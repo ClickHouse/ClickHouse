@@ -1,4 +1,5 @@
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -74,4 +75,33 @@ TEST(ZooKeeperTest, ListRequestWireRoundTrip)
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, true, true);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::EPHEMERAL_ONLY, true, false);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, false, true);
+}
+
+TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)
+{
+    ZooKeeperCreate2Response original;
+    original.path_created = "/created/node";
+    original.zstat.czxid = 42;
+    original.zstat.mzxid = 43;
+    original.zstat.ctime = 1000;
+    original.zstat.mtime = 2000;
+    original.zstat.version = 3;
+    original.zstat.cversion = 1;
+    original.zstat.aversion = 0;
+    original.zstat.ephemeralOwner = 0;
+    original.zstat.dataLength = 13;
+    original.zstat.numChildren = 0;
+    original.zstat.pzxid = 44;
+
+    WriteBufferFromOwnString out;
+    original.writeImpl(out);
+
+    ZooKeeperCreate2Response decoded;
+    ReadBufferFromString in(out.str());
+    decoded.readImpl(in);
+
+    EXPECT_TRUE(in.eof());
+    EXPECT_EQ(decoded.path_created, original.path_created);
+    EXPECT_EQ(decoded.zstat, original.zstat);
+    EXPECT_EQ(decoded.zstat.dataLength, 13);
 }

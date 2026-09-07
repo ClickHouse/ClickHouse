@@ -16,9 +16,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC를 사용하여 ClickHouse BYOC를 배포하려면 아래 단계를 따르십시오. 이 방식은 네트워크 구성에 대한 제어 수준을 높여 주며, ClickHouse BYOC를 기존 네트워크 인프라에 통합할 수 있게 해줍니다.
 
 <Steps>
-  <Step>
-    ### 기존 VPC 구성
-
+  <Step title="기존 VPC 구성" id="configure-existing-vpc">
     1. ClickHouse Kubernetes(GKE) 클러스터용으로 [ClickHouse BYOC 지원 리전](/ko/products/cloud/reference/supported-regions)에 프라이빗 서브넷을 최소 1개 할당하십시오. GKE 클러스터 노드에 충분한 IP 주소를 제공할 수 있도록 서브넷의 CIDR 범위는 최소 `/24`(예: 10.0.0.0/24)여야 합니다.
     2. 프라이빗 서브넷 내에서 GKE 클러스터 파드에 사용할 보조 IPv4 범위를 최소 1개 할당하십시오. GKE 클러스터 파드에 충분한 IP 주소를 제공할 수 있도록 보조 범위는 최소 `/23`이어야 합니다.
     3. 서브넷에서 **Private Google Access**를 활성화하십시오. 이렇게 하면 GKE 노드가 외부 IP 주소 없이도 Google API 및 서비스에 연결할 수 있습니다.
@@ -26,9 +24,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Private Google Access가 활성화된 기본 및 보조 IPv4 범위를 보여주는 BYOC GCP 서브넷 세부 정보" />
   </Step>
 
-  <Step>
-    ### 네트워크 연결 확인
-
+  <Step title="네트워크 연결 확인" id="ensure-network-connectivity">
     **Cloud NAT Gateway**
     VPC에 [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview)가 배포되어 있는지 확인하십시오. ClickHouse BYOC 구성 요소는 Tailscale 컨트롤 플레인과 통신하기 위해 아웃바운드 인터넷 액세스가 필요합니다. Tailscale은 비공개 관리 작업을 위한 안전한 제로 트러스트 네트워킹을 제공하는 데 사용됩니다. Cloud NAT gateway는 외부 IP 주소가 없는 인스턴스에 이러한 아웃바운드 연결을 제공합니다.
 
@@ -36,9 +32,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
     VPC에서 DNS 해석이 정상적으로 작동하고 있으며, 표준 DNS 이름을 차단하거나 방해하거나 덮어쓰지 않는지 확인하십시오. ClickHouse BYOC는 DNS를 사용해 Tailscale 컨트롤 서버와 ClickHouse 서비스 엔드포인트를 확인합니다. DNS를 사용할 수 없거나 구성이 잘못된 경우 BYOC 서비스가 연결되지 않거나 제대로 작동하지 않을 수 있습니다.
   </Step>
 
-  <Step>
-    ### BYOC 인프라 설정
-
+  <Step title="BYOC 인프라 설정" id="set-up-byoc-infrastructure">
     새 인프라를 설정할 때 ClickHouse Cloud 콘솔에서 다음을 구성하십시오.
 
     1. **VPC configuration**에서 **Use existing VPC**를 선택하십시오.

@@ -27,7 +27,7 @@ namespace
 {
     /// Checks if the types of the specified arguments are valid for the `histogram_quantile` function.
     void checkArgumentTypes(
-        const PQT::Function * function_node,
+        const PrometheusQueryTree::Function * function_node,
         const std::vector<SQLQueryPiece> & arguments,
         const ConverterContext & context)
     {
@@ -69,7 +69,7 @@ bool isHistogramQuantile(std::string_view function_name)
 }
 
 SQLQueryPiece applyHistogramQuantile(
-    const PQT::Function * function_node,
+    const PrometheusQueryTree::Function * function_node,
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context)
 {

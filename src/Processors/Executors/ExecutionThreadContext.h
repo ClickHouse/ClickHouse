@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <queue>
 #include <condition_variable>
 
@@ -35,10 +36,6 @@ public:
     UInt64 wait_time_ns = 0;
 #endif
 
-    const size_t thread_number;
-    const bool profile_processors;
-    const bool trace_processors;
-
     /// There is a performance optimization that schedules a task to the current thread, avoiding global task queue.
     /// Optimization decreases contention on global task queue but may cause starvation.
     /// See 01104_distributed_numbers_test.sql
@@ -46,6 +43,12 @@ public:
     /// if it was applied more than `max_scheduled_local_tasks` in a row.
     constexpr static size_t max_scheduled_local_tasks = 128;
     size_t num_scheduled_local_tasks = 0;
+
+    const StepWallClockRegistry * step_to_wall_clock_registry = nullptr;
+
+    const size_t thread_number;
+    const bool profile_processors;
+    const bool trace_processors;
 
     void wait(std::atomic_bool & finished);
     void wakeUp();
@@ -62,8 +65,9 @@ public:
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
+        , step_to_wall_clock_registry(step_wall_clock_registry_)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)
         , trace_processors(trace_processors_)

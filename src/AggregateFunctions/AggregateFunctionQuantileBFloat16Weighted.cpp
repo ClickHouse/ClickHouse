@@ -62,13 +62,13 @@ The function is a fast quantile estimator with a maximum relative error of `0.78
 quantileBFloat16Weighted(level)(expr, weight)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Column with numeric data.", {"(U)Int*", "Float*"}},
-        {"weight", "Column with weights of sequence members.", {"(U)Int*", "Float*"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}},
+        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Optional. Level of quantile. Possible values are in the range from 0 to 1. Default value: 0.5.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level. For `Date` and `DateTime` inputs the output format matches the input format.", {"Float64", "Date", "DateTime"}};
     FunctionDocumentation::Examples examples = {
     {
         "Computing weighted quantile with bfloat16",
@@ -90,7 +90,41 @@ SELECT quantileBFloat16Weighted(0.75)(a, w), quantileBFloat16Weighted(0.75)(b, w
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
     factory.registerFunction(NameQuantileBFloat16Weighted::name, {createAggregateFunctionQuantile<FuncQuantileBFloat16Weighted>, documentation});
-    factory.registerFunction(NameQuantilesBFloat16Weighted::name, {createAggregateFunctionQuantile<FuncQuantilesBFloat16Weighted>, {}});
+
+    FunctionDocumentation::Description description_quantiles = R"(
+Like [`quantilesBFloat16`](/sql-reference/aggregate-functions/reference/quantilesBFloat16) but takes into account the weight of each value.
+
+Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers at different levels simultaneously, in a single pass.
+    )";
+    FunctionDocumentation::Syntax syntax_quantiles = R"(
+quantilesBFloat16Weighted(level1, level2, ...)(expr, weight)
+    )";
+    FunctionDocumentation::Arguments arguments_quantiles = {
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}},
+        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
+    };
+    FunctionDocumentation::Parameters parameters_quantiles = {
+        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified. For `Date` and `DateTime` inputs the output format matches the input format.", {"Array(Float64)", "Array(Date)", "Array(DateTime)"}};
+    FunctionDocumentation::Examples examples_quantiles = {
+    {
+        "Computing multiple weighted bfloat16 quantiles",
+        R"(
+SELECT quantilesBFloat16Weighted(0.25, 0.5, 0.75)(number, 1) FROM numbers(10)
+        )",
+        R"(
+┌─quantilesBFloat16Weighted(0.25, 0.5, 0.75)(number, 1)─┐
+│ [2,4,7]                                               │
+└───────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantiles = {21, 10};
+    FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
+
+    factory.registerFunction(NameQuantilesBFloat16Weighted::name, {createAggregateFunctionQuantile<FuncQuantilesBFloat16Weighted>, documentation_quantiles});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianBFloat16Weighted", NameQuantileBFloat16Weighted::name);

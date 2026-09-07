@@ -1,0 +1,280 @@
+#!/usr/bin/env bash
+
+table_name="table_04516_${CLICKHOUSE_DATABASE}"
+user_a="user_04516_a_${CLICKHOUSE_DATABASE}"
+user_b="user_04516_b_${CLICKHOUSE_DATABASE}"
+role1="role1_04516_${CLICKHOUSE_DATABASE}"
+role2="role2_04516_${CLICKHOUSE_DATABASE}"
+role3="role3_04516_${CLICKHOUSE_DATABASE}"
+role4="role4_04516_${CLICKHOUSE_DATABASE}"
+
+query_as_user()
+{
+    local user="$1"
+    local query="$2"
+    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="$user" --query="$query"
+}
+
+error_as_user()
+{
+    local user="$1"
+    local query="$2"
+    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="$user" --query="$query" 2>&1 || true
+}
+
+http_as_user()
+{
+    local user="$1"
+    local session_id="$2"
+    local query="$3"
+    $CLICKHOUSE_CURL -u "${user}:" -sS "${CLICKHOUSE_URL}&session_id=${session_id}" --data-binary "$query"
+}
+
+cleanup()
+{
+    $CLICKHOUSE_CLIENT --query "
+        DROP USER IF EXISTS ${user_a}, ${user_b};
+        DROP ROLE IF EXISTS ${role1}, ${role2}, ${role3}, ${role4};
+        DROP TABLE IF EXISTS ${table_name};
+    "
+}
+
+reset_access()
+{
+    $CLICKHOUSE_CLIENT --query "
+        DROP USER IF EXISTS ${user_a}, ${user_b};
+        DROP ROLE IF EXISTS ${role1}, ${role2}, ${role3}, ${role4};
+        CREATE USER ${user_a};
+        CREATE USER ${user_b};
+    "
+}
+
+setup_role_test_table()
+{
+    cleanup
+    $CLICKHOUSE_CLIENT --query "
+        CREATE TABLE ${table_name}(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple();
+        INSERT INTO ${table_name} VALUES (1, 5), (2, 10);
+    "
+}
+
+test_create_role()
+{
+    echo "create_role"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "CREATE ROLE ${role1}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SELECT * FROM ${table_name}")"
+    $CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${role1}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SELECT * FROM ${table_name}")"
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_a}"
+    [ "$(query_as_user "${user_a}" "SELECT * FROM ${table_name}")" = $'1\t5\n2\t10' ]
+    $CLICKHOUSE_CLIENT --query "REVOKE ${role1} FROM ${user_a}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SELECT * FROM ${table_name}")"
+    echo "OK"
+}
+
+test_grant_role_to_role()
+{
+    echo "grant_role_to_role"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "CREATE ROLE ${role1}, ${role2}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SELECT * FROM ${table_name}")"
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_a}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SELECT * FROM ${table_name}")"
+    $CLICKHOUSE_CLIENT --query "GRANT ${role2} TO ${role1}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SELECT * FROM ${table_name}")"
+    $CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${role2}"
+    [ "$(query_as_user "${user_a}" "SELECT * FROM ${table_name}")" = $'1\t5\n2\t10' ]
+    echo "OK"
+}
+
+test_combine_privileges()
+{
+    echo "combine_privileges"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "CREATE ROLE ${role1}, ${role2}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SELECT * FROM ${table_name}")"
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_a}"
+    $CLICKHOUSE_CLIENT --query "GRANT SELECT(x) ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${role1}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SELECT * FROM ${table_name}")"
+    [ "$(query_as_user "${user_a}" "SELECT x FROM ${table_name}")" = $'1\n2' ]
+    $CLICKHOUSE_CLIENT --query "GRANT SELECT(y) ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${role2}"
+    $CLICKHOUSE_CLIENT --query "GRANT ${role2} TO ${user_a}"
+    [ "$(query_as_user "${user_a}" "SELECT * FROM ${table_name}")" = $'1\t5\n2\t10' ]
+    echo "OK"
+}
+
+test_admin_option()
+{
+    echo "admin_option"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "CREATE ROLE ${role1}"
+    $CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${role1}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_b}" "SELECT * FROM ${table_name}")"
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_a}"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "GRANT ${role1} TO ${user_b}")"
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_b}" "SELECT * FROM ${table_name}")"
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_a} WITH ADMIN OPTION"
+    query_as_user "${user_a}" "GRANT ${role1} TO ${user_b}"
+    [ "$(query_as_user "${user_b}" "SELECT * FROM ${table_name}")" = $'1\t5\n2\t10' ]
+    echo "OK"
+}
+
+test_revoke_requires_admin_option()
+{
+    echo "revoke_requires_admin_option"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "CREATE ROLE ${role1}, ${role2}"
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_b}"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "GRANT ${role1} TO ${user_b}" ]
+    grep -q "necessary to have the role ${role1} granted" <<<"$(error_as_user "${user_a}" "REVOKE ${role1} FROM ${user_b}")"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "GRANT ${role1} TO ${user_b}" ]
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_a}"
+    grep -q "granted, but without ADMIN option" <<<"$(error_as_user "${user_a}" "REVOKE ${role1} FROM ${user_b}")"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "GRANT ${role1} TO ${user_b}" ]
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_a} WITH ADMIN OPTION"
+    query_as_user "${user_a}" "REVOKE ${role1} FROM ${user_b}"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "" ]
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1} TO ${user_b}"
+    query_as_user "${user_a}" "REVOKE ALL FROM ${user_b}"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "" ]
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1}, ${role2} TO ${user_b}"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "GRANT ${role1}, ${role2} TO ${user_b}" ]
+    grep -q "necessary to have the role ${role2} granted" <<<"$(error_as_user "${user_a}" "REVOKE ALL FROM ${user_b}")"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "GRANT ${role1}, ${role2} TO ${user_b}" ]
+    query_as_user "${user_a}" "REVOKE ALL EXCEPT ${role2} FROM ${user_b}"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "GRANT ${role2} TO ${user_b}" ]
+    $CLICKHOUSE_CLIENT --query "GRANT ${role2} TO ${user_a} WITH ADMIN OPTION"
+    query_as_user "${user_a}" "REVOKE ALL FROM ${user_b}"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "" ]
+    $CLICKHOUSE_CLIENT --query "GRANT ${role1}, ${role2} TO ${user_b}"
+    query_as_user "${user_a}" "REVOKE ALL FROM ${user_b}"
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")" = "" ]
+    echo "OK"
+}
+
+test_set_role()
+{
+    echo "set_role"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "CREATE ROLE ${role1}, ${role2}; GRANT ${role1}, ${role2} TO ${user_a}"
+    session_id="04516_set_role_${CLICKHOUSE_DATABASE}"
+    [ "$(http_as_user "${user_a}" "$session_id" "SHOW CURRENT ROLES")" = "${role1}"$'\t0\t1\n'"${role2}"$'\t0\t1' ]
+    http_as_user "${user_a}" "$session_id" "SET ROLE ${role1}" > /dev/null
+    [ "$(http_as_user "${user_a}" "$session_id" "SHOW CURRENT ROLES")" = "${role1}"$'\t0\t1' ]
+    http_as_user "${user_a}" "$session_id" "SET ROLE ${role2}" > /dev/null
+    [ "$(http_as_user "${user_a}" "$session_id" "SHOW CURRENT ROLES")" = "${role2}"$'\t0\t1' ]
+    http_as_user "${user_a}" "$session_id" "SET ROLE NONE" > /dev/null
+    [ "$(http_as_user "${user_a}" "$session_id" "SHOW CURRENT ROLES")" = "" ]
+    http_as_user "${user_a}" "$session_id" "SET ROLE DEFAULT" > /dev/null
+    [ "$(http_as_user "${user_a}" "$session_id" "SHOW CURRENT ROLES")" = "${role1}"$'\t0\t1\n'"${role2}"$'\t0\t1' ]
+    echo "OK"
+}
+
+test_changing_default_roles_affects_new_sessions_only()
+{
+    echo "changing_default_roles_affects_new_sessions_only"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "CREATE ROLE ${role1}, ${role2}; GRANT ${role1}, ${role2} TO ${user_a}"
+    session_id="04516_old_session_${CLICKHOUSE_DATABASE}"
+    other_session_id="04516_new_session_${CLICKHOUSE_DATABASE}"
+    [ "$(http_as_user "${user_a}" "$session_id" "SHOW CURRENT ROLES")" = "${role1}"$'\t0\t1\n'"${role2}"$'\t0\t1' ]
+    $CLICKHOUSE_CLIENT --query "SET DEFAULT ROLE ${role2} TO ${user_a}"
+    [ "$(http_as_user "${user_a}" "$session_id" "SHOW CURRENT ROLES")" = "${role1}"$'\t0\t0\n'"${role2}"$'\t0\t1' ]
+    [ "$(http_as_user "${user_a}" "$other_session_id" "SHOW CURRENT ROLES")" = "${role2}"$'\t0\t1' ]
+    echo "OK"
+}
+
+test_introspection()
+{
+    echo "introspection"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "
+        CREATE ROLE ${role1}, ${role2};
+        GRANT ${role1} TO ${user_a};
+        GRANT ${role2} TO ${user_b} WITH ADMIN OPTION;
+        GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${user_a}, ${role2};
+        GRANT CREATE ON *.* TO ${user_b} WITH GRANT OPTION;
+        REVOKE SELECT(x) ON ${CLICKHOUSE_DATABASE}.${table_name} FROM ${role2};
+    "
+    grep -Fxq "${role1}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW ROLES")"
+    grep -Fxq "${role2}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW ROLES")"
+    grep -Fxq "CREATE ROLE ${role1}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLE ${role1}")"
+    grep -Fxq "CREATE ROLE ${role2}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLE ${role2}")"
+    grep -Fxq "CREATE ROLE ${role1}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLES ${role1}, ${role2}")"
+    grep -Fxq "CREATE ROLE ${role2}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLES ${role1}, ${role2}")"
+    grep -Fxq "CREATE ROLE ${role1}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLES")"
+    grep -Fxq "CREATE ROLE ${role2}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLES")"
+    user_a_grants="$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_a}")"
+    [ "$user_a_grants" = "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${user_a}"$'\n'"GRANT ${role1} TO ${user_a}" ]
+    user_b_grants="$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")"
+    [ "$user_b_grants" = "GRANT CREATE ON *.* TO ${user_b} WITH GRANT OPTION"$'\n'"GRANT ${role2} TO ${user_b} WITH ADMIN OPTION" ]
+    [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${role1}")" = "" ]
+    role2_grants="$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${role2}")"
+    [ "$role2_grants" = "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${role2}"$'\n'"REVOKE SELECT(x) ON ${CLICKHOUSE_DATABASE}.${table_name} FROM ${role2}" ]
+    [ "$(query_as_user "${user_a}" "SHOW GRANTS")" = "$user_a_grants" ]
+    [ "$(query_as_user "${user_a}" "SHOW GRANTS FOR ${role1}")" = "" ]
+    grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SHOW GRANTS FOR ${role2}")"
+    [ "$(query_as_user "${user_b}" "SHOW GRANTS")" = "$user_b_grants" ]
+    [ "$(query_as_user "${user_a}" "SHOW CURRENT ROLES")" = "${role1}"$'\t0\t1' ]
+    [ "$(query_as_user "${user_b}" "SHOW CURRENT ROLES")" = "${role2}"$'\t1\t1' ]
+    [ "$(query_as_user "${user_a}" "SHOW ENABLED ROLES")" = "${role1}"$'\t0\t1\t1' ]
+    [ "$(query_as_user "${user_b}" "SHOW ENABLED ROLES")" = "${role2}"$'\t1\t1\t1' ]
+    access_out="$($CLICKHOUSE_CLIENT --query "SHOW ACCESS")"
+    grep -Fq "CREATE ROLE ${role1}" <<<"$access_out"
+    grep -Fq "CREATE ROLE ${role2}" <<<"$access_out"
+    grep -Fq "GRANT ${role1} TO ${user_a}" <<<"$access_out"
+    grep -Fq "GRANT ${role2} TO ${user_b} WITH ADMIN OPTION" <<<"$access_out"
+    roles_out="$($CLICKHOUSE_CLIENT --query "
+        SELECT
+            name,
+            if(storage IN ('local_directory', 'replicated'), 'writable_access_storage', storage)
+        FROM system.roles
+        WHERE name IN ('${role1}', '${role2}')
+        ORDER BY name
+    ")"
+    [ "$roles_out" = "${role1}"$'\twritable_access_storage\n'"${role2}"$'\twritable_access_storage' ]
+    grants_out="$($CLICKHOUSE_CLIENT --query "SELECT user_name, role_name, access_type, database, table, column, is_partial_revoke, grant_option FROM system.grants WHERE user_name IN ('${user_a}', '${user_b}') OR role_name IN ('${role1}', '${role2}') ORDER BY user_name, role_name, access_type, column FORMAT TSVRaw")"
+    grep -Fq "${user_a}	\N	SELECT	${CLICKHOUSE_DATABASE}	${table_name}	\N	0	0" <<<"$grants_out"
+    grep -Fq "${user_b}	\N	CREATE	\N	\N	\N	0	1" <<<"$grants_out"
+    grep -Fq "\N	${role2}	SELECT	${CLICKHOUSE_DATABASE}	${table_name}	x	1	0" <<<"$grants_out"
+    grep -Fq "\N	${role2}	SELECT	${CLICKHOUSE_DATABASE}	${table_name}	\N	0	0" <<<"$grants_out"
+    role_grants_out="$($CLICKHOUSE_CLIENT --query "SELECT user_name, role_name, granted_role_name, granted_role_is_default, with_admin_option FROM system.role_grants WHERE user_name IN ('${user_a}', '${user_b}') OR role_name IN ('${role1}', '${role2}') ORDER BY user_name, role_name, granted_role_name FORMAT TSVRaw")"
+    grep -Fxq "${user_a}"$'\t\\N\t'"${role1}"$'\t1\t0' <<<"$role_grants_out"
+    grep -Fxq "${user_b}"$'\t\\N\t'"${role2}"$'\t1\t1' <<<"$role_grants_out"
+    grep -Fxq "${role1}"$'\t0\t1' <<<"$(query_as_user "${user_a}" "SELECT * FROM system.current_roles ORDER BY role_name")"
+    grep -Fxq "${role2}"$'\t1\t1' <<<"$(query_as_user "${user_b}" "SELECT * FROM system.current_roles ORDER BY role_name")"
+    grep -Fxq "${role1}"$'\t0\t1\t1' <<<"$(query_as_user "${user_a}" "SELECT * FROM system.enabled_roles ORDER BY role_name")"
+    grep -Fxq "${role2}"$'\t1\t1\t1' <<<"$(query_as_user "${user_b}" "SELECT * FROM system.enabled_roles ORDER BY role_name")"
+    echo "OK"
+}
+
+test_function_current_roles()
+{
+    echo "function_current_roles"
+    reset_access
+    $CLICKHOUSE_CLIENT --query "
+        CREATE ROLE ${role1}, ${role2}, ${role3}, ${role4};
+        GRANT ${role4} TO ${role2};
+        GRANT ${role1}, ${role2}, ${role3} TO ${user_a};
+    "
+    session_id="04516_fn_roles_${CLICKHOUSE_DATABASE}"
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "['${role1}','${role2}','${role3}']	['${role1}','${role2}','${role3}']	['${role1}','${role2}','${role3}','${role4}']" ]
+    http_as_user "${user_a}" "$session_id" "SET ROLE ${role1}" > /dev/null
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "['${role1}','${role2}','${role3}']	['${role1}']	['${role1}']" ]
+    http_as_user "${user_a}" "$session_id" "SET ROLE ${role2}" > /dev/null
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "['${role1}','${role2}','${role3}']	['${role2}']	['${role2}','${role4}']" ]
+    http_as_user "${user_a}" "$session_id" "SET ROLE NONE" > /dev/null
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "['${role1}','${role2}','${role3}']	[]	[]" ]
+    http_as_user "${user_a}" "$session_id" "SET ROLE DEFAULT" > /dev/null
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "['${role1}','${role2}','${role3}']	['${role1}','${role2}','${role3}']	['${role1}','${role2}','${role3}','${role4}']" ]
+    $CLICKHOUSE_CLIENT --query "SET DEFAULT ROLE ${role2} TO ${user_a}"
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "['${role2}']	['${role1}','${role2}','${role3}']	['${role1}','${role2}','${role3}','${role4}']" ]
+    $CLICKHOUSE_CLIENT --query "REVOKE ${role3} FROM ${user_a}"
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "['${role2}']	['${role1}','${role2}']	['${role1}','${role2}','${role4}']" ]
+    $CLICKHOUSE_CLIENT --query "REVOKE ${role2} FROM ${user_a}"
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "[]	['${role1}']	['${role1}']" ]
+    $CLICKHOUSE_CLIENT --query "SET DEFAULT ROLE ALL TO ${user_a}"
+    [ "$(http_as_user "${user_a}" "$session_id" "SELECT defaultRoles(), currentRoles(), enabledRoles()")" = "['${role1}']	['${role1}']	['${role1}']" ]
+    echo "OK"
+}

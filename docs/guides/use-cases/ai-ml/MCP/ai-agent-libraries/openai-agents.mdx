@@ -25,8 +25,7 @@ This example can be found as a notebook in the [examples repository](https://git
 You can run the following steps either from your Python REPL or via script.
 
 <Steps>
-<Step>
-## Install libraries {#install-libraries}
+<Step title="Install libraries" id="install-libraries">
 
 Install the required library by running the following commands:
 
@@ -35,8 +34,7 @@ pip install -q --upgrade pip
 pip install -q openai-agents
 ```
 </Step>
-<Step>
-## Setup credentials {#setup-credentials}
+<Step title="Setup credentials" id="setup-credentials">
 
 Next, you'll need to provide your OpenAI API key:
 
@@ -49,8 +47,7 @@ os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter OpenAI API Key:")
 Enter OpenAI API Key: ········
 ```
 </Step>
-<Step>
-## Initialize MCP server and OpenAI agent {#initialize-mcp-and-agent}
+<Step title="Initialize MCP server and OpenAI agent" id="initialize-mcp-and-agent">
 
 Now configure the ClickHouse MCP server to point at the ClickHouse SQL playground,
 initialize your OpenAI agent and ask it a question:

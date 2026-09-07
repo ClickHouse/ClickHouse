@@ -43,7 +43,7 @@ public:
     size_t duplicate() const;
     /// Increments the object's reference count, returns reference count before call.
 
-    size_t release() const throw();
+    size_t release() const noexcept;
     /// Decrements the object's reference count
     /// and deletes the object if the count
     /// reaches zero, returns reference count before call.
@@ -78,7 +78,7 @@ inline size_t RefCountedObject::duplicate() const
 }
 
 
-inline size_t RefCountedObject::release() const throw()
+inline size_t RefCountedObject::release() const noexcept
 {
     size_t reference_count_before = _counter.fetch_sub(1, std::memory_order_acq_rel);
 

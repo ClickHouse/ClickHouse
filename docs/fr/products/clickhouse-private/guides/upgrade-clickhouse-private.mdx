@@ -35,9 +35,7 @@ Avant de commencer la mise à niveau :
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Mettre à niveau le chart Helm de l’opérateur
-
+  <Step title="1. Mettre à niveau le chart Helm de l’opérateur" id="1-upgrade-the-operator-helm-chart">
     Conservez les valeurs Helm existantes telles quelles et mettez à jour uniquement les versions de l’opérateur vers les nouvelles versions cibles.
 
     ```bash
@@ -47,12 +45,10 @@ Avant de commencer la mise à niveau :
       -n clickhouse-operator-system
     ```
 
-    > **Remarque :** La mise à niveau de l’opérateur peut déclencher un redémarrage progressif de tous les clusters ClickHouse qu’il gère. Si vous avez plusieurs clusters et souhaitez valider la mise à niveau sur l’un d’eux avant de laisser l’opérateur réconcilier les autres, consultez [Protecting Clusters During Upgrade](#protecting-clusters-during-upgrade) ci-dessous.
+    > **Remarque :** La mise à niveau de l’opérateur peut déclencher un redémarrage progressif de tous les clusters ClickHouse qu’il gère. Si vous avez plusieurs clusters et souhaitez valider la mise à niveau sur l’un d’eux avant de laisser l’opérateur réconcilier les autres, consultez [Protéger les clusters pendant la mise à niveau](#protecting-clusters-during-upgrade) ci-dessous.
   </Step>
 
-  <Step>
-    ### 2. Valider l’opérateur mis à niveau
-
+  <Step title="2. Valider l’opérateur mis à niveau" id="2-validate-the-upgraded-operator">
     Vérifiez que le déploiement de l’opérateur est en cours d’exécution et fonctionne correctement :
 
     ```bash
@@ -68,9 +64,7 @@ Avant de commencer la mise à niveau :
     ```
   </Step>
 
-  <Step>
-    ### 3. Mettre à niveau le chart Helm `onprem-clickhouse-cluster`
-
+  <Step title="3. Mettre à niveau le chart Helm onprem-clickhouse-cluster" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
     Mettez à niveau le chart Helm `onprem-clickhouse-cluster` pour chaque cluster. Conservez les valeurs Helm existantes telles quelles et mettez à jour uniquement les versions des images du serveur ClickHouse et de Keeper vers les nouvelles versions cibles.
 
     ```bash
@@ -85,9 +79,7 @@ Avant de commencer la mise à niveau :
     Cela déclenche un **redémarrage progressif des pods Keeper et serveur** (un pod à la fois). Répétez l’opération pour chaque cluster.
   </Step>
 
-  <Step>
-    ### 4. Valider le cluster mis à niveau
-
+  <Step title="4. Valider le cluster mis à niveau" id="4-validate-the-upgraded-cluster">
     Une fois le redémarrage progressif terminé, vérifiez que le cluster est sain :
 
     ```bash

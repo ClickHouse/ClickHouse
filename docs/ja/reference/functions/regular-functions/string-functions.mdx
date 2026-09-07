@@ -324,7 +324,7 @@ SELECT base58Decode('JxF12TrwUP45BMd');
 
 導入バージョン: v22.7.0
 
-文字列を [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) 形式でエンコードします。
+文字列を [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01) 形式でエンコードします。
 
 **構文**
 
@@ -361,6 +361,7 @@ SELECT base58Encode('ClickHouse');
 導入バージョン: v18.16.0
 
 RFC 4648 に従い、[Base64](https://en.wikipedia.org/wiki/Base64) 表現から文字列をデコードします。
+バージョン 26.7 以降では、入力中の空白文字であるスペース、タブ (`\t`)、改行 (`\n`)、キャリッジリターン (`\r`)、およびフォームフィード (`\f`) は無視されます (それ以前のバージョンでは、これらを含む入力は拒否されていました) 。垂直タブ (`\v`) と、Base64 アルファベットに含まれないその他の文字は拒否されます。
 エラー時には例外をスローします。
 
 **構文**
@@ -438,6 +439,8 @@ SELECT base64Encode('clickhouse')
 導入バージョン: v24.6.0
 
 RFC 4648 に従い、URL セーフなアルファベットを使用した [Base64](https://en.wikipedia.org/wiki/Base64) 表現から文字列をデコードします。
+デコード時には、標準アルファベット (`+` および `/`) も受け付けます。
+バージョン 26.7 以降では、入力内の空白文字である space、tab (`\t`) 、line feed (`\n`) 、carriage return (`\r`) 、および form feed (`\f`) は無視されます (それ以前のバージョンでは、これらを含む入力は拒否されていました) 。Vertical tab (`\v`) および Base64 アルファベットに含まれないその他の文字は拒否されます。
 エラー時には例外をスローします。
 
 **構文**
@@ -639,8 +642,8 @@ SELECT caseFoldUTF8('Straße')
 
 ```response title=Response
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                 │
-└─────────────────────────┘
+│ strasse                │
+└────────────────────────┘
 ```
 
 <div id="compareSubstrings">
@@ -1165,13 +1168,13 @@ editDistanceUTF8(s1, s2)
 **使用例**
 
 ```sql title=Query
-SELECT editDistanceUTF8('我是谁', '我是我')
+SELECT editDistanceUTF8('我是谁', '我是我') AS distance
 ```
 
 ```response title=Response
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
 ```
 
 <div id="encodeXMLComponent">
@@ -1499,7 +1502,7 @@ SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')
 
 導入バージョン: v24.1.0
 
-[Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) の仕組みに従い、ドメイン名の ASCII 表現 (ToASCII アルゴリズム) を返します。
+[Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) の方式に従い、ドメイン名の ASCII 表現 (ToASCII アルゴリズム) を返します。
 入力文字列は UTF エンコードされており、ASCII 文字列に変換可能である必要があります。そうでない場合は例外がスローされます。
 
 <Note>
@@ -1518,7 +1521,7 @@ idnaEncode(s)
 
 **戻り値**
 
-入力値に対する IDNA の仕組みに従い、入力文字列の ASCII 表現を返します。[`String`](/ja/reference/data-types/string)
+入力値に対する IDNA 方式に従い、入力文字列の ASCII 表現を返します。[`String`](/ja/reference/data-types/string)
 
 **例**
 
@@ -1659,9 +1662,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2100,7 +2100,7 @@ SELECT s FROM t ORDER BY naturalSortKey(s)
 ```response title=Response
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
 ```
 
@@ -2212,13 +2212,13 @@ UTF-8 文字列を NFKC で正規化した形式を返します。 [`String`](/j
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- 丸囲み数字
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- 1 2 3 に変換される
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
 ```
 
@@ -2289,8 +2289,8 @@ UTF-8 文字列を NFKD で正規化した形式を返します。 [`String`](/j
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + 下付き文字 2 + O + 上付き文字 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- H 2 O 2 に変換
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -2509,8 +2509,8 @@ SELECT removeDiacriticsUTF8('café résumé naïve')
 
 ```response title=Response
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                          │
-└────────────────────────────────────────────┘
+│ cafe resume naive                         │
+└───────────────────────────────────────────┘
 ```
 
 <div id="repeat">
@@ -3270,7 +3270,7 @@ SELECT stringJaccardIndex('clickhouse', 'mouse')
 
 導入バージョン: v23.11.0
 
-UTF8 でエンコードされた文字列に対する [`stringJaccardIndex`](#stringJaccardIndex) と同様の関数です。
+UTF-8 でエンコードされた文字列に対する [`stringJaccardIndex`](#stringJaccardIndex) と同様の関数です。
 
 **構文**
 
@@ -3292,13 +3292,13 @@ stringJaccardIndexUTF8(s1, s2)
 **使用例**
 
 ```sql title=Query
-SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
+SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ```
 
 ```response title=Response
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
 ```
 
 <div id="substring">
@@ -3314,6 +3314,8 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
 * `offset` が負の場合、部分文字列は先頭からではなく、文字列の末尾から `offset` 文字分さかのぼった位置から始まります。
 
 省略可能な引数 `length` では、返される部分文字列の最大バイト数を指定します。
+
+数値の各桁に対して同様の操作を行う [`digits`](/ja/reference/functions/regular-functions/other-functions#digits) 関数も参照してください。
 
 **構文**
 
@@ -3912,7 +3914,7 @@ upperUTF8(s)
 
 **戻り値**
 
-String型の値。[`String`](/ja/reference/data-types/string)
+String データ型の値。[`String`](/ja/reference/data-types/string)
 
 **例**
 

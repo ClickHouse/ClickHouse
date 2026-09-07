@@ -10,12 +10,38 @@
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
 #include <Poco/JSON/Object.h>
 
+#include <functional>
+#include <unordered_map>
+
+namespace DB
+{
+struct DatabaseDataLakeSettings;
+}
+
 namespace DataLake
 {
 
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
+
+/// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
+/// supports altering settings registers its own validator; catalog types without
+/// a registered validator do not support altering settings and get `NOT_IMPLEMENTED`.
+class CatalogSettingsAlterValidatorFactory
+{
+public:
+    using Validator = std::function<void(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)>;
+
+    static CatalogSettingsAlterValidatorFactory & instance();
+
+    void registerValidator(DB::DatabaseDataLakeCatalogType catalog_type, Validator validator);
+
+    void validate(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes) const;
+
+private:
+    std::unordered_map<DB::DatabaseDataLakeCatalogType, Validator> validators;
+};
 
 struct DataLakeSpecificProperties
 {
@@ -70,8 +96,8 @@ public:
     /// Some catalogs (Unity or Glue) may store not only Iceberg/DeltaLake tables but other kinds of "tables"
     /// as simple files or some in-memory tables, or even DataLake tables but in some private storages.
     /// ClickHouse can see these tables via catalog, but obviously cannot read them.
-    /// So we use these methods to identify such tables and show them in SHOW TABLES and
-    /// SHOW CREATE TABLE queries.
+    /// We use these methods to hide such tables from listings (SHOW TABLES, system.tables);
+    /// SHOW CREATE TABLE can still describe them (with engine `Other`).
     void setTableIsNotReadable(const std::string & reason)
     {
         if (is_default_readable_table)
@@ -122,6 +148,38 @@ private:
 };
 
 
+/// A table as returned by a catalog's bulk listing, without a per-table metadata fetch.
+struct CatalogTable
+{
+    /// Full name including namespace, e.g. "namespace.table".
+    std::string name;
+
+    /// Whether ClickHouse can read this table (Iceberg for Glue/REST/Hive, Delta for Unity).
+    /// Mixed catalogs set it from the bulk listing so SHOW TABLES can hide unreadable tables.
+    bool is_readable = true;
+};
+
+using CatalogTables = std::vector<CatalogTable>;
+
+/// Catalog-layer view of the `name` predicate (translated from `DB::TablesFilter`
+/// by `DatabaseDataLake`) so the catalog can restrict which namespaces it lists.
+struct TableNameFilter
+{
+    /// Equals (`name = 'ns.table'`) and Like (`name LIKE 'ns.%'`) prune to specific
+    /// namespaces; All lists the whole catalog (fallback when we can't prune).
+    enum class Kind
+    {
+        All,
+        Equals,
+        Like,
+    };
+
+    Kind kind = Kind::All;
+    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
+    std::string value;
+};
+
+
 struct CatalogSettings
 {
     String storage_endpoint;
@@ -151,9 +209,18 @@ public:
     /// Does catalog have any tables?
     virtual bool empty() const = 0;
 
-    /// Fetch tables' names list.
-    /// Contains full namespaces in names.
-    virtual DB::Names getTables() const = 0;
+    /// Fetch the list of tables (names contain full namespaces). Each entry carries an
+    /// `is_readable` flag so listings can drop unreadable tables without a metadata fetch.
+    virtual CatalogTables getTables() const = 0;
+
+    /// Enumerate every namespace as a full dot-separated path (hierarchical catalogs
+    /// return every nested level; flat catalogs their single-level names).
+    virtual Namespaces getNamespaces() const = 0;
+
+    /// Fetch the list of tables restricted by the `name` predicate (see `TableNameFilter`);
+    /// each entry carries an `is_readable` flag like getTables(). Default impl prunes
+    /// namespaces via `getNamespaces()`.
+    virtual CatalogTables getTables(const TableNameFilter & filter) const;
 
     /// Check that a table exists in a given namespace.
     virtual bool existsTable(
@@ -212,7 +279,33 @@ public:
         return std::nullopt;
     }
 
+    /// Result of `prepareSettingsChanges`: the new catalog state built off to the side,
+    /// ready to be published by `commitSettingsChanges`.
+    struct PreparedSettingsChanges
+    {
+        virtual ~PreparedSettingsChanges() = default;
+    };
+    using PreparedSettingsChangesPtr = std::unique_ptr<PreparedSettingsChanges>;
+
+    /// Validate `ALTER DATABASE ... MODIFY SETTING` changes and build the new catalog
+    /// state without publishing anything (may throw, may do network I/O). The state
+    /// becomes visible only after `commitSettingsChanges`, so the caller can persist
+    /// the changes in between and abandon the prepared state on failure.
+    virtual PreparedSettingsChangesPtr prepareSettingsChanges(const DB::SettingsChanges & changes);
+
+    /// Publish the state built by `prepareSettingsChanges`. Must not fail.
+    virtual void commitSettingsChanges(PreparedSettingsChangesPtr prepared);
+
+    void applySettingsChanges(const DB::SettingsChanges & changes)
+    {
+        commitSettingsChanges(prepareSettingsChanges(changes));
+    }
+
 protected:
+    /// List tables directly in `namespace_name` (non-recursive), as fully-qualified
+    /// `namespace.table` entries carrying an `is_readable` flag like getTables().
+    virtual CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
+
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
     const std::string warehouse;

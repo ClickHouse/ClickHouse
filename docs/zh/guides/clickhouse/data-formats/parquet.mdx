@@ -161,7 +161,7 @@ FORMAT Parquet
   ## ClickHouse 和 Parquet 数据类型
 </div>
 
-ClickHouse 和 Parquet 的数据类型大多相同，但仍[略有差异](/zh/reference/formats/Parquet/Parquet#data-types-matching-parquet)。例如，ClickHouse 会将 `DateTime` 类型导出为 Parquet 的 `int64`。如果再将其导入回 ClickHouse，我们看到的将是数字 ([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet)) ：
+ClickHouse 和 Parquet 的数据类型大多相同，但仍[略有差异](/zh/reference/formats/Parquet/Parquet#data-types-matching-parquet)。例如，ClickHouse 会将 `DateTime` 类型导出为 Parquet 的 `int64`。如果再将其导入回 ClickHouse，我们看到的将是数字 ([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet))：
 
 ```sql
 SELECT * FROM file('time.parquet', Parquet);
@@ -182,7 +182,7 @@ SELECT * FROM file('time.parquet', Parquet);
 ```sql
 SELECT
     n,
-    toDateTime(time)                 <--- 整数转时间
+    toDateTime(time)                 <--- int to time
 FROM file('time.parquet', Parquet);
 ```
 

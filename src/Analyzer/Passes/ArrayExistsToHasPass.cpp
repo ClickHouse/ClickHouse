@@ -2,6 +2,7 @@
 
 #include <Functions/array/has.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -47,13 +48,20 @@ public:
         if (!lambda_node)
             return;
 
-        auto & lambda_arguments_nodes = lambda_node->getArguments().getNodes();
-        if (lambda_arguments_nodes.size() != 1)
+        const auto & lambda_argument_names = lambda_node->getArguments().getNames();
+        if (lambda_argument_names.size() != 1)
             return;
 
-        const auto & lambda_argument_column_node = lambda_arguments_nodes[0];
-        if (lambda_argument_column_node->getNodeType() != QueryTreeNodeType::COLUMN)
-            return;
+        const auto & lambda_argument_name = lambda_argument_names[0];
+        auto lambda_arguments_node = lambda_node->getArgumentsTyped();
+
+        /// The lambda parameter is referenced in the body as a column sourced from the lambda arguments node.
+        auto is_lambda_argument = [&](const QueryTreeNodePtr & argument_node)
+        {
+            const auto * column_node = argument_node->as<ColumnNode>();
+            return column_node && column_node->getColumnName() == lambda_argument_name
+                && column_node->getColumnSourceOrNull() == lambda_arguments_node;
+        };
 
         auto * filter_node = lambda_node->getExpression()->as<FunctionNode>();
         if (!filter_node || filter_node->getFunctionName() != "equals")
@@ -73,14 +81,14 @@ public:
 
         if (filter_lhs_argument_node_type == QueryTreeNodeType::COLUMN &&
             filter_rhs_argument_node_type == QueryTreeNodeType::CONSTANT &&
-            filter_lhs_argument_node->isEqual(*lambda_argument_column_node))
+            is_lambda_argument(filter_lhs_argument_node))
         {
             /// Rewrite arrayExists(x -> x = elem, arr) -> has(arr, elem)
             has_constant_element_argument = filter_rhs_argument_node;
         }
         else if (filter_lhs_argument_node_type == QueryTreeNodeType::CONSTANT &&
             filter_rhs_argument_node_type == QueryTreeNodeType::COLUMN &&
-            filter_rhs_argument_node->isEqual(*lambda_argument_column_node))
+            is_lambda_argument(filter_rhs_argument_node))
         {
             /// Rewrite arrayExists(x -> elem = x, arr) -> has(arr, elem)
             has_constant_element_argument = filter_lhs_argument_node;

@@ -1,0 +1,36 @@
+compact, DEFAULT NULL
+0
+0
+42	0
+compact, no default
+1
+1
+1
+1
+1
+1
+1	42	0
+2	\N	1
+wide
+0
+0
+42	0
+string
+1
+1
+1	a	0
+2	\N	1
+memory
+1
+1
+1
+1
+1	42	0
+2	\N	1
+apply_mutations_on_fly
+1
+1
+1	0	0
+2	\N	1
+tuple element
+7

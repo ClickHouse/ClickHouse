@@ -370,13 +370,15 @@ ClickHouse は各パートのベクトル索引から 3.0 x 10 = 30 件の最近
 
 ClickHouse のスキップ索引は通常、グラニュール単位でフィルタリングを行います。つまり、スキップ索引でのルックアップは (内部的には) 一致する可能性のあるグラニュールのリストを返し、後続のスキャンで読み込むデータ量を減らします。
 これはスキップ索引全般では有効に機能しますが、ベクトル類似度索引では &quot;granularity mismatch&quot; を引き起こします。
-もう少し詳しく言うと、ベクトル類似度索引は、指定された参照ベクトルに対して最も類似する N 個のベクトルの行番号を特定しますが、その後、それらの行番号をグラニュール番号に外挿する必要があります。
-その後 ClickHouse はこれらのグラニュールをディスクから読み込み、それらのグラニュール内のすべてのベクトルに対して距離計算を繰り返します。
-このステップは再スコアリング と呼ばれ、理論上は精度を向上できる可能性があります。ベクトル類似度索引が返すのは *近似* 結果にすぎないことを思い出してください。しかし、パフォーマンスの観点では最適ではないのは明らかです。
+もう少し詳しく言うと、ベクトル類似度索引は、指定された参照ベクトルに対して最も類似する N 個のベクトルの行番号を特定します。
+設定 `vector_search_with_rescoring = 1` では、ClickHouse は候補行の元のフル精度ベクトルを読み取り、通常の SQL パイプラインで最終的な距離を計算します。
+クエリプランで可能な場合、ClickHouse は最終的な距離計算の前に、ベクトル索引が返した候補行にスキャンを絞り込みます。
+このステップは rescoring と呼ばれ、特に量子化されたベクトル索引では精度を向上させることができます。これは、最終的なランキングで索引距離ではなく保存されたベクトルを使用するためです。
+追加のフィルタによって候補が削られすぎる場合や、より高い再現率が必要な場合は、設定 `vector_search_index_fetch_multiplier` を増やして、ベクトル索引が rescoring 用により多くの候補行を返すようにしてください。
 
-そこで ClickHouse は、再スコアリング を無効にして、最も類似するベクトルとその距離を索引から直接返す最適化を提供しています。
+そこで ClickHouse は、rescoring を無効にして、最も類似するベクトルとその距離を索引から直接返す最適化を提供しています。
 この最適化はデフォルトで有効になっています。設定 [vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings#vector_search_with_rescoring) を参照してください。
-大まかな仕組みとしては、ClickHouse は最も類似するベクトルとその距離を仮想カラム `_distances` として利用できるようにします。
+大まかな仕組みとしては、ClickHouse は最も類似するベクトルとその距離を仮想カラム `_distance` として利用できるようにします。
 これを確認するには、`EXPLAIN header = 1` を付けてベクトル検索クエリを実行します。
 
 ```sql
@@ -411,7 +413,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 ```
 
 <Note>
-  再スコアリングなし (`vector_search_with_rescoring = 0`) で実行し、かつ並列レプリカが有効なクエリでは、再スコアリングにフォールバックする場合があります。
+  rescoring なし (`vector_search_with_rescoring = 0`) で実行し、かつ並列レプリカが有効なクエリでは、rescoring にフォールバックする場合があります。
 </Note>
 
 <div id="performance-tuning">
@@ -582,28 +584,29 @@ WHERE type = 'vector_similarity';
 ```
 
 <div id="differences-to-regular-skipping-indexes">
-  #### 通常の skipping indexes との違い
+  #### 通常の スキッピング索引 との違い
 </div>
 
-通常の [skipping indexes](/ja/concepts/features/performance/skip-indexes/skipping-indexes) と同様に、ベクトル類似度索引は granule 単位で構築され、各 index block は `GRANULARITY = [N]` 個の granule で構成されます (通常の skipping indexes のデフォルトでは `[N]` = 1) 。
+通常の [スキッピング索引](/ja/concepts/features/performance/skip-indexes/skipping-indexes) と同様に、ベクトル類似度索引は グラニュール 単位で構築され、各 index block は `GRANULARITY = [N]` 個の グラニュール で構成されます (通常の スキッピング索引 のデフォルトでは `[N]` = 1) 。
 たとえば、table のプライマリインデックスの granularity が 8192 (設定 `index_granularity = 8192`) で、`GRANULARITY = 2` の場合、各 index block には 16384 行が含まれます。
 しかし、近似近傍探索のための data structure と algorithm は、本質的に row-oriented です。
 これらは行の集合を compact に表現して保持し、ベクトル検索 queries に対して行を返します。
-そのため、ベクトル類似度索引の動作には、通常の skipping indexes と比べてやや直感に反する違いがあります。
+そのため、ベクトル類似度索引の動作には、通常の スキッピング索引 と比べてやや直感に反する違いがあります。
 
 ユーザーが column にベクトル類似度索引を定義すると、ClickHouse は内部的に各 index block ごとにベクトル類似度の「sub-index」を作成します。
 この sub-index は、自身が属する index block 内の行しか認識しないという意味で「local」です。
-前述の例で、ある column に 65536 行あるとすると、4 つの index blocks (8 つの granule にまたがる) と、各 index block に対応するベクトル類似度 sub-index が作成されます。
+前述の例で、ある column に 65536 行あるとすると、4 つの index blocks (8 つの グラニュール にまたがる) と、各 index block に対応するベクトル類似度 sub-index が作成されます。
 理論上、sub-index は、その index block 内で最も近い N 個の points に対応する行を直接返せます。
-しかし、ClickHouse は granule 単位で data をディスクから memory に読み込むため、sub-index は一致した行を granule granularity に外挿します。
-これは、通常の skipping indexes が index block 単位で data をスキップするのとは異なります。
+`vector_search_with_rescoring = 1` のクエリでは、クエリプラン がこの最適化を許可している場合、ClickHouse はこれらの行位置を使用して、保存されているベクトルから最終的な距離を計算する前に行を filter できます。
+rescoring を行わない場合、ClickHouse は virtual column `_distance` を介してベクトル索引からの距離を直接使用します。
+どちらのモードでも、読み取りのスケジューリングには周囲の グラニュール 範囲が引き続き使用されます。これは、通常の スキッピング索引 が index block 単位で data をスキップするのとは異なります。
 
 `GRANULARITY` parameter は、作成されるベクトル類似度 sub-index の数を決定します。
 `GRANULARITY` の値が大きいほど、ベクトル類似度 sub-index の数は少なくなりますが、それぞれは大きくなり、最終的には column (または column の data part) に sub-index が 1 つだけになる場合もあります。
-その場合、その sub-index は column のすべての行を「global」に把握できるため、関連する行を含む column (part) の granule を直接すべて返せます (そのような granule の数は最大でも `LIMIT [N]` 個です) 。
-次のステップで、ClickHouse はこれらの granule を読み込み、granule 内のすべての行に対して総当たりで距離計算を行い、実際に最適な行を特定します。
-`GRANULARITY` の値が小さい場合は、各 sub-index が最大 `LIMIT N` 個の granule を返します。
-その結果、より多くの granule を読み込んで後段で filter する必要があります。
+その場合、その sub-index は column のすべての行を「global」に把握できるため、関連する行を含む column (part) の グラニュール を直接すべて返せます (そのような グラニュール の数は最大でも `LIMIT [N]` 個です) 。
+`vector_search_with_rescoring = 1` の場合、ClickHouse はその後、該当する行位置を読み取り、それらの行について正確な距離を計算できます。
+`GRANULARITY` の値が小さい場合は、各 sub-index が最大 `LIMIT N` 個の candidate rows を返せます。
+その結果、より多くの candidate rows を読み込んで後段で filter する必要が生じる場合があります。
 どちらの場合でも検索精度は同等で、異なるのは processing 性能だけである点に注意してください。
 一般に、ベクトル類似度索引では大きな `GRANULARITY` を使用し、ベクトル類似度 structure の memory consumption が大きすぎるといった問題がある場合にのみ、より小さい `GRANULARITY` の値を使うことが推奨されます。
 ベクトル類似度索引で `GRANULARITY` が指定されていない場合、デフォルト値は 1 億です。
@@ -641,6 +644,109 @@ LIMIT 3;
 * [dbpedia](/ja/get-started/sample-datasets/dbpedia)
 * [hackernews](/ja/get-started/sample-datasets/hacker-news-vector-search)
 
+<div id="vector-search-with-quantized-codecs">
+  ### 量子化コーデックを使用したベクトル検索
+</div>
+
+<Note>
+  `Quantized` コーデックは実験的機能です。`SET allow_experimental_codecs = 1` を設定して有効にしてください。
+  問題が発生した場合は、[ClickHouseリポジトリ](https://github.com/clickhouse/clickhouse/issues)で issue を作成してください。
+</Note>
+
+<div id="quantized-codecs-introduction">
+  #### はじめに
+</div>
+
+[ベクトル類似度索引](#vector-similarity-index) は、グラフをたどって最近傍クエリに応答する方式で、グラフ全体をメモリ上に保持できる場合には非常に高い性能を発揮します。
+ただし、適用範囲を制限する条件が 2 つあります。
+
+* **スケール。** ベクトル自体に加えて、グラフの構築にかかる時間と、それを格納するために必要なメモリが支配的なコストになります。
+* **フィルタリング。** 選択性の高い `WHERE` フィルタがあると、グラフ走査は効果的ではなくなります。述語を満たす少数の行に到達できないか、それらを見つけるために不釣り合いに多くの候補を調べる必要があるためです。
+
+これに対して、総当たりスキャンにはこうした制約がありません。補助構造は不要で、パーツは連結によってマージされ、フィルタは単にスキャン対象の行数を減らすだけです。
+唯一の欠点は、読み取る必要があるデータ量です。フル `Float32` 精度で格納されたベクトルをスキャンする場合、ストレージ I/O が支配的になります。ベクトル列全体をディスク (またはオブジェクトストレージ) から読み取る必要があるためです。高密度な埋め込みカラムでは、これはテーブル内で最大のカラムであり、圧縮効率も高くありません。
+
+`Quantized` カラム コーデック は、この欠点に対処します。
+各ベクトルは 2 つの形で格納されます。元のフル精度の値はそのまま保持しつつ、付随するストリームに compact な *量子化コード* も保存します。
+ベクトル検索クエリでは、まず低コストで SIMD に適した距離関数を使ってコードをスキャンし、最も有望な候補の ショートリスト を作成します。その後、その ショートリスト をフル精度ベクトルに対して再ランキングします。
+コードは生のベクトルよりもはるかに小さいため、ショートリスト のスキャンでストレージから読み取るバイト数を大幅に減らせます。また、フル精度カラムにアクセスするのは ショートリスト に残った少数の候補だけで済む一方、最終的なランキング精度は維持されます。
+
+<div id="quantized-codecs-declaring">
+  #### コーデックの宣言
+</div>
+
+`Array(Float32)` (または `Array(Float64)` / `Array(BFloat16)`) カラムに `Quantized(...)` コーデックを設定します。
+このコーデックは実験的機能のため、まず `allow_experimental_codecs` を有効にします:
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+フル精度のデータは通常どおり保存され、コーデックは補助的なコードストリームを追加するだけです。
+コーデックはテーブル作成時に固定されるため、`ALTER TABLE` で追加したり変更したりすることはできません。
+
+<div id="quantized-codecs-methods">
+  #### 量子化方式
+</div>
+
+各方式は、サイズ / 精度 / 距離指標のトレードオフにおいて、それぞれ異なる特性を持ちます。`dimensions` 引数はベクトル長です。
+
+* `Quantized('rabitq', dimensions)` — 各座標に 1 ビットの符号ビットと、バイアスのないコサイン補正係数 (`dimensions/8 + 4` バイト) を持ちます。小さく、`popcount` での計算負荷が低い、強力なデフォルトです。`cosineDistance` のみ対応。
+* `Quantized('turboquant', dimensions)` — 各座標に 2 ビット (1 ビットの MSE コードと 1 ビットの残差コード) を使い、より高忠実度な候補を実現します (`dimensions/4 + 4` バイト) 。`cosineDistance` のみ対応。
+* `Quantized('int8', dimensions)` — 各座標に 1 つの `Int8` コードとベクトルノルムを持ちます (`dimensions + 4` バイト) 。サイズは最大ですが、最も忠実なフラットコードです。`L2Distance` と `cosineDistance` に対応します。
+* `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: 先頭の `leading_dimensions` 個の座標だけを、`Int8` (ベクトルごとの scale 付き) または `BFloat16` として保持します。Matryoshka Representation Learning で学習した埋め込み向けの非常に小さなコードです。`L2Distance` と `cosineDistance` に対応します。
+* `Quantized('product', dimensions, nbits, m)` — Product Quantization: パーツごとのコードブックを k-means で学習し、各ベクトルを `nbits` ビットの `m` 個のコードに変換します (そのため `dimensions` は `m` の倍数である必要があります) 。最もコンパクトな選択肢で、1 バイトあたりの再現率も最も高い一方、insert 時に学習ステップが必要です。`L2Distance` と `cosineDistance` に対応します。
+
+`rabitq` と `turboquant` では、`dimensions` は 8 の倍数である必要があります。
+
+<div id="quantized-codecs-searching">
+  #### 通常どおりに検索する
+</div>
+
+特別なクエリ構文は不要で、[完全一致検索](#exact-nearest-neighbor-search)で使うのと同じ top-`k` クエリを記述します。
+
+```sql
+WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+SELECT id
+FROM vectors
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 10
+SETTINGS vector_search_use_quantized_codes = 1;
+```
+
+`vector_search_use_quantized_codes = 1` を使用すると、オプティマイザはクエリを自動的に 2 段階のプランに書き換えます。まず量子化されたコードをスキャンしてショートリストを作成し、その後そのショートリストをフル精度の `vec` に対して再スコアリングします。
+この設定はデフォルトでオフになっているため、有効にしない限り、同じクエリは通常の厳密スキャンとして実行されます。コーデック が結果を変えることはなく、明示的に有効化した場合にのみ、より高速な経路を提供します。
+選択したメソッドがサポートする距離関数を使用してください。すべてのメソッドでは `cosineDistance`、`int8`、`prefix`、`product` では追加で `L2Distance` を使用できます。
+
+<div id="quantized-codecs-settings">
+  #### 設定
+</div>
+
+* `allow_experimental_codecs` — `Quantized` コーデックを宣言するには、有効になっている必要があります (デフォルト: `0`) 。
+* `vector_search_use_quantized_codes` — ショートリスト化と再スコアリングからなる 2 段階リライトを有効にします (デフォルト: `0`) 。オフの場合、該当するクエリはフル精度ベクトルを厳密にスキャンします。
+* `vector_search_index_fetch_multiplier` — クエリの `LIMIT` に対して、候補をどれだけショートリスト化するかを指定します。スキャンでは、再スコアリングの前に上位 `LIMIT × multiplier` 件の code を保持します。値を大きくすると、再スコアリングのコストは増えますが、再現率は向上します。デフォルトは `1` (オーバーサンプリングなし) なので、良好な再現率を得るには、通常はこれをたとえば `10` 以上に引き上げる必要があります。
+
+<div id="quantized-codecs-built-for-scale">
+  #### スケールを前提に設計
+</div>
+
+このコーデックが ClickHouse に適しているのは、コストの高い処理であるスキャンが、まさに ClickHouse engine の得意分野だからです。
+
+* **ベクトル化。** スキャンカーネルは SIMD 向けに実装されており、CPU がサポートする最も広い命令セットにランタイムディスパッチされます。具体的には、符号コード方式 (`rabitq`、`turboquant`) ではハードウェア `popcount` を使い、それ以外では広幅の fused-multiply-add を使います。
+* **コアとパーツ全体で並列処理。** フラットスキャンは本質的に並列化しやすく、ClickHouse もそのように扱います。距離計算は利用可能なすべての threads とテーブル内のすべての パーツにわたって同時に実行され、直列化されるのは最後の top-`k` マージだけです。
+* **分散。** 分片化されたクラスターでは、処理は各マシンに分散されます。各分片がそれぞれの slice を並列にスキャンし、マージコーディネーターがショートリストをマージします。
+* **列指向でフィルターとの相性がよい。** 量子化コードは専用のカラムに格納され、圧縮されたうえで他のすべてのカラムと同じ I/O パスで読み込まれるため、選択性の高い `WHERE` を使えば、スキャンするコード数がその分減るだけです。
+* **別途 build は不要。** コードはベクトルの書き込みと同時に生成され、連結によってマージされます。構築・調整・再構築が必要な索引はないため、テーブルはデータが書き込まれた時点ですぐに検索可能になります。
+
+コードはあくまで候補生成に使われるだけで、保持されているフル精度のカラムが最終的な正確な ランキング を担います。
+
 <div id="approximate-nearest-neighbor-search-qbit">
   ### 量子化ビット (QBit)
 </div>
@@ -661,13 +767,14 @@ ClickHouse は、こうした制約に対処する Quantized Bit (`QBit`) デー
 `QBit` 型のカラムを宣言するには、次の構文を使用します。
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 ここで:
 
-* `element_type` – 各ベクトル要素の型。サポートされている型は `BFloat16`、`Float32`、`Float64` です
+* `element_type` – 各ベクトル要素の型。サポートされている型は `Int8`、`BFloat16`、`Float32`、`Float64` です
 * `dimension` – 各ベクトルの要素数
+* `stride` – 任意。`dimension` の約数で、次元を `dimension / stride` 個の連続したグループに分割し、それぞれを別々のストリームに格納します。これにより、先頭側の次元だけを対象とする検索では、読み取るストリーム数を減らせます (Matryoshka 埋め込みで有用です)。既定値は `dimension` で、この場合、この型はストライドなしの `QBit` とバイト単位で同一です。詳細は [`QBit` data type page](/ja/reference/data-types/qbit) を参照してください。
 
 <div id="qbit-create">
   #### `QBit` テーブルの作成とデータの追加

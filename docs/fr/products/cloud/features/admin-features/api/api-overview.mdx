@@ -23,10 +23,10 @@ L&#39;API ClickHouse Cloud s&#39;appuie sur la [spécification OpenAPI](https://
 open source afin de permettre une utilisation prévisible côté client. Si vous devez
 consulter par programmation la documentation de l&#39;API ClickHouse Cloud, nous proposons un point de terminaison Swagger au format JSON
 via https://api.clickhouse.cloud/v1. Vous pouvez également accéder à la documentation de l&#39;API via
-la [Swagger UI](/fr/api-reference/organization/get-list-of-available-organizations).
+la [Swagger UI](/fr/products/cloud/api-reference/organization/get-list-of-available-organizations).
 
 <Note>
-  Si votre organization a été migrée vers l&#39;un des [nouveaux plans tarifaires](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false) et que vous utilisez OpenAPI, vous devrez supprimer le champ `tier` de la requête `POST` de création de service.
+  Si votre organisation a été migrée vers l&#39;un des [nouveaux plans tarifaires](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false) et que vous utilisez OpenAPI, vous devrez supprimer le champ `tier` de la requête `POST` de création de service.
 
   Le champ `tier` a été supprimé de l&#39;objet service, car nous n&#39;avons plus de tiers de service.
   Cela affectera les objets renvoyés par les requêtes de service `POST`, `GET` et `PATCH`. Par conséquent, tout code qui utilise ces API devra peut-être être adapté pour prendre en compte ces modifications.

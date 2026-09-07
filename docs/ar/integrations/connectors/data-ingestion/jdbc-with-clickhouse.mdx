@@ -17,11 +17,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   يتطلب استخدام JDBC جسر ClickHouse JDBC، لذا ستحتاج إلى استخدام `clickhouse-local` على جهاز محلي لتمرير البيانات من قاعدة بياناتك إلى ClickHouse Cloud. تفضّل بزيارة صفحة [**استخدام clickhouse-local**](/ar/get-started/migrate/other-methods/clickhouse-local-etl) في قسم **Migrate** من الوثائق لمزيد من التفاصيل.
 </Note>
 
-**نظرة عامة:** يتيح <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>، بالاقتران مع [jdbc table function](/ar/reference/functions/table-functions/jdbc) أو [JDBC table engine](/ar/reference/engines/table-engines/integrations/jdbc)، لـ ClickHouse الوصول إلى البيانات من أي مصدر بيانات خارجي يتوفر له <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBC driver</a>:
+**نظرة عامة:** يتيح <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>، بالاقتران مع [jdbc table function](/ar/reference/functions/table-functions/jdbc) أو [JDBC table engine](/ar/reference/engines/table-engines/integrations/jdbc)، لـ ClickHouse الوصول إلى البيانات من أي مصدر بيانات خارجي يتوفر له <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">برنامج تشغيل JDBC</a>:
 
 <Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="مخطط معمارية ClickHouse JDBC Bridge" background="white" />
 
-ويكون ذلك مفيدًا عندما لا يتوفر [integration engine](/ar/reference/engines/table-engines/integrations/index) أصلي مدمج، أو table function، أو قاموس خارجي لمصدر البيانات الخارجي، بينما يتوفر JDBC driver لهذا المصدر.
+ويكون ذلك مفيدًا عندما لا يتوفر [integration engine](/ar/reference/engines/table-engines/integrations/index) أصلي مدمج، أو table function، أو قاموس خارجي لمصدر البيانات الخارجي، بينما يتوفر برنامج تشغيل JDBC لهذا المصدر.
 
 يمكنك استخدام ClickHouse JDBC Bridge لكلٍّ من القراءة والكتابة، وكذلك بالتوازي مع عدة مصادر بيانات خارجية. فعلى سبيل المثال، يمكنك تشغيل distributed queries على ClickHouse عبر عدة مصادر بيانات خارجية وداخلية في الوقت الفعلي.
 
@@ -89,7 +89,7 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
   * لك حرية استخدام أي اسم تريده لمصدر البيانات، وقد استخدمنا `mysql8`
   * في قيمة `jdbcUrl`، تحتاج إلى استبدال `<host>` و`<port>` بالقيم المناسبة وفقًا لمثيل MySQL قيد التشغيل لديك، على سبيل المثال: `"jdbc:mysql://localhost:3306"`
   * تحتاج إلى استبدال `<username>` و`<password>` ببيانات اعتماد MySQL الخاصة بك. وإذا كنت لا تستخدم كلمة مرور، فيمكنك حذف السطر `"password": "<password>"` من ملف الإعدادات أعلاه
-  * في قيمة `driverUrls`، اكتفينا بتحديد URL يمكن تنزيل <a href="https://repo1.maven.org/maven2/mysql/mysql-connector-java/" target="_blank">الإصدار الحالي</a> من MySQL JDBC driver منه. هذا كل ما نحتاج إلى فعله، وسيتولى ClickHouse JDBC Bridge تنزيل JDBC driver هذا تلقائيًا (إلى دليل خاص بنظام التشغيل).
+  * في قيمة `driverUrls`، اكتفينا بتحديد URL يمكن تنزيل <a href="https://repo1.maven.org/maven2/mysql/mysql-connector-java/" target="_blank">الإصدار الحالي</a> من MySQL برنامج تشغيل JDBC منه. هذا كل ما نحتاج إلى فعله، وسيتولى ClickHouse JDBC Bridge تنزيل برنامج تشغيل JDBC هذا تلقائيًا (إلى دليل خاص بنظام التشغيل).
 </Note>
 
 <br />
@@ -155,7 +155,7 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 
 1. نثبّت ClickHouse JDBC Bridge ونُهيّئه ونشغّله على مضيف مخصص باتباع الخطوات الموضحة في القسم 1 من هذا الدليل.
 
-2. على كل مضيف ClickHouse، نضيف كتلة الإعداد التالية إلى <a href="/ar/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">إعدادات خادم ClickHouse</a> (بحسب تنسيق الإعداد الذي اخترته، استخدم إما إصدار XML أو YAML):
+2. على كل مضيف ClickHouse، نضيف كتلة الإعداد التالية إلى <a href="/ar/concepts/features/configuration/server-config/configuration-files" target="_blank">إعدادات خادم ClickHouse</a> (بحسب تنسيق الإعداد الذي اخترته، استخدم إما إصدار XML أو YAML):
 
 <Tabs>
   <Tab title="XML">
@@ -181,18 +181,18 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
   * لقد حدّدنا المنفذ الافتراضي لـ ClickHouse JDBC Bridge وهو `9019`، وإذا كنت تستخدم منفذًا مختلفًا لـ JDBC Bridge، فيجب تعديل الإعداد أعلاه وفقًا لذلك
 </Note>
 
-[//]: # "## 4. Additional Info"
+[//]: # "## 4. معلومات إضافية"
 
 [//]: #
 
 [//]: # "TODO: "
 
-[//]: # "- mention that for jdbc table function it is more performant (not two queries each time) to also specify the schema as a parameter"
+[//]: # "- اذكر أنه بالنسبة إلى jdbc table function يكون الأداء أفضل (وليس استعلامين في كل مرة) عند تحديد الـ schema أيضًا كمعامل"
 
 [//]: #
 
-[//]: # "- mention ad hoc query vs table query, saved query, named query"
+[//]: # "- اذكر الاستعلام المخصص مقابل استعلام الجدول، والاستعلام المحفوظ، والاستعلام المسمّى"
 
 [//]: #
 
-[//]: # "- mention insert into "
+[//]: # "- اذكر insert into "

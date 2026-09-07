@@ -1,0 +1,56 @@
+---
+description: '列出当前会话中定义的假设性（what-if）索引的系统表'
+keywords: ['系统表', 'hypothetical_indexes', 'what-if']
+sidebarTitle: 'hypothetical_indexes'
+slug: /operations/system-tables/hypothetical_indexes
+title: 'system.hypothetical_indexes'
+doc_type: '参考'
+---
+
+列出当前会话中定义的所有假设性 (what-if) 跳过索引。参见 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#create-hypothetical-index) 和 [`EXPLAIN WHATIF`](/zh/reference/statements/explain#explain-whatif)。
+
+其内容受会话范围限制：每个连接只能看到自己的假设性索引；如果当前会话中尚未创建任何索引，则该表为空。
+
+当前的 `(database, table)` 会在查询时按 UUID 解析，因此会反映 `RENAME TABLE` 的结果，并且已删除表对应的条目会自动隐藏。
+
+<div id="columns">
+  ## 列
+</div>
+
+| 列             | 类型       | 描述                                       |
+| ------------- | -------- | ---------------------------------------- |
+| `database`    | `String` | 目标数据库。                                   |
+| `table`       | `String` | 目标表。                                     |
+| `name`        | `String` | 索引名。                                     |
+| `type`        | `String` | 索引类型 (`minmax`、`set`、`bloom_filter` 等) 。 |
+| `type_full`   | `String` | 包含参数的索引类型表达式，例如 `bloom_filter(0.01)`。    |
+| `expression`  | `String` | 在 `CREATE HYPOTHETICAL INDEX` 中定义的索引表达式。 |
+| `granularity` | `UInt64` | 每个索引粒度包含的数据粒度数。                          |
+
+<div id="example">
+  ## 示例
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX i1 ON t (b) TYPE bloom_filter(0.01)  GRANULARITY 1;
+CREATE HYPOTHETICAL INDEX i2 ON t (b) TYPE bloom_filter(0.001) GRANULARITY 1;
+
+SELECT database, table, name, type, type_full, expression, granularity
+FROM system.hypothetical_indexes;
+```
+
+```text
+┌─database─┬─table─┬─name─┬─type─────────┬─type_full───────────┬─expression─┬─granularity─┐
+│ default  │ t     │ i1   │ bloom_filter │ bloom_filter(0.01)  │ b          │           1 │
+│ default  │ t     │ i2   │ bloom_filter │ bloom_filter(0.001) │ b          │           1 │
+└──────────┴───────┴──────┴──────────────┴─────────────────────┴────────────┴─────────────┘
+```
+
+`type` 是基本类型名称，`type_full` 则包含参数，因此用户可以区分 `bloom_filter(0.01)` 和 `bloom_filter(0.001)` 这类带参数的变体。
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#create-hypothetical-index)
+* [`EXPLAIN WHATIF`](/zh/reference/statements/explain#explain-whatif)

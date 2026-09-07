@@ -24,21 +24,46 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(con
     if (!isQueryInitialized())
         return nullptr;
 
+    std::lock_guard lock(query_map_mutex);
     auto query_iter = query_map.find(std::string(CurrentThread::getQueryId()));
     return (query_iter == query_map.end()) ? nullptr : query_iter->second;
 }
 
-void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &)
+FileCacheQueryLimit::QueryContextPtr
+FileCacheQueryLimit::removeQueryContext(const std::string & query_id, QueryContextPtr & context, const CachePriorityGuard::WriteLock &)
 {
-    auto query_iter = query_map.find(query_id);
-    if (query_iter == query_map.end())
+    QueryContextPtr doomed;
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Attempt to release query context that does not exist (query_id: {})",
-            query_id);
+        std::lock_guard lock(query_map_mutex);
+
+        auto query_iter = query_map.find(query_id);
+        const bool owns_map_entry = query_iter != query_map.end() && query_iter->second == context;
+
+        /// Drop this holder's own reference to the context under the lock, then decide. use_count()
+        /// is not a synchronization primitive, so the decision must be made after every reference
+        /// change to the context is serialized by this mutex (which also guards getOrSetQueryContext).
+        /// Deciding before dropping the reference (or dropping it outside the lock) is a TOCTOU:
+        /// two holders releasing at once can both observe the shared count and both skip the erase,
+        /// orphaning the map entry, or one can erase while the other is being revived (see #109508).
+        context.reset();
+
+        if (owns_map_entry && query_iter->second.use_count() == 1)
+        {
+            /// The reference this holder held is gone and the map entry is now the sole owner, so
+            /// this was the last holder. Extract the pointer instead of erasing in place so the
+            /// QueryContext (its records map and per-query priority queue) is destroyed by the
+            /// caller after the cache write lock is released, not under it. Otherwise a query that
+            /// touched many segments frees all of that state while holding cache->lockCache(),
+            /// blocking unrelated reserve/eviction work for the duration of teardown.
+            doomed = std::move(query_iter->second);
+            query_map.erase(query_iter);
+        }
+        /// If owns_map_entry is false, the entry was already removed or re-created for a newer holder
+        /// via getOrSetQueryContext; another live holder now owns it, so leave it in place. If the
+        /// map entry is not the sole owner, another holder for the same query_id is still alive and
+        /// the context must stay so the per-query limit keeps being enforced.
     }
-    query_map.erase(query_iter);
+    return doomed;
 }
 
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
@@ -49,6 +74,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     if (query_id.empty())
         return nullptr;
 
+    std::lock_guard lock(query_map_mutex);
     auto [it, inserted] = query_map.emplace(query_id, nullptr);
     if (inserted)
     {
@@ -125,12 +151,19 @@ FileCacheQueryLimit::QueryContextHolder::QueryContextHolder(
 
 FileCacheQueryLimit::QueryContextHolder::~QueryContextHolder()
 {
-    /// If only the query_map and the current holder hold the context_query,
-    /// the query has been completed and the query_context is released.
-    if (context && context.use_count() == 2)
+    /// The last-holder decision (and the drop of this holder's reference) must happen inside
+    /// removeQueryContext under the cache write lock, not here: dropping the reference or deciding
+    /// outside the lock races with revival via getOrSetQueryContext and can leak or orphan the entry.
+    /// context is only set when the per-query download limit is enabled, so this is a no-op otherwise.
+    if (context)
     {
-        auto lock = cache->lockCache();
-        query_limit->removeQueryContext(query_id, lock);
+        /// When this is the last holder, removeQueryContext hands the context back so it is destroyed
+        /// here, after the cache lock scope has ended, rather than under cache->lockCache().
+        QueryContextPtr doomed;
+        {
+            auto lock = cache->lockCache();
+            doomed = query_limit->removeQueryContext(query_id, context, lock);
+        }
     }
 }
 

@@ -147,9 +147,26 @@ SELECT * FROM (
 
 처음 2개 행을 건너뛴 뒤 3개를 가져오면 일반적으로 `1, 1, 2`가 반환되지만, 마지막 행과 값이 같기 때문에 두 번째 `2`도 포함됩니다.
 
-<Note>
-  `WITH TIES`는 음수 제한와 함께는 지원되지 않습니다.
-</Note>
+`WITH TIES`는 음수 제한 및 오프셋과도 함께 작동합니다. 선택된 첫 번째 행과 `ORDER BY` 값이 동일한 추가 행도 포함합니다:
+
+```sql
+SELECT number % 3 AS n FROM numbers(15)
+ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+`WITH TIES`가 없으면 결과는 `1, 1, 2, 2`가 됩니다. `WITH TIES`를 사용하면 첫 번째로 선택된 행과 값이 같기 때문에 값이 `1`인 추가 행 3개가 포함됩니다.
 
 이 수정자는 [`ORDER BY ... WITH FILL`](/ko/reference/statements/select/order-by#order-by-expr-with-fill-modifier) 수정자와 함께 사용할 수 있습니다.
 

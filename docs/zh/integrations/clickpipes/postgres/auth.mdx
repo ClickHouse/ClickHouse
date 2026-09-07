@@ -12,20 +12,40 @@ integration:
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-本文介绍 ClickPipes 客户如何利用基于角色的访问控制，通过 Amazon Aurora 和 RDS 进行身份验证，并安全地访问其数据库。
-
-<Warning>
-  对于 AWS RDS Postgres 和 Aurora Postgres，受 AWS IAM DB 身份验证的限制，您只能运行 `Initial Load Only` ClickPipes。
-
-  对于 MySQL 和 MariaDB，则不受此限制影响，您既可以运行 `Initial Load Only` ClickPipes，也可以运行 `CDC` ClickPipes。
-</Warning>
+本文介绍 ClickPipes 客户如何利用基于角色的访问控制，通过亚马逊 Aurora 和 RDS 进行身份验证，并安全地访问其数据库。
 
 <div id="setup">
   ## 设置
 </div>
 
+<div id="before-you-start">
+  ### 开始前
+</div>
+
+<div id="make-sure-iam-authentication-is-enabled">
+  #### 确保已启用 IAM 身份验证
+</div>
+
+1. 登录 AWS 账户，并进入要配置的 RDS 实例。
+2. 点击 **Modify** 按钮。
+3. 向下滚动到 **Database authentication** 部分。
+4. 启用 **Password and IAM database authentication** 选项。
+5. 点击 **Continue** 按钮。
+6. 确认更改，然后点击 **Apply immediately** 选项。
+
+<div id="setting-up-the-database-user">
+  #### 设置数据库用户
+</div>
+
+连接到您的 RDS/Aurora 实例，创建一个已启用 IAM 身份验证的数据库用户，然后按照相应 source setup guide 中的其余步骤为 ClickPipes 配置实例：
+
+* [AWS Aurora for PostgreSQL source setup guide](/zh/integrations/clickpipes/postgres/source/aurora#configure-database-user)
+* [AWS RDS for PostgreSQL source setup guide](/zh/integrations/clickpipes/postgres/source/rds#configure-database-user)
+* [AWS Aurora for MySQL source setup guide](/zh/integrations/clickpipes/mysql/source/aurora#configure-database-user)
+* [AWS RDS for MySQL source setup guide](/zh/integrations/clickpipes/mysql/source/rds#configure-database-user)
+
 <div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ### 获取 ClickHouse 服务的 IAM Role ARN
+  ### 获取 ClickHouse 服务的 IAM 角色 ARN
 </div>
 
 1 - 登录到你的 ClickHouse Cloud 账户。
@@ -42,20 +62,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 我们将此值称为 `{ClickHouse_IAM_ARN}`。这就是将用于访问你的 RDS/Aurora 实例的 IAM 角色。
 
-<div id="configuring-the-rds-aurora-instance">
-  ### 配置 RDS/Aurora 实例
+<div id="setting-up-iam-role">
+  ### 配置 IAM 角色
 </div>
-
-<div id="enabling-iam-db-authentication">
-  #### 启用 IAM DB 身份验证
-</div>
-
-1. 登录 AWS 账户，并进入要配置的 RDS 实例。
-2. 点击 **Modify** 按钮。
-3. 向下滚动到 **Database authentication** 部分。
-4. 启用 **Password and IAM database authentication** 选项。
-5. 点击 **Continue** 按钮。
-6. 确认更改，然后点击 **Apply immediately** 选项。
 
 <div id="obtaining-the-rds-resource-id">
   #### 获取 RDS/Aurora 资源 ID
@@ -64,35 +73,6 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 1. 登录 AWS 账户，然后前往要配置的 RDS 实例或 Aurora 集群。
 2. 点击 **Configuration** 选项卡。
 3. 记下 **Resource ID** 的值。对于 RDS，其格式应类似于 `db-xxxxxxxxxxxxxx`；对于 Aurora 集群，其格式应类似于 `cluster-xxxxxxxxxxxxxx`。我们将此值记为 `{RDS_RESOURCE_ID}`。该资源 ID 将在 IAM 策略中用于授予对 RDS 实例的访问权限。
-
-<div id="setting-up-the-database-user">
-  #### 设置数据库用户
-</div>
-
-<div id="setting-up-the-database-user-postgres">
-  ##### PostgreSQL
-</div>
-
-1. 连接到您的 RDS/Aurora 实例，并使用以下命令创建一个新的数据库用户：
-   ```sql
-   CREATE USER clickpipes_iam_user; 
-   GRANT rds_iam TO clickpipes_iam_user;
-   ```
-2. 按照 [PostgreSQL 数据源设置指南](/zh/integrations/clickpipes/postgres/source/rds) 中的其余步骤，为 ClickPipes 配置您的 RDS 实例。
-
-<div id="setting-up-the-database-user-mysql">
-  ##### MySQL / MariaDB
-</div>
-
-1. 连接到你的 RDS/Aurora 实例，并使用以下命令创建一个新的数据库用户：
-   ```sql
-   CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-   ```
-2. 按照 [MySQL 数据源设置指南](/zh/integrations/clickpipes/mysql/source/rds) 中的其余步骤，为 ClickPipes 配置 RDS/Aurora 实例。
-
-<div id="setting-up-iam-role">
-  ### 配置 IAM 角色
-</div>
 
 <div id="manually-create-iam-role">
   #### 手动创建 IAM 角色。

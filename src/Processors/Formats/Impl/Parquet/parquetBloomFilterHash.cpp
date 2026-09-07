@@ -1,6 +1,8 @@
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 
 #if USE_PARQUET
 
@@ -173,6 +175,40 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
         column = nullable_column->getNestedColumnPtr().get();
 
     std::vector<uint64_t> hashes;
+    /// Allocate the exact capacity up front rather than growing geometrically via `emplace_back`.
+    /// The dictionary-filter pruning path budgets this vector as exactly `size() * sizeof(UInt64)`
+    /// against `input_format_parquet_memory_high_watermark` (see `hashDictionaryValues`); a geometric
+    /// growth would transiently allocate up to twice that and overshoot the reservation.
+    hashes.reserve(column->size());
+
+    /// Hash string columns directly from their underlying buffers. The generic `Field` path below
+    /// copies every value into the `std::string` inside `Field` - a heap scratch allocation of up to
+    /// the longest value, which the dictionary-filter pruning path does not budget (its reservation in
+    /// `hashDictionaryValues` covers only the materialized column, this `hashes` vector, and the
+    /// value-set `HashSet`). All the other hashable types (integers, IPv4/IPv6) are stored inline in
+    /// `Field` and allocate nothing. The digest must stay identical to what `parquetTryHashField`
+    /// produces for query constants: `tryHashString`/`tryHashFLBA` hash the raw value bytes after the
+    /// same string-type check, so equal values keep hashing equal on both sides.
+    const auto physical_type = parquet_column_descriptor->physical_type();
+    if ((physical_type == parquet::Type::type::BYTE_ARRAY || physical_type == parquet::Type::type::FIXED_LEN_BYTE_ARRAY)
+        && (checkAndGetColumn<ColumnString>(column) || checkAndGetColumn<ColumnFixedString>(column)))
+    {
+        if (!isParquetStringTypeSupportedForBloomFilters(
+                parquet_column_descriptor->logical_type(), parquet_column_descriptor->converted_type()))
+        {
+            return std::nullopt;
+        }
+
+        parquet::XxHasher hasher;
+        for (size_t i = 0u; i < column->size(); i++)
+        {
+            std::string_view value = column->getDataAt(i);
+            parquet::ByteArray ba{value};
+            hashes.emplace_back(hasher.Hash(&ba));
+        }
+
+        return hashes;
+    }
 
     for (size_t i = 0u; i < column->size(); i++)
     {

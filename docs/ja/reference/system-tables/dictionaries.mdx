@@ -26,7 +26,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `name` ([String](/ja/reference/data-types/index)) — Dictionary 名。
 * `uuid` ([UUID](/ja/reference/data-types/index)) — Dictionary UUID。
 * `status` ([Enum8(&#39;NOT&#95;LOADED&#39; = 0, &#39;LOADED&#39; = 1, &#39;FAILED&#39; = 2, &#39;LOADING&#39; = 3, &#39;FAILED&#95;AND&#95;RELOADING&#39; = 4, &#39;LOADED&#95;AND&#95;RELOADING&#39; = 5, &#39;NOT&#95;EXIST&#39; = 6)](/ja/reference/data-types/index)) — Dictionary の status。設定可能な値:
-  * **NOT&#95;LOADED** — 使用されていないため、Dictionary は読み込まれていません
+  * **NOT&#95;LOADED** — Dictionary は現在メモリに読み込まれていません
   * **LOADED** — Dictionary は正常に読み込まれました
   * **FAILED** — error のため Dictionary を読み込めませんでした
   * **LOADING** — Dictionary は現在読み込み中です

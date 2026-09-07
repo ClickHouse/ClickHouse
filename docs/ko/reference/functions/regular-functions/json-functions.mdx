@@ -744,13 +744,13 @@ JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)
 **사용 예시**
 
 ```sql title=Query
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
 ```
 
 ```response title=Response
-┌─res────────────────────┐
+┌─res────────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────┘
+└────────────────────────────┘
 ```
 
 <div id="JSONExtractKeysAndValuesCaseInsensitive">
@@ -822,7 +822,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
 
 ```response title=Response
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200.0]'),('b','"hello"')] │
+│ [('a','[-100,200]'),('b','"hello"')] │
 └──────────────────────────────────────┘
 ```
 
@@ -1326,7 +1326,7 @@ SELECT json, JSONSharedDataPaths(json) FROM test;
 
 도입 버전: v24.8.0
 
-JSON 컬럼의 각 행에 대해 공유 데이터 구조에 저장된 경로 목록과 해당 타입을 반환합니다.
+JSON 컬럼의 각 행에 대해 공유 데이터 구조에 저장된 경로 목록과 해당 유형을 반환합니다.
 
 **구문**
 
@@ -1340,7 +1340,7 @@ JSONSharedDataPathsWithTypes(json)
 
 **반환 값**
 
-공유 데이터 구조에 저장된 경로와 해당 경로의 JSON 컬럼 내 데이터 타입을 담은 맵을 반환합니다. [`Map(String, String)`](/ko/reference/data-types/map)
+공유 데이터 구조에 저장된 경로와 해당 경로의 JSON 컬럼 내 데이터 유형을 담은 맵을 반환합니다. [`Map(String, String)`](/ko/reference/data-types/map)
 
 **예시**
 
@@ -1354,10 +1354,10 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ```response title=Response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                  │
-│ {"b":"Hello"}                        │ {'b':'String'}                      │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
-└──────────────────────────────────────┴─────────────────────────────────────┘
+│ {"a":"42"}                           │ {}                                 │
+│ {"b":"Hello"}                        │ {'b':'String'}                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└──────────────────────────────────────┴────────────────────────────────────┘
 ```
 
 <div id="JSONType">

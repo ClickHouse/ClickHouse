@@ -111,9 +111,27 @@ def collect_snippet_anchors(text, docs_root, page_dir, seen):
         seen.add(sp)
         with open(sp, "r", encoding="utf-8", errors="replace") as f:
             snip = f.read()
+        # Never advertise ids that only occur inside code samples or MDX
+        # comments -- they don't render, so they are not fragment targets.
+        snip = strip_code_blocks(strip_mdx_comments(snip))
         ids.update(m.group(1) or m.group(2) for m in ANCHOR_ID_RE.finditer(snip))
+        # Element ids (e.g. `<Step id="...">`) are fragment targets too.
+        ids.update(m.group(1) for m in ELEMENT_ID_RE.finditer(snip))
         ids |= collect_snippet_anchors(snip, docs_root, os.path.dirname(sp), seen)
     return ids
+
+
+def collect_generated_setting_anchors(page_path):
+    """Expose client-side setting redirects as fragment aliases to lychee."""
+    manifest = os.path.splitext(page_path)[0] + "/manifest.json"
+    if not os.path.isfile(manifest):
+        return set()
+    try:
+        with open(manifest, encoding="utf-8") as f:
+            anchor_routes = json.load(f).get("anchorRoutes", {})
+    except (OSError, ValueError, TypeError):
+        return set()
+    return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
 
 
 def dump_inputs(docs_root):
@@ -191,22 +209,39 @@ def materialize_redirects(docs_root, dest):
             continue
         if any(os.path.exists(os.path.join(dest, src + e)) for e in ("", ".mdx", ".md")):
             continue  # a real page already covers this path
-        # For English sources, seed the placeholder with the destination's anchor
-        # ids (only `<a id>` tags, not its content, so we don't re-check the
-        # destination's own links) -- this makes a fragment link to the redirect
-        # source (e.g. .../oss#install-clickhouse) resolve, since Mintlify applies
-        # the fragment on the destination. Locale sources get an empty placeholder
-        # (their destinations are checked for page-existence only; see below).
+        # For English sources, seed the placeholder with the destination's
+        # fragment ids (written as `<a id>` stubs only, not its content, so we
+        # don't re-check the destination's own links) -- this makes a fragment
+        # link to the redirect source (e.g. .../oss#install-clickhouse)
+        # resolve, since Mintlify applies the fragment on the destination. The
+        # ids are collected from the original source with the same hygiene as
+        # the page pass: heading `{#anchor}`s, element ids, and anchors
+        # inherited from imported snippets, with code samples and MDX comments
+        # stripped first so ids that never render are not advertised. Locale
+        # sources get an empty placeholder (their destinations are checked for
+        # page-existence only; see below).
         anchors = set()
         if src.split("/")[0] not in LOCALE_PREFIXES:
             dest_url = (r.get("destination") or "").strip()
             if dest_url.startswith("/"):
                 for e in (".mdx", ".md"):
-                    cand = os.path.join(dest, dest_url.lstrip("/") + e)
+                    cand = os.path.join(docs_root, dest_url.lstrip("/") + e)
                     if os.path.isfile(cand):
                         with open(cand, encoding="utf-8", errors="replace") as f:
-                            anchors = {m.group(1) or m.group(2)
-                                       for m in ANCHOR_ID_RE.finditer(f.read())}
+                            raw = f.read()
+                        text = strip_code_blocks(strip_mdx_comments(raw))
+                        anchors = {m.group(1) or m.group(2)
+                                   for m in ANCHOR_ID_RE.finditer(text)}
+                        # Element ids (e.g. `<Step id="...">`) too.
+                        anchors |= {m.group(1) for m in ELEMENT_ID_RE.finditer(text)}
+                        # Anchors inherited from imported snippets.
+                        anchors |= collect_snippet_anchors(
+                            text, docs_root, os.path.dirname(cand), set())
+                        # Generated settings overview pages also expose the
+                        # moved fragments through a client-side redirect map.
+                        # A legacy path redirecting to an overview inherits
+                        # those aliases just as it inherits rendered anchors.
+                        anchors |= collect_generated_setting_anchors(cand)
                         break
         p = os.path.join(dest, src + ".mdx")
         os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
@@ -241,9 +276,21 @@ def build_tree(docs_root, dest):
                 # Append anchors the page inherits from imported snippets, which
                 # Mintlify renders inline but lychee cannot see across the import.
                 anchors = collect_snippet_anchors(raw, docs_root, root, set())
+                # Split settings overview pages redirect their historical
+                # fragments client-side. Their generated manifest is the
+                # canonical alias registry; append its keys only in this
+                # throwaway tree so static fragment validation matches runtime.
+                anchors |= collect_generated_setting_anchors(
+                    os.path.join(root, name))
                 # Non-<a> element ids (e.g. <div id="...">) are valid fragment
                 # targets too, but lychee doesn't extract them -- add them here.
-                anchors |= {m.group(1) for m in ELEMENT_ID_RE.finditer(raw)}
+                # Scan with code samples and MDX comments stripped (same
+                # hygiene as the snippet and redirect paths), so ids that never
+                # render are not advertised.
+                anchors |= {
+                    m.group(1)
+                    for m in ELEMENT_ID_RE.finditer(strip_code_blocks(strip_mdx_comments(raw)))
+                }
                 if anchors:
                     text += "\n\n" + "".join(
                         f'<a id="{a}"></a>\n' for a in sorted(anchors)

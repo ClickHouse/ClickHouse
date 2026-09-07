@@ -44,7 +44,7 @@ It is applicable when selecting data from tables using the following table engin
 - `CollapsingMergeTree`
 - `VersionedCollapsingMergeTree`
 
-`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](/reference/settings/session-settings#max_final_threads) setting limits the number of threads used.
+`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](/reference/settings/session-settings/max#max_final_threads) setting limits the number of threads used.
 
 ### Drawbacks {#drawbacks}
 
@@ -57,7 +57,7 @@ Queries that use `FINAL` execute slightly slower than similar queries that do no
 
 As an alternative to using `FINAL`, it is sometimes possible to use different queries that assume the background processes of the `MergeTree` engine have not yet occurred and deal with it by applying an aggregation (for example, to discard duplicates). If you need to use `FINAL` in your queries in order to get the required results, it is okay to do so but be aware of the additional processing required.
 
-`FINAL` can be applied automatically using [FINAL](/reference/settings/session-settings#final) setting to all tables in a query using a session or a user profile.
+`FINAL` can be applied automatically using [FINAL](/reference/settings/session-settings/other#final) setting to all tables in a query using a session or a user profile.
 
 ### Example Usage {#example-usage}
 

@@ -20,8 +20,7 @@ This guide assumes you've completed [Setting up your OpenTelemetry Collector](/c
 For a Kubernetes-resident workload, the gateway collector itself should be deployed **inside the same cluster using the upstream OpenTelemetry Helm chart with the ClickStack collector image**. Follow the Helm path in [Deploying the collector](/clickstack/ingesting-data/collector#configuring-the-collector) to install it. **Ensure you have recorded this OTLP endpoint**.
 
 <Steps>
-<Step>
-## Gather your prerequisites {#gather-prerequisites}
+<Step title="Gather your prerequisites" id="gather-prerequisites">
 
 You'll need:
 
@@ -36,8 +35,7 @@ You'll need:
 For a cluster-local deployment, run the gateway collector as a Kubernetes `Deployment` or `StatefulSet` inside the same cluster and address it through its in-cluster service DNS. For a gateway running outside the cluster, use its externally reachable URL.
 </Info>
 </Step>
-<Step>
-## Create the auth secret and ConfigMap {#create-secret-and-configmap}
+<Step title="Create the auth secret and ConfigMap" id="create-secret-and-configmap">
 
 Pick the namespace you want the collectors to live in, then create a secret holding the `OTLP_AUTH_TOKEN` and a ConfigMap pointing at your gateway:
 
@@ -59,16 +57,14 @@ kubectl create configmap otel-config-vars \
 
 Both collectors below read these values via `extraEnvs`, so the same secret and ConfigMap are reused across them.
 </Step>
-<Step>
-## Add the OpenTelemetry Helm repo {#add-otel-helm-repo}
+<Step title="Add the OpenTelemetry Helm repo" id="add-otel-helm-repo">
 
 ```shell
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
 helm repo update
 ```
 </Step>
-<Step>
-## Deploy the cluster collector {#deploy-cluster-collector}
+<Step title="Deploy the cluster collector" id="deploy-cluster-collector">
 
 This is a single-replica Deployment that collects **Kubernetes events** and **cluster-wide metrics** (node counts, pod phases, deployment status, and so on). Running more than one replica would produce duplicates.
 
@@ -137,8 +133,7 @@ helm install k8s-otel-deployment open-telemetry/opentelemetry-collector \
   -n ${NAMESPACE}
 ```
 </Step>
-<Step>
-## Deploy the node collector {#deploy-node-collector}
+<Step title="Deploy the node collector" id="deploy-node-collector">
 
 This is a DaemonSet that runs on every node to collect **container logs**, **host metrics**, and **kubelet metrics** (per-pod and per-container CPU and memory utilisation against requests and limits).
 
@@ -255,8 +250,7 @@ kubectl get pods -n ${NAMESPACE} -l app.kubernetes.io/name=opentelemetry-collect
 
 You should see one Deployment pod and one DaemonSet pod per node, all in `Running` state.
 </Step>
-<Step>
-## Forward Kubernetes attributes to your apps (recommended) {#forward-k8s-attributes}
+<Step title="Forward Kubernetes attributes to your apps (recommended)" id="forward-k8s-attributes">
 
 To correlate your application logs, metrics, and traces with Kubernetes metadata (pod name, namespace, node, deployment), forward the metadata into your application via `OTEL_RESOURCE_ATTRIBUTES`. The DaemonSet's `k8sattributes` processor will then enrich incoming telemetry with the matching pod and node attributes.
 
@@ -305,8 +299,7 @@ spec:
               value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.deployment.name=$(DEPLOYMENT_NAME)
 ```
 </Step>
-<Step>
-## Confirm in the ClickStack UI {#confirm-in-ui}
+<Step title="Confirm in the ClickStack UI" id="confirm-in-ui">
 
 Open your service in the [ClickHouse Cloud console](https://console.clickhouse.cloud) and select **ClickStack** from the left menu.
 
@@ -326,8 +319,7 @@ If nothing shows up:
 - Confirm `YOUR_OTEL_COLLECTOR_ENDPOINT` is reachable from inside the cluster (`kubectl exec` into one of the collector pods and `curl` it).
 - Check that the `OTLP_AUTH_TOKEN` in the secret matches the value set on the gateway collector.
 </Step>
-<Step>
-## Further reading {#further-reading}
+<Step title="Further reading" id="further-reading">
 
 - [Kubernetes integration reference](/clickstack/integration-examples/kubernetes) for the full set of receivers, processors, and tuning options.
 - [Forwarding resource tags to pods](/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) for more detail on application-side enrichment.

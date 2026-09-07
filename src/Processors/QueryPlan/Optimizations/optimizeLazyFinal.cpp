@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/InputSelectorStep.h>
@@ -13,6 +14,7 @@
 #include <Processors/QueryPlan/LazilyUnorderedReadFromMergeTree.h>
 #include <Processors/QueryPlan/LazyFinalKeyAnalysisStep.h>
 #include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/LazyFinalSharedState.h>
@@ -48,6 +50,25 @@ static ActionsDAG cloneFilterSubDAG(const ActionsDAG & dag, const String & filte
             sub_dag.getOutputs().push_back(input);
 
     return sub_dag;
+}
+
+/// Expose the given intermediate nodes (by result name) as outputs of `dag`, if present and not
+/// already exposed. Used so that the set-building read's prewhere keeps the computed columns that
+/// a WHERE `FilterStep` above the reading step consumes as inputs.
+static void exposeNodesAsDAGOutputs(ActionsDAG & dag, const NameSet & names)
+{
+    if (names.empty())
+        return;
+
+    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    for (const auto & node : dag.getNodes())
+    {
+        if (names.contains(node.result_name) && !outputs.contains(&node))
+        {
+            dag.getOutputs().push_back(&node);
+            outputs.insert(&node);
+        }
+    }
 }
 
 /// Add a FilterStep that keeps only rows where is_deleted == 0.
@@ -247,14 +268,16 @@ struct SplitResult
 
 /// Try to split parts into non-intersecting and intersecting by primary key.
 /// If all parts are non-intersecting, replaces the plan node directly and returns fully_replaced=true.
-/// Otherwise returns a plan for non-intersecting parts (or nullptr if none), and updates
-/// the reading step's analyzed result to contain only intersecting parts.
+/// Otherwise, if allow_partial_split is set, returns a plan for non-intersecting parts (or nullptr
+/// if none), and updates the reading step's analyzed result to contain only intersecting parts;
+/// if not set, leaves the reading step untouched and returns fully_replaced=true to stop.
 static SplitResult trySplitNonIntersectingParts(
     ReadFromMergeTree * reading_step,
     ReadFromMergeTree::AnalysisResultPtr analyzed_result,
     FilterStep * filter_step,
     QueryPlan::Node * read_node,
-    QueryPlan & query_plan)
+    QueryPlan & query_plan,
+    bool allow_partial_split)
 {
     const auto & metadata_snapshot = reading_step->getStorageMetadata();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -296,6 +319,11 @@ static SplitResult trySplitNonIntersectingParts(
     /// index. Leave the reading step untouched so the query falls back to a regular FINAL read.
     /// Must come before the `non_intersecting_parts_ranges.empty()` check to cover the all-intersecting case.
     if (!reading_step->getIndexReadTasks().empty())
+        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
+
+    /// For queries that can stop reading early the set-building plan is a pessimization, and the
+    /// partial split alone does not preserve the reading order; keep the regular FINAL read.
+    if (!allow_partial_split)
         return {.non_intersecting_plan = nullptr, .fully_replaced = true};
 
     if (split.non_intersecting_parts_ranges.empty())
@@ -366,9 +394,58 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (data.merging_params.mode != MergeTreeData::MergingParams::Replacing)
         return;
 
+    /// The steps above may rely on the reading step producing rows in the order of the
+    /// sorting key, but the set-building replacement plan does not produce rows in any
+    /// particular order. Besides, read-in-order queries can often stop early, while the
+    /// set-building phase would read all filtered rows up front. Such queries may still
+    /// use the full non-intersecting replacement, which preserves both the order and the
+    /// early exit — the flag is checked before the partial split below.
+    const bool reading_in_order = reading_step->readsInOrder();
+
     /// Skip if projection was applied.
     if (reading_step->getAnalyzedResult())
         return;
+
+    /// Find a LIMIT that applies directly to the reading step's output (only Expression/Filter
+    /// steps in between). Such a limit lets the query stop reading early, which the set-building
+    /// phase would defeat. Any other step consumes the whole stream and stops the search.
+    size_t limit_above_reading = 0;
+    for (size_t i = stack.size() - 1; i-- > 0;)
+    {
+        auto * step = stack[i].node->step.get();
+        if (const auto * expression_step = typeid_cast<ExpressionStep *>(step))
+        {
+            /// arrayJoin changes the number of rows, a limit above it is not comparable to selected_rows.
+            if (expression_step->getExpression().hasArrayJoin())
+                break;
+            continue;
+        }
+        if (const auto * filter_step_above = typeid_cast<FilterStep *>(step))
+        {
+            if (filter_step_above->getExpression().hasArrayJoin())
+                break;
+            continue;
+        }
+        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is produced.
+        /// The DISTINCT transform honors the hint even when the enclosing limit has
+        /// always_read_till_end (e.g. exact_rows_before_limit), so any non-zero hint means the
+        /// query terminates reading early; if the hint seeding ever starts to account for that,
+        /// this check follows automatically.
+        if (const auto * distinct_step = typeid_cast<DistinctStep *>(step))
+        {
+            limit_above_reading = distinct_step->getLimitHint();
+            break;
+        }
+        /// With always_read_till_end (e.g. exact_rows_before_limit or WITH TOTALS) the query
+        /// reads the whole stream anyway, so the limit does not allow to stop reading early.
+        if (const auto * limit_step = typeid_cast<LimitStep *>(step); limit_step && !limit_step->alwaysReadTillEnd())
+        {
+            size_t limit = limit_step->getLimit();
+            size_t offset = limit_step->getOffset();
+            limit_above_reading = limit + offset < limit ? std::numeric_limits<size_t>::max() : limit + offset;
+        }
+        break;
+    }
 
     /// Check the immediate parent for a FilterStep or InputSelectorStep.
     FilterStep * filter_step = nullptr;
@@ -400,12 +477,17 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (reading_step->getParts().empty())
         return;
 
+    /// A limit below the number of selected rows means the query is expected to finish early.
+    const bool stops_reading_early = reading_in_order
+        || (limit_above_reading && analyzed_result && limit_above_reading < analyzed_result->selected_rows);
+
     /// Split parts into non-intersecting (unique key ranges, no FINAL needed) and
     /// intersecting (overlapping, need FINAL). This avoids running the expensive
     /// aggregation-based FINAL on parts that have no duplicates.
     /// When all parts are non-intersecting, replaceNodeWithPlan is called inside
     /// and fully_replaced is set — in that case we're done.
-    auto split_result = trySplitNonIntersectingParts(reading_step, analyzed_result, filter_step, read_node, query_plan);
+    auto split_result = trySplitNonIntersectingParts(
+        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
 
     if (split_result.fully_replaced)
         return;
@@ -440,24 +522,78 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// Start with the original column set (covers prewhere, row policy, etc.),
     /// then append primary key source columns, filter input columns,
     /// and prewhere/row_policy input columns that might be missing.
+    ///
+    /// `set_columns` is the list of columns to read FROM STORAGE for the set-building
+    /// `ReadFromMergeTree` (it is passed as `all_column_names`). It must contain only
+    /// real storage columns/subcolumns: the `ReadFromMergeTree` constructor calls
+    /// `StorageSnapshot::getSampleBlockForColumns` on it, which throws
+    /// NOT_FOUND_COLUMN_IN_BLOCK for any name that is not a storage or virtual column.
+    ///
+    /// The `filter_step` above the reading step takes its inputs from the reading
+    /// step's OUTPUT columns, which include columns PRODUCED by the reading step's
+    /// prewhere (e.g. the computed `greaterOrEquals(42, id)` predicate, kept when the
+    /// remaining WHERE conjunct references it) rather than read from storage. Such
+    /// derived columns are regenerated by the cloned prewhere/row-level-filter on the
+    /// set-building read, so they must not be requested from storage here. We only add
+    /// a name to `set_columns` if the storage snapshot actually has it as a column or
+    /// subcolumn, which is exactly the precondition `getSampleBlockForColumns` checks.
+    const auto & set_columns_desc = storage_snapshot->metadata->getColumns();
+    auto is_storage_column = [&](const String & name)
+    {
+        return set_columns_desc.hasColumnOrSubcolumn(GetColumnsOptions::All, name)
+            || storage_snapshot->metadata->virtuals.has(name);
+    };
+
     Names set_columns = reading_step->getAllColumnNames();
     {
         NameSet existing(set_columns.begin(), set_columns.end());
 
-        auto add_columns = [&](const ActionsDAG & dag)
+        auto add_columns = [&](const ActionsDAG & dag, bool storage_columns_only)
         {
             for (const auto * input : dag.getInputs())
+            {
+                /// Filter inputs may be derived columns produced by the reading step's
+                /// prewhere/row-level-filter, not storage columns. Requesting those from
+                /// storage would throw NOT_FOUND_COLUMN_IN_BLOCK, so skip non-storage names.
+                if (storage_columns_only && !is_storage_column(input->result_name))
+                    continue;
                 if (existing.insert(input->result_name).second)
                     set_columns.push_back(input->result_name);
+            }
         };
 
-        add_columns(primary_key_dag);
+        add_columns(primary_key_dag, /*storage_columns_only=*/ false);
         if (filter_step)
-            add_columns(filter_step->getExpression());
+            add_columns(filter_step->getExpression(), /*storage_columns_only=*/ true);
         if (const auto & prewhere = reading_step->getQueryInfo().prewhere_info)
-            add_columns(prewhere->prewhere_actions);
+            add_columns(prewhere->prewhere_actions, /*storage_columns_only=*/ false);
         if (const auto & row_filter = reading_step->getQueryInfo().row_level_filter)
-            add_columns(row_filter->actions);
+            add_columns(row_filter->actions, /*storage_columns_only=*/ false);
+    }
+
+    /// Inspect the inputs of the WHERE `filter_step` we copy above the set-building read below.
+    ///
+    /// `filter_derived_inputs`: inputs PRODUCED by the reading step's prewhere/row-level-filter
+    /// rather than read from storage (e.g. the computed `greaterOrEquals(42, id)` predicate). They
+    /// were excluded from `set_columns` above (not storage columns), so the set-building read must
+    /// expose them from its cloned prewhere/row-level-filter, else the copied WHERE cannot find them.
+    ///
+    /// `filter_all_inputs`: EVERY input the copied WHERE consumes (storage and derived). Used to
+    /// decide whether the prewhere/row-level-filter column must be kept in the output: if the WHERE
+    /// still consumes it we must not remove it. This is exactly the case `splitAndFillPrewhereInfo`
+    /// handles by flipping `remove_prewhere_column` to false, and it includes the case where the
+    /// pushed predicate is a plain storage column (e.g. `WHERE flag AND value != 7`), which is NOT
+    /// in `filter_derived_inputs`.
+    NameSet filter_derived_inputs;
+    NameSet filter_all_inputs;
+    if (filter_step)
+    {
+        for (const auto * input : filter_step->getExpression().getInputs())
+        {
+            filter_all_inputs.insert(input->result_name);
+            if (!is_storage_column(input->result_name))
+                filter_derived_inputs.insert(input->result_name);
+        }
     }
 
     QueryPlan set_plan;
@@ -470,19 +606,32 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         set_query_info.table_expression_modifiers->setHasFinal(false);
 
         /// Fix prewhere/row_policy DAGs so they don't remove columns from output.
+        /// Also expose the derived columns the WHERE filter consumes (see `filter_derived_inputs`),
+        /// so the copied WHERE filter below finds its inputs in the reading step's output.
         if (set_query_info.prewhere_info)
         {
             set_query_info.prewhere_info = std::make_shared<PrewhereInfo>(set_query_info.prewhere_info->clone());
             set_query_info.prewhere_info->prewhere_actions = cloneFilterSubDAG(
                 set_query_info.prewhere_info->prewhere_actions, set_query_info.prewhere_info->prewhere_column_name);
-            set_query_info.prewhere_info->remove_prewhere_column = true;
+            exposeNodesAsDAGOutputs(set_query_info.prewhere_info->prewhere_actions, filter_derived_inputs);
+            /// Keep the prewhere predicate column in the output when the copied WHERE filter still
+            /// consumes it. `splitAndFillPrewhereInfo` flips `remove_prewhere_column` to false in the
+            /// single-conjunct case where the residual WHERE references the pushed predicate; forcing
+            /// removal here would erase that column and the WHERE could not resolve its input. Check
+            /// ALL of the WHERE's inputs, not only derived ones: the pushed predicate can be a plain
+            /// storage column (e.g. `WHERE flag AND value != 7`), which is not in `filter_derived_inputs`.
+            set_query_info.prewhere_info->remove_prewhere_column
+                = !filter_all_inputs.contains(set_query_info.prewhere_info->prewhere_column_name);
         }
         if (set_query_info.row_level_filter)
         {
             auto fixed = std::make_shared<FilterDAGInfo>();
             fixed->actions = cloneFilterSubDAG(set_query_info.row_level_filter->actions, set_query_info.row_level_filter->column_name);
+            exposeNodesAsDAGOutputs(fixed->actions, filter_derived_inputs);
             fixed->column_name = set_query_info.row_level_filter->column_name;
-            fixed->do_remove_column = true;
+            /// Same reasoning as `remove_prewhere_column` above: keep the row-level-filter column
+            /// when the copied WHERE still consumes it, checking all of the WHERE's inputs.
+            fixed->do_remove_column = !filter_all_inputs.contains(fixed->column_name);
             set_query_info.row_level_filter = std::move(fixed);
         }
 

@@ -283,6 +283,37 @@ doc_type: 'مرجع'
   ```
 </Accordion>
 
+<div id="passing-keys">
+  ## تمرير المفاتيح إلى دوال القاموس
+</div>
+
+تعتمد وسيطة المفتاح (`id_expr`) في دوال مثل `dictGet` و`dictGetOrDefault` و`dictGetOrNull` و`dictHas` على مفتاح القاموس:
+
+* بالنسبة إلى قاموس ذي **مفتاح بسيط** (`UInt64`)، مرّر قيمة المفتاح مباشرة:
+
+```sql
+SELECT dictGet('simple_key_dictionary', 'attr_name', toUInt64(1));
+```
+
+* بالنسبة إلى قاموس ذي **مفتاح مركب (معقّد)** يتألف من أكثر من سمة واحدة، مرّر قيم المفتاح على شكل tuple:
+
+```sql
+SELECT dictGet('complex_key_dictionary', 'attr_name', ('value_for_field1', 42));
+```
+
+* عندما **يتألف المفتاح المركب من سمة واحدة**، يمكن تمرير قيمة المفتاح مباشرةً، من دون تضمينها داخل `tuple`. الطريقتان التاليتان صحيحتان ومتكافئتان:
+
+```sql
+SELECT dictGet('complex_key_dictionary', 'attr_name', 'key');
+SELECT dictGet('complex_key_dictionary', 'attr_name', tuple('key'));
+```
+
+ينطبق هذا أيضًا على قواميس `ip_trie`، التي يكون مفتاحها سمة واحدة. ويمكن تمرير عنوان IP المراد البحث عنه مباشرةً:
+
+```sql
+SELECT dictGet('ip_trie_dictionary', 'attr_name', toIPv4('202.79.32.10'));
+```
+
 {/* 
   يُستبدل المحتوى الداخلي للوسوم أدناه وقت بناء إطار عمل التوثيق بـ
   توثيق مُولَّد من system.functions. يُرجى عدم تعديل الوسوم أو حذفها.
@@ -299,6 +330,10 @@ doc_type: 'مرجع'
 
 تسترجع القيم من القاموس.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -309,7 +344,7 @@ dictGet('dict_name', attr_names, id_expr)
 
 * `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
 * `attr_names` — اسم عمود القاموس، أو Tuple من أسماء الأعمدة. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
-* `id_expr` — قيمة المفتاح. تعبير يُرجع UInt64/Tuple(T). [`UInt64`](/ar/reference/data-types/int-uint) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. بالنسبة إلى قاموس ذي مفتاح بسيط، تعبير يُرجع قيمة `UInt64`. وبالنسبة إلى قاموس ذي مفتاح مركب، تعبير يُرجع Tuple من قيم المفاتيح. وإذا كان المفتاح المركب يتكون من سمة واحدة، فيمكن تمرير قيمتها مباشرةً، من دون تغليفها في `tuple`. [`UInt64`](/ar/reference/data-types/int-uint) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
 
 **القيمة المعادة**
 
@@ -321,6 +356,9 @@ dictGet('dict_name', attr_names, id_expr)
 **استرجاع سمة واحدة**
 
 ```sql title=Query
+CREATE TABLE ext_dict_test_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO ext_dict_test_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_test (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'ext_dict_test_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
 ```
 
@@ -331,6 +369,9 @@ SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
 **سمات متعددة**
 
 ```sql title=Query
+CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT
     dictGet('ext_dict_mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
@@ -362,6 +403,10 @@ LIMIT 3;
 
 وباستثناء أنها تُرجع قيمًا من النوع `Array(T)` بدلًا من `T`، تعمل هذه الدالة بصورة مماثلة لـ [`dictGet`](#dictGet).
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -391,6 +436,13 @@ dictGetAll(dict_name, attr_names, id_expr[, limit])
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE regexp_os (id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)) ENGINE = Memory;
+INSERT INTO regexp_os VALUES
+    (1, 0, 'Linux',      ['os_replacement'], ['Linux']),
+    (2, 1, 'Android',    ['os_replacement'], ['Android']),
+    (3, 2, 'Android 1',  ['os_replacement'], ['Android']),
+    (4, 3, 'Android 12', ['os_replacement'], ['Android']);
+CREATE DICTIONARY regexp_tree (regexp String, os_replacement String DEFAULT 'Other') PRIMARY KEY regexp SOURCE(CLICKHOUSE(TABLE 'regexp_os' DB currentDatabase())) LIFETIME(MIN 0 MAX 0) LAYOUT(REGEXP_TREE);
 SELECT
     'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36' AS user_agent,
 
@@ -415,6 +467,10 @@ SELECT
 
 يعيد الأبناء من المستوى الأول في مصفوفة من الفهارس. وهو التحويل العكسي لـ [dictGetHierarchy](#dictGetHierarchy).
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -435,6 +491,9 @@ dictGetChildren(dict_name, key)
 **الحصول على الأبناء المباشرين لقاموس**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetChildren('hierarchical_dictionary', 2);
 ```
 
@@ -451,6 +510,10 @@ SELECT dictGetChildren('hierarchical_dictionary', 2);
 قُدِّم في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Date` بغضّ النظر عن تهيئة القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -478,6 +541,9 @@ dictGetDate(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2020-01-01');
+CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetDate('all_types_dict', 'Date_value', 1)
 ```
 
@@ -494,6 +560,10 @@ SELECT dictGetDate('all_types_dict', 'Date_value', 1)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Date` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -522,6 +592,9 @@ dictGetDateOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15');
+CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetDate('all_types_dict', 'Date_value', 1);
 
@@ -545,6 +618,10 @@ SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01
 تم تقديمه في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `DateTime` بغض النظر عن تهيئة القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **البنية**
 
@@ -572,6 +649,9 @@ dictGetDateTime(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
+CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
 ```
 
@@ -588,6 +668,10 @@ SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `DateTime` بغضّ النظر عن تهيئة القاموس، أو يُرجِع القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -616,6 +700,9 @@ dictGetDateTimeOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
+CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
 
@@ -640,6 +727,10 @@ SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateT
 
 يعيد جميع العناصر المتحدّرة كما لو جرى تطبيق الدالة [`dictGetChildren`](#dictGetChildren) تكراريًا `level` مرات.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -661,6 +752,9 @@ dictGetDescendants(dict_name, key, level)
 **الحصول على الأبناء من المستوى الأول لقاموس**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- consider the following hierarchical dictionary:
 -- 0 (Root)
 -- └── 1 (Level 1 - Node 1)
@@ -686,6 +780,10 @@ SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
 قُدِّم في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Float32` بغضّ النظر عن إعدادات القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -713,6 +811,9 @@ dictGetFloat32(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -123.123);
+CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 ```
 
@@ -728,7 +829,11 @@ SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 
 أُضيفت في: v1.1.0
 
-تُحوِّل قيمة سمة القاموس إلى نوع البيانات `Float32` بغض النظر عن إعدادات القاموس، أو تُرجِع القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+تُحوِّل قيمة سمة القاموس إلى نوع البيانات `Float32` بغض النظر عن تهيئة القاموس، أو تُرجِع القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: يمكنها إرجاع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -757,6 +862,9 @@ dictGetFloat32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 123.45);
+CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
 
@@ -765,12 +873,12 @@ SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
 ```
 
 ```response title=Response
-┌─dictGetFloat⋯_value', 1)─┐
-│                   123.45 │
-└──────────────────────────┘
-┌─dictGetFloat⋯e', 999, -1)─┐
-│                       -1  │
-└───────────────────────────┘
+┌─dictGetFloat32('all_types_dict', 'Float32_value', 1)─┐
+│                                               123.45 │
+└──────────────────────────────────────────────────────┘
+┌─dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.)─┐
+│                                                                   -1 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetFloat64">
@@ -780,6 +888,10 @@ SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
 قُدِّم في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Float64` بغضّ النظر عن تهيئة القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -807,6 +919,9 @@ dictGetFloat64(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -123.123);
+CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
 ```
 
@@ -823,6 +938,10 @@ SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
 أُضيفت في: v1.1.0
 
 تحوِّل قيمة سمة القاموس إلى نوع البيانات `Float64` بغض النظر عن إعدادات القاموس، أو تُرجِع القيمة الافتراضية الموفَّرة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -851,6 +970,9 @@ dictGetFloat64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 987654.123456);
+CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
 
@@ -875,6 +997,10 @@ SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
 
 ينشئ مصفوفة تحتوي على جميع أسلاف مفتاح في [القاموس الهرمي](/ar/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -895,6 +1021,9 @@ dictGetHierarchy(dict_name, key)
 **الحصول على التسلسل الهرمي لمفتاح**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 ```
 
@@ -911,6 +1040,10 @@ SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `IPv4` بغضّ النظر عن تهيئة القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -938,6 +1071,9 @@ dictGetIPv4(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '192.168.0.1');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 ```
 
@@ -955,6 +1091,10 @@ SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 
 يحوِّل قيمة سمة القاموس إلى نوع البيانات `IPv4` بغضّ النظر عن تهيئة القاموس، أو يُرجع القيمة الافتراضية المقدَّمة إذا لم يتم العثور على المفتاح.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -965,7 +1105,7 @@ dictGetIPv4OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 * `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
 * `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
-* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
 * `default_value_expr` — القيمة أو القيم التي تُرجع إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
 
 **القيمة المُعادة**
@@ -982,6 +1122,9 @@ dictGetIPv4OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال للاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '192.168.0.1');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
 
@@ -990,12 +1133,12 @@ SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0
 ```
 
 ```response title=Response
-┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
-│ 192.168.0.1                         │
-└─────────────────────────────────────┘
-┌─dictGetIPv4OrDefa⋯0.0.0.0'))─┐
-│ 0.0.0.0                      │
-└──────────────────────────────┘
+┌─dictGetIPv4('all_types_dict', 'IPv4_value', 1)─┐
+│ 192.168.0.1                                    │
+└────────────────────────────────────────────────┘
+┌─dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'))─┐
+│ 0.0.0.0                                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetIPv6">
@@ -1005,6 +1148,10 @@ SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0
 أُضيف في: v23.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `IPv6` بغضّ النظر عن تهيئة القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -1032,6 +1179,9 @@ dictGetIPv6(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
 ```
 
@@ -1047,7 +1197,11 @@ SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
 
 أُضيف في: v23.1.0
 
-يحوّل قيمة سمة القاموس إلى نوع البيانات `IPv6` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+يحوّل قيمة سمة القاموس إلى نوع البيانات `IPv6` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -1076,6 +1230,9 @@ dictGetIPv6OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
 
@@ -1084,12 +1241,12 @@ SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
 ```
 
 ```response title=Response
-┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
-│ 2001:db8:85a3::8a2e:370:7334        │
-└─────────────────────────────────────┘
-┌─dictGetIPv6OrDefa⋯:1'::IPv6)─┐
-│ ::1                          │
-└──────────────────────────────┘
+┌─dictGetIPv6('all_types_dict', 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334                   │
+└────────────────────────────────────────────────┘
+┌─dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, CAST('::1', 'IPv6'))─┐
+│ ::1                                                                            │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt16">
@@ -1099,6 +1256,10 @@ SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Int16` بغضّ النظر عن إعدادات القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -1115,10 +1276,10 @@ dictGetInt16(dict_name, attr_name, id_expr)
 **القيمة المعادة**
 
 يعيد قيمة سمة القاموس المطابقة لـ `id_expr`،
-وإلا فيعيد محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
+وإلا فيُعيد محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
 
 <Note>
-  يطرح ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو كانت القيمة لا تطابق نوع بيانات السمة.
+  يطرح ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
 </Note>
 
 **أمثلة**
@@ -1126,6 +1287,9 @@ dictGetInt16(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -5000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
 ```
 
@@ -1142,6 +1306,10 @@ SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
 قُدِّم في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Int16` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المحددة إذا لم يتم العثور على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -1162,7 +1330,7 @@ dictGetInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 وإلا فيعيد القيمة المُمرَّرة في المعامل `default_value_expr`.
 
 <Note>
-  يُصدر ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
 </Note>
 
 **أمثلة**
@@ -1170,6 +1338,9 @@ dictGetInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -5000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
 
@@ -1193,6 +1364,10 @@ SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
 قُدِّم في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Int32` بغضّ النظر عن تهيئة القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: فقد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **الصياغة**
 
@@ -1220,6 +1395,9 @@ dictGetInt32(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 ```
 
@@ -1236,6 +1414,10 @@ SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Int32` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يتم العثور على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -1264,6 +1446,9 @@ dictGetInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
 
@@ -1287,6 +1472,10 @@ SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
 قُدِّم في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Int64` بغضّ النظر عن تهيئة القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **الصيغة**
 
@@ -1314,6 +1503,9 @@ dictGetInt64(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
 ```
 
@@ -1330,6 +1522,10 @@ SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Int64` بغض النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -1358,6 +1554,9 @@ dictGetInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -9223372036854775808);
+CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
 
@@ -1381,6 +1580,10 @@ SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
 قُدِّمت في: v1.1.0
 
 يحوِّل قيمة سمة القاموس إلى نوع البيانات `Int8` بغض النظر عن تهيئة القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -1408,6 +1611,9 @@ dictGetInt8(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -100);
+CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 ```
 
@@ -1424,6 +1630,10 @@ SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 تم تقديمه في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `Int8` بغضّ النظر عن تكوين القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -1452,6 +1662,9 @@ dictGetInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -100);
+CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
 
@@ -1481,6 +1694,10 @@ SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
 ولا تكون ذاكرة التخزين المؤقت دائمة عبر الاستعلامات. وعند بلوغ الحد الأقصى، تُطرَد الإدخالات وفق آلية LRU.
 ويكون ذلك أكثر فعالية مع القواميس الكبيرة عندما يكون للإدخال عدد قيم مميزة منخفض، وتكون مجموعة العمل ضمن حدود ذاكرة التخزين المؤقت. اضبطه على `0` لتعطيل التخزين المؤقت.
 
+<Note>
+  هذه الدالة غير حتمية: إذ يمكنها إرجاع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -1502,12 +1719,15 @@ dictGetKeys('dict_name', 'attr_name', value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
+CREATE TABLE task_priority_source (task_id UInt64, priority_level String) ENGINE = Memory;
+INSERT INTO task_priority_source VALUES (1, 'low'), (2, 'high'), (3, 'medium'), (4, 'high');
+CREATE DICTIONARY task_id_to_priority_dictionary (task_id UInt64, priority_level String) PRIMARY KEY task_id SOURCE(CLICKHOUSE(TABLE 'task_priority_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 0);
+SELECT arraySort(dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high')) AS ids;
 ```
 
 ```response title=Response
 ┌─ids───┐
-│ [4,2] │
+│ [2,4] │
 └───────┘
 ```
 
@@ -1519,6 +1739,10 @@ SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') A
 
 يسترجع قيماً من قاموس، مع إرجاع قيمة افتراضية إذا لم يتم العثور على المفتاح.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -1529,7 +1753,7 @@ dictGetOrDefault('dict_name', attr_names, id_expr, default_value)
 
 * `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
 * `attr_names` — اسم عمود القاموس، أو `Tuple` من أسماء الأعمدة. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
-* `id_expr` — قيمة المفتاح. تعبير يُرجع UInt64/Tuple(T). [`UInt64`](/ar/reference/data-types/int-uint) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. بالنسبة إلى قاموس ذي مفتاح بسيط، تعبير يُرجع قيمة `UInt64`. وبالنسبة إلى قاموس ذي مفتاح مركب، تعبير يُرجع `Tuple` من قيم المفاتيح. إذا كان المفتاح المركب يتكون من سمة واحدة، فيمكن تمرير قيمتها مباشرةً، من دون تغليفها داخل `tuple`. [`UInt64`](/ar/reference/data-types/int-uint) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
 * `default_value` — القيمة الافتراضية التي تُعاد إذا لم يُعثر على المفتاح. يجب أن يطابق النوع نوع بيانات السمة.
 
 **القيمة المُعادة**
@@ -1542,6 +1766,9 @@ dictGetOrDefault('dict_name', attr_names, id_expr, default_value)
 **الحصول على قيمة باستخدام قيمة افتراضية**
 
 ```sql title=Query
+CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
 ```
 
@@ -1556,6 +1783,10 @@ SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
 أُضيفت في: v21.4.0
 
 تسترجع قيماً من قاموس، وتُرجِع NULL إذا لم يتم العثور على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **الصيغة**
 
@@ -1577,6 +1808,11 @@ dictGetOrNull('dict_name', 'attr_name', id_expr)
 **مثال باستخدام قاموس ذي مفتاح نطاقي**
 
 ```sql title=Query
+CREATE TABLE range_key_dictionary_source_table (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) ENGINE = TinyLog();
+INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
+INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
+INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
+CREATE DICTIONARY range_key_dictionary (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE 'range_key_dictionary_source_table' DB currentDatabase())) LIFETIME(MIN 1 MAX 1000) LAYOUT(RANGE_HASHED()) RANGE(MIN start_date MAX end_date);
 SELECT
     (number, toDate('2019-05-20')),
     dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
@@ -1591,6 +1827,54 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
 (4,'2019-05-20')  \N
 ```
 
+<div id="dictGetRoot">
+  ## dictGetRoot
+</div>
+
+قُدِّمت في: v26.7.0
+
+تعيد أعلى سلف (الجذر) لمفتاح في [قاموس هرمي](/ar/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+
+وهذا مكافئ عمليًا لأخذ آخر عنصر من المصفوفة التي تعيدها [dictGetHierarchy](#dictGetHierarchy)، أي `dictGetHierarchy(dict_name, key)[-1]`.
+
+إذا كان المفتاح نفسه عقدة من المستوى الأعلى في التسلسل الهرمي، فسيُعاد المفتاح. وإذا لم يكن المفتاح موجودًا في القاموس، فستُعاد القيمة `0`.
+
+<Note>
+  هذه الدالة غير حتمية: فقد تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
+
+**الصياغة**
+
+```sql
+dictGetRoot(dict_name, key)
+```
+
+**الوسائط**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `key` — قيمة المفتاح. [`UInt64`](/ar/reference/data-types/int-uint)
+
+**القيمة المُعادة**
+
+تعيد أعلى سلف (الجذر) للمفتاح. [`UInt64`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**الحصول على الجذر الخاص بمفتاح**
+
+```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+SELECT dictGetRoot('hierarchical_dictionary', 5)
+```
+
+```response title=Response
+┌─dictGetRoot(⋯ionary', 5)─┐
+│                        1 │
+└──────────────────────────┘
+```
+
 <div id="dictGetString">
   ## dictGetString
 </div>
@@ -1598,6 +1882,10 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
 استُحدث في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `String` بغضّ النظر عن إعدادات القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -1625,6 +1913,9 @@ dictGetString(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 'test string');
+CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetString('all_types_dict', 'String_value', 1)
 ```
 
@@ -1641,6 +1932,10 @@ SELECT dictGetString('all_types_dict', 'String_value', 1)
 أُضيف في: v1.1.0
 
 يحوِّل قيمة سمة القاموس إلى نوع البيانات `String` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يتم العثور على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصياغة**
 
@@ -1661,7 +1956,7 @@ dictGetStringOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 وإلا فتُرجع القيمة المُمرَّرة في المعامل `default_value_expr`.
 
 <Note>
-  يُطلق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تكن القيمة مطابقة لنوع بيانات السمة.
+  يطرح ClickHouse استثناء إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تكن القيمة مطابقة لنوع بيانات السمة.
 </Note>
 
 **أمثلة**
@@ -1669,6 +1964,9 @@ dictGetStringOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 'test string');
+CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetString('all_types_dict', 'String_value', 1);
 
@@ -1677,12 +1975,12 @@ SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
 ```
 
 ```response title=Response
-┌─dictGetString(⋯_value', 1)─┐
-│ test string                │
-└────────────────────────────┘
-┌─dictGetStringO⋯ 999, 'default')─┐
-│ default                         │
-└─────────────────────────────────┘
+┌─dictGetString('all_types_dict', 'String_value', 1)─┐
+│ test string                                        │
+└────────────────────────────────────────────────────┘
+┌─dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default')─┐
+│ default                                                                  │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt16">
@@ -1692,6 +1990,10 @@ SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
 قُدِّم في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt16` بغض النظر عن إعدادات القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -1719,6 +2021,9 @@ dictGetUInt16(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 5000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 ```
 
@@ -1735,6 +2040,10 @@ SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 أُضيف في: v1.1.0
 
 يحوِّل قيمة سمة القاموس إلى نوع البيانات `UInt16` بغض النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: إذ يمكنها إرجاع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -1763,6 +2072,9 @@ dictGetUInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 5000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
 
@@ -1786,6 +2098,10 @@ SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
 قُدِّم في: v1.1.0
 
 يحوِّل قيمة سمة القاموس إلى نوع البيانات `UInt32` بغضّ النظر عن تكوين القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: إذ يمكنها إرجاع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -1813,6 +2129,9 @@ dictGetUInt32(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
 ```
 
@@ -1829,6 +2148,10 @@ SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt32` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يتم العثور على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -1857,6 +2180,9 @@ dictGetUInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
 
@@ -1880,6 +2206,10 @@ SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
 استُحدث في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt64` بغضّ النظر عن إعداد القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **البنية**
 
@@ -1907,6 +2237,9 @@ dictGetUInt64(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 ```
 
@@ -1923,6 +2256,10 @@ SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt64` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -1951,6 +2288,9 @@ dictGetUInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
@@ -1974,6 +2314,10 @@ SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt8` بغض النظر عن إعدادات القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **البنية**
 
@@ -2001,6 +2345,9 @@ dictGetUInt8(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 100);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 ```
 
@@ -2017,6 +2364,10 @@ SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt8` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -2045,6 +2396,9 @@ dictGetUInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 100);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
 
@@ -2068,6 +2422,10 @@ SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `UUID` بغض النظر عن إعدادات القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -2095,6 +2453,9 @@ dictGetUUID(dict_name, attr_name, id_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '123e4567-e89b-12d3-a456-426614174000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 ```
 
@@ -2111,6 +2472,10 @@ SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 أُضيف في: v1.1.0
 
 يحوّل قيمة سمة القاموس إلى نوع البيانات `UUID` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المُقدَّمة إذا لم يتم العثور على المفتاح.
+
+<Note>
+  هذه الدالة غير حتمية: إذ يمكنها إرجاع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -2139,6 +2504,9 @@ dictGetUUIDOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '550e8400-e29b-41d4-a716-446655440000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- for key which exists
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
 
@@ -2147,12 +2515,12 @@ SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-
 ```
 
 ```response title=Response
-┌─dictGetUUID('all_t⋯ 'UUID_value', 1)─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │
-└──────────────────────────────────────┘
-┌─dictGetUUIDOrDefa⋯000000000000'::UUID)─┐
-│ 00000000-0000-0000-0000-000000000000   │
-└────────────────────────────────────────┘
+┌─dictGetUUID('all_types_dict', 'UUID_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000           │
+└────────────────────────────────────────────────┘
+┌─dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, CAST('00000000-0000-0000-0000-000000000000', 'UUID'))─┐
+│ 00000000-0000-0000-0000-000000000000                                                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictHas">
@@ -2162,6 +2530,10 @@ SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-
 أُضيفت في: v1.1.0
 
 يتحقق مما إذا كان المفتاح موجودًا في القاموس.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **البنية**
 
@@ -2183,6 +2555,9 @@ dictHas('dict_name', id_expr)
 **التحقق من وجود مفتاح في القاموس**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- consider the following hierarchical dictionary:
 -- 0 (Root)
 -- └── 1 (Level 1 - Node 1)
@@ -2213,6 +2588,10 @@ SELECT dictHas('hierarchical_dictionary', 7);
 
 يتحقق من السلف الخاص بمفتاح عبر السلسلة الهرمية كاملةً في القاموس.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -2234,11 +2613,14 @@ dictIsIn(dict_name, child_id_expr, ancestor_id_expr)
 **التحقق من العلاقة الهرمية**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 -- valid hierarchy
-SELECT dictIsIn('hierarchical_dictionary', 6, 3)
+SELECT dictIsIn('hierarchical_dictionary', 6, 3);
 
 -- invalid hierarchy
-SELECT dictIsIn('hierarchical_dictionary', 3, 5)
+SELECT dictIsIn('hierarchical_dictionary', 3, 5);
 ```
 
 ```response title=Response

@@ -1,6 +1,7 @@
 {
   "group": "C#",
   "icon": "/images/integrations/logos/csharp.svg",
-  "root": "integrations/language-clients/csharp/overview",
-  "pages": []
+  "pages": [
+    "integrations/language-clients/csharp/overview"
+  ]
 }

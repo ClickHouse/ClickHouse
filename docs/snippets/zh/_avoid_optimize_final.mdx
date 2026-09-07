@@ -8,7 +8,11 @@ title: 避免使用 OPTIMIZE FINAL
 
 随着时间推移，后台进程会将较小的 parts 合并成较大的 parts，以减少碎片并提升查询性能。
 
-<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="简单合并" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/bestpractices/simple_merges.webp" alt="简单合并" />
+  </Frame>
+</div>
 
 虽然你可能会想手动触发这种合并，例如使用：
 

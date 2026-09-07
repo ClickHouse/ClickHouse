@@ -133,7 +133,23 @@ public:
 
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
+        /// Merge the per-thread single-level hash tables in parallel, partitioned by the key hash,
+        /// instead of the serial merge.
+        bool enable_parallel_single_level_merge = false;
+
         bool serialize_string_with_zero_byte = false;
+
+        /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
+        /// aggregation-method state is constructed for every contiguous run of equal order-key
+        /// values (via `executeOnBlockSmall` / `mergeOnBlockSmall`), so a method whose state
+        /// construction does work proportional to the whole block turns a single block into
+        /// O(number_of_runs * block_size) work. This is the case for the `prealloc_serialized`
+        /// method, which serializes all of the block's keys up front on construction. In that mode
+        /// the per-run path falls back to the plain `serialized` method (lazy, per-row key
+        /// serialization) to keep it linear; see `Aggregator::method_chosen_for_in_order`. The
+        /// whole-block merge stage (`mergeBlocks` in `MergingAggregatedBucketTransform`) keeps
+        /// `prealloc_serialized`, where it is a win.
+        bool aggregation_in_order = false;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
@@ -159,7 +175,8 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
             bool enable_producing_buckets_out_of_order_in_aggregation_,
-            bool serialize_string_with_zero_byte_);
+            bool serialize_string_with_zero_byte_,
+            bool enable_parallel_single_level_merge_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -171,7 +188,7 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
+        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -268,6 +285,29 @@ public:
 
     ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants && data_variants) const;
 
+    /// Whether the variants' single-level method can be merged in hash partitions
+    /// (`mergeSingleLevelPartitionAndConvertToChunk`): every method with a two-level counterpart, whose
+    /// bucket function defines the partition partition.
+    bool canMergeSingleLevelInPartitions(const AggregatedDataVariants & variants) const;
+
+    /// Merges partition `partition_index` of `num_partitions` — the keys whose two-level bucket `b` satisfies
+    /// `b % num_partitions == partition_index` — out of every table of `non_empty_data` into a fresh table
+    /// and converts it to one output chunk. The merge adopts the aggregate state pointers of
+    /// first-seen keys and nulls the visited source cells, so distinct partitions may run concurrently
+    /// over the same source tables and the tables' destruction afterwards cannot double-destroy.
+    /// The NULL key of the single-key nullable methods belongs to partition 0.
+    /// `max_source_table_size` (used to pre-size the destination table) must be measured by the
+    /// caller before any partition starts: once the workers run, the source tables are mutated
+    /// concurrently and may not be read outside the caller-owned partition.
+    AggregatedChunk mergeSingleLevelPartitionAndConvertToChunk(
+        ManyAggregatedDataVariants & non_empty_data,
+        bool final,
+        size_t partition_index,
+        size_t num_partitions,
+        size_t max_source_table_size,
+        std::atomic<bool> & is_cancelled,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
+
     using BucketToChunks = std::map<Int32, AggregatedChunks>;
     /// Merge partially aggregated chunks separated to buckets into one data structure.
     void mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVariants & result, std::atomic<bool> & is_cancelled);
@@ -305,6 +345,7 @@ private:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
+    friend class ConvertingAggregatedToChunksByPartitionMergingSource;
     friend class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap;
     friend class AggregatingInOrderTransform;
 
@@ -319,6 +360,19 @@ private:
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
+
+    /// The aggregation method used by the per-run in-order path (`executeOnBlockSmall` /
+    /// `mergeOnBlockSmall`, called only from `AggregatingInOrderTransform`). It equals
+    /// `method_chosen`, except that when `Params::aggregation_in_order` is set the `prealloc_serialized`
+    /// variants are replaced by their plain `serialized` counterparts. That path builds a fresh state
+    /// for every run of equal order-key values, so the up-front whole-block serialization done by
+    /// `prealloc_serialized` on construction would make it quadratic. All whole-block paths (including
+    /// `mergeBlocks` used by `MergingAggregatedBucketTransform`) keep `method_chosen`, where
+    /// `prealloc_serialized` is a win. The `serialized` and `prealloc_serialized` methods produce
+    /// byte-identical keys and share the same hash-method context, so mixing them across pipeline
+    /// stages is safe.
+    AggregatedDataVariants::Type method_chosen_for_in_order;
+
     Sizes key_sizes;
 
     HashMethodContextPtr aggregation_state_cache;
@@ -581,6 +635,17 @@ private:
     template <typename Method>
     AggregatedChunks prepareChunksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
 
+    /// The per-method body of `mergeSingleLevelPartitionAndConvertToChunk`'s merge. `TwoLevelMethod` is
+    /// the method's two-level counterpart, whose bucket function defines the partition partition.
+    template <typename Method, typename TwoLevelMethod>
+    void mergeSingleLevelPartitionImpl(
+        Method & dst_method,
+        const std::vector<AggregatedDataVariants *> & sources,
+        Arena * arena,
+        size_t partition_index,
+        size_t num_partitions,
+        std::atomic<bool> & is_cancelled) const;
+
     template <typename State, typename Table>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
@@ -705,9 +770,6 @@ private:
         AggregateDataPtr place,
         Arena * arena);
 };
-
-/// NOTE: For non-Analyzer it does not include the database name
-UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);

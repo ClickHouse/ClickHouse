@@ -55,31 +55,23 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
     <br />
 
     <Steps>
-      <Step>
-        ### Créer un nouveau service
-
+      <Step title="Créer un nouveau service" id="create-a-service">
         Sur la page d’accueil de ClickHouse Cloud, sélectionnez `New service` pour créer un nouveau service.
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="Service Service" border />
       </Step>
 
-      <Step>
-        ### Indiquez votre fournisseur, votre région et votre ressource
-
+      <Step title="Indiquez votre fournisseur, votre région et votre ressource" id="specify-your-region-and-resources">
         <ProviderSelection />
       </Step>
 
-      <Step>
-        ### Configurer l’ingestion
-
+      <Step title="Configurer l’ingestion" id="setup-ingestion-create-new">
         Une fois votre service provisionné, assurez-vous que ce service est sélectionné, puis cliquez sur &quot;ClickStack&quot; dans le menu de gauche.
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step>
-        ### Accéder à l’interface de ClickStack
-
+      <Step title="Accéder à l’interface de ClickStack" id="navigate-to-clickstack-ui-cloud-create-new">
         <NavigateClickStackUI />
 
         <br />
@@ -91,9 +83,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
     <br />
 
     <Steps>
-      <Step>
-        ### Sélectionner un service
-
+      <Step title="Sélectionner un service" id="select-service">
         Depuis la page d’accueil de ClickHouse Cloud, sélectionnez le service pour lequel vous souhaitez activer Managed ClickStack.
 
         <Warning>
@@ -107,9 +97,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
         <Image img="/images/clickstack/select_service.webp" alt="Sélectionner un service" size="lg" />
       </Step>
 
-      <Step>
-        ### Accédez à la ClickStack UI
-
+      <Step title="Accéder à l’interface de ClickStack" id="navigate-to-the-clickstack-ui-existing">
         Sélectionnez &#39;ClickStack&#39; dans le menu de navigation de gauche. Vous serez redirigé vers la ClickStack UI et authentifié automatiquement selon vos permissions ClickHouse Cloud.
 
         Si des tables OpenTelemetry existent déjà dans votre service, elles seront détectées automatiquement et les sources de données correspondantes seront créées.
@@ -124,12 +112,10 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
         <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
 
-        Si cette étape réussit, c’est terminé : tout est prêt 🎉. Sinon, passez à la configuration de l’ingestion.
+        Si cette étape réussit, c’est terminé : tout est prêt 🎉. Sinon, passez à la configuration de l’ingestion.
       </Step>
 
-      <Step>
-        ### Configurer l&#39;ingestion
-
+      <Step title="Configurer l’ingestion" id="setup-ingestion-existing-service">
         Si la détection automatique échoue ou si vous n&#39;avez aucune table existante, vous serez invité à configurer l&#39;ingestion.
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="Configurer l’ingestion dans l’interface utilisateur de ClickStack" size="lg" />
@@ -153,7 +139,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             ### Démarrer un collecteur
 
-            La procédure ci-dessous suit l’approche recommandée, qui consiste à utiliser la **distribution ClickStack de l’OpenTelemetry Collector**, laquelle inclut un traitement supplémentaire et est optimisée spécifiquement pour ClickHouse Cloud. Si vous souhaitez utiliser votre propre OpenTelemetry Collector, consultez [&quot;Configurer des collecteurs existants.&quot;](#configure-existing-collectors)
+            La procédure ci-dessous suit l’approche recommandée, qui consiste à utiliser la **distribution ClickStack de l’OpenTelemetry Collector**, laquelle inclut un traitement supplémentaire et est optimisée spécifiquement pour ClickHouse Cloud. Si vous souhaitez utiliser votre propre OpenTelemetry Collector, consultez [&quot;Configurer des collecteurs existants.&quot;](#configure-existing-collectors-existing)
 
             Pour démarrer rapidement, copiez et exécutez la commande Docker affichée.
 
@@ -260,9 +246,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
         </Tabs>
       </Step>
 
-      <Step>
-        ### Accédez à l’interface ClickStack
-
+      <Step title="Accéder à l’interface de ClickStack" id="navigate-to-clickstack-ui-existing-service">
         Une fois la configuration de l’ingestion terminée et l’envoi des données démarré, sélectionnez &quot;Next&quot;.
 
         <Tabs>
@@ -312,16 +296,16 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 1. Accédez à votre service dans la console ClickHouse Cloud
 2. Accédez à **Settings** → **SQL Console Access**
 3. Définissez le niveau d’autorisation approprié pour chaque utilisateur :
-   * **Service Admin → Full Access** - Requis pour activer les alerts
-   * **Service Read Only → Read Only** - Permet de consulter les données d’observabilité et de créer des dashboards
+   * **Service Admin → Full Access** - Requis pour activer les alertes
+   * **Service Read Only → Read Only** - Permet de consulter les données d’observabilité et de créer des tableaux de bord
    * **No access** - Ne permet pas d’accéder à HyperDX
 
 <Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud Lecture seule" size="md" />
 
 <Warning>
-  **Les alerts nécessitent des droits d’administrateur**
+  **Les alertes nécessitent des droits d’administrateur**
 
-  Pour activer les alerts, au moins un utilisateur disposant des permissions **Service Admin** (associées à **Full Access** dans la liste déroulante **SQL Console Access**) doit se connecter à HyperDX au moins une fois. Cela crée dans la base de données un utilisateur dédié qui exécute les requêtes d’alerts.
+  Pour activer les alertes, au moins un utilisateur disposant des permissions **Service Admin** (associées à **Full Access** dans la liste déroulante **SQL Console Access**) doit se connecter à HyperDX au moins une fois. Cela crée dans la base de données un utilisateur dédié qui exécute les requêtes d’alerte.
 </Warning>
 
 <div id="clickstack-read-only-compute">

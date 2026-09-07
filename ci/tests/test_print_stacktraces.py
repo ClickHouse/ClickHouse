@@ -24,6 +24,7 @@ Post-fix: the helpers run to completion against a live server.
 
 import argparse
 import io
+import os
 import runpy
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -64,6 +65,10 @@ def _make_args():
         replicated_database=False,
         shared_catalog=False,
         force_color=False,
+        binary=os.environ.get("CLICKHOUSE_BINARY", "clickhouse"),
+        # A reachable server means __main__ collected build flags at startup;
+        # a non-ASan set keeps print_c_stacktraces on its lldb path.
+        build_flags=set(),
     )
 
 
@@ -96,3 +101,28 @@ def test_print_sql_stacktraces_against_live_server():
     # output confirms the round-trip succeeded.
     assert "Collecting stacktraces from system.stack_trace table" in output, output
     assert "trace_str" in output or "thread_name" in output, output
+
+
+def test_is_asan_build_uses_collected_flags():
+    # Normal path: build flags were collected while the server was reachable,
+    # so membership in the set decides — no binary query needed.
+    ct = _load_clickhouse_test()
+    args = _make_args()
+
+    args.build_flags = {ct["BuildFlags"].ADDRESS}
+    assert ct["is_asan_build"](args) is True
+
+    args.build_flags = set()
+    assert ct["is_asan_build"](args) is False
+
+
+def test_is_asan_build_falls_back_to_binary_when_flags_missing():
+    # Startup-failure path: flags were never collected (server never served a
+    # query), so the ASan bit is read from the binary itself rather than from
+    # ASAN_OPTIONS. The CI tests job runs a master release build, not an ASan
+    # build, so this must resolve to False without raising.
+    ct = _load_clickhouse_test()
+    args = _make_args()
+    delattr(args, "build_flags")
+
+    assert ct["is_asan_build"](args) is False

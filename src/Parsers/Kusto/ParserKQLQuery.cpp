@@ -471,7 +471,7 @@ static bool preprocessUnionJoin(IParser::Pos & pos, ASTPtr & node, Expected & ex
         else return false;
 
         String on_clause;
-        if (join_on.find("==") == String::npos && join_on.find('=') == String::npos)
+        if (!join_on.contains("==") && !join_on.contains('='))
         {
             /// Handle comma-separated join keys: on a, b -> a = a1 AND b = b1
             std::vector<String> keys;

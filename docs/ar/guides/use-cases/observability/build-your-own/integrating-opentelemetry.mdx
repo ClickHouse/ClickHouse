@@ -643,28 +643,28 @@ SETTINGS ttl_only_drop_parts = 1
 نوصي بأن يستخدم المستخدمون [معالج الدفعات](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) الموضّح في الإعدادات السابقة لتحقيق ما سبق. فهذا يضمن إرسال عمليات insert على شكل دفعات متسقة من الصفوف تستوفي المتطلبات المذكورة أعلاه. وإذا كان من المتوقع أن يحقق الـ collector معدل throughput مرتفعًا (أحداثًا في الثانية)، وكان بالإمكان إرسال ما لا يقل عن 10,000 حدث في كل عملية insert، فعادةً ما يكون هذا هو التجميع الوحيد المطلوب في مسار المعالجة. ويمكن استخدام قيم تصل إلى 100,000 إذا كانت الذاكرة تسمح بذلك. وفي هذه الحالة، سيقوم الـ collector بتفريغ الدفعات قبل بلوغ `timeout` الخاص بمعالج الدفعات، مما يضمن بقاء زمن الانتقال من طرف إلى طرف في مسار المعالجة منخفضًا، وأن تكون الدفعات ذات حجم متسق.
 
 <div id="use-asynchronous-inserts">
-  ### استخدم الإدراجات غير المتزامنة
+  ### استخدم asynchronous inserts
 </div>
 
-عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون معدل النقل في المجمّع منخفضًا، ومع ذلك يظلون يتوقعون أن تصل البيانات إلى ClickHouse بأقل زمن انتقال ممكن من طرف إلى طرف. في هذه الحالة، تُرسل الدفعات الصغيرة عند انتهاء مهلة `timeout` الخاصة بـ batch processor. وقد يؤدي ذلك إلى مشكلات، وهنا تبرز الحاجة إلى الإدراجات غير المتزامنة. تظهر هذه الحالة عادةً عندما **تُضبط المجمّعات التي تعمل بدور agent للإرسال مباشرةً إلى ClickHouse**. ويمكن للبوابات، من خلال عملها كمجمِّعات مركزية، أن تخفف هذه المشكلة — راجع [التوسع باستخدام البوابات](#scaling-with-gateways).
+عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون معدل النقل في collector منخفضًا، ومع ذلك يظلون يتوقعون أن تصل البيانات إلى ClickHouse بأقل زمن انتقال ممكن من طرف إلى طرف. في هذه الحالة، تُرسل الدفعات الصغيرة عند انتهاء مهلة `timeout` الخاصة بـ معالج الدفعات. وقد يؤدي ذلك إلى مشكلات، وهنا تبرز الحاجة إلى asynchronous inserts. تظهر هذه الحالة عادةً عندما **تُضبط collectors التي تعمل بدور agent للإرسال مباشرةً إلى ClickHouse**. ويمكن لـ gateways، من خلال عملها كمجمِّعات مركزية، أن تخفف هذه المشكلة — راجع [التوسع باستخدام gateways](#scaling-with-gateways).
 
-إذا لم يكن من الممكن ضمان دفعات كبيرة، فيمكنك إسناد التجميع إلى ClickHouse باستخدام [الإدراجات غير المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). مع الإدراجات غير المتزامنة، تُدرج البيانات أولًا في buffer، ثم تُكتب لاحقًا إلى مساحة تخزين قاعدة البيانات، أي بشكل غير متزامن.
+إذا لم يكن من الممكن ضمان دفعات كبيرة، فيمكنك إسناد التجميع إلى ClickHouse باستخدام [asynchronous inserts](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). مع asynchronous inserts، تُدرج البيانات أولًا في buffer، ثم تُكتب لاحقًا إلى مساحة تخزين قاعدة البيانات، أي بشكل غير متزامن.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="الإدراجات غير المتزامنة" size="md" />
+<Image img="/images/use-cases/observability/observability-6.webp" alt="asynchronous inserts" size="md" />
 
-عند [تمكين الإدراجات غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، عندما يستقبل ClickHouse ① insert query، تُكتب بيانات الاستعلام ② فورًا إلى buffer داخل الذاكرة. وعندما ③ تحدث عملية flush التالية للـ buffer، تُرتَّب بيانات الـ buffer [ترتيبًا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) ثم تُكتب كجزء إلى مساحة تخزين قاعدة البيانات. لاحظ أن البيانات لا تكون قابلة للبحث عبر queries قبل flush إلى مساحة تخزين قاعدة البيانات؛ كما أن عملية flush للـ buffer [قابلة للضبط](/ar/concepts/features/operations/insert/asyncinserts).
+عند [تمكين asynchronous inserts](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، عندما يستقبل ClickHouse ① insert query، تُكتب بيانات الاستعلام ② فورًا إلى buffer داخل الذاكرة. وعندما ③ تحدث عملية flush التالية للـ buffer، تُرتَّب بيانات الـ buffer [ترتيبًا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) ثم تُكتب كجزء إلى مساحة تخزين قاعدة البيانات. لاحظ أن البيانات لا تكون قابلة للبحث عبر queries قبل flush إلى مساحة تخزين قاعدة البيانات؛ كما أن عملية flush للـ buffer [قابلة للضبط](/ar/concepts/features/operations/insert/asyncinserts).
 
-لتمكين الإدراجات غير المتزامنة للمجمّع، أضف `async_insert=1` إلى connection string. نوصي باستخدام `wait_for_async_insert=1` (وهو الإعداد الافتراضي) للحصول على ضمانات التسليم — راجع [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) لمزيد من التفاصيل.
+لتمكين asynchronous inserts للمجمّع، أضف `async_insert=1` إلى connection string. نوصي باستخدام `wait_for_async_insert=1` (وهو الإعداد الافتراضي) للحصول على ضمانات التسليم — راجع [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) لمزيد من التفاصيل.
 
 تُدرج بيانات async insert بمجرد تنفيذ flush لـ buffer في ClickHouse. ويحدث ذلك إما بعد تجاوز [`async_insert_max_data_size`](/ar/reference/settings/session-settings#async_insert_max_data_size) أو بعد مرور [`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings#async_insert_max_data_size) مللي ثانية منذ أول INSERT query. وإذا ضُبط `async_insert_stale_timeout_ms` على قيمة غير صفرية، فستُدرج البيانات بعد مرور `async_insert_stale_timeout_ms milliseconds` منذ آخر query. يمكنك ضبط هذه settings للتحكم في زمن الانتقال من طرف إلى طرف في pipeline لديك. وترد [هنا](/ar/reference/settings/session-settings#async_insert) settings إضافية يمكن استخدامها لضبط flush للـ buffer. وبوجه عام، تكون القيم الافتراضية مناسبة.
 
 <Info>
-  **فكّر في الإدراجات غير المتزامنة التكيفية**
+  **فكّر في asynchronous inserts التكيفية**
 
-  في الحالات التي يُستخدم فيها عدد قليل من agents، مع معدل نقل منخفض ومتطلبات صارمة لزمن الانتقال من طرف إلى طرف، فقد تكون [الإدراجات غير المتزامنة التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. لكن هذه الميزة لا تكون مناسبة عادةً لحالات استخدام Observability ذات معدل النقل المرتفع، كما هو الحال مع ClickHouse.
+  في الحالات التي يُستخدم فيها عدد قليل من agents، مع معدل نقل منخفض ومتطلبات صارمة لزمن الانتقال من طرف إلى طرف، فقد تكون [asynchronous inserts التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. لكن هذه الميزة لا تكون مناسبة عادةً لحالات استخدام Observability ذات معدل النقل المرتفع، كما هو الحال مع ClickHouse.
 </Info>
 
-أخيرًا، لا يكون سلوك deduplication السابق المرتبط بالإدراجات المتزامنة في ClickHouse مُمكّنًا افتراضيًا عند استخدام الإدراجات غير المتزامنة. وإذا لزم الأمر، فراجع الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings#async_insert_deduplicate).
+أخيرًا، لا يكون سلوك deduplication السابق المرتبط بالإدراجات المتزامنة في ClickHouse مُمكّنًا افتراضيًا عند استخدام asynchronous inserts. وإذا لزم الأمر، فراجع الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings#async_insert_deduplicate).
 
 يمكن العثور على التفاصيل الكاملة حول ضبط هذه feature [هنا](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، مع شرح معمّق [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse).
 
@@ -675,30 +675,30 @@ SETTINGS ttl_only_drop_parts = 1
 يمكن اعتماد عدة معماريات للنشر عند استخدام OTel collector مع ClickHouse. نوضح أدناه كل خيار ومتى يكون مناسبًا على الأرجح.
 
 <div id="agents-only">
-  ### الوكلاء فقط
+  ### agents فقط
 </div>
 
-في معمارية الوكلاء فقط، ينشر المستخدمون OTel collector كوكلاء على الأطراف. تستقبل هذه الوكلاء `traces` من التطبيقات المحلية (مثلًا كحاوية sidecar) وتجمع `logs` من الخوادم وعُقد Kubernetes. في هذا الوضع، ترسل الوكلاء بياناتها مباشرةً إلى ClickHouse.
+في معمارية agents فقط، ينشر المستخدمون OTel collector كـ agents على الأطراف. تستقبل هذه agents `traces` من التطبيقات المحلية (مثلًا كحاوية sidecar) وتجمع `logs` من الخوادم وعُقد Kubernetes. في هذا الوضع، ترسل agents بياناتها مباشرةً إلى ClickHouse.
 
 <Image img="/images/use-cases/observability/observability-7.webp" alt="الوكلاء فقط" size="md" />
 
 تُعد هذه المعمارية مناسبة لعمليات النشر الصغيرة والمتوسطة. وتتمثل ميزتها الرئيسية في أنها لا تتطلب عتادًا إضافيًا، وتُبقي البصمة الإجمالية لموارد حل observability من ClickHouse عند الحد الأدنى، مع اقتران بسيط بين التطبيقات و`collectors`.
 
-ينبغي التفكير في الانتقال إلى معمارية قائمة على البوابة بمجرد أن يتجاوز عدد الوكلاء عدة مئات. فهذه المعمارية تنطوي على عدة عيوب تجعل توسيع نطاقها صعبًا:
+ينبغي التفكير في الانتقال إلى معمارية قائمة على البوابة بمجرد أن يتجاوز عدد agents عدة مئات. فهذه المعمارية تنطوي على عدة عيوب تجعل توسيع نطاقها صعبًا:
 
-* **توسيع نطاق الاتصالات** - سينشئ كل وكيل اتصالًا مع ClickHouse. ومع أن ClickHouse قادر على الحفاظ على مئات، إن لم يكن آلاف، اتصالات `insert` المتزامنة، فإن ذلك سيصبح في نهاية المطاف عاملًا مقيِّدًا وسيجعل `inserts` أقل كفاءة — أي إن ClickHouse سيستهلك موارد أكثر للإبقاء على هذه الاتصالات. ويؤدي استخدام `gateways` إلى تقليل عدد الاتصالات وجعل `inserts` أكثر كفاءة.
+* **توسيع نطاق الاتصالات** - سينشئ كل agent اتصالًا مع ClickHouse. ومع أن ClickHouse قادر على الحفاظ على مئات، إن لم يكن آلاف، اتصالات `insert` المتزامنة، فإن ذلك سيصبح في نهاية المطاف عاملًا مقيِّدًا وسيجعل `inserts` أقل كفاءة — أي إن ClickHouse سيستهلك موارد أكثر للإبقاء على هذه الاتصالات. ويؤدي استخدام `gateways` إلى تقليل عدد الاتصالات وجعل `inserts` أكثر كفاءة.
 * **المعالجة عند الأطراف** - يجب تنفيذ أي تحويلات أو معالجة للأحداث عند الأطراف أو داخل ClickHouse في هذه المعمارية. وإلى جانب كون ذلك مقيِّدًا، فقد يعني هذا إما إنشاء `materialized views` معقدة في ClickHouse أو نقل قدر كبير من العمليات الحسابية إلى الأطراف — حيث قد تتأثر الخدمات الحرجة وتكون الموارد شحيحة.
-* **الدفعات الصغيرة وزمن الاستجابة** - قد تجمع `collectors` الخاصة بالوكلاء عددًا قليلًا جدًا من الأحداث، كلٌّ على حدة. وهذا يعني عادةً أنها تحتاج إلى تهيئتها لتنفيذ `flush` على فاصل زمني محدد للوفاء بـ اتفاقيات مستوى الخدمة الخاصة بالتسليم. وقد يؤدي ذلك إلى أن يرسل `collector` دفعات صغيرة إلى ClickHouse. وعلى الرغم من أن هذا يُعد عيبًا، فإنه يمكن التخفيف منه باستخدام `Asynchronous inserts` — انظر [تحسين `inserts`](#optimizing-inserts).
+* **الدفعات الصغيرة وزمن الاستجابة** - قد تجمع `collectors` الخاصة بـ agents عددًا قليلًا جدًا من الأحداث، كلٌّ على حدة. وهذا يعني عادةً أنها تحتاج إلى تهيئتها لتنفيذ `flush` على فاصل زمني محدد للوفاء بـ اتفاقيات مستوى الخدمة الخاصة بالتسليم. وقد يؤدي ذلك إلى أن يرسل `collector` دفعات صغيرة إلى ClickHouse. وعلى الرغم من أن هذا يُعد عيبًا، فإنه يمكن التخفيف منه باستخدام `Asynchronous inserts` — انظر [تحسين `inserts`](#optimizing-inserts).
 
 <div id="scaling-with-gateways">
-  ### التوسّع باستخدام البوابات
+  ### التوسّع باستخدام gateways
 </div>
 
 يمكن نشر OTel collector كمثيلات gateway لمعالجة القيود المذكورة أعلاه. فهي توفّر خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة. وتتلقى هذه المثيلات الأحداث من التطبيقات (أو من collectors أخرى تؤدي دور agent) عبر OTLP endpoint واحد. وعادةً ما تُنشر مجموعة من مثيلات gateway، مع استخدام load balancer جاهز لتوزيع الحمل فيما بينها.
 
 <Image img="/images/use-cases/observability/observability-8.webp" alt="التوسّع باستخدام البوابات" size="md" />
 
-الهدف من هذه المعمارية هو نقل المعالجة كثيفة الاستهلاك حسابيًا بعيدًا عن agents، مما يقلّل استخدامهم للموارد إلى الحد الأدنى. ويمكن لهذه البوابات تنفيذ مهام التحويل التي كان سيتعيّن على agents تنفيذها لولا ذلك. وعلاوة على ذلك، فمن خلال تجميع الأحداث من عدد كبير من agents، يمكن للبوابات ضمان إرسال batches كبيرة إلى ClickHouse، مما يتيح insertion بكفاءة. كما يمكن توسيع gateway collectors هذه بسهولة مع إضافة المزيد من agents وازدياد throughput للأحداث. ويظهر أدناه مثال على config لبوابة، مع config agent مرتبط يستهلك ملف السجل المنظَّم المستخدم في المثال. لاحظ استخدام OTLP للتواصل بين agent وgateway.
+الهدف من هذه المعمارية هو نقل المعالجة كثيفة الاستهلاك حسابيًا بعيدًا عن agents، مما يقلّل استخدامهم للموارد إلى الحد الأدنى. ويمكن لهذه الـ gateways تنفيذ مهام التحويل التي كان سيتعيّن على agents تنفيذها لولا ذلك. وعلاوة على ذلك، فمن خلال تجميع الأحداث من عدد كبير من agents، يمكن للـ gateways ضمان إرسال batches كبيرة إلى ClickHouse، مما يتيح insertion بكفاءة. كما يمكن توسيع gateway collectors هذه بسهولة مع إضافة المزيد من agents وازدياد throughput للأحداث. ويظهر أدناه مثال على config لـ gateway، مع config agent مرتبط يستهلك ملف السجل المنظَّم المستخدم في المثال. لاحظ استخدام OTLP للتواصل بين agent وgateway.
 
 [clickhouse-agent-config.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*Nprocessors%3A*N_batch%3A*N___timeout%3A_5s*N___send*_batch*_size%3A_10000*N*Nexporters%3A*N_otlp%3A*N___endpoint%3A_localhost%3A4317*N___tls%3A*N_____insecure%3A_true_*H_Set_to_false_if_you_are_using_a_secure_connection*N*Nservice%3A*N_telemetry%3A*N___metrics%3A*N_____address%3A_0.0.0.0%3A9888_*H_Modified_as_2_collectors_running_on_same_host*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Botlp%5D%7E\&distro=otelcol-contrib%7E\&distroVersion=v0.103.1%7E)
 

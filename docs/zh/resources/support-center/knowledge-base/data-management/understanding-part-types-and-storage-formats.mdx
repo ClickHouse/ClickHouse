@@ -1,0 +1,184 @@
+---
+title: 理解 part 类型和存储格式
+description: '了解 ClickHouse 中不同的 part 类型（Wide 与 Compact）以及存储格式（Full 与 Packed），以及它们对性能的影响。'
+date: 2026-02-03
+tags: ['核心数据概念']
+keywords: ['compact parts', 'wide parts', '全量存储', '打包存储', 'part 类型', '存储格式']
+---
+
+ClickHouse 使用两个彼此独立的概念来组织 part 内的数据：
+
+* **Part 类型** (Wide 与 Compact) ：列数据在 part 内的存储方式
+* **存储格式** (Full 与 Packed) ：part 的文件在磁盘上的存储方式
+
+<div id="part-types-wide-vs-compact">
+  ## 数据分区片段类型：Wide 与 Compact
+</div>
+
+数据分区片段类型决定了列数据在数据分区片段中的组织方式。
+
+| 类型          | 描述                                                                        | 最适用场景             |
+| ----------- | ------------------------------------------------------------------------- | ----------------- |
+| **Wide**    | 每一列都存储在单独的文件中，并且各自拥有自己的[标记文件](/zh/concepts/core-concepts/glossary#mark-file) | 只查询部分列的场景         |
+| **Compact** | 所有列都存储在单个文件中，共用一个[标记文件](/zh/concepts/core-concepts/glossary#mark-file)       | 摄取性能，以及需要查询所有列的场景 |
+
+<div id="when-each-type-is-used">
+  ### 各类型的使用时机
+</div>
+
+数据分区片段类型由以下表设置控制：
+
+* [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_bytes_for_wide_part)：数据分区片段使用 `Wide` 格式所需的最小字节数
+* [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_rows_for_wide_part)：数据分区片段使用 `Wide` 格式所需的最小行数
+
+如果某个数据分区片段的字节数或行数中任一项小于对应的设置值，则该分区片段会以 `Compact` 格式存储；否则将使用 `Wide` 格式。
+
+<div id="performance-considerations">
+  ### 性能注意事项
+</div>
+
+**Compact parts：**
+
+* 摄取性能更好
+* 适合需要查询所有列的场景
+* 对小 parts 更高效
+
+**Wide parts：**
+
+* 对于只选择部分列的查询更高效
+* 更适合按需访问列的大型数据集
+
+Compact 到 Wide 的 merge 比 Wide 到 Wide 的 merge 更慢，因为 ClickHouse 在 Compact 到 Wide 的转换中使用的是[垂直合并](/zh/concepts/core-concepts/merges#memory-optimized-merges)算法，而在 Compact 到 Compact 的 merge 中使用的是水平算法。如果你希望无论大小都强制使用 Wide parts，可以将 `min_bytes_for_wide_part` 设置为 `0`。
+
+这在以下场景中会很有用：
+
+1. 当你的表有很多列 (例如超过 600 列) 并且要进行大批量 insert 时，将其设为 0 有助于提升性能
+2. 用于优化 `system.metric_log` 和 `system.text_log` 等系统表在 merge 期间占用过多内存时的内存使用情况
+3. 当处理高 insert 量的表，并且希望优化存储和 merge behavior 时
+4. 当你希望 part 格式行为保持一致，并且不想承担基于大小阈值进行格式切换所带来的 overhead 时
+
+值得注意的是，虽然将其设为 0 可以改善某些性能表现，但由于 Wide parts 格式，可能会对 S3 storage 产生更多 GET requests。
+
+<div id="limitations">
+  ### 限制
+</div>
+
+不会为 compact parts 计算列大小统计信息，这可能会影响监控和优化。查询 `system.parts_columns` 时，compact parts 的 `column_data_compressed_bytes` 和 `column_data_uncompressed_bytes` 将显示为 `0`。更多信息，请参见[“查找 wide 或 compact parts 的数量和大小”](/zh/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type)。
+
+<div id="storage-formats-full-vs-packed">
+  ## 存储格式：Full vs Packed
+</div>
+
+存储格式决定了分片文件在磁盘上的物理存放方式。
+
+| 格式         | 说明               | 可用范围       |
+| ---------- | ---------------- | ---------- |
+| **Full**   | 分片目录中的每个文件都单独存储  | 开源版和 Cloud |
+| **Packed** | 所有文件都会打包到单个归档文件中 | 开源版和 Cloud |
+
+<div id="full-storage">
+  ### Full 存储
+</div>
+
+在完整存储中，每个数据分片都由多个彼此独立的文件组成，并分别存储在磁盘上。这是默认的存储格式。
+
+<div id="packed-storage">
+  ### Packed 存储
+</div>
+
+在 Packed 存储中，所有分片文件都会打包为单个归档文件。这会显著减少文件操作次数；而对于 S3 这类远程存储来说，这一点尤为重要，因为每个请求都会带来相应的延迟和成本。
+
+**Packed 存储的优势：**
+
+* 更少的 S3/对象存储 API 调用
+* 减轻协调服务的元数据压力
+* 更低的存储成本 (Full 存储的成本可能会高得多)
+* 在远程存储上，小分片的性能更好
+
+<div id="when-packed-storage-is-used">
+  ### 何时使用 Packed 存储
+</div>
+
+如果满足以下**任一**条件，分片就会使用 Packed 存储：
+
+* 未压缩字节数 &lt; [`min_bytes_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
+* 行数 &lt; [`min_rows_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
+* 合并级别 &lt; [`min_level_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+
+Packed 存储需要显式启用：这三个设置的默认值均为 `0`，因此除非你调高其中某一个值，否则分片会使用 Full 存储。
+
+<Info>
+  **降级兼容性**
+
+  一旦某个分片以 Packed 存储方式写入，不支持 Packed 存储的 ClickHouse 版本将无法再读取它。因此，启用 Packed 存储后，将无法降级到这类版本，所以只有在你确认不需要回滚时才应启用它。
+</Info>
+
+`min_level_for_full_part_storage` 设置可用于同时优化对象存储上的性能和成本，尤其适合持续接收插入的表。
+该设置从 ClickHouse 25.10 版本开始可用，并与 `min_level_for_wide_part` 配合使用，从而对分片存储策略进行全面控制。
+
+在以下用例中，可以考虑将其从默认值 (0) 调整为其他值：
+
+* 当表持续进行数据摄取时，初始分片很快就会被合并，因此一开始就将其存储为完整分片格式会造成浪费
+* 设置此参数可以避免插入期间高成本的 S3 PUT 请求。例如，一项分析表明，生成完整分片的插入平均每次会产生 31.3 个 PUT 请求，而仅生成 packed 分片的插入平均每次仅产生 2.22 个 PUT 请求
+* 插入操作会更快，尤其是对于包含大量列的表，因为 packed 存储会将所有数据写入一个文件，而不是为每一列分别创建文件。
+
+推荐配置：
+
+对于对象存储部署，设置 `min_level_for_full_part_storage = 2`。
+这样可确保：
+
+* 0 级分片 (初始插入) 使用 packed 存储
+* 1 级分片 继续使用 packed 存储
+* 只有 2 级及以上的分片 才使用完整存储格式
+
+<Tip>
+  对于接收超大但不频繁写入、且未发生足够合并的表，应避免使用此设置，因为大型初始写入可能更适合立即使用完整分片存储。
+</Tip>
+
+<div id="combining-part-types-and-storage-formats">
+  ## 分片类型与存储格式的组合
+</div>
+
+这两个概念彼此独立，因此你可以选择任意一种组合：
+
+| 组合               | 用例                          |
+| ---------------- | --------------------------- |
+| Wide + Full      | 本地存储中的大型分片 (开源版本中的默认选项) |
+| Wide + Packed    | 云存储中的大型分片               |
+| Compact + Full   | 本地存储中的小型分片              |
+| Compact + Packed | 云存储中的小型分片               |
+
+<div id="querying-part-information">
+  ## 查询 part 相关信息
+</div>
+
+您可以使用 [`system.parts`](/zh/reference/system-tables/parts) 表查看现有 parts 的 part 类型和存储类型：
+
+```sql
+SELECT
+    part_type,
+    part_storage_type,
+    max(level),
+    count(),
+    formatReadableSize(max(data_uncompressed_bytes)),
+    formatReadableSize(min(data_uncompressed_bytes))
+FROM system.parts
+WHERE (database != 'system') AND active
+GROUP BY
+    1,
+    2
+ORDER BY
+    1 ASC,
+    2 ASC
+```
+
+你会看到类似下面这样的内容：
+
+```response
+   ┌─part_type─┬─part_storage_type─┬─max(level)─┬─count()─┬─formatReadab⋯sed_bytes))─┬─formatReadab⋯sed_bytes))─┐
+1. │ Compact   │ Full              │      12688 │    2456 │ 1023.87 MiB              │ 23.78 MiB                │
+2. │ Compact   │ Packed            │      97383 │   13748 │ 127.77 MiB               │ 1.00 B                   │
+3. │ Wide      │ Full              │       7642 │    2000 │ 1.38 TiB                 │ 30.18 MiB                │
+4. │ Wide      │ Packed            │         10 │     187 │ 110.01 MiB               │ 1.30 KiB                 │
+   └───────────┴───────────────────┴────────────┴─────────┴──────────────────────────┴──────────────────────────┘
+```

@@ -78,12 +78,12 @@ In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference
 quantileExact(level)(expr)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Quantile of the specified level. For numeric data types the output format will be the same as the input format.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Quantile of the specified level. For numeric data types the output format will be the same as the input format.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
     {
         "Computing exact quantile",
@@ -102,7 +102,42 @@ SELECT quantileExact(number) FROM numbers(10);
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
     factory.registerFunction(NameQuantileExact::name, {createAggregateFunctionQuantile<FuncQuantileExact>, documentation});
-    factory.registerFunction(NameQuantilesExact::name, { createAggregateFunctionQuantile<FuncQuantilesExact>, {}, properties });
+
+    FunctionDocumentation::Description description_quantiles = R"(
+Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.
+
+This function is equivalent to [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+
+To get exact values, all the passed values are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed.
+    )";
+    FunctionDocumentation::Syntax syntax_quantiles = R"(
+quantilesExact(level1, level2, ...)(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_quantiles = {
+        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}}
+    };
+    FunctionDocumentation::Parameters parameters_quantiles = {
+        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of quantiles of the specified levels in the same order as the levels were specified. For numeric data types the output format matches the input format.", {"Array((U)Int*)", "Array(Int128)", "Array(UInt128)", "Array(Int256)", "Array(UInt256)", "Array(Float*)", "Array(Decimal*)", "Array(Date)", "Array(DateTime)", "Array(DateTime64)"}};
+    FunctionDocumentation::Examples examples_quantiles = {
+    {
+        "Computing multiple exact quantiles",
+        R"(
+SELECT quantilesExact(0.25, 0.5, 0.75)(number) FROM numbers(10)
+        )",
+        R"(
+┌─quantilesExact(0.25, 0.5, 0.75)(number)─┐
+│ [2,5,7]                                 │
+└─────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantiles = {1, 1};
+    FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
+
+    factory.registerFunction(NameQuantilesExact::name, { createAggregateFunctionQuantile<FuncQuantilesExact>, documentation_quantiles, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianExact", NameQuantileExact::name);

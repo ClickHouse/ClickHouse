@@ -51,7 +51,7 @@ SELECT id, PRT,
     FROM (SELECT number AS id, if(number = 3, 0, 1) AS PRT FROM numbers(5)) AS t
     ORDER BY id;
 
--- 5. Setting also applies under the new analyzer (default) and the legacy one.
+-- 5. Setting also applies under the analyzer (default) and the legacy one.
 
 SET enable_analyzer = 0;
 SELECT DENSE_RANK(a) OVER (ORDER BY a) FROM (SELECT 1 AS a);

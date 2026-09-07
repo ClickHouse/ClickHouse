@@ -13,7 +13,9 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/AsyncLoader.h>
+#include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -608,7 +610,9 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
+            /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, /*storage_settings=*/ nullptr, args.context, false);
         }
         else
         {
@@ -623,9 +627,53 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
             configuration.host = parsed_host_port.first;
             configuration.port = parsed_host_port.second;
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+        }
+
+        /// An internal metadata replay (server startup / restore, the same distinction
+        /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
+        /// startup rebuilds every database from persisted metadata with an ATTACH query and
+        /// `loadMetadata` aborts on the first exception, so a validation added after the database
+        /// was created must not turn its stored definition into a server that cannot boot.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+
+        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
+        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
+        /// below is built from `host` / `port`. This engine keeps a single replication connection,
+        /// so exactly one address is accepted; canonicalize it back into `host` / `port`.
+        if (configuration.host.empty())
+        {
+            if (configuration.addresses.size() == 1)
+            {
+                configuration.host = configuration.addresses.front().first;
+                configuration.port = configuration.addresses.front().second;
+            }
+            else if (!is_internal_metadata_replay)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Engine `{}` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
+                                engine_name, configuration.addresses.size());
+            }
+            /// On a replay a legacy multi-address definition keeps its historical behavior: it could
+            /// be created before this validation existed (replication starts asynchronously, so the
+            /// broken connection string never aborted the CREATE), and the database must keep loading
+            /// with replication failing and retrying in the background rather than abort startup.
+        }
+
+        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
+        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
+        /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
+        /// Skip it only for an internal metadata replay: enforcing the policy there would turn one
+        /// database created before the whitelist was tightened into a server that cannot boot.
+        /// A user-issued `ATTACH DATABASE` is not a replay and stays fail-closed, otherwise it
+        /// would be a direct bypass of the policy.
+        if (!is_internal_metadata_replay)
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
         auto connection_info = postgres::formatConnectionString(
@@ -811,7 +859,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine.
 
 Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
 
@@ -845,7 +893,7 @@ A user-created replication slot. Must be used together with `materialized_postgr
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](/reference/engines/database-engines/materialized-postgresql) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
 ```sql
 CREATE DATABASE database1
@@ -948,6 +996,32 @@ Access to tables:
 2. pg_replication_slots
 
 3. pg_publication_tables
+
+### Backup and restore {#backup-and-restore}
+
+A `MaterializedPostgreSQL` database can be backed up. The data of every replicated table lives in a nested `ReplacingMergeTree` table, so `BACKUP DATABASE` captures that data by delegating to the nested table.
+
+```sql
+BACKUP DATABASE postgres_db TO Disk('backups', 'postgres_db.zip');
+```
+
+Restoring a `MaterializedPostgreSQL` database or table **in place is not supported**. A restored `MaterializedPostgreSQL` object immediately starts replicating from the live PostgreSQL source, so restoring the backup snapshot on top of it would mix the snapshot with the current remote state. RESTORE therefore fails closed in this case. Restore the captured data into plain `ReplacingMergeTree` tables instead:
+
+- In a database backup, each table's stored definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine), so each table can be restored straight into a new, not-yet-existing table:
+
+    ```sql
+    RESTORE TABLE postgres_db.table1 AS restored_db.table1
+    FROM Disk('backups', 'postgres_db.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
+
+- For a standalone `MaterializedPostgreSQL` table backup, the stored definition is the `MaterializedPostgreSQL` engine itself. Create a `ReplacingMergeTree` table beforehand with the same structure as the nested table (including the `_sign` and `_version` columns) and restore into it:
+
+    ```sql
+    RESTORE TABLE src AS existing_replacing_mergetree
+    FROM Disk('backups', 'table.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
 )DOCS_MD",
         .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password')",
         .related = {"PostgreSQL"}});

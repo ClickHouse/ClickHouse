@@ -1,0 +1,154 @@
+---
+description: 'Documentation sur les index hypothétiques (what-if)'
+sidebarTitle: 'INDEX HYPOTHÉTIQUE'
+slug: /sql-reference/statements/hypothetical-index
+title: 'Index hypothétiques'
+doc_type: 'référence'
+---
+
+Les index hypothétiques sont des index de saut virtuels, limités à la session, que vous pouvez attacher à une table de la famille `MergeTree` sans réellement les construire ni les stocker. Ils n&#39;existent que dans la session en cours et sont utilisés par [`EXPLAIN WHATIF`](/fr/reference/statements/explain#explain-whatif) pour estimer l&#39;effet qu&#39;aurait un véritable index de saut sur une requête — généralement le taux de saut (fraction des marks pouvant être ignorés) ainsi qu&#39;un coût approximatif en marks et en octets.
+
+Utilisez les index hypothétiques pour évaluer des index candidats avant de payer le coût de leur matérialisation sur disque.
+
+<div id="create-hypothetical-index">
+  ## CREATE HYPOTHETICAL INDEX
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
+    ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
+```
+
+La syntaxe reprend celle de `ALTER TABLE ... ADD INDEX`, mais aucun index n’est créé ni écrit — seule la description de l’index est stockée dans la session en cours.
+
+* `name` — nom de l’index ; doit être unique dans `(database, table)` pour cette session.
+* `expression` — la colonne ou l’expression à indexer.
+* `TYPE type` — `minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, `tokenbf_v1(...)`. `text` et `vector_similarity` ne sont pas pris en charge et sont rejetés lors de `CREATE`, car la validation réelle de `ALTER TABLE ... ADD INDEX` dépend de paramètres définis au niveau de la table que le stockage propre à la session ne peut pas reproduire.
+* `GRANULARITY value` — nombre de granules de données par granule d’index. La valeur par défaut est 1.
+
+La table cible doit être une table de la famille `MergeTree` dans une base de données `Atomic` (elle doit avoir un UUID). Les tables sans UUID — par exemple dans une base de données `Ordinary` legacy, ou un `MergeTree` utilisant l’ancienne syntaxe — sont rejetées, car le stockage de session associe les index hypothétiques à l’UUID de la table.
+
+**Exemple**
+
+```sql
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+```
+
+<div id="evaluating-a-hypothetical-index-with-explain-whatif">
+  ## Évaluer un index hypothétique avec EXPLAIN WHATIF
+</div>
+
+Définir un index hypothétique ne suffit pas en soi — pour voir comment il affecterait une requête, exécutez [`EXPLAIN WHATIF`](/fr/reference/statements/explain#explain-whatif) sur un `SELECT` représentatif. L’estimateur indique l’applicabilité de chaque index candidat, le nombre de marks qu’il lirait, le taux de saut qui en résulterait, ainsi que la manière dont l’estimation a été produite (`empirical`, `statistical` ou `applicability_only`).
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+Résultat :
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       631
+```
+
+`est_bytes` est une estimation basée sur la taille moyenne des lignes de la table, donc la valeur exacte varie selon le stockage et la compression.
+
+Pour éviter l’analyse empirique en mémoire et estimer plutôt à partir des [statistiques de colonnes](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), définissez-les d’abord sur les colonnes concernées (elles sont désactivées par défaut), attendez la fin de la mutation de matérialisation, puis désactivez cette méthode empirique :
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+Consultez la référence [`EXPLAIN WHATIF`](/fr/reference/statements/explain#explain-whatif) pour obtenir le schéma de sortie complet et les paramètres.
+
+<div id="drop-hypothetical-index">
+  ## DROP HYPOTHETICAL INDEX
+</div>
+
+```sql
+DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
+```
+
+Supprime un index hypothétique de la session en cours.
+
+<div id="drop-all-hypothetical-indexes">
+  ## DROP ALL HYPOTHETICAL INDEXES
+</div>
+
+```sql
+DROP ALL HYPOTHETICAL INDEXES
+```
+
+Supprime tous les index hypothétiques définis dans la session en cours, quelle que soit la table.
+
+<div id="scope-and-lifetime">
+  ## Portée et durée de vie
+</div>
+
+* Les index hypothétiques n&#39;existent que dans la **session actuelle** — ils sont invisibles aux autres sessions et supprimés lorsque la session prend fin.
+* Le fait d&#39;en définir un ou d&#39;en supprimer un ne crée aucun index et n&#39;affecte jamais les requêtes ordinaires sur la table. La variante empirique de `EXPLAIN WHATIF` lit bien les données de la table pour construire l&#39;index candidat en mémoire, et ce balayage est imputé aux limites de lecture et aux quotas de la session.
+* Consultez les index hypothétiques de la session actuelle via [`system.hypothetical_indexes`](/fr/reference/system-tables/hypothetical_indexes).
+
+<div id="limitations">
+  ## Limitations
+</div>
+
+Les candidats `text` et `vector_similarity` sont rejetés lors de `CREATE HYPOTHETICAL INDEX`, car leur validation réelle dépend de paramètres au niveau de la table que le stockage propre à la session ne peut pas répliquer.
+
+`EXPLAIN WHATIF` renvoie `status: not_applicable` pour les requêtes avec `FINAL` (l’élagage par index de saut interagit avec `PrimaryKeyExpand`) et l’erreur `NOT_IMPLEMENTED` lorsque la requête est servie depuis une projection (un index de table parente n’est pas matérialisé sur les parties de projection).
+
+Le `skip_ratio` empirique constitue une **borne supérieure** : il comptabilise chaque granule survivante indépendamment et ne modélise ni la fusion des écarts de seek (`merge_tree_min_rows_for_seek` / `merge_tree_min_bytes_for_seek`), ni la combinaison d’un candidat avec un index de saut existant sous un prédicat disjonctif (`OR`). Un index matérialisé réel peut donc lire légèrement plus de données, ou élaguer dans des cas que l’estimation ne couvre pas.
+
+<div id="required-privileges">
+  ## Privilèges requis
+</div>
+
+`CREATE HYPOTHETICAL INDEX` requiert le privilège `SELECT` sur les colonnes référencées par l’expression de l’index — un `SELECT` au niveau des colonnes (par exemple `GRANT SELECT(b)`) suffit — car `EXPLAIN WHATIF` lit effectivement ces colonnes.
+
+`DROP HYPOTHETICAL INDEX` et `DROP ALL HYPOTHETICAL INDEXES` ne requièrent aucun privilège supplémentaire ; ils se contentent de supprimer des entrées du stockage local à la session.
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`EXPLAIN WHATIF`](/fr/reference/statements/explain#explain-whatif)
+* [`system.hypothetical_indexes`](/fr/reference/system-tables/hypothetical_indexes)
+* [Index de saut de données](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)

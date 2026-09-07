@@ -23,10 +23,14 @@ Dans ce mode, le S3 ClickPipe effectue un chargement initial de **tous les fichi
 Différents types de défaillances peuvent survenir lors de l’ingestion des données, ce qui peut entraîner des insertions partielles ou des doublons. Les Object Storage ClickPipes tolèrent les échecs d’insertion et offrent une sémantique exactly-once grâce à des tables de staging temporaires. Les données sont d’abord insérées dans une table de staging ; si un problème survient, la table de staging est vidée avec TRUNCATE et l’insertion est relancée depuis un état propre. Les partitions ne sont déplacées vers la table cible qu’une fois l’insertion terminée avec succès.
 
 <Steps>
-  <Step>
-    ## Créer une file d&#39;attente Amazon SQS
-
+  <Step title="Créer une file d'attente Amazon SQS" id="create-sqs-queue">
     **1.** Dans la console AWS, accédez à **Simple Queue Service &gt; Create queue**. Utilisez les paramètres par défaut pour créer une nouvelle file d&#39;attente standard.
+
+    <Warning>
+      **Une file d’attente par ClickPipe**
+
+      Chaque ClickPipe doit disposer de sa propre file d’attente SQS dédiée. SQS remet chaque message à un seul consommateur : si deux ClickPipes ou plus (ou toute autre application) consomment la même file d’attente, chaque événement n’est reçu que par l’un d’eux, et les fichiers sont ignorés sans avertissement par les pipes qui ne reçoivent jamais l’événement. Cela s’applique même si les ClickPipes utilisent des modèles de chemin différents — un pipe qui reçoit un événement pour un fichier ne correspondant pas au modèle l’ignore, et aucun autre pipe ne verra jamais cet événement. Pour ingérer à partir du même bucket avec plusieurs ClickPipes, créez une file d’attente par ClickPipe et utilisez des règles EventBridge pour acheminer les événements vers chaque file d’attente.
+    </Warning>
 
     <Tip>
       Nous recommandons vivement de configurer une **Dead-Letter-Queue (DLQ)** pour la file d’attente SQS, afin de faciliter le débogage et les nouvelles tentatives sur les messages ayant échoué. Si une DLQ est configurée, les messages en échec seront remis en file d’attente et retraités jusqu’au nombre de fois défini dans le paramètre `maxReceiveCount` de la DLQ.
@@ -119,7 +123,7 @@ Différents types de défaillances peuvent survenir lors de l’ingestion des do
         }
         ```
 
-        **b.** Dans les propriétés du bucket S3, activez **Event notifications** pour les événements `ObjectCreated` et définissez la file d’attente SQS comme destination. Vous pouvez éventuellement spécifier un préfixe ou un suffixe pour filtrer les objets qui déclenchent les notifications — si c’est le cas, assurez-vous qu’il correspond au chemin défini pour le ClickPipe.
+        **b.** Dans les propriétés du bucket S3, activez **Event notifications**, sélectionnez **All object create events** (`s3:ObjectCreated:*`) comme type d’événement, puis définissez la file d’attente SQS comme destination. Ne sélectionnez pas plutôt des types d’événements individuels : les téléversements peuvent émettre différents événements `ObjectCreated` selon la manière dont ils sont effectués (par exemple, les téléversements multipart émettent `CompleteMultipartUpload` plutôt que `Put`), et les fichiers dont le type d’événement n’est pas sélectionné ne seront jamais remis dans la file d’attente. Vous pouvez éventuellement spécifier un préfixe ou un suffixe pour filtrer les objets qui déclenchent les notifications — si c’est le cas, assurez-vous qu’il correspond au chemin défini pour le ClickPipe.
 
         <Note>
           S3 n’autorise pas plusieurs règles de notification qui se recoupent pour les mêmes types d’événements sur un même bucket. Si vous avez déjà une règle de notification pour les événements `ObjectCreated` sur ce bucket, utilisez plutôt l’approche EventBridge.
@@ -128,9 +132,7 @@ Différents types de défaillances peuvent survenir lors de l’ingestion des do
     </Tabs>
   </Step>
 
-  <Step>
-    ## Configurer un rôle IAM
-
+  <Step title="Configurer un rôle IAM" id="configure-iam-role">
     **1.** Dans la console ClickHouse Cloud, accédez à **Settings &gt; Network security information** et copiez l’**IAM role ARN** de votre service.
 
     **2.** Dans la console AWS, accédez à **IAM &gt; Roles &gt; Create role**. Choisissez **Custom trust policy** et collez le contenu suivant, en remplaçant `<ch-cloud-arn>` par l’**IAM role ARN** copié à l’étape précédente :
@@ -191,12 +193,10 @@ Différents types de défaillances peuvent survenir lors de l’ingestion des do
     ```
   </Step>
 
-  <Step>
-    ## Créer un ClickPipe en mode non ordonné
-
+  <Step title="Créer un ClickPipe en mode non ordonné" id="create-clickpipe">
     **1.** Dans la console ClickHouse Cloud, accédez à **Sources de données &gt; Créer un ClickPipe** et sélectionnez **Amazon S3**. Renseignez les informations nécessaires pour vous connecter à votre bucket S3. Sous **Méthode d’authentification**, choisissez **IAM role** et fournissez l’ARN du rôle que vous avez créé à l’étape précédente.
 
-    **2.** Sous **Données entrantes**, activez **Ingestion continue**. Sélectionnez **N’importe quel ordre** comme mode d’ingestion et indiquez l’**URL de la file d’attente SQS** associée à votre bucket.
+    **2.** Sous **Données entrantes**, activez **Ingestion continue**. Sélectionnez **N’importe quel ordre** comme mode d’ingestion et indiquez l’**URL de la file d’attente SQS** associée à votre bucket. La file d’attente doit être utilisée exclusivement par ce ClickPipe — voir [Créer une file d’attente Amazon SQS](#create-sqs-queue).
 
     **3.** Sous **Informations d’analyse**, définissez une **clé de tri** pour la table cible. Apportez les ajustements nécessaires au schéma mappé, puis configurez un rôle pour l’utilisateur de base de données ClickPipes.
 

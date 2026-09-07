@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/SharedMutex.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
@@ -10,6 +13,12 @@ namespace DB
 class ColumnString;
 
 /// Mapping between identifiers and tags which are collected in the context of the currently executed query.
+///
+/// Identifiers can be of any type: they are stored in serialized form,
+/// so lookups must use the same type of identifiers which was used to store them.
+/// Identifiers of all types share the same map, so identifiers of different types are treated as the same
+/// identifier if their serialized forms are identical (for example, UInt64 and Int64 with the same bit pattern,
+/// or UUID and FixedString(16) with the same bytes).
 ///
 /// Set of tags are always sorted.
 ///
@@ -46,13 +55,10 @@ public:
     /// A group is just an integer.
     using Group = UInt64;
 
-    /// Adds mapping between a specified identifier and a set of tags to the collector.
-    /// The function assigns a group to that set of tags and returns it.
-    template <typename IDType>
-    void storeTags(const IDType & id, const TagNamesAndValuesPtr & tags);
-
-    template <typename IDType>
-    void storeTags(const VectorWithMemoryTracking<IDType> & ids, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+    /// Adds mapping between identifiers from a column and sets of tags to the collector.
+    /// `id_column` is allowed to be Nullable, in that case rows with NULL identifiers are skipped.
+    /// `tags_vector` must contain one element per row of `id_column`.
+    void storeTags(const ColumnPtr & id_column, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
 
     /// Returns the group assigned to a specified set of tags.
     /// If that set of tags hasn't been added to the collector yet then this functions adds it.
@@ -77,20 +83,15 @@ public:
     VectorWithMemoryTracking<String> extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract) const;
     void extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const;
 
-    /// Returns the group assigned to the set of tags which was added to the collector
-    /// with a specified identifier.
-    template <typename IDType>
-    Group getGroupByID(const IDType & id) const;
+    /// Returns the groups assigned to the sets of tags which were added to the collector
+    /// with identifiers from a column. Throws an exception if some identifier is unknown.
+    /// `id_column` must not be Nullable.
+    VectorWithMemoryTracking<Group> getGroupByID(const ColumnPtr & id_column) const;
 
-    template <typename IDType>
-    VectorWithMemoryTracking<Group> getGroupByID(const VectorWithMemoryTracking<IDType> & ids) const;
-
-    /// Returns the set of tags which was added to the collector with a specified identifier.
-    template <typename IDType>
-    TagNamesAndValuesPtr getTagsByID(const IDType & id) const;
-
-    template <typename IDType>
-    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const VectorWithMemoryTracking<IDType> & ids) const;
+    /// Returns the sets of tags which were added to the collector with identifiers from a column.
+    /// Throws an exception if some identifier is unknown.
+    /// `id_column` must not be Nullable.
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const ColumnPtr & id_column) const;
 
     /// Removes a tag from a group and returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
@@ -193,20 +194,10 @@ private:
 
     std::unordered_map<TagsKey, Group, Hash, Equal> groups_for_tags TSA_GUARDED_BY(mutex);
 
-    template <typename IDType>
-    struct IDMap
-    {
-        std::unordered_map<IDType, Group> groups_by_id;
-    };
-
-    template <typename IDType>
-    IDMap<IDType> & getIDMap() TSA_REQUIRES(mutex);
-
-    template <typename IDType>
-    const IDMap<IDType> & getConstIDMap() const TSA_REQUIRES_SHARED(mutex);
-
-    IDMap<UInt64> uint64_id_map TSA_GUARDED_BY(mutex);
-    IDMap<UInt128> uint128_id_map TSA_GUARDED_BY(mutex);
+    /// Identifiers are stored in serialized form, the keys of `groups_by_id` point to memory owned by `ids_arena`.
+    using GroupsByID = HashMapWithSavedHash<std::string_view, Group>;
+    Arena ids_arena TSA_GUARDED_BY(mutex);
+    GroupsByID groups_by_id TSA_GUARDED_BY(mutex);
 };
 
 }

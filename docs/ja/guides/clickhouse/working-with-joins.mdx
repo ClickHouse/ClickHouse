@@ -52,7 +52,7 @@ ClickHouseは、次のJOINの種類をサポートしています。
   ## INNER JOIN
 </div>
 
-`INNER JOIN` は、結合キーで一致する各行の組み合わせごとに、左側のテーブルの行のカラム値と右側のテーブルの行のカラム値を組み合わせて返します。
+`INNER JOIN` は、結合キーで一致する各行の組み合わせごとに、左テーブルの行のカラム値と右テーブルの行のカラム値を組み合わせて返します。
 1 つの行に複数の一致がある場合は、該当するすべての一致が返されます (つまり、結合キーが一致する行については [デカルト積](https://en.wikipedia.org/wiki/Cartesian_product) が生成されます) 。
 
 <Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
@@ -146,7 +146,7 @@ LIMIT 10;
 </div>
 
 `CROSS JOIN` は、結合キーを考慮せずに、2つのテーブルの完全なデカルト積を生成します。
-左側のテーブルの各行は、右側のテーブルの各行と組み合わされます。
+左テーブルの各行は、右テーブルの各行と組み合わされます。
 
 <Image img="/images/starter_guides/joins/cross_join.webp" alt="クロス結合" />
 
@@ -237,7 +237,7 @@ LIMIT 10;
 ALL
 ```
 
-また、前述のとおり、`RIGHT OUTER JOIN` では `OUTER` キーワードを省略でき、さらに任意で `ALL` キーワードを追加することもできるため、`ALL RIGHT JOIN` と書いても正しく動作します。
+また、前述のとおり、`RIGHT OUTER JOIN` では `OUTER` キーワードを省略でき、さらに任意で `ALL` キーワードを追加することもできるため、`ALL RIGHT JOIN` と書いても正しく動作します.
 
 <div id="left--right-semi-join">
   ## (LEFT / RIGHT) SEMI JOIN
@@ -398,7 +398,7 @@ INNER ANY JOIN right_table AS r ON l.c = r.c;
 </div>
 
 `ASOF JOIN` は、厳密ではない一致を可能にします。
-左側のテーブルの行に対して右側のテーブルに完全一致する行がない場合は、代わりに右側のテーブルから最も近い行が一致として使われます。
+左テーブルの行に対して右テーブルに完全一致する行がない場合は、代わりに右テーブルから最も近い行が一致として使われます。
 
 これは時系列分析で特に有用で、クエリの複雑さを大幅に抑えられます。
 
@@ -453,8 +453,8 @@ final_price:        9645
 </Note>
 
 <div id="summary">
-  ## 概要
+  ## まとめ
 </div>
 
-このガイドでは、ClickHouse が標準的な SQL JOIN の型をすべてサポートしているほか、分析クエリに対応するための特殊な JOIN もサポートしていることを説明します。
-JOIN の詳細については、[JOIN](/ja/reference/statements/select/join)ステートメントのドキュメントを参照してください。
+このガイドでは、ClickHouse が標準的な SQL の JOIN の種類をすべてサポートしていることに加え、分析クエリに対応するための特殊な JOIN もサポートしていることを説明します。
+JOIN の詳細については、[JOIN](/ja/reference/statements/select/join) ステートメントのドキュメントを参照してください。

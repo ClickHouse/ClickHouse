@@ -1,0 +1,356 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouse Cloud",
+      "pages": [
+        {
+          "group": "开始使用",
+          "pages": [
+            "zh/products/cloud/getting-started/intro",
+            "zh/products/cloud/getting-started/resource-tour"
+          ],
+          "root": "zh/products/cloud/getting-started/cloud-get-started"
+        },
+        {
+          "group": "功能",
+          "pages": [
+            "zh/products/cloud/features/cloud-tiers",
+            "zh/products/cloud/features/cli",
+            "zh/products/cloud/features/integrations",
+            "zh/products/cloud/features/data-catalogs",
+            "zh/products/cloud/reference/architecture",
+            "zh/products/cloud/reference/supported-regions",
+            {
+              "expanded": false,
+              "group": "SQL 控制台",
+              "pages": [
+                "zh/products/cloud/features/sql-console-features/sql-console",
+                "zh/products/cloud/features/sql-console-features/query-insights",
+                "zh/products/cloud/features/sql-console-features/query-endpoints",
+                "zh/products/cloud/features/sql-console-features/dashboards",
+                "zh/products/cloud/features/sql-console-features/clickstack",
+                "zh/products/cloud/features/sql-console-features/user-defined-functions"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "基础设施",
+              "pages": [
+                {
+                  "group": "自动扩缩容",
+                  "pages": [
+                    "zh/products/cloud/features/autoscaling/vertical",
+                    "zh/products/cloud/features/autoscaling/horizontal",
+                    "zh/products/cloud/features/autoscaling/make-before-break",
+                    "zh/products/cloud/features/autoscaling/idling",
+                    "zh/products/cloud/features/autoscaling/scaling-recommendations",
+                    "zh/products/cloud/features/autoscaling/scheduled-scaling"
+                  ],
+                  "root": "zh/products/cloud/features/autoscaling/overview"
+                },
+                "zh/products/cloud/features/infrastructure/parallel-replicas",
+                "zh/products/cloud/features/infrastructure/deployment-options",
+                "zh/products/cloud/features/infrastructure/shared-catalog",
+                "zh/products/cloud/features/infrastructure/shared-merge-tree",
+                "zh/products/cloud/features/infrastructure/warehouses"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Admin",
+              "pages": [
+                {
+                  "group": "Cloud API",
+                  "pages": [
+                    "zh/products/cloud/features/admin-features/api/api-overview",
+                    "zh/products/cloud/features/admin-features/api/openapi",
+                    "zh/products/cloud/features/admin-features/api/postman"
+                  ],
+                  "root": "zh/products/cloud/features/admin-features/api/index"
+                },
+                "zh/products/cloud/features/admin-features/upgrades"
+              ]
+            },
+            "zh/products/cloud/features/security",
+            {
+              "expanded": false,
+              "group": "监控",
+              "pages": [
+                "zh/products/cloud/features/monitoring/overview",
+                "zh/products/cloud/features/monitoring/cloud-console",
+                "zh/products/cloud/features/monitoring/advanced-dashboard",
+                "zh/products/cloud/features/monitoring/notifications",
+                "zh/products/cloud/features/monitoring/prometheus",
+                "zh/products/cloud/features/monitoring/system-tables",
+                "zh/products/cloud/features/monitoring/integrations"
+              ]
+            },
+            {
+              "group": "备份",
+              "pages": [
+                "zh/products/cloud/features/backups/faq"
+              ],
+              "root": "zh/products/cloud/features/backups/overview"
+            },
+            "zh/products/cloud/features/support",
+            {
+              "expanded": false,
+              "group": "AI/ML",
+              "pages": [
+                "zh/products/cloud/features/ai-ml/ask-ai",
+                "zh/products/cloud/features/ai-ml/aichat/using-ai-chat",
+                "zh/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+                "zh/products/cloud/features/ai-ml/langfuse",
+                "zh/products/cloud/features/ai-ml/remote-mcp",
+                "zh/products/cloud/features/ai-ml/mcp/remote-mcp",
+                {
+                  "group": "ClickHouse 智能体",
+                  "pages": [
+                    "zh/products/cloud/features/ai-ml/agents/quickstart",
+                    "zh/products/cloud/features/ai-ml/agents/chat",
+                    {
+                      "group": "智能体构建器",
+                      "pages": [
+                        "zh/products/cloud/features/ai-ml/agents/builder/model-parameters",
+                        "zh/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                        "zh/products/cloud/features/ai-ml/agents/builder/web-search",
+                        "zh/products/cloud/features/ai-ml/agents/builder/image-generation",
+                        "zh/products/cloud/features/ai-ml/agents/builder/vision",
+                        "zh/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                        "zh/products/cloud/features/ai-ml/agents/builder/skills",
+                        "zh/products/cloud/features/ai-ml/agents/builder/subagents"
+                      ],
+                      "root": "zh/products/cloud/features/ai-ml/agents/builder/index"
+                    },
+                    "zh/products/cloud/features/ai-ml/agents/prompts",
+                    "zh/products/cloud/features/ai-ml/agents/memory",
+                    "zh/products/cloud/features/ai-ml/agents/marketplace",
+                    "zh/products/cloud/features/ai-ml/agents/sharing-and-access"
+                  ],
+                  "root": "zh/products/cloud/features/ai-ml/agents/index"
+                },
+                "zh/products/cloud/features/ai-ml/model-developer-terms"
+              ],
+              "root": "zh/products/cloud/features/ai-ml/index"
+            }
+          ]
+        },
+        {
+          "group": "Cloud 参考文档",
+          "pages": [
+            "zh/products/cloud/reference/service-uptime",
+            "zh/products/cloud/reference/account-close",
+            "zh/products/cloud/reference/data-resiliency",
+            "zh/products/cloud/reference/settings",
+            "zh/products/cloud/reference/security/console-roles",
+            "zh/products/cloud/reference/security/audit-logging",
+            "zh/products/cloud/reference/security/compliance-overview",
+            "zh/products/cloud/reference/security/ai-compliance",
+            "zh/products/cloud/reference/personal-data-access"
+          ],
+          "root": "zh/products/cloud/reference/index"
+        },
+        {
+          "group": "计费",
+          "pages": [
+            "zh/products/cloud/reference/billing/billing-overview",
+            {
+              "expanded": false,
+              "group": "市场",
+              "pages": [
+                "zh/products/cloud/reference/billing/marketplace/overview",
+                "zh/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
+                "zh/products/cloud/reference/billing/marketplace/aws-marketplace-payg",
+                "zh/products/cloud/reference/billing/marketplace/azure-marketplace-committed",
+                "zh/products/cloud/reference/billing/marketplace/azure-marketplace-payg",
+                "zh/products/cloud/reference/billing/marketplace/gcp-marketplace-committed",
+                "zh/products/cloud/reference/billing/marketplace/gcp-marketplace-payg",
+                "zh/products/cloud/reference/billing/marketplace/migrate-marketplace-payg-committed"
+              ],
+              "root": "zh/products/cloud/reference/billing/marketplace/index"
+            },
+            {
+              "expanded": false,
+              "group": "ClickPipes",
+              "pages": [
+                "zh/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+                "zh/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
+              ],
+              "root": "zh/products/cloud/reference/billing/clickpipes/index"
+            },
+            "zh/products/cloud/reference/billing/network-data-transfer",
+            "zh/products/cloud/reference/billing/payment-thresholds",
+            "zh/products/cloud/reference/billing/spend-alerts",
+            "zh/products/cloud/reference/billing/managing-payment-methods",
+            "zh/products/cloud/reference/billing/billing-compliance"
+          ],
+          "root": "zh/products/cloud/reference/billing/index"
+        },
+        {
+          "group": "指南",
+          "pages": [
+            {
+              "group": "最佳实践",
+              "pages": [
+                "zh/products/cloud/guides/best-practices/multitenancy",
+                "zh/products/cloud/guides/best-practices/usagelimits"
+              ],
+              "root": "zh/products/cloud/guides/best-practices/index"
+            },
+            {
+              "expanded": false,
+              "group": "通用",
+              "pages": [
+                "zh/products/cloud/guides/cloud-compatibility",
+                "zh/products/cloud/guides/production-readiness"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "迁移",
+              "pages": [
+                "zh/products/cloud/guides/migration/upload-a-csv-file",
+                "zh/products/cloud/guides/migration/oss-to-cloud-backup-restore"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "SQL 控制台",
+              "pages": [
+                "zh/products/cloud/guides/sql-console/connection-details",
+                "zh/products/cloud/guides/sql-console/query-endpoints"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "备份",
+              "pages": [
+                "zh/products/cloud/guides/backups/review-and-restore-backups",
+                "zh/products/cloud/guides/backups/configurable-backups",
+                {
+                  "expanded": false,
+                  "group": "使用自有备份",
+                  "pages": [
+                    "zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
+                    "zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
+                    "zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands"
+                  ]
+                }
+              ],
+              "root": "zh/products/cloud/guides/backups/index"
+            },
+            {
+              "expanded": false,
+              "group": "数据源",
+              "pages": [
+                "zh/products/cloud/guides/data-sources/cloud-endpoints-api",
+                "zh/products/cloud/guides/data-sources/accessing-s3-data-securely",
+                "zh/products/cloud/guides/data-sources/secure-azure",
+                "zh/products/cloud/guides/data-sources/secure-gcs",
+                "zh/products/cloud/guides/data-sources/accessing-iceberg-data-securely"
+              ],
+              "root": "zh/products/cloud/guides/data-sources/index"
+            },
+            {
+              "expanded": false,
+              "group": "基础设施",
+              "pages": [
+                {
+                  "expanded": false,
+                  "group": "部署模式",
+                  "pages": [
+                    "zh/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
+                    "zh/products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
+                    "zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                  ]
+                }
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "安全",
+              "pages": [
+                {
+                  "expanded": false,
+                  "group": "云访问管理",
+                  "pages": [
+                    "zh/products/cloud/guides/security/cloud-access-management/manage-my-account",
+                    "zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                    "zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                    "zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+                    "zh/products/cloud/guides/security/cloud-access-management/manage-database-users",
+                    "zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
+                    "zh/products/cloud/guides/security/cloud-access-management/scim-setup",
+                    "zh/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
+                    "zh/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
+                    "zh/products/cloud/guides/security/saml-sso-removal"
+                  ],
+                  "root": "zh/products/cloud/guides/security/cloud-access-management/index"
+                },
+                {
+                  "expanded": false,
+                  "group": "连接",
+                  "pages": [
+                    "zh/products/cloud/guides/security/connectivity/setting-ip-filters",
+                    {
+                      "expanded": false,
+                      "group": "私有网络连接",
+                      "pages": [
+                        "zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
+                        "zh/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
+                        "zh/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
+                      ],
+                      "root": "zh/products/cloud/guides/security/connectivity/private-networking/index"
+                    }
+                  ]
+                },
+                {
+                  "expanded": false,
+                  "group": "审计日志",
+                  "pages": [
+                    "zh/products/cloud/guides/security/audit-logging/console-audit-log",
+                    "zh/products/cloud/guides/security/audit-logging/database-audit-log",
+                    "zh/products/cloud/guides/security/audit-logging/byoc-security-playbook"
+                  ],
+                  "root": "zh/products/cloud/guides/security/audit-logging/index"
+                },
+                {
+                  "expanded": false,
+                  "group": "数据安全",
+                  "pages": [
+                    "zh/products/cloud/guides/security/data-masking",
+                    "zh/products/cloud/guides/security/cmek"
+                  ]
+                },
+                {
+                  "expanded": false,
+                  "group": "合规",
+                  "pages": [
+                    "zh/products/cloud/guides/security/compliance/hipaa-onboarding",
+                    "zh/products/cloud/guides/security/compliance/pci-onboarding"
+                  ]
+                }
+              ]
+            }
+          ],
+          "root": "zh/products/cloud/guides/index"
+        },
+        {
+          "group": "API 参考文档",
+          "openapi": {
+            "directory": "zh/products/cloud/api-reference",
+            "source": "_specs/cloud-openapi.json"
+          },
+          "pages": {
+            "$ref": "./api-reference/navigation.json"
+          }
+        }
+      ]
+    },
+    {
+      "$ref": "../bring-your-own-cloud/navigation.json"
+    }
+  ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
+  "item": "ClickHouse Cloud"
+}

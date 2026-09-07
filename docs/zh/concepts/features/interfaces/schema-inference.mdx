@@ -2000,7 +2000,7 @@ $$)
   ### Avro
 </div>
 
-在 Avro 格式中，ClickHouse 会从数据中读取 schema，并根据以下类型对应关系将其转换为 ClickHouse schema：
+在 Avro 格式中，ClickHouse 会从数据中读取 schema，并根据以下类型映射将其转换为 ClickHouse schema：
 
 | Avro 数据类型                          | ClickHouse 数据类型                                                       |
 | ---------------------------------- | --------------------------------------------------------------------- |
@@ -2019,7 +2019,7 @@ $$)
 | `string (uuid)` *                  | [UUID](/zh/reference/data-types/uuid)                                    |
 | `binary (decimal)` *               | [Decimal(P, S)](/zh/reference/data-types/decimal)                        |
 
-* [Avro 逻辑类型](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+* [Avro 逻辑类型](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 不支持其他 Avro 类型。
 

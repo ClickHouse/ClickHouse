@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """
-Script to automatically extract quick-start metadata and update home.mdx
+Script to automatically extract quick-start metadata and regenerate the
+quickstarts-data.jsx modules
 
 This script scans the docs/get-started/quickstarts/ directory for .mdx files,
-extracts metadata from their frontmatter, and updates the quickStartsData array
-in home.mdx.
+extracts metadata from their frontmatter, and writes it to
+snippets/components/QuickStartsGrid/quickstarts-data.jsx, which home.mdx
+imports. It does the same for every locale tree (docs/<locale>/get-started/
+quickstarts/ -> snippets/<locale>/components/QuickStartsGrid/
+quickstarts-data.jsx), so the cards pick up the translated titles and
+descriptions from the locale pages' frontmatter. The data lives in a snippets
+module rather than inline in home.mdx because the translation pipeline
+translates snippet modules but not `export const` literals inside pages
+(same layout as KBExplorer's kb-data.jsx).
 
 Usage:
     python scripts/update_quickstarts.py
@@ -13,7 +21,26 @@ Usage:
 import re
 import json
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Tuple
+
+def unquote_scalar(value: str) -> str:
+    """Unquote a single YAML scalar, honoring the escaping the docs frontmatter
+    actually uses.
+
+    Inside a single-quoted scalar a doubled '' is the one literal apostrophe
+    YAML allows ('l''immobilier' -> l'immobilier); inside a double-quoted scalar
+    a backslash escapes the next character. The previous code stripped the outer
+    quotes and emitted the rest verbatim, so escaped apostrophes leaked into the
+    generated card data. A real YAML parser would be ideal, but PyYAML is not
+    available in the docs CI image, so unescape the two quoting styles by hand.
+    """
+    value = value.strip()
+    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
+        return value[1:-1].replace("''", "'")
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        # Unescape \" and \\ left-to-right (re.sub matches non-overlapping).
+        return re.sub(r'\\(["\\])', r'\1', value[1:-1])
+    return value
 
 def parse_frontmatter(content: str) -> Dict[str, Any]:
     """
@@ -45,20 +72,29 @@ def parse_frontmatter(content: str) -> Dict[str, Any]:
             key = key.strip()
             value = value.strip()
 
-            # Remove quotes from strings
-            value = value.strip('"').strip("'")
-
-            # Handle arrays like [item1, item2]
+            # Handle arrays like [item1, item2]. Brackets are unquoted, so this
+            # is checked before unquoting the scalar form below.
             if value.startswith('[') and value.endswith(']'):
                 # Parse array
                 array_content = value[1:-1]
-                items = [item.strip().strip('"').strip("'")
+                items = [unquote_scalar(item)
                         for item in array_content.split(',')]
                 frontmatter[key] = [item for item in items if item]
             else:
-                frontmatter[key] = value
+                frontmatter[key] = unquote_scalar(value)
 
     return frontmatter
+
+def slugify_tag(value: str) -> str:
+    """
+    Normalize a frontmatter tag value to the stable slug the QuickStartsGrid
+    filter options match against ('AI/ML' -> 'ai-ml'). Slugs survive the
+    translation pipeline (which localizes display labels but leaves
+    identifier-like strings alone), so filtering keeps working on locale pages.
+    """
+    slug = re.sub(r'[^a-z0-9]+', '-', value.lower()).strip('-')
+    # 'OSS' means self-managed; the grid exposes only the latter as an option.
+    return {'oss': 'self-managed'}.get(slug, slug)
 
 def extract_quickstart_data(file_path: Path, base_dir: Path) -> Dict[str, Any]:
     """
@@ -114,10 +150,11 @@ def find_quickstart_files(quickstarts_dir: Path) -> List[Path]:
     # Find both .md and .mdx files
     for pattern in ['**/*.mdx', '**/*.md']:
         for file_path in quickstarts_dir.glob(pattern):
-            # Skip home.mdx and files in underscore-prefixed directories
-            if file_path.name == 'home.mdx':
+            # Skip home.mdx, the README, and anything underscore-prefixed
+            # (templates like _TEMPLATE.mdx and helper directories)
+            if file_path.name in ('home.mdx', 'README.md'):
                 continue
-            if any(part.startswith('_') for part in file_path.relative_to(quickstarts_dir).parts[:-1]):
+            if any(part.startswith('_') for part in file_path.relative_to(quickstarts_dir).parts):
                 continue
             files.append(file_path)
 
@@ -137,9 +174,14 @@ def generate_badges(use_cases: List[str], products: List[str]) -> str:
     Returns:
         Badge components as a string
     """
-    # First line: muted text back-link (arrow icon + label), styled to match the
-    # homepage links (e.g. "Read the quickstart" / "Set up docs MCP server").
-    first_line = '<a href="home" className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors font-normal no-underline"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>All quickstarts</a>'
+    # First line: muted text back-link to the quickstarts home. Its markup and
+    # styling live in a single shared partial,
+    # get-started/quickstarts/_back-to-quickstarts.mdx, which every quickstart
+    # page imports as <BackToQuickstarts /> (Mintlify resolves the import to the
+    # localized copy per locale). Keeping the link in one partial avoids
+    # duplicating the styling across every page and locale; the page's import of
+    # the partial is what makes this tag resolve.
+    first_line = '<BackToQuickstarts />'
 
     # Second line: all other badges
     second_line_badges = []
@@ -154,10 +196,11 @@ def generate_badges(use_cases: List[str], products: List[str]) -> str:
         display_text = use_case.title() if use_case.lower() != 'ai/ml' else 'AI/ML'
         second_line_badges.append(f'<Badge size="lg" color="blue">{display_text}</Badge>')
 
-    # Add product badges (orange)
+    # Add product badges (orange). Brand/acronym names must not be title-cased
+    # ('OSS'.title() == 'Oss').
+    product_labels = {'oss': 'OSS', 'chdb': 'chDB', 'clickpipes': 'ClickPipes', 'clickstack': 'ClickStack'}
     for product in products:
-        # Capitalize properly
-        display_text = product.title()
+        display_text = product_labels.get(product.lower(), product.title())
         second_line_badges.append(f'<Badge size="lg" color="orange">{display_text}</Badge>')
 
     # Combine with line break and add margin
@@ -165,9 +208,14 @@ def generate_badges(use_cases: List[str], products: List[str]) -> str:
 
     return f'{first_line}\n<div className="mt-2 flex flex-wrap gap-2">\n{second_line}\n</div>'
 
-def update_quickstart_badges(file_path: Path, use_cases: List[str], products: List[str]) -> None:
+def update_quickstart_badges(file_path: Path, use_cases: List[str], products: List[str]) -> Optional[str]:
     """
-    Update the autogenerated badges section in a quick-start MDX file.
+    Refresh the autogenerated badges section of a quick-start MDX file.
+
+    Returns the updated page content, or None when the badge block is already
+    up to date. Nothing is written here: the caller stages the content and
+    flushes it only after the whole scan has succeeded, so a failure on a
+    later page cannot leave the tree half-regenerated.
 
     Args:
         file_path: Path to the quick-start MDX file
@@ -183,146 +231,171 @@ def update_quickstart_badges(file_path: Path, use_cases: List[str], products: Li
     # Pattern to match the autogenerated section
     pattern = r'\{/\* AUTOGENERATED_START \*/\}.*?\{/\* AUTOGENERATED_END \*/\}'
 
-    # Check if markers exist
+    # Without the markers the badge block cannot be updated and the page would
+    # silently keep stale badges, so this is an error, not a warning.
     if not re.search(pattern, content, re.DOTALL):
-        print(f"    Warning: No AUTOGENERATED markers found in {file_path.name}")
-        return
+        raise ValueError(
+            "no {/* AUTOGENERATED_START */}/{/* AUTOGENERATED_END */} markers "
+            "found; cannot update the badge block (copy the marker pair from "
+            "_TEMPLATE.mdx)"
+        )
 
     # Replace the content between markers
     replacement = f'{{/* AUTOGENERATED_START */}}\n{badges}\n{{/* AUTOGENERATED_END */}}'
-    content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+    updated = re.sub(pattern, replacement, content, flags=re.DOTALL)
+    return updated if updated != content else None
 
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(content)
+def render_data_module(quickstarts: List[Dict[str, Any]]) -> str:
+    """Render the quickstarts-data.jsx module body.
 
-def generate_javascript_array(quickstarts: List[Dict[str, Any]]) -> str:
+    Tag values are emitted as slugs (the form the grid's filter options match
+    against); the in-page badges keep the raw frontmatter values.
+
+    The data is emitted as JSON, which is valid JS object-literal syntax, so
+    titles/descriptions with apostrophes, backticks, smart quotes, or non-Latin
+    text need no special escaping. ensure_ascii=False keeps non-ASCII readable.
     """
-    Generate JavaScript array code from quick-start data.
+    slugged = [
+        {**qs,
+         'useCases': [slugify_tag(v) for v in qs.get('useCases', [])],
+         'products': [slugify_tag(v) for v in qs.get('products', [])]}
+        for qs in quickstarts
+    ]
+    body = json.dumps(slugged, indent=2, ensure_ascii=False)
+    return (
+        "// AUTO-GENERATED by _site/scripts/update_quickstarts.py — do not edit by hand.\n"
+        "// Re-run the script to refresh the quick-start card data.\n"
+        f"export const quickStartsData = {body};\n"
+    )
 
-    Args:
-        quickstarts: List of quick-start dictionaries
+def build_quickstarts(quickstarts_dir: Path, project_root: Path,
+                      update_badges: bool,
+                      staged: Dict[Path, str]) -> Tuple[List[Dict[str, Any]], int]:
+    """Extract quick-start data from every page in quickstarts_dir.
 
-    Returns:
-        JavaScript code as a string
+    Returns the extracted data and the number of pages that failed. Failed
+    pages are reported but do not stop the scan, so one run surfaces every
+    problem; the caller must treat a non-zero failure count as an error
+    rather than shipping data that silently omits the failed pages.
+
+    Refreshed badge blocks are added to `staged` (path -> new content), not
+    written: the caller flushes them only after every scan has succeeded.
     """
-    lines = ['export const quickStartsData = [']
+    files = find_quickstart_files(quickstarts_dir)
+    quickstarts = []
+    failures = 0
+    seen_ids = {}
+    for file_path in files:
+        try:
+            data = extract_quickstart_data(file_path, project_root)
 
-    for qs in quickstarts:
-        lines.append('  {')
+            # Ids are the filename stem, so the recursive scan lets two pages in
+            # different subdirectories collide (foo/setup.mdx and bar/setup.mdx
+            # both -> 'setup'). A collision would silently drop one page from the
+            # id->page map used for cross-locale tag inheritance, and emit
+            # duplicate ids for React keys and featured lookup, so fail closed
+            # (the non-zero failure count below blocks every write).
+            prior = seen_ids.get(data['id'])
+            if prior is not None:
+                raise ValueError(
+                    f"duplicate quickstart id {data['id']!r}; also produced by "
+                    f"{prior.relative_to(quickstarts_dir)}. Ids are the filename "
+                    "stem and must be unique across the tree — rename one file."
+                )
+            seen_ids[data['id']] = file_path
 
-        # Add each field
-        for key, value in qs.items():
-            if isinstance(value, list):
-                # Format arrays
-                array_items = ', '.join(f"'{item}'" for item in value)
-                lines.append(f"    {key}: [{array_items}],")
-            elif isinstance(value, str):
-                # Escape single quotes in strings
-                escaped_value = value.replace("'", "\\'")
-                lines.append(f"    {key}: '{escaped_value}',")
-            else:
-                lines.append(f"    {key}: {json.dumps(value)},")
+            if update_badges:
+                updated = update_quickstart_badges(file_path, data['useCases'], data['products'])
+                if updated is not None:
+                    staged[file_path] = updated
 
-        lines.append('  },')
-
-    lines.append('];')
-
-    return '\n'.join(lines)
-
-def update_home_mdx(home_path: Path, quickstarts_data: str) -> None:
-    """
-    Update the home.mdx file with new quickstarts data.
-
-    Args:
-        home_path: Path to home.mdx
-        quickstarts_data: JavaScript array code as a string
-    """
-    with open(home_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    # Find the quickStartsData array and replace it
-    # Match from "export const quickStartsData = [" to the closing "];"
-    pattern = r'export const quickStartsData = \[.*?\];'
-
-    if not re.search(pattern, content, re.DOTALL):
-        print("Warning: Could not find quickStartsData array in home.mdx")
-        print("Adding it before the QuickStartsGrid component...")
-
-        # Find the component usage and add data before it
-        component_pattern = r'(<QuickStartsGrid)'
-        if re.search(component_pattern, content):
-            content = re.sub(
-                component_pattern,
-                f'{quickstarts_data}\n\n{{/* Render the QuickStartsGrid component */}}\n\\1',
-                content
-            )
-        else:
-            print("Error: Could not find QuickStartsGrid component in home.mdx")
-            return
-    else:
-        # Replace existing data
-        content = re.sub(pattern, quickstarts_data, content, flags=re.DOTALL)
-
-    with open(home_path, 'w', encoding='utf-8') as f:
-        f.write(content)
-
-    print(f"✓ Updated {home_path}")
+            quickstarts.append(data)
+            print(f"  ✓ {file_path.name}: {data['title']}")
+        except Exception as e:
+            print(f"  ✗ {file_path.name}: Error - {e}")
+            failures += 1
+    return quickstarts, failures
 
 def main():
     """Main function to run the script."""
     # Get the project root directory (this script lives in _site/scripts/)
     project_root = Path(__file__).resolve().parents[2]
 
-    # Paths
     quickstarts_dir = project_root / 'get-started' / 'quickstarts'
-    home_path = quickstarts_dir / 'home.mdx'
-
     if not quickstarts_dir.exists():
         print(f"Error: Quick-starts directory not found: {quickstarts_dir}")
         return 1
 
-    if not home_path.exists():
-        print(f"Error: home.mdx not found: {home_path}")
-        return 1
+    # Every write (badge blocks and data modules) is staged here and flushed
+    # only after all trees have scanned cleanly, so a failure anywhere leaves
+    # the tree untouched instead of half-regenerated.
+    staged = {}
 
+    # English tree: extract data and refresh the in-page badge blocks.
     print(f"Scanning for quick-start files in {quickstarts_dir}...")
-
-    # Find all quick-start files
-    files = find_quickstart_files(quickstarts_dir)
-
-    if not files:
-        print("No quick-start files found (excluding home.mdx)")
-        return 0
-
-    print(f"Found {len(files)} quick-start file(s)")
-
-    # Extract metadata from each file and update badges
-    quickstarts = []
-    for file_path in files:
-        try:
-            data = extract_quickstart_data(file_path, project_root)
-            quickstarts.append(data)
-            print(f"  ✓ {file_path.name}: {data['title']}")
-
-            # Update badges in the file
-            update_quickstart_badges(file_path, data['useCases'], data['products'])
-        except Exception as e:
-            print(f"  ✗ {file_path.name}: Error - {e}")
-
+    quickstarts, failures = build_quickstarts(quickstarts_dir, project_root,
+                                              update_badges=True, staged=staged)
     if not quickstarts:
         print("No valid quick-start data extracted")
         return 1
 
-    # Generate JavaScript array
-    print("\nGenerating JavaScript array...")
-    js_array = generate_javascript_array(quickstarts)
+    output_path = (project_root / 'snippets' / 'components' / 'QuickStartsGrid'
+                   / 'quickstarts-data.jsx')
+    staged[output_path] = render_data_module(quickstarts)
+    print(f"✓ Staged {len(quickstarts)} quick-start(s) for {output_path}")
 
-    # Update home.mdx
-    print(f"\nUpdating {home_path}...")
-    update_home_mdx(home_path, js_array)
+    # Locale trees: same extraction against the translated pages, so titles and
+    # descriptions come out localized and hrefs come out locale-prefixed
+    # (extract_quickstart_data derives the href from the path relative to the
+    # project root). Badges are left to the translation pipeline.
+    locales = ['ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh']
+    for locale in locales:
+        locale_dir = project_root / locale / 'get-started' / 'quickstarts'
+        if not locale_dir.exists():
+            print(f"  - {locale}: no quickstarts directory, skipped")
+            continue
+        print(f"\nScanning {locale_dir}...")
+        locale_quickstarts, locale_failures = build_quickstarts(
+            locale_dir, project_root, update_badges=False, staged=staged)
+        failures += locale_failures
+        if not locale_quickstarts:
+            print(f"  - {locale}: no valid quick-start data, skipped")
+            continue
+        # Keep useCases/products canonical English: the grid filters match data
+        # values against its option lists by string equality, and the
+        # translation pipeline translates frontmatter tag values inconsistently.
+        english_by_id = {qs['id']: qs for qs in quickstarts}
+        for entry in locale_quickstarts:
+            english = english_by_id.get(entry['id'])
+            if english is None:
+                # A localized page whose id has no English counterpart cannot
+                # inherit canonical tags, so it would keep its own translated
+                # useCases/products — which slugify_tag collapses to "" for
+                # non-Latin text, shipping a card with an unfilterable tag.
+                # Fail closed rather than emit broken explorer data (the
+                # non-zero failure count below blocks all writes).
+                print(f"  ✗ {locale}/{entry['id']}: no English quickstart with "
+                      "this id; the localized tags cannot be made canonical. "
+                      "Rename this page to match its English counterpart, or "
+                      "add the missing English page.")
+                failures += 1
+                continue
+            entry['useCases'] = english['useCases']
+            entry['products'] = english['products']
+        locale_output = (project_root / 'snippets' / locale / 'components'
+                         / 'QuickStartsGrid' / 'quickstarts-data.jsx')
+        staged[locale_output] = render_data_module(locale_quickstarts)
+        print(f"✓ Staged {len(locale_quickstarts)} quick-start(s) for {locale_output}")
 
-    print(f"\n✓ Successfully updated home.mdx with {len(quickstarts)} quick-start(s)")
-    print(f"✓ Updated badges in {len(quickstarts)} quick-start file(s)")
+    if failures:
+        print(f"\n✗ {failures} page(s) failed; nothing was written — "
+              "fix the errors above and re-run.")
+        return 1
+
+    for path, content in staged.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+    print(f"\n✓ Wrote {len(staged)} file(s)")
     return 0
 
 if __name__ == '__main__':

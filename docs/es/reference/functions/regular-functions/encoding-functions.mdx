@@ -100,7 +100,7 @@ Devuelve una cadena de dirección Bech32, compuesta por la parte legible para hu
 **Bech32m predeterminado**
 
 ```sql title=Query
--- Cuando no se proporciona una versión witness, el valor predeterminado es 1, el algoritmo Bech32m actualizado.
+-- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
@@ -111,7 +111,7 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
 **Algoritmo Bech32**
 
 ```sql title=Query
--- Una versión witness igual a 0 producirá una cadena de dirección diferente.
+-- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
@@ -122,8 +122,8 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
 **HRP personalizado**
 
 ```sql title=Query
--- Aunque 'bc' (Mainnet) y 'tb' (Testnet) son los únicos valores hrp permitidos para el
--- formato de dirección SegWit, Bech32 permite cualquier hrp que cumpla los requisitos anteriores.
+-- While 'bc' (Mainnet) and 'tb' (red de pruebas) are the only allowed hrp values for the
+-- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
 ```
 
@@ -134,8 +134,8 @@ abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
 **Dirección de Cosmos SDK (BIP173, sin versión witness)**
 
 ```sql title=Query
--- El uso de la variante 'bech32' codifica datos sin procesar sin un byte de versión witness,
--- compatible con Cosmos SDK, Injective, Osmosis y otras cadenas no SegWit.
+-- Using 'bech32' variant encodes raw data without a witness version byte,
+-- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
 ```
 
@@ -1093,7 +1093,7 @@ Si desea convertir el resultado en un número, puede usar las funciones `reverse
 Admite tanto letras mayúsculas como minúsculas `A-F`.
 No es necesario que el número de dígitos hexadecimales sea par.
 Si es impar, el último dígito se interpreta como la mitad menos significativa del byte `00-0F`.
-Si la cadena de argumento contiene cualquier carácter distinto de un dígito hexadecimal, se devuelve un resultado definido por la implementación (no se lanza ninguna excepción).
+Si la cadena del argumento contiene cualquier carácter distinto de un dígito hexadecimal, se devuelve un resultado definido por la implementación (no se lanza ninguna excepción).
 En el caso de un argumento numérico, `unhex()` no realiza la operación inversa de hex(N).
 
 **Sintaxis**

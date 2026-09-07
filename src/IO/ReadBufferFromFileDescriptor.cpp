@@ -260,7 +260,11 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         if (offset_after_seek_pos > 0)
             ignore(offset_after_seek_pos);
 
-        return seek_pos;
+        /// Return the position we are actually at, not `seek_pos`. With O_DIRECT (`required_alignment > 1`)
+        /// `seek_pos` is `new_pos` rounded down to the alignment, and the difference has just been skipped
+        /// by `ignore` above, so the buffer is positioned at `new_pos`. Returning `seek_pos` would break
+        /// callers that take the returned value as the new position (see `ReadBufferFromEncryptedFile`).
+        return static_cast<off_t>(new_pos);
     }
     /// NOLINTEND(readability-else-after-return)
 }

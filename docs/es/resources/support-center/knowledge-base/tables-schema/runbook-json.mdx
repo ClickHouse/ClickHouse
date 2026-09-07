@@ -1,0 +1,280 @@
+---
+title: 'Runbook: esquema de JSON'
+description: 'Elige el enfoque de esquema adecuado para datos JSON en ClickHouse: columnas tipadas, híbrido, JSON nativo o almacenamiento como String'
+date: 2026-03-20
+tags: ['Runbooks', 'Modelado de datos']
+keywords: ['JSON', 'tipo JSON', 'diseño de esquemas', 'indicaciones de tipo', 'max_dynamic_paths', 'datos semiestructurados', 'esquema dinámico', 'JSONAsObject']
+---
+
+<Note>
+  El tipo de columna JSON está listo para producción a partir de ClickHouse 25.3+. No se recomienda usar versiones anteriores en producción.
+</Note>
+
+Los datos llegan en formato JSON. ClickHouse ofrece varias formas de almacenarlos, desde columnas completamente tipadas hasta un String sin procesar. La opción adecuada depende de lo predecible que sea el esquema y de si se necesitan consultas a nivel de campo.
+
+**Alcance:** Esta página aborda decisiones de diseño de esquemas para almacenar datos JSON. No cubre los [formatos de entrada/salida JSON](/es/reference/formats/JSON/JSON), las [funciones JSON](/es/reference/functions/regular-functions/json-functions) ni la sintaxis de las consultas. Para más información sobre el propio tipo de columna JSON, consulte [Use JSON where appropriate](/es/concepts/best-practices/json-type).
+
+**Asume:** Familiaridad con la [creación de tablas de ClickHouse](/es/reference/statements/create/table), los conceptos básicos de [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree) y la sintaxis de los tipos de columna.
+
+<div id="quick-decision">
+  ## Decisión rápida
+</div>
+
+* **Si** cada campo tiene un tipo conocido y estable, y el esquema rara vez cambia
+  **→** [Columnas tipadas](#typed-columns)
+* **Si** la mayoría de los campos son estables, pero alguna parte es dinámica o impredecible
+  **→** [Híbrido (columnas tipadas + JSON)](#hybrid)
+* **Si** toda la estructura es dinámica, con claves que aparecen y desaparecen entre registros
+  **→** [Columna JSON nativa](#native-json)
+* **Si** los campos dinámicos son pares clave-valor con un tipo de valor uniforme (p. ej., tags de texto, métricas numéricas)
+  **→** [`Map`](#when-map-fits-better) en lugar de JSON
+* **Si** solo se almacena y recupera el blob JSON sin consultas a nivel de campo
+  **→** [Almacenamiento opaco en String](#opaque-storage)
+
+<Note>
+  No confunda el *formato* JSON con el *tipo de columna* JSON. Puede insertar datos en formato JSON (mediante `JSONEachRow`, etc.) en columnas tipadas sin usar en absoluto el tipo de columna `JSON`. La decisión aquí se refiere a los tipos de columna, no a los formatos de entrada.
+</Note>
+
+<div id="approach-details">
+  ## Detalles del enfoque
+</div>
+
+<div id="typed-columns">
+  ### Columnas tipadas
+</div>
+
+**Cuándo usarlo:** La estructura del JSON se conoce por completo en tiempo de diseño. Los campos y los tipos no cambian entre registros. Incluso las estructuras anidadas complejas (arrays de objetos, mapas anidados) pueden expresarse con los tipos [`Array`](/es/reference/data-types/array), [`Tuple`](/es/reference/data-types/tuple) y [`Nested`](/es/reference/data-types/nested-data-structures/index).
+
+**Consideraciones:** Los cambios de esquema requieren `ALTER TABLE`. Los campos inesperados se descartan silenciosamente al insertar, a menos que se actualice el esquema.
+
+<Accordion title="Configuración, verificación y aspectos a tener en cuenta">
+  **Configuración**
+
+  ```sql
+  CREATE TABLE events
+  (
+      `timestamp` DateTime,
+      `service`   LowCardinality(String),
+      `level`     Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+      `message`   String,
+      `host`      LowCardinality(String),
+      `duration_ms` UInt32
+  )
+  ENGINE = MergeTree
+  ORDER BY (service, timestamp)
+  ```
+
+  **Verificación**
+
+  ```sql
+  -- Confirma que los tipos de columna coincidan con lo esperado
+  DESCRIBE TABLE events FORMAT Vertical
+
+  -- Inserta y consulta para validar que el esquema procese correctamente tus datos
+  INSERT INTO events FORMAT JSONEachRow
+  {"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42}
+
+  SELECT service, level, duration_ms FROM events WHERE service = 'api'
+  ```
+
+  **Ten en cuenta**
+
+  * Si insertas datos JSON con `JSONEachRow` y el JSON contiene campos que no están en el esquema, ClickHouse los descarta silenciosamente de forma predeterminada. Establece [`input_format_skip_unknown_fields`](/es/reference/settings/formats#input_format_skip_unknown_fields) en `0` si quieres que se produzcan errores.
+</Accordion>
+
+***
+
+<div id="hybrid">
+  ### Híbrido (columnas tipadas + JSON)
+</div>
+
+**Cuándo usarlo:** Un conjunto básico de campos es estable (marcas de tiempo, ID, códigos de estado), pero parte del payload es dinámica. Por ejemplo, atributos definidos por el usuario, tags, metadatos o campos de extensión que varían entre registros.
+
+**Compensaciones:** Rendimiento completo en las columnas tipadas y flexibilidad en la columna JSON. La columna JSON sigue teniendo sobrecoste en las inserciones y coste de almacenamiento para su parte dinámica.
+
+<Accordion title="Configuración, verificación y aspectos a tener en cuenta">
+  **Configuración**
+
+  ```sql
+  CREATE TABLE events
+  (
+      `timestamp`  DateTime,
+      `service`    LowCardinality(String),
+      `level`      Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+      `message`    String,
+      `host`       LowCardinality(String),
+      `duration_ms` UInt32,
+      `attributes` JSON(
+          max_dynamic_paths = 256,
+          `http.status_code` UInt16,
+          `http.method` LowCardinality(String),
+          SKIP REGEXP 'debug\..*'
+      )
+  )
+  ENGINE = MergeTree
+  ORDER BY (service, timestamp)
+  ```
+
+  **Verificación**
+
+  ```sql
+  -- Inserte datos de ejemplo e inspeccione las rutas inferidas
+  INSERT INTO events FORMAT JSONEachRow
+  {"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42,"attributes":{"http.status_code":200,"http.method":"GET","user.region":"eu-west","custom_tag":"abc"}}
+
+  SELECT JSONAllPathsWithTypes(attributes)
+  FROM events
+  FORMAT PrettyJSONEachRow
+  ```
+
+  **Tenga en cuenta**
+
+  * Use [indicaciones de tipo](/es/reference/data-types/newjson) en las rutas JSON que conozca de antemano. Estas indicaciones evitan la discriminator column y almacenan la ruta como una columna tipada normal, con el mismo rendimiento y sin sobrecoste.
+  * Use `SKIP` o `SKIP REGEXP` para las rutas que nunca consulte (metadatos de depuración, ID internos de tracing) para ahorrar almacenamiento y reducir el número de subcolumnas.
+  * Ajuste `max_dynamic_paths` de forma proporcional al número de rutas distintas que realmente consulta. El valor predeterminado (1024) funciona en la mayoría de los casos. Redúzcalo si su sección dinámica es limitada.
+  * No establezca `max_dynamic_paths` por encima de 10,000. Los valores altos aumentan el consumo de recursos y reducen la eficiencia.
+
+  <Info>
+    **Claves con puntos**
+
+    Las claves con puntos (por ejemplo, `http.status_code`) se tratan como rutas anidadas de forma predeterminada, por lo que `{"http.status_code": 200}` se almacena igual que `{"http": {"status_code": 200}}`. Esto es habitual con los atributos de OTel. Use indicaciones de tipo para controlar cómo se almacenan las rutas con puntos, o habilite `json_type_escape_dots_in_keys` (25.8+).
+  </Info>
+</Accordion>
+
+***
+
+<div id="native-json">
+  ### Columna JSON nativa
+</div>
+
+**Cuándo usarla:** Cuando la estructura es realmente impredecible, con claves que aparecen y desaparecen entre registros. Resulta adecuada para esquemas generados por usuarios, sistemas de plugin o ingestión en data lakes donde no controlas el esquema de origen.
+
+**Compensaciones:** Inserciones más lentas que en las columnas tipadas. Lecturas del objeto completo más lentas que con String. Sobrecarga de almacenamiento por la gestión de subcolumnas. Funciona bien para consultas a nivel de campo sobre rutas específicas.
+
+<Accordion title="Configuración, verificación y aspectos a tener en cuenta">
+  **Configuración**
+
+  ```sql
+  CREATE TABLE dynamic_events
+  (
+      `id`   UInt64,
+      `ts`   DateTime DEFAULT now(),
+      `data` JSON(
+          max_dynamic_paths = 512,
+          `event_type` LowCardinality(String),
+          `version` UInt8
+      )
+  )
+  ENGINE = MergeTree
+  ORDER BY (data.event_type, ts)
+  ```
+
+  Usa el formato [`JSONAsObject`](/es/reference/formats/JSON/JSONAsObject) al insertar documentos JSON completos en una columna JSON. Trata cada línea de entrada como un objeto JSON completo asignado a la columna.
+
+  **Verificación**
+
+  ```sql
+  INSERT INTO dynamic_events (id, data) FORMAT JSONEachRow
+  {"id": 1, "data": {"event_type": "click", "version": 2, "page": "/home", "button_id": "cta-1"}}
+  {"id": 2, "data": {"event_type": "purchase", "version": 1, "item_id": "SKU-99", "amount": 49.99, "currency": "USD"}}
+
+  -- Comprueba qué rutas detectó ClickHouse y sus tipos
+  SELECT JSONAllPathsWithTypes(data) FROM dynamic_events FORMAT PrettyJSONEachRow
+
+  -- Consulta una ruta específica
+  SELECT data.page FROM dynamic_events WHERE data.event_type = 'click'
+  ```
+
+  **Ten en cuenta**
+
+  * Sin indicaciones de tipo, ClickHouse infiere los tipos de cada ruta a partir de los primeros valores que encuentra. Si `score` llega como `"10"` (cadena) en un registro y como `10` (entero) en otro, la ruta obtiene una columna discriminadora y las consultas se vuelven más lentas. Añade indicaciones para las rutas con tipos conocidos.
+  * Cuando el número de rutas supera `max_dynamic_paths`, los valores desbordados se mueven a una [estructura de datos compartida](/es/reference/data-types/newjson#shared-data-structure), lo que reduce el rendimiento de las consultas. Supervísalo con [`JSONDynamicPaths()`](/es/reference/data-types/newjson#introspection-functions) y mantén el límite por debajo de 10.000.
+  * Cada ruta dinámica admite hasta `max_dynamic_types` (32 de forma predeterminada) tipos de datos distintos. Si una sola ruta supera este valor, los tipos adicionales pasan al almacenamiento variant compartido. Esto rara vez importa, salvo que tus datos tengan tipos muy inconsistentes para el mismo campo.
+</Accordion>
+
+***
+
+<div id="opaque-storage">
+  ### Almacenamiento opaco en String
+</div>
+
+**Cuándo usarlo:** Los documentos JSON se almacenan y recuperan completos, y luego se pasan a una aplicación, se archivan o se reenvían a otros sistemas. Sin filtrado a nivel de campo ni agregación dentro de ClickHouse.
+
+**Desventajas:** Inserciones más rápidas y el esquema más simple. No hay consultas a nivel de campo sin análisis en tiempo de ejecución (familia `JSONExtract`), lo cual es lento a gran escala.
+
+<Accordion title="Configuración, verificación y aspectos a tener en cuenta">
+  **Configuración**
+
+  ```sql
+  CREATE TABLE raw_events
+  (
+      `id`        UInt64,
+      `received`  DateTime DEFAULT now(),
+      `payload`   String
+  )
+  ENGINE = MergeTree
+  ORDER BY (received)
+  ```
+
+  **Verificación**
+
+  ```sql
+  INSERT INTO raw_events (id, payload) VALUES
+  (1, '{"type":"click","page":"/home"}'),
+  (2, '{"type":"purchase","item":"SKU-99","amount":49.99}')
+
+  -- Confirma que los datos se recuperan intactos
+  SELECT payload FROM raw_events WHERE id = 1
+
+  -- Verifica que aún puedes extraer campos de forma ad hoc cuando sea necesario
+  SELECT JSONExtractString(payload, 'type') AS event_type FROM raw_events
+  ```
+
+  **Ten en cuenta**
+
+  * Si los requisitos cambian y más adelante necesitas consultas a nivel de campo, tendrás que crear una tabla nueva con columnas tipadas o columnas JSON y rellenarla con los datos históricos. Si existe alguna posibilidad de que consultes campos individuales, empieza mejor con el [enfoque híbrido](#hybrid).
+  * Las funciones `JSONExtract` analizan la cadena en cada consulta. Es aceptable para exploración ad hoc, pero no para dashboards de producción ni workloads con QPS alto.
+  * Considera códecs de compresión (`ZSTD`) en la columna String si los payloads JSON son grandes; comprime bien.
+</Accordion>
+
+<div id="comparison">
+  ## Comparación
+</div>
+
+| Dimensión                         | Columnas tipadas        | Híbrido                                   | JSON nativo                             | String                                  |
+| --------------------------------- | ----------------------- | ----------------------------------------- | --------------------------------------- | --------------------------------------- |
+| **Rendimiento de inserción**      | Más rápido              | Rápido                                    | Moderado                                | Más rápido                              |
+| **Consultas a nivel de campo**    | Más rápidas             | Rápidas (tipadas); buenas (JSON con hint) | Buenas (con hint); más lentas (Dynamic) | Lentas (parsing en tiempo de ejecución) |
+| **Lecturas de objetos completos** | Rápidas                 | Moderadas                                 | Lentas                                  | Más rápidas                             |
+| **Eficiencia de almacenamiento**  | La mejor                | Buena                                     | Moderada                                | Buena (comprime bien)                   |
+| **Flexibilidad del esquema**      | Ninguna (`ALTER TABLE`) | Parcial (núcleo rígido, cola flexible)    | Completa                                | Completa                                |
+| **Complejidad**                   | Baja                    | Media                                     | Media–alta                              | Baja                                    |
+
+<div id="when-map-fits-better">
+  ## Cuando conviene más usar Map
+</div>
+
+Si tus campos dinámicos son pares clave-valor homogéneos —todos los valores comparten el mismo tipo—, [`Map(String, T)`](/es/reference/data-types/map) es más sencillo y eficiente que una columna JSON. Algunos ejemplos habituales son: etiquetas de texto (`Map(String, String)`), métricas numéricas (`Map(String, Float64)`) o feature flags (`Map(String, Bool)`).
+
+```sql
+CREATE TABLE tagged_events
+(
+    `timestamp` DateTime,
+    `service`   LowCardinality(String),
+    `tags`      Map(String, String)  -- e.g., {"env": "prod", "region": "us-east-1", "team": "platform"}
+)
+ENGINE = MergeTree
+ORDER BY (service, timestamp)
+```
+
+`Map` admite el filtrado a nivel de clave (`tags['env'] = 'prod'`), requiere menos almacenamiento que JSON y evita la sobrecarga de las subcolumnas del tipo JSON. Ten en cuenta que las búsquedas por clave recorren el mapa de forma lineal de manera predeterminada; esto está bien para conjuntos pequeños de etiquetas, pero para mapas con más de 100 claves, considera la [serialización `with_buckets`](/es/reference/data-types/map#bucketed-map-serialization). Usa JSON cuando los valores tengan tipos mixtos o la estructura tenga anidamiento; usa `Map` cuando sean pares clave-valor planos con un tipo de valor uniforme.
+
+<div id="related-resources">
+  ## Recursos relacionados
+</div>
+
+* [Usa JSON cuando corresponda](/es/concepts/best-practices/json-type) — cuándo usar el tipo de columna JSON frente a otras alternativas
+* [Referencia sobre el tipo de datos JSON](/es/reference/data-types/newjson) — sintaxis completa para indicaciones de tipo, SKIP, max&#95;dynamic&#95;paths y funciones de introspección
+* [Selección de tipos de datos](/es/concepts/best-practices/select-data-type) — guía general para seleccionar tipos de datos
+* [Un nuevo y potente tipo de datos JSON para ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse) — análisis en profundidad de la arquitectura de almacenamiento del tipo JSON
+* [Referencia de formatos JSON](/es/reference/formats/JSON/JSON) — formatos de entrada/salida para datos JSON (JSONEachRow, JSONAsObject, etc.)

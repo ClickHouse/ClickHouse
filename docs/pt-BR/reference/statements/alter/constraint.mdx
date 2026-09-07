@@ -6,19 +6,24 @@ title: 'Manipulação de restrições'
 doc_type: 'reference'
 ---
 
-As restrições podem ser adicionadas ou excluídas usando a seguinte sintaxe:
+As restrições podem ser adicionadas, modificadas ou excluídas usando a sintaxe a seguir:
 
 ```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
-Veja mais sobre [restrições](/pt-BR/reference/statements/create/table#constraints).
+Assim como na criação de tabelas, uma restrição pode ser declarada como `CHECK` (imposta em `INSERT`) ou como `ASSUME` (considerada confiável pelo otimizador sem ser verificada). Veja [constraints](/pt-BR/reference/statements/create/table#constraints) para entender a diferença entre as duas.
 
-As consultas adicionam ou removem metadados sobre restrições da tabela e, por isso, são processadas imediatamente.
+`MODIFY CONSTRAINT` substitui a declaração de uma restrição existente, mantendo sua posição na definição da tabela. Ele também pode alterar o tipo da restrição (por exemplo, de `CHECK` para `ASSUME`). É equivalente a remover a restrição e adicioná-la novamente com a nova declaração. Se a restrição não existir, a consulta lançará um erro, a menos que `IF EXISTS` seja especificado.
+
+Veja mais em [constraints](/pt-BR/reference/statements/create/table#constraints).
+
+As consultas adicionam, alteram ou removem metadados sobre restrições da tabela, por isso são processadas imediatamente.
 
 <Tip>
-  A verificação da restrição **não será executada** nos dados existentes caso ela tenha sido adicionada.
+  A verificação da restrição **não será executada** sobre os dados existentes se ela tiver sido adicionada ou modificada.
 </Tip>
 
-Todas as alterações em tabelas replicadas são propagadas para o ZooKeeper e também serão aplicadas às outras réplicas.
+Todas as alterações em tabelas replicadas são propagadas para o ZooKeeper e também serão aplicadas em outras réplicas.

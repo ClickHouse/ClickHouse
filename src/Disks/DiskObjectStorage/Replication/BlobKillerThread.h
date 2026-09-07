@@ -27,6 +27,8 @@ public:
         ObjectStorageRouterPtr object_storages_,
         std::shared_ptr<BlobKillerThread> wrapped_blob_killer_);
 
+    ~BlobKillerThread();
+
     void startup();
     void shutdown();
     void triggerAndWait();
@@ -40,16 +42,25 @@ private:
     const std::shared_ptr<BlobKillerThread> wrapped_blob_killer;
     const LoggerPtr log;
 
+    BackgroundSchedulePoolTaskHolder task;
+
+    /// Runtime statistics
     std::atomic<bool> started{false};
     std::atomic<bool> enabled{true};
     std::atomic<int64_t> finished_rounds{0};
+
+    /// Runtime parameters
     std::atomic<int64_t> reschedule_interval_sec{0};
     std::atomic<int64_t> metadata_request_batch{0};
+    std::atomic<int64_t> max_metadata_request_batch{0};
+    std::atomic<int64_t> blobs_in_task{0};
     std::atomic<int64_t> max_blobs_in_task{0};
+    std::atomic<int64_t> threads_count{0};
+    std::atomic<int64_t> max_threads_count{0};
+
+    /// Workers pool
     ThreadPool remove_tasks_pool;
     ThreadPoolCallbackRunnerLocal<bool> remove_tasks_runner;
-
-    BackgroundSchedulePoolTaskHolder task;
 };
 
 using BlobKillerThreadPtr = std::shared_ptr<BlobKillerThread>;

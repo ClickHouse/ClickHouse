@@ -21,9 +21,7 @@ Cert Manager를 사용하여 ClickHouse 서버와 Keeper용 TLS 인증서를 생
 </div>
 
 <Steps>
-  <Step>
-    ### 1. 인증서 발급자 생성
-
+  <Step title="1. 인증서 발급자 생성" id="1-create-a-certificate-issuer">
     인증 기관 역할을 할 자체 서명 `Issuer`를 생성합니다:
 
     ```yaml
@@ -36,12 +34,10 @@ Cert Manager를 사용하여 ClickHouse 서버와 Keeper용 TLS 인증서를 생
       selfSigned: {}
     ```
 
-    > **참고:** `Issuer`는 네임스페이스 범위의 리소스이므로, 이를 참조하는 `Certificate` 리소스와 동일한 네임스페이스에 있어야 합니다. 자체 서명 발급자는 테스트 용도에 적합합니다. 운영(production) 환경에서는 [발급자 옵션 목록](https://cert-manager.io/docs/configuration/issuers/)을 검토하십시오.
+    > **참고:** `Issuer`는 네임스페이스 범위의 리소스이므로, 이를 참조하는 `Certificate` 리소스와 동일한 네임스페이스에 있어야 합니다. 자체 서명 issuer는 테스트 용도에 적합합니다. 운영(production) 환경에서는 [issuer 옵션 목록](https://cert-manager.io/docs/configuration/issuers/)을 검토하십시오.
   </Step>
 
-  <Step>
-    ### 2. Certificate 리소스 생성
-
+  <Step title="2. Certificate 리소스 생성" id="2-create-certificate-resources">
     ClickHouse 서버용 `Certificate` 리소스를 생성합니다:
 
     ```yaml
@@ -64,10 +60,8 @@ Cert Manager를 사용하여 ClickHouse 서버와 Keeper용 TLS 인증서를 생
     필요한 경우 Keeper에도 적절한 `dnsNames`와 `secretName`을 사용해 같은 작업을 반복하십시오.
   </Step>
 
-  <Step>
-    ### 3. cert-manager 시크릿 키를 사용하도록 Helm values 구성
-
-    기본적으로 `onprem-clickhouse-cluster` Helm 차트는 `ca.crt`, `server.crt`, `server.key`라는 이름의 시크릿 키를 예상합니다. cert-manager는 `ca.crt`, `tls.crt`, `tls.key`를 생성합니다. Helm values에서 키 이름을 재정의합니다:
+  <Step title="3. Cert Manager 시크릿 키를 사용하도록 Helm values 구성" id="3-configure-helm-values-to-use-cert-manager-secret-keys">
+    기본적으로 `onprem-clickhouse-cluster` Helm 차트는 `ca.crt`, `server.crt`, `server.key`라는 이름의 시크릿 키를 예상합니다. Cert Manager는 `ca.crt`, `tls.crt`, `tls.key`를 생성합니다. Helm values에서 키 이름을 재정의합니다:
 
     ```yaml
     server:

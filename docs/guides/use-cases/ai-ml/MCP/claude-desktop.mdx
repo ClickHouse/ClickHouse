@@ -18,19 +18,16 @@ import { Image } from "/snippets/components/Image.jsx";
 </Frame>
 
 <Steps>
-<Step>
-## Install uv {#install-uv}
+<Step title="Install uv" id="install-uv">
 
 You will need to install [uv](https://docs.astral.sh/uv/) to follow the instructions in this guide.
 If you don't want to use uv, you will need to update the MCP server config to use an alternative package manager.
 </Step>
-<Step>
-## Download Claude Desktop {#download-claude-desktop}
+<Step title="Download Claude Desktop" id="download-claude-desktop">
 
 You'll also need to install the Claude Desktop app, which you can download from the [Claude Desktop website](https://claude.ai/desktop).
 </Step>
-<Step>
-## Configuring ClickHouse MCP server {#configure-clickhouse-mcp-server}
+<Step title="Configuring ClickHouse MCP server" id="configure-clickhouse-mcp-server">
 
 Once you've got Claude Desktop installed, it's time to configure the [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse).
 We can do this via the [Claude Desktop configuration file](https://claude.ai/docs/configuration).
@@ -92,8 +89,7 @@ MCP mcp-clickhouse: spawn uv ENOENT
 If that happens, you'll need to update the `command` to have the full path to `uv`. e.g. if you've installed via Cargo, it will be `/Users/<username>/.cargo/bin/uv`
 </Warning>
 </Step>
-<Step>
-## Using ClickHouse MCP server {#using-clickhouse-mcp-server}
+<Step title="Using ClickHouse MCP server" id="using-clickhouse-mcp-server">
 
 Once you've restarted Claude Desktop, you can find the ClickHouse MCP server by clicking on the `Search and tools` icon:
 

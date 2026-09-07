@@ -167,7 +167,7 @@ It is still possible that the client interacting with ClickHouse server is not a
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT randomStringUTF8(13)", R"(
 ┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+│ 󶡕𲉗𩍄ԍ╃𑄅󦨁󷌁󬾣𹼫󤓆󺜘󩶧         │
 └──────────────────────┘
         )"}
     };

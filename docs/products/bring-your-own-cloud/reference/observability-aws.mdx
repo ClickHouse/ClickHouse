@@ -46,17 +46,19 @@ To connect to the built-in Prometheus stack:
 
 1. **Contact ClickHouse Support** to enable the private load balancer for your BYOC environment.
 2. **Request the Prometheus endpoint URL** from ClickHouse Support.
-3. **Verify private network connectivity** to the Prometheus endpoint—typically via VPC peering or other private network setup.
+3. **Verify private network connectivity** to the Prometheus endpoint—typically via VPC/VNet peering or other private network setup.
 
 Endpoint formats vary by connectivity type:
 
 | Connectivity | Endpoint format |
 |---|---|
-| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| PrivateLink | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| VPC/VNet peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| Private endpoint | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+
+`<cloud>` is `aws`, `gcp`, or `azure`. For private endpoints, `<label>` is cloud-specific: `vpce` on AWS, `p` on GCP, and `privatelink` on Azure.
 
 <Note>
-The Prometheus stack URL is only accessible via private network connections and doesn't require authentication. Access is restricted to networks that can reach your BYOC VPC through VPC peering or other private connectivity options.
+The Prometheus stack URL is only accessible via private network connections and doesn't require authentication. Access is restricted to networks that can reach your BYOC VPC/VNet through peering or other private connectivity options.
 </Note>
 
 ### Integrating with Your Monitoring Tools {#prometheus-stack-integration}

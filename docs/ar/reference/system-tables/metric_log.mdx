@@ -111,7 +111,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على بيانات Parquet الوصفية في ذاكرة التخزين المؤقت وكان لا بد من قراءتها من القرص.
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/ar/reference/data-types/int-uint)) — العدد التقريبي للبايتات التي أُخرجت من ذاكرة التخزين المؤقت لبيانات Parquet الوصفية.
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في التهيئة المتزامنة لمكرّرات بيانات Iceberg.
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في التهيئة المتزامنة لمكرّرات بيانات Iceberg.
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في تحديث بيانات التخزين الوصفية لـ Iceberg انطلاقًا من الحالة (`buildStorageMetadataFromState`).
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمعلومات الكائنات المُعادة من مكرّر Iceberg.
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأزواج ملفات البيانات وملفات الحذف الموضعي المقبولة بواسطة تحليل minmax من بين الأزواج المناسبة بحسب التقسيم ورقم التسلسل.
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأزواج ملفات البيانات وملفات الحذف الموضعي المقبولة بواسطة تحليل minmax من بين الأزواج المناسبة بحسب التقسيم ورقم التسلسل.
@@ -532,8 +532,6 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
   9. تختلف الإعدادات المرتبطة بتنسيق الأجزاء، مثل &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;، بين النسخ المتماثلة المختلفة.
      اكتشف الخادم هذه الحالة بنجاح، وسيقوم بتنزيل الجزء المدمج من النسخة المتماثلة لفرض نتيجة متطابقة على مستوى البايت.
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لا تكون فيها البيانات بعد الـ mutation مطابقة على مستوى البايتات للبيانات الموجودة على النسخ المتماثلة الأخرى. بالإضافة إلى الأسباب الموضحة في &#39;DataAfterMergeDiffersFromReplica&#39;، قد يحدث هذا أيضًا بسبب mutation غير حتمية.
-* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/ar/reference/data-types/int-uint)) — تمت إضافة polygon إلى ذاكرة التخزين المؤقت ‏(pool) الخاصة بالدالة &#39;pointInPolygon&#39;.
-* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المخصصة لـ polygons المضافة إلى ذاكرة التخزين المؤقت ‏(pool) الخاصة بالدالة &#39;pointInPolygon&#39;.
 * `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد نماذج مصنف Naive Bayes التي جرى تحميلها.
 * `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المخصصة لنماذج مصنف Naive Bayes.
 * `ProfileEvent_USearchAddCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المتجهات التي أُضيفت إلى indexes الخاصة بـ usearch.

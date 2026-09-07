@@ -234,6 +234,57 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
+<div id="example-projection-with-where">
+  ### مثال على إسقاط مع عبارة `WHERE`
+</div>
+
+يمكن أن تتضمن الـ إسقاطات عبارة `WHERE` لتخزين مجموعة فرعية فقط من الصفوف. ويكون ذلك مفيدًا عندما تُصفّي الاستعلامات كثيرًا باستخدام شرط معروف، إذ لا تُخزِّن الـ إسقاط إلا الصفوف المطابقة، مما يقلل التخزين ويحسّن أداء الاستعلامات.
+
+إنشاء جدول وإضافة إسقاط مُرشَّحة:
+
+```sql
+CREATE TABLE events
+(
+    `event_type` String,
+    `time` DateTime,
+    `message` String
+)
+ENGINE = MergeTree()
+ORDER BY time;
+
+ALTER TABLE events ADD PROJECTION proj_pageview (
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
+```
+
+إدخال البيانات:
+
+```sql
+INSERT INTO events VALUES
+    ('pageview', '2024-01-01', 'homepage'),
+    ('click', '2024-01-02', 'button'),
+    ('pageview', '2024-01-03', 'about');
+```
+
+عندما **تستلزم** عبارة `WHERE` الخاصة بالاستعلام عبارة `WHERE` الخاصة بالإسقاط (أي إن كل شرط في عامل تصفية الإسقاط موجود أيضًا في عامل تصفية الاستعلام)، يمكن للمُحسِّن استخدام الإسقاط تلقائيًا إذا حدّد أن ذلك مفيد:
+
+```sql
+-- This query implies the projection's WHERE, so the projection may be used:
+SELECT time, message FROM events WHERE event_type = 'pageview';
+
+-- A stricter query also implies the projection's WHERE:
+SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
+
+-- This query does NOT imply the projection, so the base table is scanned:
+SELECT time, message FROM events WHERE event_type = 'click';
+```
+
+فحص الاستلزام متحفّظ — إذ يعتمد على المطابقة الدقيقة لأجزاء الاقتران في الصيغة المعيارية للتعبير. وقد تفوته بعض فرص التحسين الصحيحة (مثل استلزام النطاقات)، لكنه لن يُنتج أبدًا نتائج غير صحيحة.
+
 <div id="manipulating-projections">
   ## إدارة الإسقاطات
 </div>
@@ -244,11 +295,19 @@ SETTINGS enable_shared_storage_snapshot_in_query = 1
   ### ADD PROJECTION
 </div>
 
-استخدم العبارة أدناه لإضافة وصف إسقاط إلى البيانات الوصفية للجدول:
+استخدم تعليمة SQL التالية لإضافة وصف لإسقاط إلى البيانات الوصفية لجدول:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+<Note>
+  عندما يحدِّد الإسقاط عبارة `WHERE`، لا تُجسَّد إلا الصفوف التي تطابق الشرط. ويمكن للمُحسِّن استخدام هذا الإسقاط عندما يستلزم `WHERE` الخاص بالاستعلام منطقيًا `WHERE` الخاص بالإسقاط، وكان الإسقاط مفيدًا لخطة الاستعلام. وينطبق ذلك على كلٍّ من الإسقاطات العادية والإسقاطات التجميعية.
+</Note>
 
 <div id="with-settings">
   #### عبارة `WITH SETTINGS`

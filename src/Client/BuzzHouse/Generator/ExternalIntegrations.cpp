@@ -36,7 +36,9 @@ static String escapeJSON(const String & s)
             case '\r': out += "\\r"; break;
             case '\t': out += "\\t"; break;
             default:
-                if (c < 0x20 || c >= 0x80)
+                /// Bytes >= 0x80 pass through untouched: escaping them as \u00XX would
+                /// mojibake multi-byte UTF-8 sequences (e.g. enum element names)
+                if (c < 0x20)
                     out += fmt::format("\\u{:04x}", c);
                 else
                     out += static_cast<char>(c);
@@ -1108,7 +1110,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        String buf = dttp->extended ? rg.nextDateTime64("", false, rg.nextBool()) : rg.nextDateTime("", false, rg.nextBool());
+        String buf = dttp->extended ? rg.nextDateTime64("", false, dttp->precision.value_or(0)) : rg.nextDateTime("", false, rg.nextBool());
 
         if constexpr (is_document<T>)
         {
@@ -1247,11 +1249,11 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
 
         if constexpr (is_document<T>)
         {
-            output << cname << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator));
+            output << cname << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), this->fc.fuzz_floating_points);
         }
         else
         {
-            output << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator));
+            output << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), this->fc.fuzz_floating_points);
         }
     }
     else if ((gtp = dynamic_cast<GeoType *>(tp)))
@@ -1715,7 +1717,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         rg.nextInFullRange(),
         escapeJSON(t.getDatabaseName()),
         escapeJSON(t.getBaseName(false)),
-        t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
+        t.file_format.value_or("any"),
         t.isDeterministic() ? "1" : "0");
     for (const auto & entry : entries)
     {
@@ -1723,7 +1725,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
             R"({}{{"name":"{}","type":"{}"}})",
             first ? "" : ",",
             escapeJSON(entry.getBottomName()),
-            entry.getBottomType()->typeName(false, true));
+            escapeJSON(entry.getBottomType()->typeName(false, true)));
         first = false;
     }
     buf += "]";
@@ -1739,6 +1741,11 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     else if (t.isKafkaEngine())
     {
         buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", escapeJSON(t.topic.value()), escapeJSON(t.group.value()));
+    }
+    else if (t.isFileEngine())
+    {
+        buf += fmt::format(
+            R"(,"engine":"file","path":"{}","compression":"{}")", escapeJSON(t.getTablePath()), t.file_comp.value_or("none"));
     }
     buf += "}";
     fc.outf << "--External table " << buf << std::endl;
@@ -1853,7 +1860,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                           te->add_params()->set_svalue(minio.secret);
                           if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
                           {
-                              te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                              te->add_params()->set_svalue(t.file_format.value());
                               if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
                               {
                                   te->add_params()->set_svalue(t.file_comp.value());
@@ -1888,7 +1895,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
         te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
         te->add_params()->set_svalue(t.topic.value()); /// topic
         te->add_params()->set_svalue(t.group.value()); /// group
-        te->add_params()->set_in_out(t.file_format.has_value() ? t.file_format.value() : InOutFormat::INOUT_CSV);
+        te->add_params()->set_in_out(t.file_format.value_or("CSV"));
     }
 }
 

@@ -310,7 +310,7 @@ ClickHouse client의 출력은 다음과 같습니다:
   ClickHouse에서는 프라이머리 키 컬럼 값이 동일한 여러 행을 삽입할 수 있습니다. 이 경우(아래 다이어그램의 행 1과 행 2 참조) 최종 순서는 지정된 정렬 키, 즉 `EventTime` 컬럼의 값에 따라 결정됩니다.
 </Note>
 
-ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">컬럼 지향 데이터베이스 관리 시스템</a>입니다. 아래 다이어그램에서 볼 수 있듯이
+ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">컬럼 지향 데이터베이스 관리 시스템</a>입니다. 아래 다이어그램에서 볼 수 있듯이
 
 * 디스크상 표현에서는 테이블 컬럼마다 하나의 데이터 파일(`*.bin`)이 있으며, 해당 컬럼의 모든 값은 <a href="/ko/get-started/about/distinctive-features#data-compression" target="_blank">압축된</a> 포맷으로 저장되고,
 * 887만 개의 행은 프라이머리 키 컬럼(그리고 추가 정렬 키 컬럼)을 기준으로 사전식 오름차순으로 디스크에 저장됩니다. 즉, 이 경우에는
@@ -329,7 +329,7 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
 </Note>
 
 <div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### 데이터는 병렬 처리를 위해 그래뉼로 구성됩니다
+  ### 데이터는 병렬 데이터 처리를 위해 그래뉼로 구성됩니다
 </div>
 
 데이터 처리를 위해 테이블의 컬럼 값은 논리적으로 그래뉼로 나뉩니다.
@@ -384,71 +384,86 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
 <Note>
   * [adaptive index granularity](/ko/resources/changelogs/oss/2019#experimental-features-1)을 사용하는 테이블의 경우, 마지막 테이블 행의 프라이머리 키 컬럼 값을 기록하는 추가 &quot;final&quot; 마크 1개도 프라이머리 인덱스에 저장됩니다. 하지만 이 가이드의 설명을 단순화하고 다이어그램과 결과를 재현 가능하게 만들기 위해 adaptive index granularity를 비활성화했으므로, 이 예시 테이블의 인덱스에는 해당 final 마크가 포함되지 않습니다.
 
-  * 프라이머리 인덱스 파일은 전체가 주 메모리(main memory)에 로드됩니다. 파일이 사용 가능한 여유 메모리 공간보다 크면 ClickHouse에서 오류가 발생합니다.
+  * 프라이머리 인덱스 파일은 전체가 메인 메모리(main memory)에 로드됩니다. 파일이 사용 가능한 여유 메모리 공간보다 크면 ClickHouse에서 오류가 발생합니다.
 </Note>
 
-<Accordion title="프라이머리 인덱스 내용 확인">
-  <p>
-    자가 관리형 ClickHouse 클러스터에서는 예시 테이블의 프라이머리 인덱스 내용을 확인하기 위해 <a href="/ko/reference/functions/table-functions/file" target="_blank">file 테이블 함수</a>를 사용할 수 있습니다.
+<Accordion title="프라이머리 인덱스 내용 검사">
+  자가 관리형 ClickHouse 클러스터에서는 예시 테이블의 프라이머리 인덱스 내용을 확인하기 위해 [file 테이블 함수](/ko/reference/functions/table-functions/file)를 사용할 수 있습니다.
 
-    이를 위해 먼저 실행 중인 클러스터의 노드 하나에서 프라이머리 인덱스 파일을 <a href="/ko/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a>로 복사해야 합니다:
+  이를 위해 먼저 실행 중인 클러스터의 노드 하나에 있는 [user&#95;files&#95;path](/ko/reference/settings/server-settings/settings#user_files_path)로 프라이머리 인덱스 파일을 복사해야 합니다:
 
-    <ul>
-      <li>1단계: 프라이머리 인덱스 파일이 들어 있는 part 경로 확인</li>
-      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+  **1단계: 프라이머리 인덱스 파일이 있는 part 경로 가져오기**
 
-      테스트 머신에서는 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`가 반환됩니다.
+  ```sql
+  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
+  ```
 
-      <li>2단계: user&#95;files&#95;path 확인</li>
-      Linux의 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">기본 user&#95;files&#95;path</a>는
-      `/var/lib/clickhouse/user_files/`
+  테스트 머신에서는 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`를 반환합니다.
 
-      이며, Linux에서는 다음과 같이 변경 여부를 확인할 수 있습니다: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+  **2단계: user&#95;files&#95;path 가져오기**
 
-      테스트 머신에서 이 경로는 `/Users/tomschreiber/Clickhouse/user_files/`입니다.
+  Linux의 [기본 user&#95;files&#95;path](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505)는 `/var/lib/clickhouse/user_files/`입니다.
 
-      <li>3단계: 프라이머리 인덱스 파일을 user&#95;files&#95;path로 복사하기</li>
+  Linux에서는 다음 명령으로 이 값이 변경되었는지도 확인할 수 있습니다: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
-    </ul>
+  테스트 머신에서 이 경로는 `/Users/tomschreiber/Clickhouse/user_files/`입니다.
 
-    <br />
+  **3단계: 프라이머리 인덱스 파일을 user&#95;files&#95;path로 복사하기**
 
-    이제 SQL을 통해 프라이머리 인덱스의 내용을 확인할 수 있습니다:
+  ```bash
+  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  ```
 
-    <ul>
-      <li>항목 수 확인</li>
-      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
-      `1083`이 반환됩니다.
+  이제 SQL로 프라이머리 인덱스의 내용을 확인할 수 있습니다:
 
-      <li>처음 두 개의 인덱스 마크 확인</li>
-      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+  **항목 수 가져오기**
 
-      다음이 반환됩니다.
+  ```sql
+  SELECT count()
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
+  ```
 
-      `240923, http://showtopics.html%3...<br/>
-                  4073710, http://mk.ru&pos=3_0`
+  `1083`을 반환합니다.
 
-      <li>마지막 인덱스 마크 확인</li>
-      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
-      다음이 반환됩니다.
-      `4292714039 │ http://sosyal-mansetleri...`
-    </ul>
+  **처음 두 개의 인덱스 마크 가져오기**
 
-    <br />
+  ```sql
+  SELECT UserID, URL
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 0, 2;
+  ```
 
-    이는 예시 테이블의 프라이머리 인덱스 내용 다이어그램과 정확히 일치합니다:
-  </p>
+  다음을 반환합니다.
+
+  ```response
+  240923, http://showtopics.html%3...
+  4073710, http://mk.ru&pos=3_0
+  ```
+
+  **마지막 인덱스 마크 가져오기**
+
+  ```sql
+  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 1082, 1;
+  ```
+
+  다음을 반환합니다.
+
+  ```response
+  4292714039 │ http://sosyal-mansetleri...
+  ```
+
+  이는 예시 테이블의 프라이머리 인덱스 내용에 대한 다이어그램과 정확히 일치합니다:
 </Accordion>
 
-프라이머리 키 항목은 각 인덱스 항목이 특정 데이터 범위의 시작을 표시하므로 인덱스 마크라고 합니다. 예시 테이블에 적용하면 다음과 같습니다:
+프라이머리 키 항목은 각 인덱스 항목이 특정 데이터 범위의 시작을 표시하므로 인덱스 마크라고 부릅니다. 예시 테이블에서는 구체적으로 다음과 같습니다:
 
 * UserID 인덱스 마크:
 
   프라이머리 인덱스에 저장된 `UserID` 값은 오름차순으로 정렬되어 있습니다.<br />
-  따라서 위 다이어그램의 &#39;mark 1&#39;은 그래뉼 1의 모든 테이블 행과 그 뒤의 모든 그래뉼에서 `UserID` 값이 4,073,710 이상임이 보장된다는 뜻입니다.
+  따라서 위 다이어그램의 &#39;mark 1&#39;은 그래뉼 1의 모든 테이블 행과 그 뒤의 모든 그래뉼에 있는 `UserID` 값이 4,073,710보다 크거나 같음이 보장된다는 것을 나타냅니다.
 
-[뒤에서 살펴보겠지만](#the-primary-index-is-used-for-selecting-granules), 이러한 전역 정렬 순서 덕분에 ClickHouse는 쿼리가 프라이머리 키의 첫 번째 컬럼을 기준으로 필터링할 때 첫 번째 키 컬럼의 인덱스 마크에 대해 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색 알고리즘</a>을 사용할 수 있습니다.
+[뒤에서 살펴보겠지만](#the-primary-index-is-used-for-selecting-granules), 이러한 전역 순서 덕분에 ClickHouse는 쿼리가 프라이머리 키의 첫 번째 컬럼을 기준으로 filter할 때 첫 번째 키 컬럼의 인덱스 마크에 대해 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색 알고리즘</a>을 사용할 수 있습니다.
 
 * URL 인덱스 마크:
 
@@ -586,7 +601,7 @@ LIMIT 10;
 
 <Accordion title="그래뉼 선택 세부 정보">
   <p>
-    위 다이어그램은 마크 176이 첫 번째 인덱스 엔트리임을 보여줍니다. 즉, 연결된 그래뉼 176의 최소 UserID 값은 749.927.693보다 작고, 다음 마크(마크 177)에 해당하는 그래뉼 177의 최소 UserID 값은 이 값보다 큽니다. 따라서 UserID 컬럼 값이 749.927.693인 행을 포함할 가능성이 있는 것은 마크 176에 해당하는 그래뉼 176뿐입니다.
+    위 다이어그램은 마크 176이 첫 번째 인덱스 항목임을 보여줍니다. 즉, 연결된 그래뉼 176의 최소 UserID 값은 749.927.693보다 작고, 다음 마크(마크 177)에 해당하는 그래뉼 177의 최소 UserID 값은 이 값보다 큽니다. 따라서 UserID 컬럼 값이 749.927.693인 행을 포함할 가능성이 있는 것은 마크 176에 해당하는 그래뉼 176뿐입니다.
   </p>
 </Accordion>
 
@@ -608,7 +623,7 @@ ClickHouse가 쿼리에 일치하는 행을 포함할 가능성이 있는 그래
 
 특정 컬럼에 대한 각 마크 파일 엔트리에는 오프셋 형태로 두 개의 위치가 저장됩니다.
 
-* 첫 번째 오프셋(위 다이어그램의 &#39;block&#95;offset&#39;)은 선택한 그래뉼의 압축된 버전을 포함하는 <a href="/ko/get-started/about/distinctive-features#data-compression" target="_blank">압축된</a> 컬럼 data file 내의 <a href="/ko/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a> 위치를 가리킵니다. 이 압축 block에는 몇 개의 압축된 그래뉼이 들어 있을 수 있습니다. 찾은 압축 파일 block은 읽는 시점에 메인 메모리로 압축 해제됩니다.
+* 첫 번째 오프셋(위 다이어그램의 &#39;block&#95;offset&#39;)은 선택한 그래뉼의 압축된 버전을 포함하는 <a href="/ko/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a>이 있는 <a href="/ko/get-started/about/distinctive-features#data-compression" target="_blank">compressed</a> 컬럼 data file의 위치를 가리킵니다. 이 압축 block에는 몇 개의 압축된 그래뉼이 들어 있을 수 있습니다. 찾은 압축 파일 block은 읽는 시점에 메인 메모리로 압축 해제됩니다.
 
 * 두 번째 오프셋(위 다이어그램의 &#39;granule&#95;offset&#39;)은 마크 파일에서 제공되며, 압축 해제된 블록 데이터 내에서 그래뉼의 위치를 나타냅니다.
 
@@ -617,7 +632,7 @@ ClickHouse가 쿼리에 일치하는 행을 포함할 가능성이 있는 그래
 <Note>
   * [wide format](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)을 사용하고 [adaptive index granularity](/ko/resources/changelogs/oss/2019#experimental-features-1)를 사용하지 않는 테이블의 경우, ClickHouse는 위에 표시된 `.mrk` 마크 파일을 사용합니다. 이 파일에는 엔트리마다 길이 8바이트인 주소 두 개가 들어 있습니다. 이 엔트리들은 모두 같은 크기를 가진 그래뉼의 물리적 위치입니다.
 
-  인덱스 세분화 수준은 기본적으로 [default](/ko/reference/settings/merge-tree-settings#index_granularity_bytes)로 adaptive이지만, 이 예시 테이블에서는 adaptive index granularity를 비활성화했습니다(이 가이드의 설명을 단순화하고 다이어그램과 결과를 재현 가능하게 만들기 위함입니다). 이 테이블은 데이터 크기가 [min&#95;bytes&#95;for&#95;wide&#95;part](/ko/reference/settings/merge-tree-settings#min_bytes_for_wide_part)보다 크기 때문에 wide format을 사용합니다(자가 관리형 cluster에서는 기본값이 10 MB입니다).
+  인덱스 세분화 수준은 [default](/ko/reference/settings/merge-tree-settings#index_granularity_bytes)로 adaptive이지만, 이 예시 테이블에서는 adaptive index granularity를 비활성화했습니다(이 가이드의 설명을 단순화하고 다이어그램과 결과를 재현 가능하게 만들기 위함입니다). 이 테이블은 데이터 크기가 [min&#95;bytes&#95;for&#95;wide&#95;part](/ko/reference/settings/merge-tree-settings#min_bytes_for_wide_part)보다 크기 때문에 wide format을 사용합니다(자가 관리형 cluster에서는 기본값이 10 MB입니다).
 
   * wide format을 사용하고 adaptive index granularity를 사용하는 테이블의 경우, ClickHouse는 `.mrk2` 마크 파일을 사용합니다. 이 파일은 `.mrk` 마크 파일과 유사한 엔트리를 포함하지만, 엔트리마다 현재 엔트리가 연결된 그래뉼의 행 수를 나타내는 세 번째 값이 추가됩니다.
 
@@ -1098,7 +1113,7 @@ Processed 335.87 thousand rows,
 13.54 MB (12.91 million rows/s., 520.38 MB/s.)
 ```
 
-실제로는 materialized view를 뒷받침하는 암묵적으로 생성된 테이블(및 해당 프라이머리 인덱스(primary index))이 [명시적으로 생성한 보조 테이블(secondary table)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)과 동일하므로, 쿼리는 명시적으로 생성한 테이블을 사용할 때와 사실상 같은 방식으로 실행됩니다.
+실제로는 materialized view를 뒷받침하는 암시적으로 생성된 테이블(및 해당 프라이머리 인덱스(primary index))이 [명시적으로 생성한 보조 테이블(secondary table)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)과 동일하므로, 쿼리는 명시적으로 생성한 테이블을 사용할 때와 사실상 같은 방식으로 실행됩니다.
 
 이에 해당하는 ClickHouse 서버 로그 파일의 trace 로그를 보면, ClickHouse가 인덱스 마크에 대해 이진 검색을 수행하고 있음을 확인할 수 있습니다:
 

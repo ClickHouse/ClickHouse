@@ -14,13 +14,11 @@ import Recommendations from '/snippets/recommendations.mdx';
 > Linux distributions.
 
 <Steps>
-<Step>
-## Review recommendations {#review-recommendations}
+<Step title="Review recommendations" id="review-recommendations">
 
 <Recommendations />
 </Step>
-<Step>
-## Set up the RPM repository {#setup-the-rpm-repository}
+<Step title="Set up the RPM repository" id="setup-the-rpm-repository">
 
 Add the official repository by running the following command:
 
@@ -39,8 +37,7 @@ sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
 In the steps below, `yum install` can be replaced by `zypper install`, depending
 on which package manager you're using.
 </Step>
-<Step>
-## Install ClickHouse server and client {#install-clickhouse-server-and-client-1}
+<Step title="Install ClickHouse server and client" id="install-clickhouse-server-and-client-1">
 
 To install ClickHouse run the following commands:
 
@@ -57,8 +54,7 @@ for example:
 sudo yum install clickhouse-server-22.8.7.34
 ```
 </Step>
-<Step>
-## Start ClickHouse server {#start-clickhouse-server-1}
+<Step title="Start ClickHouse server" id="start-clickhouse-server-1">
 
 To start ClickHouse server, run:
 
@@ -80,8 +76,7 @@ If you set up a password for your server, then you will need to run:
 clickhouse-client --password
 ```
 </Step>
-<Step>
-## Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper-1}
+<Step title="Install standalone ClickHouse Keeper" id="install-standalone-clickhouse-keeper-1">
 
 <Tip>
 In production environments we strongly recommend running ClickHouse Keeper on dedicated nodes.
@@ -95,8 +90,7 @@ To install `clickhouse-keeper` on standalone ClickHouse Keeper servers, run:
 sudo yum install -y clickhouse-keeper
 ```
 </Step>
-<Step>
-## Enable and start ClickHouse Keeper {#enable-and-start-clickhouse-keeper-1}
+<Step title="Enable and start ClickHouse Keeper" id="enable-and-start-clickhouse-keeper-1">
 
 ```bash
 sudo systemctl enable clickhouse-keeper

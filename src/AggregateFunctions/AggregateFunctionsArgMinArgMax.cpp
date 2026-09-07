@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -124,9 +125,10 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
-                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
                     this->type_val->getName(),
-                    getName());
+                    getName(),
+                    getNumericVariantSupertypeHint(type.getPtr()));
         };
         check_not_dynamic_or_variant(*this->type_val);
         this->type_val->forEachChild(check_not_dynamic_or_variant);

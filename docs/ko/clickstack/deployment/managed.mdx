@@ -55,31 +55,23 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### 새 서비스 생성
-
+      <Step title="새 서비스 생성" id="create-a-service">
         ClickHouse Cloud 랜딩 페이지에서 `New service`를 선택해 새 서비스를 생성합니다.
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="서비스" border />
       </Step>
 
-      <Step>
-        ### provider, region 및 리소스 지정
-
+      <Step title="provider, region 및 리소스 지정" id="specify-your-region-and-resources">
         <ProviderSelection />
       </Step>
 
-      <Step>
-        ### 수집 설정
-
+      <Step title="수집 설정" id="setup-ingestion-create-new">
         서비스 프로비저닝이 완료되면 해당 서비스가 선택되어 있는지 확인한 후, 왼쪽 메뉴에서 &quot;ClickStack&quot;을 클릭하십시오.
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step>
-        ### ClickStack UI로 이동
-
+      <Step title="ClickStack UI로 이동" id="navigate-to-clickstack-ui-cloud-create-new">
         <NavigateClickStackUI />
 
         <br />
@@ -91,9 +83,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### 서비스 선택
-
+      <Step title="서비스 선택" id="select-service">
         ClickHouse Cloud 랜딩 페이지에서 관리형 ClickStack을 활성화할 ClickHouse 서비스를 선택합니다.
 
         <Warning>
@@ -107,9 +97,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
         <Image img="/images/clickstack/select_service.webp" alt="서비스 선택" size="lg" />
       </Step>
 
-      <Step>
-        ### ClickStack UI로 이동
-
+      <Step title="ClickStack UI로 이동" id="navigate-to-the-clickstack-ui-existing">
         왼쪽 탐색 메뉴에서 &#39;ClickStack&#39;을 선택하세요. ClickStack UI로 이동하며, ClickHouse Cloud 권한에 따라 자동으로 인증됩니다.
 
         서비스에 OpenTelemetry 테이블이 이미 있는 경우 자동으로 감지되며, 해당 데이터 소스가 생성됩니다.
@@ -127,16 +115,14 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
         이 단계가 성공하면 설정이 완료된 것입니다 — 모두 준비되었습니다 🎉. 그렇지 않으면 수집 설정을 계속 진행하세요.
       </Step>
 
-      <Step>
-        ### 수집 설정
-
+      <Step title="수집 설정" id="setup-ingestion-existing-service">
         자동 감지에 실패하거나 기존 테이블이 없는 경우, 수집 설정을 완료하라는 안내 메시지가 표시됩니다.
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="ClickStack UI에서 수집 설정" size="lg" />
 
         &quot;Start Ingestion&quot;을 선택하면 수집 소스를 선택하는 화면이 표시됩니다. Managed ClickStack은 OpenTelemetry와 [Vector](https://vector.dev/)를 주요 수집 소스로 지원합니다. 또한 사용자는 [ClickHouse Cloud 지원 통합](/ko/integrations/home) 중 하나를 사용하여 자체 스키마로 ClickHouse에 직접 데이터를 전송할 수도 있습니다.
 
-        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="source 선택 - ClickStack UI" border />
+        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="소스 선택 - ClickStack UI" border />
 
         <Info>
           **OpenTelemetry 권장**
@@ -153,7 +139,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             ### collector 시작
 
-            다음 내용은 권장 방식인 **ClickStack distribution of the OpenTelemetry Collector** 사용을 전제로 합니다. 이 배포판에는 추가 처리 기능이 포함되어 있으며 ClickHouse Cloud에 맞게 특별히 최적화되어 있습니다. 자체 OpenTelemetry Collector를 사용하려면 [&quot;기존 collector 구성&quot;](#configure-existing-collectors)을 참조하세요.
+            다음 내용은 권장 방식인 **ClickStack distribution of the OpenTelemetry Collector** 사용을 전제로 합니다. 이 배포판에는 추가 처리 기능이 포함되어 있으며 ClickHouse Cloud에 맞게 특별히 최적화되어 있습니다. 자체 OpenTelemetry Collector를 사용하려면 [&quot;기존 collector 구성&quot;](#configure-existing-collectors-existing)을 참조하세요.
 
             빠르게 시작하려면 아래에 표시된 Docker 명령을 복사해 실행하세요.
 
@@ -260,9 +246,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
         </Tabs>
       </Step>
 
-      <Step>
-        ### ClickStack UI로 이동
-
+      <Step title="ClickStack UI로 이동" id="navigate-to-clickstack-ui-existing-service">
         수집 설정을 완료하고 데이터 전송을 시작한 후에는 &quot;다음&quot;을 선택하세요.
 
         <Tabs>

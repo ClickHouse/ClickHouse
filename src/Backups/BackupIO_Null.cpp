@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BACKUP_NOT_FOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -109,7 +110,12 @@ void registerBackupEngineNull(BackupFactory & factory)
         return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, writer);
     };
 
-    factory.registerBackupEngine("Null", creator_fn);
+    auto destination_identity_fn = [](const BackupInfo &, ContextPtr) -> Strings
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Null backup destinations do not have a persistent identity");
+    };
+
+    factory.registerBackupEngine("Null", creator_fn, destination_identity_fn);
 }
 
 }

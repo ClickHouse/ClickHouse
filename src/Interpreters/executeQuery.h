@@ -100,6 +100,12 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_inte
 /// If the callback throws, its exception is rethrown after io.onFinish().
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback);
 
+/// Throws if a SETTINGS clause anywhere in the query changes the `allow_experimental_analyzer`
+/// (`enable_analyzer`) setting to a value different from `context_value`: the analyzer cannot be
+/// switched in the middle of query processing. Applied to every query at the start of processing;
+/// also used for generated queries that bypass `executeQuery`, such as in the `eval` table function.
+void validateAnalyzerSettings(ASTPtr ast, bool context_value);
+
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,

@@ -66,6 +66,10 @@ private:
         /// Both get_peer_info_all and get_srv_config_all hold the raft lock internally.
         KeeperServer::RespondingCounts getRespondingCounts();
 
+        /// Fill is_alive / is_synced / peer_last_log_index / last_succ_resp_ms for members.
+        /// Must be called only when this raft instance is the leader.
+        void applyPeerHealthToMembers(std::vector<KeeperClusterMemberInfo> & members, uint64_t self_log_idx);
+
         using nuraft::raft_server::raft_server;
 
         /// Keeper context for accessing coordination settings (e.g. commit profiler).
@@ -218,6 +222,7 @@ public:
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 
     std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
+    std::vector<std::pair<std::string, Int32>> getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const;
 
     const KeeperContextPtr & getKeeperContext() const { return keeper_context; }
 };

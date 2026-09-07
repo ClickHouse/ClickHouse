@@ -18,23 +18,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Frame>
 
 <Steps>
-  <Step>
-    ## تثبيت uv
-
+  <Step title="تثبيت uv" id="install-uv">
     ستحتاج إلى تثبيت [uv](https://docs.astral.sh/uv/) لاتباع التعليمات الواردة في هذا الدليل.
-    إذا كنت لا ترغب في استخدام uv، فستحتاج إلى تحديث إعدادات ClickHouse MCP server لاستخدام مدير حزم بديل.
+    إذا كنت لا ترغب في استخدام uv، فستحتاج إلى تحديث إعدادات خادم MCP لاستخدام مدير حزم بديل.
   </Step>
 
-  <Step>
-    ## تنزيل Claude Desktop
-
+  <Step title="تنزيل Claude Desktop" id="download-claude-desktop">
     ستحتاج أيضًا إلى تثبيت تطبيق Claude Desktop، ويمكنك تنزيله من [موقع Claude Desktop](https://claude.ai/desktop).
   </Step>
 
-  <Step>
-    ## إعداد ClickHouse MCP server
-
-    بمجرد تثبيت Claude Desktop، يحين وقت إعداد [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse).
+  <Step title="إعداد خادم ClickHouse MCP" id="configure-clickhouse-mcp-server">
+    بمجرد تثبيت Claude Desktop، يحين وقت إعداد [خادم ClickHouse MCP](https://github.com/ClickHouse/mcp-clickhouse).
     يمكننا القيام بذلك عبر [ملف إعداد Claude Desktop](https://claude.ai/docs/configuration).
 
     للعثور على هذا الملف، انتقل أولًا إلى صفحة الإعدادات (`Cmd+,` على جهاز Mac)، ثم انقر على علامة التبويب `Developer` في القائمة اليسرى.
@@ -52,7 +46,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
 
     يستخدم قاموس `mcpServers` اسم خادم MCP كمفتاح، وقاموسًا لخيارات الإعداد كقيمة.
-    على سبيل المثال، سيبدو إعداد ClickHouse MCP server المتصل بـ ClickHouse Playground كما يلي:
+    على سبيل المثال، سيبدو إعداد خادم ClickHouse MCP المتصل بـ ClickHouse Playground كما يلي:
 
     ```json
     {
@@ -95,10 +89,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Warning>
   </Step>
 
-  <Step>
-    ## استخدام ClickHouse MCP server
-
-    بعد إعادة تشغيل Claude Desktop، يمكنك العثور على ClickHouse MCP server بالنقر على أيقونة `Search and tools`:
+  <Step title="استخدام خادم ClickHouse MCP" id="using-clickhouse-mcp-server">
+    بعد إعادة تشغيل Claude Desktop، يمكنك العثور على خادم ClickHouse MCP بالنقر على أيقونة `Search and tools`:
 
     <Image img="/images/use-cases/AI_ML/MCP/find-mcp-servers.webp" alt="العثور على خوادم MCP" size="md" />
 
@@ -106,14 +98,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     يمكنك بعد ذلك اختيار ما إذا كنت تريد تعطيل كل الأدوات أو بعضها.
 
-    الآن أصبحنا جاهزين لطرح بعض الأسئلة على Claude، ما سيؤدي إلى استخدامه ClickHouse MCP server.
+    الآن أصبحنا جاهزين لطرح بعض الأسئلة على Claude، ما سيدفعه إلى استخدام خادم ClickHouse MCP.
     على سبيل المثال، يمكننا أن نسأله: `What's the most interesting dataset in the SQL playground?`.
 
     سيطلب Claude منا تأكيد استخدام كل أداة في خادم MCP عند استدعائها لأول مرة:
 
     <Image img="/images/use-cases/AI_ML/MCP/mcp-permission.webp" alt="منح إذن لاستخدام أداة list_databases" size="md" />
 
-    فيما يلي يمكنك رؤية جزء من محادثة يتضمن بعض استدعاءات الأدوات إلى ClickHouse MCP server:
+    فيما يلي يمكنك رؤية جزء من محادثة يتضمن بعض استدعاءات الأدوات إلى خادم ClickHouse MCP:
 
     <Image img="/images/use-cases/AI_ML/MCP/claude-conversation.webp" alt="محادثة Claude" size="md" />
   </Step>

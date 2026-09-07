@@ -71,6 +71,24 @@ struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::De
             new_state->bucket_shared_data_structure_states[bucket] = bucket_shared_data_structure_states[bucket] ? bucket_shared_data_structure_states[bucket]->clone() : nullptr;
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (object_structure_state)
+            callback(object_structure_state);
+        if (shared_data_paths_state)
+            callback(shared_data_paths_state);
+        for (const auto & bucket_state : bucket_shared_data_paths_state)
+        {
+            if (bucket_state)
+                callback(bucket_state);
+        }
+        for (const auto & bucket_state : bucket_shared_data_structure_states)
+        {
+            if (bucket_state)
+                callback(bucket_state);
+        }
+    }
 };
 
 void SerializationObjectDistinctPaths::enumerateStreams(

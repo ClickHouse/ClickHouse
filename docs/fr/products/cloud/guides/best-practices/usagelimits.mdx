@@ -11,7 +11,7 @@ Bien que ClickHouse soit connu pour sa rapidité et sa fiabilité, des performan
 s&#39;obtiennent dans certaines limites de fonctionnement. Par exemple, un trop grand nombre de tables,
 de bases de données ou de parts peut nuire aux performances. Pour éviter cela, ClickHouse
 Cloud impose des limites sur plusieurs dimensions opérationnelles.
-Le détail de ces garde-fous figure ci-dessous.
+Le détail de ces garde-fous figure ci-dessous et indique les valeurs par défaut.
 
 <Tip>
   Si vous avez atteint l&#39;un de ces garde-fous, il est possible que vous
@@ -41,3 +41,15 @@ Le détail de ces garde-fous figure ci-dessous.
   100, et le nombre maximal de tables est limité à 500. En outre, le stockage
   des services du niveau Basic est limité à 1 To.
 </Note>
+
+<Note>
+  Pour les services qui dépassent déjà les limites d&#39;utilisation ci-dessus, les limites de tables/bases de données sont définies sur le nombre actuel de tables/bases de données du service, plus 25 %.
+</Note>
+
+Les seuils spécifiques d&#39;avertissement (`warn`) et d&#39;exception (`throw`) de votre service peuvent être vérifiés en interrogeant system.server&#95;settings. Par exemple,
+
+```
+SELECT * 
+FROM system.server_settings 
+WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw')
+```

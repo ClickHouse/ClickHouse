@@ -26,9 +26,7 @@ Para uma visão geral conceitual de como o Hydra funciona, consulte [Hydra Compu
 * Acesso ao registro do Helm e ao Chart do Helm `onprem-clickhouse-cluster`
 
 <Steps>
-  <Step>
-    ## 1. Identifique o Cluster Pai
-
+  <Step title="1. Identifique o Cluster Pai" id="1-identify-the-parent-cluster">
     Antes de criar um filho, anote o **nome** e o **espaço de nomes** do cluster pai. O pai precisa estar em execução — os filhos não podem ser provisionados se o pai estiver parado, encerrado ou ocioso.
 
     Para um cluster chamado `default-xx-01`, os valores padrão são:
@@ -39,9 +37,7 @@ Para uma visão geral conceitual de como o Hydra funciona, consulte [Hydra Compu
     | Espaço de nomes | `ns-default-xx-01` |
   </Step>
 
-  <Step>
-    ## 2. Crie uma Instância Filha
-
+  <Step title="2. Crie uma Instância Filha" id="2-create-a-child-instance">
     <Warning>
       Cada instância de ClickHouseCluster deve ficar em seu próprio espaço de nomes. Não implante uma instância filha no mesmo espaço de nomes do pai. O Operator pressupõe um ClickHouseCluster por espaço de nomes, e violar isso causa degradação dos clusters.
     </Warning>
@@ -62,15 +58,13 @@ Para uma visão geral conceitual de como o Hydra funciona, consulte [Hydra Compu
 
     A instância filha irá:
 
-    * Compartilhar o conjunto do ClickHouse Keeper do pai (não é necessária uma implantação separada do Keeper)
+    * Compartilhar o ensemble do ClickHouse Keeper do pai (não é necessária uma implantação separada do Keeper)
     * Compartilhar o prefixo de dados no S3 do pai
     * Executar seus próprios pods do ClickHouse server com alocações de recursos independentes
     * Expor seu próprio endpoint de Service do Kubernetes
   </Step>
 
-  <Step>
-    ## 3. Crie um Filho Somente Leitura (Opcional)
-
+  <Step title="3. Crie um Filho Somente Leitura (Opcional)" id="3-create-a-read-only-child-optional">
     Para criar um filho que possa consultar dados, mas não gravá-los, adicione a flag `isReadonly`:
 
     ```bash
@@ -89,9 +83,7 @@ Para uma visão geral conceitual de como o Hydra funciona, consulte [Hydra Compu
     Filhos somente leitura são adequados para cargas de trabalho de relatórios, dashboards ou analytics em que o acesso de gravação é desnecessário.
   </Step>
 
-  <Step>
-    ## 4. Verifique a Instância Filha
-
+  <Step title="4. Verifique a Instância Filha" id="4-verify-the-child-instance">
     Depois que o filho for implantado, verifique se ele está em execução:
 
     ```bash

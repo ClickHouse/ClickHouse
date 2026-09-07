@@ -771,6 +771,78 @@ SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 
 UInt8，false 时为 0，true 时为 1
 
+<div id="geometryintersectcartesian">
+  ## geometryIntersectCartesian
+</div>
+
+如果两个几何对象相交 (共享任意公共点、线或区域) ，则返回 true。
+
+与 [`polygonsIntersectCartesian`](#polygonsintersectcartesian) 不同，它接受任何几何数据类型
+(`Point`、`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) ，包括通用的
+[`Geometry`](/zh/reference/data-types/geo#geometry) 类型，并且两个参数可以是不同的类型。
+
+坐标采用笛卡尔坐标系。
+
+<div id="example">
+  ### 示例
+</div>
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### 输入参数
+</div>
+
+两个任意几何数据类型 (或 `Geometry`) 的几何对象。
+
+<div id="returned-value">
+  ### 返回值
+</div>
+
+UInt8，`false` 表示 0，`true` 表示 1
+
+<div id="geometryintersectspherical">
+  ## geometryIntersectSpherical
+</div>
+
+如果两个几何对象相交 (即共享任意公共点、线或区域) ，则返回 true。
+
+与 [`polygonsIntersectSpherical`](#polygonsintersectspherical) 不同，它接受任何几何数据类型
+(`Point`、`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) ，包括通用的
+[`Geometry`](/zh/reference/data-types/geo#geometry) 类型，并且两个参数可以是不同的类型。
+
+坐标会被视为位于理想球面上。
+
+<div id="example">
+  ### 示例
+</div>
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### 输入参数
+</div>
+
+任意几何数据类型 (或 `Geometry`) 的两个几何对象。
+
+<div id="returned-value">
+  ### 返回值
+</div>
+
+UInt8，false 时为 0，true 时为 1
+
 <div id="polygonconvexhullcartesian">
   ## polygonConvexHullCartesian
 </div>

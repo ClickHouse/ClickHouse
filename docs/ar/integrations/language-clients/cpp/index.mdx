@@ -1,0 +1,185 @@
+---
+description: 'توثيق لمكتبة العميل ClickHouse بلغة C++ والتكامل
+  مع إطار العمل u-server'
+sidebarTitle: 'C++'
+slug: /interfaces/cpp
+title: 'مكتبة العميل C++'
+doc_type: 'reference'
+---
+
+`clickhouse-cpp` هي مكتبة العميل الرسمية لـ ClickHouse بلغة C++، وتوفّر واجهة سريعة وآمنة نوعيًا
+للتعامل مع ClickHouse باستخدام بروتوكوله الثنائي الأصلي.
+
+تتوفر إرشادات البناء، وأمثلة الاستخدام، ووثائق إضافية في
+مستودع GitHub الخاص بالمشروع: [https://github.com/ClickHouse/clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp).
+
+<Note>
+  المكتبة قيد التطوير النشط. ومع أنها تدعم بالفعل الوظائف الأساسية في ClickHouse،
+  فقد لا تكون بعض الميزات وأنواع البيانات مطبّقة بالكامل أو مدعومة بعد.
+
+  ملاحظاتك قيّمة للغاية، وهي تساعد في توجيه تحديد أولويات الميزات الجديدة
+  والتحسينات. إذا واجهت قيودًا، أو وظائف غير متوفرة، أو سلوكًا غير متوقع، فيُرجى
+  مشاركة ملاحظاتك أو طلبات الميزات عبر متتبع المشكلات على
+  [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
+</Note>
+
+<div id="including-library-into-project">
+  ## تضمين المكتبة في مشروعك
+</div>
+
+أبسط طريقة لتضمين المكتبة في مشروعك هي استخدام وحدة `FetchContent` في CMake.
+ويتيح لك هذا الأسلوب تثبيت إصدار محدد بعينه من المكتبة وبناءه كجزء من
+سير عمل CMake المعتاد.
+
+```cmake
+include(FetchContent)
+
+set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
+FetchContent_Declare(
+    clickhouse-cpp
+    GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
+    GIT_TAG v2.6.0   # can also be `master` or other banch
+)
+FetchContent_MakeAvailable(clickhouse-cpp)
+```
+
+يُفعِّل الخيار `WITH_OPENSSL` دعم TLS في المكتبة، وهو مطلوب عند الاتصال بـ
+ClickHouse Cloud أو بعمليات نشر ClickHouse الأخرى التي تدعم SSL. ومع أنه يمكن الاستغناء عنه في
+الاتصالات التي لا تستخدم TLS، فإن تفعيله يُنصح به عمومًا.
+
+يتطلب البناء مع دعم SSL تثبيت حزم تطوير OpenSSL. ثبّت
+`libssl-dev` على Debian وUbuntu أو مشتقاتهما؛ و`openssl-devel` على Fedora وRed Hat؛ أو
+`openssl` على macOS باستخدام homebrew.
+
+بعد إتاحة هذه التبعية، اربط هدفك بهدف المكتبة المُصدَّر التالي:
+
+```cmake
+target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="example-setup-client">
+  ### إعداد كائن `Client`
+</div>
+
+أنشئ مثيلاً من `Client` لإقامة اتصال مع ClickHouse. يوضّح المثال التالي
+كيفية الاتصال بمثيل ClickHouse محلي، حيث لا يلزم إدخال كلمة مرور ولا يكون SSL
+مفعّلًا.
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{clickhouse::ClientOptions().SetHost("localhost")};
+```
+
+في الإعدادات الأكثر تقدّمًا، يلزم إجراء تكوين إضافي. يوضّح المثال التالي
+كيفية الاتصال بمثيل ClickHouse Cloud باستخدام عدة معلمات إضافية:
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{
+    clickhouse::ClientOptions{}
+      .SetHost("your.instance.clickhouse.cloud")
+      .SetUser("default")
+      .SetPassword("your-password")
+      .SetSSLOptions({})   // Enable SSL
+      .SetPort(9440)       // for connections over SSL ClickHouse Cloud uses port 9440
+    };
+```
+
+<div id="example-create-table">
+  ### إنشاء الجداول وتنفيذ الاستعلامات من دون بيانات
+</div>
+
+لتنفيذ استعلام لا يُرجع أي بيانات، مثل إنشاء الجداول، استخدم الطريقة `Execute`.
+وينطبق النهج نفسه على عبارات أخرى مثل `ALTER TABLE` و`DROP` وما إلى ذلك.
+
+```cpp
+client.Execute(R"(
+    CREATE TABLE IF NOT EXISTS greetings (
+        id UInt64,
+        message String,
+        language String)
+    ENGINE = MergeTree ORDER BY id)");
+```
+
+<div id="example-insert-data">
+  ### إدراج البيانات
+</div>
+
+لإدراج البيانات في جدول، أنشئ `Block` واملأه بكائنات الأعمدة المطابقة لـ
+مخطط الجدول. تُضاف البيانات عمودًا بعمود، ثم تُدرَج في عملية واحدة باستخدام
+الطريقة `Insert`، وهي مُحسّنة لتنفيذ عمليات كتابة مجمّعة بكفاءة.
+
+```cpp
+auto id = std::make_shared<clickhouse::ColumnUInt64>();
+auto message = std::make_shared<clickhouse::ColumnString>();
+auto language = std::make_shared<clickhouse::ColumnString>();
+
+id->Append(1);
+message->Append("Hello, World!");
+language->Append("English");
+
+id->Append(2);
+message->Append("¡Hola, Mundo!");
+language->Append("Spanish");
+
+id->Append(3);
+message->Append("Hallo wereld!");
+language->Append("Dutch");
+
+clickhouse::Block block{};
+block.AppendColumn("id", id);
+block.AppendColumn("message", message);
+block.AppendColumn("language", language);
+
+client.Insert("greetings", block);
+```
+
+<div id="example-select">
+  ### اختيار البيانات
+</div>
+
+لتنفيذ استعلام يُرجع بيانات، استخدم الطريقة `Select` ومرّر `callback` لمعالجة
+النتيجة. تُمرَّر نتائج الاستعلام على شكل كائنات `Block`، بما يعكس تمثيل البيانات
+الأصلي الموجَّه بالأعمدة في ClickHouse.
+
+```cpp
+client.Select(
+    "SELECT id, message, language FROM greetings",
+    [](const clickhouse::Block & block){
+        for (size_t i = 0; i < block.GetRowCount(); ++i) {
+            auto id = block[0]->AsStrict<clickhouse::ColumnUInt64>()->At(i);
+            auto message = block[1]->AsStrict<clickhouse::ColumnString>()->At(i);
+            auto language = block[2]->AsStrict<clickhouse::ColumnString>()->At(i);
+            std::cout << id << "\t" << message << "\t" << language << "\n";
+        }
+    });
+```
+
+<div id="supported-data-types">
+  ## أنواع البيانات المدعومة
+</div>
+
+* `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
+* `UInt128`, `Int128`
+* `Decimal32`, `Decimal64`, `Decimal128`
+* `Float32`, `Float64`
+* `Date`
+* `DateTime`, `DateTime64`
+* `DateTime([timezone])`, `DateTime64(N, [timezone])`
+* `UUID`
+* `Enum8`, `Enum16`
+* `String`
+* `FixedString(N)`
+* `LowCardinality(String)` و `LowCardinality(FixedString(N))`
+* `Nullable(T)`
+* `Array(T)`
+* `Tuple`
+* `Map`
+* `IPv4`, `IPv6`
+* `Point`, `Ring`, `Polygon`, `MultiPolygon`

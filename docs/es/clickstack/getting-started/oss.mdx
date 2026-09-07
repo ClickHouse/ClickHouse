@@ -26,9 +26,7 @@ La opción más sencilla es una **distribución de imagen única** que incluye t
 Esta imagen todo en uno le permite iniciar toda la pila con un solo comando, por lo que es ideal para pruebas, experimentación o implementaciones locales rápidas.
 
 <Steps>
-  <Step>
-    ## Implementar la pila con docker
-
+  <Step title="Implementar la pila con docker" id="deploy-stack-with-docker">
     Lo siguiente ejecutará un colector de OpenTelemetry (en los puertos 4317 y 4318), la UI de HyperDX (en el puerto 8080) y ClickHouse (8123).
 
     ```shell
@@ -64,9 +62,7 @@ Esta imagen todo en uno le permite iniciar toda la pila con un solo comando, por
     </Tip>
   </Step>
 
-  <Step>
-    ## Vaya a la UI de ClickStack
-
+  <Step title="Vaya a la UI de ClickStack" id="navigate-to-hyperdx-ui">
     Visite [http://localhost:8080](http://localhost:8080) para acceder a la UI de ClickStack (HyperDX).
 
     Cree un usuario e introduzca un nombre de usuario y una contraseña que cumplan los requisitos de complejidad.
@@ -76,9 +72,7 @@ Esta imagen todo en uno le permite iniciar toda la pila con un solo comando, por
     HyperDX se conectará automáticamente al clúster local y creará fuentes de datos para logs, traces, metrics y sessions, lo que le permitirá explorar el producto de inmediato.
   </Step>
 
-  <Step>
-    ## Explore el producto
-
+  <Step title="Explore el producto" id="explore-the-product">
     Con la pila implementada, pruebe uno de nuestros conjuntos de datos de ejemplo.
 
     Para seguir usando el clúster local:
@@ -114,16 +108,14 @@ Para obtener más información sobre este modelo de implementación, consulte [&
   ### Versión alojada
 </div>
 
-Puede usar una versión alojada de ClickStack, disponible en modo local, en [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
+Puede usar una versión alojada de ClickStack, disponible en modo local, en [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).
 
 <div id="self-hosted-version">
   ### Versión autohospedada
 </div>
 
 <Steps>
-  <Step>
-    ### Ejecutar con Docker
-
+  <Step title="Ejecutar con Docker" id="run-local-with-docker">
     La imagen del modo local autohospedado incluye un colector de OpenTelemetry, la UI de ClickStack y un servidor ClickHouse ya preconfigurados. Esto facilita la ingesta de datos de telemetría desde sus aplicaciones y su visualización con una configuración externa mínima. Para empezar con la versión autohospedada, simplemente ejecute el contenedor de Docker con los puertos adecuados mapeados:
 
     ```shell
@@ -133,9 +125,7 @@ Puede usar una versión alojada de ClickStack, disponible en modo local, en [pla
     A diferencia de la imagen &quot;All in one&quot;, no se le pedirá que cree un usuario, ya que **el modo local no incluye autenticación**.
   </Step>
 
-  <Step>
-    ### Complete las credenciales de conexión
-
+  <Step title="Complete las credenciales de conexión" id="complete-connection-credentials">
     Para conectarse a su propio **clúster externo de ClickHouse**, puede introducir manualmente sus credenciales de conexión.
 
     Como alternativa, si quiere explorar rápidamente el producto, también puede hacer clic en **Conectarse al servidor Demo** para acceder a datasets precargados y probar ClickStack sin necesidad de configuración.

@@ -207,10 +207,10 @@ WHERE query_id='<query_id>'
 ```
 
 <div id="using-projections-to-speed-up-UK-price-paid">
-  ### 프로젝션을 사용해 영국 부동산 실거래가 쿼리 속도 높이기
+  ### PROJECTION을 사용해 영국 부동산 실거래가 쿼리 속도 높이기
 </div>
 
-프로젝션을 사용해 쿼리 성능을 어떻게 높일 수 있는지 보여주기 위해,
+PROJECTION을 사용해 쿼리 성능을 어떻게 높일 수 있는지 보여주기 위해,
 실제 데이터셋을 사용하는 예시를 살펴보겠습니다. 이 예시에서는 3,003만 개의 행이 있는
 [UK Property Price Paid](/ko/get-started/sample-datasets/uk-price-paid)
 튜토리얼의 테이블을 사용합니다. 이 데이터셋은
@@ -261,7 +261,7 @@ ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2);
 ```
 
-프로젝션을 사용해 이 쿼리를 더 빠르게 만들 수 있는지 확인해 보겠습니다.
+PROJECTION을 사용해 이 쿼리를 더 빠르게 만들 수 있는지 확인해 보겠습니다.
 
 원본 테이블과 결과를 유지하기 위해 새 테이블을 만들고 `INSERT INTO SELECT`로 데이터를 복사합니다:
 
@@ -270,7 +270,7 @@ CREATE TABLE uk.uk_price_paid_with_projections AS uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections SELECT * FROM uk.uk_price_paid;
 ```
 
-프라이머리 인덱스를 갖고 town과 price를 기준으로 정렬된 추가적인(숨겨진) 테이블을 생성하는 projection `prj_oby_town_price`를 만들고 데이터를 채워, 특정 town에서 가장 높은 거래 가격의 county를 나열하는 쿼리를
+프라이머리 인덱스를 갖고 town과 price를 기준으로 정렬된 추가적인(숨겨진) 테이블을 생성하는 PROJECTION `prj_oby_town_price`를 만들고 데이터를 채워, 특정 town에서 가장 높은 거래 가격의 county를 나열하는 쿼리를
 최적화합니다:
 
 ```sql
@@ -293,7 +293,7 @@ SETTINGS mutations_sync = 1
 [`mutations_sync`](/ko/reference/settings/session-settings#mutations_sync) 설정은
 동기식 실행을 강제하는 데 사용됩니다.
 
-프로젝션 `prj_gby_county`를 생성하고 데이터를 채웁니다. 이 프로젝션은
+PROJECTION `prj_gby_county`를 생성하고 데이터를 채웁니다. 이 PROJECTION은
 기존 영국의 130개 카운티 전체에 대해 `avg(price)` 집계 값을 점진적으로 미리 계산하는
 추가적인 (숨겨진) 테이블입니다:
 
@@ -315,16 +315,16 @@ SETTINGS mutations_sync = 1
 ```
 
 <Note>
-  위의 `prj_gby_county` 프로젝션과 같이 프로젝션에서 `GROUP BY` 절을 사용하면,
+  위의 `prj_gby_county` PROJECTION과 같이 PROJECTION에서 `GROUP BY` 절을 사용하면,
   (숨겨진) 테이블의 기반 스토리지 엔진이 `AggregatingMergeTree`가 되고,
   모든 집계 함수는 `AggregateFunction`으로 변환됩니다. 이렇게 하면
   점진적인 데이터 집계가 올바르게 수행됩니다.
 </Note>
 
 아래 그림은 메인 테이블 `uk_price_paid_with_projections`
-과 두 개의 프로젝션을 시각화한 것입니다:
+과 두 개의 PROJECTION을 시각화한 것입니다:
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="메인 테이블 uk_price_paid_with_projections와 두 개의 프로젝션 시각화" />
+<Image img="/images/data-modeling/projections_2.webp" size="md" alt="메인 테이블 uk_price_paid_with_projections와 두 개의 PROJECTION 시각화" />
 
 이제 가장 높은 거래 가격 3건에 해당하는 런던의 카운티를 나열하는
 쿼리를 다시 실행하면, 쿼리 성능이 향상된 것을 확인할 수 있습니다:
@@ -701,6 +701,6 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
   ## 관련 콘텐츠
 </div>
 
-* [ClickHouse 프라이머리 인덱스 실용 입문](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [ClickHouse의 프라이머리 인덱스에 대한 실용적인 소개](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [구체화된 뷰(materialized view)](/ko/concepts/features/materialized-views/index)
 * [ALTER PROJECTION](/ko/reference/statements/alter/projection)

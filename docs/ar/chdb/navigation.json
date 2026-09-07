@@ -1,0 +1,85 @@
+{
+  "groups": [
+    {
+      "group": "البدء",
+      "pages": [
+        "ar/chdb/getting-started"
+      ],
+      "root": "ar/chdb/index"
+    },
+    {
+      "group": "تكاملات اللغات",
+      "pages": [
+        "ar/chdb/install/python",
+        "ar/chdb/install/nodejs",
+        "ar/chdb/install/go",
+        "ar/chdb/install/rust",
+        "ar/chdb/install/bun",
+        "ar/chdb/install/c"
+      ],
+      "root": "ar/chdb/install/index"
+    },
+    {
+      "group": "DataStore",
+      "pages": [
+        "ar/chdb/datastore/quickstart",
+        "ar/chdb/datastore/factory-methods",
+        "ar/chdb/datastore/query-building",
+        "ar/chdb/datastore/aggregation",
+        "ar/chdb/datastore/accessors",
+        "ar/chdb/datastore/io",
+        "ar/chdb/datastore/execution-model",
+        "ar/chdb/datastore/pandas-compat",
+        "ar/chdb/datastore/class-reference"
+      ],
+      "root": "ar/chdb/datastore/index"
+    },
+    {
+      "group": "التهيئة",
+      "pages": [
+        "ar/chdb/configuration/execution-engine",
+        "ar/chdb/configuration/function-config",
+        "ar/chdb/configuration/performance-mode"
+      ],
+      "root": "ar/chdb/configuration/index"
+    },
+    {
+      "group": "تصحيح الأخطاء",
+      "pages": [
+        "ar/chdb/debugging/explain",
+        "ar/chdb/debugging/logging",
+        "ar/chdb/debugging/profiling"
+      ],
+      "root": "ar/chdb/debugging/index"
+    },
+    {
+      "group": "أدلة المطورين",
+      "pages": [
+        "ar/chdb/guides/jupysql",
+        "ar/chdb/guides/querying-pandas",
+        "ar/chdb/guides/querying-apache-arrow",
+        "ar/chdb/guides/querying-s3-bucket",
+        "ar/chdb/guides/querying-parquet",
+        "ar/chdb/guides/query-remote-clickhouse",
+        "ar/chdb/guides/clickhouse-local",
+        "ar/chdb/guides/migration-from-pandas",
+        "ar/chdb/guides/pandas-cookbook",
+        "ar/chdb/guides/pandas-differences",
+        "ar/chdb/guides/pandas-performance",
+        "ar/chdb/guides/pandas-to-sql"
+      ],
+      "root": "ar/chdb/guides/index"
+    },
+    {
+      "group": "المرجع التقني",
+      "pages": [
+        "ar/chdb/reference/data-formats",
+        "ar/chdb/reference/sql-reference",
+        "ar/chdb/api/python"
+      ],
+      "root": "ar/chdb/reference/index"
+    }
+  ],
+  "icon": "/images/icons/icon-chdb.svg",
+  "item": "chDB"
+}

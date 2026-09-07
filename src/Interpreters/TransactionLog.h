@@ -153,7 +153,8 @@ private:
     static TransactionID deserializeTID(const String & csn_node_content);
     static String serializeTID(const TransactionID & tid);
 
-    inline static std::atomic<Int64> async_tables_loading_job_number{0};
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static std::atomic<Int64> async_tables_loading_job_number;
 
     ZooKeeperPtr getZooKeeper() const;
 

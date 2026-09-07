@@ -1,6 +1,6 @@
 -- Test: exercises `max_streams * max_streams_to_max_threads_ratio` POSITIVE overflow path.
 -- Covers: src/Interpreters/InterpreterSelectQuery.cpp:2798-2806 (legacy planner) and
---         src/Planner/PlannerJoinTree.cpp:848-856 (new analyzer).
+--         src/Planner/PlannerJoinTree.cpp:848-856 (analyzer).
 -- The existing test 03148 only covers the NEGATIVE overflow path
 -- (max_streams_to_max_threads_ratio = -9223372036854775808 -> x < lowest()).
 -- This test covers the POSITIVE overflow path (x > size_t::max()) which was the

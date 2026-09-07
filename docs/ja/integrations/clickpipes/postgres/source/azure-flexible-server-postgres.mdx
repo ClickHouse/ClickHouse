@@ -76,7 +76,7 @@ ClickPipes は Postgres 12 以降をサポートしています。
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication には、指定したテーブルから生成される変更イベントのセットが含まれ、後でレプリケーションストリームを取り込むために使用されます。
+`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされるテーブルの集合を定義します。すべてのテーブルをレプリケーションする予定でない限り、`FOR ALL TABLES` は使用しないことをお勧めします。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
 <div id="add-clickpipes-ips-to-firewall">
   ## ClickPipes の IP をファイアウォールに追加

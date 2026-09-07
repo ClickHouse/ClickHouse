@@ -2,69 +2,89 @@
 sidebarTitle: 'إدارة مفاتيح واجهة برمجة تطبيقات'
 slug: /cloud/manage/openapi
 title: 'إدارة مفاتيح واجهة برمجة تطبيقات'
-description: 'يوفّر ClickHouse Cloud واجهة برمجة تطبيقات تستند إلى OpenAPI تتيح لك إدارة حسابك وبعض جوانب خدماتك برمجيًا.'
+description: 'يوفّر ClickHouse Cloud واجهة برمجة تطبيقات تعتمد على OpenAPI، وتتيح لك إدارة حسابك وبعض جوانب خدماتك برمجيًا.'
 doc_type: 'guide'
-keywords: ['api', 'openapi', 'rest api', 'الوثائق', 'إدارة Cloud']
+keywords: ['واجهة برمجة تطبيقات', 'OpenAPI', 'واجهة برمجة تطبيقات REST', 'التوثيق', 'إدارة السحابة']
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-يوفّر ClickHouse Cloud واجهة برمجة تطبيقات تستند إلى OpenAPI، وتتيح لك إدارة حسابك وبعض جوانب خدماتك برمجيًا.
+يوفّر ClickHouse Cloud واجهة برمجة تطبيقات تعتمد على OpenAPI، ما يتيح لك إدارة حسابك وبعض جوانب خدماتك برمجيًا.
 
 <Note>
   يغطي هذا المستند واجهة برمجة تطبيقات ClickHouse Cloud. للاطلاع على نقاط نهاية واجهة برمجة تطبيقات قاعدة البيانات، يُرجى مراجعة [Cloud Endpoints API](/ar/products/cloud/guides/sql-console/query-endpoints)
 </Note>
 
-1. يمكنك استخدام علامة التبويب **مفاتيح واجهة برمجة تطبيقات** في القائمة اليمنى لإنشاء مفاتيح واجهة برمجة التطبيقات الخاصة بك وإدارتها.
+<Steps>
+  <Step title="افتح صفحة مفاتيح واجهة برمجة تطبيقات">
+    يمكنك استخدام علامة التبويب **مفاتيح واجهة برمجة تطبيقات** في القائمة اليسرى لإنشاء مفاتيح واجهة برمجة تطبيقات وإدارتها.
 
-<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="علامة التبويب مفاتيح واجهة برمجة تطبيقات" border />
+    <Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="علامة التبويب مفاتيح واجهة برمجة تطبيقات" border />
+  </Step>
 
-2. ستعرض صفحة **مفاتيح واجهة برمجة تطبيقات** في البداية رسالةً تطلب منك إنشاء أول مفتاح واجهة برمجة تطبيقات، كما هو موضح أدناه. بعد إنشاء مفتاحك الأول، يمكنك إنشاء مفاتيح جديدة باستخدام زر `New API Key` الذي يظهر في الزاوية العلوية اليمنى.
+  <Step title="ابدأ بإنشاء مفتاح واجهة برمجة تطبيقات">
+    ستعرض صفحة **مفاتيح واجهة برمجة تطبيقات** في البداية مطالبةً بإنشاء أول مفتاح واجهة برمجة تطبيقات لك، كما هو موضح أدناه. بعد إنشاء مفتاحك الأول، يمكنك إنشاء مفاتيح جديدة باستخدام زر `New API Key` الذي يظهر في الزاوية العلوية اليسرى.
 
-<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="صفحة مفاتيح واجهة برمجة تطبيقات" border />
+    <Image img="/images/cloud/manage/openapi2.webp" size="md" alt="صفحة مفاتيح واجهة برمجة تطبيقات" border />
+  </Step>
 
-3. لإنشاء مفتاح واجهة برمجة تطبيقات، حدِّد اسم المفتاح وأذونات المفتاح ووقت انتهاء الصلاحية، ثم انقر على `Generate API Key`.
+  <Step title="كوّن مفتاح واجهة برمجة تطبيقات">
+    حدّد اسم المفتاح وأذوناته ووقت انتهاء صلاحيته.
 
-<br />
+    <Note>
+      تتوافق الأذونات مع [الأدوار المعرّفة مسبقًا](/ar/products/cloud/reference/security/console-roles) في ClickHouse Cloud. يمتلك دور المطوّر أذونات قراءة فقط للخدمات المعيّنة، بينما يمتلك دور المسؤول أذونات كاملة للقراءة والكتابة.
+    </Note>
 
-<Note>
-  تتوافق الأذونات مع [الأدوار المحددة مسبقًا](/ar/products/cloud/reference/security/console-roles) في ClickHouse Cloud. يمتلك دور المطوّر أذونات قراءة فقط للخدمات المعيّنة، بينما يمتلك دور المسؤول أذونات كاملة للقراءة والكتابة.
-</Note>
+    <Tip>
+      **Query API Endpoints**
 
-<Tip>
-  **Query API Endpoints**
+      لاستخدام مفاتيح واجهة برمجة تطبيقات مع [Query API Endpoints](/ar/products/cloud/guides/sql-console/query-endpoints)، اضبط Organization Role على `Member` كحد أدنى، وامنح Service Role إمكانية الوصول إلى `Query Endpoints`.
+    </Tip>
 
-  لاستخدام مفاتيح واجهة برمجة تطبيقات مع [Query API Endpoints](/ar/products/cloud/guides/sql-console/query-endpoints)، اضبط Organization Role على `Member` (كحد أدنى)، وامنح Service Role إمكانية الوصول إلى `Query Endpoints`.
-</Tip>
+    <Image img="/images/cloud/manage/openapi3.png" size="md" alt="نموذج إنشاء مفتاح واجهة برمجة تطبيقات" border />
+  </Step>
 
-<Image img="/images/cloud/manage/openapi3.png" size="md" alt="نموذج إنشاء مفتاح واجهة برمجة تطبيقات" border />
+  <Step title="أضف عناوين IP المسموح بها">
+    لتقييد العملاء الذين يمكنهم استخدام مفتاح واجهة برمجة تطبيقات، انتقل إلى قسم **Allow access to this API Key** وحدّد **Specific locations**. أدخل عنوان IP أو نطاق CIDR، مثل `203.0.113.1` أو `203.0.113.0/24`، ثم أضف إدخالات أخرى حسب الحاجة.
 
-4. ستعرض الشاشة التالية معرّف المفتاح وسرّ المفتاح. انسخ هاتين القيمتين واحفظهما في مكان آمن، مثل خزنة. لن تُعرض هذه القيم بعد مغادرة هذه الشاشة.
+    تلتزم Query API Endpoints بقوائم السماح لعناوين IP على مستوى مفتاح واجهة برمجة تطبيقات. ونظرًا لأن الطلبات تُمرَّر عبر وكيل من داخل بنية ClickHouse التحتية، فلا تنطبق قوائم السماح لعناوين IP على مستوى الخدمة. راجع [IP Access Control](/ar/cloud/features/query-api-endpoints#ip-access-control) لمزيد من التفاصيل.
 
-<Image img="/images/cloud/manage/openapi4.webp" size="md" alt="تفاصيل مفتاح واجهة برمجة تطبيقات" border />
+    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="عناوين IP المسموح بها والمكوّنة لمفتاح واجهة برمجة تطبيقات" border />
 
-5. تستخدم واجهة برمجة تطبيقات ClickHouse Cloud [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) للتحقق من صحة مفاتيح واجهة برمجة تطبيقات الخاصة بك. إليك مثالًا على كيفية استخدام مفاتيح واجهة برمجة تطبيقات لإرسال طلبات إلى واجهة برمجة تطبيقات ClickHouse Cloud باستخدام `curl`:
+    انقر على **Generate API Key** عند الانتهاء من تكوين المفتاح.
+  </Step>
 
-```bash
-$ KEY_ID=mykeyid
-$ KEY_SECRET=mykeysecret
+  <Step title="احفظ بيانات اعتماد مفتاح واجهة برمجة تطبيقات">
+    ستعرض الشاشة التالية معرّف المفتاح وسرّه. انسخ هاتين القيمتين واحفظهما في مكان آمن، مثل خزنة أسرار. لن تظهر هاتان القيمتان مرة أخرى بعد مغادرة هذه الشاشة.
 
-$ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
-```
+    <Image img="/images/cloud/manage/openapi4.webp" size="md" alt="تفاصيل مفتاح واجهة برمجة تطبيقات" border />
+  </Step>
 
-6. بالعودة إلى صفحة **مفاتيح واجهة برمجة تطبيقات**، سترى اسم المفتاح، وآخر أربعة أحرف من معرّف المفتاح، والأذونات، والحالة، وتاريخ انتهاء الصلاحية، والمنشئ. يمكنك من هذه الشاشة تعديل اسم المفتاح، والأذونات، وتاريخ انتهاء الصلاحية. كما يمكنك أيضًا من هذه الشاشة تعطيل المفاتيح أو حذفها.
+  <Step title="صادِق طلبات واجهة برمجة تطبيقات">
+    تستخدم واجهة برمجة تطبيقات ClickHouse Cloud [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) للتحقق من صحة مفاتيح واجهة برمجة تطبيقات. إليك مثالًا على كيفية استخدام مفاتيح واجهة برمجة تطبيقات لإرسال طلبات إلى واجهة برمجة تطبيقات ClickHouse Cloud باستخدام `curl`:
 
-<br />
+    ```bash
+    $ KEY_ID=mykeyid
+    $ KEY_SECRET=mykeysecret
 
-<Note>
-  حذف مفتاح واجهة برمجة تطبيقات إجراء دائم. وستفقد أي خدمات تستخدم هذا المفتاح إمكانية الوصول إلى ClickHouse Cloud فورًا.
-</Note>
+    $ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
+    ```
+  </Step>
 
-<Image img="/images/cloud/manage/openapi5.webp" size="md" alt="صفحة إدارة مفاتيح واجهة برمجة تطبيقات" border />
+  <Step title="أدر مفاتيح واجهة برمجة تطبيقات الحالية">
+    عند العودة إلى صفحة **مفاتيح واجهة برمجة تطبيقات**، سترى اسم المفتاح، وآخر أربعة أحرف من معرّف المفتاح، والأذونات، والحالة، وتاريخ انتهاء الصلاحية، والمنشئ. يمكنك من هذه الشاشة تعديل اسم المفتاح وأذوناته وتاريخ انتهاء صلاحيته. كما يمكنك أيضًا تعطيل المفاتيح أو حذفها منها.
+
+    <Note>
+      يُعد حذف مفتاح واجهة برمجة تطبيقات إجراءً نهائيًا. وستفقد أي خدمات تستخدم هذا المفتاح إمكانية الوصول إلى ClickHouse Cloud فورًا.
+    </Note>
+
+    <Image img="/images/cloud/manage/openapi5.webp" size="md" alt="صفحة إدارة مفاتيح واجهة برمجة تطبيقات" border />
+  </Step>
+</Steps>
 
 <div id="endpoints">
   ## نقاط النهاية
 </div>
 
-للاطّلاع على تفاصيل نقاط النهاية، راجِع [مرجع واجهة برمجة التطبيقات](/ar/api-reference/organization/get-list-of-available-organizations).
+للاطّلاع على تفاصيل نقاط النهاية، راجِع [مرجع واجهة برمجة التطبيقات](/ar/products/cloud/api-reference/organization/get-list-of-available-organizations).
 استخدم مفتاح واجهة برمجة التطبيقات والسرّ الخاص بها مع عنوان URL الأساسي `https://api.clickhouse.cloud/v1`.

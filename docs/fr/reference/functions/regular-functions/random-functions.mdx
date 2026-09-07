@@ -39,6 +39,10 @@ Introduite dans : v20.5.0
 
 Inverse les bits de la chaîne d’entrée `s`, avec une probabilité `p` pour chaque bit.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -82,6 +86,10 @@ Renvoie un nombre `UInt32` aléatoire suivant une distribution uniforme.
 Cette fonction utilise un générateur congruentiel linéaire avec un état initial obtenu à partir du système, ce qui signifie que, bien qu&#39;il paraisse aléatoire, il ne l&#39;est pas réellement et peut être prévisible si l&#39;état initial est connu.
 Dans les cas où une véritable source d&#39;aléa est indispensable, envisagez d&#39;utiliser d&#39;autres méthodes, comme des appels système ou l&#39;intégration de bibliothèques externes.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -121,6 +129,10 @@ Renvoie un nombre `UInt64` aléatoire suivant une distribution uniforme.
 Utilise un générateur congruentiel linéaire avec un état initial obtenu à partir du système, ce qui signifie que, même s&#39;il semble aléatoire, il ne l&#39;est pas réellement et peut être prévisible si l&#39;état initial est connu.
 Lorsque le caractère véritablement aléatoire est crucial, envisagez d&#39;utiliser d&#39;autres méthodes, comme des appels système ou l&#39;intégration de bibliothèques externes.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -154,6 +166,10 @@ SELECT rand64();
 Introduit dans : v22.10.0
 
 Renvoie un nombre aléatoire de type Float64 issu d’une [loi de Bernoulli](https://en.wikipedia.org/wiki/Bernoulli_distribution).
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -195,6 +211,10 @@ SELECT randBernoulli(.75) FROM numbers(5)
 Apparu dans : v22.10.0
 
 Renvoie un nombre aléatoire de type Float64 tiré d&#39;une [loi binomiale](https://en.wikipedia.org/wiki/Binomial_distribution).
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -238,6 +258,10 @@ Introduit dans : v22.11.0
 
 Renvoie un nombre `Float64` aléatoire suivant une distribution uniforme entre `0` (inclus) et `1` (exclus).
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -271,6 +295,10 @@ SELECT randCanonical();
 Introduit dans : v22.10.0
 
 Renvoie un nombre Float64 aléatoire tiré d’une [loi du chi carré](https://en.wikipedia.org/wiki/Chi-squared_distribution).
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -320,6 +348,10 @@ Cette fonction :
 
 Elle est utile pour utiliser les mêmes seeds ou identifiants aléatoires sur toutes les lignes d’un jeu de données
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -368,6 +400,10 @@ Introduit dans : v22.10.0
 
 Renvoie un nombre Float64 aléatoire issu d’une [loi exponentielle](https://en.wikipedia.org/wiki/Exponential_distribution).
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -408,6 +444,10 @@ SELECT randExponential(1/10) FROM numbers(5)
 Introduit dans : v22.10.0
 
 Renvoie un nombre Float64 aléatoire tiré d’une [loi F](https://en.wikipedia.org/wiki/F-distribution).
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -451,6 +491,10 @@ Introduit dans : v22.10.0
 
 Renvoie un nombre Float64 aléatoire issu d&#39;une [loi log-normale](https://en.wikipedia.org/wiki/Log-normal_distribution).
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -492,6 +536,10 @@ SELECT randLogNormal(100, 5) FROM numbers(5)
 Introduit dans : v22.10.0
 
 Renvoie un nombre aléatoire de type Float64 tiré d’une [loi binomiale négative](https://en.wikipedia.org/wiki/Negative_binomial_distribution).
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -535,6 +583,10 @@ Introduit dans : v22.10.0
 
 Renvoie un nombre Float64 aléatoire issu d&#39;une [loi normale](https://en.wikipedia.org/wiki/Normal_distribution).
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -577,6 +629,10 @@ Introduit dans : v22.10.0
 
 Renvoie un nombre Float64 aléatoire tiré d’une [distribution de Poisson](https://en.wikipedia.org/wiki/Poisson_distribution).
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -618,6 +674,10 @@ Introduit dans : v22.10.0
 
 Renvoie un nombre Float64 aléatoire issu d’une [loi t de Student](https://en.wikipedia.org/wiki/Student%27s_t-distribution).
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -658,6 +718,10 @@ SELECT randStudentT(10) FROM numbers(5)
 Introduit dans : v22.10.0
 
 Renvoie un nombre Float64 aléatoire uniformément distribué sur l’intervalle $[\min, \max]$.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -702,6 +766,10 @@ Introduit dans : v20.5.0
 Génère une chaîne aléatoire de longueur fixe contenant le nombre de caractères spécifié.
 Les caractères renvoyés ne sont pas nécessairement des caractères ASCII, c’est-à-dire qu’ils peuvent ne pas être imprimables.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -725,9 +793,9 @@ SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 ```
 
 ```response title=Response
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
+┌─rnd────────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                   │
+└────────────┴───────────────────────────────────┘
 ```
 
 <div id="randomPrintableASCII">
@@ -739,6 +807,10 @@ Introduit dans : v20.1.0
 Génère une chaîne [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) aléatoire contenant le nombre de caractères spécifié.
 
 Si vous passez `length < 0`, le comportement de la fonction est indéfini.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -780,6 +852,10 @@ Introduit dans : v20.5.0
 Génère une chaîne aléatoire du nombre de caractères spécifié.
 Les caractères renvoyés ne sont pas nécessairement des caractères ASCII, c’est-à-dire qu’ils peuvent ne pas être affichables.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -818,6 +894,10 @@ Génère une chaîne [UTF-8](https://en.wikipedia.org/wiki/UTF-8) aléatoire con
 Aucun point de code issu de [plans](https://en.wikipedia.org/wiki/Plane_\(Unicode\)) non attribués (plans 4 à 13) n&#39;est renvoyé.
 Il est également possible que le client interagissant avec le serveur ClickHouse ne soit pas en mesure d&#39;afficher correctement la chaîne UTF-8 générée.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -842,7 +922,7 @@ SELECT randomStringUTF8(13)
 
 ```response title=Response
 ┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+│ 󶡕𲉗𩍄ԍ╃𑄅󦨁󷌁󬾣𹼫󤓆󺜘󩶧         │
 └──────────────────────┘
 ```
 

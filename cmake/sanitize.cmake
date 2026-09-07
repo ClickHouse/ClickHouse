@@ -192,3 +192,15 @@ endif()
 # bundled path here ensures it takes precedence without disrupting #include_next chains (which
 # libcxx relies on to reach the compiler's own stddef.h, stdarg.h, etc.).
 include_directories (SYSTEM "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
+
+# Control-Flow Integrity (CFI) requires ThinLTO (-flto=thin) and -fwhole-program-vtables.
+# These are already enabled for release builds (ENABLE_THINLTO=ON). Do NOT combine with SANITIZE=
+# because SANITIZE disables ThinLTO. Use this option standalone with a release build type.
+option (ENABLE_CFI "Enable Clang Control-Flow Integrity sanitizer (requires ENABLE_THINLTO)" OFF)
+
+if (ENABLE_CFI)
+    if (SANITIZE)
+        message (FATAL_ERROR "ENABLE_CFI is incompatible with SANITIZE: ThinLTO must be enabled for CFI and is disabled by sanitizer builds")
+    endif()
+    message (STATUS "Enabled Control-Flow Integrity (CFI) sanitizer: cfi-vcall, cfi-derived-cast")
+endif()

@@ -2,15 +2,43 @@
 slug: /deployment-guides/index
 title: 'Aperçu des guides de déploiement'
 description: 'Page d’accueil de la section déploiement et mise à l’échelle'
-keywords: ['guides de déploiement', 'mise à l’échelle', 'déploiement en cluster', 'réplication', 'tolérance aux pannes']
+keywords: ['guides de déploiement', 'mise à l’échelle', 'déploiement de cluster', 'réplication', 'tolérance aux pannes']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-Cette section aborde les sujets suivants :
+Cette section couvre les sujets suivants :
 
-| Rubrique                                                                                                   |
-| ---------------------------------------------------------------------------------------------------------- |
-| [Introduction](/fr/guides/oss/deployment-and-scaling/terminology)                                             |
-| [Mise à l’échelle horizontale](/fr/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)             |
-| [Réplication pour la tolérance aux pannes](/fr/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas) |
-| [Déploiement en cluster](/fr/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas)                  |
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/fr/guides/oss/deployment-and-scaling/terminology">
+    Terminologie utilisée pour décrire les déploiements de ClickHouse.
+  </Card>
+
+  <Card title="Shards et répliques de table" icon="table-cells-large" href="/fr/guides/oss/deployment-and-scaling/shards">
+    Découvrez ce que sont les shards et les répliques de table, ainsi que leur utilité.
+  </Card>
+
+  <Card title="Rééquilibrage des données" icon="scale-balanced" href="/fr/guides/oss/deployment-and-scaling/scaling-clusters">
+    Différentes approches pour rééquilibrer les données lors de la mise à l’échelle d’un cluster.
+  </Card>
+
+  <Card title="Séparation du stockage et du calcul" icon="hard-drive" href="/fr/guides/oss/deployment-and-scaling/separation-storage-compute">
+    Utilisez ClickHouse avec un stockage d’objets pour séparer le stockage du calcul.
+  </Card>
+
+  <Card title="Découverte du cluster" icon="magnifying-glass" href="/fr/guides/oss/deployment-and-scaling/cluster-discovery">
+    Permettez aux nœuds de se découvrir et de s’enregistrer automatiquement via ClickHouse Keeper.
+  </Card>
+
+  <Card title="Keeper" icon="key" href="/fr/guides/oss/deployment-and-scaling/keeper/index">
+    Configuration de ClickHouse Keeper, le système de coordination pour la réplication et le DDL distribué.
+  </Card>
+
+  <Card title="Monitoring" icon="chart-line" href="/fr/guides/oss/deployment-and-scaling/monitoring/monitoring">
+    Supervision de ClickHouse et traçage avec OpenTelemetry.
+  </Card>
+
+  <Card title="Exemples" icon="server" href="/fr/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas">
+    Exemples de déploiements : réplication pour la tolérance aux pannes, montée en charge horizontale et déploiement de cluster combiné.
+  </Card>
+</CardGroup>

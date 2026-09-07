@@ -45,9 +45,7 @@ FIPS を使用する場合、**S3 バケット名にピリオド (`.`) を含め
 ***
 
 <Steps>
-  <Step>
-    ## フェーズ 1: FIPS 準拠の証明書を作成する
-
+  <Step title="フェーズ 1: FIPS 準拠の証明書を作成する" id="phase-1-create-fips-certificates">
     FIPS コンプライアンスを満たすには、FIPS が有効化された環境で、FIPS 承認済みのアルゴリズムを使用して生成された TLS 証明書が必要です。必要な証明書は 3 組あります。
 
     | Certificate | Private Key  | Public Key   | SAN Required                                                                                                                                    |
@@ -65,9 +63,7 @@ FIPS を使用する場合、**S3 バケット名にピリオド (`.`) を含め
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 2: Kubernetes の前提条件のインストール
-
+  <Step title="フェーズ 2: Kubernetes の前提条件のインストール" id="phase-2-install-kubernetes-prerequisites">
     ### VolumeSnapshot CRDs のインストール
 
     ```bash
@@ -96,9 +92,7 @@ FIPS を使用する場合、**S3 バケット名にピリオド (`.`) を含め
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 3: Operator をインストールする
-
+  <Step title="フェーズ 3: Operator をインストールする" id="phase-3-install-operator">
     FIPS ECR エンドポイントの形式に注意してください: `0000000000.dkr-ecr-fips.us-west-2.on.aws` (標準の `.amazonaws.com` エンドポイントではありません) 。
 
     ```text
@@ -130,9 +124,7 @@ FIPS を使用する場合、**S3 バケット名にピリオド (`.`) を含め
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 4: 証明書シークレットの作成
-
+  <Step title="フェーズ 4: 証明書シークレットの作成" id="phase-4-create-certificate-secrets">
     シークレットは、ClickHouse クラスターを実行する Kubernetes の同じネームスペースに作成する必要があります。クラスター名が `default-xx-01` の場合、ネームスペースは `ns-default-xx-01` になります。
 
     ネームスペースが存在することを確認してから、シークレットを作成してください。**シークレット名とキー名は変更しないでください。**
@@ -159,9 +151,7 @@ FIPS を使用する場合、**S3 バケット名にピリオド (`.`) を含め
     ***
   </Step>
 
-  <Step>
-    ## フェーズ5: ClickHouse クラスターのデプロイ
-
+  <Step title="フェーズ5: ClickHouse クラスターのデプロイ" id="phase-5-deploy-clickhouse-cluster">
     ECR および S3 には、正しい FIPS バージョンのエンドポイントを使用してください。FIPS エンドポイントは [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/) で確認できます。
 
     ```text expandable
@@ -264,9 +254,7 @@ FIPS を使用する場合、**S3 バケット名にピリオド (`.`) を含め
     ***
   </Step>
 
-  <Step>
-    ## フェーズ 6: インストールの検証
-
+  <Step title="フェーズ 6: インストールの検証" id="phase-6-verify-installation">
     ### TLS ポートへのポートフォワード
 
     FIPS モードでは、ClickHouse は標準のポート 9000 ではなく、ポート **9440** で TLS を使用します。

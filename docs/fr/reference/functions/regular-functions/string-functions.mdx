@@ -324,7 +324,7 @@ SELECT base58Decode('JxF12TrwUP45BMd');
 
 Introduite dans : v22.7.0
 
-Encode une chaîne en [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html).
+Encode une chaîne en [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01).
 
 **Syntaxe**
 
@@ -361,6 +361,7 @@ SELECT base58Encode('ClickHouse');
 Introduit dans : v18.16.0
 
 Décode une chaîne à partir d’une représentation [Base64](https://en.wikipedia.org/wiki/Base64), conformément à la RFC 4648.
+Depuis la version 26.7, les caractères d’espacement suivants dans l’entrée sont ignorés : espace, tabulation (`\t`), saut de ligne (`\n`), retour chariot (`\r`) et saut de page (`\f`) (les versions antérieures rejetaient les entrées qui en contenaient). La tabulation verticale (`\v`), ainsi que tous les autres caractères ne faisant pas partie de l’alphabet Base64, sont rejetés.
 Lève une exception en cas d’erreur.
 
 **Syntaxe**
@@ -437,7 +438,9 @@ SELECT base64Encode('clickhouse')
 
 Introduit dans : v24.6.0
 
-Décode une chaîne à partir d’une représentation [Base64](https://en.wikipedia.org/wiki/Base64) en utilisant un alphabet sûr pour les URL, conformément à la RFC 4648.
+Décode une chaîne à partir d’une représentation [Base64](https://en.wikipedia.org/wiki/Base64) en utilisant un alphabet compatible avec les URL, conformément à la RFC 4648.
+L’alphabet standard (`+` et `/`) est également accepté lors du décodage.
+Depuis la version 26.7, les caractères d’espacement espace, tabulation (`\t`), saut de ligne (`\n`), retour chariot (`\r`) et saut de page (`\f`) présents dans l’entrée sont ignorés (les versions antérieures rejetaient les entrées qui les contenaient). La tabulation verticale (`\v`) ainsi que tous les autres caractères ne faisant pas partie de l’alphabet Base64 sont rejetés.
 Lève une exception en cas d’erreur.
 
 **Syntaxe**
@@ -639,8 +642,8 @@ SELECT caseFoldUTF8('Straße')
 
 ```response title=Response
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                 │
-└─────────────────────────┘
+│ strasse                │
+└────────────────────────┘
 ```
 
 <div id="compareSubstrings">
@@ -1165,13 +1168,13 @@ Renvoie la distance d’édition entre les deux chaînes UTF8. [`UInt64`](/fr/re
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT editDistanceUTF8('我是谁', '我是我')
+SELECT editDistanceUTF8('我是谁', '我是我') AS distance
 ```
 
 ```response title=Response
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
 ```
 
 <div id="encodeXMLComponent">
@@ -1595,8 +1598,8 @@ SELECT initcap('John''s cat won''t eat.');
 Introduit dans : v23.7.0
 
 Comme [`initcap`](#initcap), `initcapUTF8` convertit la première lettre de chaque mot en majuscule et le reste en minuscules.
-Suppose que la chaîne contient un texte encodé en UTF-8 valide.
-Si cette hypothèse n&#39;est pas respectée, aucune exception n&#39;est levée et le résultat n&#39;est pas défini.
+Suppose que la chaîne contient un texte valide encodé en UTF-8.
+Si cette hypothèse n&#39;est pas respectée, aucune exception n&#39;est levée et le résultat est indéfini.
 
 <Note>
   Cette fonction ne détecte pas la langue ; par exemple, pour le turc, le résultat peut ne pas être tout à fait correct (i/İ vs. i/I).
@@ -1659,9 +1662,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2100,7 +2100,7 @@ SELECT s FROM t ORDER BY naturalSortKey(s)
 ```response title=Response
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
 ```
 
@@ -2190,7 +2190,7 @@ SELECT
 
 Introduit dans : v21.11.0
 
-Normalise une chaîne en UTF-8 selon la [forme de normalisation NFKC](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
+Normalise une chaîne UTF-8 selon la [forme de normalisation NFKC](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
 
 **Syntaxe**
 
@@ -2204,7 +2204,7 @@ normalizeUTF8NFKC(str)
 
 **Valeur renvoyée**
 
-Renvoie la forme normalisée NFKC de la chaîne en UTF-8. [`String`](/fr/reference/data-types/string)
+Renvoie la forme normalisée NFKC de la chaîne UTF-8. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -2212,13 +2212,13 @@ Renvoie la forme normalisée NFKC de la chaîne en UTF-8. [`String`](/fr/referen
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Circled number characters
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converts to 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
 ```
 
@@ -2289,8 +2289,8 @@ Renvoie la forme normalisée NFKD de la chaîne UTF-8. [`String`](/fr/reference/
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subscript 2 + O + superscript 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converts to H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -2510,8 +2510,8 @@ SELECT removeDiacriticsUTF8('café résumé naïve')
 
 ```response title=Response
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                          │
-└────────────────────────────────────────────┘
+│ cafe resume naive                         │
+└───────────────────────────────────────────┘
 ```
 
 <div id="repeat">
@@ -3293,13 +3293,13 @@ Renvoie l’indice de similarité de Jaccard entre les deux chaînes UTF8. [`Flo
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
+SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ```
 
 ```response title=Response
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
 ```
 
 <div id="substring">
@@ -3315,6 +3315,8 @@ Le comptage des octets commence à 1, selon la logique suivante :
 * Si `offset` est négatif, la sous-chaîne commence à `offset` caractères de la fin de la chaîne, et non du début.
 
 Un argument facultatif, `length`, spécifie le nombre maximal d’octets que la sous-chaîne renvoyée peut contenir.
+
+Voir aussi la fonction [`digits`](/fr/reference/functions/regular-functions/other-functions#digits), qui effectue l’opération analogue sur les chiffres d’un nombre.
 
 **Syntaxe**
 
@@ -3893,7 +3895,7 @@ SELECT upper('clickhouse')
 
 Introduit dans : v1.1.0
 
-Convertit une chaîne en majuscules, en supposant qu’elle contient du texte UTF-8 valide.
+Convertit une chaîne en majuscules, en supposant qu’elle contient du texte encodé en UTF-8 valide.
 Si cette hypothèse n’est pas respectée, aucune exception n’est levée et le résultat est indéfini.
 
 <Note>

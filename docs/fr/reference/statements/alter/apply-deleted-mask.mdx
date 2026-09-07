@@ -1,5 +1,5 @@
 ---
-description: 'Documentation sur APPLY DELETED MASK'
+description: 'Documentation pour APPLY DELETED MASK'
 sidebarTitle: 'APPLY DELETED MASK'
 slug: /sql-reference/statements/alter/apply-deleted-mask
 title: 'APPLY DELETED MASK'
@@ -10,7 +10,7 @@ doc_type: 'reference'
 ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
 ```
 
-La commande applique le masque créé par [la suppression légère](/fr/reference/statements/delete) et supprime physiquement du disque les lignes marquées comme supprimées. Cette commande est une mutation lourde, sémantiquement équivalente à la requête `ALTER TABLE [db].name DELETE WHERE _row_exists = 0`.
+La commande applique le masque créé par la [suppression légère](/fr/reference/statements/delete) et supprime de force du disque les lignes marquées comme supprimées. Cette commande est une mutation lourde et équivaut sémantiquement à la requête `ALTER TABLE [db].name DELETE WHERE _row_exists = 0`.
 
 <Note>
   Elle fonctionne uniquement pour les tables de la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les tables [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication)).

@@ -32,11 +32,11 @@ quantiles(level1, level2, ...)(expr)
 
 **参数**
 
-* `expr` — 基于列值的表达式，结果类型为数值数据类型、Date 或 DateTime。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+* `expr` — 基于列值的表达式，结果类型为数值数据类型、`Date`、`DateTime` 或 `DateTime64`。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Int128`](/zh/reference/data-types/int-uint) 或 [`UInt128`](/zh/reference/data-types/int-uint) 或 [`Int256`](/zh/reference/data-types/int-uint) 或 [`UInt256`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 
 **返回值**
 
-按指定级别的顺序返回的近似分位数组。[`Array(Float64)`](/zh/reference/data-types/array) 或 [`Array(Date)`](/zh/reference/data-types/array) 或 [`Array(DateTime)`](/zh/reference/data-types/array)
+按指定级别的顺序返回的近似分位数组。数值参数返回 `Float64`，而 `Decimal`、`Date`、`DateTime` 和 `DateTime64` 参数会保留其输入格式。[`Array(Float64)`](/zh/reference/data-types/array) 或 [`Array(Decimal*)`](/zh/reference/data-types/array) 或 [`Array(Date)`](/zh/reference/data-types/array) 或 [`Array(DateTime)`](/zh/reference/data-types/array) 或 [`Array(DateTime64)`](/zh/reference/data-types/array)
 
 **示例**
 

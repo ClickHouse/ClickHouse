@@ -1,0 +1,130 @@
+---
+description: 'La función de tabla `eval` evalúa una expresión constante como una cadena de consulta y ejecuta la consulta `SELECT` resultante.'
+sidebarTitle: 'eval'
+slug: /sql-reference/table-functions/eval
+title: 'eval'
+doc_type: 'reference'
+---
+
+La función de tabla `eval` evalúa su argumento como una cadena de consulta y, a continuación, ejecuta esa cadena como una única consulta `SELECT`.
+
+Esta función de tabla es Experimental y está deshabilitada de forma predeterminada. Habilítela con la configuración `allow_experimental_eval_table_function`:
+
+```sql
+SET allow_experimental_eval_table_function = 1;
+```
+
+También requiere el analizador ([`enable_analyzer`](/es/reference/settings/session-settings#allow_experimental_analyzer), activado de forma predeterminada).
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+eval(expression)
+eval(SELECT ...)
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+* `expression` — Una expresión constante que devuelve una cadena de consulta. Se permiten parámetros de consulta y subconsultas escalares.
+* `SELECT ...` — Una consulta `SELECT` que devuelve una cadena de consulta. Esta forma es azúcar sintáctico de una subconsulta escalar: `eval(SELECT ...)` es equivalente a `eval((SELECT ...))`, por lo que la consulta debe devolver exactamente una fila y una columna.
+
+El valor de la expresión debe tener uno de estos tipos:
+
+* `String`
+* `Nullable(String)`
+* `LowCardinality(String)`
+* `LowCardinality(Nullable(String))`
+
+Si el valor es `NULL`, `eval` lanza una excepción.
+
+<div id="returned-value">
+  ## Valor devuelto
+</div>
+
+Devuelve el resultado de la consulta `SELECT` generada en forma de tabla.
+
+El esquema de salida se determina cuando se analiza la función de tabla `eval`, por lo que las consultas externas pueden hacer referencia a los nombres y tipos reales de las columnas de la consulta generada.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Evalúe una expresión constante:
+
+```sql
+SELECT * FROM eval('SEL' || 'ECT 1 AS x');
+```
+
+Resultado:
+
+```text
+┌─x─┐
+│ 1 │
+└───┘
+```
+
+Usa un parámetro de consulta:
+
+```sql
+SET param_q = 'SELECT 2 AS y';
+SELECT * FROM eval({q:String});
+```
+
+Resultado:
+
+```text
+┌─y─┐
+│ 2 │
+└───┘
+```
+
+Evalúe una consulta `SELECT` de entrada que devuelva el texto de la consulta:
+
+```sql
+SELECT * FROM eval(SELECT 'SELECT 3 AS z');
+```
+
+Resultado:
+
+```text
+┌─z─┐
+│ 3 │
+└───┘
+```
+
+Usa el esquema generado en la consulta externa:
+
+```sql
+SELECT x + 1 FROM eval('SELECT 4 AS x');
+```
+
+Resultado:
+
+```text
+┌─plus(x, 1)─┐
+│          5 │
+└────────────┘
+```
+
+<div id="restrictions">
+  ## Restricciones
+</div>
+
+* `eval` funciona solo con el analizador de consultas (`enable_analyzer = 1`).
+* La consulta generada debe ser una única consulta `SELECT`, sin opciones de salida como `INTO OUTFILE` o `FORMAT`. `eval` no ejecuta múltiples sentencias.
+* La consulta generada debe ser autocontenida: se resuelve en su propio ámbito y no puede hacer referencia a alias de `WITH` ni a columnas de la consulta externa.
+* La consulta generada no puede volver a usar la función de tabla `eval`.
+* `eval` no puede usarse como argumento de otra función de tabla, como `remote('host', eval(...))`. Para ejecutar la consulta generada en un servidor remoto, envuélvela en `view`: `remote('host', view(SELECT * FROM eval(...)))`.
+* El argumento se evalúa una vez durante el análisis de la consulta, no una vez por fila o bloque.
+* El registro de consultas de la consulta externa registra la consulta original que contiene `eval`; la consulta `SELECT` generada no se registra como una consulta de usuario independiente.
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* [función de tabla `view`](/es/reference/functions/table-functions/view)
+* configuración `allow_experimental_eval_table_function`

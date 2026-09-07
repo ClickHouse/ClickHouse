@@ -156,7 +156,7 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-When ClickHouse server executes many concurrent queries with [multiple threads](/reference/settings/session-settings#max_threads) and all CPU slots are in use the overload state is reached. In the overload state every released CPU slot is rescheduled to proper workload according to scheduling policies. For queries sharing the same workload, slots are allocated using round-robin. For queries in separate workloads, slots are allocated according to weights, priorities, and limits specified for workloads.
+When ClickHouse server executes many concurrent queries with [multiple threads](/reference/settings/session-settings/max-threads#max_threads) and all CPU slots are in use the overload state is reached. In the overload state every released CPU slot is rescheduled to proper workload according to scheduling policies. For queries sharing the same workload, slots are allocated using round-robin. For queries in separate workloads, slots are allocated according to weights, priorities, and limits specified for workloads.
 
 CPU time is consumed by threads when they are not blocked and work on CPU-intensive tasks. For scheduling purpose, two kinds of threads are distinguished:
 * Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
@@ -187,18 +187,18 @@ CREATE WORKLOAD ingestion IN production
 
 This configuration example provides independent CPU slot pools for admin and production. The production pool is shared between analytics and ingestion. Furthermore, if the production pool is overloaded, 9 of 10 released slots will be rescheduled to analytical queries if necessary. The ingestion queries would only receive 1 of 10 slots during overload periods. This might improve the latency of user-facing queries. Analytics has its own limit of 60 concurrent threads, always leaving at least 40 threads to support ingestion. When there is no overload, ingestion could use all 100 threads.
 
-To exclude a query from CPU scheduling set a query setting [use_concurrency_control](/reference/settings/session-settings#use_concurrency_control) to 0.
+To exclude a query from CPU scheduling set a query setting [use_concurrency_control](/reference/settings/session-settings/use#use_concurrency_control) to 0.
 
 CPU scheduling is not supported for merges and mutations yet.
 
 To provide fair allocations for workload it is necessary to perform preemption and down-scaling during query execution. Preemption is enabled with `cpu_slot_preemption` server setting. If it is enabled, every thread renews its CPU slot periodically (according to `cpu_slot_quantum_ns` server setting). Such a renewal can block execution if CPU is overloaded. When execution is blocked for a prolonged time (see `cpu_slot_preemption_timeout_ms` server setting), the query scales down and the number of concurrently running threads decreases dynamically. Note that CPU time fairness is guaranteed between workloads, but between queries inside the same workload it might be violated in some corner cases.
 
 <Warning>
-Slot scheduling provides a way to control [query concurrency](/reference/settings/session-settings#max_threads) but does not guarantee fair CPU time allocation unless server setting `cpu_slot_preemption` is set to `true`, otherwise fairness is provided based on number of CPU slot allocations among competing workloads. It does not imply equal amount of CPU seconds because without preemption CPU slot may be held indefinitely. A thread acquires a slot at the beginning and release when work is done.
+Slot scheduling provides a way to control [query concurrency](/reference/settings/session-settings/max-threads#max_threads) but does not guarantee fair CPU time allocation unless server setting `cpu_slot_preemption` is set to `true`, otherwise fairness is provided based on number of CPU slot allocations among competing workloads. It does not imply equal amount of CPU seconds because without preemption CPU slot may be held indefinitely. A thread acquires a slot at the beginning and release when work is done.
 </Warning>
 
 <Note>
-Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](/reference/settings/server-settings/settings#concurrent_threads_scheduler) setting set "fair_round_robin" value.
+Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) setting set "fair_round_robin" value.
 </Note>
 
 ## Threads vs. CPUs {#threads_vs_cpus}
@@ -287,7 +287,7 @@ Every workload with a `max_memory` limit ensures that the total memory allocated
 If eviction is prevented or does not free enough memory, the new allocation is blocked until enough memory is freed. These rules allow queueing of excessive queries based on memory pressure and provide a convenient way to avoid MEMORY_LIMIT_EXCEEDED errors.
 
 <Note>
-Workload limits are independent from other ways to limit memory consumption like [max_memory_usage](/reference/settings/session-settings#max_memory_usage) query setting. They could be used together to achieve better control over memory consumption. It is possible to set independent memory limits based on users (not workloads). This is less flexible and does not provide features like memory reservation and queueing of pending queries. See [Memory overcommit](/concepts/features/configuration/settings/memory-overcommit)
+Workload limits are independent from other ways to limit memory consumption like [max_memory_usage](/reference/settings/session-settings/max-memory-usage#max_memory_usage) query setting. They could be used together to achieve better control over memory consumption. It is possible to set independent memory limits based on users (not workloads). This is less flexible and does not provide features like memory reservation and queueing of pending queries. See [Memory overcommit](/concepts/features/configuration/settings/memory-overcommit)
 </Note>
 
 Workload setting `max_waiting_queries` limits the number of pending allocations for the workload. When the limit is reached, the server returns an error `SERVER_OVERLOADED`. Note that `max_waiting_queries` is not inherited by children workloads and makes sense only for leaf workloads.
@@ -325,7 +325,7 @@ CREATE RESOURCE query (QUERY)
 CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
 ```
 
-Workload setting `max_concurrent_queries` limits the number of concurrent queries that could run simultaneously for a given workload. This is analog of query [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings#max_concurrent_queries_for_all_users) and server [max_concurrent_queries](/reference/settings/server-settings/settings#max_concurrent_queries) settings. Async insert queries and some specific queries like KILL are not counted towards the limit.
+Workload setting `max_concurrent_queries` limits the number of concurrent queries that could run simultaneously for a given workload. This is analog of query [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) and server [max_concurrent_queries](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) settings. Async insert queries and some specific queries like KILL are not counted towards the limit.
 
 Workload settings `max_queries_per_second` and `max_burst_queries` limit the number of queries for the workload using a token bucket throttler. It guarantees that during any time interval `T` no more than `max_queries_per_second * T + max_burst_queries` new queries will start execution.
 
@@ -464,83 +464,16 @@ Example:
 
 Note that server configuration options have priority over SQL way to define resources.
 
-The following example shows how to define IO scheduling hierarchies shown in the picture above:
-
-```xml
-<clickhouse>
-    <resources>
-        <network_read>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_read>
-        <network_write>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_write>
-    </resources>
-</clickhouse>
-```
-
-To be able to use the full capacity of the underlying resource, you should use `inflight_limit`. Note that a low number of `max_requests` or `max_cost` could lead to not full resource utilization, while too high numbers could lead to empty queues inside the scheduler, which in turn will result in policies being ignored (unfairness or ignoring of priorities) in the subtree. On the other hand, if you want to protect resources from too high utilization, you should use `bandwidth_limit`. It throttles when the amount of resource consumed in `duration` seconds exceeds `max_burst + max_speed * duration` bytes. Two `bandwidth_limit` nodes on the same resource could be used to limit peak bandwidth during short intervals and average bandwidth for longer ones.
-
-### Deprecated workload classifiers {#workload-classifiers}
-
-Workload classifiers are used to define mapping from `workload` specified by a query into leaf-queues that should be used for specific resources. At the moment, workload classification is simple: only static mapping is available.
-
-Example:
-```xml
-<clickhouse>
-    <workload_classifiers>
-        <production>
-            <network_read>/fair/prod</network_read>
-            <network_write>/fair/prod</network_write>
-        </production>
-        <development>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </development>
-        <default>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </default>
-    </workload_classifiers>
-</clickhouse>
-```
-
 ## See also {#see-also}
 - [system.scheduler](/reference/system-tables/scheduler)
 - [system.workloads](/reference/system-tables/workloads)
 - [system.resources](/reference/system-tables/resources)
-- [merge_workload](/reference/settings/merge-tree-settings#merge_workload) merge tree setting
-- [merge_workload](/reference/settings/server-settings/settings#merge_workload) global server setting
-- [mutation_workload](/reference/settings/merge-tree-settings#mutation_workload) merge tree setting
-- [mutation_workload](/reference/settings/server-settings/settings#mutation_workload) global server setting
-- [workload_path](/reference/settings/server-settings/settings#workload_path) global server setting
-- [workload_zookeeper_path](/reference/settings/server-settings/settings#workload_zookeeper_path) global server setting
-- [cpu_slot_preemption](/reference/settings/server-settings/settings#cpu_slot_preemption) global server setting
-- [cpu_slot_quantum_ns](/reference/settings/server-settings/settings#cpu_slot_quantum_ns) global server setting
-- [cpu_slot_preemption_timeout_ms](/reference/settings/server-settings/settings#cpu_slot_preemption_timeout_ms) global server setting
+- [merge_workload](/reference/settings/merge-tree-settings/merge#merge_workload) merge tree setting
+- [merge_workload](/reference/settings/server-settings/settings/merge#merge_workload) global server setting
+- [mutation_workload](/reference/settings/merge-tree-settings/other#mutation_workload) merge tree setting
+- [mutation_workload](/reference/settings/server-settings/settings/other#mutation_workload) global server setting
+- [workload_path](/reference/settings/server-settings/settings/workload#workload_path) global server setting
+- [workload_zookeeper_path](/reference/settings/server-settings/settings/workload#workload_zookeeper_path) global server setting
+- [cpu_slot_preemption](/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) global server setting
+- [cpu_slot_quantum_ns](/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) global server setting
+- [cpu_slot_preemption_timeout_ms](/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) global server setting

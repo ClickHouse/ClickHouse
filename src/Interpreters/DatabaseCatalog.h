@@ -72,9 +72,11 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     StoragePtr getTable() const;
 
+    std::shared_ptr<IDatabase> getDatabase() const;
+
     operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
 
-    IDatabase * temporary_tables = nullptr;
+    std::weak_ptr<IDatabase> temporary_tables;
     UUID id = UUIDHelpers::Nil;
     FutureSetFromSubqueryPtr future_set;
 };

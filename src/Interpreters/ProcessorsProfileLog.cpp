@@ -150,7 +150,7 @@ void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IPro
                 processor_elem.memory_allocated_bytes = info.memory_allocated_bytes;
                 processor_elem.memory_freed_bytes = info.memory_freed_bytes;
 
-                processors_profile_log->add(processor_elem);
+                processors_profile_log->add([&](ProcessorProfileLogElement & element) { element = processor_elem; });
             }
         }
         auto logger = ::getLogger("ProcessorProfileLog");

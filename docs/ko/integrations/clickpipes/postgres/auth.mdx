@@ -14,15 +14,35 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 문서에서는 ClickPipes 고객이 역할 기반 접근을 사용하여 Amazon Aurora 및 RDS에서 인증을 수행하고 데이터베이스에 안전하게 액세스하는 방법을 설명합니다.
 
-<Warning>
-  AWS RDS Postgres 및 Aurora Postgres에서는 AWS IAM DB 인증의 제약으로 인해 `Initial Load Only` ClickPipes만 실행할 수 있습니다.
-
-  MySQL 및 MariaDB에는 이 제약이 적용되지 않으므로 `Initial Load Only` ClickPipes와 `CDC` ClickPipes를 모두 실행할 수 있습니다.
-</Warning>
-
 <div id="setup">
   ## Setup
 </div>
+
+<div id="before-you-start">
+  ### 시작하기 전에
+</div>
+
+<div id="make-sure-iam-authentication-is-enabled">
+  #### IAM 인증이 활성화되어 있는지 확인하십시오
+</div>
+
+1. AWS 계정에 로그인한 후 구성할 RDS 인스턴스로 이동합니다.
+2. **Modify** 버튼을 클릭합니다.
+3. 아래로 스크롤하여 **Database authentication** 섹션을 찾습니다.
+4. **Password and IAM database authentication** 옵션을 활성화합니다.
+5. **Continue** 버튼을 클릭합니다.
+6. 변경 사항을 검토한 후 **Apply immediately** 옵션을 클릭합니다.
+
+<div id="setting-up-the-database-user">
+  #### 데이터베이스 사용자 설정하기
+</div>
+
+RDS/Aurora 인스턴스에 연결한 다음 IAM 인증이 활성화된 데이터베이스 사용자를 생성하십시오. 그런 다음 ClickPipes용 인스턴스를 구성할 수 있도록 소스 설정 가이드의 나머지 단계를 따르십시오.
+
+* [AWS Aurora for PostgreSQL 소스 설정 가이드](/ko/integrations/clickpipes/postgres/source/aurora#configure-database-user)
+* [AWS RDS for PostgreSQL 소스 설정 가이드](/ko/integrations/clickpipes/postgres/source/rds#configure-database-user)
+* [AWS Aurora for MySQL 소스 설정 가이드](/ko/integrations/clickpipes/mysql/source/aurora#configure-database-user)
+* [AWS RDS for MySQL 소스 설정 가이드](/ko/integrations/clickpipes/mysql/source/rds#configure-database-user)
 
 <div id="obtaining-the-clickhouse-service-iam-role-arn">
   ### ClickHouse 서비스 IAM 역할 ARN 가져오기
@@ -42,20 +62,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 값을 `{ClickHouse_IAM_ARN}`이라고 하겠습니다. 이 IAM 역할은 RDS/Aurora 인스턴스에 액세스하는 데 사용됩니다.
 
-<div id="configuring-the-rds-aurora-instance">
-  ### RDS/Aurora 인스턴스 구성하기
+<div id="setting-up-iam-role">
+  ### IAM 역할 설정하기
 </div>
-
-<div id="enabling-iam-db-authentication">
-  #### IAM DB 인증 활성화
-</div>
-
-1. AWS 계정에 로그인한 후 구성할 RDS 인스턴스로 이동합니다.
-2. **Modify** 버튼을 클릭합니다.
-3. 아래로 스크롤하여 **Database authentication** 섹션을 찾습니다.
-4. **Password and IAM database authentication** 옵션을 활성화합니다.
-5. **Continue** 버튼을 클릭합니다.
-6. 변경 사항을 검토한 후 **Apply immediately** 옵션을 클릭합니다.
 
 <div id="obtaining-the-rds-resource-id">
   #### RDS/Aurora Resource ID 확인하기
@@ -64,35 +73,6 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 1. AWS 계정에 로그인한 다음, 구성할 RDS 인스턴스 또는 Aurora 클러스터로 이동합니다.
 2. **Configuration** 탭을 클릭합니다.
 3. **Resource ID** 값을 확인합니다. RDS는 `db-xxxxxxxxxxxxxx`, Aurora 클러스터는 `cluster-xxxxxxxxxxxxxx` 형식입니다. 이 값을 `{RDS_RESOURCE_ID}`라고 하겠습니다. 이 값은 RDS 인스턴스에 대한 액세스를 허용하는 IAM 정책에서 사용할 Resource ID입니다.
-
-<div id="setting-up-the-database-user">
-  #### 데이터베이스 사용자 설정하기
-</div>
-
-<div id="setting-up-the-database-user-postgres">
-  ##### PostgreSQL
-</div>
-
-1. RDS/Aurora 인스턴스에 연결한 후, 다음 명령으로 새 데이터베이스 사용자를 생성하십시오.
-   ```sql
-   CREATE USER clickpipes_iam_user; 
-   GRANT rds_iam TO clickpipes_iam_user;
-   ```
-2. [PostgreSQL 소스 설정 가이드](/ko/integrations/clickpipes/postgres/source/rds)의 나머지 단계를 따라 RDS 인스턴스를 ClickPipes용으로 구성하십시오.
-
-<div id="setting-up-the-database-user-mysql">
-  ##### MySQL / MariaDB
-</div>
-
-1. RDS/Aurora 인스턴스에 연결한 다음, 다음 명령으로 새 데이터베이스 사용자를 생성합니다.
-   ```sql
-   CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-   ```
-2. [MySQL 소스 설정 가이드](/ko/integrations/clickpipes/mysql/source/rds)의 나머지 단계를 따라 RDS/Aurora 인스턴스를 ClickPipes에 맞게 구성하십시오.
-
-<div id="setting-up-iam-role">
-  ### IAM 역할 설정하기
-</div>
 
 <div id="manually-create-iam-role">
   #### IAM 역할을 수동으로 생성합니다.

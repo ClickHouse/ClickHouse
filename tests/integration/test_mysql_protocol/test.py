@@ -455,8 +455,12 @@ def test_mysql_replacement_query_injection(started_cluster):
         port=server_port,
     )
 
-    # SHOW TABLE STATUS LIKE: a benign pattern reads only system.tables.
+    # SHOW TABLE STATUS LIKE: a benign pattern returns exactly the matching table. The lookup is
+    # scoped to the session's current database (MySQL semantics), so the table must live in
+    # `default`; the previously observed `system.one` no longer leaks across databases.
     cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("DROP TABLE IF EXISTS default.one")
+    cursor.execute("CREATE TABLE default.one (dummy UInt8) ENGINE = Memory")
     cursor.execute("SHOW TABLE STATUS LIKE 'one'")
     rows = cursor.fetchall()
     assert [r["Name"] for r in rows] == ["one"], rows
@@ -590,6 +594,7 @@ def test_mysql_replacement_query_injection(started_cluster):
     # It must instead match nothing (the malformed command is not coerced into a lookup).
     cursor.execute("SHOW TABLE STATUS LIKEx'one'")
     assert [r["Name"] for r in cursor.fetchall()] == [], "SHOW TABLE STATUS LIKE accepted a missing separator"
+    cursor.execute("DROP TABLE default.one")
     client.close()
 
 
@@ -866,6 +871,260 @@ def test_python_client(started_cluster):
     cursor.execute("SELECT * FROM table1 ORDER BY a")
     assert cursor.fetchall() == [{"a": 1}, {"a": 1}, {"a": 3}, {"a": 4}]
     cursor.execute("DROP DATABASE x")
+
+
+def test_collation_consistency(started_cluster):
+    # The MySQL compatibility surface must advertise a single collation everywhere:
+    # the handshake, SHOW COLLATION, INFORMATION_SCHEMA, and result-set column metadata.
+    utf8mb4_0900_ai_ci = 255
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+
+    # Handshake: the charset id sent in the initial handshake packet.
+    assert client.server_language == utf8mb4_0900_ai_ci
+
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+
+    # SHOW COLLATION enumerates every collation the server stamps on the wire:
+    # the advertised one for strings and the binary pseudo-collation for non-string
+    # columns. Connector/NET builds its charset-id dictionary from this result, so
+    # a charset id missing here breaks reading any result set that uses it.
+    cursor.execute("SHOW COLLATION")
+    collations = cursor.fetchall()
+    assert {
+        "Collation": "utf8mb4_0900_ai_ci",
+        "Charset": "utf8mb4",
+        "Id": utf8mb4_0900_ai_ci,
+        "Default": "Yes",
+        "Compiled": "Yes",
+        "Sortlen": 0,
+        "Pad_attribute": "NO PAD",
+    } in collations
+    assert {
+        "Collation": "binary",
+        "Charset": "binary",
+        "Id": 63,
+        "Default": "Yes",
+        "Compiled": "Yes",
+        "Sortlen": 1,
+        "Pad_attribute": "NO PAD",
+    } in collations
+
+    # The filtered forms of the statement are honored server-side: the dispatcher is
+    # prefix-based, so a LIKE / WHERE tail must narrow the result, not be dropped.
+    cursor.execute("SHOW COLLATION LIKE 'utf8mb4%'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    # MySQL matches collation names case-insensitively.
+    cursor.execute("SHOW COLLATION LIKE 'UTF8MB4%'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION LIKE 'no_such_collation%'")
+    assert list(cursor.fetchall()) == []
+
+    cursor.execute("SHOW COLLATION WHERE Charset = 'binary'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["binary"]
+
+    # MySQL string comparisons in the WHERE form are case-insensitive too, for both
+    # the literal values and the column names.
+    cursor.execute("SHOW COLLATION WHERE Charset = 'UTF8MB4'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Collation = 'UTF8MB4_0900_AI_CI'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE collation IN ('UTF8MB4_0900_AI_CI', 'BINARY')")
+    assert sorted(row["Collation"] for row in cursor.fetchall()) == [
+        "binary",
+        "utf8mb4_0900_ai_ci",
+    ]
+
+    cursor.execute("SHOW COLLATION WHERE Charset LIKE 'UTF8%' AND Id = 255")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Charset = 'no_such_charset'")
+    assert list(cursor.fetchall()) == []
+
+    # Quoted numeric filters keep MySQL's numeric/string coercion: the case-folding
+    # rewrite applies only to string-valued columns, so `Id` and `Sortlen` must never
+    # be wrapped in a string-only function (which would throw instead of matching).
+    cursor.execute("SHOW COLLATION WHERE Id = '255'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Id IN ('255', '63')")
+    assert sorted(row["Collation"] for row in cursor.fetchall()) == [
+        "binary",
+        "utf8mb4_0900_ai_ci",
+    ]
+
+    cursor.execute("SHOW COLLATION WHERE Sortlen != '1'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    # INFORMATION_SCHEMA.COLLATIONS contains it with the same charset and id.
+    cursor.execute(
+        "SELECT CHARACTER_SET_NAME, ID FROM INFORMATION_SCHEMA.COLLATIONS "
+        "WHERE COLLATION_NAME = 'utf8mb4_0900_ai_ci'"
+    )
+    assert cursor.fetchall() == [
+        {"CHARACTER_SET_NAME": "utf8mb4", "ID": utf8mb4_0900_ai_ci}
+    ]
+
+    # INFORMATION_SCHEMA.SCHEMATA advertises the same default collation.
+    cursor.execute(
+        "SELECT DEFAULT_COLLATION_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
+        "WHERE SCHEMA_NAME = 'default'"
+    )
+    assert cursor.fetchall() == [{"DEFAULT_COLLATION_NAME": "utf8mb4_0900_ai_ci"}]
+
+    # Result-set metadata: textual columns are stamped with the same charset id
+    # in ColumnDefinition41 packets, not with utf8_general_ci or binary.
+    cursor.execute("SELECT 'text' AS t, 1 AS n")
+    fields = {f.name: f.charsetnr for f in cursor._result.fields}
+    assert fields["t"] == utf8mb4_0900_ai_ci
+    binary_charset = 63
+    assert fields["n"] == binary_charset
+
+    client.close()
+
+
+def test_show_table_status_matches_information_schema(started_cluster):
+    # SHOW TABLE STATUS and INFORMATION_SCHEMA.TABLES describe the same MySQL metadata
+    # family, so both surfaces must share one mapping: a client mixing the two
+    # introspection paths must see identical values for one object.
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute(
+        "CREATE TABLE default.table_status_consistency (n UInt64) "
+        "ENGINE = MergeTree ORDER BY n"
+    )
+    try:
+        cursor.execute("INSERT INTO default.table_status_consistency VALUES (1), (2)")
+
+        cursor.execute("SHOW TABLE STATUS LIKE 'table_status_consistency'")
+        status_rows = cursor.fetchall()
+        assert len(status_rows) == 1, status_rows
+        status = status_rows[0]
+
+        cursor.execute(
+            "SELECT * FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE table_schema = 'default' AND table_name = 'table_status_consistency'"
+        )
+        info = cursor.fetchall()[0]
+
+        for status_column, info_column in [
+            ("Name", "table_name"),
+            ("Engine", "engine"),
+            ("Version", "version"),
+            ("Row_format", "row_format"),
+            ("Rows", "table_rows"),
+            ("Avg_row_length", "avg_row_length"),
+            ("Data_length", "data_length"),
+            ("Max_data_length", "max_data_length"),
+            ("Index_length", "index_length"),
+            ("Data_free", "data_free"),
+            ("Auto_increment", "auto_increment"),
+            ("Create_time", "create_time"),
+            ("Update_time", "update_time"),
+            ("Check_time", "check_time"),
+            ("Collation", "table_collation"),
+            ("Checksum", "checksum"),
+            ("Create_options", "create_options"),
+            ("Comment", "table_comment"),
+        ]:
+            assert status[status_column] == info[info_column], (
+                status_column,
+                status[status_column],
+                info[info_column],
+            )
+
+        assert status["Engine"] == "MergeTree"
+        assert status["Rows"] == 2
+        assert status["Collation"] == "utf8mb4_0900_ai_ci"
+
+        # Engine must be reported for real table engines that don't store data
+        # on disk (classified as FOREIGN TABLE), not only for BASE TABLE rows;
+        # only view-like objects report a NULL Engine, as in MySQL.
+        cursor.execute(
+            "CREATE TABLE default.table_status_memory (n UInt64) ENGINE = Memory"
+        )
+        try:
+            cursor.execute("SHOW TABLE STATUS LIKE 'table_status_memory'")
+            memory_rows = cursor.fetchall()
+            assert len(memory_rows) == 1, memory_rows
+            assert memory_rows[0]["Engine"] == "Memory", memory_rows[0]
+
+            cursor.execute(
+                "SELECT table_type, engine FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE table_schema = 'default' AND table_name = 'table_status_memory'"
+            )
+            memory_info = cursor.fetchall()[0]
+            assert memory_info["table_type"] == "FOREIGN TABLE", memory_info
+            assert memory_info["engine"] == "Memory", memory_info
+        finally:
+            cursor.execute("DROP TABLE default.table_status_memory")
+    finally:
+        cursor.execute("DROP TABLE default.table_status_consistency")
+        client.close()
+
+
+def test_show_table_status_scoped_to_current_database(started_cluster):
+    # MySQL scopes SHOW TABLE STATUS to the session's default database. With the same
+    # table name present in two databases, the statement must return only the row of the
+    # session's current database, and must follow USE to the other one.
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("CREATE DATABASE db_status_scope_1")
+    try:
+        cursor.execute("CREATE DATABASE db_status_scope_2")
+        cursor.execute(
+            "CREATE TABLE db_status_scope_1.status_scope (a UInt8) "
+            "ENGINE = MergeTree ORDER BY a"
+        )
+        cursor.execute(
+            "CREATE TABLE db_status_scope_2.status_scope (a UInt8) ENGINE = Log"
+        )
+
+        client.select_db("db_status_scope_1")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        rows = cursor.fetchall()
+        assert len(rows) == 1, rows
+        assert rows[0]["Name"] == "status_scope"
+        assert rows[0]["Engine"] == "MergeTree"
+
+        # USE switches the session database; the same statement must now see the other table.
+        client.select_db("db_status_scope_2")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        rows = cursor.fetchall()
+        assert len(rows) == 1, rows
+        assert rows[0]["Engine"] == "Log"
+
+        # A database without a match must return an empty set even though the
+        # name matches tables elsewhere.
+        client.select_db("default")
+        cursor.execute("SHOW TABLE STATUS LIKE 'status_scope'")
+        assert list(cursor.fetchall()) == []
+    finally:
+        cursor.execute("DROP DATABASE IF EXISTS db_status_scope_1")
+        cursor.execute("DROP DATABASE IF EXISTS db_status_scope_2")
+        client.close()
 
 
 def test_golang_client(started_cluster, golang_container):

@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 Добавленный в: v20.1.0
 
-Как и [`quantileExact`](/ru/reference/functions/aggregate-functions/quantileExact), эта функция вычисляет точный [квантиль](https://en.wikipedia.org/wiki/Quantile) числовой последовательности.
+Как и [`quantileExact`](/ru/reference/functions/aggregate-functions/quantileExact), эта функция вычисляет точный [квантиль](https://en.wikipedia.org/wiki/Quantile) числовой последовательности данных.
 
 Эта функция эквивалентна [`quantileExact`](/ru/reference/functions/aggregate-functions/quantileExact), но использует инклюзивный метод вычисления квантилей, как описано в [методе R-7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 
@@ -37,7 +37,7 @@ quantileExactInclusive(level)(expr)
 
 **Аргументы**
 
-* `expr` — Выражение над значениями столбца, результатом которого являются числовые типы данных, `Date` или `DateTime`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+* `expr` — Выражение над значениями столбца, результатом которого являются числовые типы данных, `Date` или `DateTime`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
 
 **Возвращаемое значение**
 

@@ -10,7 +10,7 @@ add_headers_and_sources(clickhouse_parsers ./Kusto/KustoFunctions)
 add_headers_and_sources(clickhouse_parsers ./Prometheus)
 
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
-target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access)
+target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access Poco::JSON)
 
 if (TARGET ch_rust::prql)
     target_link_libraries(clickhouse_parsers PRIVATE ch_rust::prql)

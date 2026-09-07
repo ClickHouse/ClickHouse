@@ -11,6 +11,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Columns/IColumn_fwd.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -116,6 +118,9 @@ protected:
     void initColumnsSubstreamsIfNeeded();
 
     virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
+
+    /// This is useful only for vector codecs (like SZ3).
+    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
     const MergeTreeIndices skip_indices;
     const String marks_file_extension;

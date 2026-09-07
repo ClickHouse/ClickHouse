@@ -46,15 +46,13 @@ The chart supports standard Kubernetes best practices, including:
 <br/>
 
 <Steps>
-<Step>
-### Prerequisites {#prerequisites}
+<Step title="Prerequisites" id="prerequisites">
 
 - [Helm](https://helm.sh/) v3+
 - Kubernetes cluster (v1.20+ recommended)
 - `kubectl` configured to interact with your cluster
 </Step>
-<Step>
-### Add the ClickStack Helm repository {#add-the-clickstack-helm-repository}
+<Step title="Add the ClickStack Helm repository" id="add-the-clickstack-helm-repository">
 
 Add the ClickStack Helm repository:
 ```shell
@@ -62,8 +60,7 @@ helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
 helm repo update
 ```
 </Step>
-<Step>
-### Install the operators {#install-the-operators}
+<Step title="Install the operators" id="install-the-operators">
 
 Install the operator chart first. This registers the CRDs required by the main chart:
 ```shell
@@ -75,16 +72,14 @@ Wait for the operator pods to become ready before proceeding:
 kubectl get pods -l app.kubernetes.io/instance=clickstack-operators
 ```
 </Step>
-<Step>
-### Install ClickStack {#installing-clickstack}
+<Step title="Install ClickStack" id="installing-clickstack">
 
 Once the operators are running, install the main chart:
 ```shell
 helm install my-clickstack clickstack/clickstack
 ```
 </Step>
-<Step>
-### Verify the installation {#verify-the-installation}
+<Step title="Verify the installation" id="verify-the-installation">
 
 Verify the installation:
 ```shell
@@ -93,8 +88,7 @@ kubectl get pods -l "app.kubernetes.io/name=clickstack"
 
 When all pods are ready, proceed.
 </Step>
-<Step>
-### Forward ports {#forward-ports}
+<Step title="Forward ports" id="forward-ports">
 
 Port forwarding allows us to access and set up HyperDX. Users deploying to production should instead expose the service via an ingress or load balancer to ensure proper network access, TLS termination, and scalability. Port forwarding is best suited for local development or one-off administrative tasks, not long-term or high-availability environments.
 ```shell
@@ -109,8 +103,7 @@ kubectl port-forward \
 For production deployments, configure ingress with TLS instead of port forwarding. See the [Ingress Configuration guide](/clickstack/deployment/helm-configuration#ingress-setup) for detailed setup instructions.
 </Tip>
 </Step>
-<Step>
-### Navigate to the UI {#navigate-to-the-ui}
+<Step title="Navigate to the UI" id="navigate-to-the-ui">
 
 Visit [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
 
@@ -126,8 +119,7 @@ On clicking `Create`, data sources will be created for the ClickHouse instance d
 You can override the default connection to the integrated ClickHouse instance. For details, see ["Using ClickHouse Cloud"](#using-clickhouse-cloud).
 </Info>
 </Step>
-<Step>
-### Customizing values (optional) {#customizing-values}
+<Step title="Customizing values (optional)" id="customizing-values">
 
 You can customize settings by using `--set` flags. For example:
 ```shell
@@ -165,8 +157,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 </Step>
-<Step>
-### Using secrets (optional) {#using-secrets}
+<Step title="Using secrets (optional)" id="using-secrets">
 
 The v2.x chart uses a unified secret (`clickstack-secret`) populated from `hyperdx.secrets` in your values. All sensitive environment variables — including ClickHouse passwords, MongoDB passwords, and the HyperDX API key — flow through this single secret.
 

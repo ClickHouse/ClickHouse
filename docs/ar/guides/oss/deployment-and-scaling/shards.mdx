@@ -24,7 +24,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <br />
 
-في هذه الحالة، يمكن تقسيم البيانات عبر عدة خوادم ClickHouse على هيئة شظايا جدول:
+في هذه الحالة، يمكن تقسيم البيانات عبر عدة خوادم ClickHouse على شكل شظايا جدول:
 
 <Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
 
@@ -75,7 +75,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 يوضح هذا المخطط كيفية معالجة استعلامات `SELECT` باستخدام جدول موزّع في ClickHouse:
 
-<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="المقاطع" />
+<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
 
 <br />
 

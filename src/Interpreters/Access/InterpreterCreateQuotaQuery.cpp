@@ -77,6 +77,9 @@ namespace
         {
             auto duration = query_limits.duration;
 
+            if (!query_limits.drop && duration.count() <= 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota interval duration must be positive, got {} seconds", duration.count());
+
             auto it = boost::range::find_if(quota_all_limits, [&](const Quota::Limits & x) { return x.duration == duration; });
             if (query_limits.drop)
             {

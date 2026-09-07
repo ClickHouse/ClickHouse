@@ -162,7 +162,7 @@ ClickHouse обрабатывает этот запрос, применяя по
 
 <br />
 
-① **Отсечение партиций**: [MinMax indexes](/ru/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) используются, чтобы игнорировать целые партиции (наборы частей), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в ключе партиционирования таблицы.
+① **Отсечение партиций**: [индексы MinMax](/ru/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) используются, чтобы игнорировать целые партиции (наборы частей), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в ключе партиционирования таблицы.
 
 ② **Отсечение гранул**: Для оставшихся частей данных после шага ① используется их [первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes), чтобы игнорировать все [гранулы](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (блоки строк), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в первичном ключе таблицы.
 

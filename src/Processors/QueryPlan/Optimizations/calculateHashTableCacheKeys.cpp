@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Analyzer/TableFunctionNode.h>
 #include <Core/Joins.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
@@ -35,7 +36,6 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
     SipHash hash;
     hash.update(read.getSerializationName());
-    String table_name;
     if (const auto & snapshot = read.getStorageSnapshot())
     {
         StorageID storage_id = snapshot->storage.getStorageID();
@@ -43,7 +43,15 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
             hash.update(storage_id.uuid.toUnderType());
         else
             hash.update(storage_id.getFullTableName());
-        table_name = storage_id.getFullTableName();
+    }
+    /// A storage created by a table function has no UUID, and its StorageID does not depend on
+    /// the arguments: any numbers(N) reads from `_table_function.numbers`. Mix in the table
+    /// function subtree (its name and resolved arguments), otherwise e.g. numbers(1) and
+    /// numbers(1e6) would share a stats entry.
+    if (const auto & table_expression = read.getQueryInfo().table_expression)
+    {
+        if (table_expression->as<TableFunctionNode>())
+            hash.update(table_expression->getTreeHash({.compare_aliases = false}));
     }
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);

@@ -200,7 +200,7 @@ def main():
             f" -DCMAKE_CXX_COMPILER=clang++-21"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_TERMINFO=OFF"
-            f" -DLLVM_ENABLE_ZLIB=OFF"
+            f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
             f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
@@ -317,8 +317,8 @@ def main():
                 build_result.info = "Build failed at link step (expected); profraw files collected"
             results.append(build_result)
 
-        # Merge profraw files using system llvm-profdata (stage 1 build lacks zlib
-        # support, but the profraw files may contain zlib-compressed sections)
+        # Merge profraw files with llvm-profdata-21 (it supports the zlib-compressed
+        # profile format the instrumented clang can emit)
         profraw_dir = f"{STAGE1_BUILD_DIR}/profiles/"
         if os.path.isdir(profraw_dir) and os.listdir(profraw_dir):
             results.append(
@@ -411,7 +411,7 @@ def main():
             f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f" -DLLVM_ENABLE_TERMINFO=OFF"
-            f" -DLLVM_ENABLE_ZLIB=OFF"
+            f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
             f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DLLVM_BINUTILS_INCDIR=/usr/include"
             f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
@@ -648,6 +648,15 @@ def main():
             os.makedirs(ninja_log_dir, exist_ok=True)
             shutil.copy2(ninja_log_saved, f"{ninja_log_dir}/ninja_log")
             print(f"Installed .ninja_log to {ninja_log_dir}/ninja_log")
+
+        # LLVM installs the versioned `clang-21` plus unversioned `clang++`->`clang`->`clang-21`,
+        # but not a versioned `clang++-21`. ClickHouse selects compilers by versioned name, so
+        # without this the C++ compiler resolves to whatever `clang++-21` is elsewhere on PATH (e.g.
+        # a distro one) while C/ASM use this toolchain - a silent mismatch. Add the missing symlink.
+        clangpp = f"{STAGE2_INSTALL_DIR}/bin/clang++-21"
+        if not os.path.lexists(clangpp):
+            os.symlink("clang", clangpp)
+            print(f"Created symlink {clangpp} -> clang")
 
         # Strip ELF executables and shared libraries to reduce archive size
         # (relocations from --emit-relocs and LTO symbols are no longer needed).

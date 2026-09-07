@@ -1,0 +1,27 @@
+Dynamic reference -> Dynamic result, optimization on
+Dynamic(max_types=8)
+Dynamic(max_types=8)
+Dynamic(max_types=8)
+Same result type with the optimization off
+Dynamic(max_types=8)
+Values are identical with the optimization on and off (full precision), all three functions
+1	98	5.6789	0.1183
+2	45.5	11.7154	0.5907
+1	98	5.6789	0.1183
+2	45.5	11.7154	0.5907
+A plain (non-Dynamic) array reference still uses the optimization: Float64 result
+Float64
+Original fuzzer shape must not throw a logical error during analysis
+56
+42
+Variant reference -> Nullable result, optimization on
+Nullable(Float64)
+Nullable(Float64)
+Nullable(Float64)
+Same Variant result type with the optimization off
+Nullable(Float64)
+Variant reference values are identical with the optimization on and off, all three functions
+1	98	5.6789	0.1183
+2	45.5	11.7154	0.5907
+1	98	5.6789	0.1183
+2	45.5	11.7154	0.5907

@@ -10,7 +10,7 @@ keywords: ['example dataset', 'menus', 'historical data', 'sample data', 'nypl']
 
 이 데이터셋은 New York Public Library에서 제작했습니다. 호텔, 레스토랑, 카페의 메뉴와 각 요리 가격에 관한 과거 데이터가 포함되어 있습니다.
 
-출처: http://menus.nypl.org/data
+출처: https://www.nypl.org/research/support/whats-on-the-menu
 이 데이터는 퍼블릭 도메인에 속합니다.
 
 이 데이터는 도서관 아카이브에서 가져온 것이므로 일부 내용이 누락되어 있을 수 있고, 통계 분석에 활용하기에는 어려움이 있을 수 있습니다. 그럼에도 꽤 먹음직스러운 데이터이기도 합니다.
@@ -24,12 +24,12 @@ keywords: ['example dataset', 'menus', 'historical data', 'sample data', 'nypl']
 
 ```bash
 wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
-# 옵션: 체크섬 검증
+# Option: Validate the checksum
 md5sum 2021_08_01_07_01_17_data.tgz
-# 체크섬 값: db6126724de939a5481e3160a2d67d15
+# Checksum should be equal to: db6126724de939a5481e3160a2d67d15
 ```
 
-필요한 경우 http://menus.nypl.org/data에 있는 최신 링크로 교체하십시오.
+필요한 경우 https://www.nypl.org/research/support/whats-on-the-menu에 있는 최신 링크로 교체하십시오.
 다운로드 용량은 약 35 MB입니다.
 
 <div id="unpack-dataset">

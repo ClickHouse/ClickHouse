@@ -1,0 +1,60 @@
+---
+description: 'CHECK DATABASE 문서'
+sidebarTitle: 'CHECK DATABASE'
+slug: /sql-reference/statements/check-database
+title: 'CHECK DATABASE SQL 문'
+doc_type: 'reference'
+---
+
+`CHECK DATABASE` 쿼리는 데이터베이스의 상태를 확인합니다.
+
+주된 용도는 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진에서 사용되는 것으로, 데이터베이스를 뒷받침하는 외부 카탈로그에 접근할 수 있는지와 해당 카탈로그의 테이블 목록을 가져올 수 있는지를 확인합니다. 이는 경량 프로브입니다. 테이블 데이터를 읽지 않고도 연결성과 인증을 확인합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+쿼리의 기본 구문은 다음과 같습니다:
+
+```sql
+CHECK DATABASE database_name
+```
+
+* `database_name`: 확인할 데이터베이스의 이름을 지정합니다.
+
+쿼리는 결과 집합(result set)을 반환하지 않습니다. 검사가 성공하면 쿼리는 어떤 행도 생성하지 않고 완료됩니다. 검사가 실패하면(예를 들어, 카탈로그에 연결할 수 없거나 자격 증명이 더 이상 유효하지 않은 경우) 쿼리는 실패 원인을 설명하는 예외를 발생시킵니다.
+
+<div id="behavior">
+  ## 동작
+</div>
+
+[`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 엔진을 사용하는 데이터베이스에서 `CHECK DATABASE`는 다음과 같이 동작합니다.
+
+* 외부 카탈로그(예: AWS Glue, Databricks Unity, Hive Metastore 또는 Iceberg REST 카탈로그)에 연결하여 테이블 목록을 가져옵니다.
+* 카탈로그에 연결할 수 있고 인증이 유효하면 성공으로 보고합니다.
+* 카탈로그에 테이블이 하나도 없어도 됩니다. 비어 있어도 연결할 수 있는 카탈로그는 정상 상태로 간주됩니다.
+
+전용 상태 확인을 구현하지 않은 데이터베이스 엔진에서는 `CHECK DATABASE`가 아무 작업도 수행하지 않고 성공적으로 완료됩니다.
+
+`CHECK DATABASE`를 실행하려면 해당 데이터베이스에 대한 `CHECK` 권한이 필요합니다([`GRANT`](/ko/reference/statements/grant) 참조).
+
+<div id="examples">
+  ## 예시
+</div>
+
+`datalake`라는 `DataLakeCatalog` 데이터베이스를 확인합니다:
+
+```sql title="Query"
+CHECK DATABASE datalake;
+```
+
+카탈로그에 접근할 수 있고 자격 증명이 유효하면 쿼리가 성공적으로 완료되며 아무 행도 반환하지 않습니다.
+
+카탈로그에 접근할 수 없으면 쿼리는 대신 예외를 발생시킵니다. 정확한 메시지는 카탈로그 유형과 근본적인 실패 원인(예: 연결 오류, `401 인증되지 않음`과 같은 HTTP 상태 코드, 또는 DNS 해석 실패)에 따라 달라집니다.
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`CHECK TABLE`](/ko/reference/statements/check-table)
+* [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake)

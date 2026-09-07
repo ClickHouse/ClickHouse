@@ -1,188 +1,197 @@
 export const kbIndex = {
   categories: [
     "Cloud",
-    "設定",
-    "データのインポートとエクスポート",
-    "データ管理",
-    "一般・よくある質問",
-    "インテグレーションとクライアントライブラリ",
-    "Materialized viewとプロジェクション",
-    "監視とデバッグ",
-    "パフォーマンスと最適化",
-    "クエリとSQL",
-    "セキュリティとアクセス制御",
-    "セットアップとインストール",
-    "テーブルとスキーマ",
-    "トラブルシューティングとエラー"
+    "Configuration & settings",
+    "Data import & export",
+    "Data management",
+    "General & FAQs",
+    "Integrations & client libraries",
+    "Materialized views & projections",
+    "Monitoring & debugging",
+    "Performance & optimization",
+    "Queries & SQL",
+    "Security & access control",
+    "Setup & installation",
+    "Tables & schema",
+    "Troubleshooting & errors"
   ],
   tags: [
-    "ベストプラクティス",
-    "コミュニティ",
-    "コンセプト",
-    "データの基本概念",
-    "データエクスポート",
-    "データフォーマット",
-    "データ取り込み",
-    "データモデリング",
-    "データソース",
-    "デプロイとスケーリング",
-    "エラーと例外",
-    "関数",
-    "言語クライアント",
-    "Cloudの管理",
-    "データの管理",
-    "ネイティブクライアントとインターフェース",
-    "パフォーマンスと最適化",
-    "セキュリティと認証",
-    "サーバー管理",
-    "設定",
-    "システムテーブル",
-    "ツールとユーティリティ",
-    "トラブルシューティング",
-    "ユースケース"
+    "Best Practices",
+    "Community",
+    "Concepts",
+    "Core Data Concepts",
+    "Data Export",
+    "Data Formats",
+    "Data Ingestion",
+    "Data Modelling",
+    "Data Sources",
+    "Deployments and Scaling",
+    "Errors and Exceptions",
+    "Functions",
+    "Language Clients",
+    "Managing Cloud",
+    "Managing Data",
+    "Native Clients and Interfaces",
+    "Performance and Optimizations",
+    "Runbooks",
+    "Security and Authentication",
+    "Server Admin",
+    "Settings",
+    "System Tables",
+    "Tools and Utilities",
+    "Troubleshooting",
+    "Use Cases"
   ],
   articles: [
     {
       id: "integrations/python-clickhouse-connect-example",
-      title: "ClickHouse Cloud Serviceへの接続：Pythonクライアントの実例",
-      description: "clickhouse-connectドライバーを使ったステップバイステップの例を通じて、PythonでClickHouse Cloud Serviceに接続する方法を学びます。",
+      title: "A Python client working example for connecting to ClickHouse Cloud service",
+      description: "Learn how to connect to ClickHouse Cloud Service using Python with a step-by-step example using the clickhouse-connect driver.",
       href: "/ja/resources/support-center/knowledge-base/integrations/python-clickhouse-connect-example",
       category: "Integrations & client libraries",
       tags: ["Language Clients"]
     },
     {
       id: "configuration-settings/about-quotas-and-query-complexity",
-      title: "クォータとクエリの複雑さについて",
+      title: "About quotas and query complexity",
       description:
-        "クォータとクエリの複雑さは、ClickHouseでユーザーの操作を制限する強力な手段です。このナレッジベース記事では、これら2つのアプローチの適用例を紹介します。",
+        "Quotas and Query Complexity are powerful ways to limit and restrict what users can do in ClickHouse. This KB article shows examples on how to apply these two different approaches.",
       href: "/ja/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
       category: "Configuration & settings",
       tags: ["Managing Cloud"]
     },
     {
       id: "data-import-export/achieving-atomic-inserts",
-      title: "ClickHouse Cloudにおけるアトミックな挿入と複数テーブルの整合性の実現",
-      description: "ステージングテーブルとパーティションレベルの操作を使用して、複数ステートメントのトランザクションなしにClickHouse Cloudでデータをアトミックに挿入し、複数テーブルの整合性を維持する方法。",
+      title: "Achieving atomic inserts and multi-table consistency in ClickHouse Cloud",
+      description: "How to load data atomically and keep multiple tables consistent in ClickHouse Cloud without multi-statement transactions, using staging tables and partition-level operations.",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
       category: "Data import & export",
       tags: ["Data Ingestion", "Best Practices"]
     },
     {
       id: "tables-schema/add-column",
-      title: "テーブルへのカラムの追加",
-      description: "このガイドでは、既存のテーブルにカラムを追加する方法を説明します。",
+      title: "Adding a column to a table",
+      description: "In this guide, we'll learn how to add a column to an existing table.",
       href: "/ja/resources/support-center/knowledge-base/tables-schema/add-column",
       category: "Tables & schema",
       tags: ["Data Modelling"]
     },
     {
       id: "configuration-settings/alter-user-settings-exception",
-      title: "ユーザー設定変更時の例外",
-      description: "ユーザー設定の変更時にスローされる例外の処理方法",
+      title: "Alter user settings exception",
+      description: "Handing the an exception thrown when altering user settings",
       href: "/ja/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
       category: "Configuration & settings",
       tags: ["Settings", "Errors and Exceptions"]
     },
     {
       id: "materialized-views/are-materialized-views-inserted-asynchronously",
-      title: "Materialized Viewは同期的に挿入されますか？",
-      description: "このナレッジベース記事では、Materialized Viewへの挿入が同期的に行われるかどうかを検証します。",
+      title: "Are Materialized Views inserted synchronously?",
+      description: "This KB article explores whether Materialized Views are inserted synchronously",
       href: "/ja/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
       category: "Materialized views & projections",
       tags: ["Data Modelling"]
     },
     {
       id: "tables-schema/schema-migration-tools",
-      title: "ClickHouseの自動スキーママイグレーションツール",
-      description: "ClickHouseの自動スキーママイグレーションツールと、データベーススキーマの変更を継続的に管理する方法について学びます。",
+      title: "Automatic schema migration tools for ClickHouse",
+      description: "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time.",
       href: "/ja/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
       category: "Tables & schema",
       tags: ["Tools and Utilities"]
     },
     {
       id: "cloud-services/aws-privatelink-setup-for-msk-clickpipes",
-      title: "ClickPipes向けにMSKを公開するためのAWS PrivateLinkのセットアップ",
-      description: "MSKのマルチVPC接続を介してプライベートMSKをClickPipesに公開するためのセットアップ手順。",
+      title: "AWS PrivateLink setup to expose MSK for ClickPipes",
+      description: "Setup steps to expose a private MSK via MSK multi-VPC connectivity to ClickPipes.",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes",
       category: "Cloud",
       tags: ["Security and Authentication", "Managing Cloud"]
     },
     {
       id: "cloud-services/aws-privatelink-setup-for-clickpipes",
-      title: "ClickPipes向けにプライベートRDSを公開するためのAWS PrivateLinkのセットアップ",
-      description: "AWS PrivateLinkを介してプライベートRDSをClickPipesに公開するためのセットアップ手順。",
+      title: "AWS PrivateLink setup to expose private RDS for ClickPipes",
+      description: "Setup steps to expose a private RDS via AWS PrivateLink to ClickPipes.",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes",
       category: "Cloud",
       tags: ["Security and Authentication", "Managing Cloud"]
     },
     {
+      id: "cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+      title: "MSKクラスター向けAWS PrivateLink VPCエンドポイントサービス",
+      description: "AWS PrivateLink VPCエンドポイントサービスを通じて、MSKクラスターをClickPipesに公開するためのセットアップ手順。",
+      href: "/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+      category: "Cloud",
+      tags: ["Security and Authentication", "Managing Cloud"]
+    },
+    {
       id: "data-management/backing-up-a-specific-partition",
-      title: "特定のパーティションのバックアップ",
-      description: "ClickHouseで特定のパーティションをバックアップする方法。",
+      title: "Backing up a specific partition",
+      description: "How can I backup a specific partition in ClickHouse?",
       href: "/ja/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
       category: "Data management",
       tags: ["Managing Data"]
     },
     {
       id: "general-faqs/key-value",
-      title: "ClickHouseをキーバリューストレージとして使用できますか？",
-      description: "ClickHouseをキーバリューストレージとして使用できるかどうかというよくある質問への回答。",
+      title: "Can I use ClickHouse as a key-value storage?",
+      description: "Answers the frequently asked question of whether or not ClickHouse can be used as a key-value storage?",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/key-value",
       category: "General & FAQs",
       tags: []
     },
     {
       id: "general-faqs/time-series",
-      title: "ClickHouseを時系列データベースとして使用できますか？",
-      description: "ClickHouseを時系列データベースとして使用する方法を解説するページ。",
+      title: "Can I use ClickHouse as a time-series database?",
+      description: "Page describing how to use ClickHouse as a time-series database",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/time-series",
       category: "General & FAQs",
       tags: []
     },
     {
       id: "queries-sql/pivot",
-      title: "ClickHouseでPIVOTは使用できますか？",
+      title: "Can you PIVOT in ClickHouse?",
       description:
-        "ClickHouseにはPIVOT句はありませんが、集計関数コンビネーターを使用して同様の機能を実現できます。英国の住宅価格データセットを使ってその方法を見てみましょう。",
+        "ClickHouse doesn't have a PIVOT clause, but we can get close to this functionality using aggregate function combinators. Let's see how to do this using the UK housing prices dataset.",
       href: "/ja/resources/support-center/knowledge-base/queries-sql/pivot",
       category: "Queries & SQL",
       tags: ["Data Modelling", "Core Data Concepts"]
     },
     {
       id: "general-faqs/vector-search",
-      title: "ClickHouseをベクトル検索に使用できますか？",
-      description: "埋め込みの保存やコサイン類似度などの距離関数を使った検索など、ClickHouseをベクトル検索に活用する方法を学びます。",
+      title: "Can you use ClickHouse for vector search?",
+      description: "Learn how to use ClickHouse for vector search, including storing embeddings and searching with distance functions like cosine similarity.",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/vector-search",
       category: "General & FAQs",
       tags: ["Use Cases", "Concepts"]
     },
     {
       id: "monitoring-debugging/send-logs-level",
-      title: "クライアントでのクエリのサーバーログのキャプチャ",
-      description: "`send_logs_level`クライアント設定を使用して、ログ設定が異なる場合でもクライアントレベルでサーバーログをキャプチャする方法を学びます。",
+      title: "Capturing server logs of queries at the client",
+      description: "Learn how to capture server logs at the client level, even with different log settings, using the `send_logs_level` client setting.",
       href: "/ja/resources/support-center/knowledge-base/monitoring-debugging/send-logs-level",
       category: "Monitoring & debugging",
       tags: ["Server Admin"]
     },
     {
       id: "configuration-settings/change-the-prompt-in-clickhouse-client",
-      title: "clickhouse-clientのプロンプトの変更",
-      description: "この記事では、ClickHouseクライアントおよびclickhouse-localのターミナルウィンドウのプロンプトを:)からプレフィックス付きの:)に変更する方法を説明します。",
+      title: "Change the prompt in clickhouse-client",
+      description: "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
       href: "/ja/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       category: "Configuration & settings",
       tags: ["Settings", "Native Clients and Interfaces"]
     },
     {
       id: "security/common-rbac-queries",
-      title: "よく使われるRBACクエリ",
-      description: "ユーザーに特定の権限を付与するためのクエリ集。",
+      title: "一般的なRBACクエリ",
+      description: "ユーザーに特定の権限を付与するためのクエリ。",
       href: "/ja/resources/support-center/knowledge-base/security/common-rbac-queries",
       category: "Security & access control",
       tags: ["Security and Authentication", "Managing Cloud"]
     },
     {
       id: "queries-sql/comparing-metrics-between-queries",
-      title: "デシベルによるクエリ間のメトリクスの比較",
+      title: "クエリ間のメトリクスをデシベルで比較する",
       description: "ClickHouseで2つのクエリ間のメトリクスを比較するクエリ。",
       href: "/ja/resources/support-center/knowledge-base/queries-sql/comparing-metrics-between-queries",
       category: "Queries & SQL",
@@ -190,24 +199,32 @@ export const kbIndex = {
     },
     {
       id: "configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      title: "Configuring CAP_IPC_LOCK and CAP_SYS_NICE Capabilities in Docker",
-      description: "Learn how to resolve Docker capability warnings for `CAP_IPC_LOCK` and `CAP_SYS_NICE` when running ClickHouse in a container.",
+      title: "DockerでのCAP_IPC_LOCKおよびCAP_SYS_NICE機能の設定",
+      description: "コンテナでClickHouseを実行する際の`CAP_IPC_LOCK`および`CAP_SYS_NICE`に関するDockerの機能警告を解決する方法。",
       href: "/ja/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
       category: "Configuration & settings",
       tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      title: "Configuring CAP_IPC_LOCK and CAP_SYS_NICE Capabilities in Docker",
-      description: "Learn how to resolve Docker capability warnings for `CAP_IPC_LOCK` and `CAP_SYS_NICE` when running ClickHouse in a container.",
+      title: "DockerでのCAP_IPC_LOCKおよびCAP_SYS_NICE機能の設定",
+      description: "コンテナでClickHouseを実行する際の`CAP_IPC_LOCK`および`CAP_SYS_NICE`に関するDockerの機能警告を解決する方法。",
       href: "/ja/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
       category: "Troubleshooting & errors",
       tags: ["Errors and Exceptions"]
     },
     {
+      id: "cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+      title: "ClickPipes向けConfluent Cloudプライベート接続",
+      description: "AWS PrivateLink またはGCP Private Service Connectを経由して、ClickPipesを既存のConfluent Cloud Kafkaクラスターに接続する方法。",
+      href: "/ja/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+      category: "Cloud",
+      tags: ["Security and Authentication", "Managing Cloud"]
+    },
+    {
       id: "cloud-services/custom-dns-alias-for-instance",
-      title: "Create a custom DNS alias by setting up a reverse proxy",
-      description: "Learn how to set up a custom DNS alias for your instance using a reverse proxy",
+      title: "リバースプロキシを設定してカスタムDNSエイリアスを作成する",
+      description: "リバースプロキシを使用してインスタンスのカスタムDNSエイリアスを設定する方法。",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/custom-dns-alias-for-instance",
       category: "Cloud",
       tags: ["Server Admin", "Security and Authentication"]
@@ -216,118 +233,118 @@ export const kbIndex = {
       id: "troubleshooting/part-intersects-previous-part",
       title: "DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data.",
       description:
-        "この記事では、ClickHouseにおけるパーツの重複に関するDB::Exceptionエラーの解決方法を説明します。このエラーは、競合状態またはZooKeeperデータへの手動介入が原因で発生することがあります。",
+        "この記事では、ClickHouseにおけるパートの交差に関連するDB::Exceptionエラーの解決方法を説明します。このエラーは、競合状態またはZooKeeperデータへの手動介入によって引き起こされることが多いです。",
       href: "/ja/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
-      category: "トラブルシューティングとエラー",
-      tags: ["エラーと例外", "システムテーブル"]
+      category: "Troubleshooting & errors",
+      tags: ["Errors and Exceptions", "System Tables"]
     },
     {
       id: "setup-installation/difference-between-official-builds-and-3rd-party",
-      title: "Differences Between Official and 3rd-Party ClickHouse Builds",
-      description: "Understand the key differences between official ClickHouse builds and 3rd-party builds, including updates, compatibility, and security considerations.",
+      title: "公式ビルドとサードパーティClickHouseビルドの違い",
+      description: "アップデート、互換性、セキュリティの考慮事項を含む、公式ClickHouseビルドとサードパーティビルドの主な違いを理解する。",
       href: "/ja/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
       category: "Setup & installation",
       tags: ["Concepts"]
     },
     {
       id: "general-faqs/cost-based",
-      title: "Does ClickHouse have a cost-based optimizer",
-      description: "ClickHouse has certain cost-based optimization mechanics",
+      title: "ClickHouseにはコストベースのオプティマイザがありますか",
+      description: "ClickHouseには特定のコストベースの最適化メカニズムがあります",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/cost-based",
       category: "General & FAQs",
       tags: []
     },
     {
       id: "general-faqs/datalake",
-      title: "Does ClickHouse support data lakes?",
-      description: "ClickHouse supports data lakes, including Iceberg, Delta Lake, Apache Hudi, Apache Paimon, Hive",
+      title: "ClickHouseはデータレイクをサポートしていますか？",
+      description: "ClickHouseはIceberg、Delta Lake、Apache Hudi、Apache Paimon、Hiveを含むデータレイクをサポートしています",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/datalake",
       category: "General & FAQs",
       tags: []
     },
     {
       id: "general-faqs/distributed-join",
-      title: "Does ClickHouse support distributed JOIN?",
-      description: "ClickHouse supports distributed JOIN",
+      title: "ClickHouseは分散JOINをサポートしていますか？",
+      description: "ClickHouseは分散JOINをサポートしています",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/distributed-join",
       category: "General & FAQs",
       tags: []
     },
     {
       id: "general-faqs/federated",
-      title: "Does ClickHouse support federated queries?",
-      description: "ClickHouse supports a wide range for federated and hybrid queries",
+      title: "ClickHouseはフェデレーテッドクエリをサポートしていますか？",
+      description: "ClickHouseはフェデレーテッドおよびハイブリッドクエリの幅広い範囲をサポートしています",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/federated",
       category: "General & FAQs",
       tags: []
     },
     {
       id: "general-faqs/concurrency",
-      title: "Does ClickHouse support frequent, concurrent queries?",
-      description: "ClickHouse supports high QPS and high concurrency",
+      title: "ClickHouseは頻繁な同時クエリをサポートしていますか？",
+      description: "ClickHouseは高QPSと高並行性をサポートしています",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/concurrency",
       category: "General & FAQs",
       tags: []
     },
     {
       id: "cloud-services/multi-region-replication",
-      title: "Does ClickHouse support multi-region replication?",
-      description: "This page answers whether ClickHouse supports multi-region replication",
+      title: "ClickHouseはマルチリージョンレプリケーションをサポートしていますか？",
+      description: "このページではClickHouseがマルチリージョンレプリケーションをサポートしているかどうかを説明します",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
       category: "Cloud",
       tags: []
     },
     {
       id: "general-faqs/updates",
-      title: "Does ClickHouse support real-time updates?",
-      description: "ClickHouse supports lightweight real-time updates",
+      title: "ClickHouseはリアルタイム更新をサポートしていますか？",
+      description: "ClickHouseは軽量なリアルタイム更新をサポートしています",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/updates",
       category: "General & FAQs",
       tags: []
     },
     {
       id: "security/row-column-policy",
-      title: "Does ClickHouse support row-level and column-level security?",
-      description: "Learn about row-level and column-level access restrictions in ClickHouse and ClickHouse Cloud, and how to implement role-based access control (RBAC) with policies.",
+      title: "ClickHouseは行レベルおよび列レベルのセキュリティをサポートしていますか？",
+      description: "ClickHouseおよびClickHouse Cloudにおける行レベルおよび列レベルのアクセス制限と、ポリシーを使用したロールベースのアクセス制御（RBAC）の実装方法について説明します。",
       href: "/ja/resources/support-center/knowledge-base/security/row-column-policy",
       category: "Security & access control",
       tags: ["Security and Authentication"]
     },
     {
       id: "cloud-services/execute-system-queries-in-cloud",
-      title: "Execute SYSTEM Statements on All Nodes in ClickHouse Cloud",
-      description: "Learn how to use `ON CLUSTER` and `clusterAllReplicas` to execute SYSTEM statements and queries across all nodes in a ClickHouse Cloud service.",
+      title: "ClickHouse CloudのすべてのノードでSYSTEMステートメントを実行する",
+      description: "`ON CLUSTER`および`clusterAllReplicas`を使用して、ClickHouse CloudサービスのすべてのノードでSYSTEMステートメントとクエリを実行する方法。",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/execute-system-queries-in-cloud",
       category: "Cloud",
       tags: ["Deployments and Scaling"]
     },
     {
       id: "troubleshooting/count-parts-by-type",
-      title: "Find counts and sizes of wide or compact parts",
-      description: "This knowledgebase article shows you how to find part counts by the type of part - wide or compact.",
+      title: "ワイドまたはコンパクトパーツの数とサイズを確認する",
+      description: "このナレッジベース記事では、パーツの種類（ワイドまたはコンパクト）ごとにパーツ数を確認する方法を説明します。",
       href: "/ja/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type",
       category: "Troubleshooting & errors",
       tags: ["Troubleshooting"]
     },
     {
       id: "troubleshooting/fix-developer-verification-error-in-macos",
-      title: "Fix the Developer Verification Error in MacOS",
-      description: "Learn how to resolve the MacOS developer verification error when running ClickHouse commands, using either System Settings or the terminal.",
+      title: "macOSの開発者検証エラーを修正する",
+      description: "システム設定またはターミナルを使用して、ClickHouseコマンドの実行時に発生するmacOSの開発者検証エラーを解決する方法。",
       href: "/ja/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos",
       category: "Troubleshooting & errors",
       tags: ["Errors and Exceptions"]
     },
     {
       id: "data-import-export/s3-export-data-year-month-folders",
-      title: "How can I do partitioned writes by year and month on S3?",
-      description: "Learn how to write partitioned data by year and month to an S3 bucket in ClickHouse, using a custom path structure for organizing the data.",
+      title: "S3で年月ごとにパーティション分割された書き込みを行うにはどうすればよいですか？",
+      description: "カスタムパス構造を使用して、ClickHouseでS3バケットに年月ごとにパーティション分割されたデータを書き込む方法。",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders",
       category: "Data import & export",
       tags: ["Data Export", "Native Clients and Interfaces"]
     },
     {
       id: "data-import-export/kafka-clickhouse-json",
-      title: "How can I use the new JSON Data Type with Kafka?",
+      title: "KafkaでJSONデータ型を使用するには？",
       description: "Learn how to load JSON messages from Apache Kafka directly into a single JSON column in ClickHouse using the Kafka table engine and JSON data type.",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json",
       category: "Data import & export",
@@ -335,7 +352,7 @@ export const kbIndex = {
     },
     {
       id: "cloud-services/change-billing-email",
-      title: "How do I change my Billing Contact in ClickHouse Cloud?",
+      title: "ClickHouse Cloudの請求先連絡先を変更するには？",
       description: "Let's learn how to change your billing address in ClickHouse Cloud.",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/change-billing-email",
       category: "Cloud",
@@ -344,152 +361,161 @@ export const kbIndex = {
     {
       id: "general-faqs/how-do-i-contribute-code-to-clickhouse",
       title: "How do I contribute code to ClickHouse?",
-      description: "ClickHouseはGitHub上で開発されているオープンソースプロジェクトです。慣例に従い、コントリビューション手順はソースコードリポジトリのルートにあるCONTRIBUTINGファイルに記載されています。",
+      description: "ClickHouse is an open-source project developed on GitHub. As customary, contribution instructions are published in CONTRIBUTING file in the root of the source code repository.",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/how-do-i-contribute-code-to-clickhouse",
-      category: "一般・よくある質問",
-      tags: ["コミュニティ"]
+      category: "General & FAQs",
+      tags: ["Community"]
     },
     {
       id: "data-import-export/parquet-to-csv-json",
       title: "ParquetファイルをCSVまたはJSONに変換するには？",
-      description: "ClickHouseの`clickhouse-local`ツールを使用して、ParquetファイルをCSVまたはJSON形式に変換する方法を説明します。",
+      description: "Learn how to use ClickHouse's `clickhouse-local` tool to easily convert Parquet files to CSV or JSON formats.",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/parquet-to-csv-json",
-      category: "データのインポートとエクスポート",
-      tags: ["データソース", "データフォーマット"]
+      category: "Data import & export",
+      tags: ["Data Sources", "Data Formats"]
     },
     {
       id: "data-import-export/mysql-to-parquet-csv-json",
       title: "ClickHouseを使用してMySQLデータをParquet、CSV、またはJSONにエクスポートするには？",
-      description: "`clickhouse-local`ツールを使用して、MySQLデータをParquet、CSV、またはJSON形式に素早くエクスポートする方法を説明します。",
+      description: "Learn how to use the `clickhouse-local` tool to export MySQL data into formats like Parquet, CSV, or JSON quickly and efficiently.",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/mysql-to-parquet-csv-json",
-      category: "データのインポートとエクスポート",
-      tags: ["データフォーマット", "データエクスポート"]
+      category: "Data import & export",
+      tags: ["Data Formats", "Data Export"]
     },
     {
       id: "data-import-export/postgresql-to-parquet-csv-json",
-      title: "PostgreSQLデータをParquet、CSV、またはJSONにエクスポートするには？",
-      description: "`clickhouse-local`を使用してPostgreSQLデータをParquet、CSV、またはJSON形式にエクスポートする方法を、豊富な例を交えて説明します。",
+      title: "How do I export PostgreSQL data to Parquet, CSV or JSON?",
+      description: "Learn how to export PostgreSQL data to Parquet, CSV, or JSON formats using `clickhouse-local` with various examples.",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/postgresql-to-parquet-csv-json",
-      category: "データのインポートとエクスポート",
-      tags: ["データエクスポート", "データフォーマット"]
+      category: "Data import & export",
+      tags: ["Data Export", "Data Formats"]
     },
     {
       id: "setup-installation/install-clickhouse-windows10",
       title: "Windows 10にClickHouseをインストールするには？",
-      description: "WSL 2を使用してWindows 10にClickHouseをインストールし、動作確認する方法を説明します。セットアップ、トラブルシューティング、テスト環境の構築方法も含みます。",
+      description: "Learn how to install and test ClickHouse on Windows 10 using WSL 2. Includes setup, troubleshooting, and running a test environment.",
       href: "/ja/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
-      category: "セットアップとインストール",
-      tags: ["ツールとユーティリティ"]
+      category: "Setup & installation",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "security/remove-default-user",
-      title: "デフォルトユーザーを削除するには？",
-      description: "ClickHouse Serverの実行時にデフォルトユーザーを削除する方法を説明します。",
+      title: "How do I remove the default user?",
+      description: "Learn how to remove the default user when running ClickHouse Server.",
       href: "/ja/resources/support-center/knowledge-base/security/remove-default-user",
-      category: "セキュリティとアクセス制御",
-      tags: ["サーバー管理"]
+      category: "Security & access control",
+      tags: ["Server Admin"]
     },
     {
       id: "cloud-services/ingest-failures-23-9-release",
       title: "ClickHouse 23.9リリース後の取り込みエラーを解決するには？",
-      description: "`async_inserts`を使用するテーブルに対してClickHouse 23.9で導入された厳格なグラント確認によって発生する取り込みエラーの解決方法を説明します。グラントを更新してエラーを修正する手順も含みます。",
+      description: "Learn how to resolve ingest failures caused by stricter grant checking introduced in ClickHouse 23.9 for tables using `async_inserts`. Update grants to fix errors.",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/ingest-failures-23-9-release",
       category: "Cloud",
-      tags: ["エラーと例外"]
+      tags: ["Errors and Exceptions"]
     },
     {
       id: "performance-optimization/insert-select-settings-tuning",
-      title: "INSERT...SELECT実行中のTOO MANY PARTSエラーを解決するには？",
-      description: "`INSERT...SELECT`実行中にClickHouseで発生するTOO_MANY_PARTSエラーを、大きなブロック向けの上級設定のチューニングとパーティションしきい値の引き上げによって解決する方法を説明します。",
+      title: "How do I solve TOO MANY PARTS error during an INSERT...SELECT?",
+      description: "Resolve the TOO_MANY_PARTS error in ClickHouse during an `INSERT...SELECT` by tuning expert-level settings for larger blocks and increasing partition thresholds.",
       href: "/ja/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
-      category: "パフォーマンスと最適化",
-      tags: ["設定", "エラーと例外"]
+      category: "Performance & optimization",
+      tags: ["Settings", "Errors and Exceptions"]
     },
     {
       id: "integrations/node-js-example",
-      title: "NodeJSで@clickhouse/clientを使用するには？",
-      description: "Node.jsアプリケーションで@clickhouse/clientを使用してClickHouseと連携し、クエリを実行する方法を説明します。",
+      title: "How do I use NodeJS with @clickhouse/client",
+      description: "Learn how to use @clickhouse/client in a Node.js application to interact with ClickHouse and perform queries.",
       href: "/ja/resources/support-center/knowledge-base/integrations/node-js-example",
-      category: "インテグレーションとクライアントライブラリ",
-      tags: ["言語クライアント"]
+      category: "Integrations & client libraries",
+      tags: ["Language Clients"]
     },
     {
       id: "monitoring-debugging/view-number-of-active-mutations",
-      title: "アクティブまたはキュー待ちのミューテーション数を確認するには？",
+      title: "How do I view the number of active or queued mutations?",
       description:
-        "特に`ALTER`や`UPDATE`操作を実行する際に、ClickHouseでアクティブまたはキュー待ちのミューテーション数を監視する方法を説明します。ミューテーションの追跡には`system.mutations`テーブルを使用します。",
+        "Monitor the number of active or queued mutations in ClickHouse, especially when performing `ALTER` or `UPDATE` operations. Use the `system.mutations` table for tracking mutations.",
       href: "/ja/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations",
-      category: "監視とデバッグ",
-      tags: ["システムテーブル"]
+      category: "Monitoring & debugging",
+      tags: ["System Tables"]
     },
     {
       id: "data-management/read-consistency",
-      title: "ClickHouseでデータ読み取りの一貫性を確保するには？",
-      description: "同一ノードまたは任意のノードに接続している場合でも、ClickHouseからの読み取り時にデータの一貫性を確保する方法を説明します。",
+      title: "How to achieve data read consistency in ClickHouse?",
+      description: "Learn how to ensure data consistency when reading from ClickHouse, whether you're connected to the same node or a random node.",
       href: "/ja/resources/support-center/knowledge-base/data-management/read-consistency",
-      category: "データ管理",
-      tags: ["パフォーマンスと最適化"]
+      category: "Data management",
+      tags: ["Performance and Optimizations"]
     },
     {
       id: "setup-installation/llvm-clang-up-to-date",
-      title: "LinuxでLLVMとclangをビルドするには",
-      description: "LinuxでLLVMとclangをビルドするためのコマンドです。",
+      title: "How to build LLVM and clang on Linux",
+      description: "Commands to build LLVM and clang on Linux.",
       href: "/ja/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-      category: "セットアップとインストール",
-      tags: ["コミュニティ", "ツールとユーティリティ"]
+      category: "Setup & installation",
+      tags: ["Community", "Tools and Utilities"]
     },
     {
       id: "data-management/calculate-ratio-of-zero-sparse-serialization",
-      title: "テーブルの各カラムにおける空/ゼロ値の比率を計算するには",
-      description: "スパースカラムのシリアライゼーションを最適化するために、ClickHouseテーブルの各カラムにおける空またはゼロ値の比率を計算する方法を説明します。",
+      title: "How to calculate the ratio of empty/zero values in every column in a table",
+      description: "Learn how to calculate the ratio of empty or zero values in every column of a ClickHouse table to optimize sparse column serialization.",
       href: "/ja/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
-      category: "データ管理",
-      tags: ["パフォーマンスと最適化"]
+      category: "Data management",
+      tags: ["Performance and Optimizations"]
     },
     {
       id: "security/check-users-roles",
-      title: "ロールに割り当てられたユーザーとその逆を確認するには",
-      description: "ClickHouseの`system.role_grants`をクエリして、ロールに割り当てられたユーザーや特定のユーザーに割り当てられたロールを確認する方法を説明します。",
+      title: "How to Check Users Assigned to Roles and Vice Versa",
+      description: "Learn how to query ClickHouse's `system.role_grants` to find users assigned to roles and roles assigned to specific users.",
       href: "/ja/resources/support-center/knowledge-base/security/check-users-roles",
-      category: "セキュリティとアクセス制御",
-      tags: ["サーバー管理", "システムテーブル", "Cloud管理"]
+      category: "Security & access control",
+      tags: ["Server Admin", "System Tables", "Managing Cloud"]
     },
     {
       id: "monitoring-debugging/which-processes-are-currently-running",
-      title: "サーバーで現在実行中のコードを確認するには？",
+      title: "How to check what code is currently running on a server?",
       description:
-        "ClickHouseは`system.stack_trace`などのイントロスペクションツールを提供しており、各サーバースレッドで現在実行中のコードを検査できます。デバッグやパフォーマンス監視に役立ちます。",
+        "ClickHouse provides introspection tools like `system.stack_trace` for inspecting what code is currently running on each server thread, helping with debugging and performance monitoring.",
       href: "/ja/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running",
-      category: "監視とデバッグ",
-      tags: ["サーバー管理"]
+      category: "Monitoring & debugging",
+      tags: ["Server Admin"]
     },
     {
       id: "cloud-services/how-to-check-my-clickhouse-cloud-sevice-state",
       title: "ClickHouse Cloudサービスの状態を確認するには",
-      description: "ClickHouse Cloud APIを使用して、サービスを起動させることなく停止中、アイドル中、または実行中かどうかを確認する方法を説明します。",
+      description: "Learn how to use the ClickHouse Cloud API to check if your service is stopped, idle, or running without waking it up.",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/how-to-check-my-clickhouse-cloud-sevice-state",
       category: "Cloud",
-      tags: ["Cloud管理"]
+      tags: ["Managing Cloud"]
+    },
+    {
+      id: "monitoring-debugging/collect-and-draw-traces",
+      title: "クエリトレースを収集して描画する方法",
+      description:
+        "このガイドでは、組み込みの方法またはGrafanaを使用して、セルフマネージドのClickHouseでクエリトレースを収集・描画する方法を説明します。これは、複雑なクエリを扱う際に、EXPLAINが提供する情報を超えた内部実行メカニズムを理解する必要がある場合に特に役立ちます。",
+      href: "/ja/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
+      category: "Monitoring & debugging",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "configuration-settings/configure-a-user-setting",
-      title: "ClickHouseでユーザーの設定を構成するには",
-      description: "`SET`および`ALTER USER`コマンドを使用して、個別のクエリ、クライアントセッション、または特定のユーザー向けにClickHouseの設定を定義する方法を説明します。",
+      title: "ClickHouseでユーザーの設定を構成する方法",
+      description: "`SET`および`ALTER USER`コマンドを使用して、個々のクエリ、クライアントセッション、または特定のユーザーに対してClickHouseの設定を定義する方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/configuration-settings/configure-a-user-setting",
-      category: "構成と設定",
-      tags: ["設定"]
+      category: "Configuration & settings",
+      tags: ["Settings"]
     },
     {
       id: "materialized-views/projection-example",
-      title: "クエリでPROJECTIONが使用されているかを確認するには？",
-      description: "サンプルデータを使ったテストとEXPLAINを使用して、ClickHouseクエリでPROJECTIONが使用されているかどうかを確認する方法を説明します。",
+      title: "クエリでプロジェクションが使用されているか確認する方法",
+      description: "サンプルデータでテストし、EXPLAINを使用してプロジェクションの使用を確認することで、ClickHouseクエリでプロジェクションが使用されているかどうかを確認する方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/materialized-views/projection-example",
-      category: "materialized viewとPROJECTION",
-      tags: ["データモデリング"]
+      category: "Materialized views & projections",
+      tags: ["Data Modelling"]
     },
     {
       id: "cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys",
-      title: "SSHキーを使用してClickHouseに接続するには",
+      title: "SSHキーを使用してClickHouseに接続する方法",
       description: "SSHキーを使用してClickHouseおよびClickHouse Cloudに接続する方法",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys",
       category: "Cloud",
@@ -497,123 +523,131 @@ export const kbIndex = {
     },
     {
       id: "data-management/dictionary-using-strings",
-      title: "How to Create a ClickHouse Dictionary with String Keys and Values",
-      description: "Learn how to create a ClickHouse dictionary using string keys and values from a MergeTree table as the source, with examples of setup and usage.",
+      title: "文字列キーと値を使用したClickHouseディクショナリの作成方法",
+      description: "MergeTreeテーブルをソースとして文字列キーと値を使用したClickHouseディクショナリの作成方法を、セットアップと使用例とともに学びます。",
       href: "/ja/resources/support-center/knowledge-base/data-management/dictionary-using-strings",
       category: "Data management",
       tags: ["Data Modelling"]
     },
     {
       id: "tables-schema/how-to-create-table-to-query-multiple-remote-clusters",
-      title: "How to create a table that can query multiple remote clusters",
-      description: "How to create a table that can query multiple remote clusters",
+      title: "複数のリモートクラスターをクエリできるテーブルの作成方法",
+      description: "複数のリモートクラスターをクエリできるテーブルの作成方法",
       href: "/ja/resources/support-center/knowledge-base/tables-schema/how-to-create-table-to-query-multiple-remote-clusters",
       category: "Tables & schema",
       tags: ["Deployments and Scaling"]
     },
     {
       id: "setup-installation/enabling-ssl-with-lets-encrypt",
-      title: "How to Enable SSL with Let's Encrypt on a Single ClickHouse Server",
-      description: "Learn how to set up SSL for a single ClickHouse server using Let's Encrypt, including certificate issuance, configuration, and validation.",
+      title: "単一のClickHouseサーバーでLet's EncryptによるSSLを有効にする方法",
+      description: "証明書の発行、設定、検証を含む、Let's Encryptを使用した単一ClickHouseサーバーのSSLセットアップ方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
       category: "Setup & installation",
       tags: ["Security and Authentication"]
     },
     {
       id: "data-import-export/file-export",
-      title: "How to Export Data from ClickHouse to a File",
-      description: "Learn various methods to export data from ClickHouse, including `INTO OUTFILE`, the File table engine, and command-line redirection.",
+      title: "ClickHouseからファイルにデータをエクスポートする方法",
+      description: "`INTO OUTFILE`、Fileテーブルエンジン、コマンドラインリダイレクトなど、ClickHouseからデータをエクスポートするさまざまな方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/file-export",
       category: "Data import & export",
       tags: ["Data Export"]
     },
     {
       id: "queries-sql/how-to-filter-a-clickhouse-table-by-an-array-column",
-      title: "How to filter a ClickHouse table by an array-column?",
-      description: "Knowledgebase article on how to filter a ClickHouse table by an array-column.",
+      title: "配列カラムでClickHouseテーブルをフィルタリングする方法",
+      description: "配列カラムでClickHouseテーブルをフィルタリングする方法に関するナレッジベース記事。",
       href: "/ja/resources/support-center/knowledge-base/queries-sql/how-to-filter-a-clickhouse-table-by-an-array-column",
       category: "Queries & SQL",
       tags: ["Data Modelling", "Functions"]
     },
     {
       id: "monitoring-debugging/generate-har-file",
-      title: "How to Generate a HAR file for support",
-      description: "A HAR (HTTP Archive) file captures the network activity in your browser. It can help our support team diagnose slow page loads, failed requests, or other network issues.",
+      title: "サポート用HARファイルの生成方法",
+      description: "HAR（HTTPアーカイブ）ファイルはブラウザのネットワークアクティビティをキャプチャします。ページの読み込みが遅い、リクエストが失敗する、その他のネットワーク問題の診断にサポートチームが役立てることができます。",
       href: "/ja/resources/support-center/knowledge-base/monitoring-debugging/generate-har-file",
       category: "Monitoring & debugging",
       tags: ["Tools and Utilities"]
     },
     {
       id: "materialized-views/how-to-display-queries-using-mv",
-      title: "How to Identify Queries Using Materialized Views in ClickHouse",
-      description: "Learn how to query ClickHouse logs to identify all queries involving Materialized Views within a specified time range.",
+      title: "ClickHouseでマテリアライズドビューを使用するクエリを特定する方法",
+      description: "指定した時間範囲内でマテリアライズドビューに関連するすべてのクエリを特定するために、ClickHouseログをクエリする方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
       category: "Materialized views & projections",
       tags: ["System Tables"]
     },
     {
       id: "performance-optimization/find-expensive-queries",
-      title: "How to Identify the Most Expensive Queries in ClickHouse",
-      description: "Learn how to use the `query_log` table in ClickHouse to identify the most memory and CPU-intensive queries across distributed nodes.",
+      title: "ClickHouseで最もコストの高いクエリを特定する方法",
+      description: "ClickHouseの`query_log`テーブルを使用して、分散ノード全体で最もメモリとCPUを消費するクエリを特定する方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries",
       category: "Performance & optimization",
       tags: ["Performance and Optimizations"]
     },
     {
       id: "configuration-settings/ignoring-incorrect-settings",
-      title: "How to Ignore Incorrect Settings in ClickHouse",
-      description: "Learn how to use the `skip_check_for_incorrect_settings` option to allow ClickHouse to start even when user-level settings are specified incorrectly.",
+      title: "ClickHouseで不正な設定を無視する方法",
+      description: "ユーザーレベルの設定が誤って指定されている場合でもClickHouseを起動できるようにする`skip_check_for_incorrect_settings`オプションの使用方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/configuration-settings/ignoring-incorrect-settings",
       category: "Configuration & settings",
       tags: ["Settings"]
     },
     {
       id: "data-import-export/json-import",
-      title: "How to import JSON into ClickHouse?",
-      description: "This page shows you how to import JSON into ClickHouse",
+      title: "ClickHouseにJSONをインポートする方法",
+      description: "このページでは、ClickHouseにJSONをインポートする方法を説明します。",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/json-import",
       category: "Data import & export",
       tags: []
     },
     {
       id: "setup-installation/how-to-increase-thread-pool-size",
-      title: "How to Increase the Number of Threads in ClickHouse",
-      description: "Learn how to configure the Global Thread pool in ClickHouse by adjusting settings like `max_thread_pool_size`, `thread_pool_queue_size`, and `max_thread_pool_free_size`.",
+      title: "ClickHouseのスレッド数を増やす方法",
+      description: "`max_thread_pool_size`、`thread_pool_queue_size`、`max_thread_pool_free_size`などの設定を調整して、ClickHouseのグローバルスレッドプールを設定する方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
       category: "Setup & installation",
       tags: ["Performance and Optimizations"]
     },
     {
       id: "data-import-export/kafka-to-clickhouse-setup",
-      title: "How to Ingest Data from Kafka into ClickHouse",
-      description: "Learn how to ingest data from a Kafka topic into ClickHouse using the Kafka table engine, materialized views, and MergeTree tables.",
+      title: "KafkaからClickHouseにデータを取り込む方法",
+      description: "Kafkaテーブルエンジン、マテリアライズドビュー、MergeTreeテーブルを使用して、KafkaトピックからClickHouseにデータを取り込む方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/kafka-to-clickhouse-setup",
       category: "Data import & export",
       tags: ["Data Ingestion"]
     },
     {
       id: "data-import-export/ingest-parquet-files-in-s3",
-      title: "How to ingest Parquet files from an S3 bucket",
-      description: "Learn the basics of using the S3 table engine in ClickHouse to ingest and query Parquet files from an S3 bucket, including setup, access permissions, and data import examples.",
+      title: "S3バケットからParquetファイルを取り込む方法",
+      description: "セットアップ、アクセス権限、データインポート例を含む、S3バケットからParquetファイルを取り込みクエリするためのClickHouseのS3テーブルエンジンの基本を学びます。",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/ingest-parquet-files-in-s3",
       category: "Data import & export",
       tags: ["Data Ingestion"]
     },
     {
       id: "queries-sql/how-to-insert-all-rows-from-another-table",
-      title: "How to insert all rows from one table to another?",
-      description: "Knowledgebase article on how to insert all rows from one table to another.",
+      title: "あるテーブルから別のテーブルにすべての行を挿入する方法",
+      description: "あるテーブルから別のテーブルにすべての行を挿入する方法に関するナレッジベース記事。",
       href: "/ja/resources/support-center/knowledge-base/queries-sql/how-to-insert-all-rows-from-another-table",
       category: "Queries & SQL",
       tags: ["Data Ingestion"]
     },
     {
       id: "performance-optimization/check-query-processing-time-only",
-      title: "How to Measure Query Processing Time Without Returning Rows",
-      description: "Learn how to use the `FORMAT Null` option in ClickHouse to measure query processing time without returning any rows to the client.",
+      title: "行を返さずにクエリ処理時間を測定する方法",
+      description: "クライアントに行を返さずにクエリ処理時間を測定するために、ClickHouseの`FORMAT Null`オプションを使用する方法を学びます。",
       href: "/ja/resources/support-center/knowledge-base/performance-optimization/check-query-processing-time-only",
       category: "Performance & optimization",
       tags: ["Performance and Optimizations"]
+    },
+    {
+      id: "cloud-services/opt-out-core-dump-collection",
+      title: "クラッシュレポート収集をオプトアウトする方法",
+      description: "この記事では、ClickHouse Cloudでクラッシュレポートの収集をオプトアウトする方法を説明します",
+      href: "/ja/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection",
+      category: "Cloud",
+      tags: ["Managing Cloud"]
     },
     {
       id: "monitoring-debugging/outputSendLogsLevelTracesToFile",
@@ -632,9 +666,25 @@ export const kbIndex = {
       tags: ["Tools and Utilities"]
     },
     {
+      id: "troubleshooting/recovering-from-corrupt-keeper-snapshot",
+      title: "破損したKeeperスナップショットから復旧する方法",
+      description: "破損したKeeperスナップショットからの復旧方法を説明する記事：問題の症状、スナップショットとは何か・どこにあるか、および復旧戦略について。",
+      href: "/ja/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
+      category: "Troubleshooting & errors",
+      tags: ["Troubleshooting"]
+    },
+    {
+      id: "troubleshooting/restore-replica-after-storage-failure",
+      title: "ストレージ障害後にレプリカを復元する方法",
+      description: "この記事では、ClickHouseのアトミックデータベースでレプリケートテーブルを使用している際に、レプリカの1つのディスク/ストレージが失われた・破損した場合のデータ復旧方法を説明します。",
+      href: "/ja/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure",
+      category: "Troubleshooting & errors",
+      tags: ["Deployments and Scaling"]
+    },
+    {
       id: "integrations/how-to-set-up-ch-on-docker-odbc-connect-mssql",
-      title: "ODBCを使用してDocker上のClickHouseをMicrosoft SQL Server（MSSQL）データベースに接続する方法",
-      description: "ODBCを使用してDocker上のClickHouseをMicrosoft SQL Server（MSSQL）データベースに接続する方法",
+      title: "How to set up ClickHouse on Docker with ODBC to connect to a Microsoft SQL Server (MSSQL) database",
+      description: "How to set up ClickHouse on Docker with ODBC to connect to a Microsoft SQL Server (MSSQL) database",
       href: "/ja/resources/support-center/knowledge-base/integrations/how-to-set-up-ch-on-docker-odbc-connect-mssql",
       category: "Integrations & client libraries",
       tags: ["Native Clients and Interfaces"]
@@ -642,162 +692,162 @@ export const kbIndex = {
     {
       id: "queries-sql/using-array-join-to-extract-and-query-attributes",
       title: "How to use array join to extract and query varying attributes using map keys and values",
-      description: "マップのキーと値を使用して、array joinで可変属性を抽出・クエリする方法を示す簡単な例",
+      description: "Simple example to illustrate how to use array join to extract and query varying attributes using map keys and values",
       href: "/ja/resources/support-center/knowledge-base/queries-sql/using-array-join-to-extract-and-query-attributes",
-      category: "クエリ & SQL",
+      category: "Queries & SQL",
       tags: ["Functions"]
     },
     {
       id: "materialized-views/how-to-use-parametrised-views",
-      title: "ClickHouseでパラメーター化ビューを使用する方法",
-      description: "クエリ時パラメーターに基づく動的なデータスライシングのために、ClickHouseでパラメーター化ビューを作成・クエリする方法を学びます。",
+      title: "How to Use Parameterized Views in ClickHouse",
+      description: "Learn how to create and query parameterized views in ClickHouse for dynamic data slicing based on query-time parameters.",
       href: "/ja/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-      category: "materialized view & プロジェクション",
-      tags: ["ユースケース"]
+      category: "Materialized views & projections",
+      tags: ["Use Cases"]
     },
     {
       id: "tables-schema/exchangeStatementToSwitchTables",
-      title: "exchangeコマンドを使用してテーブルを切り替える方法",
-      description: "exchangeコマンドを使用してテーブルを切り替える方法",
+      title: "How to use the exchange command to switch tables",
+      description: "How to use the exchange command to switch tables",
       href: "/ja/resources/support-center/knowledge-base/tables-schema/exchangeStatementToSwitchTables",
-      category: "テーブル & スキーマ",
-      tags: ["データ管理"]
+      category: "Tables & schema",
+      tags: ["Managing Data"]
     },
     {
       id: "queries-sql/compare-resultsets",
-      title: "2つのクエリが同じ結果セットを返すかを検証する方法",
-      description: "ハッシュ関数と比較手法を使用して、2つのClickHouseクエリが同一の結果セットを生成することを検証する方法を学びます。",
+      title: "How to Validate if Two Queries Return the Same Result-sets",
+      description: "Learn how to validate that two ClickHouse queries produce identical result-sets using hash functions and comparison techniques.",
       href: "/ja/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
-      category: "クエリ & SQL",
+      category: "Queries & SQL",
       tags: ["Functions"]
     },
     {
       id: "monitoring-debugging/check-query-cache-in-use",
-      title: "ClickHouseでクエリキャッシュの使用状況を確認する方法",
-      description: "`clickhouse-client`のトレースログまたはSQLコマンドを使用して、ClickHouseでクエリキャッシュが利用されているかどうかを確認する方法を学びます。",
+      title: "How to verify query cache usage in ClickHouse",
+      description: "Learn how to check if query cache is being utilized in ClickHouse using `clickhouse-client` trace logs or SQL commands.",
       href: "/ja/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
-      category: "監視 & デバッグ",
-      tags: ["パフォーマンスと最適化"]
+      category: "Monitoring & debugging",
+      tags: ["Performance and Optimizations"]
     },
     {
       id: "cloud-services/unable-to-access-cloud-service",
-      title: "ClickHouse Cloud サービスにアクセスできない",
-      description: "IPアクセスリストの設定を含む、ClickHouse Cloud サービスへのアクセス問題のトラブルシューティング",
+      title: "I am unable to access a ClickHouse Cloud service",
+      description: "Troubleshooting access issues with ClickHouse Cloud services, including IP Access List configuration",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/unable-to-access-cloud-service",
       category: "Cloud",
-      tags: ["エラーと例外", "Cloud管理"]
+      tags: ["Errors and Exceptions", "Managing Cloud"]
     },
     {
       id: "performance-optimization/finding-expensive-queries-by-memory-usage",
-      title: "ClickHouseでメモリ使用量によるコストの高いクエリを特定する",
-      description: "`system.query_log`テーブルを使用して、クラスター構成およびスタンドアロン構成の例を交えながら、ClickHouseで最もメモリを消費するクエリを見つける方法を学びます。",
+      title: "Identifying Expensive Queries by Memory Usage in ClickHouse",
+      description: "Learn how to use the `system.query_log` table to find the most memory-intensive queries in ClickHouse, with examples for clustered and standalone setups.",
       href: "/ja/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
-      category: "パフォーマンス & 最適化",
-      tags: ["パフォーマンスと最適化"]
+      category: "Performance & optimization",
+      tags: ["Performance and Optimizations"]
     },
     {
       id: "data-import-export/importing-and-working-with-json-array-objects",
-      title: "ClickHouseでのJSON配列オブジェクトのインポートとクエリ",
-      description: "JSON関数とArray操作を使用して、ClickHouseにJSON配列オブジェクトをインポートし、高度なクエリを実行する方法を学びます。",
+      title: "Importing and Querying JSON Array Objects in ClickHouse",
+      description: "Learn how to import JSON array objects into ClickHouse and perform advanced queries using JSON functions and array operations.",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/importing-and-working-with-json-array-objects",
-      category: "データのインポート & エクスポート",
-      tags: ["データフォーマット"]
+      category: "Data import & export",
+      tags: ["Data Formats"]
     },
     {
       id: "data-import-export/importing-geojason-with-nested-object-array",
-      title: "深くネストされたオブジェクト配列を持つGeoJSONのインポート",
-      description: "「深くネストされたオブジェクト配列を持つGeoJSONのインポート」",
+      title: "Importing GeoJSON with a deeply nested object array",
+      description: "Learn how to import GeoJSON files with deeply nested object arrays into ClickHouse and query the nested feature data.",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/importing-geojason-with-nested-object-array",
-      category: "データのインポート & エクスポート",
-      tags: ["データフォーマット"]
+      category: "Data import & export",
+      tags: ["Data Formats"]
     },
     {
       id: "performance-optimization/improve-map-performance",
-      title: "ClickHouseでのMapルックアップパフォーマンスの改善",
-      description: "特定のキーを独立したカラムとしてマテリアライズすることで、ClickHouseのMapカラムルックアップを最適化してクエリパフォーマンスを向上させる方法を学びます。",
+      title: "Improving Map lookup performance in ClickHouse",
+      description: "Learn how to optimize Map column lookups in ClickHouse for better query performance by materializing specific keys as standalone columns.",
       href: "/ja/resources/support-center/knowledge-base/performance-optimization/improve-map-performance",
-      category: "パフォーマンス & 最適化",
-      tags: ["パフォーマンスと最適化"]
+      category: "Performance & optimization",
+      tags: ["Performance and Optimizations"]
     },
     {
       id: "tables-schema/delete-old-data",
-      title: "ClickHouseテーブルから古いレコードを削除することは可能ですか？",
-      description: "このページでは、ClickHouseテーブルから古いレコードを削除できるかどうかという質問に回答します。",
+      title: "Is it possible to delete old records from a ClickHouse table?",
+      description: "This page answers the question of whether it is possible to delete old records from a ClickHouse table",
       href: "/ja/resources/support-center/knowledge-base/tables-schema/delete-old-data",
-      category: "テーブル & スキーマ",
+      category: "Tables & schema",
       tags: []
     },
     {
       id: "general-faqs/separate-storage",
-      title: "ClickHouseをストレージとコンピュートを分離してデプロイすることは可能ですか？",
-      description: "このページでは、ClickHouseをストレージとコンピュートを分離してデプロイできるかどうかについて回答します。",
+      title: "Is it possible to deploy ClickHouse with separate storage and compute?",
+      description: "This page provides an answer as to whether it is possible to deploy ClickHouse with separate storage and compute",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/separate-storage",
-      category: "一般 & よくある質問",
+      category: "General & FAQs",
       tags: []
     },
     {
       id: "data-import-export/json-extract-example",
-      title: "JSONの抽出例",
-      description: "JSONから基本型を抽出する方法の簡単な例",
+      title: "JSON Extract example",
+      description: "A short example on how to extract base types from JSON",
       href: "/ja/resources/support-center/knowledge-base/data-import-export/json-extract-example",
-      category: "データのインポート & エクスポート",
-      tags: ["データフォーマット"]
+      category: "Data import & export",
+      tags: ["Data Formats"]
     },
     {
       id: "queries-sql/calculate-pi-using-sql",
-      title: "SQLを使って円周率を計算しよう",
-      description: "円周率の日！ClickHouse SQLを使って円周率を計算しましょう",
+      title: "Let's calculate pi using SQL",
+      description: "It's Pi Day! Let's calculate pi using ClickHouse SQL",
       href: "/ja/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
-      category: "クエリ & SQL",
-      tags: ["ユースケース"]
+      category: "Queries & SQL",
+      tags: ["Use Cases"]
     },
     {
       id: "cloud-services/clickhouse-cloud-api-usage",
-      title: "APIとcURLを使用したClickHouse Cloud サービスの管理",
-      description: "APIエンドポイントとcURLコマンドを使用して、ClickHouse Cloud サービスを起動、停止、再開する方法を学びます。",
+      title: "Managing ClickHouse Cloud Service with API and cURL",
+      description: "Learn how to start, stop, and resume a ClickHouse Cloud service using API endpoints and cURL commands.",
       href: "/ja/resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
       category: "Cloud",
-      tags: ["Cloud管理", "ツールとユーティリティ"]
+      tags: ["Managing Cloud", "Tools and Utilities"]
     },
     {
       id: "monitoring-debugging/mapping-of-system-metrics-to-prometheus-metrics",
-      title: "system.dashboardsで使用されるメトリクスから`system.custom_metrics`のPrometheusメトリクスへのマッピング",
-      description: "system.dashboardsで使用されるメトリクスからsystem.custom_metricsのPrometheusメトリクスへのマッピング",
+      title: "Mapping of metrics used in system.dashboards to Prometheus metrics in `system.custom_metrics`",
+      description: "Mapping of metrics used in system.dashboards to Prometheus metrics in system.custom_metrics",
       href: "/ja/resources/support-center/knowledge-base/monitoring-debugging/mapping-of-system-metrics-to-prometheus-metrics",
-      category: "監視 & デバッグ",
-      tags: ["システムテーブル"]
+      category: "Monitoring & debugging",
+      tags: ["System Tables"]
     },
     {
       id: "security/windows-active-directory-to-ch-roles",
-      title: "Windows Active DirectoryセキュリティグループをClickHouseロールにマッピングする",
-      description: "Windows Active DirectoryセキュリティグループをClickHouseロールにマッピングする例",
+      title: "Mapping Windows Active Directory security groups to ClickHouse roles",
+      description: "Example of mapping Windows Active Directory security groups to ClickHouse roles",
       href: "/ja/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles",
-      category: "セキュリティ & アクセス制御",
-      tags: ["ツールとユーティリティ"]
+      category: "Security & access control",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "performance-optimization/memory-limit-exceeded-for-query",
-      title: "クエリのメモリ制限超過",
-      description: "クエリのメモリ制限超過エラーのトラブルシューティング",
+      title: "Memory limit exceeded for query",
+      description: "Troubleshooting memory limit exceeded errors for a query",
       href: "/ja/resources/support-center/knowledge-base/performance-optimization/memory-limit-exceeded-for-query",
-      category: "パフォーマンス & 最適化",
-      tags: ["エラーと例外"]
+      category: "Performance & optimization",
+      tags: ["Errors and Exceptions"]
     },
     {
       id: "integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
-      title: "Power BI ClickHouseコネクターを使用する際のODBC認証失敗エラー",
-      description: "Power BI ClickHouseコネクターを使用する際のODBC認証失敗エラー",
+      title: "ODBC authentication failed error when using the Power BI ClickHouse connector",
+      description: "ODBC authentication failed error when using the Power BI ClickHouse connector",
       href: "/ja/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
-      category: "インテグレーション & クライアントライブラリ",
-      tags: ["ネイティブクライアントとインターフェース", "エラーと例外"]
+      category: "Integrations & client libraries",
+      tags: ["Native Clients and Interfaces", "Errors and Exceptions"]
     },
     {
       id: "monitoring-debugging/profiling-clickhouse-with-llvm-xray",
-      title: "LLVMのXRayを使用したClickHouseのプロファイリング",
-      description: "LLVMのXRayインストルメンテーションプロファイラーを使用してClickHouseをプロファイリングし、トレースを可視化してパフォーマンスを分析する方法を学びます。",
+      title: "Profiling ClickHouse with LLVM's XRay",
+      description: "Learn how to profile ClickHouse using LLVM's XRay instrumentation profiler, visualize traces, and analyze performance.",
       href: "/ja/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray",
-      category: "監視 & デバッグ",
-      tags: ["パフォーマンスと最適化", "ツールとユーティリティ"]
+      category: "Monitoring & debugging",
+      tags: ["Performance and Optimizations", "Tools and Utilities"]
     },
     {
       id: "integrations/python-http-requests",
@@ -817,7 +867,7 @@ export const kbIndex = {
     },
     {
       id: "data-import-export/cannot-append-data-to-parquet-format",
-      title: 'Resolving "Cannot Append Data in Parquet Format" Error in ClickHouse',
+      title: 'Resolving "Cannot Append Data in Parquet Format" error in ClickHouse',
       description: 'Are you getting the error "Cannot append data in format Parquet to file" error in ClickHouse? Let\'s take a look at how to resolve it.',
       href: "/ja/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
       category: "Data import & export",
@@ -825,7 +875,7 @@ export const kbIndex = {
     },
     {
       id: "troubleshooting/exception-too-many-parts",
-      title: 'Resolving "Too Many Parts" Error in ClickHouse',
+      title: 'Resolving "Too Many Parts" error in ClickHouse',
       description: 'Learn how to address the "Too many parts" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.',
       href: "/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
       category: "Troubleshooting & errors",
@@ -836,16 +886,24 @@ export const kbIndex = {
       title: "Resolving SSL Certificate Verify Error in ClickHouse",
       description: "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
       href: "/ja/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
-      category: "トラブルシューティングとエラー",
-      tags: ["セキュリティと認証", "エラーと例外"]
+      category: "Troubleshooting & errors",
+      tags: ["Security and Authentication", "Errors and Exceptions"]
     },
     {
       id: "troubleshooting/connection-timeout-remote-remoteSecure",
-      title: "`remote`および`remoteSecure`テーブル関数のタイムアウトエラーを解決する",
-      description: "接続タイムアウト設定を調整して、ClickHouseの`remote`または`remoteSecure`テーブル関数使用時に発生するタイムアウトエラーを修正する方法を説明します。",
+      title: "Resolving Timeout Errors with `remote` and `remoteSecure` Table Functions",
+      description: "Learn how to fix timeout errors when using `remote` or `remoteSecure` table functions in ClickHouse by adjusting the connection timeout settings.",
       href: "/ja/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
       category: "Troubleshooting & errors",
       tags: ["Errors and Exceptions"]
+    },
+    {
+      id: "tables-schema/runbook-json",
+      title: "Runbook: JSONスキーマ",
+      description: "ClickHouse の JSON データに適したスキーマアプローチを選択する — 型付きカラム、ハイブリッド、ネイティブ JSON、または String ストレージ",
+      href: "/ja/resources/support-center/knowledge-base/tables-schema/runbook-json",
+      category: "Tables & schema",
+      tags: ["Runbooks", "Data Modelling"]
     },
     {
       id: "tables-schema/search-across-node-for-tables-with-a-wildcard",
@@ -897,6 +955,14 @@ export const kbIndex = {
       tags: ["Performance and Optimizations"]
     },
     {
+      id: "data-management/understanding-part-types-and-storage-formats",
+      title: "パートタイプとストレージフォーマットについて",
+      description: "ClickHouseにおける各種パートタイプ（Wide vs Compact）およびストレージフォーマット（Full vs Packed）と、それらがパフォーマンスに与える影響について説明します。",
+      href: "/ja/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats",
+      category: "Data management",
+      tags: ["Core Data Concepts"]
+    },
+    {
       id: "queries-sql/useful-queries-for-troubleshooting",
       title: "Useful queries for troubleshooting",
       description: "A collection of handy queries for troubleshooting ClickHouse, including monitoring table sizes, long-running queries, and errors.",
@@ -906,7 +972,7 @@ export const kbIndex = {
     },
     {
       id: "general-faqs/use-clickhouse-for-log-analytics",
-      title: "Using ClickHouse for Log Analytics",
+      title: "Using ClickHouse for log analytics",
       description: "ClickHouse is popular for logs and metrics analysis because of the real-time analytics capabilities provided. Ready to find out more?",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/use-clickhouse-for-log-analytics",
       category: "General & FAQs",
@@ -914,7 +980,7 @@ export const kbIndex = {
     },
     {
       id: "queries-sql/filtered-aggregates",
-      title: "Using Filtered Aggregates in ClickHouse",
+      title: "Using filtered aggregates in ClickHouse",
       description: "Learn how to use filtered aggregates in ClickHouse with `-If` and `-Distinct` aggregate combinators to simplify query syntax and enhance analytics.",
       href: "/ja/resources/support-center/knowledge-base/queries-sql/filtered-aggregates",
       category: "Queries & SQL",
@@ -955,10 +1021,10 @@ export const kbIndex = {
     {
       id: "general-faqs/columnar-database",
       title: "What is a columnar database?",
-      description: "This page describes what a columnar database is",
+      description: "A columnar database stores the data of each column independently. This allows reading data from disk only for those columns that are used in any given query.",
       href: "/ja/resources/support-center/knowledge-base/general-faqs/columnar-database",
       category: "General & FAQs",
-      tags: []
+      tags: ["Core Data Concepts"]
     },
     {
       id: "general-faqs/olap",
@@ -986,9 +1052,9 @@ export const kbIndex = {
     },
     {
       id: "data-management/when-is-ttl-applied",
-      title: "TTLルールはいつ適用されますか？また、適用タイミングを制御できますか？",
+      title: "When are TTL rules applied, and do we have control over it?",
       description:
-        "ClickHouseのTTLルールは非同期で適用されますが、`merge_with_ttl_timeout`設定を使用して実行タイミングを制御できます。TTLを強制適用する方法や、TTL実行に使用するバックグラウンドスレッドの管理方法について説明します。",
+        "TTL rules in ClickHouse are eventually applied, and you can control when they are executed using the `merge_with_ttl_timeout` setting. Learn how to force TTL application and manage background threads for TTL execution.",
       href: "/ja/resources/support-center/knowledge-base/data-management/when-is-ttl-applied",
       category: "Data management",
       tags: ["Core Data Concepts"]

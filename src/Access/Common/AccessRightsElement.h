@@ -87,6 +87,11 @@ struct AccessRightsElement
     /// Throws an exception if some flags can't be granted.
     void throwIfNotGrantable() const;
 
+    /// The filter of `GRANT READ ON S3('s3://foo/.*')` is matched with `RE2::FullMatch` when access
+    /// is checked, so a pattern that does not compile never matches: the grant would look accepted
+    /// and grant nothing. Throws `CANNOT_COMPILE_REGEXP` instead.
+    void throwIfFilterIsNotCompilable() const;
+
     /// Resets flags which cannot be granted.
     void eraseNotGrantable();
 
@@ -126,6 +131,9 @@ public:
 
     /// Throws an exception if some flags can't be granted.
     void throwIfNotGrantable() const;
+
+    /// For each element throws if its filter is not a compilable regular expression.
+    void throwIfFilterIsNotCompilable() const;
 
     /// Resets flags which cannot be granted.
     void eraseNotGrantable();

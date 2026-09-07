@@ -46,6 +46,7 @@ namespace Setting
     extern const SettingsBool schema_inference_use_cache_for_s3;
     extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
     extern const SettingsS3UriStyle s3_uri_style;
+    extern const SettingsString s3_base;
 }
 
 namespace S3AuthSetting
@@ -204,16 +205,25 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
+    /// Resolve relative URLs against the `s3_base` setting. When the setting rewrote the URL,
+    /// record the resolved value so that `StorageObjectStorageConfiguration::initialize`
+    /// materializes it back into the persisted engine args (`url='...'` override), keeping the
+    /// persisted DDL independent of `s3_base` at attach time.
+    const String raw_collection_url = collection.get<String>("url");
+    const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
+    if (collection_url != raw_collection_url)
+        url_overridden_by_base_setting = collection_url;
+
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         url = S3::URI(
-            std::filesystem::path(collection.get<String>("url")) / filename,
+            std::filesystem::path(collection_url) / filename,
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);
     else
         url = S3::URI(
-            collection.get<String>("url"),
+            collection_url,
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);
@@ -273,14 +283,35 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
     s3_settings->auth_settings[S3AuthSetting::external_id] = collection.getOrDefault<String>("external_id", "");
 
-    /// A query-overridden `role_arn` (`s3(collection, role_arn = ...)`) must not be assumed using the
-    /// collection's operator-provisioned keys as the STS base. Honor it only when the same query also supplied
-    /// the base key pair; a `role_arn` from the stored collection definition is left untouched.
+    /// A query-overridden `role_arn` (`s3(collection, role_arn = ...)`) is honored even under the restriction
+    /// (STS assume-role is the documented way to grant ClickHouse Cloud access to a private bucket), but it
+    /// must not be assumed using the collection's operator-provisioned keys as the STS base. When the same
+    /// query did not also supply the base key pair, drop the collection keys so the assume-role call is signed
+    /// by the server's ambient identity instead; a `role_arn` from the stored collection definition is left
+    /// untouched and keeps the collection's own keys as its base.
     if (context->shouldRestrictUserQueryS3Credentials() && collection.isQueryOverridden("role_arn")
         && !(collection.isQueryOverridden("access_key_id") && collection.isQueryOverridden("secret_access_key")))
     {
-        s3_settings->auth_settings.clearRoleArn();
+        s3_settings->auth_settings[S3AuthSetting::access_key_id] = "";
+        s3_settings->auth_settings[S3AuthSetting::secret_access_key] = "";
+        s3_settings->auth_settings[S3AuthSetting::session_token] = "";
     }
+
+    /// A query-overridden `role_arn` must not silently inherit the collection's `external_id`: it is the
+    /// secret half of the STS triple, tied to the collection's own role, and reusing it with a
+    /// query-chosen role could unlock any role whose trust policy gates on that ExternalId. Drop it unless
+    /// the query supplied its own.
+    if (context->shouldRestrictUserQueryS3Credentials() && collection.isQueryOverridden("role_arn")
+        && !collection.isQueryOverridden("external_id"))
+        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+
+    /// When the query supplies its own key pair but no `session_token`, drop any token inherited from the
+    /// collection: it was issued for the collection's keys and would be sent with the query's keys instead
+    /// (and would break the STS base when a query-supplied `role_arn` is also present). Mirrors the
+    /// explicit-URL path in `fromAST`.
+    if (collection.isQueryOverridden("access_key_id") && collection.isQueryOverridden("secret_access_key")
+        && !collection.isQueryOverridden("session_token"))
+        s3_settings->auth_settings[S3AuthSetting::session_token] = "";
 
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
@@ -677,8 +708,20 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     }
 
     /// This argument is always the first
+    String url_str = checkAndGetLiteralArgument<String>(args[0], "url");
+
+    /// Resolve relative URLs against the `s3_base` setting, and materialize the resolved URL
+    /// back into the arguments so that the persisted DDL (`SHOW CREATE TABLE`, DETACH/ATTACH,
+    /// server restart) does not depend on the value of `s3_base` at attach time.
+    if (String resolved_url = StorageURL::resolveURLBase(url_str, context->getSettingsRef()[Setting::s3_base].value, "s3_base");
+        resolved_url != url_str)
+    {
+        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true);
+        url_str = std::move(resolved_url);
+    }
+
     url = S3::URI(
-        checkAndGetLiteralArgument<String>(args[0], "url"),
+        url_str,
         context->getSettingsRef()[Setting::allow_archive_path_syntax],
         /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
         /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
@@ -800,14 +843,17 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     if (query_provided_access_key_id && query_provided_secret_access_key && !query_provided_session_token)
         s3_settings->auth_settings[S3AuthSetting::session_token] = "";
 
-    /// A query-supplied `role_arn` must assume the role with the query's own base keys, not the server `<s3>`
-    /// static keys (a confused-deputy STS path). Drop it when the query did not supply its own key pair.
+    /// A query-supplied `role_arn` is honored even under the restriction (STS assume-role is the documented
+    /// way to grant ClickHouse Cloud access to a private bucket), but it must assume the role with the query's
+    /// own base keys or the server's ambient identity, never the server `<s3>`/endpoint static keys (a
+    /// confused-deputy STS path). Drop the inherited keys when the query supplied a `role_arn` without its own
+    /// key pair, so the assume-role call falls through to the ambient provider chain.
     if (restrict_server_credentials && !String(s3_settings->auth_settings[S3AuthSetting::role_arn]).empty()
         && !(query_provided_access_key_id && query_provided_secret_access_key))
     {
-        s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
-        s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
-        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+        s3_settings->auth_settings[S3AuthSetting::access_key_id] = "";
+        s3_settings->auth_settings[S3AuthSetting::secret_access_key] = "";
+        s3_settings->auth_settings[S3AuthSetting::session_token] = "";
     }
 
     if (no_sign_request)

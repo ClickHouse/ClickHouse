@@ -16,7 +16,7 @@ ClickHouse は、[Apache Iceberg](/ja/reference/engines/table-engines/integratio
   ### 既存データをそのままクエリする
 </div>
 
-ClickHouse は、データを複製することなく、オブジェクトストレージ内のオープンテーブルフォーマットを直接クエリできます。Iceberg、Delta Lake、Hudi、Paimon を標準採用している組織なら、ClickHouse から既存のテーブルを参照するよう設定するだけで、ClickHouse の SQL方言、分析関数、高効率なネイティブの Parquet リーダーをすぐに活用できます。同時に、[clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) や [chDB](/ja/products/chdb/index) のようなツールを使えば、リモートストレージ上の 70 を超えるファイルフォーマットに対して探索的なアドホック分析を行うことができ、インフラストラクチャの準備なしにデータレイク内のデータセットを対話的に調査できます。
+ClickHouse は、データを複製することなく、オブジェクトストレージ内のオープンテーブルフォーマットを直接クエリできます。Iceberg、Delta Lake、Hudi、Paimon を標準採用している組織なら、ClickHouse から既存のテーブルを参照するよう設定するだけで、ClickHouse の SQL方言、分析関数、高効率なネイティブの Parquet リーダーをすぐに活用できます。同時に、[clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) や [chDB](/ja/chdb/index) のようなツールを使えば、リモートストレージ上の 70 を超えるファイルフォーマットに対して探索的なアドホック分析を行うことができ、インフラストラクチャの準備なしにデータレイク内のデータセットを対話的に調査できます。
 
 これは、[テーブル関数とテーブルエンジン](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) を使った直接読み取り、または [データカタログへの接続](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) のいずれかで実現できます。
 
@@ -70,6 +70,12 @@ ClickHouse はオープンテーブルフォーマットへのデータの書き
 * **Reverse ETL** - ユーザーが materialized view やスケジュールクエリを使って ClickHouse 内で変換を実行し、その結果をオープンテーブルフォーマットに永続化して、データエコシステム内の他のツールで利用できるようにしたい場合。
 
 [データレイクへの書き込み](/ja/guides/use-cases/data-warehousing/getting-started/writing-data)については、getting started guide を参照してください。
+
+<div id="best-practices">
+  ### ベストプラクティス
+</div>
+
+本番環境のワークロードについては、テーブル関数、テーブルエンジン、カタログ接続の選定、パフォーマンス設定の調整、データレイククエリのデバッグに関するガイダンスがまとまった[データレイクのベストプラクティス](/ja/guides/use-cases/data-warehousing/getting-started/best-practices)を参照してください。
 
 <div id="next-steps">
   ## 次のステップ

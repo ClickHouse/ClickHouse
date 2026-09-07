@@ -19,8 +19,7 @@ This getting started guide allows you to collect local logs and metrics from you
 This guide assumes you have completed the [Getting Started Guide for Managed ClickStack](/clickstack/deployment/managed) and have the [connection credentials recorded](/clickstack/getting-started/managed#next-steps).
 
 <Steps>
-<Step>
-### Create a custom OpenTelemetry configuration {#create-otel-configuration}
+<Step title="Create a custom OpenTelemetry configuration" id="create-otel-configuration">
 
 Create a `custom-local-config.yaml` file with the following content:
 
@@ -102,8 +101,7 @@ To avoid this behavior, you can set the start position to `end` in the receiver 
 
 For more details on the OpenTelemetry (OTel) configuration structure, we recommend [the official guide](https://opentelemetry.io/docs/collector/configuration/).
 </Step>
-<Step>
-### Start the OpenTelemetry collector {#start-the-otel-collector}
+<Step title="Start the OpenTelemetry collector" id="start-the-otel-collector">
 
 Run a standalone collector with the following command:
 
@@ -123,15 +121,13 @@ docker run -d \
 
 The collector will immediately begin collecting local system logs and metrics.
 </Step>
-<Step>
-### Select your service {#select-your-service}
+<Step title="Select your service" id="select-your-service">
 
 Select the service with Managed ClickStack from the main ClickHouse cloud landing page.
 
 <Image img="/images/clickstack/select_service.webp" alt="Select Service" size="lg"/>
 </Step>
-<Step>
-### Explore system logs {#navigate-to-the-hyperdx-ui}
+<Step title="Explore system logs" id="navigate-to-the-hyperdx-ui">
 
 Select `ClickStack` from the left menu to navigate to the ClickStack UI, where you will be automatically authenticated.
 
@@ -139,8 +135,7 @@ The search UI should be populated with local system logs. Expand the filters to 
 
 <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX Local logs" size="lg"/>
 </Step>
-<Step>
-### Explore system metrics {#explore-system-metrics}
+<Step title="Explore system metrics" id="explore-system-metrics">
 
 We can explore our metrics using charts.
 

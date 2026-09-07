@@ -16,9 +16,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용해 ClickHouse BYOC를 배포하려면 아래 단계를 따르십시오. 이 방식은 네트워크 구성에 대한 제어 범위를 넓혀 주며, ClickHouse BYOC를 기존 네트워크 인프라에 통합할 수 있도록 합니다.
 
 <Steps>
-  <Step>
-    ### 기존 VPC 구성
-
+  <Step title="기존 VPC 구성" id="configure-existing-vpc">
     1. VPC에 `clickhouse-byoc="true"` 태그를 추가합니다.
     2. ClickHouse Cloud에서 사용할 수 있도록 서로 다른 3개의 가용 영역에 걸쳐 최소 3개의 프라이빗 서브넷을 할당합니다.
     3. 각 서브넷이 ClickHouse 배포에 충분한 IP 주소를 제공할 수 있도록 최소 `/23` CIDR 범위(예: `10.0.0.0/23`)를 사용하는지 확인합니다.
@@ -29,17 +27,13 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
     <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="BYOC VPC 서브넷 태그" />
   </Step>
 
-  <Step>
-    ### S3 Gateway Endpoint 구성
-
+  <Step title="S3 Gateway Endpoint 구성" id="configure-s3-endpoint">
     VPC에 S3 Gateway Endpoint가 아직 구성되어 있지 않다면, VPC와 Amazon S3 간의 안전한 프라이빗 통신을 위해 이를 생성해야 합니다. 이 엔드포인트를 사용하면 ClickHouse 서비스가 퍼블릭 인터넷을 거치지 않고 S3에 액세스할 수 있습니다. 예시 구성은 아래 스크린샷을 참고하십시오.
 
     <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="BYOC S3 Endpoint" />
   </Step>
 
-  <Step>
-    ### 네트워크 연결 확인
-
+  <Step title="네트워크 연결 확인" id="ensure-network-connectivity">
     **아웃바운드 인터넷 연결**
     VPC는 최소한 아웃바운드 인터넷 연결을 허용해야 ClickHouse BYOC 구성 요소가 Tailscale 컨트롤 플레인과 통신할 수 있습니다. Tailscale은 프라이빗 관리 작업을 위한 안전한 제로 트러스트 네트워킹을 제공하는 데 사용됩니다. Tailscale의 초기 등록 및 설정에는 퍼블릭 인터넷 연결이 필요하며, 이는 직접 연결하거나 NAT gateway를 통해 구현할 수 있습니다. 이 연결은 BYOC 배포의 프라이버시와 보안을 모두 유지하는 데 필요합니다.
 
@@ -47,9 +41,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
     VPC에서 DNS 확인이 정상적으로 작동하고, 표준 DNS 이름을 차단하거나 간섭하거나 덮어쓰지 않는지 확인합니다. ClickHouse BYOC는 DNS를 사용해 Tailscale 컨트롤 서버와 ClickHouse 서비스 엔드포인트를 확인합니다. DNS를 사용할 수 없거나 잘못 구성된 경우, BYOC 서비스가 연결에 실패하거나 제대로 작동하지 않을 수 있습니다.
   </Step>
 
-  <Step>
-    ### AWS 계정 구성
-
+  <Step title="AWS 계정 구성" id="configure-aws-account">
     초기 BYOC 설정에서는 ClickHouse Cloud의 BYOC 컨트롤러가 인프라를 관리할 수 있도록 권한 있는 IAM 역할(`ClickHouseManagementRole`)을 생성합니다. 이는 [CloudFormation 템플릿](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) 또는 [Terraform 모듈](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz)을 사용해 수행할 수 있습니다.
 
     `BYO-VPC` 구성으로 배포하는 경우, ClickHouse Cloud가 고객 관리형 VPC를 수정할 권한을 받지 않도록 `IncludeVPCWritePermissions` 매개변수를 `false`로 설정하십시오.
@@ -71,9 +63,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
     ```
   </Step>
 
-  <Step>
-    ### BYOC 인프라 설정
-
+  <Step title="BYOC 인프라 설정" id="set-up-byoc-infrastructure">
     ClickHouse Cloud 콘솔에서 새 인프라를 설정할 때 다음 항목을 구성합니다.
 
     1. **VPC configuration**에서 **Use existing VPC**를 선택합니다.
@@ -94,16 +84,54 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
   ## 고객 관리형 IAM 역할
 </div>
 
-고급 보안 요구 사항이나 엄격한 컴플라이언스 정책이 있는 조직에서는 ClickHouse Cloud가 IAM 역할을 생성하도록 하는 대신 자체 IAM 역할을 제공할 수 있습니다. 이 방식을 사용하면 IAM 권한을 완전히 제어할 수 있으며, 조직의 보안 정책도 적용할 수 있습니다.
+고급 보안 요구 사항이나 엄격한 컴플라이언스 정책이 있는 조직에서는 ClickHouse Cloud가 IAM 역할을 생성하도록 하는 대신 자체 IAM 역할을 제공할 수 있습니다. 이 방식은 IAM 권한을 완전히 제어할 수 있게 해 주며, 조직의 보안 정책을 강제 적용할 수 있도록 합니다.
 
 <Info>
-  고객 관리형 IAM 역할은 비공개 프리뷰 상태입니다. 이 기능이 필요하면 ClickHouse 지원팀에 문의하여 구체적인 요구 사항과 일정에 대해 논의하십시오.
-
-  이 기능이 제공되면 다음을 수행할 수 있습니다.
-
-  * ClickHouse Cloud에서 사용할 수 있도록 사전 구성된 IAM 역할 제공
-  * 교차 계정 액세스에 사용되는 `ClickHouseManagementRole`의 IAM 관련 권한에서 쓰기 권한 제거
-  * 역할 권한과 신뢰 관계를 완전히 제어
+  고객 관리형 IAM 역할은 비공개 프리뷰 상태입니다. 아래 단계를 진행하기 전에 조직에서 이 기능을 사용할 수 있도록 ClickHouse 지원팀에 문의하십시오.
 </Info>
 
-ClickHouse Cloud가 기본적으로 생성하는 IAM 역할에 대한 자세한 내용은 [BYOC 권한 참고](/ko/products/bring-your-own-cloud/reference/privilege)를 참조하십시오.
+고객 관리형 IAM 역할을 사용하면 다음이 가능합니다.
+
+* ClickHouse Cloud가 원래 생성했을 인프라별 IAM 역할을 미리 생성합니다
+* 교차 계정 액세스에 사용되는 `ClickHouseManagementRole`에서 IAM 쓰기 권한을 제거합니다
+* 역할 권한과 신뢰 관계를 완전히 제어합니다
+
+<Steps>
+  <Step title="IAM 쓰기 권한 없이 관리 역할 구성" id="byo-iam-management-role">
+    [초기 BYOC 설정](/ko/cloud/reference/byoc/onboarding/standard)을 수행할 때 관리 역할의 IAM 쓰기 권한을 비활성화하십시오. CloudFormation 템플릿을 사용하는 경우 `IncludeIAMWritePermissions` 매개변수를 `false`로 설정하십시오. Terraform 모듈을 사용하는 경우:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
+      include_iam_write_permissions = false
+    }
+    ```
+
+    `<version>`은 module의 [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 최신 태그로 바꾸십시오. 항상 최신 release를 사용하십시오.
+  </Step>
+
+  <Step title="인프라별 IAM 역할 생성" id="byo-iam-per-infra-roles">
+    각 BYOC 인프라가 Provisioning되기 전에 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) per-infra module을 사용하여 필요한 IAM 역할(EKS 파드 아이덴티티 역할, ClickHouse S3 액세스 역할, 데이터 플레인 관리 역할)을 생성하십시오.
+
+    ```hcl
+    module "clickhouse_per_infra_iam" {
+      source = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws-per-infra-iam?ref=<version>"
+
+      spoken_name = "<spoken-name-provided-by-clickhouse>"
+      region      = "<aws-region-of-the-infrastructure>"
+      external_id = "<external-id-provided-by-clickhouse>"
+    }
+    ```
+
+    `<version>`은 module의 [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 최신 태그로 바꾸십시오. 항상 최신 release를 사용하십시오.
+  </Step>
+
+  <Step title="인프라별 역할을 최신 상태로 유지" id="byo-iam-keep-up-to-date">
+    <Warning>
+      ClickHouse는 새로운 플랫폼 기능에 필요한 역할과 권한을 주기적으로 추가합니다. ClickHouse에서 업데이트를 안내하면 최신 release의 per-infra module을 다시 적용하십시오. 오래된 버전을 사용하면 BYOC 인프라의 Provisioning 및 upgrade가 실패할 수 있습니다.
+    </Warning>
+  </Step>
+</Steps>
+
+ClickHouse Cloud가 기본적으로 생성하는 IAM 역할에 대한 자세한 내용은 [BYOC Privilege Reference](/ko/products/bring-your-own-cloud/reference/privilege)를 참조하십시오.

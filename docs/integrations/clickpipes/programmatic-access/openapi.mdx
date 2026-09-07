@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programmatic', 'rest', 'curl']
 ---
 
-All ClickPipes types can be created, updated, and deleted programmatically using the [ClickHouse Cloud OpenAPI](/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes). This page covers authentication and the available ClickPipes endpoints, with example `curl` requests for each ClickPipe type.
+All ClickPipes types can be created, updated, and deleted programmatically using the [ClickHouse Cloud OpenAPI](/products/cloud/api-reference/clickpipes/list-clickpipes). This page covers authentication and the available ClickPipes endpoints, with example `curl` requests for each ClickPipe type.
 
 ## Authentication {#authentication}
 
@@ -51,7 +51,7 @@ For CDC ClickPipes (Postgres, MySQL, MongoDB), there are additional org-level en
 | `GET` | `/organizations/{organizationId}/clickpipes/cdcScaling` | Get CDC ClickPipes scaling |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | Update CDC ClickPipes scaling |
 
-For the full request and response schemas for each endpoint, see the [Swagger UI](/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+For the full request and response schemas for each endpoint, see the [API reference](/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 ## Examples {#examples}
 
@@ -99,7 +99,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
 
 ## Creating ClickPipes {#creating-clickpipes}
 
-The `POST /clickpipes` request body varies by source type. The examples below show the structure for each supported ClickPipe type. For the authoritative JSON schemas, refer to the [Swagger UI](/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+The `POST /clickpipes` request body varies by source type. The examples below show the structure for each supported ClickPipe type. For the authoritative JSON schemas, refer to the [API reference](/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 ### Kafka {#create-kafka}
 

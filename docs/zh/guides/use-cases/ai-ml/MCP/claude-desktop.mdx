@@ -18,26 +18,20 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Frame>
 
 <Steps>
-  <Step>
-    ## 安装 uv
-
+  <Step title="安装 uv" id="install-uv">
     要按照本指南进行操作，你需要先安装 [uv](https://docs.astral.sh/uv/)。
     如果你不想使用 uv，则需要更新 MCP 服务器配置，改用其他包管理器。
   </Step>
 
-  <Step>
-    ## 下载 Claude Desktop
-
+  <Step title="下载 Claude Desktop" id="download-claude-desktop">
     你还需要安装 Claude Desktop 应用，可以从 [Claude Desktop 网站](https://claude.ai/desktop) 下载。
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse MCP 服务器
-
+  <Step title="配置 ClickHouse MCP 服务器" id="configure-clickhouse-mcp-server">
     安装好 Claude Desktop 后，就可以开始配置 [ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 了。
     这可以通过 [Claude Desktop 配置文件](https://claude.ai/docs/configuration) 完成。
 
-    要找到该文件，请先进入设置页面 (Mac 上按 `Cmd+,`) ，然后点击左侧菜单中的 `Developer` 选项卡。
+    要找到该文件，请先进入设置页面 (`Cmd+,` 在 Mac 上)，然后点击左侧菜单中的 `Developer` 选项卡。
     随后你会看到如下界面，需要点击 `Edit config` 按钮：
 
     <Image img="/images/use-cases/AI_ML/MCP/claude-desktop-config.webp" alt="Claude Desktop 配置" size="md" />
@@ -95,9 +89,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Warning>
   </Step>
 
-  <Step>
-    ## 使用 ClickHouse MCP 服务器
-
+  <Step title="使用 ClickHouse MCP 服务器" id="using-clickhouse-mcp-server">
     重启 Claude Desktop 后，点击 `Search and tools` 图标即可找到 ClickHouse MCP 服务器：
 
     <Image img="/images/use-cases/AI_ML/MCP/find-mcp-servers.webp" alt="查找 MCP 服务器" size="md" />

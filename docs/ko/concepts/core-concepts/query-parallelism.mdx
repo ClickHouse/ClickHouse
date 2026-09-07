@@ -45,7 +45,7 @@ ClickHouse는 ① 테이블의 프라이머리 키(primary key)에 대한 필터
 
 <br />
 
-효율적으로 레인을 분산하는 것은 CPU 활용도를 극대화하고 전체 쿼리 시간을 줄이는 데 중요합니다.
+효율적인 레인 분산은 CPU 활용도를 극대화하고 전체 쿼리 시간을 줄이는 핵심입니다.
 
 <div id="processing-queries-on-sharded-tables">
   ### 세그먼트된 테이블에서 쿼리 처리하기
@@ -98,7 +98,7 @@ SETTINGS send_logs_level='trace';
 * ① ClickHouse는 3개의 데이터 범위에 걸쳐 3,609개의 그래뉼(트레이스 로그에서는 마크로 표시됨)을 읽어야 합니다.
 * ② 59개의 CPU 코어가 있으므로 이 작업은 59개의 병렬 처리 스트림에 분산되며, 각 레인에 하나씩 할당됩니다.
 
-또는 [EXPLAIN](/ko/reference/statements/explain#explain-pipeline) 절을 사용해 집계 쿼리의 [물리적 연산자 계획](/ko/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization), 즉 &quot;query pipeline&quot;이라고도 하는 구조를 살펴볼 수 있습니다.
+또는 [EXPLAIN](/ko/reference/statements/explain#explain-pipeline) 절을 사용해 집계 쿼리의 [물리적 연산자 계획](/ko/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization), 즉 &quot;쿼리 파이프라인&quot;이라고도 하는 구조를 살펴볼 수 있습니다.
 
 ```sql
 EXPLAIN PIPELINE

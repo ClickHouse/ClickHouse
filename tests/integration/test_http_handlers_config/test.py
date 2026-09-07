@@ -201,6 +201,16 @@ def test_predefined_query_handler():
         )
         assert b"max_threads\t1\n" == res1.content
 
+        # A query parameter used as a setting value inside the SETTINGS clause must be
+        # discovered by analyzeReceiveQueryParams so that the handler accepts param_threads
+        # and substitutes it into the setting.
+        res_settings = cluster.instance.http_request(
+            "test_predefined_handler_settings_param?param_threads=5",
+            method="GET",
+        )
+        assert res_settings.status_code == 200
+        assert b"5\n" == res_settings.content
+
         assert (
             cluster.instance.http_request("test_predefined_handler_auth_with_password")
             .content.strip()

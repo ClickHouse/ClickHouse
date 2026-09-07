@@ -13,16 +13,12 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
 > يُوصى باستخدام أرشيفات `tgz` الرسمية المجمّعة مسبقًا لجميع توزيعات Linux عندما لا يكون تثبيت حزم `deb` أو `rpm` ممكنًا.
 
 <Steps>
-  <Step>
-    ## راجع التوصيات
-
+  <Step title="راجع التوصيات" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## نزّل وثبّت أحدث إصدار مستقر
-
-    يمكن تنزيل الإصدار المطلوب باستخدام `curl` أو `wget` من المستودع https://packages.clickhouse.com/tgz/.
+  <Step title="نزّل وثبّت أحدث إصدار مستقر" id="install-latest-stable">
+    يمكن تنزيل الإصدار المطلوب باستخدام `curl` أو `wget` من المستودع [https://packages.clickhouse.com/tgz/](https://packages.clickhouse.com/tgz/).
     بعد ذلك، يجب فك ضغط الأرشيفات التي تم تنزيلها وتثبيتها باستخدام البرامج النصية الخاصة بالتثبيت.
 
     فيما يلي مثال على كيفية تثبيت أحدث إصدار مستقر.
@@ -34,9 +30,7 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## احصل على أحدث إصدار من ClickHouse
-
+  <Step title="احصل على أحدث إصدار من ClickHouse" id="get-latest-version">
     احصل على أحدث إصدار من ClickHouse من GitHub وخزّنه في المتغير `LATEST_VERSION`.
 
     ```bash
@@ -46,10 +40,8 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## اكتشف معمارية نظامك
-
-    اكتشف معمارية النظام واضبط المتغير `ARCH` وفقًا لذلك:
+  <Step title="اكتشف معمارية نظامك" id="detect-system-architecture">
+    اكتشف معمارية النظام واضبط المتغير ARCH وفقًا لذلك:
 
     ```bash
     case $(uname -m) in
@@ -60,11 +52,8 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## نزّل ملفات tarball لكل مكوّن من مكوّنات ClickHouse
-
-    نزّل ملفات tarball لكل مكوّن من مكوّنات ClickHouse. تحاول الحلقة تنزيل
-    الحزم الخاصة بالمعمارية أولًا، ثم تلجأ إلى الحزم العامة.
+  <Step title="نزّل ملفات tarball لكل مكوّن من مكوّنات ClickHouse" id="download-tarballs">
+    نزّل ملفات tarball لكل مكوّن من مكوّنات ClickHouse. تحاول الحلقة تنزيل الحزم الخاصة بالمعمارية أولًا، ثم تلجأ إلى الحزم العامة.
 
     ```bash
     for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client clickhouse-keeper
@@ -75,9 +64,7 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## استخرج الحزم وثبّتها
-
+  <Step title="استخرج الحزم وثبّتها" id="extract-and-install">
     شغّل الأوامر أدناه لاستخراج الحزم التالية وتثبيتها:
 
     * `clickhouse-common-static`

@@ -59,3 +59,8 @@ SELECT finalizeAggregation(CAST(unhex('0F0000000000000000'),
                                 'AggregateFunction(quantileExact, UInt64)')); -- { serverError CANNOT_READ_ALL_DATA }
 SELECT finalizeAggregation(CAST(unhex('0F000000000000803F'),
                                 'AggregateFunction(quantileTDigest, UInt64)')); -- { serverError CANNOT_READ_ALL_DATA }
+
+-- groupUniqArray over a composite type deserializes each stored key through the ColumnString arena path;
+-- a zero string_size must be rejected instead of underflowing to a huge/OOB allocation.
+SELECT finalizeAggregation(CAST(unhex('01080000000000000000'),
+                                'AggregateFunction(groupUniqArray, Tuple(String))')); -- { serverError INCORRECT_DATA }

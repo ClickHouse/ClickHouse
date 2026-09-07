@@ -21,7 +21,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="Диаграмма архитектуры ClickHouse JDBC Bridge" background="white" />
 
-Это удобно, когда для внешнего источника данных нет встроенного [движка интеграции](/ru/reference/engines/table-engines/integrations/index), табличной функции или внешнего словаря, но для этого источника доступен драйвер JDBC.
+Это удобно, когда для внешнего источника данных нет встроенного [движка интеграции](/ru/reference/engines/table-engines/integrations/index), табличной функции или внешнего словаря, но для этого источника доступен JDBC-драйвер.
 
 ClickHouse JDBC Bridge можно использовать как для чтения, так и для записи. Также его можно использовать параллельно для нескольких внешних источников данных: например, вы можете выполнять в ClickHouse распределённые запросы к нескольким внешним и внутренним источникам данных в реальном времени.
 
@@ -102,7 +102,7 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 ```
 
 <Note>
-  Мы запустили ClickHouse JDBC Bridge в режиме переднего плана. Чтобы остановить Bridge, верните на передний план окно Unix-оболочки, показанное выше, и нажмите `CTRL+C`.
+  Мы запустили ClickHouse JDBC Bridge в режиме переднего плана. Чтобы остановить Bridge, верните на передний план окно Unix shell, показанное выше, и нажмите `CTRL+C`.
 </Note>
 
 <div id="use-the-jdbc-connection-from-within-clickhouse">
@@ -155,7 +155,7 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 
 1. Установите, настройте и запустите ClickHouse JDBC Bridge на выделенном хосте, следуя шагам, описанным в разделе 1 этого руководства.
 
-2. На каждом хосте ClickHouse добавьте следующий блок конфигурации в <a href="/ru/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">конфигурацию сервера ClickHouse</a> (в зависимости от выбранного формата конфигурации используйте вариант XML или YAML):
+2. На каждом хосте ClickHouse добавьте следующий блок конфигурации в <a href="/ru/concepts/features/configuration/server-config/configuration-files" target="_blank">конфигурацию сервера ClickHouse</a> (в зависимости от выбранного формата конфигурации используйте вариант XML или YAML):
 
 <Tabs>
   <Tab title="XML">

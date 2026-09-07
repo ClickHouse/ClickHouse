@@ -38,19 +38,19 @@ Según los [benchmarks de Facebook](https://facebook.github.io/zstd/#benchmarks)
   ## Bloque
 </div>
 
-| campo               | tipo    | descripción                                                                                    |
-| ------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| campo               | tipo    | descripción                                                                                       |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------------- |
 | checksum            | uint128 | [Hash](/es/resources/develop-contribute/native-protocol/hash) de (encabezado + datos comprimidos) |
-| raw&#95;size        | uint32  | Tamaño bruto sin encabezado                                                                    |
-| data&#95;size       | uint32  | Tamaño de los datos sin comprimir                                                              |
-| mode                | byte    | Modo de compresión                                                                             |
-| compressed&#95;data | binary  | Bloque de datos comprimidos                                                                    |
+| raw&#95;size        | uint32  | Tamaño bruto sin encabezado                                                                       |
+| data&#95;size       | uint32  | Tamaño de los datos sin comprimir                                                                 |
+| mode                | byte    | Modo de compresión                                                                                |
+| compressed&#95;data | binary  | Bloque de datos comprimidos                                                                       |
 
 <Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Diagrama que ilustra la estructura del bloque de compresión de ClickHouse" />
 
 El encabezado es (raw&#95;size + data&#95;size + mode); el tamaño bruto consiste en len(header + compressed&#95;data).
 
-La suma de verificación es `hash(header + compressed_data)`, mediante [ClickHouse CityHash](/es/resources/develop-contribute/native-protocol/hash).
+La suma de comprobación es `hash(header + compressed_data)`, mediante [ClickHouse CityHash](/es/resources/develop-contribute/native-protocol/hash).
 
 <div id="none-mode">
   ## Modo None

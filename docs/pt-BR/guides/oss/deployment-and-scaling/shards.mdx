@@ -105,7 +105,7 @@ O processamento de consultas funciona de forma semelhante ao de configurações 
 
 ① Uma consulta direcionada à tabela distribuída é enviada ao servidor ClickHouse correspondente, seja diretamente ou por meio de um balanceador de carga.
 
-② A tabela distribuída encaminha a consulta para uma réplica de cada shard, em que cada servidor ClickHouse que hospeda a réplica selecionada calcula, em paralelo, seu resultado local da consulta.
+② A tabela distribuída encaminha a consulta para uma réplica de cada shard, em que cada servidor ClickHouse que hospeda a réplica selecionada calcula seu resultado local da consulta em paralelo.
 
 O restante funciona da [mesma forma](#select-forwarding) que em configurações sem réplicas e não é mostrado no diagrama acima. O servidor ClickHouse que hospeda a tabela distribuída inicialmente direcionada coleta todos os resultados locais, mescla-os no resultado global final e o retorna ao cliente que enviou a consulta.
 

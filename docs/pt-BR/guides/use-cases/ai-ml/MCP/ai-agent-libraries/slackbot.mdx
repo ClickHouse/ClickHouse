@@ -27,25 +27,19 @@ Esse bot permite que você faça perguntas sobre seus dados no ClickHouse direta
 * Você precisará de uma API key da Anthropic ou de outro provedor de LLM
 
 <Steps>
-  <Step>
-    ## Criar um Slack App
-
+  <Step title="Criar um Slack App" id="create-a-slack-app">
     1. Acesse [slack.com/apps](https://slack.com/apps) e clique em `Create New App`.
     2. Escolha a opção `From scratch` e dê um nome ao seu app.
     3. Selecione seu workspace do Slack.
   </Step>
 
-  <Step>
-    ## Instalar o app no seu workspace
-
+  <Step title="Instalar o app no seu workspace" id="install-the-app-to-your-workspace">
     Em seguida, você precisará adicionar ao seu workspace o app criado na etapa anterior.
     Você pode seguir as instruções de [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
     na documentação do Slack.
   </Step>
 
-  <Step>
-    ## Configurar as definições do app do Slack
-
+  <Step title="Configurar as definições do app do Slack" id="configure-slack-app-settings">
     * Acesse `App Home`
       * Em `Show Tabs` → `Messages Tab`: habilite `Allow users to send Slash commands and messages from the messages tab`
       * Acesse `Socket Mode`
@@ -70,9 +64,7 @@ Esse bot permite que você faça perguntas sobre seus dados no ClickHouse direta
         * Save Changes
   </Step>
 
-  <Step>
-    ## Adicionar variáveis de ambiente (`.env`)
-
+  <Step title={<>Adicionar variáveis de ambiente (<code>.env</code>)</>} id="add-env-vars">
     Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis de ambiente,
     que permitirão que seu app se conecte ao [SQL playground do ClickHouse](https://sql.clickhouse.com/).
 
@@ -91,9 +83,7 @@ Esse bot permite que você faça perguntas sobre seus dados no ClickHouse direta
     ou uma instância no Cloud, se preferir.
   </Step>
 
-  <Step>
-    ## Usando o bot
-
+  <Step title="Usando o bot" id="using-the-bot">
     1. **Inicie o bot:**
 
        ```sh
@@ -104,7 +94,7 @@ Esse bot permite que você faça perguntas sobre seus dados no ClickHouse direta
        * Responda na thread com uma menção: `@yourbot how many contributions did these users make last week?`
        * Envie uma mensagem direta para o bot: `Show me all tables in the demo database.`
 
-    O bot responderá na thread, usando todas as mensagens anteriores como contexto,
+    O bot responderá na thread, usando todas as mensagens anteriores como contexto
     quando aplicável.
 
     **Contexto da thread:**

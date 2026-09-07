@@ -317,6 +317,18 @@ Dictionary 更新の最大遅延時間 (秒)
 
 修正不能なECCメモリエラーの数です。この値がゼロ以外の場合は、不良RAMが存在し、データ破損の可能性があることを示しているため、直ちに交換する必要があります。ソース: `/sys/devices/system/edac/mc/`
 
+<div id="executableuserdefinedfunctionmemoryresidentbytes">
+  ### ExecutableUserDefinedFunctionMemoryResidentBytes
+</div>
+
+実行可能および実行可能プールのユーザー定義関数と、その子孫プロセスに属する稼働中のすべてのプロセスにおける常駐セットサイズ (VmRSS) の合計値です。単位はバイトです。アイドル状態の実行可能プールワーカーも含まれます。共有ページはプロセスごとに1回ずつ計上されるため、この合計値は上限となり、UDF プロセス群の実際の物理メモリ使用量 (一意の使用量) を上回る場合があります。
+
+<div id="executableuserdefinedfunctionprocesses">
+  ### ExecutableUserDefinedFunctionProcesses
+</div>
+
+実行可能および実行可能プールのユーザー定義関数用に起動された稼働中のプロセス数 (それらの子孫プロセスを含む) 。
+
 <div id="filesystemcachebytes">
   ### FilesystemCacheBytes
 </div>

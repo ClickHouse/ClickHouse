@@ -30,6 +30,11 @@ public:
         return original_storage_snapshot ? original_storage_snapshot->storage.supportedPrewhereColumns() : std::nullopt;
     }
 
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override
+    {
+        return original_storage_snapshot && original_storage_snapshot->storage.supportedPrewhereColumnsIncludeSubcolumns();
+    }
+
     bool supportsSubcolumns() const override { return true; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool canMoveConditionsToPrewhere() const override

@@ -147,9 +147,26 @@ SELECT * FROM (
 
 Al omitir las primeras 2 filas y tomar 3, normalmente se devolvería `1, 1, 2`, pero se incluye el segundo `2` porque empata con la última fila.
 
-<Note>
-  `WITH TIES` no es compatible con límites negativos.
-</Note>
+`WITH TIES` también funciona con límites y OFFSET negativos. Incluye filas adicionales que tienen los mismos valores de `ORDER BY` que la primera fila seleccionada:
+
+```sql
+SELECT number % 3 AS n FROM numbers(15)
+ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+Sin `WITH TIES`, el resultado sería `1, 1, 2, 2`. Con `WITH TIES`, se incluyen tres filas adicionales con el valor `1` porque empatan con la primera fila seleccionada.
 
 Este modificador puede combinarse con el modificador [`ORDER BY ... WITH FILL`](/es/reference/statements/select/order-by#order-by-expr-with-fill-modifier).
 

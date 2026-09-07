@@ -1,0 +1,12 @@
+_part_offset attach	2
+commit_order attach	2
+unrelated alter after attach ok
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+plain disable ok
+mixed add-projection enable-gate ok
+BAD_ARGUMENTS

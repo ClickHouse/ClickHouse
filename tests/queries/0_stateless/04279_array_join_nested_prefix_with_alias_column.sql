@@ -1,6 +1,6 @@
 -- Regression test: `ARRAY JOIN <name>` over a nested prefix should expand to the
 -- per-field Array columns even when an ALIAS column with the same name exists.
--- The new analyzer used to pick the ALIAS column and fail with `TYPE_MISMATCH`
+-- The analyzer used to pick the ALIAS column and fail with `TYPE_MISMATCH`
 -- when the alias resolved to a non-Array expression (e.g. a Tuple).
 
 DROP TABLE IF EXISTS t_array_join_alias_nested SYNC;

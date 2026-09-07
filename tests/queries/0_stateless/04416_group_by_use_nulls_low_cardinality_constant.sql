@@ -1,5 +1,5 @@
 -- Tags: no-old-analyzer
--- no-old-analyzer: the fix is in `ConstantNode::convertToNullable` (query tree, new analyzer only);
+-- no-old-analyzer: the fix is in `ConstantNode::convertToNullable` (query tree, analyzer only);
 -- the old analyzer does not convert a constant grouping key to Nullable under `group_by_use_nulls`,
 -- so it produces a different type for the plain-String key.
 

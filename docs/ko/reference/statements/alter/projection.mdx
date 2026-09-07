@@ -234,6 +234,57 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
+<div id="example-projection-with-where">
+  ### `WHERE` 절이 있는 PROJECTION 예시
+</div>
+
+PROJECTION에는 일부 행만 저장하도록 `WHERE` 절을 포함할 수 있습니다. 이는 쿼리에서 정해진 프레디케이트를 기준으로 자주 필터링하는 경우에 유용합니다. PROJECTION은 일치하는 행만 구체화하여 저장하므로 스토리지 사용량을 줄이고 쿼리 성능을 향상합니다.
+
+테이블을 생성하고 필터링된 PROJECTION을 추가합니다:
+
+```sql
+CREATE TABLE events
+(
+    `event_type` String,
+    `time` DateTime,
+    `message` String
+)
+ENGINE = MergeTree()
+ORDER BY time;
+
+ALTER TABLE events ADD PROJECTION proj_pageview (
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
+```
+
+데이터 삽입:
+
+```sql
+INSERT INTO events VALUES
+    ('pageview', '2024-01-01', 'homepage'),
+    ('click', '2024-01-02', 'button'),
+    ('pageview', '2024-01-03', 'about');
+```
+
+쿼리의 `WHERE` 절이 PROJECTION의 `WHERE` 절을 **포함**하는 경우(즉, PROJECTION 필터의 모든 조건이 쿼리 필터에도 포함된 경우), 옵티마이저는 이것이 유리하다고 판단하면 자동으로 해당 PROJECTION을 사용할 수 있습니다:
+
+```sql
+-- This query implies the projection's WHERE, so the projection may be used:
+SELECT time, message FROM events WHERE event_type = 'pageview';
+
+-- A stricter query also implies the projection's WHERE:
+SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
+
+-- This query does NOT imply the projection, so the base table is scanned:
+SELECT time, message FROM events WHERE event_type = 'click';
+```
+
+함의 검사(implication check)는 보수적으로 동작합니다 — 표현식의 정규 형식에서 각 conjunct를 정확히 일치시키는 방식을 사용합니다. 일부 유효한 최적화 기회(예: 범위 함의)는 놓칠 수 있지만, 잘못된 결과를 생성하지는 않습니다.
+
 <div id="manipulating-projections">
   ## 프로젝션 관리
 </div>
@@ -244,11 +295,19 @@ SETTINGS enable_shared_storage_snapshot_in_query = 1
   ### ADD PROJECTION
 </div>
 
-아래 SQL 문을 사용하여 테이블 메타데이터에 프로젝션 설명을 추가하십시오:
+아래 문을 사용하여 테이블 메타데이터에 PROJECTION 설명을 추가합니다:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+<Note>
+  PROJECTION이 `WHERE` 절을 정의하면 프레디케이트를 만족하는 행만 구체화됩니다. 옵티마이저는 쿼리의 `WHERE`가 PROJECTION의 `WHERE`를 논리적으로 함의하고, 해당 PROJECTION이 쿼리 계획에 도움이 되는 경우 이러한 PROJECTION을 사용할 수 있습니다. 이는 일반 PROJECTION과 집계 PROJECTION 모두에 적용됩니다.
+</Note>
 
 <div id="with-settings">
   #### `WITH SETTINGS` 절

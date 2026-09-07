@@ -28,9 +28,7 @@ doc_type: 'guide'
 你可以按照以下步骤创建 Streamlit 应用程序。
 
 <Steps>
-  <Step>
-    ## 安装依赖库
-
+  <Step title="安装依赖库" id="install-libraries">
     运行以下命令安装所需的依赖库：
 
     ```bash
@@ -38,9 +36,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 创建工具文件
-
+  <Step title="创建工具文件" id="create-utilities">
     创建一个 `utils.py` 文件，其中包含两个工具函数。第一个是一个异步生成器函数，用于处理来自
     Agno agent 的 stream 响应。第二个函数用于为 Streamlit
     应用程序应用样式：
@@ -67,9 +63,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 配置凭证
-
+  <Step title="配置凭证" id="setup-credentials">
     将 Anthropic API 密钥设置为环境变量：
 
     ```bash
@@ -84,9 +78,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## 导入所需库
-
+  <Step title="导入所需库" id="import-libraries">
     首先创建主 Streamlit 应用文件 (例如 `app.py`) ，然后添加以下导入：
 
     ```python
@@ -110,9 +102,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 定义 agent 流式处理函数
-
+  <Step title="定义 agent 流式处理函数" id="define-agent-function">
     添加主 agent 函数，使其连接到 [ClickHouse 的 SQL playground](https://sql.clickhouse.com/)，并以流式方式返回响应：
 
     ```python
@@ -162,9 +152,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 添加同步封装函数
-
+  <Step title="添加同步封装函数" id="add-wrapper-functions">
     添加辅助函数，以处理 Streamlit 中的异步流式传输：
 
     ```python
@@ -172,7 +160,7 @@ doc_type: 'guide'
         queue = Queue()
         def run():
             asyncio.run(_agent_stream_to_queue(message, queue))
-            queue.put(None)  # 哨兵值，用于结束流
+            queue.put(None)  # Sentinel to end stream
         threading.Thread(target=run, daemon=True).start()
         while True:
             chunk = queue.get()
@@ -186,9 +174,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 创建 Streamlit 界面
-
+  <Step title="创建 Streamlit 界面" id="create-interface">
     添加 Streamlit UI 组件和聊天功能：
 
     ```python
@@ -217,9 +203,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 运行应用程序
-
+  <Step title="运行应用程序" id="run-application">
     要启动 ClickHouse AI 智能体 Web 应用程序，可在终端中运行以下命令：
 
     ```bash

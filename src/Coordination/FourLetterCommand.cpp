@@ -323,22 +323,24 @@ String MonitorCommand::run()
 
     print(ret, "server_state", keeper_info.getRole());
 
-    const auto & storage_stats = state_machine.getStorageStats();
+    const auto storage_stats = state_machine.getStorageStats();
 
-    print(ret, "znode_count", storage_stats.nodes_count.load(std::memory_order_relaxed));
-    print(ret, "watch_count", storage_stats.total_watches_count.load(std::memory_order_relaxed));
-    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed));
-    print(ret, "approximate_data_size", storage_stats.approximate_data_size.load(std::memory_order_relaxed));
+    print(ret, "znode_count", storage_stats.nodes_count);
+    print(ret, "watch_count", storage_stats.total_watches_count);
+    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count);
+    print(ret, "approximate_data_size", storage_stats.approximate_data_size);
     print(ret, "key_arena_size", 0);
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    auto max_file_descriptor_count = getMaxFileDescriptorCount();
-    if (max_file_descriptor_count.has_value())
-        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
-    else
-        print(ret, "max_file_descriptor_count", -1);
+    /// An undetermined value is reported as the textual `-1`, as ZooKeeper does.
+    /// It must not go through the `uint64_t` overload of `print`: `-1` would wrap around
+    /// to 2^64 - 1, which is indistinguishable from an unlimited `RLIMIT_NOFILE` (`RLIM_INFINITY`).
+    const Int64 open_file_descriptor_count = getCurrentProcessFDCount();
+    print(ret, "open_file_descriptor_count", toString(open_file_descriptor_count));
+
+    const auto max_file_descriptor_count = getMaxFileDescriptorCount();
+    print(ret, "max_file_descriptor_count", max_file_descriptor_count.has_value() ? toString(*max_file_descriptor_count) : String("-1"));
 #endif
 
     if (keeper_info.is_leader)
@@ -413,7 +415,7 @@ String ServerStatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
-    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
+    const auto storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -425,9 +427,9 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
+    write("Zxid", formatZxid(storage_stats.last_committed_zxid));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
+    write("Node count", toString(storage_stats.nodes_count));
 
     return buf.str();
 }
@@ -443,7 +445,7 @@ String StatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
-    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
+    const auto storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -459,9 +461,9 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
+    write("Zxid", formatZxid(storage_stats.last_committed_zxid));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
+    write("Node count", toString(storage_stats.nodes_count));
 
     return buf.str();
 }
@@ -473,9 +475,10 @@ String BriefWatchCommand::run()
 
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
-    buf << state_machine.getSessionsWithWatchesCount() << " connections watching "
-        << state_machine.getWatchedPathsCount() << " paths\n";
-    buf << "Total watches:" << state_machine.getTotalWatchesCount() << "\n";
+    const auto storage_stats = state_machine.getStorageStats();
+    buf << storage_stats.sessions_with_watches_count << " connections watching "
+        << storage_stats.watched_paths_count << " paths\n";
+    buf << "Total watches:" << storage_stats.total_watches_count << "\n";
     return buf.str();
 }
 

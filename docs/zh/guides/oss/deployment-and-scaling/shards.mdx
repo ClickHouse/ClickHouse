@@ -79,19 +79,19 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 <br />
 
-① 发往分布式表的 SELECT 聚合查询会被发送到相应的 ClickHouse server，可以直接发送，也可以通过负载均衡器发送。
+① 发往分布式表的 SELECT 聚合查询会被发送到相应的 ClickHouse 服务器，可以直接发送，也可以通过负载均衡器发送。
 
-② 分布式表会将该查询转发到所有托管目标表分片的 server，在这些 server 上，每个 ClickHouse server 都会**并行**计算各自的本地聚合结果。
+② 分布式表会将该查询转发到所有托管目标表分片的 ClickHouse 服务器，在这些 ClickHouse 服务器 上，每个 ClickHouse 服务器 都会**并行**计算各自的本地聚合结果。
 
-随后，最初接收该分布式表查询的 ClickHouse server 会在 ③ 收集所有本地结果，④ 将其合并为最终的全局结果，并在 ⑤ 将结果返回给查询发送方。
+随后，最初接收该分布式表查询的 ClickHouse 服务器 会在 ③ 收集所有本地结果，④ 将其合并为最终的全局结果，并在 ⑤ 将结果返回给查询发送方。
 
 <div id="what-are-table-replicas-in-clickhouse">
   ## ClickHouse 中的表副本是什么？
 </div>
 
-ClickHouse 中的复制通过在多台服务器上维护**分片数据的副本**来确保**数据完整性**和**故障转移**。由于硬件故障不可避免，复制通过确保每个分片都有多个副本来防止数据丢失。写入可以直接发往任意副本，也可以通过[分布式表](#distributed-table-creation)发起，由后者为该操作选择一个副本。更改会自动传播到其他副本。在发生故障或进行维护时，数据在其他副本上仍然可用；一旦故障主机恢复，它会自动完成同步以保持最新状态。
+ClickHouse 中的复制通过在多台服务器上维护**分片数据的副本**来确保**数据完整性**和**故障转移**。由于硬件故障不可避免，复制通过确保每个分片都有多个副本来防止数据丢失。写入可以直接发送到任意副本，也可以通过[分布式表](#distributed-table-creation)发送，由后者为该操作选择一个副本。更改会自动传播到其他副本。在发生故障或进行维护时，数据在其他副本上仍然可用；一旦故障主机恢复，它会自动同步以保持最新状态。
 
-请注意，复制需要在[集群架构](/zh/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)中使用 [Keeper](https://clickhouse.com/clickhouse/keeper) 组件。
+请注意，复制要求在[集群架构](/zh/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)中包含 [Keeper](https://clickhouse.com/clickhouse/keeper) 组件。
 
 下图展示了一个由六台服务器组成的 ClickHouse 集群，其中前面介绍的两个表分片 `Shard-1` 和 `Shard-2` 各自都有三个副本。一个查询被发送到该集群：
 
@@ -99,13 +99,13 @@ ClickHouse 中的复制通过在多台服务器上维护**分片数据的副本*
 
 <br />
 
-查询处理的方式与没有副本的配置类似，只是每个分片中只有一个副本执行该查询。
+查询处理的方式与没有副本的配置类似，只是每个分片中只有一个副本会执行该查询。
 
 > 副本不仅能确保数据完整性和故障转移，还能让多个查询在不同副本上并行运行，从而提升查询处理吞吐量。
 
-① 针对分布式表的查询会被发送到相应的 ClickHouse 服务器，可以直接发送，也可以通过负载均衡器发送。
+① 发往分布式表的查询会被发送到相应的 ClickHouse 服务器，可以直接发送，也可以通过负载均衡器发送。
 
-② Distributed 表会将查询转发到每个分片中的一个副本，承载所选副本的每台 ClickHouse 服务器都会并行计算其本地查询结果。
+② 分布式表会将查询转发到每个分片中的一个副本，承载所选副本的每台 ClickHouse 服务器都会并行计算各自的本地查询结果。
 
 其余部分与没有副本配置时[相同](#select-forwarding)，因此上图中未显示。承载最初目标分布式表的 ClickHouse 服务器会收集所有本地结果，将其合并为最终的全局结果，并将其返回给查询发送方。
 

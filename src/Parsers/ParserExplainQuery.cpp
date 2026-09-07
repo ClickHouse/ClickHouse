@@ -27,6 +27,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_estimates(Keyword::ESTIMATE);
     ParserKeyword s_table_override(Keyword::TABLE_OVERRIDE);
     ParserKeyword s_current_transaction(Keyword::CURRENT_TRANSACTION);
+    ParserKeyword s_analyze(Keyword::ANALYZE);
     ParserKeyword s_whatif(Keyword::WHATIF);
 
     if (s_explain.ignore(pos, expected))
@@ -49,6 +50,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::TableOverride;
         else if (s_current_transaction.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::CurrentTransaction;
+        else if (s_analyze.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::Analyze;
         else if (s_whatif.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::WhatIf;
     }
@@ -63,7 +66,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
         auto begin = pos;
         if (parser_settings.parse(pos, settings, expected))
-            explain_query->setSettings(std::move(settings));
+            explain_query->setSettings(std::move(settings), String(textBetween(begin, pos)));
         else
             pos = begin;
     }

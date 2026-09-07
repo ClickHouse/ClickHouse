@@ -24,10 +24,13 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP SETTINGS variable [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [SET variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
 要使用 `ALTER USER`，您必须具有 [ALTER USER](/zh/reference/statements/grant#access-management) 权限。
+
+`SET variable = value` 是 `MODIFY SETTING variable = value` 的别名：它会原地修改单个设置，同时保留其余设置。相比裸 `SETTINGS` 子句 (它会替换整个 settings 列表，并移除所有继承的 (父) profile) ，请优先使用它 (或 `MODIFY SETTING`) 。
 
 <div id="grantees-clause">
   ## GRANTEES 子句

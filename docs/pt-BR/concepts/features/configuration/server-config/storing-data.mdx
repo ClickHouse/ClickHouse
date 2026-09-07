@@ -32,19 +32,23 @@ que podem ser caros. Para evitar armazenar dados localmente, há suporte às seg
 </div>
 
 Os motores de tabela das famílias [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) e [`Log`](/pt-BR/reference/engines/table-engines/log-family/log)
-podem armazenar dados em `S3`, `AzureBlobStorage` e `HDFS` (não compatível) usando um disco dos tipos `s3`,
-`azure_blob_storage` e `hdfs` (não compatível), respectivamente.
+podem armazenar dados em `S3`, `AzureBlobStorage` e `HDFS` (sem suporte) usando um disco dos tipos `s3`,
+`azure_blob_storage` e `hdfs` (sem suporte), respectivamente.
+
+<Note>
+  O tipo de disco `s3` também pode ser usado com provedores de armazenamento de objetos compatíveis com S3, como o Alibaba Cloud Object Storage Service. Configure `endpoint` com o endpoint compatível com S3 do provedor e leve em conta quaisquer requisitos de compatibilidade específicos do provedor.
+</Note>
 
 A configuração do disco exige:
 
-1. Uma seção `type`, igual a um destes valores: `s3`, `azure_blob_storage`, `hdfs` (não compatível), `local_blob_storage`, `web`.
+1. Uma seção `type`, igual a um destes valores: `s3`, `azure_blob_storage`, `hdfs` (sem suporte), `local_blob_storage`, `web`.
 2. A configuração de um tipo específico de armazenamento externo.
 
 A partir da versão `24.1` do ClickHouse, é possível usar uma nova opção de configuração.
 Ela exige especificar:
 
 1. Um `type` igual a `object_storage`
-2. `object_storage_type`, igual a um destes valores: `s3`, `azure_blob_storage` (ou apenas `azure` a partir da `24.3`), `hdfs` (não compatível), `local_blob_storage` (ou apenas `local` a partir da `24.3`), `web`.
+2. `object_storage_type`, igual a um destes valores: `s3`, `azure_blob_storage` (ou apenas `azure` a partir da `24.3`), `hdfs` (sem suporte), `local_blob_storage` (ou apenas `local` a partir da `24.3`), `web`.
 
 <br />
 

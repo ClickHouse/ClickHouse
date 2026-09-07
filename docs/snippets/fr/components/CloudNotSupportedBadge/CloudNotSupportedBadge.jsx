@@ -12,3 +12,5 @@ export const CloudNotSupportedBadge = () => {
         </div>
     )
 }
+
+export default CloudNotSupportedBadge;

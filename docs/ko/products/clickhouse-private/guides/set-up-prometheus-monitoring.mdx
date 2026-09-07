@@ -21,9 +21,7 @@ kube-prometheus-stack과 ClickHouse Grafana mixin을 사용해 ClickHouse 메트
 </div>
 
 <Steps>
-  <Step>
-    ### 1. kube-prometheus-stack 설치
-
+  <Step title="1. kube-prometheus-stack 설치" id="1-install-kube-prometheus-stack">
     Prometheus community Helm 리포지토리를 로컬 Helm 클라이언트에 추가하고 차트를 내려받으십시오:
 
     ```bash
@@ -46,9 +44,7 @@ kube-prometheus-stack과 ClickHouse Grafana mixin을 사용해 ClickHouse 메트
     > **참고:** kube-prometheus-stack에는 Prometheus, Alertmanager, Grafana, 그리고 Prometheus Operator가 함께 포함되어 있습니다. 프라이빗 레지스트리로 미러링해야 하는 전체 image 목록은 [chart 문서](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)에서 확인하십시오.
   </Step>
 
-  <Step>
-    ### 2. ClickHouse Operator에서 PodMonitor 활성화
-
+  <Step title="2. ClickHouse Operator에서 PodMonitor 활성화" id="2-enable-podmonitors-in-the-clickhouse-operator">
     ClickHouse Operator Helm 차트에는 ClickHouse 서버와 Keeper용 PodMonitor 정의가 포함되어 있습니다. operator의 Helm values에서 이를 활성화하세요:
 
     ```yaml
@@ -83,9 +79,7 @@ kube-prometheus-stack과 ClickHouse Grafana mixin을 사용해 ClickHouse 메트
     > **참고:** Prometheus 인스턴스에서 다른 release 이름을 사용하는 경우, operator 차트 템플릿을 재정의하거나 kube-prometheus-stack values에서 `prometheus.prometheusSpec.podMonitorSelector`를 구성해 PodMonitor 레이블 셀렉터를 그에 맞게 업데이트하십시오.
   </Step>
 
-  <Step>
-    ### 3. 사용자 지정 메트릭 핸들러 활성화(선택 사항)
-
+  <Step title="3. 사용자 지정 메트릭 핸들러 활성화(선택 사항)" id="3-enable-the-custom-metrics-handler-optional">
     ClickHouse 서버는 3123 포트의 전용 HTTP 핸들러를 통해 추가 `ClickHouse_CustomMetric_*` 메트릭을 노출합니다. 이 엔드포인트에 액세스하려면 인증이 필요합니다. 스크레이핑을 활성화하려면 다음을 수행하십시오:
 
     ```yaml
@@ -107,9 +101,7 @@ kube-prometheus-stack과 ClickHouse Grafana mixin을 사용해 ClickHouse 메트
     사용자 지정 메트릭의 전체 목록과 권장 알림 임계값은 [메트릭 및 알림 참고](/ko/products/clickhouse-private/reference/metrics-and-alerts-reference)에서 확인할 수 있습니다.
   </Step>
 
-  <Step>
-    ### 4. Prometheus 타깃 확인
-
+  <Step title="4. Prometheus 타깃 확인" id="4-verify-prometheus-targets">
     배포 후 Prometheus가 ClickHouse 타깃을 발견해 스크레이프하는지 확인합니다:
 
     ```bash
@@ -125,9 +117,7 @@ kube-prometheus-stack과 ClickHouse Grafana mixin을 사용해 ClickHouse 메트
     ```
   </Step>
 
-  <Step>
-    ### 5. ClickHouse Grafana Mixin 대시보드 가져오기
-
+  <Step title="5. ClickHouse Grafana Mixin 대시보드 가져오기" id="5-import-the-clickhouse-grafana-mixin-dashboards">
     [ClickHouse Grafana mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/)은 ClickHouse 서버 및 Keeper 메트릭용으로 미리 만들어진 대시보드를 제공합니다. 에어갭 환경에서는 대시보드 JSON 파일을 수동으로 가져오십시오.
 
     #### 대시보드 다운로드
@@ -170,9 +160,7 @@ kube-prometheus-stack과 ClickHouse Grafana mixin을 사용해 ClickHouse 메트
     Grafana 사이드카는 `grafana_dashboard: "1"` 레이블이 지정된 ConfigMaps를 자동으로 감지해 대시보드를 불러옵니다.
   </Step>
 
-  <Step>
-    ### 6. 알림 규칙 구성 (선택 사항)
-
+  <Step title="6. 알림 규칙 구성 (선택 사항)" id="6-configure-alert-rules-optional">
     `PrometheusRule` 리소스를 생성하여 권장 ClickHouse 알림 규칙을 Prometheus에 가져오십시오. 전체 알림 정의는 [알림 구성](/ko/products/clickhouse-private/guides/configure-alerting-for-clickhouse) 및 [메트릭 및 알림 참고](/ko/products/clickhouse-private/reference/metrics-and-alerts-reference)를 참조하십시오.
 
     예시:

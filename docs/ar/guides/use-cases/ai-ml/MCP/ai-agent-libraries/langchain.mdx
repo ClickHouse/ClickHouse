@@ -28,9 +28,7 @@ doc_type: 'guide'
 يمكنك تنفيذ الخطوات التالية إما من خلال بايثون REPL أو عبر برنامج نصي.
 
 <Steps>
-  <Step>
-    ## تثبيت المكتبات
-
+  <Step title="تثبيت المكتبات" id="install-libraries">
     ثبّت المكتبات المطلوبة بتنفيذ الأوامر التالية:
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## إعداد بيانات الاعتماد
-
+  <Step title="إعداد بيانات الاعتماد" id="setup-credentials">
     بعد ذلك، ستحتاج إلى إدخال مفتاح واجهة برمجة تطبيقات Anthropic الخاص بك:
 
     ```python
@@ -61,9 +57,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## تهيئة خادم MCP
-
+  <Step title="تهيئة خادم MCP" id="initialize-mcp-and-agent">
     الآن، قم بتكوين خادم ClickHouse MCP بحيث يشير إلى ClickHouse SQL playground:
 
     ```python
@@ -89,9 +83,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## تهيئة معالج التدفق
-
+  <Step title="تهيئة معالج التدفق" id="configure-the-stream-handler">
     عند العمل مع Langchain وClickHouse MCP server، غالبًا ما تُعاد نتائج
     الاستعلام على هيئة بيانات متدفقة بدلًا من استجابة واحدة. ومع مجموعات البيانات الكبيرة أو
     الاستعلامات التحليلية المعقدة التي قد تستغرق وقتًا في المعالجة، من المهم تهيئة
@@ -149,9 +141,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## استدعِ الوكيل
-
+  <Step title="استدعِ الوكيل" id="call-the-agent">
     أخيرًا، استدعِ وكيلك واسأله عمّن ساهم بأكبر قدر من الشيفرة البرمجية في ClickHouse:
 
     ```python

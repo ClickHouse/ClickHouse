@@ -16,7 +16,7 @@ ClickHouse Cloud's control plane runs your BYOC deployment without reading custo
 | Component | What leaves your VPC |
 |-----------|----------------------|
 | State exporter | Service state (health, status) to an `SQS` queue owned by ClickHouse Cloud. |
-| Billing scraper | CPU and memory metrics to an S3 bucket owned by ClickHouse Cloud. |
+| Billing scraper | CPU and memory metrics to an object storage bucket owned by ClickHouse Cloud. |
 | AlertManager | Cluster health alerts to ClickHouse Cloud. |
 
 Query traffic, table contents, and schemas never flow through these channels. Logs and metrics stay inside your BYOC VPC.

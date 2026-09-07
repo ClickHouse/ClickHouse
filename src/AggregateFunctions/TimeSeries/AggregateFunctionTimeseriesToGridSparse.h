@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <optional>
 
 
 #include <DataTypes/DataTypesDecimal.h>
@@ -14,12 +15,14 @@
 namespace DB
 {
 
-template <bool array_arguments_, typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
+template <typename TimestampType_, typename IntervalType_, typename ValueType_>
 struct AggregateFunctionTimeseriesToGridSparseTraits
 {
-    static constexpr bool array_arguments = array_arguments_;
-    static constexpr bool is_rate = is_rate_;
-
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
@@ -29,142 +32,107 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
         return "timeSeriesResampleToGridWithStaleness";
     }
 
-    struct Bucket
+    struct Summary
     {
         TimestampType first = 0;
         ValueType second = 0;
+        bool has_value = false;
 
         void add(TimestampType timestamp, ValueType value)
         {
-            if (timestamp > first || (timestamp == first && value > second))
+            if (!has_value || timestamp > first || (timestamp == first && value > second))
             {
                 first = timestamp;
                 second = value;
+                has_value = true;
             }
         }
 
-        void merge(const Bucket & other)
+        void merge(const Summary & other)
         {
-            add(other.first, other.second);
+            if (other.has_value)
+                add(other.first, other.second);
+        }
+
+        void serialize(WriteBuffer & buf) const
+        {
+            writeBinary(has_value, buf);
+            writeBinaryLittleEndian(first, buf);
+            writeBinaryLittleEndian(second, buf);
+        }
+
+        void deserialize(ReadBuffer & buf)
+        {
+            readBinary(has_value, buf);
+            readBinaryLittleEndian(first, buf);
+            readBinaryLittleEndian(second, buf);
+        }
+
+        template <typename RangeType>
+        void checkTimestampsInRange(const RangeType & range) const
+        {
+            if (has_value && !range.contains(first))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Cannot deserialize data: timestamp {} is outside its bucket's range",
+                    static_cast<Int64>(first));
         }
     };
+
+    /// Sliding aggregator: the result at a grid point is the most recent sample inside its window. Buckets are
+    /// added in time order, so each new bucket's sample is newer than the kept one; keeping a single newest
+    /// sample is enough. Once that newest sample falls out of the window every older sample is out too, so the
+    /// window is then empty.
+    struct Aggregator
+    {
+        Summary latest;
+
+        void add(const Summary & summary, TimestampType /*bucket_end_timestamp*/)
+        {
+            /// Buckets arrive in ascending time order, so a populated bucket's sample is newer than the kept one;
+            /// `merge` keeps the newer sample and ignores an empty bucket.
+            latest.merge(summary);
+        }
+
+        void removeBefore(TimestampType cut_off)
+        {
+            if (latest.has_value && latest.first <= cut_off)
+                latest = Summary{};
+        }
+
+        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        {
+            if (!latest.has_value)
+                return std::nullopt;
+            return latest.second;
+        }
+    };
+
+    /// Resample keeps no preaggregated summary - the bucket (its newest sample) is fed to the aggregator as-is.
+    using Bucket = Summary;
 };
 
 
 /// Aggregate function to convert timeseries to the specified grid with staleness
 /// Missing values are filled with NULLs
-template <typename Traits>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_>
 class AggregateFunctionTimeseriesToGridSparse final :
-    public AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesToGridSparse<Traits>, Traits>
+    public AggregateFunctionTimeseriesBase<
+        AggregateFunctionTimeseriesToGridSparse<TimestampType_, IntervalType_, ValueType_>,
+        AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, IntervalType_, ValueType_>>
 {
 public:
-    static constexpr bool DateTime64Supported = true;
+    using Traits = AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, IntervalType_, ValueType_>;
 
-    static_assert(Traits::is_rate == false, "AggregateFunctionTimeseriesToGridSparse does not have rate version");
-
-    using TimestampType = typename Traits::TimestampType;
-    using IntervalType = typename Traits::IntervalType;
-    using ValueType = typename Traits::ValueType;
-
-    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesToGridSparse<Traits>, Traits>;
-
+    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesToGridSparse, Traits>;
     using Base::Base;
 
-    using Bucket = typename Base::Bucket;
-
-    static void serializeBucket(const Bucket & bucket, WriteBuffer & buf)
+    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
     {
-        writeBinaryLittleEndian(bucket.first, buf);
-        writeBinaryLittleEndian(bucket.second, buf);
+        return {};
     }
 
-    void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
-    {
-        TimestampType timestamp;
-        readBinaryLittleEndian(timestamp, buf);
-        Base::checkTimestampInRange(timestamp, bucket_index);
-
-        ValueType value;
-        readBinaryLittleEndian(value, buf);
-
-        bucket = {timestamp, value};
-    }
-
-    /// Insert the result into the column
-    void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
-    {
-        VectorWithMemoryTracking<TimestampType> timestamps;
-
-        ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
-
-        offsets_to.push_back(offsets_to.empty() ? Base::bucket_count : offsets_to.back() + Base::bucket_count);
-
-        if (!Base::bucket_count)
-            return;
-
-        ColumnNullable & result_to = typeid_cast<ColumnNullable &>(arr_to.getData());
-        auto & data_to = typeid_cast<typename Base::ColVecResultType &>(result_to.getNestedColumn()).getData();
-        auto & nulls_to = result_to.getNullMapData();
-
-        const size_t old_size = data_to.size();
-        chassert(old_size == nulls_to.size(), "Sizes of nested column and null map of Nullable column are not equal");
-
-        data_to.resize(old_size + Base::bucket_count);
-        nulls_to.resize(old_size + Base::bucket_count);
-
-        ValueType * values = data_to.data() + old_size;  /// use result column as a buffer for values
-        UInt8 * nulls = nulls_to.data() + old_size;
-
-        /// Fill all timestamps with zeros to indicate missing values
-        timestamps.assign(Base::bucket_count, 0);
-        std::fill(nulls, nulls + Base::bucket_count, 1);
-
-        /// Fill the data for existing buckets
-        for (const auto & bucket : Base::data(place)->buckets)
-        {
-            timestamps[bucket.first] = bucket.second.first;
-            values[bucket.first] = bucket.second.second;
-            nulls[bucket.first] = 0;
-        }
-
-        /// Fill the data for missing buckets
-        bool has_previous_value = false;
-        ValueType previous_value = {};
-        TimestampType previous_timestamp = {};
-
-        for (size_t i = 0; i < Base::bucket_count; ++i)
-        {
-            /// Compute `current_timestamp` via `Base::timestampAtIndex` rather than with a
-            /// loop-carried `current_timestamp += Base::step`. The accumulator form performed
-            /// one final, unused `+=` on the last iteration which signed-overflowed
-            /// `TimestampType` (e.g. `Decimal<Int64>::operator+=`) when `start_timestamp` was
-            /// near `INT64_MIN` and `step` was near `INT64_MAX`, triggering UBSAN.
-            const TimestampType current_timestamp = Base::timestampAtIndex(i);
-
-            /// Update the most recent sample from this bucket.
-            if (!nulls[i])
-            {
-                has_previous_value = true;
-                previous_value = values[i];
-                previous_timestamp = timestamps[i];
-            }
-
-            /// The most recent sample may be within the staleness window or not.
-            if (has_previous_value && !Base::isSampleOutOfWindow(previous_timestamp, current_timestamp))
-            {
-                values[i] = previous_value;
-                nulls[i] = 0;
-            }
-            else
-            {
-                values[i] = ValueType{};
-                nulls[i] = 1;
-            }
-        }
-    }
-
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr UInt16 FORMAT_VERSION = 3;
+    static constexpr bool DateTime64Supported = true;
 };
 
 }

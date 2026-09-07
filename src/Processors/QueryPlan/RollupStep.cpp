@@ -52,4 +52,9 @@ void RollupStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(generateOutputHeader(params.getHeader(*input_headers.front(), final), params.keys, use_nulls));
 }
 
+QueryPlanStepPtr RollupStep::clone() const
+{
+    return std::make_unique<RollupStep>(*this);
+}
+
 }

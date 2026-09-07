@@ -1,0 +1,511 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/naive-bayes
+title: 'قواميس Naive Bayes'
+sidebarTitle: 'Naive Bayes'
+description: 'هيّئ قواميس NAIVE_BAYES لتصنيف النصوص.'
+doc_type: 'reference'
+---
+
+يصنّف القاموس `naive_bayes` (`NAIVE_BAYES`) النصوص باستخدام نموذج [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) متعدد الحدود، وهو نموذج الأحداث القياسي للنصوص: إذ يقيّم كل فئة بناءً على مدى تكرار ظهور **n-gram counts** الخاصة بالمدخل فيها. وتزوّده بجدول يحتوي على **n-gram counts** لكل فئة، فيُجمِّعها في نموذج مرة واحدة عند وقت التحميل، ثم يستخدمه لتصنيف أي نص تمرّره إليه.
+
+وهو مناسب لتصنيف النصوص بسرعة وبأسلوب خفيف، مثل تحليل المشاعر، ووضع تسميات للموضوعات أو الرسائل غير المرغوب فيها، واكتشاف اللغة أو برنامج نصي.
+
+يمكنك query القاموس باستخدام إحدى الدوال الثلاث التالية:
+
+* تعيد [`naiveBayesClassifier`](/ar/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) معرّف الفئة المتوقعة.
+* تعيد [`naiveBayesClassifierWithProb`](/ar/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithProb) الفئة المتوقعة مع احتمالها.
+* تعيد [`naiveBayesClassifierWithAllProbs`](/ar/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithAllProbs) كل فئة مع احتمالها.
+
+يمكن أيضًا لـ [`dictGet`](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet) العادية إجراء التصنيف (راجع [الملاحظات](#notes)). وهناك دالة أخرى، هي [`naiveBayesNgrams`](/ar/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams)، لا تُجري التصنيف، بل تقسّم النص إلى n-grams بالطريقة نفسها التي يستخدمها القاموس، بحيث يمكنك بناء بيانات التدريب من raw text (راجع [بناء بيانات التدريب من raw text](#build-training-data-from-raw-text)).
+
+<div id="quickstart">
+  ## البدء السريع
+</div>
+
+نبني هنا نموذج unigram (`n = 1`) بوضع token لتحليل المشاعر.
+
+**1. أنشئ جدول مصدر** لإحصاءات تكرار n-gram لكل فئة:
+
+```sql
+CREATE TABLE training_data (class_id UInt32, ngram String, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+```
+
+**2. أدخِل بيانات التدريب** — الكلمات المفردة (unigrams) وعدد مرات ظهور كل كلمة منها في الفئة الإيجابية (`1`) والفئة السلبية (`0`):
+
+```sql
+INSERT INTO training_data VALUES
+    (1,'good',10),(1,'great',8),(1,'excellent',6),(1,'love',7),(1,'happy',5),
+    (1,'amazing',4),(1,'wonderful',3),(1,'best',3),(1,'fantastic',2),(1,'nice',4),
+    (0,'bad',10),(0,'terrible',8),(0,'awful',6),(0,'hate',7),(0,'worst',5),
+    (0,'horrible',4),(0,'poor',3),(0,'disappointing',3),(0,'ugly',2),(0,'sad',4);
+```
+
+**3. أنشئ القاموس** باستخدام تخطيط `NAIVE_BAYES`:
+
+```sql
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+```
+
+يجعل `PRIMARY KEY ngram` العمود `ngram` هو المفتاح — ولكن في قاموس `NAIVE_BAYES` يكون هذا &quot;المفتاح&quot; هو النص الذي تمرّره للتصنيف، لا قيمةً مخزّنة تبحث عنها (راجع [بنية القاموس](#dictionary-structure)). ويُهيّئ `LAYOUT` النموذج: إذ تحدد `class_attribute 'class_id'` أن `class_id` هو تسمية الفئة (لذا تكون السمة الأخرى، `count`، هي عدد مرات الظهور لكل فئة)، ويستخدم `n 1` أحاديات، بينما يقسم `mode 'token'` النص إلى كلمات تفصل بينها مسافات بيضاء (راجع [معلمات التخطيط](#layout-parameters)).
+
+**4. صنِّف** — تُرجع `naiveBayesClassifier` معرّف الفئة:
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+`1` يقابل الفئة الإيجابية، استنادًا إلى بيانات التدريب التي أدرجناها في الخطوة 2.
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is terrible') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               0 │
+   └─────────────────┘
+```
+
+وبالمثل، يشير `0` إلى الفئة السلبية.
+
+النتيجة نفسها باستخدام `dictGet`:
+
+```sql
+SELECT dictGet('sentiment', 'class_id', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+احصل على احتمال التنبؤ، أو احتمال كل فئة:
+
+```sql
+SELECT naiveBayesClassifierWithProb('sentiment', 'amazing food but terrible service') as predicted_id_with_prob;
+```
+
+```response
+   ┌─predicted_id_with_prob─────────────┐
+1. │ {                                 ↴│
+   │↳  "class_id": 0,                  ↴│
+   │↳  "probability": 0.642857145060626↴│
+   │↳}                                  │
+   └────────────────────────────────────┘
+```
+
+الفئة المتوقعة هي `0` (سلبية) باحتمال `0.64`.
+
+```sql
+SELECT naiveBayesClassifierWithAllProbs('sentiment', 'amazing food but terrible service') as all_predicted_ids_with_probs;
+```
+
+```response
+   ┌─all_predicted_ids_with_probs─────────┐
+1. │ [{                                  ↴│
+   │↳  "class_id": 0,                    ↴│
+   │↳  "probability": 0.642857145060626  ↴│
+   │↳},{                                 ↴│
+   │↳  "class_id": 1,                    ↴│
+   │↳  "probability": 0.35714285493937414↴│
+   │↳}]                                   │
+   └──────────────────────────────────────┘
+```
+
+تعيد `naiveBayesClassifierWithAllProbs` جميع الفئات مرتبة من الأعلى إلى الأدنى احتمالًا، مع احتمالات مجموعها `1.0` — وهنا `0.64` للفئة السلبية و`0.36` للفئة الإيجابية.
+
+<div id="how-it-works">
+  ## كيف يعمل
+</div>
+
+**التدريب (وقت التحميل).** يمثّل كل صف في المصدر ملاحظة بالشكل `(n-gram, class, count)`. وعند تحميل القاموس، تُصرَّف الصفوف مرةً واحدة إلى النموذج. وتُجمع الصفوف المكررة من الشكل `(n-gram, class)`، بينما تُتجاهل الصفوف التي فيها `count = 0`.
+
+**التصنيف (وقت الاستعلام).** لتصنيف سلسلة نصية، يقوم النموذج بما يلي:
+
+1. يقسّمها إلى n-grams وفقًا لـ `mode` و`n` (راجع [أوضاع التقسيم إلى رموز](#tokenization-modes)).
+2. يحسب درجة لكل فئة من خلال الجمع بين الاحتمال القبلي للفئة ومدى تكرار ظهور n-grams الخاصة بالإدخال ضمن تلك الفئة.
+3. يرتّب الفئات حسب الدرجة. وتكون الفئة ذات أعلى درجة هي التنبؤ الذي تعيده `naiveBayesClassifier`؛ كما تعيد `naiveBayesClassifierWithProb` و`naiveBayesClassifierWithAllProbs` أيضًا احتمالات — لتلك الفئة أو لجميع الفئات.
+
+هناك عاملان يؤثران في درجة كل فئة. الأول هو `alpha`، ويُستخدم للتنعيم. ويمنع التنعيم النموذج من إعطاء فئة درجة صفر لمجرد أن n-gram واحدة لم تظهر في تلك الفئة أثناء التدريب. تجعل قيمة `alpha` الأصغر النموذج يعتمد أكثر على بيانات التدريب، لذلك قد تحصل إحدى الفئات على درجة أعلى بكثير من غيرها، لكنها قد تجعل النموذج أيضًا مفرط الحساسية عندما تكون بيانات التدريب قليلة أو غير متوازنة. أما قيمة `alpha` الأكبر فتجعل أعداد n-grams أقل تأثيرًا، فتغدو درجات الفئات المختلفة أكثر تقاربًا. وإذا كانت `alpha` كبيرة جدًا، تكاد معلومات n-gram ألا تؤثر، وتصبح الدرجة معتمدةً في الغالب على الاحتمال القبلي للفئة (الموصوف لاحقًا).
+
+أما العامل الثاني فهو الاحتمال القبلي للفئة — أي ما يفترضه النموذج بشأن مدى احتمال كل فئة قبل النظر إلى النص. ويعمل هذا كدرجة ابتدائية تحصل عليها كل فئة قبل أخذ أي n-grams في الحسبان، لذا فإن الاحتمال القبلي الأعلى يجعل التنبؤ بتلك الفئة أكثر ترجيحًا. وتعتمد طريقة ضبطه على `priors_mode`. افتراضيًا (`proportional`)، تبدأ الفئة التي لها إجمالي أكبر من عدد n-grams في بيانات التدريب بدرجة أعلى. ومع `uniform`، تبدأ جميع الفئات على قدم المساواة، بحيث تكون n-grams وحدها هي التي تحسم. ومع `explicit`، يمكنك تحديد نقطة البداية لكل فئة بنفسك. راجع [أوضاع الاحتمال القبلي](#prior-modes).
+
+وأي n-gram لم تظهر مطلقًا في أي موضع ضمن بيانات التدريب تُتجاهل: فهي ليست جزءًا من مفردات النموذج، لذلك لا تفيد أي فئة ولا تضرها.
+
+تتبع الخوارزمية نموذج Naive Bayes متعدد الحدود لتصنيف النصوص؛ راجع [Manning, Raghavan &amp; Schütze, *Introduction to Information Retrieval*, ch. 13 (*Text Classification and Naive Bayes*)](https://nlp.stanford.edu/IR-book/html/htmledition/text-classification-and-naive-bayes-1.html).
+
+<div id="dictionary-structure">
+  ## بنية القاموس
+</div>
+
+لقاموس `NAIVE_BAYES` بنية ثابتة:
+
+* يتكوّن `PRIMARY KEY` من عمود واحد من النوع `String` — وهو n-gram. في وقت تنفيذ الاستعلام، يكون هذا &quot;المفتاح&quot; هو النص الذي تمرّره للتصنيف، وليس مفتاح بحث مخزّنًا.
+* إلى جانبه، عرّف **سِمتين فقط من نوع عدد صحيح غير موقّع**: وسم الفئة وعدد مرات الظهور. تستخدم معرّفات الفئات دائمًا `UInt32` داخليًا، لذلك يجب أن تتسع قيمة وسم الفئة ضمن `UInt32` (بحد أقصى `4294967295`) حتى إذا أعلنت سِمته على أنها `UInt64`. وتُرفض أي قيمة أكبر عند تحميل القاموس، لا عند إنشائه. وينطبق الأمر نفسه على الأنواع المعلنة: فإذا كان معرّف فئة المصدر أو العدد لا يتّسع لنوع السمة المعلن، يفشل التحميل بدلًا من اقتطاعه بصمت.
+* تحدد مَعلمة التخطيط `class_attribute` أي سمة تمثل وسم الفئة، وتُعدّ السمة الأخرى تلقائيًا العدد. ويمكن تعريف السمتين بأي ترتيب.
+
+يحتوي الجدول المصدر على counts **مجمّعة مسبقًا**: صف واحد لكل `(n-gram, class)` مع عدد مرات ظهور ذلك الـ n-gram في تلك الفئة. وتُنتج هذه counts عبر تقسيم corpus إلى tokens وتجميع النتيجة، إمّا ضمن pipeline التدريب الخاصة بك أو في ClickHouse انطلاقًا من raw text موسوم (راجع [Build training data from raw text](#build-training-data-from-raw-text)). ولا يستهلك القاموس سوى هذه counts.
+
+**تحديث النموذج.** لأن النموذج عبارة عن قاموس يستند إلى table، فأعِد تدريبه بتحديث table ثم إعادة تحميله:
+
+```sql
+INSERT INTO training_data VALUES (1, 'awesome', 5);
+SYSTEM RELOAD DICTIONARY sentiment;
+```
+
+<div id="layout-parameters">
+  ## معلمات البنية
+</div>
+
+| المعلمة           | الوصف                                                                                                                                                                                                  | مثال                   | القيمة الافتراضية |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ----------------- |
+| `class_attribute` | اسم السمة التي تحمل تسمية الفئة؛ أما السمة الأخرى فهي العدد.                                                                                                                                           | `'class_id'`           | *مطلوب*           |
+| `n`               | حجم n-gram: ‏`1` = أحاديات، `2` = ثنائيات، `3` = ثلاثيات، … (`1`–`1024`).                                                                                                                              | `2`                    | *مطلوب*           |
+| `mode`            | طريقة التقسيم إلى رموز: `byte` أو `codepoint` أو `token`. راجع [أوضاع التقسيم إلى رموز](#tokenization-modes).                                                                                          | `'token'`              | *مطلوب*           |
+| `alpha`           | تنعيم إضافي (Lidstone) لاحتمالات n-gram؛ ‏`alpha = 1` هو Laplace smoothing (يجب أن تكون القيمة منتهية و `> 0`).                                                                                        | `0.5`                  | `1.0`             |
+| `priors_mode`     | كيفية تحديد الاحتمالات القبلية للفئات: `uniform` أو `proportional` أو `explicit`. راجع [أوضاع الاحتمالات القبلية](#prior-modes).                                                                       | `'uniform'`            | `'proportional'`  |
+| `priors`          | احتمالات قبلية صريحة لكل فئة: مجموعة من أزواج `(class, probability)`. لا تكون صالحة إلا مع `priors_mode 'explicit'`، حيث تكون مطلوبة؛ أما تقديمها في أي وضع آخر فيُعد خطأ. ويجب أن يكون مجموعها `1.0`. | `[(0, 0.6), (1, 0.4)]` | —                 |
+| `store_source`    | الاحتفاظ بصفوف المصدر بحيث يعمل `SELECT * FROM dictionary`. ويؤدي ذلك تقريبًا إلى مضاعفة الذاكرة.                                                                                                      | `1`                    | `0`               |
+| `start_token`     | رمز حدّي يُضاف في بداية الإدخال `(n-1)` مرة. راجع [رموز الحدود](#boundary-tokens-padding).                                                                                                             | `'0x01'` / `'<s>'`     | — (من دون حشو)    |
+| `end_token`       | رمز حدّي يُضاف في نهاية الإدخال `(n-1)` مرة.                                                                                                                                                           | `'0xFF'` / `'</s>'`    | — (من دون حشو)    |
+
+يمكنك تعريف القاموس باستخدام DDL ‏`CREATE DICTIONARY` (كما في الدليل التمهيدي أعلاه) أو في ملف تكوين XML؛ راجع [بُنى القواميس](/ar/reference/statements/create/dictionary/layouts/overview) لمعرفة مكان هذا الملف. يضبط المثال أدناه كل خيارات البنية حتى تتمكن من رؤيتها جميعًا — ولا يُطلب سوى `class_attribute` و `n` و `mode`، بينما يوضح الجدول أعلاه القيم الافتراضية للباقي. في ملف التكوين، تُكتب الاحتمالات القبلية كعناصر `prior` متكررة (عنصر واحد لكل فئة، كما هو موضح أدناه)، وتكون رموز الحشو لـ `byte` و `codepoint` أرقامًا (لأن ملف التكوين لا يمكنه حمل بايتات خام)، وتكون القيمة الحرفية `token` مُفلَتة في XML عند الحاجة، لذا تتحول `<s>` إلى `&lt;s&gt;`.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY naive_bayes (ngram String, class_id UInt32, count UInt64)
+    PRIMARY KEY ngram
+    SOURCE(CLICKHOUSE(TABLE 'training_data'))
+    LAYOUT(NAIVE_BAYES(
+        class_attribute 'class_id'
+        n 2
+        mode 'token'
+        alpha 0.5
+        priors_mode 'explicit'
+        priors [(0, 0.6), (1, 0.4)]
+        store_source 1
+        start_token '<s>'
+        end_token '</s>'
+    ))
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="ملف الإعدادات">
+    ```xml
+    <dictionary>
+        <name>naive_bayes</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>ngram</name>
+                    <type>String</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>class_id</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>count</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+        <source>
+            <clickhouse>
+                <table>training_data</table>
+            </clickhouse>
+        </source>
+        <layout>
+            <naive_bayes>
+                <class_attribute>class_id</class_attribute>
+                <n>2</n>
+                <mode>token</mode>
+                <alpha>0.5</alpha>
+                <priors_mode>explicit</priors_mode>
+                <priors>
+                    <prior>
+                        <class>0</class>
+                        <probability>0.6</probability>
+                    </prior>
+                    <prior>
+                        <class>1</class>
+                        <probability>0.4</probability>
+                    </prior>
+                </priors>
+                <store_source>1</store_source>
+                <start_token>&lt;s&gt;</start_token>
+                <end_token>&lt;/s&gt;</end_token>
+            </naive_bayes>
+        </layout>
+        <lifetime>3600</lifetime>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="tokenization-modes">
+  ## أوضاع التقسيم إلى رموز
+</div>
+
+يحدِّد `mode` ما يُعدّ &quot;رمزًا&quot;، وبالتالي شكل سلاسل n-grams. ويجب أن تكون سلاسل n-grams المصدر قد أُنتجت باستخدام `mode` و`n` **نفسهما**.
+
+* `byte` — كل رمز عبارة عن بايت واحد؛ ولا يُفترض استخدام UTF-8. عند `n = 2`، تنتج `'abc'` البيغرامات البايتية `'ab'` و`'bc'`. *مناسب لـ* اكتشاف اللغة أو الترميز في تسلسلات بايتية عشوائية، وأي بيانات تكون فيها الإشارات دون مستوى المحرف مهمة. وعادةً ما يُستخدم مع `n >= 2`.
+* `codepoint` — كل رمز هو نقطة ترميز Unicode واحدة؛ ويُفسَّر الإدخال على أنه UTF-8. عند `n = 1`، تنتج `'café'` نقاط الترميز `'c'` و`'a'` و`'f'` و`'é'`. *مناسب لـ* اكتشاف نظام الكتابة واللغة، وللنصوص القصيرة أو نصوص CJK حيث لا يمكن الاعتماد على حدود الكلمات القائمة على المسافات. (يجب أن تكون سلاسل n-grams المصدر بترميز UTF-8 صالح؛ وتُفك شيفرة مدخلات الاستعلام بتسامح — راجع [الملاحظات](#notes).)
+* `token` — كل رمز هو كلمة تفصل بينها **محارف ASCII البيضاء** (المسافة، وعلامة الجدولة، والسطر الجديد، وعودة العربة، وتغذية النموذج، وعلامة الجدولة العمودية؛ وتُختزل التتابعات إلى فاصل واحد). أما محارف Unicode البيضاء غير التابعة لـ ASCII مثل `U+00A0` (مسافة غير قابلة للفصل) أو `U+2003` (مسافة em) فهي **ليست** فاصلًا وتبقى داخل الرمز. والمحارف البيضاء هي الشيء الوحيد الذي يسبّب التقسيم — فلا يُحوَّل أي شيء إلى أحرف صغيرة ولا يُزال أي شيء — لذا تصبح `'Hello, World!'` الرمزين `'Hello,'` و`'World!'` (وتُحفَظ الفاصلة و`!` والأحرف الكبيرة جميعًا)، ومع `n = 2` تُشكّل البيغرام الوحيد `'Hello, World!'`. *مناسب لـ* التصنيف على مستوى الكلمات في اللغات التي تفصل كلماتها بمسافات — مثل تحليل المشاعر، والموضوع، والبريد المزعج، ولغة الجملة.
+
+<div id="prior-modes">
+  ## أوضاع prior
+</div>
+
+يمثل prior اعتقاد النموذج بشأن كل صنف *قبل* أن ينظر إلى النص. ويحدد `priors_mode` كيفية تعيينه.
+
+* `proportional` (الافتراضي) — يكون prior لكل صنف متناسبًا مع إجمالي عدد n-gram الخاصة به في بيانات التدريب — أي مجموع عمود `count` لذلك الصنف، وليس عدد الصفوف أو مستندات التدريب — لذا تبدأ الأصناف الأكثر ظهورًا باحتمال أعلى. **اختره** عندما تتوافق نسب الأصناف في التدريب (بحسب إجمالي عدد n-gram) مع التكرارات التي تتوقعها وقت الاستعلام. **لا حاجة إلى تمرير أي شيء** — إذ يُستمد من الأعداد في المصدر.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional'))
+  ```
+
+* `uniform` — تكون جميع الأصناف متساوية الاحتمال في البداية، لذلك لا يحصل أي صنف على أفضلية أولية، ويعتمد التنبؤ بالكامل على n-grams الموجودة في المُدخل. **اختره** عندما تكون الأصناف متوازنة، أو عندما لا تعكس تكرارات التدريب مدى ظهور كل صنف وقت الاستعلام. **لا حاجة إلى تمرير أي شيء.**
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'uniform'))
+  ```
+
+* `explicit` — توفّر أنت قيم prior باستخدام `priors [(0, 0.6), (1, 0.4)]`: زوج واحد من `(class, probability)` لكل صنف، بحيث تكون كل قيمة احتمال أكبر من 0 وبحد أقصى 1، ويكون مجموعها معًا `1.0`. **اختره** عندما تعرف المعدلات الأساسية الحقيقية وتختلف عن التدريب — مثلًا، قد لا تتجاوز الرسائل المزعجة 1% من حركة المرور في بيئة الإنتاج رغم أن مجموعة التدريب كانت متوازنة. **احسبها** من الحصة الفعلية المتوقعة لكل صنف.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.9), (1, 0.1)]))
+  ```
+
+<div id="boundary-tokens-padding">
+  ## الرموز الحدّية (الحشو)
+</div>
+
+يكون الحشو معطّلًا افتراضيًا، ولا يكون مهمًا إلا عندما تكون `n > 1`، إذ يمكنه تحسين الدقة عبر تمكين النموذج من استخدام إشارات عند بداية النص ونهايته.
+
+**لماذا يساعد ذلك؟** عندما تكون `n > 1`، تحصل n-grams في وسط النص على سياق كامل من اليسار واليمين، لكن أول token وآخره لا يحظيان بذلك. تؤدي إضافة الرموز الحدّية إلى إنشاء n-grams تشير إلى &quot;بداية النص&quot; و&quot;نهاية النص&quot;، بحيث يتمكن النموذج من تعلّم الأنماط المرتبطة بالموضع — مثل كلمة تكون مميّزة عندما *تبدأ* رسالة، أو حرف يكون شائعًا في *نهاية* كلمة.
+
+**ما الذي يجب عليك فعله:**
+
+1. **حدّد كل جانب على حدة.** إن `start_token` و`end_token` مستقلان — اضبط أحدهما أو كليهما أو اتركهما معًا دون ضبط. وتعني القيمة الفارغة أن هذا الجانب لا يُحشّى.
+2. **اختر قيمًا نادرة** لا تتصادم مع البيانات الفعلية، مثل `0x01` / `0xFF` لـ `byte`، و`U+10FFFE` / `U+10FFFF` لـ `codepoint`، أو `<s>` / `</s>` لـ `token`.
+3. **أنشئ n-grams الخاصة بالتدريب باستخدام الحشو نفسه.** يقوم القاموس بحشو مدخل query فقط، ولا يحشو المصدر مطلقًا، لذا يجب أن تكون الرموز الحدّية مضمنة مسبقًا في n-grams التي تحمّلها. وأسهل طريقة لضمان التطابق هي إنشاء المصدر باستخدام [`naiveBayesNgrams`](/ar/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams)، مع تمرير `start_token` و`end_token` نفسيهما (إلى جانب `n` و`mode`) اللذين تمرّرهما إلى layout — إذ يُنتج بالضبط n-grams المحشّاة التي ينشئها القاموس في query time.
+
+يعتمد تنسيق رمز الحشو على الوضع:
+
+* `byte` — رقم لقيمة البايت، بالنظام العشري أو الست عشري `0x` (لذا فإن `'1'` و`'0x01'` متماثلان):
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token '0x01' end_token '0xFF'))
+  ```
+
+* `codepoint` — رقم لنقطة ترميز UTF-8، بالنظام العشري أو الست عشري `0x` (لذا فإن `'1114110'` و`'0x10FFFE'` متماثلان):
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF'))
+  ```
+
+* `token` — سلسلة الـ token الحرفية:
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token' start_token '<s>' end_token '</s>'))
+  ```
+
+<div id="build-training-data-from-raw-text">
+  ## أنشئ بيانات التدريب من النص الخام
+</div>
+
+إذا كنت تبدأ من نص خام موسوم بدلًا من تكرارات مجمّعة مسبقًا، فاستخدم الدالة [`naiveBayesNgrams`](/ar/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) لتقسيمه إلى n-grams. أعطِها القيم نفسها لـ `n` و`mode` و`start_token` و`end_token` كما في البنية التي تستخدمها، وستنتج n-grams نفسها تمامًا التي يتوقعها القاموس، بحيث تتطابق بيانات التدريب مع ما يراه النموذج عند تنفيذ الاستعلام.
+
+إذا كان لديك جدول من الصفوف بالشكل `(class_id, text)`، فأنشئ المصدر بالشكل `(ngram, class_id, count)` باستخدام `GROUP BY` واحد:
+
+```sql
+CREATE TABLE docs (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO docs VALUES
+    (1, 'The food was amazing and the service was great'),
+    (0, 'The service was terrible and the food was awful'),
+    (1, 'I loved this cozy little place and the friendly staff'),
+    (0, 'I hated the bad weather and the long wait'),
+    (1, 'Best dinner we have had here, everything was delicious');
+
+CREATE TABLE training_data (ngram String, class_id UInt32, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+
+INSERT INTO training_data
+SELECT ngram, class_id, count()
+FROM docs
+ARRAY JOIN naiveBayesNgrams(text, 1, 'token') AS ngram
+GROUP BY ngram, class_id;
+```
+
+```sql
+SELECT * FROM training_data ORDER BY ngram LIMIT 5;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ Best  │        1 │     1 │
+2. │ I     │        1 │     1 │
+3. │ I     │        0 │     1 │
+4. │ The   │        0 │     1 │
+5. │ The   │        1 │     1 │
+   └───────┴──────────┴───────┘
+```
+
+يُعدّ `training_data` الآن مصدرًا صالحًا لقاموس `NAIVE_BAYES` (هنا أُحاديات token؛ غيّر وسيطَي `n` و`mode` ليتوافقا مع layout لديك). يُجزّئ القاموس مُدخلات الاستعلام إلى token تمامًا كما تَرِد، لذا إذا كان نص التدريب مكتوبًا بأحرف صغيرة بينما نص الاستعلام ليس كذلك، فلن تتطابق n-grams بينهما وستتراجع دقة النموذج.
+
+<Info>
+  **الأوليات وعدد المستندات**
+
+  تُوزن الأولية `proportional` (الافتراضية) بحسب **إجمالي عدد n-grams** لكل فئة، لا بحسب عدد مستنداتها. إذا كنت تريد الأولية الكلاسيكية المعتمدة على تكرار المستندات (`documents_in_class / total_documents`)، فاحسبها من جدول `docs` الخام ومرّرها مع `priors_mode 'explicit'`:
+
+  ```sql
+  SELECT groupArray((class_id, frac)) AS priors
+  FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY class_id);
+  ```
+
+  ```response
+     ┌─priors────────────┐
+  1. │ [(0,0.4),(1,0.6)] │
+     └───────────────────┘
+  ```
+</Info>
+
+بعد ذلك، أنشئ القاموس من `training_data` مع تمرير الأولية الصريحة المحسوبة أعلاه، ثم صنّف المراجعات الجديدة:
+
+```sql
+CREATE DICTIONARY review_sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.4), (1, 0.6)]))
+LIFETIME(0);
+```
+
+```sql
+SELECT
+    naiveBayesClassifier('review_sentiment', 'amazing food and friendly staff') AS positive_review,
+    naiveBayesClassifier('review_sentiment', 'awful service and a terrible meal') AS negative_review;
+```
+
+```response
+   ┌─positive_review─┬─negative_review─┐
+1. │               1 │               0 │
+   └─────────────────┴─────────────────┘
+```
+
+الفئة `1` إيجابية و`0` سلبية، لذا صُنِّفت كلتا المراجعتين بشكل صحيح.
+
+<div id="more-examples">
+  ## أمثلة إضافية
+</div>
+
+**وضع البايت** — ثنائيات البايت (`n = 2`, `mode 'byte'`; الفئة `0` = سلاسل من الأحرف `a`–`d`، والفئة `1` = الأحرف `x`–`z`):
+
+```sql
+CREATE TABLE byte_patterns_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO byte_patterns_src VALUES (0,'ab',5),(0,'bc',5),(0,'cd',5),(1,'xy',5),(1,'yz',5),(1,'zw',5);
+
+CREATE DICTIONARY byte_patterns (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'byte_patterns_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('byte_patterns', 'abcd') AS abcd, naiveBayesClassifier('byte_patterns', 'xyzw') AS xyzw;
+```
+
+```response
+   ┌─abcd─┬─xyzw─┐
+1. │    0 │    1 │
+   └──────┴──────┘
+```
+
+**وضع نقطة الترميز** — اكتشاف نظام الكتابة على مستوى كل محرف (`n = 1`, `mode 'codepoint'`; الفئة `0` = اللاتينية، `1` = السيريلية):
+
+```sql
+CREATE TABLE script_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO script_src VALUES (0,'a',5),(0,'b',5),(0,'c',5),(0,'d',5),(1,'а',5),(1,'б',5),(1,'в',5),(1,'г',5);
+
+CREATE DICTIONARY script (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'script_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'codepoint')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('script', 'abcd') AS latin, naiveBayesClassifier('script', 'абвг') AS cyrillic;
+```
+
+```response
+   ┌─latin─┬─cyrillic─┐
+1. │     0 │        1 │
+   └───────┴──────────┘
+```
+
+**اقرأ بيانات التدريب مجددًا** باستخدام `store_source`:
+
+```sql
+CREATE TABLE stored_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO stored_src VALUES (0,'alpha',3),(0,'beta',2),(1,'gamma',4);
+
+CREATE DICTIONARY stored (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'stored_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1)) LIFETIME(0);
+
+SELECT ngram, class_id, count FROM stored ORDER BY ngram;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ alpha │        0 │     3 │
+2. │ beta  │        0 │     2 │
+3. │ gamma │        1 │     4 │
+   └───────┴──────────┴───────┘
+```
+
+**اكتشاف اللغة من النص الخام** — كلمات قصيرة مع حشو عند الحدود (`n = 2`, `mode 'codepoint'`; الفئة `0` = الإنجليزية، `1` = الإسبانية). تُبنى مقاطع `n-gram` التدريبية من الكلمات الخام باستخدام [`naiveBayesNgrams`](/ar/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams)، وتتيح رموز الحدود — التي تُمرَّر إلى كلٍّ من الدالة والبنية — للنموذج استخدام الحرف الأول والأخير من كل كلمة:
+
+```sql
+CREATE TABLE words (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO words VALUES
+    (0,'dog'),(0,'cat'),(0,'fish'),(0,'bird'),(0,'book'),(0,'hand'),(0,'tree'),(0,'milk'),(0,'duck'),(0,'frog'),(0,'lamp'),(0,'desk'),
+    (1,'gato'),(1,'casa'),(1,'perro'),(1,'libro'),(1,'mano'),(1,'leche'),(1,'arbol'),(1,'agua'),(1,'queso'),(1,'fuego'),(1,'mesa'),(1,'silla');
+
+CREATE TABLE word_ngrams (ngram String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO word_ngrams
+SELECT ngram, class_id, count()
+FROM words
+ARRAY JOIN naiveBayesNgrams(text, 2, 'codepoint', '0x10FFFE', '0x10FFFF') AS ngram
+GROUP BY ngram, class_id;
+
+CREATE DICTIONARY lang (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'word_ngrams'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('lang', 'window') AS window, naiveBayesClassifier('lang', 'fiesta') AS fiesta;
+```
+
+```response
+   ┌─window─┬─fiesta─┐
+1. │      0 │      1 │
+   └────────┴────────┘
+```
+
+<div id="notes">
+  ## ملاحظات
+</div>
+
+* **دلالات القاموس الحاسوبي.** هذا قاموس *حاسوبي*: تستعمل الدالة `dictGet(dict, '<class_attribute>', text)` لتصنيف `text` (فالمفتاح هنا مُدخل للتصنيف، وليس مفتاحًا مخزّنًا)، ولا يمكن الاستعلام عن سمة العدّ، كما أن `dictHas` تُرجع دائمًا القيمة `1`.
+* **التحقق من المصدر عند التحميل.** يجب أن يطابق كل n-gram في المصدر القيمتَين `n` و`mode` المضبوطة (وفي وضع `codepoint` يجب أيضًا أن يكون UTF-8 صالحًا)؛ وأي عدم تطابق يؤدي إلى فشل التحميل. ولأن الصفوف ذات العدّ الصفري يتم تجاهلها (راجع [كيف يعمل](#how-it-works))، فإن المصدر الفارغ أو الذي لا يحتوي إلا على قيم عدّ صفرية لا يوفّر أي بيانات للتدريب، وبالتالي يفشل تحميله.
+* **تجزئة الرموز وقت الاستعلام متساهلة.** بخلاف التحقق من المصدر، لا يُرفَض مُدخل الاستعلام مطلقًا. في وضع `codepoint`، تُفكّ البايتات غير الصالحة وفق UTF-8 بأفضل جهد بدلًا من أن تتسبب في فشل الاستعلام؛ وفي وضع `token`، لا يفصل بين الكلمات إلا محارف المسافات البيضاء من ASCII (أما محارف المسافات البيضاء في Unicode مثل `U+00A0` فتبقى داخل الرمز). وحتى مع الإدخال غير السليم، يستمر التصنيف — وغالبًا ما يستند إلى الاحتمالات القبلية، لأن n-grams الخاصة به لن تطابق تلك التي دُرِّب عليها.

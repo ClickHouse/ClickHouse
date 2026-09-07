@@ -1,0 +1,86 @@
+{
+  "groups": [
+    {
+      "group": "ابدأ الاستخدام",
+      "pages": [
+        "ar/products/managed-postgres/overview",
+        "ar/products/managed-postgres/quickstart"
+      ]
+    },
+    {
+      "group": "الميزات",
+      "pages": [
+        "ar/products/managed-postgres/connection",
+        "ar/products/managed-postgres/settings",
+        "ar/products/managed-postgres/scaling",
+        "ar/products/managed-postgres/security",
+        "ar/products/managed-postgres/rbac",
+        "ar/products/managed-postgres/local-development",
+        "ar/products/managed-postgres/high-availability",
+        "ar/products/managed-postgres/read-replicas",
+        "ar/products/managed-postgres/backup-and-restore",
+        "ar/products/managed-postgres/extensions",
+        {
+          "group": "pg_clickhouse",
+          "pages": [
+            "ar/products/managed-postgres/extensions/pg_clickhouse/reference",
+            "ar/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+          ],
+          "root": "ar/products/managed-postgres/extensions/pg_clickhouse/introduction"
+        },
+        "ar/products/managed-postgres/upgrades",
+        "ar/products/managed-postgres/openapi",
+        "ar/products/managed-postgres/terraform"
+      ]
+    },
+    {
+      "group": "اختبارات الأداء",
+      "pages": [
+        "ar/products/managed-postgres/benchmarks"
+      ]
+    },
+    {
+      "group": "التسعير",
+      "pages": [
+        "ar/products/managed-postgres/pricing"
+      ]
+    },
+    {
+      "group": "تكامل ClickHouse",
+      "pages": [
+        "ar/products/managed-postgres/clickhouse-integration"
+      ]
+    },
+    {
+      "group": "الترحيلات",
+      "pages": [
+        "ar/products/managed-postgres/migrations/overview",
+        "ar/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "ar/products/managed-postgres/migrations/logical-replication",
+        "ar/products/managed-postgres/migrations/peerdb",
+        "ar/products/managed-postgres/migrations/clickpipes",
+        "ar/products/managed-postgres/migrations/data-validation",
+        "ar/products/managed-postgres/migrations/clickhouse-cloud",
+        "ar/products/managed-postgres/migrations/faq"
+      ]
+    },
+    {
+      "group": "المراقبة",
+      "pages": [
+        "ar/products/managed-postgres/monitoring/overview",
+        "ar/products/managed-postgres/monitoring/dashboard",
+        "ar/products/managed-postgres/monitoring/metrics",
+        "ar/products/managed-postgres/monitoring/prometheus",
+        "ar/products/managed-postgres/monitoring/query-insights"
+      ]
+    },
+    {
+      "group": "الأسئلة الشائعة",
+      "pages": [
+        "ar/products/managed-postgres/faq"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-postgres.svg",
+  "item": "Managed Postgres"
+}

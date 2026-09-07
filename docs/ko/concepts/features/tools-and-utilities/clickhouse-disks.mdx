@@ -57,6 +57,8 @@ config에서 사용할 수 있는 모든 디스크는 지연 초기화됩니다.
 * `current_disk_with_path (current, current_disk, current_path)`
   현재 상태를 다음 포맷으로 출력합니다:
   `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  현재 디스크의 `path`에 있는 파일 또는 디렉터리의 전체 크기를 바이트 단위로 출력합니다. 디렉터리인 경우 포함된 모든 파일의 크기를 재귀적으로 합산합니다. `path`를 지정하지 않으면 현재 디렉터리를 사용합니다. `--human-readable`(`-h`)를 사용하면 크기를 사람이 읽기 쉬운 포맷(예: `1.23 GiB`)으로 출력합니다.
 * `help [<command>]`
   `command` 명령어의 도움말 메시지를 출력합니다. `command`를 지정하지 않으면 모든 명령어에 대한 정보를 출력합니다.
 * `move (mv) <path-from> <path-to>`.
@@ -75,9 +77,13 @@ config에서 사용할 수 있는 모든 디스크는 지연 초기화됩니다.
   `path-from`의 파일을 읽어 `path`로 출력합니다(지정하지 않으면 `stdout`).
 * `read-bitmap <path-from> [--values]`
   `path-from`에 있는 delete-bitmap(`.rbm`) 사이드카를 검사합니다. 매직과 버전, CRC 유효성, 카디널리티(삭제된 행 수), 그리고 행 범위를 출력합니다. `--values`를 사용하면 모든 set bits(삭제된 행 오프셋)도 오름차순으로 덤프합니다.
-* `read-checksums <path>`
-  현재 디스크에 있는 `MergeTree` 데이터 파트의 `checksums.txt` 파일을 읽어 `stdout`에 탭으로 구분된 사람이 읽기 쉬운 표로 출력합니다. 컬럼은 `name`, `file_size`, `file_hash`, `uncompressed_size`, `uncompressed_hash`입니다. 마지막 두 컬럼은 압축된 파일에만 존재합니다.
 * `switch-disk [--path path] <disk>`
   `path` 경로의 `disk` 디스크로 전환합니다(`path`를 지정하지 않으면 기본값은 `disk` 디스크의 이전 경로).
 * `write (w) [--path-from path] <path-to>`.
   `path`의 파일을 `path-to`에 씁니다(`path`를 지정하지 않으면 `stdin`을 사용하며, 입력은 Ctrl+D로 종료해야 합니다).
+* `wc <path> [--bytes] [--lines] [--words]`
+  현재 디스크의 `path`에 있는 파일의 바이트 수, 줄 수, 단어 수를 계산합니다(Unix `wc`와 동일). 플래그를 지정하지 않으면 세 가지 개수를 줄 수, 단어 수, 바이트 수 순서로 모두 출력합니다. 특정 개수만 선택하려면 `--bytes`(`-c`), `--lines`(`-l`), `--words`(`-w`)를 사용합니다.
+* `sed <expression> <path>`
+  현재 디스크의 `path`에 있는 파일에 `sed` `expression`을 제자리에서 적용합니다. 호스트에 `sed`가 설치되어 있어야 합니다. 옵션 없이 단일 `sed` 표현식만 지원합니다(예: `'s/foo/bar/g'`, `'/foo/d'`). 여러 표현식(`-e ... -e ...`)이나 주소와 함께 사용하는 옵션(예: `4,10p`와 함께 사용하는 `-n`)은 지원하지 않습니다.
+* `read-checksums <path>`
+  현재 디스크에 있는 `MergeTree` 데이터 파트의 `checksums.txt` 파일을 읽어 `stdout`에 탭으로 구분된 사람이 읽기 쉬운 표로 출력합니다. 컬럼은 `name`, `file_size`, `file_hash`, `uncompressed_size`, `uncompressed_hash`입니다. 마지막 두 컬럼은 압축된 파일에만 존재합니다.

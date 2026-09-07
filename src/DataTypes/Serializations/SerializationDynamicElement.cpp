@@ -58,6 +58,20 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
         new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
         return new_state;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (shared_variant)
+            callback(shared_variant);
+    }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (structure_state)
+            callback(structure_state);
+        if (variant_element_state)
+            callback(variant_element_state);
+    }
 };
 
 
@@ -233,6 +247,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             {
                 auto value = shared_variant.getDataAt(i);
                 ReadBufferFromMemory buf(value);
+                /// Reading already-stored shared-variant data: not limited by the input complexity guard.
                 auto type = decodeDataType(buf);
                 if (type->getName() == dynamic_element_name)
                 {

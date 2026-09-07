@@ -53,10 +53,8 @@ ClickHouse Cloud может подключаться к Azure Blob Storage с п
 </Warning>
 
 <Steps>
-  <Step>
-    ### Найдите исходящие IP-адреса ClickHouse Cloud
-
-    Чтобы настроить правила firewall на основе IP-адресов, нужно добавить в список разрешенных исходящие IP-адреса для вашего региона ClickHouse Cloud.
+  <Step title="Найдите исходящие IP-адреса ClickHouse Cloud" id="find-egress-ips">
+    Чтобы настроить правила брандмауэра на основе IP-адресов, нужно добавить в список разрешенных исходящие IP-адреса для вашего региона ClickHouse Cloud.
 
     Выполните следующую команду, чтобы получить список исходящих и входящих IP-адресов по регионам.
     Замените `eastus` ниже на ваш регион, чтобы отфильтровать остальные регионы:
@@ -84,16 +82,14 @@ ClickHouse Cloud может подключаться к Azure Blob Storage с п
 
     <Tip>
       См. [регионы Azure](/ru/products/cloud/reference/supported-regions#azure-regions) со списком поддерживаемых регионов Cloud,
-      а также столбец &quot;Programmatic name&quot; в [списке регионов Azure](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1),
-      чтобы определить, какое имя использовать.
+      а также столбец &quot;Programmatic name&quot; в [списке регионов Azure](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1)
+      , чтобы определить, какое имя использовать.
     </Tip>
 
     Подробнее см. в разделе [&quot;Cloud IP addresses&quot;](/ru/products/cloud/guides/data-sources/cloud-endpoints-api).
   </Step>
 
-  <Step>
-    ### Настройте firewall хранилища Azure
-
+  <Step title="Настройте брандмауэр хранилища Azure" id="configure-firewall">
     Перейдите к своему storage account в Azure Portal
 
     1. Откройте **Networking** → **Firewalls and virtual networks**
@@ -106,7 +102,7 @@ ClickHouse Cloud может подключаться к Azure Blob Storage с п
 
     4. Нажмите Save
 
-    Подробнее см. в [документации по настройке firewall Azure Storage](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal).
+    Подробнее см. в [документации по настройке брандмауэра Azure Storage](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal).
   </Step>
 </Steps>
 

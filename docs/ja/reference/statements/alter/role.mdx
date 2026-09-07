@@ -18,5 +18,8 @@ ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP PROFILES 'profile_name' [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
+
+`SET variable = value` は `MODIFY SETTING variable = value` の別名です。他の設定はそのままに、単一の設定だけをその場で変更します。これは、設定リスト全体を置き換え、さらにすべての継承元 (親) プロファイルも削除する、単独の `SETTINGS` 句とは異なります。

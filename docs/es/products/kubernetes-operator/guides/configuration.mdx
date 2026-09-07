@@ -102,8 +102,8 @@ spec:
 </Note>
 
 La adición de discos adicionales en una configuración de varios discos (JBOD), la ejecución sin un
-volumen persistente, la ampliación de la capacidad, las políticas de almacenamiento personalizadas y las reglas sobre lo que no puede
-cambiar después de la creación se tratan en la
+volumen persistente, la ampliación de la capacidad, las políticas de almacenamiento personalizadas, el cifrado en reposo y las
+reglas sobre lo que no puede cambiar después de la creación se tratan en la
 [guía de almacenamiento y volúmenes](/es/products/kubernetes-operator/guides/storage).
 
 <div id="cluster-domain">
@@ -186,9 +186,9 @@ La capacidad utilizable es la suma de todos los discos, y toda tabla que no defi
   ## Dominio del clúster
 </div>
 
-`spec.clusterDomain` establece el sufijo DNS de Kubernetes que el operador usa al generar
+`spec.clusterDomain` establece el sufijo DNS de Kubernetes que usa el operador al generar
 los nombres de host completos de los pods de Kubernetes que escribe en la
-configuración del servidor ClickHouse. Su valor predeterminado es `cluster.local` y existe tanto en
+configuración de servidor ClickHouse. Su valor predeterminado es `cluster.local` y está disponible tanto en
 `ClickHouseCluster` como en `KeeperCluster`.
 
 ```yaml
@@ -196,17 +196,17 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-El operador accede a cada pod de Kubernetes a través del Service headless como
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Ese sufijo se refleja en
+El operador se dirige a cada pod de Kubernetes a través del Service headless como
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Ese sufijo se usa en
 dos partes de la configuración generada:
 
-* En un `ClickHouseCluster`, su valor se utiliza para los nombres del host de las réplicas en
+* En un `ClickHouseCluster`, su valor se usa para los nombres del host de las réplicas en
   `remote_servers` (consultas entre réplicas y consultas `Distributed`).
 * En un `KeeperCluster`, su valor se usa para construir los nombres del host de los nodos de Keeper que
   ClickHouse utiliza para la coordinación.
 
 <Note>
-  Solo sobrescriba esto cuando el agente kubelet de su clúster se ejecute con un `--cluster-domain`
+  Sobrescriba esto solo cuando el `agente kubelet` de su clúster se ejecute con un `--cluster-domain`
   distinto de `cluster.local`. Si el valor no coincide con el dominio real del clúster,
   ClickHouse no podrá resolver los nombres del host de Keeper ni de las réplicas, y la coordinación y
   las consultas `Distributed` fallarán con errores de resolución de DNS. Establezca el **mismo** valor en el
@@ -519,13 +519,14 @@ spec:
 
 El Secret debe contener las siguientes claves:
 
-| Clave                   | Formato                                                                       | Cuándo es obligatoria         |
-| ----------------------- | ----------------------------------------------------------------------------- | ----------------------------- |
-| `interserver-password`  | contraseña en texto plano                                                     | Siempre                       |
-| `management-password`   | contraseña en texto plano                                                     | Siempre                       |
-| `keeper-identity`       | `clickhouse:<password>`                                                       | Siempre                       |
-| `cluster-secret`        | contraseña en texto plano                                                     | Siempre                       |
-| `named-collections-key` | clave AES de 16 bytes codificada en hexadecimal (32 caracteres hexadecimales) | Solo en ClickHouse `>= 25.12` |
+| Clave                   | Formato                                                                       | Cuándo es obligatoria                          |
+| ----------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------- |
+| `interserver-password`  | contraseña en texto plano                                                     | Siempre                                        |
+| `management-password`   | contraseña en texto plano                                                     | Siempre                                        |
+| `keeper-identity`       | `clickhouse:<password>`                                                       | Siempre                                        |
+| `cluster-secret`        | contraseña en texto plano                                                     | Siempre                                        |
+| `named-collections-key` | clave AES de 16 bytes codificada en hexadecimal (32 caracteres hexadecimales) | Solo en ClickHouse `>= 25.12`                  |
+| `disk-encryption-key`   | clave AES de 16 bytes codificada en hexadecimal (32 caracteres hexadecimales) | Solo cuando se establece `settings.encryption` |
 
 Un Secret completo tiene este aspecto:
 
@@ -542,6 +543,7 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 <div id="external-secret-policy">
@@ -589,7 +591,7 @@ Posibles razones:
 El operador vuelve a encolar la reconciliación mientras el Secret no sea válido, así que, en cuanto agregues las claves faltantes, la siguiente reconciliación las detectará automáticamente; no hace falta reiniciar los pods.
 
 <Note>
-  El conjunto de claves requeridas depende de la versión de ClickHouse en ejecución. `named-collections-key` solo se valida una vez que la sonda de versión del operador ha detectado ClickHouse `25.12` o una versión posterior. En versiones anteriores, la clave puede no estar presente en el Secret.
+  El conjunto de claves requeridas depende de la versión de ClickHouse en ejecución. `named-collections-key` solo se valida una vez que la sonda de versión del operador ha detectado ClickHouse `25.12` o una versión posterior. En versiones anteriores, la clave puede no estar presente en el Secret. `disk-encryption-key` solo es obligatoria cuando se establece `spec.settings.encryption`.
 </Note>
 
 <div id="additional-ports">

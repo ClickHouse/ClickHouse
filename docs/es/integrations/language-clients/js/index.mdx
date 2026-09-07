@@ -1,0 +1,1490 @@
+---
+sidebarTitle: 'JavaScript'
+keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'web', 'browser', 'Cloudflare', 'workers', 'client', 'connect', 'integrate']
+slug: /integrations/javascript
+description: 'El client oficial de JS para conectarse a ClickHouse.'
+title: 'ClickHouse JS'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-js'
+---
+
+import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+
+El client oficial de JS para conectarse a ClickHouse.
+El client está escrito en TypeScript y proporciona definiciones de tipos para la API pública del client.
+
+No tiene dependencias, está optimizado para ofrecer el máximo rendimiento y se ha probado con varias versiones y configuraciones de ClickHouse (on-premise en nodo único, on-premise en clúster y ClickHouse Cloud).
+
+Hay dos versiones diferentes del client disponibles para distintos entornos:
+
+* `@clickhouse/client` - solo para Node.js
+* `@clickhouse/client-web` - navegadores (Chrome/Firefox), Cloudflare Workers
+
+Al usar TypeScript, asegúrate de que sea como mínimo la [versión 4.5](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html), que habilita la [sintaxis inline de importación y exportación](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html#type-modifiers-on-import-names).
+
+El código fuente del client está disponible en el [repositorio de GitHub de ClickHouse-JS](https://github.com/ClickHouse/clickhouse-js).
+
+<Info>
+  **Skills de AI agent**
+
+  El client de JS incluye skills de AI agent que pueden ayudar a los agentes de programación a trabajar con el client. Instálalas con:
+
+  ```sh
+  npm skills add ClickHouse/clickhouse-js
+  ```
+</Info>
+
+<div id="environment-requirements-nodejs">
+  ## Requisitos del entorno (Node.js)
+</div>
+
+Node.js debe estar disponible en el entorno para poder ejecutar el client.
+El client es compatible con todas las [versiones mantenidas](https://github.com/nodejs/release#readme) de Node.js.
+
+En cuanto una versión de Node.js se acerca al fin de su vida útil, el client deja de ser compatible con ella, ya que se considera obsoleta e insegura.
+
+Compatibilidad de las versiones actuales de Node.js:
+
+| Versión de Node.js | ¿Compatible?            |
+| ------------------ | ----------------------- |
+| 24.x               | ✔                       |
+| 22.x               | ✔                       |
+| 20.x               | ✔                       |
+| 18.x               | Compatibilidad limitada |
+
+<div id="environment-requirements-web">
+  ## Requisitos del entorno (web)
+</div>
+
+La versión web del client se ha probado oficialmente con las versiones más recientes de los navegadores Chrome y Firefox, y puede usarse como dependencia, por ejemplo, en aplicaciones React/Vue/Angular o en Cloudflare Workers.
+
+<div id="installation">
+  ## Instalación
+</div>
+
+Para instalar la versión estable más reciente del client para Node.js, ejecuta:
+
+```sh
+npm i @clickhouse/client
+```
+
+Instalación de la versión web:
+
+```sh
+npm i @clickhouse/client-web
+```
+
+<div id="compatibility-with-clickhouse">
+  ## Compatibilidad con ClickHouse
+</div>
+
+| Versión del client | ClickHouse |
+| ------------------ | ---------- |
+| 1.12.0             | 24.8+      |
+
+Es probable que el client también funcione con versiones anteriores; sin embargo, esta compatibilidad se ofrece sobre la base del mejor esfuerzo y no está garantizada. Si utiliza una versión de ClickHouse anterior a la 23.3, consulte la [política de seguridad de ClickHouse](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) y considere actualizar.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Nuestro objetivo es cubrir varios escenarios de uso del client con los [examples](https://github.com/ClickHouse/clickhouse-js/blob/main/examples) del repositorio del client.
+
+Puede consultar un resumen general en el [README de examples](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/README.md#overview).
+
+Si algo no está claro o falta en los examples o en la documentación siguiente, no dude en [contactarnos](/es/integrations/language-clients/js/index#contact-us).
+
+<div id="client-api">
+  ### API del client
+</div>
+
+La mayoría de los ejemplos deberían ser compatibles con las versiones del client para Node.js y web, salvo que se indique explícitamente lo contrario.
+
+<div id="creating-a-client-instance">
+  #### Creación de una instancia de client
+</div>
+
+Puedes crear tantas instancias de client como sea necesario con la fábrica `createClient`:
+
+```ts
+import { createClient } from '@clickhouse/client' // or '@clickhouse/client-web'
+
+const client = createClient({
+  /* configuration */
+})
+```
+
+Si tu entorno no admite módulos ESM, puedes usar la sintaxis CJS en su lugar:
+
+```ts
+const { createClient } = require('@clickhouse/client');
+
+const client = createClient({
+  /* configuration */
+})
+```
+
+Una instancia de client puede [preconfigurarse](/es/integrations/language-clients/js/index#configuration) durante su creación.
+
+<div id="configuration">
+  #### Configuración
+</div>
+
+Al crear una instancia de client, se pueden ajustar los siguientes ajustes de conexión:
+
+| Ajuste                                                                   | Descripción                                                                                  | Valor predeterminado    | Véase también                                                                                                                    |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **url**?: string                                                         | La URL de una instancia de ClickHouse.                                                       | `http://localhost:8123` | [Documentación sobre la configuración de URL](/es/integrations/language-clients/js/index#url-configuration)                         |
+| **pathname**?: string                                                    | Un pathname opcional para añadir a la URL de ClickHouse después de que el client la procese. | `''`                    | [Documentación sobre el proxy con un pathname](/es/integrations/language-clients/js/index#proxy-with-a-pathname)                    |
+| **request&#95;timeout**?: number                                         | El timeout de la solicitud en milisegundos.                                                  | `30_000`                | -                                                                                                                                |
+| **compression**?: `{ **response**?: boolean; **request**?: boolean }`    | Habilita la compresión.                                                                      | -                       | [Documentación sobre compresión](/es/integrations/language-clients/js/index#compression)                                            |
+| **username**?: string                                                    | El nombre del usuario en cuyo nombre se realizan las solicitudes.                            | `default`               | -                                                                                                                                |
+| **password**?: string                                                    | La contraseña del usuario.                                                                   | `''`                    | -                                                                                                                                |
+| **application**?: string                                                 | El nombre de la aplicación que usa el client de Node.js.                                     | `clickhouse-js`         | -                                                                                                                                |
+| **database**?: string                                                    | El nombre de la base de datos que se va a usar.                                              | `default`               | -                                                                                                                                |
+| **clickhouse&#95;settings**?: ClickHouseSettings                         | Ajustes de ClickHouse que se aplican a todas las solicitudes.                                | `{}`                    | -                                                                                                                                |
+| **log**?: `{ **LoggerClass**?: Logger, **level**?: ClickHouseLogLevel }` | Configuración de los logs internos del client.                                               | -                       | [Documentación sobre logging](/es/integrations/language-clients/js/index#logging-nodejs-only)                                       |
+| **session&#95;id**?: string                                              | ID de sesión de ClickHouse opcional que se envía con cada solicitud.                         | -                       | -                                                                                                                                |
+| **keep&#95;alive**?: `{ **enabled**?: boolean }`                         | Está habilitado de forma predeterminada tanto en las versiones de Node.js como Web.          | -                       | -                                                                                                                                |
+| **http&#95;headers**?: `Record<string, string>`                          | Headers HTTP adicionales para las solicitudes salientes de ClickHouse.                       | -                       | [Documentación sobre proxy inverso con autenticación](/es/integrations/language-clients/js/index#reverse-proxy-with-authentication) |
+| **roles**?: string |  string[]                                           | Nombres de roles de ClickHouse para adjuntar a las solicitudes salientes.                    | -                       | [Uso de roles con la interfaz HTTP](/es/concepts/features/interfaces/http#setting-role-with-query-parameters)                       |
+
+<div id="nodejs-specific-configuration-parameters">
+  #### Parámetros de configuración específicos de Node.js
+</div>
+
+| Ajuste                                                                                                       | Descripción                                                                   | Valor predeterminado | Véase también                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **max&#95;open&#95;connections**?: number                                                                    | Número máximo de sockets conectados permitidos por host.                      | `10`                 | -                                                                                                                                                      |
+| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`                                     | Configura los certificados TLS.                                               | -                    | [Documentación de TLS](/es/integrations/language-clients/js/index#tls-certificates-nodejs-only)                                                           |
+| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }`                               | -                                                                             | -                    | [Documentación de Keep alive](/es/integrations/language-clients/js/index#keep-alive-configuration-nodejs-only)                                            |
+| **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">Experimental</Badge>   | Agente HTTP personalizado para el client.                                     | -                    | [Documentación de HTTP agent](/es/integrations/language-clients/js/index#custom-httphttps-agent-experimental-nodejs-only)                                 |
+| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">Experimental</Badge> | Establece el header `Authorization` con credenciales de autenticación básica. | `true`               | [uso de esta configuración en la documentación de HTTP agent](/es/integrations/language-clients/js/index#custom-httphttps-agent-experimental-nodejs-only) |
+
+<div id="url-configuration">
+  ### Configuración de URL
+</div>
+
+<Warning>
+  La configuración de URL *siempre* sobrescribirá los valores definidos de forma fija en el código y, en ese caso, se registrará una advertencia.
+</Warning>
+
+Es posible configurar la mayoría de los parámetros de la instancia de client mediante una URL. El formato de la URL es `http[s]://[username:password@]hostname:port[/database][?param1=value1&param2=value2]`. En casi todos los casos, el nombre de un parámetro concreto refleja su ruta en la interfaz de opciones de configuración, con algunas excepciones. Se admiten los siguientes parámetros:
+
+| Parámetro                                   | Tipo                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| `pathname`                                  | una cadena arbitraria.                                                |
+| `application_id`                            | una cadena arbitraria.                                                |
+| `session_id`                                | una cadena arbitraria.                                                |
+| `request_timeout`                           | número no negativo.                                                   |
+| `max_open_connections`                      | número no negativo, mayor que cero.                                   |
+| `compression_request`                       | booleano. Ver abajo (1)                                               |
+| `compression_response`                      | booleano.                                                             |
+| `log_level`                                 | valores permitidos: `OFF`, `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`. |
+| `keep_alive_enabled`                        | booleano.                                                             |
+| `clickhouse_setting_*` o `ch_*`             | ver abajo (2)                                                         |
+| `http_header_*`                             | ver abajo (3)                                                         |
+| (solo Node.js) `keep_alive_idle_socket_ttl` | número no negativo.                                                   |
+
+* (1) Para los booleanos, los valores válidos son `true`/`1` y `false`/`0`.
+* (2) A cualquier parámetro con el prefijo `clickhouse_setting_` o `ch_` se le eliminará ese prefijo, y el resto se añadirá a `clickhouse_settings` del client. Por ejemplo, `?ch_async_insert=1&ch_wait_for_async_insert=1` será lo mismo que:
+
+```ts
+createClient({
+  clickhouse_settings: {
+    async_insert: 1,
+    wait_for_async_insert: 1,
+  },
+})
+```
+
+Nota: los valores booleanos de `clickhouse_settings` deben pasarse como `1`/`0` en la URL.
+
+* (3) Igual que (2), pero para la configuración de `http_header`. Por ejemplo, `?http_header_x-clickhouse-auth=foobar` será equivalente a:
+
+```ts
+createClient({
+  http_headers: {
+    'x-clickhouse-auth': 'foobar',
+  },
+})
+```
+
+<div id="connecting">
+  ### Conectar
+</div>
+
+<div id="gather-your-connection-details">
+  #### Recopila los datos de tu conexión
+</div>
+
+<ConnectionDetails />
+
+<div id="connection-overview">
+  #### Resumen de la conexión
+</div>
+
+El client implementa una conexión mediante los protocolos HTTP o HTTPS. La compatibilidad con RowBinary está prevista; consulta el [issue relacionado](https://github.com/ClickHouse/clickhouse-js/issues/216).
+
+El siguiente ejemplo muestra cómo configurar una conexión a ClickHouse Cloud. Se da por hecho que los valores de `url` (incluidos
+el protocolo y el puerto) y `password` se especifican mediante variables de entorno, y que se usa el usuario `default`.
+
+**Ejemplo:** Crear una instancia de Client de Node.js usando variables de entorno para la configuración.
+
+```ts
+import { createClient } from '@clickhouse/client'
+
+const client = createClient({
+  url: process.env.CLICKHOUSE_HOST ?? 'http://localhost:8123',
+  username: process.env.CLICKHOUSE_USER ?? 'default',
+  password: process.env.CLICKHOUSE_PASSWORD ?? '',
+})
+```
+
+El repositorio del client contiene varios ejemplos que usan variables de entorno, como [crear una tabla en ClickHouse Cloud](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_cloud.ts), [usar inserciones asíncronas](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/async_insert.ts), entre muchos otros.
+
+<div id="connection-pool-nodejs-only">
+  #### Pool de conexiones (solo Node.js)
+</div>
+
+Para evitar la sobrecarga de establecer una conexión en cada solicitud, el client crea un pool de conexiones a ClickHouse para reutilizarlas mediante un mecanismo Keep-Alive. De forma predeterminada, Keep-Alive está habilitado y el tamaño del pool de conexiones se establece en `10`, pero puede cambiarlo con la [opción de configuración](/es/integrations/language-clients/js/index#configuration) `max_open_connections`.
+
+No se garantiza que se use la misma conexión del pool en las consultas posteriores, a menos que el usuario establezca `max_open_connections: 1`. Esto rara vez es necesario, pero puede ser obligatorio en casos en los que se utilicen tablas temporales.
+
+Véase también: [configuración de Keep-Alive](/es/integrations/language-clients/js/index#keep-alive-configuration-nodejs-only).
+
+<div id="query-id">
+  ### ID de consulta
+</div>
+
+Cada método que envía una consulta o una sentencia (`command`, `exec`, `insert`, `select`) proporcionará `query_id` en el resultado. El client asigna este identificador único a cada consulta y puede ser útil para obtener los datos de `system.query_log`,
+si está habilitado en la [configuración del servidor](/es/reference/settings/server-settings/settings), o para cancelar consultas de larga duración (consulte [el ejemplo](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/troubleshooting/cancel_query.ts)). Si es necesario, el usuario puede sobrescribir `query_id` en los parámetros de los métodos `command`/`query`/`exec`/`insert`.
+
+<Tip>
+  Si sobrescribe el parámetro `query_id`, debe garantizar que sea único en cada llamada. Un UUID aleatorio es una buena opción.
+</Tip>
+
+<div id="base-parameters-for-all-client-methods">
+  ### Parámetros base para todos los métodos del client
+</div>
+
+Existen varios parámetros que pueden aplicarse a todos los métodos del client ([query](/es/integrations/language-clients/js/index#query-method)/[command](/es/integrations/language-clients/js/index#command-method)/[insert](/es/integrations/language-clients/js/index#insert-method)/[exec](/es/integrations/language-clients/js/index#exec-method)).
+
+```ts
+interface BaseQueryParams {
+  // ClickHouse settings that can be applied on query level.
+  clickhouse_settings?: ClickHouseSettings
+  // Parameters for query binding.
+  query_params?: Record<string, unknown>
+  // AbortSignal instance to cancel a query in progress.
+  abort_signal?: AbortSignal
+  // query_id override; if not specified, a random identifier will be generated automatically.
+  query_id?: string
+  // session_id override; if not specified, the session id will be taken from the client configuration.
+  session_id?: string
+  // credentials override; if not specified, the client's credentials will be used.
+  auth?: { username: string, password: string }
+  // A specific list of roles to use for this query. Overrides the roles set in the client configuration.
+  role?: string | Array<string>
+}
+```
+
+<div id="query-method">
+  ### Método de consulta
+</div>
+
+Se utiliza para la mayoría de las sentencias que pueden devolver una respuesta, como `SELECT`, o para enviar DDL como `CREATE TABLE`, y debe usarse con `await`. Se espera que el conjunto de resultados devuelto se consuma en la aplicación.
+
+<Note>
+  Existe un método específico [insert](/es/integrations/language-clients/js/index#insert-method) para la inserción de datos, y [command](/es/integrations/language-clients/js/index#command-method) para los DDL.
+</Note>
+
+```ts
+interface QueryParams extends BaseQueryParams {
+  // Query to execute that might return some data.
+  query: string
+  // Format of the resulting dataset. Default: JSON.
+  format?: DataFormat
+}
+
+interface ClickHouseClient {
+  query(params: QueryParams): Promise<ResultSet>
+}
+```
+
+Véase también: [Parámetros base para todos los métodos del client](/es/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+<Tip>
+  No especifiques la cláusula FORMAT en `query`; usa en su lugar el parámetro `format`.
+</Tip>
+
+<div id="result-set-and-row-abstractions">
+  #### Abstracciones de result set y fila
+</div>
+
+`ResultSet` proporciona varios métodos prácticos para procesar datos en su aplicación.
+
+La implementación de `ResultSet` en Node.js usa `Stream.Readable` internamente, mientras que la versión web usa la API web `ReadableStream`.
+
+Puede consumir el `ResultSet` llamando a los métodos `text` o `json` de `ResultSet` y cargar en memoria el conjunto completo de filas devuelto por la consulta.
+
+Debe empezar a consumir el `ResultSet` lo antes posible, ya que mantiene abierto el flujo de respuesta y, en consecuencia, mantiene ocupada la conexión subyacente. El client no almacena en búfer los datos entrantes para evitar un posible uso excesivo de memoria por parte de la aplicación.
+
+Como alternativa, si es demasiado grande para caber en memoria de una sola vez, puede llamar al método `stream` y procesar los datos en modo streaming. En ese caso, cada uno de los fragmentos de la respuesta se transformará en arrays de filas relativamente pequeños (el tamaño de este array depende del tamaño del fragmento concreto que el client recibe del servidor, ya que puede variar, y del tamaño de cada fila), un fragmento cada vez.
+
+Consulte la lista de [formatos de datos compatibles](/es/integrations/language-clients/js/index#supported-data-formats) para determinar cuál es el mejor formato para el streaming en su caso. Por ejemplo, si quiere transmitir objetos JSON, puede elegir [JSONEachRow](/es/reference/formats/JSON/JSONEachRow), y cada fila se interpretará como un objeto de JS o, quizá, un formato [JSONCompactColumns](/es/reference/formats/JSON/JSONCompactColumns) más compacto, que hará que cada fila sea un array compacto de valores. Véase también: [archivos en streaming](/es/integrations/language-clients/js/index#streaming-files-nodejs-only).
+
+<Warning>
+  Si el `ResultSet` o su flujo no se consumen por completo, se destruirán tras el período de inactividad de `request_timeout`.
+</Warning>
+
+```ts
+interface BaseResultSet<Stream> {
+  // See "Query ID" section above
+  query_id: string
+
+  // Consume the entire stream and get the contents as a string
+  // Can be used with any DataFormat
+  // Should be called only once
+  text(): Promise<string>
+
+  // Consume the entire stream and parse the contents as a JS object
+  // Can be used only with JSON formats
+  // Should be called only once
+  json<T>(): Promise<T>
+
+  // Returns a readable stream for responses that can be streamed
+  // Every iteration over the stream provides an array of Row[] in the selected DataFormat
+  // Should be called only once
+  stream(): Stream
+}
+
+interface Row {
+  // Get the content of the row as a plain string
+  text: string
+
+  // Parse the content of the row as a JS object
+  json<T>(): T
+}
+```
+
+**Ejemplo:** (Node.js/Web) Una consulta con un conjunto de resultados en formato `JSONEachRow`, que consume todo el flujo y analiza el contenido como objetos de JS.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/array_json_each_row.ts).
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT * FROM my_table',
+  format: 'JSONEachRow',
+})
+const dataset = await resultSet.json() // or `row.text` to avoid parsing JSON
+```
+
+**Ejemplo:** (solo para Node.js) Resultado de una consulta en streaming en formato `JSONEachRow` mediante el enfoque clásico `on('data')`. Puede usarse indistintamente con la sintaxis `for await const`. [Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_streaming_json_each_row.ts).
+
+```ts
+const rows = await client.query({
+  query: 'SELECT number FROM system.numbers_mt LIMIT 5',
+  format: 'JSONEachRow', // or JSONCompactEachRow, JSONStringsEachRow, etc.
+})
+const stream = rows.stream()
+stream.on('data', (rows: Row[]) => {
+  rows.forEach((row: Row) => {
+    console.log(row.json()) // or `row.text` to avoid parsing JSON
+  })
+})
+await new Promise((resolve, reject) => {
+  stream.on('end', () => {
+    console.log('Completed!')
+    resolve(0)
+  })
+  stream.on('error', reject)
+})
+```
+
+**Ejemplo:** (solo para Node.js) Resultado de una consulta en streaming en formato `CSV` con el enfoque clásico `on('data')`. Esto puede usarse indistintamente con la sintaxis `for await const`.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_streaming_text_line_by_line.ts)
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT number FROM system.numbers_mt LIMIT 5',
+  format: 'CSV', // or TabSeparated, CustomSeparated, etc.
+})
+const stream = resultSet.stream()
+stream.on('data', (rows: Row[]) => {
+  rows.forEach((row: Row) => {
+    console.log(row.text)
+  })
+})
+await new Promise((resolve, reject) => {
+  stream.on('end', () => {
+    console.log('Completed!')
+    resolve(0)
+  })
+  stream.on('error', reject)
+})
+```
+
+**Ejemplo:** (solo para Node.js) Resultado de consulta en streaming como objetos de JS en formato `JSONEachRow`, consumidos con la sintaxis `for await const`. Esto puede usarse indistintamente con el enfoque clásico `on('data')`.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_streaming_json_each_row_for_await.ts).
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT number FROM system.numbers LIMIT 10',
+  format: 'JSONEachRow', // or JSONCompactEachRow, JSONStringsEachRow, etc.
+})
+for await (const rows of resultSet.stream()) {
+  rows.forEach(row => {
+    console.log(row.json())
+  })
+}
+```
+
+<Note>
+  La sintaxis `for await const` requiere algo menos de código que el enfoque `on('data')`, pero puede afectar negativamente al rendimiento.
+  Consulta [este issue del repositorio de Node.js](https://github.com/nodejs/node/issues/31979) para obtener más detalles.
+</Note>
+
+**Ejemplo:** (solo web) Iteración sobre el `ReadableStream` de objetos.
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT * FROM system.numbers LIMIT 10',
+  format: 'JSONEachRow'
+})
+
+const reader = resultSet.stream().getReader()
+while (true) {
+  const { done, value: rows } = await reader.read()
+  if (done) { break }
+  rows.forEach(row => {
+    console.log(row.json())
+  })
+}
+```
+
+<div id="insert-method">
+  ### Método `insert`
+</div>
+
+Este es el método principal para insertar datos.
+
+```ts
+export interface InsertResult {
+  query_id: string
+  executed: boolean
+}
+
+interface ClickHouseClient {
+  insert(params: InsertParams): Promise<InsertResult>
+}
+```
+
+El tipo de retorno es mínimo, ya que no esperamos que el servidor devuelva ningún dato y vaciamos inmediatamente el flujo de respuesta.
+
+Si se proporciona un array vacío al método insert, la sentencia insert no se enviará al servidor; en su lugar, el método se resolverá de inmediato con `{ query_id: '...', executed: false }`. Si en este caso no se proporcionó `query_id` en los params del método, en el resultado será una cadena vacía, ya que devolver un UUID aleatorio generado por el client podría resultar confuso, porque la consulta con ese `query_id` no existirá en la tabla `system.query_log`.
+
+Si la sentencia insert se envió al servidor, el indicador `executed` será `true`.
+
+<div id="insert-method-and-streaming-in-nodejs">
+  #### Método insert y streaming en Node.js
+</div>
+
+Puede funcionar tanto con un `Stream.Readable` como con un `Array<T>` simple, según el [formato de datos](/es/integrations/language-clients/js/index#supported-data-formats) especificado para el método `insert`. Consulte también esta sección sobre el [streaming de archivos](/es/integrations/language-clients/js/index#streaming-files-nodejs-only).
+
+Se debe esperar al método `insert`; sin embargo, es posible especificar un flujo de entrada y esperar a la operación `insert` más tarde, únicamente cuando el flujo se haya completado (lo que también resolverá la promesa de `insert`). Esto puede ser útil para listeners de eventos y casos similares, pero el manejo de errores puede no ser sencillo, ya que hay muchos casos límite del lado del client. En su lugar, considere usar [async inserts](/es/concepts/features/operations/insert/asyncinserts), como se muestra en [este ejemplo](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/async_insert_without_waiting.ts).
+
+<Tip>
+  Si tiene una instrucción INSERT personalizada que es difícil de modelar con este método, considere usar el [método command](/es/integrations/language-clients/js/index#command-method).
+
+  Puede ver cómo se usa en los ejemplos [INSERT INTO ... VALUES](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_values_and_functions.ts) o [INSERT INTO ... SELECT](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_from_select.ts).
+</Tip>
+
+```ts
+interface InsertParams<T> extends BaseQueryParams {
+  // Table name to insert the data into
+  table: string
+  // A dataset to insert.
+  values: ReadonlyArray<T> | Stream.Readable
+  // Format of the dataset to insert.
+  format?: DataFormat
+  // Allows to specify which columns the data will be inserted into.
+  // - An array such as `['a', 'b']` will generate: `INSERT INTO table (a, b) FORMAT DataFormat`
+  // - An object such as `{ except: ['a', 'b'] }` will generate: `INSERT INTO table (* EXCEPT (a, b)) FORMAT DataFormat`
+  // By default, the data is inserted into all columns of the table,
+  // and the generated statement will be: `INSERT INTO table FORMAT DataFormat`.
+  columns?: NonEmptyArray<string> | { except: NonEmptyArray<string> }
+}
+```
+
+Véase también: [Parámetros base para todos los métodos del client](/es/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+<Warning>
+  Una solicitud cancelada con `abort_signal` no garantiza que no se haya realizado la inserción de datos, ya que el servidor podría haber recibido parte de los datos transmitidos antes de la cancelación.
+</Warning>
+
+**Ejemplo:** (Node.js/Web) Insertar un array de valores.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/array_json_each_row.ts).
+
+```ts
+await client.insert({
+  table: 'my_table',
+  // structure should match the desired format, JSONEachRow in this example
+  values: [
+    { id: 42, name: 'foo' },
+    { id: 42, name: 'bar' },
+  ],
+  format: 'JSONEachRow',
+})
+```
+
+**Ejemplo:** (solo para Node.js) Inserta un flujo desde un archivo CSV.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/insert_file_stream_csv.ts). Véase también: [streaming de archivos](/es/integrations/language-clients/js/index#streaming-files-nodejs-only).
+
+```ts
+await client.insert({
+  table: 'my_table',
+  values: fs.createReadStream('./path/to/a/file.csv'),
+  format: 'CSV',
+})
+```
+
+**Ejemplo**: Excluya ciertas columnas de la sentencia INSERT.
+
+Dada una definición de tabla como la siguiente:
+
+```sql
+CREATE OR REPLACE TABLE mytable
+(id UInt32, message String)
+ENGINE MergeTree()
+ORDER BY (id)
+```
+
+Insertar solo una columna específica:
+
+```ts
+// Generated statement: INSERT INTO mytable (message) FORMAT JSONEachRow
+await client.insert({
+  table: 'mytable',
+  values: [{ message: 'foo' }],
+  format: 'JSONEachRow',
+  // `id` column value for this row will be zero (default for UInt32)
+  columns: ['message'],
+})
+```
+
+Excluir ciertas columnas:
+
+```ts
+// Generated statement: INSERT INTO mytable (* EXCEPT (message)) FORMAT JSONEachRow
+await client.insert({
+  table: tableName,
+  values: [{ id: 144 }],
+  format: 'JSONEachRow',
+  // `message` column value for this row will be an empty string
+  columns: {
+    except: ['message'],
+  },
+})
+```
+
+Consulta el [código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_exclude_columns.ts) para obtener más detalles.
+
+**Ejemplo**: Insertar en una base de datos distinta de la proporcionada a la instancia del client. [Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_into_different_db.ts).
+
+```ts
+await client.insert({
+  table: 'mydb.mytable', // Fully qualified name including the database
+  values: [{ id: 42, message: 'foo' }],
+  format: 'JSONEachRow',
+})
+```
+
+<div id="web-version-limitations">
+  #### Limitaciones de la versión web
+</div>
+
+Actualmente, las inserciones en `@clickhouse/client-web` solo funcionan con los formatos `Array<T>` y `JSON*`.
+La inserción de streams todavía no es compatible con la versión web debido a la limitada compatibilidad de los navegadores.
+
+En consecuencia, la interfaz `InsertParams` para la versión web es ligeramente distinta de la versión de Node.js,
+ya que `values` está limitado exclusivamente al tipo `ReadonlyArray<T>`:
+
+```ts
+interface InsertParams<T> extends BaseQueryParams {
+  // Table name to insert the data into
+  table: string
+  // A dataset to insert.
+  values: ReadonlyArray<T>
+  // Format of the dataset to insert.
+  format?: DataFormat
+  // Allows to specify which columns the data will be inserted into.
+  // - An array such as `['a', 'b']` will generate: `INSERT INTO table (a, b) FORMAT DataFormat`
+  // - An object such as `{ except: ['a', 'b'] }` will generate: `INSERT INTO table (* EXCEPT (a, b)) FORMAT DataFormat`
+  // By default, the data is inserted into all columns of the table,
+  // and the generated statement will be: `INSERT INTO table FORMAT DataFormat`.
+  columns?: NonEmptyArray<string> | { except: NonEmptyArray<string> }
+}
+```
+
+Esto puede cambiar en el futuro. Véase también: [Parámetros base para todos los métodos del client](/es/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+<div id="command-method">
+  ### Método command
+</div>
+
+Se puede usar para sentencias que no generan ninguna salida, cuando la cláusula FORMAT no es aplicable o cuando no te interesa en absoluto la respuesta. Un ejemplo de este tipo de sentencia puede ser `CREATE TABLE` o `ALTER TABLE`.
+
+Se debe esperar su finalización.
+
+El flujo de respuesta se destruye de inmediato, lo que significa que el socket subyacente se libera.
+
+```ts
+interface CommandParams extends BaseQueryParams {
+  // Statement to execute.
+  query: string
+}
+
+interface CommandResult {
+  query_id: string
+}
+
+interface ClickHouseClient {
+  command(params: CommandParams): Promise<CommandResult>
+}
+```
+
+Véase también: [Parámetros base para todos los métodos del client](/es/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+**Ejemplo:** (Node.js/Web) Crear una tabla en ClickHouse Cloud.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_cloud.ts).
+
+```ts
+await client.command({
+  query: `
+    CREATE TABLE IF NOT EXISTS my_cloud_table
+    (id UInt64, name String)
+    ORDER BY (id)
+  `,
+  // Recommended for cluster usage to avoid situations where a query processing error occurred after the response code,
+  // and HTTP headers were already sent to the client.
+  // See https://clickhouse.com/docs/interfaces/http/#response-buffering
+  clickhouse_settings: {
+    wait_end_of_query: 1,
+  },
+})
+```
+
+**Ejemplo:** (Node.js/Web) Crear una tabla en una instancia autohospedada de ClickHouse.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_single_node.ts).
+
+```ts
+await client.command({
+  query: `
+    CREATE TABLE IF NOT EXISTS my_table
+    (id UInt64, name String)
+    ENGINE MergeTree()
+    ORDER BY (id)
+  `,
+})
+```
+
+**Ejemplo:** (Node.js/Web) INSERT FROM SELECT
+
+```ts
+await client.command({
+  query: `INSERT INTO my_table SELECT '42'`,
+})
+```
+
+<Warning>
+  Una solicitud cancelada con `abort_signal` no garantiza que el servidor no haya ejecutado la sentencia.
+</Warning>
+
+<div id="exec-method">
+  ### Método exec
+</div>
+
+Si tienes una consulta personalizada que no se ajusta a `query`/`insert`
+y te interesa el resultado, puedes usar `exec` como alternativa a `command`.
+
+`exec` devuelve un stream de lectura que DEBE consumirse o destruirse del lado de la aplicación.
+
+```ts
+interface ExecParams extends BaseQueryParams {
+  // Statement to execute.
+  query: string
+}
+
+interface ClickHouseClient {
+  exec(params: ExecParams): Promise<QueryResult>
+}
+```
+
+Véase también: [Parámetros base para todos los métodos del client](/es/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+
+El tipo de retorno de Stream es diferente en las versiones para Node.js y Web.
+
+Node.js:
+
+```ts
+export interface QueryResult {
+  stream: Stream.Readable
+  query_id: string
+}
+```
+
+Web:
+
+```ts
+export interface QueryResult {
+  stream: ReadableStream
+  query_id: string
+}
+```
+
+<div id="ping">
+  ### Ping
+</div>
+
+El método `ping`, que se proporciona para comprobar el estado de la conectividad, devuelve `true` si se puede establecer conexión con el servidor.
+
+Si no se puede establecer conexión con el servidor, el error subyacente también se incluye en el resultado.
+
+```ts
+type PingResult =
+  | { success: true }
+  | { success: false; error: Error }
+
+/** Parameters for the health-check request - using the built-in `/ping` endpoint.
+ *  This is the default behavior for the Node.js version. */
+export type PingParamsWithEndpoint = {
+  select: false
+  /** AbortSignal instance to cancel a request in progress. */
+  abort_signal?: AbortSignal
+  /** Additional HTTP headers to attach to this particular request. */
+  http_headers?: Record<string, string>
+}
+/** Parameters for the health-check request - using a SELECT query.
+ *  This is the default behavior for the Web version, as the `/ping` endpoint does not support CORS.
+ *  Most of the standard `query` method params, e.g., `query_id`, `abort_signal`, `http_headers`, etc. will work,
+ *  except for `query_params`, which does not make sense to allow in this method. */
+export type PingParamsWithSelectQuery = { select: true } & Omit<
+  BaseQueryParams,
+  'query_params'
+>
+export type PingParams = PingParamsWithEndpoint | PingParamsWithSelectQuery
+
+interface ClickHouseClient {
+  ping(params?: PingParams): Promise<PingResult>
+}
+```
+
+Ping puede ser útil para comprobar si el servidor está disponible cuando se inicia la aplicación, especialmente con ClickHouse Cloud, donde una instancia puede estar inactiva y reactivarse después de un ping; en ese caso, quizá te convenga reintentarlo unas cuantas veces, con una pausa entre intentos.
+
+Ten en cuenta que, de forma predeterminada, la versión de Node.js usa el endpoint `/ping`, mientras que la versión web usa una consulta simple `SELECT 1` para lograr un resultado similar, ya que el endpoint `/ping` no admite CORS.
+
+**Ejemplo:** (Node.js/Web) Un ping sencillo a la instancia del servidor ClickHouse. Nota: en la versión web, los errores capturados serán diferentes.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/ping.ts).
+
+```ts
+const result = await client.ping();
+if (!result.success) {
+  // process result.error
+}
+```
+
+**Ejemplo:** Si además quieres comprobar las credenciales al llamar al método `ping` o especificar parámetros adicionales como `query_id`, puedes usarlo así:
+
+```ts
+const result = await client.ping({ select: true, /* query_id, abort_signal, http_headers, or any other query params */ });
+```
+
+El método ping admite la mayoría de los parámetros estándar del método `query`; consulta la definición de tipo `PingParamsWithSelectQuery`.
+
+<div id="close-nodejs-only">
+  ### Close (solo para Node.js)
+</div>
+
+Cierra todas las conexiones abiertas y libera recursos. No-op en la versión web.
+
+```ts
+await client.close()
+```
+
+<div id="streaming-files-nodejs-only">
+  ## Streaming de archivos (solo Node.js)
+</div>
+
+Hay varios ejemplos de streaming de archivos con formatos de datos populares (NDJSON, CSV, Parquet) en el repositorio del Client.
+
+* [Streaming desde un archivo NDJSON](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/insert_file_stream_ndjson.ts)
+* [Streaming desde un archivo CSV](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/insert_file_stream_csv.ts)
+* [Streaming desde un archivo Parquet](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/insert_file_stream_parquet.ts)
+* [Streaming a un archivo Parquet](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_parquet_as_file.ts)
+
+El streaming de otros formatos a un archivo debería ser similar al de Parquet;
+la única diferencia estará en el format usado en la llamada `query` (`JSONEachRow`, `CSV`, etc.) y en el nombre del archivo de salida.
+
+<div id="supported-data-formats">
+  ## Formatos de datos compatibles
+</div>
+
+El Client maneja formatos de datos como JSON o texto.
+
+Si especifica `format` como uno de la familia de formatos JSON (`JSONEachRow`, `JSONCompactEachRow`, etc.), el Client serializará y deserializará los datos durante la comunicación por la red.
+
+Los datos proporcionados en formatos de texto &quot;sin procesar&quot; (familias `CSV`, `TabSeparated` y `CustomSeparated`) se envían por la red sin transformaciones adicionales.
+
+<Tip>
+  Puede haber confusión entre JSON como formato general y el [formato JSON de ClickHouse](/es/reference/formats/JSON/JSON).
+
+  El Client admite JSON objects en streaming con formatos como [JSONEachRow](/es/reference/formats/JSON/JSONEachRow) (consulte la tabla de resumen para ver otros formatos adecuados para streaming; consulte también los [examples en el Client repository](https://github.com/ClickHouse/clickhouse-js/tree/main/examples/node) `select_streaming_`).
+
+  La cuestión es que formatos como [ClickHouse JSON](/es/reference/formats/JSON/JSON) y algunos otros se representan como un único objeto en la respuesta y el Client no puede transmitirlos en streaming.
+</Tip>
+
+| Formato                                    | Entrada (array) | Entrada (objeto) | Entrada/Salida (stream) | Salida (JSON) | Salida (texto) |
+| ------------------------------------------ | --------------- | ---------------- | ----------------------- | ------------- | -------------- |
+| JSON                                       | ❌               | ✔️               | ❌                       | ✔️            | ✔️             |
+| JSONCompact                                | ❌               | ✔️               | ❌                       | ✔️            | ✔️             |
+| JSONObjectEachRow                          | ❌               | ✔️               | ❌                       | ✔️            | ✔️             |
+| JSONColumnsWithMetadata                    | ❌               | ✔️               | ❌                       | ✔️            | ✔️             |
+| JSONStrings                                | ❌               | ❌️               | ❌                       | ✔️            | ✔️             |
+| JSONCompactStrings                         | ❌               | ❌                | ❌                       | ✔️            | ✔️             |
+| JSONEachRow                                | ✔️              | ❌                | ✔️                      | ✔️            | ✔️             |
+| JSONEachRowWithProgress                    | ❌️              | ❌                | ✔️ ❗- vea abajo         | ✔️            | ✔️             |
+| JSONStringsEachRow                         | ✔️              | ❌                | ✔️                      | ✔️            | ✔️             |
+| JSONCompactEachRow                         | ✔️              | ❌                | ✔️                      | ✔️            | ✔️             |
+| JSONCompactStringsEachRow                  | ✔️              | ❌                | ✔️                      | ✔️            | ✔️             |
+| JSONCompactEachRowWithNames                | ✔️              | ❌                | ✔️                      | ✔️            | ✔️             |
+| JSONCompactEachRowWithNamesAndTypes        | ✔️              | ❌                | ✔️                      | ✔️            | ✔️             |
+| JSONCompactStringsEachRowWithNames         | ✔️              | ❌                | ✔️                      | ✔️            | ✔️             |
+| JSONCompactStringsEachRowWithNamesAndTypes | ✔️              | ❌                | ✔️                      | ✔️            | ✔️             |
+| CSV                                        | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| CSVWithNames                               | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| CSVWithNamesAndTypes                       | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| TabSeparated                               | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| TabSeparatedRaw                            | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| TabSeparatedWithNames                      | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| TabSeparatedWithNamesAndTypes              | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| CustomSeparated                            | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| CustomSeparatedWithNames                   | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| CustomSeparatedWithNamesAndTypes           | ❌               | ❌                | ✔️                      | ❌             | ✔️             |
+| Parquet                                    | ❌               | ❌                | ✔️                      | ❌             | ✔️❗- vea abajo |
+
+Para Parquet, el principal caso de uso de las consultas `SELECT` probablemente sea escribir el flujo resultante en un archivo. Consulte [el ejemplo](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_parquet_as_file.ts) en el repositorio del Client.
+
+`JSONEachRowWithProgress` es un formato solo de salida que admite informes de progreso en el flujo. Consulte [este ejemplo](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/performance/select_json_each_row_with_progress.ts) para obtener más información.
+
+La lista completa de formatos de entrada y salida de ClickHouse está disponible
+[aquí](/es/reference/formats/index).
+
+<div id="supported-clickhouse-data-types">
+  ## Tipos de datos de ClickHouse compatibles
+</div>
+
+<Note>
+  El tipo de JS correspondiente es relevante para cualquier formato `JSON*`, excepto para los que representan todo como una cadena (p. ej., `JSONStringEachRow`)
+</Note>
+
+| Tipo                   | Estado          | Tipo de JS                       |
+| ---------------------- | --------------- | -------------------------------- |
+| UInt8/16/32            | ✔️              | number                           |
+| UInt64/128/256         | ✔️ ❗- ver abajo | string                           |
+| Int8/16/32             | ✔️              | number                           |
+| Int64/128/256          | ✔️ ❗- ver abajo | string                           |
+| Float32/64             | ✔️              | number                           |
+| Decimal                | ✔️ ❗- ver abajo | number                           |
+| Boolean                | ✔️              | boolean                          |
+| String                 | ✔️              | string                           |
+| FixedString            | ✔️              | string                           |
+| UUID                   | ✔️              | string                           |
+| Date32/64              | ✔️              | string                           |
+| DateTime32/64          | ✔️ ❗- ver abajo | string                           |
+| Enum                   | ✔️              | string                           |
+| LowCardinality         | ✔️              | string                           |
+| Array(T)               | ✔️              | T[]                              |
+| (nuevo) JSON           | ✔️              | object                           |
+| Variant(T1, T2...)     | ✔️              | T (depende de la variante)       |
+| Dynamic                | ✔️              | T (depende de la variante)       |
+| Nested                 | ✔️              | T[]                              |
+| Tuple(T1, T2, ...)     | ✔️              | [T1, T2, ...]                    |
+| Tuple(n1 T1, n2 T2...) | ✔️              | &#123; n1: T1; n2: T2; ...&#125; |
+| Nullable(T)            | ✔️              | tipo de JS para T o null         |
+| IPv4                   | ✔️              | string                           |
+| IPv6                   | ✔️              | string                           |
+| Point                  | ✔️              | [ number, number ]               |
+| Ring                   | ✔️              | Array&lt;Point&gt;               |
+| Polygon                | ✔️              | Array&lt;Ring&gt;                |
+| MultiPolygon           | ✔️              | Array&lt;Polygon&gt;             |
+| Map(K, V)              | ✔️              | Record&lt;K, V&gt;               |
+| Time/Time64            | ✔️              | string                           |
+
+La lista completa de formatos compatibles de ClickHouse está disponible
+[aquí](/es/reference/data-types/index).
+
+Véase también:
+
+* [Ejemplos de trabajo con Dynamic/Variant/JSON](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/dynamic_variant_json.ts)
+* [Ejemplos de trabajo con Time/Time64](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/time_time64.ts)
+
+<div id="datedate32-types-caveats">
+  ### Consideraciones sobre los tipos Date/Date32
+</div>
+
+Dado que el Client inserta valores sin conversión de tipos adicional, las columnas de tipo `Date`/`Date32` solo se pueden insertar como
+cadenas.
+
+**Ejemplo:** Insertar un valor de tipo `Date`.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/ba387d7f4ce375a60982ac2d99cb47391cf76cec/__tests__/integration/date_time.test.ts)
+
+```ts
+await client.insert({
+  table: 'my_table',
+  values: [ { date: '2022-09-05' } ],
+  format: 'JSONEachRow',
+})
+```
+
+Sin embargo, si usas columnas `DateTime` o `DateTime64`, puedes usar tanto cadenas como objetos Date de JS. Los objetos Date de JS se pueden pasar a `insert` tal cual, con `date_time_input_format` configurado en `best_effort`. Consulta este [ejemplo](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_js_dates.ts) para obtener más información.
+
+<div id="decimal-types-caveats">
+  ### Advertencias sobre los tipos Decimal*
+</div>
+
+Es posible insertar valores Decimal mediante formatos de la familia `JSON*`. Supongamos que tenemos una tabla definida como:
+
+```sql
+CREATE TABLE my_table
+(
+  id     UInt32,
+  dec32  Decimal(9, 2),
+  dec64  Decimal(18, 3),
+  dec128 Decimal(38, 10),
+  dec256 Decimal(76, 20)
+)
+ENGINE MergeTree()
+ORDER BY (id)
+```
+
+Podemos insertar valores sin pérdida de precisión usando la representación textual:
+
+```ts
+await client.insert({
+  table: 'my_table',
+  values: [{
+    id: 1,
+    dec32:  '1234567.89',
+    dec64:  '123456789123456.789',
+    dec128: '1234567891234567891234567891.1234567891',
+    dec256: '12345678912345678912345678911234567891234567891234567891.12345678911234567891',
+  }],
+  format: 'JSONEachRow',
+})
+```
+
+Sin embargo, al consultar los datos en formatos `JSON*`, ClickHouse devolverá los Decimal como *números* de forma predeterminada, lo que podría causar una pérdida de precisión. Para evitarlo, puedes convertir los Decimal en cadenas en la consulta:
+
+```ts
+await client.query({
+  query: `
+    SELECT toString(dec32)  AS decimal32,
+           toString(dec64)  AS decimal64,
+           toString(dec128) AS decimal128,
+           toString(dec256) AS decimal256
+    FROM my_table
+  `,
+  format: 'JSONEachRow',
+})
+```
+
+Consulta [este ejemplo](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_decimals.ts) para obtener más información.
+
+<div id="integral-types-int64-int128-int256-uint64-uint128-uint256">
+  ### Tipos integrales: Int64, Int128, Int256, UInt64, UInt128, UInt256
+</div>
+
+Aunque el server puede aceptarlo como un número, en los formatos de salida de la familia `JSON*` se devuelve como una cadena para evitar
+el desbordamiento de enteros, ya que los valores máximos de estos tipos son mayores que `Number.MAX_SAFE_INTEGER`.
+
+Sin embargo, este comportamiento se puede modificar
+con el [ajuste `output_format_json_quote_64bit_integers`](/es/reference/settings/formats#output_format_json_quote_64bit_integers)
+.
+
+**Ejemplo:** Ajusta el formato de salida JSON para números de 64 bits.
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT * from system.numbers LIMIT 1',
+  format: 'JSONEachRow',
+})
+
+expect(await resultSet.json()).toEqual([ { number: '0' } ])
+```
+
+```ts
+const resultSet = await client.query({
+  query: 'SELECT * from system.numbers LIMIT 1',
+  format: 'JSONEachRow',
+  clickhouse_settings: { output_format_json_quote_64bit_integers: 0 },
+})
+
+expect(await resultSet.json()).toEqual([ { number: 0 } ])
+```
+
+<div id="clickhouse-settings">
+  ## Ajustes de ClickHouse
+</div>
+
+El Client puede ajustar el comportamiento de ClickHouse mediante el mecanismo de
+[ajustes](/es/reference/settings/session-settings).
+Los ajustes pueden establecerse en la instancia del Client para que se apliquen a cada solicitud enviada a
+ClickHouse:
+
+```ts
+const client = createClient({
+  clickhouse_settings: {}
+})
+```
+
+O bien, se puede configurar un ajuste a nivel de solicitud:
+
+```ts
+client.query({
+  clickhouse_settings: {}
+})
+```
+
+Puede encontrar un archivo de declaración de tipos con todos los ajustes de ClickHouse compatibles
+[aquí](https://github.com/ClickHouse/clickhouse-js/blob/main/packages/client-common/src/settings.ts).
+
+<Warning>
+  Asegúrese de que el usuario en cuyo nombre se ejecutan las consultas tenga permisos suficientes para cambiar los ajustes.
+</Warning>
+
+<div id="advanced-topics">
+  ## Temas avanzados
+</div>
+
+<div id="queries-with-parameters">
+  ### Consultas con parámetros
+</div>
+
+Puede crear una consulta con parámetros y pasarles valores desde la aplicación cliente. Esto permite evitar dar formato
+a la consulta con valores dinámicos específicos en el lado del cliente.
+
+Dé formato a una consulta como de costumbre y, a continuación, coloque entre llaves los valores que desee pasar desde los parámetros de la aplicación a la consulta con
+el siguiente formato:
+
+```text
+{<name>: <data_type>}
+```
+
+donde:
+
+* `name` — Identificador provisional.
+* `data_type` - [Tipo de dato](/es/reference/data-types/index) del valor del parámetro de la aplicación.
+
+**Ejemplo:**: Consulta con parámetros.
+[Código fuente](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/query_with_parameter_binding.ts)
+.
+
+```ts
+await client.query({
+  query: 'SELECT plus({val1: Int32}, {val2: Int32})',
+  format: 'CSV',
+  query_params: {
+    val1: 10,
+    val2: 20,
+  },
+})
+```
+
+Consulte https://clickhouse.com/docs/interfaces/cli#cli-queries-with-parameters-syntax para más detalles.
+
+<div id="compression">
+  ### Compresión
+</div>
+
+Nota: la compresión de solicitudes no está disponible actualmente en la versión web. La compresión de respuestas funciona con normalidad. La versión de Node.js admite ambas.
+
+Las aplicaciones de datos que trabajan con grandes conjuntos de datos en tránsito pueden beneficiarse de habilitar la compresión. Actualmente, solo se admite `GZIP` mediante [zlib](https://nodejs.org/docs/latest-v14.x/api/zlib.html).
+
+```typescript
+createClient({
+  compression: {
+    response: true,
+    request: true
+  }
+})
+```
+
+Los parámetros de configuración son:
+
+* `response: true` indica a ClickHouse server que devuelva el cuerpo de la respuesta comprimido. Valor predeterminado: `response: false`
+* `request: true` habilita la compresión en el cuerpo de la solicitud del Client. Valor predeterminado: `request: false`
+
+<div id="logging-nodejs-only">
+  ### Registro (solo para Node.js)
+</div>
+
+<Warning>
+  El registro es una funcionalidad experimental y puede cambiar en el futuro.
+</Warning>
+
+La implementación predeterminada del logger emite registros en `stdout` mediante los métodos `console.debug/info` y en `stderr` mediante los métodos `console.warn/error`.
+Puede personalizar la lógica de registro proporcionando una `LoggerClass` y elegir el nivel de registro deseado mediante el parámetro `level` (el valor predeterminado es `WARN`):
+
+```typescript
+import type { Logger } from '@clickhouse/client'
+
+// All three LogParams types are exported by the client
+interface LogParams {
+  module: string
+  message: string
+  args?: Record<string, unknown>
+}
+type ErrorLogParams = LogParams & { err: Error }
+type WarnLogParams = LogParams & { err?: Error }
+
+class MyLogger implements Logger {
+  trace({ module, message, args }: LogParams) {
+    // ...
+  }
+  debug({ module, message, args }: LogParams) {
+    // ...
+  }
+  info({ module, message, args }: LogParams) {
+    // ...
+  }
+  warn({ module, message, args }: WarnLogParams) {
+    // ...
+  }
+  error({ module, message, args, err }: ErrorLogParams) {
+    // ...
+  }
+}
+
+const client = createClient({
+  log: {
+    LoggerClass: MyLogger,
+    level: ClickHouseLogLevel.DEBUG,
+  }
+})
+```
+
+Actualmente, el Client registrará los siguientes eventos:
+
+* `TRACE` - información de bajo nivel sobre el ciclo de vida de los sockets Keep-Alive
+* `DEBUG` - información de la respuesta (sin encabezados de autorización ni información del host)
+* `INFO` - prácticamente no se usa; mostrará el nivel de registro actual cuando se inicialice el Client
+* `WARN` - errores no fatales; una solicitud `ping` fallida se registra como advertencia, ya que el error subyacente se incluye en el resultado devuelto
+* `ERROR` - errores fatales de los métodos `query`/`insert`/`exec`/`command`, como una solicitud fallida
+
+Puede encontrar la implementación predeterminada de Logger [aquí](https://github.com/ClickHouse/clickhouse-js/blob/main/packages/client-common/src/logger.ts).
+
+<div id="tls-certificates-nodejs-only">
+  ### Certificados TLS (solo para Node.js)
+</div>
+
+El Client de Node.js admite de forma opcional tanto TLS básico (solo autoridad de certificación)
+como TLS mutuo (autoridad de certificación y certificados de cliente).
+
+Ejemplo de configuración de TLS básico, suponiendo que tiene los certificados en la carpeta `certs`
+y que el nombre del archivo de la CA es `CA.pem`:
+
+```ts
+const client = createClient({
+  url: 'https://<hostname>:<port>',
+  username: '<username>',
+  password: '<password>', // if required
+  tls: {
+    ca_cert: fs.readFileSync('certs/CA.pem'),
+  },
+})
+```
+
+Ejemplo de configuración de TLS mutuo con certificados de cliente:
+
+```ts
+const client = createClient({
+  url: 'https://<hostname>:<port>',
+  username: '<username>',
+  tls: {
+    ca_cert: fs.readFileSync('certs/CA.pem'),
+    cert: fs.readFileSync(`certs/client.crt`),
+    key: fs.readFileSync(`certs/client.key`),
+  },
+})
+```
+
+Consulta en el repositorio los ejemplos completos de TLS [básico](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/basic_tls.ts) y [mutuo](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/mutual_tls.ts).
+
+<div id="keep-alive-configuration-nodejs-only">
+  ### Configuración de Keep-Alive (solo Node.js)
+</div>
+
+El Client habilita Keep-Alive en el agente HTTP subyacente de forma predeterminada, lo que significa que los sockets conectados se reutilizarán en solicitudes posteriores y que se enviará el encabezado `Connection: keep-alive`. Los sockets inactivos permanecerán en el pool de conexiones durante 2500 milisegundos de forma predeterminada (consulta las [notas sobre cómo ajustar esta opción](/es/integrations/language-clients/js/index#adjusting-idle_socket_ttl)).
+
+`keep_alive.idle_socket_ttl` debería tener un valor bastante menor que el de la configuración del servidor/LB. La razón principal es que, como HTTP/1.1 permite que el servidor cierre los sockets sin notificar al Client, si el servidor o el balanceador de carga cierra la conexión *antes* de que lo haga el Client, este podría intentar reutilizar el socket cerrado, lo que provocaría un error `socket hang up`.
+
+Si estás modificando `keep_alive.idle_socket_ttl`, ten en cuenta que siempre debe estar sincronizado con la configuración de Keep-Alive de tu servidor/LB y que debe ser **siempre menor** que esta, para garantizar que el servidor nunca cierre primero la conexión abierta.
+
+<div id="adjusting-idle_socket_ttl">
+  #### Ajuste de `idle_socket_ttl`
+</div>
+
+El Client establece `keep_alive.idle_socket_ttl` en 2500 milisegundos, ya que puede considerarse el valor predeterminado más seguro; del lado del servidor, `keep_alive_timeout` puede configurarse [en un valor tan bajo como 3 segundos en versiones de ClickHouse anteriores a la 23.11](https://github.com/ClickHouse/ClickHouse/commit/1685cdcb89fe110b45497c7ff27ce73cc03e82d1) sin modificar `config.xml`.
+
+<Warning>
+  Si estás satisfecho con el rendimiento y no experimentas ningún problema, se recomienda **no** aumentar el valor de la configuración `keep_alive.idle_socket_ttl`, ya que podría provocar errores de &quot;Socket hang-up&quot;; además, si tu aplicación envía muchas consultas y no hay mucho tiempo de inactividad entre ellas, el valor predeterminado debería ser suficiente, ya que los sockets no permanecerán inactivos el tiempo necesario y el Client los mantendrá en el grupo.
+</Warning>
+
+Puedes encontrar el valor correcto del tiempo de espera de Keep-Alive en los encabezados de respuesta del servidor ejecutando el siguiente comando:
+
+```sh
+curl -is --data-binary "SELECT 1" <clickhouse_url>
+```
+
+Comprueba los valores de los encabezados `Connection` y `Keep-Alive` en la respuesta. Por ejemplo:
+
+```text
+Connection: Keep-Alive
+Keep-Alive: timeout=10
+```
+
+En este caso, `keep_alive_timeout` es de 10 segundos, y podrías intentar aumentar `keep_alive.idle_socket_ttl` a 9000 o incluso 9500 milisegundos para mantener los sockets inactivos abiertos un poco más de lo habitual. Presta atención a posibles errores de &quot;Socket hang-up&quot;, ya que indicarían que el servidor cierra las conexiones antes de que lo haga el Client; reduce el valor hasta que los errores desaparezcan.
+
+<div id="troubleshooting">
+  #### Resolución de problemas
+</div>
+
+Si experimentas errores `socket hang up` incluso al usar la versión más reciente del Client, tienes las siguientes opciones para resolver este problema:
+
+* Habilita los logs con un log level de al menos `WARN` (predeterminado). Esto te permitirá comprobar si hay algún stream sin consumir o colgando en el código de la aplicación: la capa de transporte lo registrará en el nivel WARN, ya que esto podría hacer que el servidor cierre el socket. Puedes habilitar el registro en la configuración del Client de la siguiente manera:
+
+  ```ts
+  const client = createClient({
+    log: { level: ClickHouseLogLevel.WARN },
+  })
+  ```
+
+* Asegúrate de que la configuración deseada se aplique a la instancia de Client correcta. Si tienes varias instancias de Client en tu aplicación, verifica de nuevo que la que usas para las consulta tenga el valor correcto de `keep_alive.idle_socket_ttl`.
+
+* Reduce el ajuste `keep_alive.idle_socket_ttl` en la configuración del Client en 500 milisegundos. En determinadas situaciones, por ejemplo, cuando hay una latencia de red alta entre el Client y el servidor, esto puede resultar beneficioso, ya que evita el caso en el que una request saliente obtenga un socket que el servidor esté a punto de cerrar.
+
+* Si este error se produce durante consulta de larga ejecución sin entrada ni salida de datos (por ejemplo, un `INSERT FROM SELECT` de larga ejecución), podría deberse a que un balanceador de carga u otros componentes de red cierran conexiones de larga duración o requests que tardan mucho en completarse. Puedes intentar forzar la entrada de algunos datos durante las consulta de larga ejecución usando una combinación de estos ajuste de ClickHouse:
+
+  ```ts
+  const client = createClient({
+    // Aquí asumimos que tendremos algunas queries con más de 5 minutos de tiempo de ejecución
+    request_timeout: 400_000,
+    /** Estos ajustes en combinación permiten evitar problemas de timeout del LB en caso de queries de larga ejecución sin entrada ni salida de datos,
+     *  como `INSERT FROM SELECT` y otras similares, ya que el balanceador de carga podría marcar la conexión como inactiva y cerrarla abruptamente.
+     *  En este caso, asumimos que el LB tiene un timeout de conexión inactiva de 120 s, por lo que configuramos 110 s como un valor "seguro". */
+    clickhouse_settings: {
+      send_progress_in_http_headers: 1,
+      http_headers_progress_interval_ms: '110000', // UInt64, debe pasarse como una cadena
+    },
+  })
+  ```
+
+  Ten en cuenta, sin embargo, que el tamaño total de los encabezados recibidos tiene un límite de 16 KB en las versiones recientes de Node.js; tras recibir cierta cantidad de encabezados de progreso, que en nuestras pruebas fue de alrededor de 70-80, se generará una excepción.
+
+  También es posible usar un enfoque completamente distinto, evitando por completo el tiempo de espera en tránsito; esto puede lograrse aprovechando la “feature” de la HTTP interface por la que las mutations no se cancelan cuando se pierde la conexión. Consulta [este Example (parte 2)](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/long_running_queries_timeouts.ts) para obtener más detalles.
+
+* La funcionalidad Keep-Alive puede deshabilitarse por completo. En ese caso, el Client también añadirá el encabezado `Connection: close` a cada request, y el HTTP agent subyacente no reutilizará las conexiones. Se ignorará el ajuste `keep_alive.idle_socket_ttl`, ya que no habrá sockets inactivos. Esto generará una sobrecarga adicional, ya que se establecerá una nueva conexión para cada request.
+
+  ```ts
+  const client = createClient({
+    keep_alive: {
+      enabled: false,
+    },
+  })
+  ```
+
+* Descarta posibles problemas con el resto de la stack de red, incluido Node.js, ejecutando una prueba sencilla desde la línea de comandos con la misma instancia de ClickHouse y la misma ruta de red (es decir, desde la misma máquina o segmento de red, por ejemplo, un pod de Kubernetes), por ejemplo, usando `curl`:
+
+  ```sh
+  curl -is --user '<user>:<password>' --data-binary "SELECT 1" <clickhouse_url>
+  ```
+
+  Puede que te convenga ejecutarlo en un bucle durante varios minutos. Si ves errores similares en `curl`, es probable que el problema no esté relacionado con la configuración del Client, sino con la stack de red o con la configuración del servidor.
+
+* Para probar la conexión con la funcionalidad nativa de Node.js, puedes intentar crear una request HTTP simple al servidor ClickHouse usando la API integrada `fetch`:
+
+```ts
+  const response = await fetch('<clickhouse_url>?query=SELECT+1', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from('<user>:<password>').toString('base64'),
+    }
+  })
+```
+
+* En algunos casos, el código de la aplicación o los adaptadores del framework pueden añadir un `ping()` preventivo antes de la ejecución real de la consulta, lo que puede provocar una situación en la que la solicitud `ping()` se complete correctamente, pero la solicitud de consulta posterior falle con un error &quot;socket hang up&quot; debido al mismo problema subyacente con las conexiones inactivas. Si observa ese patrón en los logs, compruebe si existe alguna opción para deshabilitar los pings preventivos en su framework o en el código de la aplicación. Esto también debería ayudar a reducir la probabilidad de que alguno de los componentes de red intermedios aplique limitación de tasa.
+
+* Asegúrese de que la propia aplicación esté recibiendo suficiente tiempo de CPU y de que la red no esté siendo limitada por el proveedor de hosting. Distintos mecanismos de monitorización, como las métricas de pausas de GC, las métricas de retraso del bucle de eventos y otras similares, también pueden ser útiles para descartar posibles problemas de falta de recursos.
+
+* Pruebe a revisar el código de su aplicación con la regla ESLint [no-floating-promises](https://typescript-eslint.io/rules/no-floating-promises/) habilitada, lo que ayudará a identificar promesas no gestionadas que podrían dar lugar a streams y sockets colgantes.
+
+<div id="read-only-users">
+  ### Usuarios de solo lectura
+</div>
+
+Al usar el Client con un [usuario con readonly=1](/es/concepts/features/configuration/settings/permissions-for-queries#readonly), no se puede habilitar la compresión de la respuesta, ya que requiere la configuración `enable_http_compression`. La siguiente configuración dará como resultado un error:
+
+```ts
+const client = createClient({
+  compression: {
+    response: true, // won't work with a readonly=1 user
+  },
+})
+```
+
+Consulta el [ejemplo](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/read_only_user.ts) para ver más detalles sobre las limitaciones de los usuarios con readonly=1.
+
+<div id="proxy-with-a-pathname">
+  ### Proxy con una ruta en la URL
+</div>
+
+Si tu instancia de ClickHouse está detrás de un proxy y la URL incluye una ruta, como por ejemplo http://proxy:8123/clickhouse&#95;server, especifica `clickhouse_server` como opción de configuración `pathname` (con o sin una barra inicial); de lo contrario, si se proporciona directamente en la `url`, se interpretará como la opción `database`. Se admiten varios segmentos, por ejemplo, `/my_proxy/db`.
+
+```ts
+const client = createClient({
+  url: 'http://proxy:8123',
+  pathname: '/clickhouse_server',
+})
+```
+
+<div id="reverse-proxy-with-authentication">
+  ### Proxy inverso con autenticación
+</div>
+
+Si tiene un proxy inverso con autenticación delante de su implementación de ClickHouse, puede usar la configuración `http_headers` para proporcionar los encabezados necesarios:
+
+```ts
+const client = createClient({
+  http_headers: {
+    'My-Auth-Header': '...',
+  },
+})
+```
+
+<div id="custom-httphttps-agent-experimental-nodejs-only">
+  ### Agente HTTP/HTTPS personalizado (experimental, solo para Node.js)
+</div>
+
+<Warning>
+  Esta es una funcionalidad experimental que puede cambiar de formas incompatibles con versiones anteriores en futuras versiones. La implementación predeterminada y los ajustes que proporciona el Client deberían ser suficientes para la mayoría de los casos de uso. Usa esta funcionalidad solo si estás seguro de que la necesitas.
+</Warning>
+
+De forma predeterminada, el Client configurará el agente HTTP o HTTPS subyacente mediante los ajustes proporcionados en la configuración del Client (como `max_open_connections`, `keep_alive.enabled`, `tls`), que se encargará de gestionar las conexiones al servidor de ClickHouse. Además, si se usan certificados TLS, el agente subyacente se configurará con los certificados necesarios y se aplicarán los encabezados correctos de autenticación TLS.
+
+A partir de la versión 1.2.0, es posible proporcionar un agente HTTP o HTTPS personalizado al Client, en sustitución del agente subyacente predeterminado. Esto puede resultar útil en configuraciones de red complejas. Si se proporciona un agente personalizado, se aplican las siguientes condiciones:
+
+* Las opciones `max_open_connections` y `tls` *no tendrán efecto* y el Client las ignorará, ya que forman parte de la configuración del agente subyacente.
+* `keep_alive.enabled` solo regulará el valor predeterminado del encabezado `Connection` (`true` -&gt; `Connection: keep-alive`, `false` -&gt; `Connection: close`).
+* Aunque la gestión de sockets keep-alive inactivos seguirá funcionando (ya que no está vinculada al agente, sino al propio socket), ahora es posible desactivarla por completo estableciendo el valor de `keep_alive.idle_socket_ttl` en `0`.
+
+<div id="custom-agent-usage-examples">
+  #### Ejemplos de uso de un agente personalizado
+</div>
+
+Uso de un agente HTTP o HTTPS personalizado sin certificados:
+
+```ts
+const agent = new http.Agent({ // or https.Agent
+  keepAlive: true,
+  keepAliveMsecs: 2500,
+  maxSockets: 10,
+  maxFreeSockets: 10,
+})
+const client = createClient({
+  http_agent: agent,
+})
+```
+
+Uso de un agente HTTPS personalizado con TLS básico y un certificado de CA:
+
+```ts
+const agent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 2500,
+  maxSockets: 10,
+  maxFreeSockets: 10,
+  ca: fs.readFileSync('./ca.crt'),
+})
+const client = createClient({
+  url: 'https://myserver:8443',
+  http_agent: agent,
+  // With a custom HTTPS agent, the client won't use the default HTTPS connection implementation; the headers should be provided manually
+  http_headers: {
+    'X-ClickHouse-User': 'username',
+    'X-ClickHouse-Key': 'password',
+  },
+  // Important: authorization header conflicts with the TLS headers; disable it.
+  set_basic_auth_header: false,
+})
+```
+
+Uso de un agente HTTPS personalizado con TLS mutuo:
+
+```ts
+const agent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 2500,
+  maxSockets: 10,
+  maxFreeSockets: 10,
+  ca: fs.readFileSync('./ca.crt'),
+  cert: fs.readFileSync('./client.crt'),
+  key: fs.readFileSync('./client.key'),
+})
+const client = createClient({
+  url: 'https://myserver:8443',
+  http_agent: agent,
+  // With a custom HTTPS agent, the client won't use the default HTTPS connection implementation; the headers should be provided manually
+  http_headers: {
+    'X-ClickHouse-User': 'username',
+    'X-ClickHouse-Key': 'password',
+    'X-ClickHouse-SSL-Certificate-Auth': 'on',
+  },
+  // Important: authorization header conflicts with the TLS headers; disable it.
+  set_basic_auth_header: false,
+})
+```
+
+Con certificados *y* un *agente HTTPS* personalizado, probablemente sea necesario deshabilitar el encabezado de autorización predeterminado mediante la opción `set_basic_auth_header` (introducida en la versión 1.2.0), ya que entra en conflicto con los encabezados TLS. Todos los encabezados TLS deben proporcionarse manualmente.
+
+<div id="known-limitations-nodejsweb">
+  ## Limitaciones conocidas (Node.js/web)
+</div>
+
+* No hay mapeadores de datos para los conjuntos de resultados, por lo que solo se usan primitivos del lenguaje. Está previsto añadir mapeadores para determinados tipos de datos con [soporte para RowBinary format](https://github.com/ClickHouse/clickhouse-js/issues/216).
+* Existen algunas [consideraciones sobre los tipos de datos Decimal* y Date* / DateTime*](/es/integrations/language-clients/js/index#datedate32-types-caveats).
+* Al usar formatos de la familia JSON*, los números mayores que Int32 se representan como cadenas, ya que los valores máximos de los tipos Int64+ son mayores que `Number.MAX_SAFE_INTEGER`. Consulta la sección [Tipos integrales](/es/integrations/language-clients/js/index#integral-types-int64-int128-int256-uint64-uint128-uint256) para obtener más detalles.
+
+<div id="known-limitations-web">
+  ## Limitaciones conocidas (web)
+</div>
+
+* El streaming de las consultas SELECT funciona, pero está deshabilitado para las inserciones (también a nivel de tipo).
+* La compresión de solicitudes está deshabilitada y la configuración se ignora. La compresión de respuestas funciona.
+* Todavía no hay soporte para registro.
+
+<div id="tips-for-performance-optimizations">
+  ## Consejos para optimizar el rendimiento
+</div>
+
+* Para reducir el consumo de memoria de la aplicación, considere usar streams para inserciones grandes (p. ej., desde archivos) y consultas cuando corresponda. Para listeners de eventos y casos de uso similares, los [async inserts](/es/concepts/features/operations/insert/asyncinserts) pueden ser otra buena opción, ya que permiten minimizar, o incluso evitar por completo, el batching del lado del Client. Hay ejemplos de async insert disponibles en el [repositorio del Client](https://github.com/ClickHouse/clickhouse-js/tree/main/examples/node), con `async_insert_` como prefijo del nombre de archivo.
+* El Client no habilita la compresión de solicitudes ni de respuestas de forma predeterminada. Sin embargo, al consultar o insertar grandes volúmenes de datos, podría considerar habilitarla mediante `ClickHouseClientConfigOptions.compression` (ya sea solo para `request` o `response`, o para ambos).
+* La compresión tiene un costo significativo en el rendimiento. Habilitarla para `request` o `response` afectará negativamente a la velocidad de las consultas o las inserciones, respectivamente, pero reducirá la cantidad de tráfico de red transferido por la aplicación.
+
+<div id="contact-us">
+  ## Contáctanos
+</div>
+
+Si tienes alguna pregunta o necesitas ayuda, no dudes en ponerte en contacto con nosotros en el [Slack de la comunidad](https://clickhouse.com/slack) (canal `#clickhouse-js`) o a través de [issues de GitHub](https://github.com/ClickHouse/clickhouse-js/issues).

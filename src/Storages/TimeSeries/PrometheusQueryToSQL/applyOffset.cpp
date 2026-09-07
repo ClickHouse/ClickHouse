@@ -24,7 +24,7 @@ namespace
 {
     /// Applies an offset for the evaluation time: <expression> offset 1d
     SQLQueryPiece offsetEvaluationTime(
-        const PQT::Offset * offset_node,
+        const PrometheusQueryTree::Offset * offset_node,
         SQLQueryPiece && expression,
         DurationType offset_value,
         ConverterContext & context)
@@ -102,7 +102,8 @@ namespace
     }
 
     /// Applies setting a fixed evaluation time: <expression> @ 1609746000
-    SQLQueryPiece setEvaluationTime(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
+    SQLQueryPiece setEvaluationTime(
+        const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
         /// <expression> is expected to be calculated at a fixed evaluation time.
         if (expression.start_time != expression.end_time)
@@ -210,7 +211,7 @@ namespace
     }
 }
 
-SQLQueryPiece applyOffset(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
+SQLQueryPiece applyOffset(const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
 {
     if (offset_node->at_timestamp)
     {

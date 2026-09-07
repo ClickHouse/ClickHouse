@@ -1,0 +1,356 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouse Cloud",
+      "pages": [
+        {
+          "group": "はじめに",
+          "pages": [
+            "ja/products/cloud/getting-started/intro",
+            "ja/products/cloud/getting-started/resource-tour"
+          ],
+          "root": "ja/products/cloud/getting-started/cloud-get-started"
+        },
+        {
+          "group": "機能",
+          "pages": [
+            "ja/products/cloud/features/cloud-tiers",
+            "ja/products/cloud/features/cli",
+            "ja/products/cloud/features/integrations",
+            "ja/products/cloud/features/data-catalogs",
+            "ja/products/cloud/reference/architecture",
+            "ja/products/cloud/reference/supported-regions",
+            {
+              "expanded": false,
+              "group": "SQLコンソール",
+              "pages": [
+                "ja/products/cloud/features/sql-console-features/sql-console",
+                "ja/products/cloud/features/sql-console-features/query-insights",
+                "ja/products/cloud/features/sql-console-features/query-endpoints",
+                "ja/products/cloud/features/sql-console-features/dashboards",
+                "ja/products/cloud/features/sql-console-features/clickstack",
+                "ja/products/cloud/features/sql-console-features/user-defined-functions"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "インフラストラクチャ",
+              "pages": [
+                {
+                  "group": "自動スケーリング",
+                  "pages": [
+                    "ja/products/cloud/features/autoscaling/vertical",
+                    "ja/products/cloud/features/autoscaling/horizontal",
+                    "ja/products/cloud/features/autoscaling/make-before-break",
+                    "ja/products/cloud/features/autoscaling/idling",
+                    "ja/products/cloud/features/autoscaling/scaling-recommendations",
+                    "ja/products/cloud/features/autoscaling/scheduled-scaling"
+                  ],
+                  "root": "ja/products/cloud/features/autoscaling/overview"
+                },
+                "ja/products/cloud/features/infrastructure/parallel-replicas",
+                "ja/products/cloud/features/infrastructure/deployment-options",
+                "ja/products/cloud/features/infrastructure/shared-catalog",
+                "ja/products/cloud/features/infrastructure/shared-merge-tree",
+                "ja/products/cloud/features/infrastructure/warehouses"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Admin",
+              "pages": [
+                {
+                  "group": "Cloud API",
+                  "pages": [
+                    "ja/products/cloud/features/admin-features/api/api-overview",
+                    "ja/products/cloud/features/admin-features/api/openapi",
+                    "ja/products/cloud/features/admin-features/api/postman"
+                  ],
+                  "root": "ja/products/cloud/features/admin-features/api/index"
+                },
+                "ja/products/cloud/features/admin-features/upgrades"
+              ]
+            },
+            "ja/products/cloud/features/security",
+            {
+              "expanded": false,
+              "group": "監視",
+              "pages": [
+                "ja/products/cloud/features/monitoring/overview",
+                "ja/products/cloud/features/monitoring/cloud-console",
+                "ja/products/cloud/features/monitoring/advanced-dashboard",
+                "ja/products/cloud/features/monitoring/notifications",
+                "ja/products/cloud/features/monitoring/prometheus",
+                "ja/products/cloud/features/monitoring/system-tables",
+                "ja/products/cloud/features/monitoring/integrations"
+              ]
+            },
+            {
+              "group": "バックアップ",
+              "pages": [
+                "ja/products/cloud/features/backups/faq"
+              ],
+              "root": "ja/products/cloud/features/backups/overview"
+            },
+            "ja/products/cloud/features/support",
+            {
+              "expanded": false,
+              "group": "AI/ML",
+              "pages": [
+                "ja/products/cloud/features/ai-ml/ask-ai",
+                "ja/products/cloud/features/ai-ml/aichat/using-ai-chat",
+                "ja/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
+                "ja/products/cloud/features/ai-ml/langfuse",
+                "ja/products/cloud/features/ai-ml/remote-mcp",
+                "ja/products/cloud/features/ai-ml/mcp/remote-mcp",
+                {
+                  "group": "ClickHouse Agents",
+                  "pages": [
+                    "ja/products/cloud/features/ai-ml/agents/quickstart",
+                    "ja/products/cloud/features/ai-ml/agents/chat",
+                    {
+                      "group": "エージェントビルダー",
+                      "pages": [
+                        "ja/products/cloud/features/ai-ml/agents/builder/model-parameters",
+                        "ja/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                        "ja/products/cloud/features/ai-ml/agents/builder/web-search",
+                        "ja/products/cloud/features/ai-ml/agents/builder/image-generation",
+                        "ja/products/cloud/features/ai-ml/agents/builder/vision",
+                        "ja/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                        "ja/products/cloud/features/ai-ml/agents/builder/skills",
+                        "ja/products/cloud/features/ai-ml/agents/builder/subagents"
+                      ],
+                      "root": "ja/products/cloud/features/ai-ml/agents/builder/index"
+                    },
+                    "ja/products/cloud/features/ai-ml/agents/prompts",
+                    "ja/products/cloud/features/ai-ml/agents/memory",
+                    "ja/products/cloud/features/ai-ml/agents/marketplace",
+                    "ja/products/cloud/features/ai-ml/agents/sharing-and-access"
+                  ],
+                  "root": "ja/products/cloud/features/ai-ml/agents/index"
+                },
+                "ja/products/cloud/features/ai-ml/model-developer-terms"
+              ],
+              "root": "ja/products/cloud/features/ai-ml/index"
+            }
+          ]
+        },
+        {
+          "group": "Cloudリファレンス",
+          "pages": [
+            "ja/products/cloud/reference/service-uptime",
+            "ja/products/cloud/reference/account-close",
+            "ja/products/cloud/reference/data-resiliency",
+            "ja/products/cloud/reference/settings",
+            "ja/products/cloud/reference/security/console-roles",
+            "ja/products/cloud/reference/security/audit-logging",
+            "ja/products/cloud/reference/security/compliance-overview",
+            "ja/products/cloud/reference/security/ai-compliance",
+            "ja/products/cloud/reference/personal-data-access"
+          ],
+          "root": "ja/products/cloud/reference/index"
+        },
+        {
+          "group": "請求",
+          "pages": [
+            "ja/products/cloud/reference/billing/billing-overview",
+            {
+              "expanded": false,
+              "group": "マーケットプレイス",
+              "pages": [
+                "ja/products/cloud/reference/billing/marketplace/overview",
+                "ja/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
+                "ja/products/cloud/reference/billing/marketplace/aws-marketplace-payg",
+                "ja/products/cloud/reference/billing/marketplace/azure-marketplace-committed",
+                "ja/products/cloud/reference/billing/marketplace/azure-marketplace-payg",
+                "ja/products/cloud/reference/billing/marketplace/gcp-marketplace-committed",
+                "ja/products/cloud/reference/billing/marketplace/gcp-marketplace-payg",
+                "ja/products/cloud/reference/billing/marketplace/migrate-marketplace-payg-committed"
+              ],
+              "root": "ja/products/cloud/reference/billing/marketplace/index"
+            },
+            {
+              "expanded": false,
+              "group": "ClickPipes",
+              "pages": [
+                "ja/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+                "ja/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
+              ],
+              "root": "ja/products/cloud/reference/billing/clickpipes/index"
+            },
+            "ja/products/cloud/reference/billing/network-data-transfer",
+            "ja/products/cloud/reference/billing/payment-thresholds",
+            "ja/products/cloud/reference/billing/spend-alerts",
+            "ja/products/cloud/reference/billing/managing-payment-methods",
+            "ja/products/cloud/reference/billing/billing-compliance"
+          ],
+          "root": "ja/products/cloud/reference/billing/index"
+        },
+        {
+          "group": "ガイド",
+          "pages": [
+            {
+              "group": "ベストプラクティス",
+              "pages": [
+                "ja/products/cloud/guides/best-practices/multitenancy",
+                "ja/products/cloud/guides/best-practices/usagelimits"
+              ],
+              "root": "ja/products/cloud/guides/best-practices/index"
+            },
+            {
+              "expanded": false,
+              "group": "一般",
+              "pages": [
+                "ja/products/cloud/guides/cloud-compatibility",
+                "ja/products/cloud/guides/production-readiness"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "移行",
+              "pages": [
+                "ja/products/cloud/guides/migration/upload-a-csv-file",
+                "ja/products/cloud/guides/migration/oss-to-cloud-backup-restore"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "SQLコンソール",
+              "pages": [
+                "ja/products/cloud/guides/sql-console/connection-details",
+                "ja/products/cloud/guides/sql-console/query-endpoints"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "バックアップ",
+              "pages": [
+                "ja/products/cloud/guides/backups/review-and-restore-backups",
+                "ja/products/cloud/guides/backups/configurable-backups",
+                {
+                  "expanded": false,
+                  "group": "バックアップの持ち込み",
+                  "pages": [
+                    "ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
+                    "ja/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
+                    "ja/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands"
+                  ]
+                }
+              ],
+              "root": "ja/products/cloud/guides/backups/index"
+            },
+            {
+              "expanded": false,
+              "group": "データソース",
+              "pages": [
+                "ja/products/cloud/guides/data-sources/cloud-endpoints-api",
+                "ja/products/cloud/guides/data-sources/accessing-s3-data-securely",
+                "ja/products/cloud/guides/data-sources/secure-azure",
+                "ja/products/cloud/guides/data-sources/secure-gcs",
+                "ja/products/cloud/guides/data-sources/accessing-iceberg-data-securely"
+              ],
+              "root": "ja/products/cloud/guides/data-sources/index"
+            },
+            {
+              "expanded": false,
+              "group": "インフラストラクチャ",
+              "pages": [
+                {
+                  "expanded": false,
+                  "group": "デプロイメントモード",
+                  "pages": [
+                    "ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
+                    "ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
+                    "ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                  ]
+                }
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "セキュリティ",
+              "pages": [
+                {
+                  "expanded": false,
+                  "group": "クラウドアクセス管理",
+                  "pages": [
+                    "ja/products/cloud/guides/security/cloud-access-management/manage-my-account",
+                    "ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                    "ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                    "ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+                    "ja/products/cloud/guides/security/cloud-access-management/manage-database-users",
+                    "ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
+                    "ja/products/cloud/guides/security/cloud-access-management/scim-setup",
+                    "ja/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
+                    "ja/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
+                    "ja/products/cloud/guides/security/saml-sso-removal"
+                  ],
+                  "root": "ja/products/cloud/guides/security/cloud-access-management/index"
+                },
+                {
+                  "expanded": false,
+                  "group": "接続",
+                  "pages": [
+                    "ja/products/cloud/guides/security/connectivity/setting-ip-filters",
+                    {
+                      "expanded": false,
+                      "group": "プライベートネットワーキング",
+                      "pages": [
+                        "ja/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
+                        "ja/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
+                        "ja/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
+                      ],
+                      "root": "ja/products/cloud/guides/security/connectivity/private-networking/index"
+                    }
+                  ]
+                },
+                {
+                  "expanded": false,
+                  "group": "監査ログ",
+                  "pages": [
+                    "ja/products/cloud/guides/security/audit-logging/console-audit-log",
+                    "ja/products/cloud/guides/security/audit-logging/database-audit-log",
+                    "ja/products/cloud/guides/security/audit-logging/byoc-security-playbook"
+                  ],
+                  "root": "ja/products/cloud/guides/security/audit-logging/index"
+                },
+                {
+                  "expanded": false,
+                  "group": "データセキュリティ",
+                  "pages": [
+                    "ja/products/cloud/guides/security/data-masking",
+                    "ja/products/cloud/guides/security/cmek"
+                  ]
+                },
+                {
+                  "expanded": false,
+                  "group": "コンプライアンス",
+                  "pages": [
+                    "ja/products/cloud/guides/security/compliance/hipaa-onboarding",
+                    "ja/products/cloud/guides/security/compliance/pci-onboarding"
+                  ]
+                }
+              ]
+            }
+          ],
+          "root": "ja/products/cloud/guides/index"
+        },
+        {
+          "group": "API リファレンス",
+          "openapi": {
+            "directory": "ja/products/cloud/api-reference",
+            "source": "_specs/cloud-openapi.json"
+          },
+          "pages": {
+            "$ref": "./api-reference/navigation.json"
+          }
+        }
+      ]
+    },
+    {
+      "$ref": "../bring-your-own-cloud/navigation.json"
+    }
+  ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
+  "item": "ClickHouse Cloud"
+}

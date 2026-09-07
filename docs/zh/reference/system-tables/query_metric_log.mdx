@@ -117,7 +117,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中未找到 Parquet 元数据，因此必须从磁盘读取的次数。
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 元数据缓存中被驱逐的近似字节数。
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 同步初始化 Iceberg 数据迭代器所花费的总时间。
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 同步初始化 Iceberg 数据迭代器所花费的总时间。
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 从状态更新 Iceberg 存储元数据 (`buildStorageMetadataFromState`) 所花费的总时间。
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/zh/reference/data-types/int-uint)) — Iceberg 迭代器返回的对象信息总数。
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 经过 minmax 分析后，在按分区和 sequence number 筛选出的适用配对中，被接受的数据文件-位置删除文件配对总数。
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 经过 minmax 分析后，在按分区和 sequence number 筛选出的适用配对中，被接受的数据文件-位置删除文件配对总数。
@@ -538,8 +538,6 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
   9. 不同副本上的 part 格式相关设置 (如 &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;) 不一致。
      服务器已成功检测到这种情况，并将从副本下载 merged part，以强制获得字节级完全一致的结果。
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/zh/reference/data-types/int-uint)) — 变更后的数据与其他副本上的数据在字节级别不完全一致的次数。除 `DataAfterMergeDiffersFromReplica` 中所述原因外，也可能是由非确定性的变更导致的。
-* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/zh/reference/data-types/int-uint)) — 添加到 `pointInPolygon` 函数缓存 (池) 中的多边形数量。
-* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为添加到 `pointInPolygon` 函数缓存 (池) 中的多边形分配的字节数。
 * `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/zh/reference/data-types/int-uint)) — 已加载的朴素贝叶斯分类器模型数量。
 * `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为朴素贝叶斯分类器模型分配的字节数。
 * `ProfileEvent_USearchAddCount` ([UInt64](/zh/reference/data-types/int-uint)) — 添加到 usearch 索引中的向量数量。
