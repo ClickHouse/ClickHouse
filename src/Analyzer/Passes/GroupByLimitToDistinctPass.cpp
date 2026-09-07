@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -98,28 +99,21 @@ public:
             return;
 
         /// `max_rows_to_group_by` caps the number of groups the aggregation may build and
-        /// `group_by_overflow_mode` decides what happens when the cap is hit (throw, stop, or keep
-        /// the first N groups). Dropping the aggregation drops that contract, so back off whenever
-        /// the user's cap can bind on this query:
-        ///   * a cap not above LIMIT + OFFSET would truncate (or reject) the very rows the query
-        ///     asks for, so the rewritten query would return more rows than the original;
-        ///   * an explicitly chosen non-`any` mode means the user wants the query to fail or stop
-        ///     rather than to silently return an arbitrary subset of the groups.
-        /// This mirrors OptimizeTrivialGroupByLimitPass, which backs off in the same two cases.
-        /// For a cap above LIMIT + OFFSET with the default mode, that pass — enabled by default —
-        /// already lowers the cap to LIMIT + OFFSET and switches the mode to `any` for exactly this
-        /// query shape, so the overflow can no longer be observed there either.
-        const UInt64 max_rows_to_group_by = settings[Setting::max_rows_to_group_by];
-        if (max_rows_to_group_by != 0)
-        {
-            if (max_rows_to_group_by <= required_distinct_rows)
-                return;
-
-            const bool mode_is_any = settings[Setting::group_by_overflow_mode] == OverflowMode::ANY;
-            const bool mode_is_changed = settings[Setting::group_by_overflow_mode].changed;
-            if (!mode_is_any && mode_is_changed)
-                return;
-        }
+        /// `group_by_overflow_mode` decides what happens when the cap is hit. The rewritten query
+        /// stops as soon as it has LIMIT + OFFSET distinct rows, so it can never reach a cap the
+        /// aggregation would have hit: there is no way to honour a "throw (or stop) if the input has
+        /// more than N groups" contract without reading the whole input, which is precisely what the
+        /// rewrite exists to avoid. So back off whenever such a contract exists.
+        ///
+        /// `any` is the one exception -- it keeps an arbitrary subset of the groups, which is exactly
+        /// what the rewritten query returns.
+        ///
+        /// Note that OptimizeTrivialGroupByLimitPass cannot be relied on to have already neutralised
+        /// the cap (by lowering it to LIMIT + OFFSET and switching the mode to `any`): it is optional,
+        /// and it only ever looks at the root of the query tree, while this pass also visits
+        /// subqueries -- where the cap is still fully observable.
+        if (settings[Setting::max_rows_to_group_by] != 0 && settings[Setting::group_by_overflow_mode] != OverflowMode::ANY)
+            return;
 
         if (query->hasHaving() || query->hasOrderBy() || query->hasWindow() || query->hasQualify() || query->hasLimitBy()
             || query->isLimitWithTies() || query->isGroupByWithTotals() || query->isGroupByWithRollup() || query->isGroupByWithCube()
@@ -165,13 +159,22 @@ public:
         /// external-aggregation threshold while the DISTINCT set cannot, so a query that today
         /// completes via external aggregation could start throwing MEMORY_LIMIT_EXCEEDED.
         /// Rewrite only when the byte footprint is provably bounded — the key types have a maximum
-        /// size and the worst case fits in an explicitly configured threshold — or when external
+        /// size and the worst case fits under the external-aggregation threshold — or when external
         /// aggregation is disabled for this query, in which case aggregation holds the very same
         /// keys in memory and the two plans have the same footprint.
-        const UInt64 max_bytes_before_external_group_by = settings[Setting::max_bytes_before_external_group_by];
-        const bool aggregation_can_spill
-            = max_bytes_before_external_group_by != 0 || settings[Setting::max_bytes_ratio_before_external_group_by] != 0.;
-        if (aggregation_can_spill)
+        /// An out-of-range ratio makes the aggregation throw BAD_ARGUMENTS. Leave that error where it
+        /// is instead of reproducing it here — or, worse, rewriting away the aggregation that raises it.
+        const double max_bytes_ratio_before_external_group_by = settings[Setting::max_bytes_ratio_before_external_group_by];
+        if (max_bytes_ratio_before_external_group_by < 0. || max_bytes_ratio_before_external_group_by >= 1.)
+            return;
+
+        /// `max_bytes_ratio_before_external_group_by` derives a spill threshold from the available system
+        /// memory even when `max_bytes_before_external_group_by` is 0, so ask the same helper the
+        /// Aggregator uses rather than reading the raw setting. A threshold of 0 means the aggregation
+        /// cannot spill either, and both plans hold the same keys in memory.
+        const size_t external_group_by_threshold = Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
+            settings[Setting::max_bytes_before_external_group_by], max_bytes_ratio_before_external_group_by);
+        if (external_group_by_threshold != 0)
         {
             UInt64 max_bytes_per_row = 0;
             for (const auto & group_by_node : group_by_nodes)
@@ -186,7 +189,7 @@ public:
             UInt64 max_distinct_set_bytes = 0;
             if (common::mulOverflow(max_bytes_per_row, required_distinct_rows, max_distinct_set_bytes))
                 return;
-            if (max_bytes_before_external_group_by != 0 && max_distinct_set_bytes > max_bytes_before_external_group_by)
+            if (max_distinct_set_bytes > external_group_by_threshold)
                 return;
         }
 
@@ -208,6 +211,15 @@ public:
             auto & mutable_context = query->getMutableContext();
             mutable_context->setSetting("max_rows_in_distinct", UInt64(0));
             mutable_context->setSetting("max_bytes_in_distinct", UInt64(0));
+
+            /// The mutable context is local to the initiator. A query that runs on remote replicas is
+            /// re-serialized from the query tree by `QueryNode::toAST()`, which carries only
+            /// `settings_changes` — so record the clears there as well. Otherwise the remotes would
+            /// apply their own DISTINCT limits to a query the user never wrote DISTINCT in and fail it
+            /// with SET_SIZE_LIMIT_EXCEEDED.
+            auto & settings_changes = query->getMutableSettingsChanges();
+            settings_changes.setSetting("max_rows_in_distinct", Field(UInt64(0)));
+            settings_changes.setSetting("max_bytes_in_distinct", Field(UInt64(0)));
         }
     }
 };
