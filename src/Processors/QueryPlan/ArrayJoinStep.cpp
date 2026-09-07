@@ -134,7 +134,8 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
     /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys); fusion bails for
-    /// distributed/serialized plans, so an older worker never receives it and no version bump is needed
+    /// distributed, serialized and plan-based parallel replicas plans, so an older worker or replica never
+    /// receives it and no version bump is needed
     const bool serialize_filter = element_filter.has_value();
 
     UInt8 flags = 0;
