@@ -50,3 +50,8 @@ select portRFC('2001:db8::8a2e:370:7334:80');
 select portRFC('https://[2001:db8::8a2e:370:7334]:80/path?q=1');
 select portRFC('http://[2001:db8::8a2e:370:7334]:80/', toUInt16(443));
 select portRFC('http://[2001:db8::8a2e:370:7334]/', toUInt16(443));
+
+-- IPv6 host after a userinfo prefix
+select 'ipv6-RFC-userinfo';
+select portRFC('http://user@[2001:db8::8a2e:370:7334]:80/');
+select portRFC('http://user:password@[2001:db8::8a2e:370:7334]:80/');

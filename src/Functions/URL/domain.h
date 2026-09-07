@@ -113,9 +113,16 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '@': /// myemail@gmail.com
             if (has_terminator_after_colon) return std::string_view{};
             if (has_at_symbol) goto done;
+            if (has_open_bracket) return std::string_view{}; /// '@' cannot appear inside an IP-literal
             has_sub_delims = false;
             has_at_symbol = true;
             start_of_host = pos + 1;
+            if (start_of_host < end && *start_of_host == '[') /// user@[2001:db8::1]:80
+            {
+                has_open_bracket = true;
+                ++pos;
+                start_of_host = pos + 1;
+            }
             break;
         case ';':
         case '=':
@@ -158,12 +165,10 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
 done:
     if (has_sub_delims)
         return std::string_view{};
+    if (has_open_bracket && has_end_bracket)
+        return std::string_view(start_of_host, pos - start_of_host);
     if (!has_at_symbol)
-    {
-        if (has_open_bracket && has_end_bracket)
-            return std::string_view(start_of_host, pos - start_of_host);
         pos = colon_pos ? colon_pos : pos;
-    }
     return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 
