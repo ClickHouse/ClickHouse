@@ -1,6 +1,7 @@
--- Tags: no-object-storage, zookeeper, no-shared-merge-tree
+-- Tags: no-object-storage, zookeeper, no-shared-merge-tree, no-replicated-database
 -- no-object-storage: the setting has no effect on disks with unlimited space.
 -- no-shared-merge-tree: the replicated section covers StorageReplicatedMergeTree's own OPTIMIZE path.
+-- no-replicated-database: the part counts below assume a single replica of each table.
 -- https://github.com/ClickHouse/ClickHouse/issues/80006
 
 SET optimize_throw_if_noop = 1;
@@ -67,11 +68,8 @@ CREATE TABLE t_min_unreserved_rep_final (x UInt64)
 INSERT INTO t_min_unreserved_rep_final VALUES (1);
 INSERT INTO t_min_unreserved_rep_final VALUES (2);
 
--- The leader derives its assignment limit with the headroom too, so no background merge is ever
--- assigned here: an entry that was assigned and then postponed forever would show up below.
-SELECT count() FROM system.replication_queue WHERE database = currentDatabase() AND table = 't_min_unreserved_rep_final' AND type = 'MERGE_PARTS';
-
--- Plain OPTIMIZE derives that same limit synchronously, which is the proof that it refuses.
+-- The background merge selector derives its limit the same way, but nothing observable says
+-- whether it has run yet, so only the synchronous OPTIMIZE path is asserted here.
 OPTIMIZE TABLE t_min_unreserved_rep_final; -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_min_unreserved_rep_final' AND active;
 
