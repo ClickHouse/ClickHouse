@@ -20,6 +20,9 @@ IMAGE_NAME = "clickhouse/fuzzer"
 # Maximum number of reproduce commands to display inline before writing to file
 MAX_INLINE_REPRODUCE_COMMANDS = 20
 
+# The runner agent lives on the host, outside this container, so it is only safe if the container cannot take the whole box.
+RUNNER_MEMORY_RESERVE = 8 * 1024**3
+
 cwd = Utils.cwd()
 WORKSPACE_PATH = Path(cwd) / "ci/tmp/workspace"
 
@@ -245,6 +248,7 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
+        f"--memory={Utils.physical_memory() - RUNNER_MEMORY_RESERVE} "
         "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={WORKSPACE_PATH}:/workspace "
         f"--volume={cwd}:/repo "

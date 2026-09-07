@@ -99,10 +99,11 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
     for (auto & filter : bloom_filters)
     {
         filter->resize(bytes_size);
+        /// Big-endian granules hold whole `BloomFilter::UnderType` words, so only the payload size
+        /// differs there. The read itself is unconditional: guarding it too leaves the filter zeroed.
         if constexpr (std::endian::native == std::endian::big)
             read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
+        istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
     }
 }
 
@@ -117,10 +118,10 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
     {
+        /// Mirrors `deserializeBinary`: the size is byte-order dependent, the write is not.
         if constexpr (std::endian::native == std::endian::big)
             write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
+        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
     }
 }
 
@@ -1349,6 +1350,22 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
+
+    /// The index hashing rejects an array of nullable elements (see `unwrapArraySlice` in
+    /// `BloomFilterHash.h`), which `assertIndexColumnsType` does not notice because it looks at the
+    /// primitive type only. Such an index is accepted at DDL and then fails every insert, merge and
+    /// mutation of the table, and the natural recovery - `DROP INDEX` - is refused while one of those
+    /// failed mutations is pending. Reject it here, like a nested array already is. Not on `ATTACH`:
+    /// a table created before this check must still load, so that its index can be dropped.
+    if (!attach)
+    {
+        for (const auto & type : index.sample_block.getDataTypes())
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+            if (array_type && array_type->getNestedType()->isNullable())
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
+        }
+    }
 
     if (index.arguments && index.arguments->children.size() > 1)
     {
