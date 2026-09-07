@@ -3102,7 +3102,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// unusable SST on readonly storage must fail the load, not activate
     /// unprobeable.
     MutableDataPartsVector active_uk_parts_to_rebuild;
-    const bool uk_storage_is_writable = !is_static_storage && !all_disks_are_readonly && !is_table_readonly;
     {
         auto metadata_snapshot_for_rebuild = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
         if (metadata_snapshot_for_rebuild && metadata_snapshot_for_rebuild->hasUniqueKey())
@@ -3134,7 +3133,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             /// adjust the aggregate by the delta. Rows and part count are
             /// unaffected by the rebuild.
             const auto bytes_on_disk_before = p->getBytesOnDisk();
-            unique_key_dense_index_ops->ensureValidDenseIndex(p, uk_storage_is_writable);
+            /// Writability is per-part: a mixed policy can place parts on
+            /// readonly disks even when the table itself is writable, and a
+            /// table-wide flag would misroute such parts to the rebuild path.
+            const bool part_storage_is_writable
+                = !is_static_storage && !is_table_readonly && !p->isStoredOnReadonlyDisk();
+            unique_key_dense_index_ops->ensureValidDenseIndex(p, part_storage_is_writable);
             if (const auto bytes_on_disk_after = p->getBytesOnDisk(); bytes_on_disk_after != bytes_on_disk_before)
                 increaseDataVolume(static_cast<ssize_t>(bytes_on_disk_after - bytes_on_disk_before), 0, 0);
         }
@@ -3350,6 +3354,17 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
         }
         else
         {
+            try
+            {
+                unique_key_dense_index_ops->ensureValidDenseIndex(res.part, /*storage_is_writable=*/false);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log,
+                    fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
+                continue;
+            }
+
             {
                 auto part_lock = lockParts();
                 Transaction transaction(*this, nullptr);

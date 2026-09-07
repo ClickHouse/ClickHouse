@@ -119,10 +119,11 @@ namespace
             : storage(std::move(storage_))
             , read_settings(std::move(read_settings_))
         {
-            /// RocksDB needs positional reads (`readBigAt`); the experimental
-            /// ReaderExecutor path (`use_reader_executor = 1`) does not expose
-            /// them, so use the legacy read pipeline for the sidecar.
-            /// TODO(unique-key): adapt to the ReaderExecutor path and drop this.
+            /// `readBigAt` is missing in async buffers, and O_DIRECT rejects unaligned reads;
+            /// force plain `pread`, no direct IO, no reader executor.
+            /// TODO(unique-key): adapt to those paths and drop this.
+            read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+            read_settings.local_fs_settings.direct_io_threshold = 0;
             read_settings.reader_executor.enabled = false;
         }
 

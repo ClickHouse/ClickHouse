@@ -248,6 +248,35 @@ TEST_F(SSTFixture, CorruptionRebuild)
     EXPECT_TRUE(sstIteratorContains(reader, encoded[0]));
 }
 
+/// A valid SST whose entry count does not match the part's `rows_count` (a
+/// stale/wrong-count index) opens and verifies its block checksums cleanly, so
+/// neither `Open` nor `VerifyChecksum` flags it. `num_entries` (read from the
+/// SST's table properties) is the only signal that discriminates it, and it is
+/// exactly what load-time validation compares against `rows_count`. Pins that
+/// `num_entries` is exposed and equals the entries actually written, so the
+/// wrong-count case is detectable. (The load-time policy that acts on the
+/// mismatch lives in `classifyDenseIndexSST`.)
+TEST_F(SSTFixture, NumEntriesDiscriminatesWrongCountSST)
+{
+    /// Write a valid 1-entry SST (stands in for a stale index swapped onto a
+    /// part whose real `rows_count` is larger).
+    auto block = makeUInt64Block({99});
+    ASSERT_EQ(SSTIndexWriter::writeFromBlock(
+       *storage, block, Names{"k"}, /*permutation=*/nullptr, 256,
+              checksums, /*fsync=*/false, getContext().context),
+              1u);
+
+    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+    /// Opens and every block checksum verifies - the damage is size-preserving.
+    ASSERT_TRUE(reader->verifyChecksum().ok());
+
+    auto props = reader->getProperties();
+    ASSERT_NE(props, nullptr);
+    /// The entry count is exposed and truthful; comparing it against a part's
+    /// `rows_count` (1 != 3, say) is what catches a stale/wrong-count index.
+    EXPECT_EQ(props->num_entries, 1u);
+}
+
 /// Empty-input short-circuit: zero keys → the output stream is never
 /// opened, so no `.sst` is produced. Pins `finish`'s empty-input contract.
 TEST_F(SSTFixture, EmptyInputProducesNoFile)
