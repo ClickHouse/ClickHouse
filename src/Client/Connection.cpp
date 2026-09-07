@@ -297,8 +297,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     current_resolved_address.reset();
     setDescription();
 
-    const auto exception_contains_resolved_address
-        = [this](const String & message) { return current_resolved_address && message.contains(current_resolved_address->toString()); };
+    /// The socket error may already name the endpoint that was dialled; do not repeat the same text.
+    const auto endpoint_already_named
+        = [this](const String & message) { return message.contains(getDescription(/*with_extra*/ true)); };
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
     try
@@ -419,8 +420,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add the server only when the lower-level error does not name the peer.
-        if (!exception_contains_resolved_address(e.displayText()))
+        /// Add server address to exception unless the error already names it. Exception will preserve stack trace.
+        if (!endpoint_already_named(e.displayText()))
             e.addMessage("({})", getDescription(/*with_extra*/ true));
         throw;
     }
@@ -431,8 +432,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Preserve the peer already reported by the socket error without duplicating it.
-        if (exception_contains_resolved_address(e.displayText()))
+        /// Add server address to exception unless the error already names it. Exception will remember new stack trace.
+        /// It's a pity that more precise exception type is lost.
+        if (endpoint_already_named(e.displayText()))
             throw NetException(ErrorCodes::NETWORK_ERROR, "{}", e.displayText());
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
     }
@@ -445,7 +447,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         /// This exception can only be thrown from socket->connect(), so add the connection timeout.
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
-        if (exception_contains_resolved_address(e.displayText()))
+        if (endpoint_already_named(e.displayText()))
             throw NetException(
                 ErrorCodes::SOCKET_TIMEOUT, "{} (connection timeout {} ms)", e.displayText(), connection_timeout.totalMilliseconds());
         throw NetException(
