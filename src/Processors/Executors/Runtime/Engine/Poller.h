@@ -31,7 +31,7 @@ public:
 
     void add(ProcessorState & state, int fd, uint32_t events = EPOLLIN | EPOLLERR, int64_t timeout_ms = -1);
     std::vector<ProcessorState *> poll(int timeout_ms);
-    size_t registered() const;
+    size_t pending() const;
     void wakeup();
 
 private:
@@ -56,7 +56,7 @@ class Poller
 public:
     void add(ProcessorState & state, int fd, uint32_t events = 0, int64_t timeout_ms = -1);
     std::vector<ProcessorState *> poll(int) { return {}; }
-    size_t registered() const { return 0; }
+    size_t pending() const { return 0; }
     void wakeup() {}
 };
 

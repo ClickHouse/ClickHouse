@@ -65,7 +65,7 @@ TEST(WorkStealingQueue, StealTakesNewestHalfInOrder)
     WorkStealingQueue thief;
     f.fill(victim, 0, 6);
 
-    EXPECT_EQ(3u, thief.stealFrom(victim));
+    EXPECT_EQ(3u, thief.takeBack(victim, 7));
     EXPECT_EQ(3u, thief.size());
     EXPECT_EQ(3u, victim.size());
 
@@ -81,7 +81,7 @@ TEST(WorkStealingQueue, StealRoundsUpAndAppendsBehindOwnTasks)
     f.fill(victim, 0, 5);
     thief.push(f.task(7));
 
-    EXPECT_EQ(3u, thief.stealFrom(victim));
+    EXPECT_EQ(3u, thief.takeBack(victim, 7));
     f.expectPops(thief, {7, 2, 3, 4});
     f.expectPops(victim, {0, 1});
 }
@@ -93,12 +93,32 @@ TEST(WorkStealingQueue, StealIsCappedByMaxCount)
     WorkStealingQueue thief;
     f.fill(victim, 0, 20);
 
-    EXPECT_EQ(7u, thief.stealFrom(victim));
+    EXPECT_EQ(7u, thief.takeBack(victim, 7));
     f.expectPops(thief, {13, 14, 15, 16, 17, 18, 19});
 
-    EXPECT_EQ(2u, thief.stealFrom(victim, 2));
+    EXPECT_EQ(2u, thief.takeBack(victim, 2));
     f.expectPops(thief, {11, 12});
     f.expectPops(victim, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+}
+
+TEST(WorkStealingQueue, TakeFrontTakesOldestHalfInOrder)
+{
+    Fixture f;
+    WorkStealingQueue victim;
+    WorkStealingQueue thief;
+    f.fill(victim, 0, 6);
+    thief.push(f.task(7));
+
+    EXPECT_EQ(3u, thief.takeFront(victim, 7));
+    f.expectPops(thief, {7, 0, 1, 2});
+    f.expectPops(victim, {3, 4, 5});
+
+    f.fill(victim, 0, 20);
+    EXPECT_EQ(2u, thief.takeFront(victim, 2));
+    f.expectPops(thief, {0, 1});
+    EXPECT_EQ(18u, victim.size());
+
+    EXPECT_THROW(thief.takeFront(thief, 7), Exception);
 }
 
 TEST(WorkStealingQueue, StealFromSingleAndEmpty)
@@ -107,13 +127,13 @@ TEST(WorkStealingQueue, StealFromSingleAndEmpty)
     WorkStealingQueue victim;
     WorkStealingQueue thief;
 
-    EXPECT_EQ(0u, thief.stealFrom(victim));
+    EXPECT_EQ(0u, thief.takeBack(victim, 7));
     EXPECT_TRUE(thief.empty());
 
     victim.push(f.task(0));
-    EXPECT_EQ(1u, thief.stealFrom(victim));
+    EXPECT_EQ(1u, thief.takeBack(victim, 7));
     EXPECT_TRUE(victim.empty());
     f.expectPops(thief, {0});
 
-    EXPECT_THROW(thief.stealFrom(thief), Exception);
+    EXPECT_THROW(thief.takeBack(thief, 7), Exception);
 }

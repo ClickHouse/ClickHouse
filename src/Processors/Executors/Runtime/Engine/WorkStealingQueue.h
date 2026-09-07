@@ -14,8 +14,8 @@ public:
     void push(Task task);
     Task pop();
 
-    size_t takeFront(WorkStealingQueue & victim, size_t max_to_take = 7);
-    size_t takeBack(WorkStealingQueue & victim, size_t max_to_take = 7);
+    size_t takeFront(WorkStealingQueue & victim, size_t max_to_take);
+    size_t takeBack(WorkStealingQueue & victim, size_t max_to_take);
 
     bool empty() const;
     size_t size() const;

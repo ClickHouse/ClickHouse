@@ -60,11 +60,11 @@ TEST(Poller, ReturnsStateWhenFdIsReady)
     pipe.makeReady();
 
     poller.add(pipe.state, pipe.readFd());
-    EXPECT_EQ(1u, poller.registered());
+    EXPECT_EQ(1u, poller.pending());
     EXPECT_THROW(poller.add(pipe.state, pipe.readFd()), Exception);
 
     EXPECT_EQ(one(pipe.state), poller.poll(-1));
-    EXPECT_EQ(0u, poller.registered());
+    EXPECT_EQ(0u, poller.pending());
 }
 
 TEST(Poller, NonBlockingPollReturnsNothingUntilReady)
@@ -74,7 +74,7 @@ TEST(Poller, NonBlockingPollReturnsNothingUntilReady)
 
     poller.add(pipe.state, pipe.readFd());
     EXPECT_TRUE(poller.poll(0).empty());
-    EXPECT_EQ(1u, poller.registered());
+    EXPECT_EQ(1u, poller.pending());
 
     pipe.makeReady();
     EXPECT_EQ(one(pipe.state), poller.poll(0));
@@ -90,7 +90,7 @@ TEST(Poller, ReturnsStateOnTimeout)
 
     EXPECT_EQ(one(pipe.state), poller.poll(-1));
     EXPECT_GE(steady_clock::now() - start, milliseconds(45));
-    EXPECT_EQ(0u, poller.registered());
+    EXPECT_EQ(0u, poller.pending());
 }
 
 TEST(Poller, EarliestDeadlineFiresFirst)
@@ -104,7 +104,7 @@ TEST(Poller, EarliestDeadlineFiresFirst)
 
     EXPECT_EQ(one(fast_pipe.state), poller.poll(-1));
     EXPECT_EQ(one(slow_pipe.state), poller.poll(-1));
-    EXPECT_EQ(0u, poller.registered());
+    EXPECT_EQ(0u, poller.pending());
 }
 
 TEST(Poller, ReadyFdCancelsDeadline)
@@ -122,7 +122,7 @@ TEST(Poller, ReadyFdCancelsDeadline)
 
     poller.add(second_pipe.state, second_pipe.readFd(), EPOLLIN | EPOLLERR, 50);
     EXPECT_EQ(one(second_pipe.state), poller.poll(-1));
-    EXPECT_EQ(0u, poller.registered());
+    EXPECT_EQ(0u, poller.pending());
 }
 
 TEST(Poller, StateCanBeReAddedAfterTimeout)
@@ -135,7 +135,7 @@ TEST(Poller, StateCanBeReAddedAfterTimeout)
 
     poller.add(pipe.state, pipe.readFd(), EPOLLIN | EPOLLERR, 20);
     EXPECT_EQ(one(pipe.state), poller.poll(-1));
-    EXPECT_EQ(0u, poller.registered());
+    EXPECT_EQ(0u, poller.pending());
 }
 
 TEST(Poller, DeadlineArmedWhileWaiting)
@@ -156,7 +156,7 @@ TEST(Poller, DeadlineArmedWhileWaiting)
     adder.join();
 
     EXPECT_EQ(one(timed_pipe.state), fired);
-    EXPECT_EQ(1u, poller.registered());
+    EXPECT_EQ(1u, poller.pending());
 }
 
 TEST(Poller, WakeupInterruptsPollAndIsDrained)
@@ -174,7 +174,7 @@ TEST(Poller, WakeupInterruptsPollAndIsDrained)
 
     EXPECT_TRUE(poller.poll(-1).empty());
     waker.join();
-    EXPECT_EQ(1u, poller.registered());
+    EXPECT_EQ(1u, poller.pending());
 
     EXPECT_TRUE(poller.poll(0).empty());
 
@@ -198,7 +198,7 @@ TEST(Poller, SeveralReadyFdsComeInOnePoll)
     std::vector<ProcessorState *> expected{&first_pipe.state, &second_pipe.state};
     std::ranges::sort(expected);
     EXPECT_EQ(expected, fired);
-    EXPECT_EQ(0u, poller.registered());
+    EXPECT_EQ(0u, poller.pending());
 }
 
 #endif

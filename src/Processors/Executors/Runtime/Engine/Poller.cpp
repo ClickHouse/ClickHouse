@@ -175,7 +175,7 @@ std::vector<ProcessorState *> Poller::poll(int timeout_ms)
     return fired;
 }
 
-size_t Poller::registered() const
+size_t Poller::pending() const
 {
     std::lock_guard lock(mutex);
     return fds.size();

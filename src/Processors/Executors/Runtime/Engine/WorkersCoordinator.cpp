@@ -1,0 +1,119 @@
+#include <Processors/Executors/Runtime/Engine/WorkersCoordinator.h>
+
+namespace DB
+{
+
+WorkersCoordinator::WorkersCoordinator(TaskScheduler & scheduler_, Poller & poller_)
+    : scheduler(scheduler_)
+    , poller(poller_)
+{
+}
+
+size_t WorkersCoordinator::idleLocked() const
+{
+    return sleeping_count + polling_count;
+}
+
+bool WorkersCoordinator::allIdle(size_t idle_workers) const
+{
+    return idle_workers == registered_workers && scheduler.size() == 0 && poller.pending() == 0;
+}
+
+void WorkersCoordinator::wakeOneLocked()
+{
+    if (sleeping_count > 0)
+        have_work.notify_one();
+    else if (polling_count > 0)
+        poller.wakeup();
+}
+
+void WorkersCoordinator::stopLocked()
+{
+    is_stopped = true;
+    have_work.notify_all();
+    poller.wakeup();
+}
+
+void WorkersCoordinator::enter(size_t)
+{
+    std::lock_guard lock(mutex);
+    ++registered_workers;
+}
+
+void WorkersCoordinator::leave(size_t worker_id)
+{
+    std::lock_guard lock(mutex);
+
+    --registered_workers;
+    scheduler.drain(worker_id);
+
+    if (allIdle(idleLocked()))
+        stopLocked();
+    else
+        wakeOneLocked();
+}
+
+bool WorkersCoordinator::wait(size_t worker_id)
+{
+    std::unique_lock lock(mutex);
+
+    if (is_stopped)
+        return false;
+
+    if (scheduler.size() > 0)
+        return true;
+
+    if (allIdle(idleLocked() + 1))
+    {
+        stopLocked();
+        return false;
+    }
+
+    if (poller.pending() > 0 && polling_count == 0)
+    {
+        ++polling_count;
+        lock.unlock();
+        scheduler.poll(worker_id, -1);
+        lock.lock();
+        --polling_count;
+    }
+    else
+    {
+        ++sleeping_count;
+        have_work.wait(lock);
+        --sleeping_count;
+    }
+
+    return !is_stopped;
+}
+
+void WorkersCoordinator::wakeOne()
+{
+    std::lock_guard lock(mutex);
+    wakeOneLocked();
+}
+
+void WorkersCoordinator::stop()
+{
+    std::lock_guard lock(mutex);
+    stopLocked();
+}
+
+bool WorkersCoordinator::stopped() const
+{
+    return is_stopped;
+}
+
+size_t WorkersCoordinator::idle() const
+{
+    std::lock_guard lock(mutex);
+    return idleLocked();
+}
+
+size_t WorkersCoordinator::registered() const
+{
+    std::lock_guard lock(mutex);
+    return registered_workers;
+}
+
+}

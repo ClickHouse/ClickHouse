@@ -1,0 +1,179 @@
+#include <Processors/Executors/Runtime/Engine/TaskScheduler.h>
+#include <Processors/Executors/Runtime/Pipeline/ProcessorState.h>
+
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <thread>
+#include <vector>
+#include <fcntl.h>
+#include <unistd.h>
+
+using namespace DB;
+
+namespace
+{
+
+struct Fixture
+{
+    std::vector<ProcessorState> states;
+    Poller poller;
+    TaskScheduler scheduler;
+
+    explicit Fixture(size_t workers, size_t states_count = 16)
+        : states(states_count)
+        , scheduler(poller, workers)
+    {
+    }
+
+    Task task(size_t i, Task::Kind kind = Task::Kind::Prepare) { return Task{.state = &states[i], .kind = kind}; }
+
+    size_t popIndex(size_t worker_id)
+    {
+        auto popped = scheduler.tryPop(worker_id);
+        if (!popped)
+            return states.size();
+        return popped->state - states.data();
+    }
+};
+
+class AsyncProcessor final : public IProcessor
+{
+public:
+    String getName() const override { return "Async"; }
+    Status prepare() override { return Status::Finished; }
+    void onAsyncJobReady() override { ++ready_calls; }
+
+    size_t ready_calls = 0;
+};
+
+}
+
+TEST(TaskScheduler, OwnQueueIsPoppedInPushOrder)
+{
+    Fixture f(2);
+    f.scheduler.push(f.task(0), 0);
+    f.scheduler.push(f.task(1, Task::Kind::Work), 0);
+    EXPECT_EQ(2u, f.scheduler.size());
+
+    auto first = f.scheduler.tryPop(0);
+    ASSERT_TRUE(first);
+    EXPECT_EQ(&f.states[0], first->state);
+    EXPECT_EQ(Task::Kind::Prepare, first->kind);
+
+    EXPECT_EQ(1u, f.popIndex(0));
+    EXPECT_EQ(0u, f.scheduler.size());
+    EXPECT_FALSE(f.scheduler.tryPop(0));
+}
+
+TEST(TaskScheduler, GlobalQueueIsTakenFromTheFront)
+{
+    Fixture f(2);
+    for (size_t i = 0; i < 6; ++i)
+        f.scheduler.push(f.task(i));
+
+    EXPECT_EQ(0u, f.popIndex(1));
+    EXPECT_EQ(5u, f.scheduler.size());
+    EXPECT_EQ(1u, f.popIndex(1));
+    EXPECT_EQ(2u, f.popIndex(1));
+    EXPECT_EQ(3u, f.popIndex(0));
+}
+
+TEST(TaskScheduler, StealTakesTheNewestHalfOfAnotherWorker)
+{
+    Fixture f(2);
+    for (size_t i = 0; i < 6; ++i)
+        f.scheduler.push(f.task(i), 0);
+
+    EXPECT_EQ(3u, f.popIndex(1));
+    EXPECT_EQ(4u, f.popIndex(1));
+    EXPECT_EQ(0u, f.popIndex(0));
+    EXPECT_EQ(1u, f.popIndex(0));
+    EXPECT_EQ(2u, f.popIndex(0));
+    EXPECT_EQ(5u, f.popIndex(0));
+    EXPECT_EQ(0u, f.scheduler.size());
+}
+
+TEST(TaskScheduler, DrainHandsTheQueueToTheGlobalQueue)
+{
+    Fixture f(2);
+    f.scheduler.push(f.task(0), 0);
+    f.scheduler.push(f.task(1), 0);
+
+    f.scheduler.drain(0);
+    EXPECT_EQ(2u, f.scheduler.size());
+    EXPECT_EQ(0u, f.popIndex(1));
+    EXPECT_EQ(1u, f.popIndex(1));
+}
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+TEST(TaskScheduler, PollTurnsFiredProcessorsIntoWorkTasks)
+{
+    Fixture f(1, 1);
+    AsyncProcessor processor;
+    f.states[0].processor = &processor;
+
+    int fds[2];
+    ASSERT_EQ(0, ::pipe(fds));
+    f.poller.add(f.states[0], fds[0]);
+    EXPECT_FALSE(f.scheduler.tryPop(0));
+
+    char byte = 0;
+    ASSERT_EQ(1, ::write(fds[1], &byte, 1));
+
+    auto popped = f.scheduler.tryPop(0);
+    ASSERT_TRUE(popped);
+    EXPECT_EQ(&f.states[0], popped->state);
+    EXPECT_EQ(Task::Kind::Work, popped->kind);
+    EXPECT_EQ(1u, processor.ready_calls);
+    EXPECT_EQ(0u, f.poller.pending());
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+#endif
+
+TEST(TaskScheduler, EveryTaskIsPoppedExactlyOnceAcrossThreads)
+{
+    constexpr size_t workers = 4;
+    constexpr size_t per_worker = 2000;
+
+    Fixture f(workers, workers * per_worker);
+    std::vector<std::atomic<size_t>> popped(f.states.size());
+    std::atomic<size_t> popped_total = 0;
+
+    std::vector<std::thread> threads;
+    for (size_t worker = 0; worker < workers; ++worker)
+    {
+        threads.emplace_back([&, worker]
+        {
+            for (size_t i = 0; i < per_worker; ++i)
+            {
+                f.scheduler.push(f.task(worker * per_worker + i), worker);
+                if (auto task = f.scheduler.tryPop(worker))
+                {
+                    ++popped[task->state - f.states.data()];
+                    ++popped_total;
+                }
+            }
+
+            while (popped_total.load() < f.states.size())
+            {
+                if (auto task = f.scheduler.tryPop(worker))
+                {
+                    ++popped[task->state - f.states.data()];
+                    ++popped_total;
+                }
+                else
+                    std::this_thread::yield();
+            }
+        });
+    }
+
+    for (auto & thread : threads)
+        thread.join();
+
+    EXPECT_EQ(0u, f.scheduler.size());
+    for (const auto & count : popped)
+        EXPECT_EQ(1u, count.load());
+}
