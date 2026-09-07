@@ -927,6 +927,85 @@ def test_except_data_from_materialized_postgresql_restore_into_replacing_mergetr
     pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
 
 
+def test_materialized_postgresql_nested_table_named_by_its_own_element_is_backed_up():
+    """An element naming the nested table itself asks for it, and that request wins.
+
+    The nested table stays out of a `DATABASE` or `ALL` backup because nothing named it, and
+    `BackupUtils::findInnerTables` recognises it from that same enumeration - which contains the outer
+    table, and so can tell which table owns a nested table of that name. A single-table element naming
+    only the nested table enumerates only that table, so there is no outer table in it to recognise the
+    name by, and the element named it explicitly in any case.
+
+    That is the same rule the rest of the clause follows: a table named by an element of its own is
+    backed up even when a wider element excludes it. It also matches `master`, where the nested table
+    has never been hidden from an element naming it, and an `Ordinary` database, whose tables have no
+    UUID for the name to be derived from at all.
+    """
+    pg_table = "mpg_named_directly"
+
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+    pg_manager.create_postgres_table(pg_table)
+    instance.query(
+        f"INSERT INTO postgres_database.{pg_table} SELECT number, number FROM numbers(30)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE default.{pg_table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', '{pg_table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        pg_table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    nested_table = instance.query(
+        "SELECT toString(uuid) || '_nested' FROM system.tables "
+        f"WHERE database = 'default' AND name = '{pg_table}'"
+    ).strip()
+    assert nested_table.endswith("_nested"), nested_table
+
+    def backup_files(backup_id):
+        listing = instance.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"find /backups/{backup_id} -type f | sed 's|/backups/{backup_id}/||' | sort",
+            ]
+        )
+        return [line for line in listing.splitlines() if line]
+
+    # 1. Nothing names it: a DATABASE element leaves the nested table out entirely.
+    instance.query("BACKUP DATABASE default TO Disk('backups', 'mpg_named_db/')")
+    from_database = backup_files("mpg_named_db")
+    assert not any(
+        "_nested" in path for path in from_database
+    ), f"nested table reached a DATABASE backup: {from_database}"
+
+    # 2. An element of its own names it, so it is backed up like any other table.
+    instance.query(
+        f"BACKUP TABLE default.`{nested_table}` TO Disk('backups', 'mpg_named_table/')"
+    )
+    named_directly = backup_files("mpg_named_table")
+    assert any(
+        path.startswith("metadata/default/") and "_nested" in path
+        for path in named_directly
+    ), f"the element naming the nested table did not back it up: {named_directly}"
+    assert any(
+        path.startswith("data/default/") and "_nested" in path
+        for path in named_directly
+    ), f"the nested table was backed up without its data: {named_directly}"
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+
+
 def test_except_data_overlapping_table_and_database_elements_keep_data():
     """A table's data survives when another element of the same query asks for the table itself.
 
