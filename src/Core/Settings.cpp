@@ -2633,6 +2633,8 @@ The stream carries `CPU`, `Real`, `Memory`, `MemorySample`, and `MemoryPeak` sam
 
 Delivery is best effort: queues and batches are bounded, and samples can be dropped when sampling or the client cannot keep up. Stack symbols are resolved on the server, with an empty string for an unresolved frame. Profile trace packets are sent at most once in `interactive_delay` microseconds during execution, independently of `send_profile_events`, with a final drain before the terminal packet. The final drain waits at most ten seconds for the collector; a timeout discards remaining samples and logs a server warning without changing the query result. Disabling delivery discards queued samples without waiting for the collector. Plain HTTP responses do not include profile trace packets.
 
+Remote queries request profile trace packets only when delivery is active for the coordinator's client. Remote SQL opt-ins cannot enable delivery when it is disabled at the coordinator; explicit remote SQL opt-outs remain effective.
+
 Possible values:
 
 - 0 — Disabled.

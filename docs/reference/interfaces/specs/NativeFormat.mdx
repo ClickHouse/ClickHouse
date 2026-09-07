@@ -20,6 +20,8 @@ The `ProfileTraces` packet, available at revision `54493`+, carries a block with
 
 Samples collected while draining or serializing profile trace packets are excluded from the stream. `CPU` and `Real` samples from that work can still be collected in `system.trace_log`.
 
+Secondary queries request profile trace blocks only when delivery is active for the coordinator's client. Remote SQL opt-ins cannot enable delivery when it is disabled at the coordinator; explicit remote SQL opt-outs remain effective.
+
 All multi-byte integer fields are little-endian. Signed integers use two's complement.
 
 <Tip>

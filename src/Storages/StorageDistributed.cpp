@@ -1,4 +1,5 @@
 #include <Analyzer/IQueryTreeNode.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -1187,6 +1188,7 @@ static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
         return;
 
     auto & set_query = query.settings_ast->as<ASTSetQuery &>();
+    stripProfileTraceOptInsFromQuery(query.settings_ast);
     strip_set_query(set_query);
 
     /// `ASTInsertQuery::formatImpl` always prints a bare `SETTINGS` keyword when `settings_ast` is set,
