@@ -379,9 +379,9 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         }
     }
 
-    /// A window function's aggregate is created during analysis from the argument types known then.
-    /// When an argument's actual type differs by the time the window step runs, the aggregate must be
-    /// re-created with that type for the `Null` combinator to be applied.
+    /// A window function's aggregate is created during analysis and keeps the argument types known then,
+    /// so an argument whose actual type differs when the window step runs needs the aggregate re-created
+    /// with that type.
     for (auto & window_description : window_descriptions)
     {
         for (auto & window_function : window_description.window_functions)

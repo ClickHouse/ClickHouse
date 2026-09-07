@@ -1,8 +1,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/118070
 -- https://github.com/ClickHouse/ClickHouse/issues/103393
 -- A GROUP BY key referenced from a window function was not converted to Nullable under
--- `group_by_use_nulls`, while the validator compared it against the Nullable key set, so
--- every query below except the guards was rejected with NOT_AN_AGGREGATE.
+-- `group_by_use_nulls`, while the validator compared it against the Nullable key set, so the
+-- reproducer queries below were rejected with NOT_AN_AGGREGATE.
 
 SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
