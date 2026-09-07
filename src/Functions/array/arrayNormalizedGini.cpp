@@ -86,7 +86,7 @@ struct Impl
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
             if (array2_size != array_size)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Prediction and label arrays in function arrayNormalizedGini should have same size for each row");
 
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
 

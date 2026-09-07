@@ -31,6 +31,20 @@ SELECT tupleElement(arrayNormalizedGini(range(number + 2), range(number + 2)), 3
 FROM numbers(2)
 SETTINGS max_block_size = 1;
 
+-- The complete later row must affect the result.
+SELECT round(
+    tupleElement(
+        arrayNormalizedGini(
+            if(number = 0, [0., 1.], [0., 1., 2.]),
+            if(number = 0, [0., 1.], [1., 0., 2.])
+        ),
+        3
+    ),
+    6
+)
+FROM numbers(2)
+SETTINGS max_block_size = 2;
+
 -- Mismatched arrays must still be rejected when the mismatch appears in a later row.
 SELECT arrayNormalizedGini(
     range(if(number = 0, 1, 2)),
