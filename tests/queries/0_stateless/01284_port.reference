@@ -13,13 +13,6 @@ hostname
 default-port
 80
 80
-ipv6
-0
-0
-0
-0
-0
-0
 host-no-dot
 0
 ipv4
@@ -37,6 +30,8 @@ hostname
 default-port
 80
 80
+host-no-dot
+0
 ipv6
 0
 0
@@ -44,5 +39,13 @@ ipv6
 0
 0
 0
-host-no-dot
+ipv6-RFC
 0
+80
+80
+80
+80
+0
+80
+80
+443

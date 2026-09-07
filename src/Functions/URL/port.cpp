@@ -99,6 +99,8 @@ private:
             return default_port;
 
         p = host.data() + host.size();
+        if (p < end && *p == ']')
+            ++p; /// skip the closing bracket of an IPv6 literal host, e.g. "[::1]:80"
         if (p >= end || *p != ':')
             return default_port;
         ++p;

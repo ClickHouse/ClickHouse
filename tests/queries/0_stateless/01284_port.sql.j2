@@ -23,17 +23,30 @@ select port{{ suffix }}('http://foobar.com/', toUInt16(80));
 /* ILLEGAL_TYPE_OF_ARGUMENT */ select port{{ suffix }}('', 1); -- { serverError 43 }
 /* NUMBER_OF_ARGUMENTS_DOESNT_MATCH */ select port{{ suffix }}('', 1, 1); -- { serverError 42 }
 
---
--- Known limitations of domain() (getURLHost())
---
-select 'ipv6';
-select port{{ suffix }}('http://[2001:db8::8a2e:370:7334]/');
-select port{{ suffix }}('http://[2001:db8::8a2e:370:7334]:80');
-select port{{ suffix }}('http://[2001:db8::8a2e:370:7334]:80/');
-select port{{ suffix }}('//[2001:db8::8a2e:370:7334]:80/');
-select port{{ suffix }}('[2001:db8::8a2e:370:7334]:80');
-select port{{ suffix }}('2001:db8::8a2e:370:7334:80');
 select 'host-no-dot';
 select port{{ suffix }}('//foobar:80/');
 
 {%- endfor %}
+
+--
+-- Known limitations of domain() (getURLHost())
+--
+select 'ipv6';
+select port('http://[2001:db8::8a2e:370:7334]/');
+select port('http://[2001:db8::8a2e:370:7334]:80');
+select port('http://[2001:db8::8a2e:370:7334]:80/');
+select port('//[2001:db8::8a2e:370:7334]:80/');
+select port('[2001:db8::8a2e:370:7334]:80');
+select port('2001:db8::8a2e:370:7334:80');
+
+-- portRFC() (getURLHostRFC()) does not have the limitation above and supports IPv6 hosts in brackets
+select 'ipv6-RFC';
+select portRFC('http://[2001:db8::8a2e:370:7334]/');
+select portRFC('http://[2001:db8::8a2e:370:7334]:80');
+select portRFC('http://[2001:db8::8a2e:370:7334]:80/');
+select portRFC('//[2001:db8::8a2e:370:7334]:80/');
+select portRFC('[2001:db8::8a2e:370:7334]:80');
+select portRFC('2001:db8::8a2e:370:7334:80');
+select portRFC('https://[2001:db8::8a2e:370:7334]:80/path?q=1');
+select portRFC('http://[2001:db8::8a2e:370:7334]:80/', toUInt16(443));
+select portRFC('http://[2001:db8::8a2e:370:7334]/', toUInt16(443));
