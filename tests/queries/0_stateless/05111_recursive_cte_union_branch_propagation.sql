@@ -17,17 +17,8 @@ SELECT sum(id) AS s FROM src
 UNION ALL
 SELECT sum(id) AS s FROM src;
 
-SELECT 'inside a subquery';
-SELECT * FROM
-(
-    WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3)
-    SELECT sum(id) AS s FROM src
-    UNION ALL
-    SELECT sum(id) AS s FROM src
-)
-ORDER BY s;
-
--- With an enclosing CTE of the same name the copied branch bound to it and returned 99's row count silently.
+-- The copy is not recursive, so `src` inside its body resolves outward to the enclosing CTE, whose
+-- 99 fails `id < 3`; the branch was then left with its seed row alone and returned `1` silently.
 SELECT 'shadowed by an enclosing plain CTE';
 WITH src AS (SELECT 99 AS id)
 SELECT * FROM
@@ -102,6 +93,16 @@ SELECT sum(id) AS s FROM src
 UNION ALL
 SELECT sum(id) AS s FROM src;
 
+SELECT 'control: a non-recursive list is propagated without a RECURSIVE marker';
+SELECT countSubstrings(explain, 'WITH RECURSIVE') FROM
+(
+    EXPLAIN SYNTAX
+    WITH src AS (SELECT 1 AS id)
+    SELECT sum(id) AS s FROM src
+    UNION ALL
+    SELECT sum(id) AS s FROM src
+);
+
 SELECT 'control: WITH RECURSIVE carrying only a scalar alias';
 WITH RECURSIVE 1 AS x
 SELECT x
@@ -136,3 +137,21 @@ SELECT * FROM
     UNION ALL
     WITH other AS (SELECT 0 AS z) SELECT sum(id) AS s FROM src
 ); -- { serverError UNKNOWN_TABLE }
+
+SELECT 'boundary: a later branch with its own WITH keeps it non-recursive';
+SELECT * FROM
+(
+    WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3)
+    SELECT sum(id) AS s FROM src
+    UNION ALL
+    WITH other AS (SELECT 5 AS z) SELECT sum(z) AS s FROM other
+)
+ORDER BY s;
+SELECT countSubstrings(explain, 'WITH RECURSIVE') FROM
+(
+    EXPLAIN SYNTAX
+    WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3)
+    SELECT sum(id) AS s FROM src
+    UNION ALL
+    WITH other AS (SELECT 5 AS z) SELECT sum(z) AS s FROM other
+);
