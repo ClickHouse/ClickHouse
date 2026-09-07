@@ -30,13 +30,15 @@ using namespace DB;
 /// fire fails an assertion instead of faulting.
 /// Consumption is measured between frame addresses, never between two locals' addresses: under ASan
 /// an address-taken local can live on the separately mapped fake stack. Each level still escapes its
-/// own local's address, which is what stops the compiler folding a recursion into a frameless loop.
+/// own local's address, which is what stops the compiler folding a recursion into a frameless loop;
+/// the same budget bounds the depth too, which no level that consumed a byte can reach.
 constexpr size_t recursion_budget = CoroutineStack::default_stack_size * 7 / 8;
 
 struct Observations
 {
     bool ran = false;
     bool budget_reached = false;
+    bool depth_capped = false;
     bool past_allowance = false;
 };
 
@@ -46,6 +48,12 @@ size_t NO_INLINE recurseUntilGuardTrips(size_t depth, uintptr_t first_frame, Obs
 
     char here = static_cast<char>(depth);
     __asm__ __volatile__("" : : "r"(&here) : "memory");
+    if (depth >= recursion_budget)
+    {
+        observations.depth_capped = true;
+        return depth;
+    }
+
     if (first_frame - reinterpret_cast<uintptr_t>(__builtin_frame_address(0)) >= recursion_budget)
     {
         observations.budget_reached = true;
@@ -71,6 +79,12 @@ size_t NO_INLINE descendThenSuspend(size_t depth, uintptr_t first_frame, Observa
 
     char here = static_cast<char>(depth);
     __asm__ __volatile__("" : : "r"(&here) : "memory");
+    if (depth >= recursion_budget)
+    {
+        observations.depth_capped = true;
+        return depth;
+    }
+
     if (first_frame - reinterpret_cast<uintptr_t>(__builtin_frame_address(0)) >= recursion_budget)
     {
         /// Establishes that the destructors above are ones a check would have thrown from, which is
@@ -193,6 +207,9 @@ TEST(CoroutineStackGuard, ThrowsOnDeepRecursionInsideCoroutine)
     try
     {
         executor.resume();
+        /// A fatal failure returns, so the fold-specific message has to come first.
+        if (observations.depth_capped)
+            FAIL() << "a build folded the recursion into a frameless loop";
         FAIL() << "checkStackSize() did not stop an unbounded recursion on a coroutine stack";
     }
     catch (const DB::Exception & e)
