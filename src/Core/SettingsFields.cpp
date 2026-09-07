@@ -19,6 +19,8 @@
 #include <cctz/time_zone.h>
 #pragma clang diagnostic pop
 
+#include <charconv>
+
 #include <cmath>
 #include <limits>
 
@@ -148,12 +150,14 @@ namespace
     Map stringToMap(const String & str)
     {
         /// Allow empty string as an empty map
-        if (str.empty())
+        if (str.empty() || str == "{}")
             return {};
 
-        auto type_string = std::make_shared<DataTypeString>();
-        DataTypeMap type_map(type_string, type_string);
-        auto serialization = type_map.getDefaultSerialization();
+        /// The type and its serialization do not depend on the value, and every query parses the settings
+        /// it was sent, so building them per call showed up in profiles.
+        static const DataTypeMap type_map(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+        static const auto serialization = type_map.getDefaultSerialization();
+
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -206,7 +210,21 @@ SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(const Field & f)
 template <typename T>
 String SettingFieldNumber<T>::toString() const
 {
-    return ::DB::toString(value);
+    /// A query that sets an old `compatibility` value changes hundreds of settings, and every one of them
+    /// is formatted whenever the changed settings are dumped (`system.settings`, `system.query_log`).
+    /// std::to_chars writes into the stack and the result fits the small-string buffer, so integers cost
+    /// no allocation at all, while ::DB::toString allocates a WriteBufferFromOwnString per call.
+    if constexpr (std::is_integral_v<T>)
+    {
+        char buffer[32];
+        /// std::to_chars has no bool overload; a setting of that type prints as 1 / 0.
+        const auto number = static_cast<std::conditional_t<std::is_same_v<T, bool>, UInt8, T>>(value);
+        const auto result = std::to_chars(buffer, buffer + sizeof(buffer), number);
+        chassert(result.ec == std::errc());
+        return String(buffer, result.ptr);
+    }
+    else
+        return ::DB::toString(value);
 }
 
 template <typename T>
@@ -470,14 +488,26 @@ SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
 String SettingFieldMap::toString() const
 {
-    auto type_string = std::make_shared<DataTypeString>();
-    DataTypeMap type_map(type_string, type_string);
-    auto serialization = type_map.getDefaultSerialization();
-    auto column = type_map.createColumn();
-    column->insert(value);
+    /// `http_response_headers` is changed and empty on a default server, so this is the common case when
+    /// the changed settings of every query are dumped.
+    if (value.empty())
+        return "{}";
 
+    /// The same text as SerializationMap over a Map(String, String), written directly: going through a
+    /// DataTypeMap, its serialization and a temporary column cost more than the formatting itself.
     WriteBufferFromOwnString out;
-    serialization->serializeTextEscaped(*column, 0, out, {});
+    writeChar('{', out);
+    for (const auto & element : value)
+    {
+        if (&element != &value.front())
+            writeChar(',', out);
+
+        const auto & pair = element.safeGet<Tuple>();
+        writeQuotedString(pair.at(0).safeGet<String>(), out);
+        writeChar(':', out);
+        writeQuotedString(pair.at(1).safeGet<String>(), out);
+    }
+    writeChar('}', out);
     return out.str();
 }
 
