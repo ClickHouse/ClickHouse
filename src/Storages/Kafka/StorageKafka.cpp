@@ -366,9 +366,7 @@ void StorageKafka::renameInMemory(const StorageID & new_table_id)
 
 void StorageKafka::cleanConsumers()
 {
-    /// We need to clear the cppkafka::Consumer separately from KafkaConsumer, since cppkafka::Consumer holds a weak_ptr to the KafkaConsumer (for logging callback)
-    /// So if we will remove cppkafka::Consumer from KafkaConsumer destructor, then due to librdkafka will call the logging again from destructor, it will lead to a deadlock
-    std::vector<ConsumerPtr> consumers_to_close;
+    std::vector<KafkaConsumerPtr> consumers_to_close;
 
     {
         std::unique_lock lock(mutex);
@@ -387,29 +385,26 @@ void StorageKafka::cleanConsumers()
                 std::count_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); }));
         }
 
-        size_t skipped = 0;
-        for (const auto & consumer : consumers)
-        {
-            if (!consumer->hasConsumer())
-                continue;
-            if (consumer->isInUse())
-            {
-                ++skipped;
-                continue;
-            }
-            consumers_to_close.push_back(consumer->moveConsumer());
-        }
-        if (skipped)
-            LOG_WARNING(log, "Skipped closing {} consumer(s) that are still in use", skipped);
+        consumers_to_close.swap(consumers);
     }
 
-    /// First close cppkafka::Consumer (it can use KafkaConsumer object via stat callback)
-    consumers_to_close.clear();
-
+    size_t skipped = 0;
+    for (const auto & consumer : consumers_to_close)
     {
-        std::unique_lock lock(mutex);
-        consumers.clear();
+        if (!consumer->hasConsumer())
+            continue;
+        if (consumer->isInUse())
+        {
+            ++skipped;
+            continue;
+        }
+
+        /// Both graceful close and destruction can wait for the broker. Keep them outside the pool mutex,
+        /// with the `KafkaConsumer` still alive for the statistics and logging callbacks.
+        auto detached_consumer = consumer->moveConsumer();
     }
+    if (skipped)
+        LOG_WARNING(log, "Skipped closing {} consumer(s) that are still in use", skipped);
 }
 
 void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
@@ -540,8 +535,8 @@ void StorageKafka::cleanConsumersByTTL()
     std::chrono::milliseconds timeout(KAFKA_CONSUMERS_CLEANUP_CHECK_INTERVAL_MS);
     while (!cleanup_cv.wait_for(lock, timeout, [this]() { return shutdown_called == true; }))
     {
-        /// Copy consumers for closing to a new vector to close them without a lock
-        std::vector<ConsumerPtr> consumers_to_close;
+        /// Detach expired wrappers so closing them cannot race with reuse of their pool slots.
+        std::vector<KafkaConsumerPtr> consumers_to_close;
 
         UInt64 now_usec = timeInMicroseconds(std::chrono::system_clock::now());
         {
@@ -560,7 +555,9 @@ void StorageKafka::cleanConsumersByTTL()
                 if (now_usec - consumer_last_used_usec > ttl_usec)
                 {
                     LOG_TRACE(log, "Closing #{} consumer (id: {})", i, consumer_ptr->getMemberId());
-                    consumers_to_close.push_back(consumer_ptr->moveConsumer());
+                    auto replacement = createKafkaConsumer(i);
+                    consumers_to_close.push_back(std::move(consumer_ptr));
+                    consumer_ptr = std::move(replacement);
                 }
             }
         }
@@ -571,6 +568,11 @@ void StorageKafka::cleanConsumersByTTL()
 
             Stopwatch watch;
             size_t closed = consumers_to_close.size();
+            for (const auto & consumer : consumers_to_close)
+            {
+                /// Destroy the `cppkafka::Consumer` before releasing its callback owner.
+                auto detached_consumer = consumer->moveConsumer();
+            }
             consumers_to_close.clear();
             LOG_TRACE(log, "{} consumers had been closed (due to {} usec timeout). Took {} ms.",
                 closed, ttl_usec, watch.elapsedMilliseconds());

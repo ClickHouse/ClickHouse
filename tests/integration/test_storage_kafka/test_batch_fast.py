@@ -688,6 +688,80 @@ def test_kafka_consumer_leaves_group_on_restart(kafka_cluster, leave_response):
         k.kafka_delete_topic(admin_client, topic_name)
 
 
+def test_kafka_consumer_ttl_close_releases_pool_mutex(kafka_cluster):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_ttl_close_{suffix}"
+    topic_name = f"ttl_close_{suffix}"
+    admin_client = k.get_admin_client(kafka_cluster)
+    k.kafka_create_topic(admin_client, topic_name)
+
+    try:
+        instance.query(f"""
+            CREATE TABLE test.{kafka_table} (key UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{kafka_table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_commit_on_select = 1,
+                         kafka_max_block_size = 1,
+                         kafka_poll_max_batch_size = 1,
+                         kafka_flush_interval_ms = 1000,
+                         kafka_consumers_pool_ttl_ms = 5000;
+            """)
+        k.kafka_produce(
+            kafka_cluster, topic_name, [json.dumps({"key": key}) for key in (1, 2)]
+        )
+        # Let the source finish so `kafka_commit_on_select` commits the first row before cleanup.
+        select_query = f"SELECT key FROM test.{kafka_table}"
+        assert (
+            instance.query_with_retry(
+                select_query, check_callback=lambda result: result == "1\n"
+            )
+            == "1\n"
+        )
+        offsets = admin_client.list_consumer_group_offsets(kafka_table)
+        assert [offset.offset for offset in offsets.values()] == [1]
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            with PartitionManager() as pm:
+                pm.add_rule(
+                    {
+                        "instance": instance,
+                        "chain": "INPUT",
+                        "protocol": "tcp",
+                        "source_port": 19092,
+                        "action": "DROP",
+                    }
+                )
+                instance.wait_for_log_line(
+                    f"{kafka_table}.*Sent LeaveGroupRequest", timeout=15
+                )
+
+                # The old consumer is waiting for the broker. A direct read must still be able to
+                # acquire a replacement from the pool before the five-second close budget expires.
+                read = executor.submit(instance.query, select_query, timeout=30)
+                instance.wait_for_log_line(
+                    f"{kafka_table}.*Created #0 consumer", repetitions=2, timeout=2
+                )
+                assert not instance.contains_in_log(
+                    f"{kafka_table}.*Timeout closing Kafka consumer"
+                )
+                assert not instance.contains_in_log(
+                    f"{kafka_table}.*Terminating instance"
+                )
+
+                # Let the old handle time out while the replacement is in use. Its callbacks must
+                # retain their old `KafkaConsumer` owner throughout close and destruction.
+                instance.wait_for_log_line(
+                    f"{kafka_table}.*Timeout closing Kafka consumer", timeout=10
+                )
+            assert read.result(timeout=30) == "2\n"
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS test.{kafka_table}")
+        k.kafka_delete_topic(admin_client, topic_name)
+
+
 # sequential read from different consumers leads to breaking lot of kafka invariants
 # (first consumer will get all partitions initially, and may have problems in doing polls every 60 sec)
 def test_kafka_read_consumers_in_parallel(kafka_cluster):
