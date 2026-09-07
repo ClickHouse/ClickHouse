@@ -419,9 +419,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    /// `!need_write_metadata` means the definition being attached is the one already stored in `metadata/`.
     DatabasePtr database = DatabaseFactory::instance().get(
-        create, metadata_path / "", getContext(), mode, internal, create.attach && !need_write_metadata);
+        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);

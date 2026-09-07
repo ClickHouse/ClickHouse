@@ -62,9 +62,9 @@ DatabaseFilesystem::DatabaseFilesystem(
 
     if (!fs::exists(path))
     {
-        /// Metadata loading stops at the first exception, so refusing a stored definition here would make a
-        /// directory removed since then enough to stop the server from starting. Tables resolve their file
-        /// on access, so an unreachable path costs only the tables; the database still drops.
+        /// Metadata loading stops at the first exception, so refusing the server's own startup replay here
+        /// would make a directory removed since then enough to stop the server from starting. Tables resolve
+        /// their file on access, so an unreachable path costs only the tables; the database still drops.
         if (!is_internal_metadata_replay)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
 
@@ -296,11 +296,10 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
             init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
 
-        /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` (unlike
-        /// tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` never matches here. A
-        /// definition supplied with the query is not a stored one, so it throws even when run as internal.
+        /// The loader flag, not `internal`, is the discriminator: an internal query is not necessarily the
+        /// server's own replay, because wrappers run user statements as internal ones.
         const bool is_internal_metadata_replay
-            = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH && args.replays_stored_definition;
+            = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context, is_internal_metadata_replay);
     };
