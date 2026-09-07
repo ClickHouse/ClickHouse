@@ -142,18 +142,10 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
 
     /// Zero means the step was deserialized on a worker; use the executing server's own setting.
     size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
-    size_t num_partitions = new_max_threads > 1 ? new_max_threads : 1;
-    if (num_partitions > 1)
-    {
-        /// Every partition costs one connection per input stream of every branch (the scatters), plus one
-        /// `IntersectOrExceptTransform` taking one output of every branch's scatter and producing one output.
-        /// Cap the partition count by that step-wide fan-out instead of failing on a huge `max_threads`.
-        size_t connections_per_partition = pipelines.size() + 1;
-        for (const auto & cur_pipeline : pipelines)
-            connections_per_partition += cur_pipeline->getNumStreams();
-
-        num_partitions = std::max<size_t>(1, std::min(num_partitions, scatter_connection_count_limit / connections_per_partition));
-    }
+    size_t max_streams = 0;
+    for (const auto & cur_pipeline : pipelines)
+        max_streams = std::max(max_streams, cur_pipeline->getNumStreams());
+    const size_t num_partitions = clampScatterPartitions(new_max_threads, max_streams);
 
     for (auto & cur_pipeline : pipelines)
     {
@@ -201,14 +193,6 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
 
-    if (num_partitions == 1)
-    {
-        auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator);
-        processors.push_back(transform);
-        pipeline->addTransform(std::move(transform));
-        return pipeline;
-    }
-
     /// United ports are [left_0 .. left_{N-1}, right_0 .. right_{N-1}].
     QueryPipelineProcessorsCollector collector(*pipeline, this);
     pipeline->transform([&](OutputPortRawPtrs ports)
@@ -217,7 +201,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         Processors result;
         for (size_t i = 0; i < num_partitions; ++i)
         {
-            auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator, /*read_left_input_first_=*/ false);
+            auto transform = std::make_shared<IntersectOrExceptTransform>(getOutputHeader(), current_operator, /*read_left_input_first_=*/ num_partitions == 1);
             connect(*ports[i], transform->getInputs().front());
             connect(*ports[num_partitions + i], transform->getInputs().back());
             result.push_back(std::move(transform));

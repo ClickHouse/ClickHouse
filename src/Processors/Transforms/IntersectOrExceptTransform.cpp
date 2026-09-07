@@ -66,10 +66,8 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
             {
                 auto & left_input = inputs.front();
 
-                /// Only reached when the left input is not read first: that path always arrives here
-                /// with a stashed chunk. An empty left input makes the result empty whatever the right
-                /// input holds, so stop before draining a possibly unbounded one, but sample the left
-                /// port instead of waiting on it, which would deadlock the shared scatters.
+                /// Only reached when the left input is not read first, see the constructor: sample the
+                /// left port to stop on an empty left input without waiting on it.
                 if (!has_left_input_chunk)
                 {
                     left_input.setNeeded();

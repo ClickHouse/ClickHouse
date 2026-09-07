@@ -19,4 +19,8 @@ void scatterByPartition(QueryPipelineBuilder & pipeline, size_t num_partitions, 
 inline constexpr size_t scatter_connection_count_limit = 1000000;
 void checkScatterConnectionLimit(size_t num_partitions, size_t num_streams);
 
+/// The partition count reduced (down to one) so that a scatter of `num_streams` streams stays within the limit,
+/// for steps whose partition count is a free choice.
+size_t clampScatterPartitions(size_t num_partitions, size_t num_streams);
+
 }

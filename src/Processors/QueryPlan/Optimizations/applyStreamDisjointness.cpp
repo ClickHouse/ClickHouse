@@ -82,8 +82,8 @@ static StreamDisjointnessProperty applyStreamDisjointness(
             return {};
 
         /// The partitioning expression is the identity over all output columns.
-        const auto & columns = step->getOutputHeader()->getColumnsWithTypeAndName();
-        return {ActionsDAG(columns), names, ActionsDAG(columns), nullptr};
+        ActionsDAG identity(step->getOutputHeader()->getColumnsWithTypeAndName());
+        return {identity.clone(), names, std::move(identity), nullptr};
     }
 
     /// Skip multi-child steps (joins, unions, ...) as they do not pass the disjointness property
