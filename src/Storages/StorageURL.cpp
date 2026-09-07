@@ -181,6 +181,15 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
+static void checkPostReadDoesNotUseIndexPageWildcards(const String & url, const String & http_method)
+{
+    if (urlPathHasListableGlobs(url) && IStorageURLBase::chooseReadMethod(http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
+            url);
+}
+
 String getSampleURI(String uri, ContextPtr context)
 {
     if (urlWithGlobs(uri))
@@ -1294,11 +1303,7 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (urlPathHasListableGlobs(uri) && chooseReadMethod(http_method) == Poco::Net::HTTPRequest::HTTP_POST)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
-            uri);
+    checkPostReadDoesNotUseIndexPageWildcards(uri, http_method);
 
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
@@ -2663,8 +2668,16 @@ void registerStorageURL(StorageFactory & factory)
 
             const bool use_object_storage = config.http_method.empty() && urlPathHasListableGlobs(config.url);
 
+            /// A user-supplied definition, as opposed to metadata written by an earlier `CREATE`.
+            const bool is_new_definition = args.mode <= LoadingStrictnessLevel::CREATE
+                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
             if (!use_object_storage)
             {
+                /// The read path rejects this combination, so do not let a new table be defined with it.
+                if (is_new_definition)
+                    checkPostReadDoesNotUseIndexPageWildcards(config.url, config.http_method);
+
                 return std::make_shared<StorageURL>(
                     config.url,
                     args.table_id,
@@ -2681,8 +2694,7 @@ void registerStorageURL(StorageFactory & factory)
                     /* distributed_processing */ false);
             }
 
-            if (args.mode <= LoadingStrictnessLevel::CREATE
-                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
+            if (is_new_definition)
                 checkExperimentalURLWildcardFromIndexPages(context);
 
             /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
