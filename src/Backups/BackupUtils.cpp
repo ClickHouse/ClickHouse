@@ -173,27 +173,20 @@ struct OuterTable
     String engine_name;
 };
 
-/// Whether `table_name` is the nested table of a standalone `MaterializedPostgreSQL` table, given a way to
-/// look an outer table up by the UUID the nested table's name is derived from.
+/// The UUID a nested table of this name would have been derived from, or nothing if the name is not even
+/// shaped like one.
 ///
 /// A standalone MaterializedPostgreSQL table keeps its rows in a nested table named
 /// `<uuid of the outer table>_nested`, see `StorageMaterializedPostgreSQL::getNestedTableName`. That name
 /// carries no reserved prefix, and `_nested` is not a reserved suffix either: an ordinary user table may
 /// legitimately be called `events_nested`, or even `<some uuid>_nested`. Treating the shape as proof would
-/// drop such a table from every backup, so the name is only a hint about which table would own a nested
-/// table of that name - the answer comes from that outer table's own definition.
-///
-/// Where the outer table is looked up is the caller's business, and it is the only thing the two callers
-/// differ in: `findInnerTables` resolves it inside one enumeration, `isInnerTableInCatalog` in the live
-/// `DatabaseCatalog`. Keeping the rule itself here is what stops the two from disagreeing about a name.
-/// `find_outer_table` returns nothing for a UUID it cannot resolve, and is also where the scope of the
-/// lookup is enforced - a nested table sits in the database of the table which named it.
-template <typename FindOuterTable>
-bool isMaterializedPostgreSQLNestedTable(const String & table_name, FindOuterTable && find_outer_table)
+/// drop such a table from every backup, so this is only a hint about which table would own a nested table
+/// of that name - the answer comes from that outer table's own definition.
+std::optional<UUID> outerTableUUIDFromNestedTableName(const String & table_name)
 {
     static constexpr std::string_view nested_suffix = StorageMaterializedPostgreSQL::NESTED_TABLE_SUFFIX;
     if (table_name.size() <= nested_suffix.size() || !table_name.ends_with(nested_suffix))
-        return false;
+        return {};
 
     const std::string_view uuid_part{table_name.data(), table_name.size() - nested_suffix.size()};
     /// A nil UUID cannot identify an outer table. Tables of an `Ordinary` database have no UUID at all, so a
@@ -203,9 +196,26 @@ bool isMaterializedPostgreSQLNestedTable(const String & table_name, FindOuterTab
     UUID outer_uuid;
     if (!tryParseUUID({reinterpret_cast<const UInt8 *>(uuid_part.data()), uuid_part.size()}, outer_uuid)
         || outer_uuid == UUIDHelpers::Nil)
+        return {};
+
+    return outer_uuid;
+}
+
+/// Whether `table_name` is the nested table of a standalone `MaterializedPostgreSQL` table, given a way to
+/// look an outer table up by the UUID the nested table's name is derived from.
+///
+/// `find_outer_table` returns nothing for a UUID it cannot resolve, and is also where the scope of the
+/// lookup is enforced - a nested table sits in the database of the table which named it. It always resolves
+/// the outer table inside an enumeration of that database, never in the live `DatabaseCatalog`, so that the
+/// answer is a property of the snapshot being backed up rather than of how far a replica has caught up.
+template <typename FindOuterTable>
+bool isMaterializedPostgreSQLNestedTable(const String & table_name, FindOuterTable && find_outer_table)
+{
+    auto outer_uuid = outerTableUUIDFromNestedTableName(table_name);
+    if (!outer_uuid)
         return false;
 
-    auto outer_table = find_outer_table(outer_uuid);
+    auto outer_table = find_outer_table(*outer_uuid);
     if (!outer_table)
         return false;
 
@@ -276,32 +286,13 @@ std::unordered_set<String> findInnerTables(const std::vector<std::pair<ASTPtr, S
     return inner_tables;
 }
 
-bool isInnerTableInCatalog(const String & database_name, const String & table_name)
+bool mayBeNestedTableName([[maybe_unused]] const String & table_name)
 {
-    if (isInnerTable(database_name, table_name))
-        return true;
-
 #if USE_LIBPQXX
-    auto find_outer_table = [&](const UUID & outer_uuid) -> std::optional<OuterTable>
-    {
-        auto outer_storage = DatabaseCatalog::instance().tryGetByUUID(outer_uuid).second;
-        if (!outer_storage)
-            return {};
-
-        /// A nested table sits in the database of the table which named it, so an unrelated table
-        /// elsewhere that happens to carry this UUID says nothing about this name.
-        const auto outer_table_id = outer_storage->getStorageID();
-        if (outer_table_id.database_name != database_name)
-            return {};
-
-        return OuterTable{outer_table_id.table_name, outer_storage->getName()};
-    };
-
-    if (isMaterializedPostgreSQLNestedTable(table_name, find_outer_table))
-        return true;
-#endif
-
+    return outerTableUUIDFromNestedTableName(table_name).has_value();
+#else
     return false;
+#endif
 }
 
 }

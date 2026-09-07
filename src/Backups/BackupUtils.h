@@ -46,14 +46,13 @@ bool isInnerTable(const String & database_name, const String & table_name);
 /// caught up, and a lagging replica would back up a hidden table as a table of its own.
 std::unordered_set<String> findInnerTables(const std::vector<std::pair<ASTPtr, StoragePtr>> & db_tables);
 
-/// Returns true if the live `DatabaseCatalog` shows this name to be an inner table of another table, by the
-/// same rule `findInnerTables` applies to an enumeration - the two share the classification and differ only
-/// in where the outer table is looked up.
+/// Returns true if a nested table of this name would belong to some other table, judged from the name
+/// alone. This is only the shape of the name, never proof: an ordinary user table may carry it.
 ///
-/// Use this to validate a table name written in a query, never to decide what a backup contains. The answer
-/// depends on what this replica has created so far, so on a `Replicated` database it can differ between
-/// replicas; deciding the contents of a backup that way is what `findInnerTables` exists to avoid.
-bool isInnerTableInCatalog(const String & database_name, const String & table_name);
+/// Its one use is to tell a caller that classifying this name needs the table which owns it, so that the
+/// caller can make sure the enumeration it hands to `findInnerTables` contains that owner. Nothing decides
+/// what a backup holds by this - `findInnerTables` does, against the definitions.
+bool mayBeNestedTableName(const String & table_name);
 
 }
 
