@@ -113,32 +113,58 @@ def gh_creates(log):
     return [argv for argv in gh_calls(log) if argv[:2] == ["pr", "create"]]
 
 
+def _gh_argv(argv):
+    """One walk over `argv`, in the spellings pflag accepts, yielding the (option, value)
+    pairs `gh` reads and the positionals it is left with. Every option this job passes
+    takes a value, so a split option is handed the next token whatever that token looks
+    like, and a token handed over that way is neither an option nor a positional."""
+    pairs, positionals = [], []
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        i += 1
+        if not token.startswith("-"):
+            positionals.append(token)
+            continue
+        if token.startswith("--") and "=" in token:
+            name, _, value = token.partition("=")
+        elif not token.startswith("--") and len(token) > 2:
+            # pflag drops one `=` between a short option and its value, so `-X=POST`
+            # is the call `-X POST` is.
+            name, value = token[:2], token[2:].removeprefix("=")
+        else:
+            # '' for a trailing option, which `gh` would reject.
+            name, value = token, argv[i] if i < len(argv) else ""
+            i += 1
+        pairs.append((name, value))
+    return pairs, positionals
+
+
+def gh_options(argv):
+    """Every (option, value) pair `gh` reads out of `argv`."""
+    return _gh_argv(argv)[0]
+
+
+def gh_positionals(argv):
+    """The positionals pflag leaves `gh`: an option may precede them, so an endpoint is
+    what remains rather than a fixed argv index."""
+    return _gh_argv(argv)[1]
+
+
 def flag_values(argv, flag):
-    """Every value `flag` is given, '' for a trailing one that `gh` would reject."""
-    return [
-        argv[i + 1] if i + 1 < len(argv) else ""
-        for i, token in enumerate(argv)
-        if token == flag
-    ]
+    """Every value `flag` is given."""
+    return [value for name, value in gh_options(argv) if name == flag]
 
 
 def api_fields(argv):
-    """The payload fields `gh api` will send, in the spellings pflag accepts. A bare
-    `key=value` is not one: `gh` reads it as a second positional and refuses the call
-    with "accepts 1 arg(s), received 2"."""
+    """The payload fields `gh api` will send. A bare `key=value` is not one: `gh`
+    reads it as a second positional and refuses the call with "accepts 1 arg(s),
+    received 2"."""
     fields = {}
-    tokens = argv
-    for i, token in enumerate(tokens):
-        if token in ("-f", "--raw-field", "-F", "--field"):
-            pair = tokens[i + 1] if i + 1 < len(tokens) else ""
-        elif token.startswith(("--raw-field=", "--field=")):
-            pair = token.split("=", 1)[1]
-        elif len(token) > 2 and token[0] == "-" and token[1] in "fF":
-            pair = token[2:]
-        else:
-            continue
-        key, _, value = pair.partition("=")
-        fields[key] = value
+    for name, pair in gh_options(argv):
+        if name in ("-f", "--raw-field", "-F", "--field"):
+            key, _, value = pair.partition("=")
+            fields[key] = value
     return fields
 
 
@@ -146,14 +172,14 @@ def api_method(argv):
     """The method `gh api` will use: an explicit override in any of the spellings
     pflag accepts, else POST because the command adds parameters (`gh api --help`).
     A `GET` merely reads the endpoint."""
-    tokens = argv
-    for i, token in enumerate(tokens):
-        if token in ("--method", "-X"):
-            return tokens[i + 1] if i + 1 < len(tokens) else ""
-        if token.startswith("--method="):
-            return token.split("=", 1)[1]
-        if token.startswith("-X") and len(token) > 2:
-            return token[2:]
+    method = None
+    for name, value in gh_options(argv):
+        # pflag keeps the LAST value of a repeated option: `-X POST -X GET` sends a
+        # GET, which mutates nothing.
+        if name in ("--method", "-X"):
+            method = value
+    if method is not None:
+        return method
     return "POST" if api_fields(argv) else "GET"
 
 
@@ -287,43 +313,90 @@ class ReleaseE2E:
         # successful `gh pr list --json` prints when nothing matches, so the retried
         # strict reads succeed and report "no PR".
         (self.bindir / "gh").write_text(
-            '#!/bin/sh\nsub="$1 $2"\n'
-            # Each option belongs to the subcommand that defines it, so the table is per
-            # subcommand: one another subcommand takes is unknown here. An unlisted
-            # subcommand falls through to the dispatch, which records it as unmodelled.
+            # `gh api` is a one-word command whose endpoint is a positional pflag can
+            # leave anywhere in argv; the other calls are two-word command paths.
+            '#!/bin/sh\ncase "$1" in api) sub="api" ;; *) sub="$1 $2" ;; esac\n'
+            # An option's value: recorded when the answer below reads it, refused when
+            # `gh` would reject its shape. Called from the accounting pass, so what this
+            # stub validates and what it answers from cannot disagree about a spelling.
+            "optval() {\n"
+            # An option the subcommand requires carries a value the request cannot be
+            # built without, so one that is empty, or is itself an option, is a value
+            # that went missing rather than an input.
+            '  case " $rq " in\n'
+            '    *" $1 "*)\n'
+            '      case "${2:-}" in\n'
+            '        "" | -*) bad="required $1 has no value: [$2]" ;;\n'
+            "      esac ;;\n"
+            "  esac\n"
+            '  case "$1" in\n'
+            '    --repo)  repo="$2" ;;\n'
+            '    --head)  head="$2" ;;\n'
+            '    --state) state="$2" ;;\n'
+            '    --json)  json="$2" ;;\n'
+            # `gh api` sends a field as `key=value` and refuses both a key without
+            # one and a key it was already given. A bracketed key is a path into a
+            # map, which a flat key=value cannot express, so neither is modelled.
+            "    -f|--raw-field)\n"
+            '      case "$2" in *=*) ;; *) bad="a field with no key: [$2]" ;; esac\n'
+            '      k="${2%%=*}"\n'
+            '      case "$k" in\n'
+            '        *"["* | *"]"*) bad="a structured field key: [$k]" ;;\n'
+            "      esac\n"
+            '      case " $fkeys " in\n'
+            '        *" $k "*) bad="a field given twice: [$k]" ;;\n'
+            '        *) fkeys="$fkeys $k" ;;\n'
+            "      esac ;;\n"
+            "  esac\n"
+            "}\n"
+            # Per subcommand, the options this stub models: one that belongs to another
+            # subcommand is unknown here, and an unlisted subcommand falls through to the
+            # dispatch, which records it as unmodelled.
             'case "$sub" in\n'
-            '  "pr list")        vf=" --repo --head --state --json --label --search "; rq=""; known=1 ;;\n'
+            # A filter the sentinel cannot narrow by is not modelled either: answering as
+            # though it were absent is how a lookup that starts filtering stays green.
+            '  "pr list")        vf=" --repo --head --state --json "; rq=""; known=1 ;;\n'
             # `gh pr create` prompts for a title and a body it is not given, and refuses
             # rather than prompting when it is not on a terminal.
             '  "pr create")      vf=" --repo --head --base --title --body --label ";'
             ' rq=" --title --body "; known=1 ;;\n'
             '  "auth setup-git") vf=" "; rq=""; known=1 ;;\n'
-            '  "api "*)          vf=" -f -F --raw-field --field -X --method -H "; rq=""; known=1 ;;\n'
+            # A header can change what an endpoint returns, and a typed field is
+            # evaluated client-side (`@file` is read before the request); neither is
+            # modelled, so only the raw string field is admitted.
+            '  api)              vf=" -f --raw-field -X --method "; rq=""; known=1 ;;\n'
             "  *) known=0 ;;\n"
             "esac\n"
             # `gh` refuses argv it cannot account for. Every call this stub answers is
             # `gh <group> <verb-or-endpoint>`, so two positionals are expected, and an
             # option is accountable only if it is this subcommand's and gets its value.
+            'head=""; repo=""; state=""; json=""; fkeys=""; p2=""\n'
             'if [ "$known" = 1 ]; then\n'
-            '  pos=0; skip=0; bad=""; seen=""\n'
+            '  pos=0; pend=""; bad=""; seen=""\n'
             '  for a in "$@"; do\n'
-            '    if [ "$skip" = 1 ]; then skip=0; continue; fi\n'
+            '    if [ -n "$pend" ]; then optval "$pend" "$a"; pend=""; continue; fi\n'
             '    case "$a" in\n'
-            "      --*=*) name=${a%%=*}; joined=1 ;;\n"
-            '      -[fFXH]?*) rest=${a#??}; name=${a%"$rest"}; joined=1 ;;\n'
-            '      -*) name="$a"; joined=0 ;;\n'
-            "      *) pos=$((pos + 1)); continue ;;\n"
+            "      --*=*) name=${a%%=*}; val=${a#*=}; joined=1 ;;\n"
+            '      -[fFXH]?*) rest=${a#??}; name=${a%"$rest"}; val="${rest#=}"; joined=1 ;;\n'
+            '      -*) name="$a"; val=""; joined=0 ;;\n'
+            '      *) pos=$((pos + 1)); if [ "$pos" = 2 ]; then p2="$a"; fi\n'
+            "         continue ;;\n"
             "    esac\n"
             '    case "$vf" in\n'
-            '      *" $name "*) seen="$seen $name"; [ "$joined" = 1 ] || skip=1 ;;\n'
+            '      *" $name "*) seen="$seen $name"\n'
+            '        if [ "$joined" = 1 ]\n'
+            '        then optval "$name" "$val"\n'
+            '        else pend="$name"\n'
+            "        fi ;;\n"
             '      *) bad="$a"; break ;;\n'
             "    esac\n"
             "  done\n"
             "  for r in $rq; do\n"
             '    case " $seen " in *" $r "*) ;; *) bad="$r missing" ;; esac\n'
             "  done\n"
-            '  if [ "$pos" != 2 ] || [ "$skip" = 1 ] || [ -n "$bad" ]; then\n'
-            '    echo "release-e2e stub: gh cannot account for this argv [$*]" >&2\n'
+            '  if [ "$pos" != 2 ] || [ -n "$pend" ] || [ -n "$bad" ]; then\n'
+            '    echo "release-e2e stub: gh cannot account for this argv'
+            ' [$*]${bad:+ ($bad)}" >&2\n'
             "    exit 1\n"
             "  fi\n"
             "fi\n"
@@ -331,22 +404,14 @@ class ReleaseE2E:
             # A caller that treats a failed `gh` as a warning would otherwise leave a
             # refused request in the log for the assertions to read as a completed one.
             f'printf "%s\\0" "$#" "$@" >> "{self.root}/gh.log"\n'
-            'head=""; repo=""; state=""; json=""; prev=""\n'
-            'for a in "$@"; do\n'
-            '  case "$prev" in\n'
-            '    --head)  head="$a" ;;\n'
-            '    --repo)  repo="$a" ;;\n'
-            '    --state) state="$a" ;;\n'
-            '    --json)  json="$a" ;;\n'
-            "  esac\n"
-            '  prev="$a"\n'
-            "done\n"
-            # `gh pr list` prints only the fields `--json` asks for, so a lookup that
-            # does not request the one it dereferences is neither answered nor handed it.
+            # `gh pr list` prints exactly the fields `--json` asks for and rejects an
+            # unknown one, so a request for anything but the single field answered here
+            # is refused rather than answered without it.
             'if [ "$sub" = "pr list" ]; then\n'
-            '  case ",$json," in\n'
-            "    *,url,*) ;;\n"
-            '    *) echo "release-e2e stub: gh pr list lacks [--json url]: [$*]" >&2\n'
+            '  case "$json" in\n'
+            "    url) ;;\n"
+            '    *) echo "release-e2e stub: gh pr list wants [--json url], got'
+            ' [$json]: [$*]" >&2\n'
             "       exit 1 ;;\n"
             "  esac\n"
             "fi\n"
@@ -370,7 +435,9 @@ class ReleaseE2E:
             # catch-all success answers every `gh` path no assertion covers, which
             # makes not issuing one indistinguishable from issuing it. The listed
             # subcommands are what the `new` path issues.
-            'case "$sub" in\n'
+            # For `api` that identity is the endpoint positional, not the second word.
+            'cmd="$sub"; if [ "$sub" = api ]; then cmd="api $p2"; fi\n'
+            'case "$cmd" in\n'
             "  \"pr list\") echo '[]' ;;\n"
             '  "pr create"|"auth setup-git") ;;\n'
             f'  "api repos/{REPO}/labels") ;;\n'
@@ -649,8 +716,9 @@ class ReleaseE2E:
         for argv in gh_calls(gh_log):
             if argv[:1] == ["api"]:
                 fields = api_fields(argv)
+                endpoint = gh_positionals(argv)[1:]
                 labels.append((
-                    argv[1] if len(argv) > 1 else "",
+                    endpoint[0] if endpoint else "",
                     api_method(argv),
                     fields.get("name", ""),
                     fields.get("color", ""),
