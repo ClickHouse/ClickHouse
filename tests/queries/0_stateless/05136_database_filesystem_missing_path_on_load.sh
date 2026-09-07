@@ -24,6 +24,6 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/store" \
     -q "SELECT name FROM system.databases WHERE name = 'fsdb';
         SELECT count() FROM system.tables WHERE database = 'fsdb';
         DROP DATABASE fsdb;
-        SELECT count() FROM system.databases WHERE name = 'fsdb'" 2>/dev/null
+        SELECT count() FROM system.databases WHERE name = 'fsdb'"
 
 rm -rf "${WORKING_FOLDER}"

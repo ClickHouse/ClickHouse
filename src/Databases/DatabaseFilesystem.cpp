@@ -297,8 +297,8 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
         }
 
         /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` (unlike
-        /// tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` never matches here. A user
-        /// `ATTACH DATABASE` supplies the path now rather than replaying one, and stays fail-closed.
+        /// tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` never matches here. Only that
+        /// replay may load a path that is gone: a user `CREATE`/`ATTACH DATABASE` is not internal, so it throws.
         const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context, is_internal_metadata_replay);
