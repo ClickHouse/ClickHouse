@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
@@ -36,7 +37,7 @@ namespace DB::QueryPlanOptimizations
 /// where
 /// - distance_function is function 'L2Distance', 'cosineDistance', or 'dotProduct',
 /// - vec is a column of tab (*),
-/// - reference_vec is a literal of type Array(Float32/Float64)
+/// - reference_vec is a literal of type Array(Float32 / Float64 / BFloat16 / (U)Int8 / (U)Int16 / (U)Int32 / (U)Int64)
 ///
 /// This function extracts distance_function, reference_vec, and N from the query plan without rewriting it.
 /// The extracted values are then passed to ReadFromMergeTree which can then use the vector similarity index
@@ -116,6 +117,12 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
 
+    /// LIMIT ... WITH TIES can return more rows than n. The vector search optimization
+    /// bounds the ANN search to exactly n candidates, so rows tied with the n-th row
+    /// are never retrieved. Skip the optimization and fall back to brute force.
+    if (limit_step->withTies())
+        return no_layers_updated;
+
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
     if (n > settings.max_limit_for_vector_search_queries)
         return no_layers_updated;
@@ -178,16 +185,13 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         }
         else if (child->type == ActionsDAG::ActionType::COLUMN)
         {
-            /// Is it an Array(Float32), Array(Float64) or Array(BFloat16) column?
+            /// Is it an Array(Float32), Array(Float64), Array(BFloat16), Array((U)Int8/16/32/64) column?
             const DataTypePtr & data_type = child->result_type;
             const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
             if (data_type_array == nullptr)
                 continue;
-            DataTypePtr data_type_array_nested = data_type_array->getNestedType();
-            const auto * data_type_nested_float64 = typeid_cast<const DataTypeFloat64 *>(data_type_array_nested.get());
-            const auto * data_type_nested_float32 = typeid_cast<const DataTypeFloat32 *>(data_type_array_nested.get());
-            const auto * data_type_nested_bfloat16 = typeid_cast<const DataTypeBFloat16 *>(data_type_array_nested.get());
-            if (data_type_nested_float64 == nullptr && data_type_nested_float32 == nullptr && data_type_nested_bfloat16 == nullptr)
+            WhichDataType which_data_type_array_nested(data_type_array->getNestedType());
+            if (!which_data_type_array_nested.isFloat() && !which_data_type_array_nested.isNativeInteger())
                 continue;
 
             /// Read value from column
@@ -199,9 +203,10 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
             for (const auto & field_array_value : field_array)
             {
                 Field::Types::Which field_array_value_type = field_array_value.getType();
-                if (field_array_value_type != Field::Types::Float64)
+                if (field_array_value_type != Field::Types::Float64 && field_array_value_type != Field::Types::UInt64
+                    && field_array_value_type != Field::Types::Int64)
                     return no_layers_updated;
-                Float64 float64 = field_array_value.safeGet<Float64>();
+                Float64 float64 = applyVisitor(FieldVisitorConvertToNumber<Float64>(), field_array_value);
                 reference_vector.push_back(float64);
             }
         }
@@ -526,6 +531,18 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     }
 
     const bool vector_optimization_applied = optimize_plan || apply_row_filter_for_rescoring;
+
+    /// Both vector-search optimizations narrow each granule to the candidate rows returned by the
+    /// vector index before the WHERE/PREWHERE filter runs. The query condition cache key encodes
+    /// only the filter predicate, so a granule whose candidates all fail the filter would be
+    /// recorded as "the predicate matches nothing" and a later ordinary query with the same
+    /// predicate would skip it and lose rows. Same reasoning as the SAMPLE exclusion in
+    /// ReadFromMergeTree::initializePipeline. Reading and index analysis are already excluded for
+    /// vector search (MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache and
+    /// ReadFromMergeTree::selectRangesToRead); this covers the remaining write paths.
+    if (vector_optimization_applied)
+        read_from_mergetree_step->disableQueryConditionCache();
+
     if (!vector_optimization_applied && settings.optimize_prewhere && filter_step)
         optimizePrewhere(*filter_or_prewhere_node, settings.remove_unused_columns, false);
 

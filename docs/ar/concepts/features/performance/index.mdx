@@ -1,16 +1,43 @@
 ---
 slug: /operations/overview
 sidebarTitle: 'نظرة عامة على الأداء والتحسينات'
-description: 'صفحة النظرة العامة للأداء والتحسينات'
+description: 'صفحة نظرة عامة على الأداء والتحسينات'
 title: 'الأداء والتحسينات'
 keywords: ['تحسين الأداء', 'أفضل الممارسات', 'دليل التحسين', 'أداء ClickHouse', 'تحسين قاعدة البيانات']
 doc_type: 'reference'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/ar/_performance_optimizations_table_of_contents.mdx';
+يتضمن هذا القسم نصائح وأفضل الممارسات لتحسين الأداء في ClickHouse.
+ونوصي المستخدمين بقراءة [المفاهيم الأساسية](/ar/concepts/core-concepts/parts) قبل هذا القسم،
+إذ يغطي المفاهيم الرئيسية اللازمة لتحسين الأداء.
 
-يتضمن هذا القسم نصائح وأفضل الممارسات لتحسين الأداء باستخدام ClickHouse.
-نوصي المستخدمين بقراءة [المفاهيم الأساسية](/ar/concepts/core-concepts/parts) قبل هذا القسم،
-إذ تغطي المفاهيم الرئيسية اللازمة لتحسين الأداء.
+<CardGroup cols={2}>
+  <Card title="تحسين `PREWHERE`" icon="filter" href="/ar/concepts/features/performance/prewhere">
+    كيف يساهم `PREWHERE` في تقليل عمليات الإدخال/الإخراج من خلال تصفية البيانات قبل قراءة الأعمدة غير الضرورية، وكيفية مراقبة فعاليته.
+  </Card>
 
-<TableOfContents />
+  <Card title="تنميط التخصيص" icon="memory" href="/ar/concepts/features/performance/allocation-profiling">
+    حلّل تخصيصات الذاكرة باستخدام jemalloc.
+  </Card>
+
+  <Card title="تنميط التخصيص للإصدارات السابقة لـ 25.9" icon="clock-rotate-left" href="/ar/concepts/features/performance/allocation-profiling-old">
+    تنميط التخصيص لإصدارات ClickHouse السابقة لـ 25.9.
+  </Card>
+
+  <Card title="التخزينات المؤقتة" icon="hard-drive" href="/ar/concepts/features/performance/caches/caches">
+    أنواع التخزين المؤقت، بما في ذلك query cache وquery condition cache وuserspace page cache.
+  </Card>
+
+  <Card title="فهارس تخطي البيانات" icon="forward" href="/ar/concepts/features/performance/skip-indexes/skipping-indexes">
+    تعرّف على فهارس تخطي البيانات، مع أمثلة.
+  </Card>
+
+  <Card title="التجسيد الكسول" icon="hourglass-half" href="/ar/concepts/features/performance/lazy-materialization">
+    أرجئ قراءة بيانات الأعمدة إلى أن تصبح مطلوبة فعليًا.
+  </Card>
+
+  <Card title="استكشاف الأخطاء وإصلاحها" icon="bug" href="/ar/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    تشخيص مشكلات الذاكرة، واختبار أجهزتك، وSampling query profiler.
+  </Card>
+</CardGroup>

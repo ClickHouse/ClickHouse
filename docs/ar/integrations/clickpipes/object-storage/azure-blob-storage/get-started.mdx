@@ -1,6 +1,6 @@
 ---
-sidebarTitle: 'ابدأ'
-description: 'دليل إرشادي خطوة بخطوة لإنشاء أول ClickPipe لـ Azure Blob Storage ‏(ABS).'
+sidebarTitle: 'البدء'
+description: 'دليل تفصيلي لإنشاء أول ClickPipe لـ Azure Blob Storage ‏(ABS).'
 slug: /integrations/clickpipes/object-storage/azure-blob-storage/get-started
 title: 'أنشئ أول ClickPipe لـ Azure Blob Storage'
 doc_type: 'guide'
@@ -18,33 +18,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * خدمة ClickHouse Cloud قيد التشغيل
 
 <Steps>
-  <Step>
-    ## انتقل إلى مصادر البيانات
-
-    من الصفحة الرئيسية لخدمتك، انقر على **مصادر البيانات** في القائمة الجانبية اليسرى.
+  <Step title="الانتقال إلى مصادر البيانات" id="navigate-to-data-sources">
+    من الصفحة الرئيسية لخدمتك، انقر على **Data sources** في القائمة الموجودة على اليسار.
     وسّع القائمة المنسدلة **ClickPipes** ثم انقر على **Create ClickPipe**
 
     <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="الانتقال إلى مصادر البيانات" size="md" />
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="إنشاء ClickPipe" size="md" />
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="Create ClickPipe" size="md" />
   </Step>
 
-  <Step>
-    ## اختر مصدر البيانات
+  <Step title="تحديد مصدر البيانات" id="select-data-source">
+    حدّد **Azure Blob Storage** كنوع البيانات
 
-    اختر **Azure Blob Storage** كنوع البيانات
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="اختر Azure Blob Storage" size="md" />
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="تحديد Azure Blob Storage" size="md" />
   </Step>
 
-  <Step>
-    ## أعدّ اتصال ClickPipe
-
+  <Step title="إعداد اتصال ClickPipe" id="setup-connection">
     1. امنح ClickPipe اسماً وصفياً
-    2. اختر **Connection String** من القائمة المنسدلة الخاصة بطريقة المصادقة
-    3. الصق سلسلة اتصال Azure في حقل **Connection string**
+    2. حدّد **Connection String** من القائمة المنسدلة الخاصة بطريقة المصادقة
+    3. ألصق سلسلة اتصال Azure في الحقل **Connection string**
     4. أدخل اسم الحاوية
-    5. أدخل مسار ملف Azure Blob Storage، مع استخدام أحرف البدل إذا أردت إدخال ملفات متعددة
+    5. أدخل مسار ملف Azure Blob Storage، مع استخدام أحرف البدل إذا كنت تريد إدخال عدة ملفات
 
     ويمكنك اختيارياً تمكين الإدخال المستمر. راجع [&quot;الإدخال المستمر&quot;](/ar/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion) لمزيد من التفاصيل.
 
@@ -53,49 +47,41 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="تفاصيل الإعداد" size="md" />
   </Step>
 
-  <Step>
-    ## اختر تنسيق البيانات
-
-    1. اختر نوع الملف
-    2. ضغط الملف (`detect automatically`, `none`, `gzip`, `brotli`, `xz` أو `zstd`)
+  <Step title="تحديد تنسيق البيانات" id="select-data-format">
+    1. حدّد نوع الملف
+    2. ضغط الملف (`detect automatically` أو `none` أو `gzip` أو `brotli` أو `xz` أو `zstd`)
     3. أكمل أي إعدادات إضافية خاصة بالتنسيق، مثل الفاصل المستخدم في التنسيقات المفصولة بفواصل
     4. انقر على **Parse information**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="اختر تنسيق البيانات" size="md" />
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="اختيار تنسيق البيانات" size="md" />
   </Step>
 
-  <Step>
-    ## اضبط الجدول والمخطط والإعدادات
+  <Step title="تهيئة الجدول والمخطط والإعدادات" id="configure-table-schema">
+    ستحتاج الآن إلى إنشاء جدول جديد أو تحديد جدول موجود لتخزين البيانات الواردة فيه.
 
-    تحتاج الآن إلى إنشاء جدول جديد أو اختيار جدول موجود لتخزين البيانات الواردة فيه.
-
-    1. اختر ما إذا كنت تريد تحميل البيانات إلى جدول جديد أو جدول موجود
-    2. اختر قاعدة البيانات التي ستستخدمها، والاسم الذي سيُعطى للجدول إذا كان جديداً
+    1. حدّد ما إذا كنت تريد تحميل البيانات إلى جدول جديد أو جدول موجود
+    2. حدّد قاعدة البيانات التي ستستخدمها، والاسم الذي سيُعطى للجدول إذا كان جدولاً جديداً
     3. اختر مفتاح فرز واحداً أو أكثر
-    4. حدّد أي تعيينات من الملف المصدر إلى الجدول الوجهة لاسم العمود ونوع العمود والقيمة الافتراضية وقابلية القيم الفارغة
-    5. أخيراً، حدّد الإعدادات المتقدمة مثل نوع المحرك الذي تريد استخدامه، وتعبير التقسيم، والمفتاح الأساسي
+    4. حدّد أي تعيينات من الملف المصدر إلى جدول الوجهة لاسم العمود ونوع العمود والقيمة الافتراضية وقابلية القيم الفارغة
+    5. أخيراً، حدّد الإعدادات المتقدمة مثل نوع المحرك الذي تريد استخدامه، والتعبير المستخدم للتقسيم، والمفتاح الأساسي
 
     <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="تحليل المعلومات" size="md" />
 
-    عندما تنتهي من ضبط الجدول والمخطط والإعدادات، انقر على **Details and settings**
+    عند الانتهاء من تهيئة الجدول والمخطط والإعدادات، انقر على **Details and settings**
   </Step>
 
-  <Step>
-    ## اضبط الأذونات
+  <Step title="تهيئة الأذونات" id="configure-permissions">
+    سيقوم ClickPipes بإعداد مستخدم قاعدة بيانات مخصص لكتابة البيانات.
+    ويمكنك تحديد دور لهذا المستخدم.
+    إذا كنت ستستخدم materialized views أو ستصل إلى Dictionary من جدول الوجهة، فاختر &quot;Full access&quot;.
 
-    سيُعدّ ClickPipes مستخدم قاعدة بيانات مخصصاً لكتابة البيانات.
-    يمكنك اختيار دور لهذا المستخدم.
-    إذا كنت تستخدم العروض المادية أو تحتاج إلى الوصول إلى القواميس من الجدول الوجهة، فاختر &quot;Full access&quot;.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="ضبط الأذونات" size="md" />
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="تهيئة الأذونات" size="md" />
   </Step>
 
-  <Step>
-    ## أكمل الإعداد
-
+  <Step title="إكمال الإعداد" id="complete-setup">
     انقر على **Create ClickPipe** لإكمال الإعداد
 
-    ينبغي أن يظهر ClickPipe الآن بحالة **provisioning**.
-    وبعد لحظات قليلة ستتغير حالته من **provisioning** إلى **completed**.
+    ينبغي أن ترى الآن ClickPipe في حالة provisioning.
+    وبعد لحظات قليلة ستتغير من **provisioning** إلى **completed**.
   </Step>
 </Steps>

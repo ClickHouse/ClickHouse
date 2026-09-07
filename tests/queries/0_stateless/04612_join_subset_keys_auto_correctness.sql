@@ -42,6 +42,16 @@ SELECT 'merge_pref_inner' AS t,
   = (SELECT count() FROM jks2_left l JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'full_sorting_merge,hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
 
+-- `parallel_full_sorting_merge` is likewise blind to a mixed condition, and unlike the merge
+-- algorithms above it was added after the demotion gate was first written - the gate is an
+-- allowlist so that a newly added algorithm is excluded until it is known to evaluate one.
+SELECT 'parallel_merge_pref_inner' AS t,
+    (SELECT count() FROM jks2_left l JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
+        SETTINGS join_algorithm = 'parallel_full_sorting_merge,hash', query_plan_hash_join_subset_keys_auto = 1,
+            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001)
+  = (SELECT count() FROM jks2_left l JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
+        SETTINGS join_algorithm = 'parallel_full_sorting_merge,hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
+
 -- Blocker: demoted equalities are JOIN ON conditions, so on outer joins they must be evaluated
 -- during the join (NULL-extending non-matching rows), not as a post-join filter that would drop
 -- them. Verify outer-join results are unchanged by demotion.

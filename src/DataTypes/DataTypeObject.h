@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -46,6 +47,7 @@ public:
     Field getDefault() const override { return Object(); }
 
     void insertDefaultInto(IColumn & column) const override;
+    bool isDefaultInsertTrivial() const override;
 
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -70,6 +72,10 @@ public:
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;
     const std::unordered_map<String, DataTypePtr> & getTypedPaths() const { return typed_paths; }
+
+    /// Returns a map from typed-path name to its default serialization, resolved once.
+    /// Used by mergedJSONPatch to serialize/deserialize typed-path values without a type tag.
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> getTypedPathSerializations() const;
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }
 
@@ -78,6 +84,12 @@ public:
 
     DataTypePtr getTypeOfNestedObjects() const;
     DataTypePtr getDynamicType() const;
+
+    /// Extracts a combined literal+sub-object subcolumn for the given path.
+    /// When skip_null_typed_paths is true, typed paths with NULL values in sub-objects
+    /// are not considered present, so a parent path whose typed descendants are all NULL
+    /// is treated as absent (NULL in the result).
+    ColumnPtr extractCombinedSubcolumn(const String & path, const ColumnPtr & column, bool skip_null_typed_paths) const;
 
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();

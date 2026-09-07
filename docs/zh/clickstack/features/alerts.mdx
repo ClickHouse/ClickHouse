@@ -34,17 +34,13 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
 要为某个搜索创建告警，必须先保存该搜索。你既可以为现有的已保存搜索创建告警，也可以在创建告警的过程中保存搜索。在下面的示例中，我们假设该搜索尚未保存。
 
 <Steps>
-  <Step>
-    #### 打开告警创建对话框
-
-    首先输入一个[搜索](/zh/clickstack/features/search)，然后点击`搜索`页面右上角的 `Alerts` 按钮。
+  <Step title="打开告警创建对话框" id="open-dialog">
+    首先输入一个[搜索](/zh/clickstack/features/search)，然后点击`搜索`页面右上角的 `告警` 按钮。
 
     <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="告警搜索视图" size="lg" />
   </Step>
 
-  <Step>
-    #### 创建告警
-
+  <Step title="创建告警" id="create-the-alert">
     在告警创建面板中，你可以：
 
     * 为与该告警关联的已保存搜索指定名称。
@@ -81,25 +77,19 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
 告警可以在创建图表时创建，也可以在将图表添加到仪表板时创建，或直接添加到现有图表。在下面的示例中，我们假设该图表已存在于仪表板中。
 
 <Steps>
-  <Step>
-    #### 打开图表编辑对话框
-
+  <Step title="打开图表编辑对话框" id="open-chart-dialog">
     打开图表的配置菜单，然后选择告警按钮。此时会显示图表编辑对话框。
 
     <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="编辑图表告警" size="lg" />
   </Step>
 
-  <Step>
-    #### 添加告警
-
+  <Step title="添加告警" id="add-chart-alert">
     选择 **Add Alert**。
 
     <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="向图表添加告警" size="lg" />
   </Step>
 
-  <Step>
-    #### 定义告警条件
-
+  <Step title="定义告警条件" id="define-alert-conditions">
     定义条件 (`>=`、`>`、`<=`、`<`、`=`、`!=`、`<= x >=`、`> or <`) 、阈值、持续时间和 webhook。这里的持续时间也会决定告警的触发频率。
 
     <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="为图表创建告警" size="lg" />
@@ -223,9 +213,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 要为基于 SQL 的图表创建告警：
 
 <Steps>
-  <Step>
-    #### 在仪表板中创建或打开基于 SQL 的图表
-
+  <Step title="在仪表板中创建或打开基于 SQL 的图表" id="open-sql-chart">
     在已保存的仪表板中，你可以[使用 **SQL** 图表模式创建新图表](/zh/clickstack/features/dashboards/sql-visualizations)，也可以打开现有的基于 SQL 的图表进行编辑。
 
     选择 **折线图**、**堆叠条形图** 或 **数值** 作为显示类型。
@@ -233,15 +221,13 @@ ClickStack 告警可开箱即用地集成以下服务类型：
     <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="创建 SQL 图表" size="lg" />
   </Step>
 
-  <Step>
-    #### 添加告警
-
+  <Step title="添加告警" id="add-sql-alert">
     在图表编辑器的告警部分中，选择 **Add Alert**。配置以下内容：
 
-    * **阈值类型**：`>=` (大于等于) 、`>` (大于) 、`<=` (小于等于) 、`<` (小于) 、`=` (等于) 、`!=` (不等于) 、`<= x >=` (介于两者之间) 或 `> or <` (超出范围)
-    * **阈值**：用于比较的数值
-    * **间隔**：告警的评估频率 (1m、5m、15m、30m、1h、6h、12h 或 1d) 。这也定义了每次评估的时间窗口。
-    * **Webhook**：告警触发时使用的通知通道。请参阅[添加 webhook](#add-webhook)。
+    * **阈值类型**: `>=` (大于等于), `>` (大于), `<=` (小于等于), `<` (小于), `=` (等于), `!=` (不等于), `<= x >=` (介于两者之间), 或 `> or <` (超出范围)
+    * **阈值**: 用于比较的数值
+    * **间隔**: 告警的评估频率 (1m, 5m, 15m, 30m, 1h, 6h, 12h, 或 1d)。这也定义了每次评估的时间窗口。
+    * **Webhook**: 告警触发时使用的通知通道。请参阅[添加 webhook](#add-webhook)。
 
     <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="编辑图表告警" size="lg" />
 
@@ -252,9 +238,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
     </Warning>
   </Step>
 
-  <Step>
-    #### 保存仪表板
-
+  <Step title="保存仪表板" id="save-sql-dashboard">
     保存仪表板以激活告警。告警将按照配置的间隔开始评估。
   </Step>
 </Steps>

@@ -1,0 +1,338 @@
+---
+title: 'Depuração do DataStore'
+sidebarTitle: 'Visão geral'
+slug: /chdb/debugging
+description: 'Depure operações do DataStore com explain(), profiling e logging'
+keywords: ['chdb', 'datastore', 'depuração', 'explain', 'profiling', 'logging']
+doc_type: 'guide'
+---
+
+O DataStore oferece um conjunto abrangente de ferramentas de depuração para entender e otimizar seus pipelines de dados.
+
+<div id="overview">
+  ## Visão geral das ferramentas de depuração
+</div>
+
+| Ferramenta  | Finalidade               | Quando usar                        |
+| ----------- | ------------------------ | ---------------------------------- |
+| `explain()` | Ver o plano de execução  | Entender qual SQL será executado   |
+| Profiler    | Medir o desempenho       | Encontrar operações lentas         |
+| Logging     | Ver detalhes da execução | Depurar comportamentos inesperados |
+
+<div id="decision-matrix">
+  ## Matriz de decisão rápida
+</div>
+
+| Necessidade             | Ferramenta  | Comando                     |
+| ----------------------- | ----------- | --------------------------- |
+| Ver o plano de execução | `explain()` | `ds.explain()`              |
+| Medir o desempenho      | Profiler    | `config.enable_profiling()` |
+| Depurar consultas SQL   | Logging     | `config.enable_debug()`     |
+| Tudo isso               | Combinação  | Veja abaixo                 |
+
+<div id="quick-setup">
+  ## Configuração rápida
+</div>
+
+<div id="enable-all">
+  ### Habilitar toda a depuração
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Enable all debugging
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+
+# View execution plan
+result.explain()
+
+# Get profiler report
+from chdb.datastore.config import get_profiler
+profiler = get_profiler()
+profiler.report()
+```
+
+***
+
+<div id="explain">
+  ## Método `explain()`
+</div>
+
+Veja o plano de execução antes de executar uma consulta.
+
+```python title="Query"
+ds = pd.read_csv("data.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+)
+
+# View plan
+query.explain()
+```
+
+```text title="Response"
+Pipeline:
+  Source: file('data.csv', 'CSVWithNames')
+  Filter: amount > 1000
+  GroupBy: region
+  Aggregate: sum(amount), avg(amount)
+
+Generated SQL:
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('data.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+```
+
+Consulte a [documentação do explain()](/pt-BR/chdb/debugging/explain) para mais detalhes.
+
+***
+
+<div id="profiling">
+  ## Profiling
+</div>
+
+Meça o tempo de execução de cada operação.
+
+```python title="Query"
+from chdb.datastore.config import config, get_profiler
+
+# Enable profiling
+config.enable_profiling()
+
+# Run operations
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# View report
+profiler = get_profiler()
+profiler.report(min_duration_ms=0.1)
+```
+
+```text title="Response"
+Performance Report
+==================
+Step                          Duration    Calls
+----                          --------    -----
+read_csv                      1.234s      1
+filter                        0.002s      1
+groupby                       0.001s      1
+agg                           0.089s      1
+sort                          0.045s      1
+head                          0.001s      1
+to_df (SQL execution)         0.567s      1
+----                          --------    -----
+Total                         1.939s      7
+```
+
+Consulte o [Guia de profiling](/pt-BR/chdb/debugging/profiling) para mais detalhes.
+
+***
+
+<div id="logging">
+  ## Logging
+</div>
+
+Veja logs detalhados de execução.
+
+```python
+from chdb.datastore.config import config
+
+# Enable debug logging
+config.enable_debug()
+
+# Run operations - logs will show:
+# - SQL queries generated
+# - Execution engine used
+# - Cache hits/misses
+# - Timing information
+```
+
+Exemplo de saída de log:
+
+```text
+DEBUG - DataStore: Creating from file 'data.csv'
+DEBUG - Query: SELECT region, SUM(amount) FROM ... WHERE amount > 1000 GROUP BY region
+DEBUG - Engine: Using chdb for aggregation
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+Consulte [Configuração de logging](/pt-BR/chdb/debugging/logging) para detalhes.
+
+***
+
+<div id="scenarios">
+  ## Cenários comuns de depuração
+</div>
+
+<div id="scenario-wrong-results">
+  ### 1. Consulta não retorna os resultados esperados
+</div>
+
+```python
+# Step 1: View the execution plan
+query = ds.filter(ds['age'] > 25).groupby('city').sum()
+query.explain(verbose=True)
+
+# Step 2: Enable logging to see SQL
+config.enable_debug()
+
+# Step 3: Run and check logs
+result = query.to_df()
+```
+
+<div id="scenario-slow">
+  ### 2. Consulta lenta
+</div>
+
+```python
+# Step 1: Enable profiling
+config.enable_profiling()
+
+# Step 2: Run your query
+result = process_data()
+
+# Step 3: Check profiler report
+profiler = get_profiler()
+profiler.report()
+
+# Step 4: Identify slow operations and optimize
+```
+
+<div id="scenario-engine">
+  ### 3. Entendendo a escolha da engine
+</div>
+
+```python
+# Enable verbose logging
+config.enable_debug()
+
+# Run operations
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+
+# Logs will show which engine was used for each operation:
+# DEBUG - filter: Using chdb engine
+# DEBUG - apply: Using pandas engine (custom function)
+```
+
+<div id="scenario-cache">
+  ### 4. Depuração de problemas de cache
+</div>
+
+```python
+# Enable debug to see cache operations
+config.enable_debug()
+
+# First run
+result1 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache miss, executing query
+
+# Second run (should use cache)
+result2 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache hit, returning cached result
+
+# If not caching when expected, check:
+# - Are operations identical?
+# - Is cache enabled? config.cache_enabled
+```
+
+***
+
+<div id="best-practices">
+  ## Boas práticas
+</div>
+
+<div id="best-practice-1">
+  ### 1. Faça a depuração em Development, não em produção
+</div>
+
+```python
+# Development
+config.enable_debug()
+config.enable_profiling()
+
+# Production
+config.set_log_level(logging.WARNING)
+config.set_profiling_enabled(False)
+```
+
+<div id="best-practice-2">
+  ### 2. Use explain() antes de executar consultas grandes
+</div>
+
+```python
+# Build query
+query = ds.filter(...).groupby(...).agg(...)
+
+# Check plan first
+query.explain()
+
+# If plan looks good, execute
+result = query.to_df()
+```
+
+<div id="best-practice-3">
+  ### 3. Analise o desempenho antes de otimizar
+</div>
+
+```python
+# Don't guess what's slow - measure it
+config.enable_profiling()
+result = your_pipeline()
+get_profiler().report()
+```
+
+<div id="best-practice-4">
+  ### 4. Verifique o SQL quando os resultados estiverem incorretos
+</div>
+
+```python
+# View generated SQL
+print(query.to_sql())
+
+# Compare with expected SQL
+# Run SQL directly in ClickHouse to verify
+```
+
+***
+
+<div id="summary">
+  ## Resumo das ferramentas de depuração
+</div>
+
+| Ferramenta                 | Comando                     | Saída                          |
+| -------------------------- | --------------------------- | ------------------------------ |
+| Explicar plano de execução | `ds.explain()`              | Etapas de execução + SQL       |
+| Explicação detalhada       | `ds.explain(verbose=True)`  | + metadados                    |
+| Visualizar SQL             | `ds.to_sql()`               | String da consulta SQL         |
+| Ativar debug               | `config.enable_debug()`     | Logs detalhados                |
+| Ativar profiling           | `config.enable_profiling()` | Dados de temporização          |
+| Relatório do Profiler      | `get_profiler().report()`   | Resumo de desempenho           |
+| Limpar Profiler            | `get_profiler().reset()`    | Limpa os dados de temporização |
+
+***
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+* [Método explain()](/pt-BR/chdb/debugging/explain) - Documentação detalhada do plano de execução
+* [Guia de profiling](/pt-BR/chdb/debugging/profiling) - Medição de desempenho
+* [Configuração de logging](/pt-BR/chdb/debugging/logging) - Configuração de nível de log e formato

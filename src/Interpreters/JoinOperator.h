@@ -33,6 +33,17 @@ struct JoinOperator
     /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.
     std::vector<std::pair<String, String>> shared_runtime_filter_descriptors = {};
 
+    /// Equality conditions from the ON clause that were demoted out of the hash-table key set by
+    /// `demoteHighNdvKeysToProbe` (see `optimizeJoin.cpp`). They stay JOIN ON conditions and are
+    /// evaluated during the probe via `mixed_join_expression`, never as a post-join filter, so
+    /// outer joins keep NULL-extending non-matching rows. Kept apart from `residual_filter`, which
+    /// holds genuine post-join predicates with different semantics, and apart from `expression`, so
+    /// that the hash-table statistics cache key (`calculateJoinStepCacheKeyContribution`, which
+    /// hashes only the equalities left in `expression`) reflects the keys actually inserted into
+    /// the hash table. Set by an optimizer pass, so - like `shared_runtime_filter_descriptors` -
+    /// it is not serialized: each node re-runs the pass on the deserialized plan.
+    std::vector<JoinActionRef> probe_conditions = {};
+
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,
@@ -44,8 +55,8 @@ struct JoinOperator
         , expression(std::move(expression_))
     {}
 
-    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
-    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
+    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_, UInt64 version) const;
+    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 version);
 
     String dump() const;
 };
@@ -112,11 +123,14 @@ struct JoinSettings
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;
     bool use_hash_table_stats_for_join_reordering;
+    bool enable_hash_join_row_store;
+    Float64 min_rows_ratio_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
+    bool enable_join_key_only_hash_tables;
     bool join_runtime_filter_from_fixed_hash_table;
 
-    /// Enable cardinality-driven automatic demotion of high-NDV equality keys to a residual filter.
+    /// Enable cardinality-driven automatic demotion of high-NDV equality keys to probe-time conditions.
     bool query_plan_hash_join_subset_keys_auto;
     /// Minimum estimated right-side row count for `query_plan_hash_join_subset_keys_auto` to apply.
     UInt64 query_plan_hash_join_subset_keys_min_rows;
@@ -124,7 +138,10 @@ struct JoinSettings
     /// The smallest hash key subset reaching this selectivity is selected.
     Float64 query_plan_hash_join_subset_keys_min_kept_selectivity;
 
-    explicit JoinSettings(const Settings & query_settings);
+    /// Which statistics the join must collect for EXPLAIN ANALYZE
+    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
+
+    explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
 
     void updatePlanSettings(QueryPlanSerializationSettings & settings) const;

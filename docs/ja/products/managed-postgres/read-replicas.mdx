@@ -7,12 +7,12 @@ keywords: ['読み取りレプリカ', 'スケーラビリティ', '読み取り
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-読み取りレプリカを使用すると、プライマリの Managed Postgres データベースのコピーを 1 つ以上作成できます。これらのレプリカは、PostgreSQL のネイティブなレプリケーションを使用してプライマリ データベースに継続的に追従し、変更内容を常に反映します。
+読み取りレプリカを使用すると、プライマリの ClickHouse Managed Postgres データベースのコピーを 1 つ以上作成できます。これらのレプリカは、PostgreSQL のネイティブなレプリケーションを使用してプライマリ データベースに継続的に追従し、変更内容を常に反映します。
 
 読み取りレプリカを管理するには、warehouse の編集アイコンをクリックします。
 
@@ -64,7 +64,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 読み取りレプリカの仕組み
 </div>
 
-Managed Postgres の読み取りレプリカでは、ストリーミングレプリケーションではなく、WAL shipping アーキテクチャを採用しています。この設計は、プライマリデータベースへの影響を最小限に抑えることを重視したものです。
+ClickHouse Managed Postgres の読み取りレプリカでは、ストリーミングレプリケーションではなく、WAL shipping アーキテクチャを採用しています。この設計は、プライマリデータベースへの影響を最小限に抑えることを重視したものです。
 
 <div id="wal-shipping-from-object-storage">
   ### オブジェクトストレージを使用した WAL shipping

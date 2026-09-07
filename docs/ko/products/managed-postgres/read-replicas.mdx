@@ -7,12 +7,12 @@ keywords: ['읽기 레플리카', '확장성', '읽기 스케일링', 'Postgres 
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-읽기 레플리카를 사용하면 프라이머리 Managed Postgres 데이터베이스의 복사본을 하나 이상 만들 수 있습니다. 이러한 레플리카는 PostgreSQL의 네이티브 복제를 사용해 프라이머리 데이터베이스를 지속적으로 따라가며 변경 사항을 반영합니다.
+읽기 레플리카를 사용하면 프라이머리 ClickHouse Managed Postgres 데이터베이스의 복사본을 하나 이상 만들 수 있습니다. 이러한 레플리카는 PostgreSQL의 네이티브 복제를 사용해 프라이머리 데이터베이스를 지속적으로 따라가며 변경 사항을 반영합니다.
 
 읽기 레플리카를 관리하려면 warehouse에서 편집 아이콘을 클릭하세요:
 
@@ -26,7 +26,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 읽기 레플리카 관리
 </div>
 
-**Read replicas** 페이지에서는 오른쪽 상단의 **Flow** 및 **Table** 컨트롤로 전환할 수 있는 두 가지 보기를 제공합니다.
+**읽기 레플리카** 페이지에서는 오른쪽 상단의 **Flow** 및 **Table** 컨트롤로 전환할 수 있는 두 가지 보기를 제공합니다.
 
 **Flow** 보기에는 복제 토폴로지가 표시됩니다. 맨 위의 프라이머리 인스턴스에서 각 레플리카로 화살표가 아래로 이어지며, 티어, 리전, 상태를 한눈에 확인할 수 있습니다:
 
@@ -64,7 +64,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 읽기 레플리카 작동 방식
 </div>
 
-Managed Postgres의 읽기 레플리카는 스트리밍 복제 대신 WAL 배송 아키텍처를 사용합니다. 이 설계는 프라이머리 데이터베이스에 미치는 영향을 최소화하는 데 우선순위를 둡니다.
+ClickHouse Managed Postgres의 읽기 레플리카는 스트리밍 복제 대신 WAL 배송 아키텍처를 사용합니다. 이 설계는 프라이머리 데이터베이스에 미치는 영향을 최소화하는 데 우선순위를 둡니다.
 
 <div id="wal-shipping-from-object-storage">
   ### 객체 스토리지에서의 WAL 배송

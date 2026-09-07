@@ -30,9 +30,9 @@
         Plain join on both keys; the query opts in to `query_plan_hash_join_subset_keys_auto`
         explicitly because the setting is off by default. On master / without the
         setting, both keys go into the hash table (~10M entries). With the setting,
-        the planner keeps `low_card` and pushes `high_card` to a residual probe-time
-        equality filter. Memory drops ~2x; runtime in the same shape ranges from no
-        change to a clear improvement depending on cache pressure.
+        the join-order optimizer keeps `low_card` as the hash key and evaluates
+        `high_card` during the probe. Memory drops ~2x; runtime in the same shape ranges
+        from no change to a clear improvement depending on cache pressure.
     -->
     <fill_query>INSERT INTO jks_perf_left  SELECT number, intDiv(number, 10), number FROM numbers(10000000)</fill_query>
     <fill_query>INSERT INTO jks_perf_right SELECT number, intDiv(number, 10), number FROM numbers(10000000)</fill_query>

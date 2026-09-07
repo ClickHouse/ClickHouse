@@ -1,0 +1,90 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-18
+title: 'デモデイズ - 2026-06-18'
+sidebarTitle: '2026-06-18'
+sidebar_label: '2026-06-18'
+sidebar_position: 618
+description: '2026-06-18のClickStackデモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="source-filters-now-everywhere">
+  ## ログソースフィルターをあらゆる場所で利用可能に
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zl5ymdzoM6U" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Services ダッシュボード全体でログソースフィルターを利用できるようになりました。サービス名フィルターを持つトレースまたはログソースを選択すると、ダッシュボードは値を選択するまでクエリを実行せずに待機します。そのフィルターは、すべてのチャート、クエリ、サイドパネルに一貫して適用されます。トレースウォーターフォールも同様に動作し、スパンを開く際に Search ページのログソースフィルターを継承しながら、追加のフィルターも設定できます。Sessions ページも更新され、ログソースフィルターがサイドバー、トレースパネル、ネストされたビューに引き継がれるようになりました。
+
+ログソースフィルターのオートコンプリートも拡張されました。以前は Search ページでのみ利用できましたが、現在はダッシュボードを含め、ログソースフィルターがサポートされているすべての場所で利用できます。内部的には、各ログソースが独自のフィルターセットを持つ場合でも、オートコンプリートは複数のログソースにまたがってキーと値を解決します。同じ改善は、Raw SQL エディタとクエリビルダー内のすべてのログソースフィルター入力でも利用できます。
+
+**関連 PR:** [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) ダッシュボードフィルターにログソーススコープを追加、[#2459](https://github.com/hyperdxio/hyperdx/pull/2459) 除外されたログソーススコープ付きフィルターがあるタイルにアイコンを表示
+
+<div id="better-ai-generated-dashboards-for-custom-schemas">
+  ## カスタムスキーマ向け AI 生成ダッシュボードの改善
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/LUi5047F3fs" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+カスタムスキーマを対象に AI でダッシュボードを作成していたユーザーが、深刻なパフォーマンス問題に直面しました。根本原因は、生成された Raw SQL タイルでダッシュボードの時間フィルターマクロではなく時間範囲がハードコードされていたため、ダッシュボードの時間範囲を変更しても反映されなかったことです。また、あるタイルでは整数型の timestamp カラムに対するフィルタリングによって主キーが利用されず、フルテーブルスキャンが発生していました。
+
+この問題に対処するため、Raw SQL ダッシュボードタイル用の MCP スキーマでは、agents がダッシュボードの時間フィルターマクロを使用すべきことが明示されるようになりました。また、ClickStack UI では、生成された SQL タイルにこれらのマクロがない場合に警告が表示されるため、ダッシュボードを保存する前に見つけやすくなっています。変更をデプロイ後、顧客が最初に使用したプロンプトを再実行すると、正しいマクロを使用する SQL が生成され、ダッシュボードが大幅に高速化されました。
+
+**関連 PR:** [#2473](https://github.com/hyperdxio/hyperdx/pull/2473) Raw SQL タイルで agents にマクロの使用を促す
+
+<div id="simpler-hashing-for-otel-metrics-and-a-primary-key-idea">
+  ## OTel メトリクスのハッシュ化を簡素化、主キー最適化のアイデア
+</div>
+
+*[@dhable](https://github.com/dhable) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MjAUdJJbC8M" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+コミュニティからの貢献により、JSON 属性カラムを持つメトリクスの属性ハッシュ化が修正されましたが、その結果、2 つの異なるコードパスが導入されました。JSON スキーマでは `cityHash64` の可変長形式を使用する一方、Map ベースのスキーマではハッシュ化の前に 3 つのマップを連結していました。しかし、この追加処理は不要であることが判明しました。現在は両方のスキーマタイプで同じ `cityHash64` 実装を使用しており、コードが簡素化されるとともに、ハッシュ化中の不要なマップ割り当ても回避されています。
+
+この作業により、OpenTelemetry メトリクススキーマに対する最適化の可能性も明らかになりました。現在、主キーには完全な属性マップが格納されており、ClickHouse が索引の一部としてマップをメモリ内に保持するため、メモリ使用量が増加します。挿入時に属性ハッシュをマテリアライズし、代わりにそれを主キーで使用するという案があります。まだ変更はありませんが、OpenTelemetry スキーマの更新が再び検討されるようになった今、改めて検討する価値のある最適化です。
+
+**関連 PR:** [#2475](https://github.com/hyperdxio/hyperdx/pull/2475) AttributesHash を可変長の cityHash64 に統一
+
+<div id="filter-pill-and-data-source-polish">
+  ## フィルターピルとログソースの改善
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zi6HPj5_JQg" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+今週は、小規模ながら便利な使い勝手の改善が 2 件導入されました。以前のスタイルでは削除ボタンが見えにくいというユーザーフィードバックを受け、除外フィルターピルが格段に読みやすくなりました。より淡い赤色を採用したことで、ライトモードとダークモードの両方でコントラストが向上しています。
+
+多数のログソースの管理も容易になりました。ログソースに任意のセクションを割り当て、ソースセレクター内でグループ化できるようになりました。セクションがないログソースは引き続き「Other」の下に表示されるため、既存の設定には影響しません。検索もセクション名に一致するよう更新され、所属グループしか覚えていない場合でも、関連するログソースを見つけやすくなりました。この機能は現在、より広く展開する前に、ユーザーがログソースをどのように整理するかを評価するため、社内で使用されています。
+
+**関連 PR:** [#2478](https://github.com/hyperdxio/hyperdx/pull/2478) ライトテーマで除外フィルターピルを読みやすくする、[#2432](https://github.com/hyperdxio/hyperdx/pull/2432) ログソースに任意の Section フィールドを追加、[#2476](https://github.com/hyperdxio/hyperdx/pull/2476) タグ形式の検索でログソースセレクターをセクションごとにグループ化、[#2477](https://github.com/hyperdxio/hyperdx/pull/2477) ソースフォームで既存のセクション名を提案
+
+<div id="per-chart-series-limits-for-high-cardinality-charts">
+  ## 高カーディナリティチャートのチャートごとのシリーズ数制限
+</div>
+
+*[@wrn14897](https://github.com/wrn14897) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/xKpHvhbo-PI" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+チャートが返すシリーズ数を制限できるようになり、HTTP ルートや span ID などの高カーディナリティフィールドでグループ化する際のパフォーマンス問題を回避できます。以前は、これらのクエリで数十万ものシリーズが生成され、ダッシュボードの動作が遅くなったり応答しなくなったりすることがありました。チャートを上位 N シリーズに制限することで、レンダリング時間と転送データ量の両方を削減できます。
+
+chunk 化されたクエリでは、上位シリーズを効率的に選択する処理はより複雑です。現在の実装では、最新の chunk から上位 N を決定し、同じシリーズセットをクエリ全体に適用します。処理はブラウザではなく ClickHouse で実行されます。このアプローチは現在も評価中であり、今後のクエリ最適化の導入に伴って変更される可能性があります。
+
+**関連 PR:** [#2449](https://github.com/hyperdxio/hyperdx/pull/2449) シリーズ数制限をオプトインにし、chunk 間で一貫性を確保、[#2429](https://github.com/hyperdxio/hyperdx/pull/2429) OOM を防ぐため、group-by 時系列を上位 N シリーズに制限

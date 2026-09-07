@@ -1,15 +1,18 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/Streaming/CursorTree_fwd.h>
 
 #include <base/types.h>
 #include <Common/MapWithMemoryTracking.h>
 
+#include <memory>
 #include <variant>
 
 namespace DB
 {
+
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
 /// Single node of cursor tree, which represents logical entry of cursor.
 /// Example: partition/shard etc.
@@ -28,6 +31,8 @@ public:
     Int64 getValue(const String & key, Int64 default_value) const;
     Int64 & setValue(const String & key, Int64 value);
 
+    CursorTreeNodePtr clone() const;
+
     Data::iterator begin();
     Data::iterator end();
 
@@ -37,5 +42,8 @@ public:
 private:
     Data data;
 };
+
+Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
+CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree);
 
 }

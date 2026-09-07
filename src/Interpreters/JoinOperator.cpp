@@ -5,7 +5,9 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -23,7 +25,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -75,7 +76,10 @@ namespace Setting
     extern const SettingsDouble max_bytes_ratio_before_external_join;
 
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
+    extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const SettingsBool enable_hash_join_row_store;
+    extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
 
     extern const SettingsBool query_plan_hash_join_subset_keys_auto;
     extern const SettingsUInt64 query_plan_hash_join_subset_keys_min_rows;
@@ -130,14 +134,18 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
+    extern const QueryPlanSerializationSettingsBool enable_join_key_only_hash_tables;
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const QueryPlanSerializationSettingsBool enable_hash_join_row_store;
+    extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
 
     extern const QueryPlanSerializationSettingsBool query_plan_hash_join_subset_keys_auto;
     extern const QueryPlanSerializationSettingsUInt64 query_plan_hash_join_subset_keys_min_rows;
     extern const QueryPlanSerializationSettingsDouble query_plan_hash_join_subset_keys_min_kept_selectivity;
 }
 
-JoinSettings::JoinSettings(const Settings & query_settings)
+JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
+    : join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
 
@@ -188,12 +196,13 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = query_settings[Setting::enable_software_prefetch_in_join];
 
-    if (temporary_files_buffer_size > 1_GiB)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
     use_hash_table_stats_for_join_reordering = query_settings[Setting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
+    enable_join_key_only_hash_tables = query_settings[Setting::enable_join_key_only_hash_tables];
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
+    enable_hash_join_row_store = query_settings[Setting::enable_hash_join_row_store];
+    min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
     query_plan_hash_join_subset_keys_auto = query_settings[Setting::query_plan_hash_join_subset_keys_auto];
     query_plan_hash_join_subset_keys_min_rows = query_settings[Setting::query_plan_hash_join_subset_keys_min_rows];
@@ -235,7 +244,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     max_joined_block_size_rows = settings[QueryPlanSerializationSetting::max_joined_block_size_rows];
     max_joined_block_size_bytes = settings[QueryPlanSerializationSetting::max_joined_block_size_bytes];
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
-    temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
+    temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
     join_output_by_rowlist_perkey_rows_threshold = settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = settings[QueryPlanSerializationSetting::join_to_sort_maximum_table_rows];
@@ -252,7 +261,10 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
+    enable_join_key_only_hash_tables = settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
+    enable_hash_join_row_store = settings[QueryPlanSerializationSetting::enable_hash_join_row_store];
+    min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 
     query_plan_hash_join_subset_keys_auto = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_auto];
     query_plan_hash_join_subset_keys_min_rows = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_rows];
@@ -311,7 +323,10 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
+    settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables] = enable_join_key_only_hash_tables;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
+    settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
+    settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
 
     settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_auto] = query_plan_hash_join_subset_keys_auto;
     settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_rows] = query_plan_hash_join_subset_keys_min_rows;
@@ -378,15 +393,34 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
     }
 }
 
-void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
+void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag, UInt64 version) const
 {
     auto node_to_id = actions_dag->getNodeToIdMap();
-    serializeNodeList(out, node_to_id, expression);
+    const bool version_has_probe_conditions = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_CONDITIONS;
+
+    if (version_has_probe_conditions || probe_conditions.empty())
+    {
+        serializeNodeList(out, node_to_id, expression);
+    }
+    else
+    {
+        /// An older reader has nowhere to put a probe-time equality, and dropping one would add rows
+        /// to the join result. They are ordinary ON equalities, so write them back into the ON
+        /// expression: the remote side then keys the hash table on all of them, losing the
+        /// optimization but never a row.
+        std::vector<JoinActionRef> undemoted_expression = expression;
+        undemoted_expression.insert(undemoted_expression.end(), probe_conditions.begin(), probe_conditions.end());
+        serializeNodeList(out, node_to_id, undemoted_expression);
+    }
+
     serializeNodeList(out, node_to_id, residual_filter);
 
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
+
+    if (version_has_probe_conditions)
+        serializeNodeList(out, node_to_id, probe_conditions);
 }
 
 static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
@@ -411,7 +445,7 @@ static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const Act
     return result;
 }
 
-JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 version)
 {
     auto id_to_node = expression_actions.getActionsDAG()->getIdToNode();
     auto actions = deserializeNodeList(in, id_to_node, expression_actions);
@@ -424,6 +458,8 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     JoinOperator result(kind, strictness, locality);
     result.expression = std::move(actions);
     result.residual_filter = std::move(residual_filter);
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_CONDITIONS)
+        result.probe_conditions = deserializeNodeList(in, id_to_node, expression_actions);
 
     return result;
 }

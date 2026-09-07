@@ -246,10 +246,7 @@ struct JoinAlgorithmParams
     bool join_any_take_last_row;
 
     UInt64 hash_table_key_hash;
-    /// Parent-independent SipHash of the right subtree (without this join's equi-key
-    /// contribution). Used to derive `hash_table_key_hash` after `demoteLowNdvKeysToResidual`
-    /// has finalized which equi keys actually live in the hash table.
-    UInt64 right_subtree_raw_hash = 0;
+    UInt64 join_output_key_hash;
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;
 
@@ -263,10 +260,14 @@ struct JoinAlgorithmParams
 
     UInt64 max_bytes_before_external_join = 0;
 
+    bool enable_hash_join_row_store = true;
+    Float64 min_rows_ratio_for_hash_join_row_store = 0;
+
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
 
     std::optional<UInt64> rhs_size_estimation;
+    std::optional<UInt64> result_rows_estimation;
 
     explicit JoinAlgorithmParams(const Context & context);
 
@@ -274,6 +275,7 @@ struct JoinAlgorithmParams
         const JoinSettings & join_settings,
         UInt64 max_threads_,
         UInt64 hash_table_key_hash_,
+        UInt64 join_output_key_hash_,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         std::chrono::milliseconds lock_acquire_timeout_);
@@ -291,7 +293,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const JoinAlgorithmParams & params);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
-TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);
+TableExpressionSet extractTableExpressionsSet(const TableExpressionNodePtr & node);
 
 std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     const IQueryTreeNode * expression_root_node,

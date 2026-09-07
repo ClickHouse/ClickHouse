@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/QueryNode.h>
@@ -29,6 +30,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
+        in_prewhere = parent_scope->in_prewhere;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();
@@ -44,6 +46,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
             union_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
 
         context = union_node->getContext();
+        in_prewhere = false;
     }
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
@@ -53,6 +56,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = query_node->getContext();
         group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
             && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        in_prewhere = false;
     }
 
     if (context)
@@ -89,7 +93,7 @@ IdentifierResolveScope * IdentifierResolveScope::getNearestQueryScope()
     return scope_to_check;
 }
 
-AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node)
+AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node)
 {
     auto it = table_expression_node_to_data.find(table_expression_node);
     if (it == table_expression_node_to_data.end())
@@ -103,7 +107,7 @@ AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrTh
     return it->second;
 }
 
-const AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const
+const AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const
 {
     auto it = table_expression_node_to_data.find(table_expression_node);
     if (it == table_expression_node_to_data.end())
