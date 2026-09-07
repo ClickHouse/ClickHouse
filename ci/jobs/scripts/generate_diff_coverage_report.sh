@@ -73,10 +73,10 @@ export REPO_NAME
 #    BASE_COMMIT (the actual PR merge base) so we only see files the PR itself
 #    changed. Using FIRST_BASE_COMMIT here would pull in unrelated master commits
 #    from the gap between FIRST_BASE_COMMIT and BASE_COMMIT — a src/Foo.cpp edit
-#    from that gap would appear in patterns, set _diff_ran=True, and then cause
-#    llvm_coverage_job.py to parse it into _changed_paths, flipping
-#    _binary_unchanged=False and suppressing the newly-covered analysis even
-#    though the PR binary is genuinely unchanged.
+#    from that gap would appear in patterns and turn a genuine no_cpp_changes
+#    outcome into report_generated, suppressing the global newly-covered
+#    analysis llvm_coverage_job.py runs for tests-only PRs even though the PR
+#    binary is genuinely unchanged.
 #
 # `gh` reports a failure as a bare "gh: Not Found (HTTP 404)" naming no resource,
 # so each endpoint is echoed before it is requested.
