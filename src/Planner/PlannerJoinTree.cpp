@@ -2202,14 +2202,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// enforces the view policy in the right namespace and handles the Distributed
                         /// policy (not propagated to shards — see issue #28334) and used_row_policies
                         /// bookkeeping correctly, so we fall back to it whenever any policy is present.
-                        const auto & view_id = storage->getStorageID();
+                        /// The view's policies are asked for with the same effective-filter test,
+                        /// keyed by the id as written, that `buildRowPolicyFilterIfNeeded` uses
+                        /// below: when the view is written as `ov.v` behind a read-only `Overlay`
+                        /// facade, the storage id is the source (`src.v`) and a policy on the
+                        /// facade name alone would be invisible here, so the pushdown would fire
+                        /// while a non-pushable filter had already been built for the view path —
+                        /// which then fails the `row_policy_filter_not_pushed` guard below with
+                        /// `ILLEGAL_PREWHERE` instead of falling back to `StorageView::readImpl`.
                         const auto & dist_id = underlying_dist->getStorageID();
-                        auto view_row_policy = query_context->getRowPolicyFilter(
-                            view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                        auto view_row_policy = getEffectiveRowPolicyFilter(
+                            storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context);
                         auto dist_row_policy = query_context->getRowPolicyFilter(
                             dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-                        const bool has_row_policy = (view_row_policy && !view_row_policy->isAlwaysTrue())
-                            || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
+                        const bool has_row_policy
+                            = view_row_policy || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
 
                         /// Also suppress when shard pruning is forced. The pushdown ships the outer
                         /// query's WHERE in the view-output namespace, which cannot be safely mapped to
