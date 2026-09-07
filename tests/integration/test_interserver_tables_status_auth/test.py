@@ -1,16 +1,19 @@
 import socket
+import time
 
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
-# Regression tests for PR #99854: an interserver `TablesStatusRequest` must not return
-# table existence / readonly / replication-delay status to a peer that has not proven
-# knowledge of the cluster `<secret>`. Two rejection paths are covered:
+# Regression tests for pre-authentication interserver packet handling: in interserver mode
+# the cluster `<secret>` is only verified while the `Query` packet is processed, so a packet
+# that arrives before it must neither disclose anything nor have its payload deserialized.
+# Three rejection paths are covered:
 #
-#  * old protocol (no hash) + `interserver_tables_status_require_auth` -> rejected;
-#  * new protocol with a wrong cluster secret -> hash validation fails -> rejected.
+#  * `TablesStatusRequest`, old protocol (no hash) + `interserver_tables_status_require_auth`;
+#  * `TablesStatusRequest`, new protocol signed with the wrong cluster secret;
+#  * `Data` before any `Query` -> rejected without the Native block being read.
 #
 # The legitimate authenticated path is covered by `test_distributed_inter_server_secret`.
 
@@ -23,6 +26,11 @@ node_b = cluster.add_instance("node_b", main_configs=["configs/secret_b.xml"])
 # DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 (no nonce in the server Hello).
 OLD_REVISION = 54449
 USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
+
+# A type name no other test can produce, so the log assertions below cannot be crossed.
+BOGUS_TYPE = "NoSuchTypeGroeneAI"
+BOGUS_TYPE_READ = f"Unknown data type family: {BOGUS_TYPE}"
+DATA_REJECTED = "Unexpected packet Data received from client"
 
 
 @pytest.fixture(scope="module")
@@ -147,3 +155,78 @@ def test_new_protocol_wrong_secret_request_is_rejected(started_cluster):
     assert node_b.contains_in_log(
         "Interserver authentication failed for TablesStatusRequest"
     ), "node_b did not reject the wrong-secret TablesStatusRequest via hash validation"
+
+
+def test_data_packet_before_query_is_not_deserialized(started_cluster):
+    """A `Data` packet arriving before any `Query` must be rejected without its Native
+    block being read. The Hello names cluster `mismatch` (which has a secret) so the
+    handshake is accepted into interserver mode, where nothing is authenticated yet. The
+    block declares a column type that does not exist, so reading the payload would hand
+    that name to `DataTypeFactory` and log it as an unknown family."""
+    hello = (
+        varuint(0)
+        + varstring("test")           # client name
+        + varuint(24)                 # version major
+        + varuint(3)                  # version minor
+        + varuint(OLD_REVISION)       # tcp protocol revision
+        + varstring("")               # default database
+        + varstring(USER_INTERSERVER_MARKER)
+        + varstring("")               # password (empty -> interserver mode)
+        + varstring("mismatch")       # cluster name (must exist and have a secret)
+        + varstring("")               # salt
+    )
+    # Uncompressed: the compression method is only negotiated while a query is processed.
+    # rows=0 carries no column data, since the type name precedes it on the wire.
+    data_packet = (
+        varuint(2)                    # Protocol::Client::Data
+        + varstring("")               # external table name
+        + varuint(0)                  # BlockInfo field terminator
+        + varuint(1)                  # columns
+        + varuint(0)                  # rows
+        + varstring("c")              # column name
+        + varstring(BOGUS_TYPE)       # column type name
+    )
+
+    before_read = int(node_a.count_in_log(BOGUS_TYPE_READ))
+    before_rejected = int(node_a.count_in_log(DATA_REJECTED))
+
+    sock = socket.create_connection((node_a.ip_address, 9000), timeout=20)
+    sock.settimeout(20)
+    try:
+        sock.sendall(hello)
+        # Consume the server Hello (old-revision layout: no nonce, no chunking).
+        read_varuint(sock)      # packet type (Hello)
+        read_varstring(sock)    # server name
+        read_varuint(sock)      # version major
+        read_varuint(sock)      # version minor
+        read_varuint(sock)      # revision
+        read_varstring(sock)    # timezone
+        read_varstring(sock)    # display name
+        read_varuint(sock)      # version patch
+        sock.sendall(data_packet)
+        try:
+            data = sock.recv(4096)
+        except ConnectionResetError:
+            data = b""
+        assert not data, "server answered a Data packet sent before any query"
+    finally:
+        sock.close()
+
+    # The verdict is logged while the connection handler unwinds, so wait for either
+    # outcome: reading the log too early would satisfy the absence assertion on its own.
+    after_read, after_rejected = before_read, before_rejected
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        after_read = int(node_a.count_in_log(BOGUS_TYPE_READ))
+        after_rejected = int(node_a.count_in_log(DATA_REJECTED))
+        if after_read > before_read or after_rejected > before_rejected:
+            break
+        time.sleep(0.5)
+
+    assert after_read == before_read, (
+        f"the type name {BOGUS_TYPE} came off the wire and reached DataTypeFactory: the "
+        "Native block was deserialized without the cluster secret being proved"
+    )
+    assert (
+        after_rejected > before_rejected
+    ), "the Data packet was not rejected with UNEXPECTED_PACKET_FROM_CLIENT"
