@@ -28,6 +28,9 @@ using namespace DB;
 /// depth reached does not depend on how large the compiler makes a frame. The budget overshoots the
 /// guard's allowance yet stops short of the end of the stack, so a build where the guard does not
 /// fire fails an assertion instead of faulting.
+/// Consumption is measured between frame addresses, never between two locals' addresses: under ASan
+/// an address-taken local can live on the separately mapped fake stack. Each level still escapes its
+/// own local's address, which is what stops the compiler folding a recursion into a frameless loop.
 constexpr size_t recursion_budget = CoroutineStack::default_stack_size * 7 / 8;
 
 struct Observations
@@ -42,7 +45,8 @@ size_t NO_INLINE recurseUntilGuardTrips(size_t depth, uintptr_t first_frame, Obs
     checkStackSize();
 
     char here = static_cast<char>(depth);
-    if (first_frame - reinterpret_cast<uintptr_t>(&here) >= recursion_budget)
+    __asm__ __volatile__("" : : "r"(&here) : "memory");
+    if (first_frame - reinterpret_cast<uintptr_t>(__builtin_frame_address(0)) >= recursion_budget)
     {
         observations.budget_reached = true;
         return depth;
@@ -66,7 +70,8 @@ size_t NO_INLINE descendThenSuspend(size_t depth, uintptr_t first_frame, Observa
     CheckingOnDestruction unwind_probe;
 
     char here = static_cast<char>(depth);
-    if (first_frame - reinterpret_cast<uintptr_t>(&here) >= recursion_budget)
+    __asm__ __volatile__("" : : "r"(&here) : "memory");
+    if (first_frame - reinterpret_cast<uintptr_t>(__builtin_frame_address(0)) >= recursion_budget)
     {
         /// Establishes that the destructors above are ones a check would have thrown from, which is
         /// what makes the teardown assertions non-vacuous.
@@ -99,8 +104,7 @@ struct CoroutineTask : public AsyncTask
 
     void run(AsyncCallback, SuspendCallback suspend_callback) override
     {
-        char first_frame = 0;
-        const uintptr_t first_frame_address = reinterpret_cast<uintptr_t>(&first_frame);
+        const uintptr_t first_frame_address = reinterpret_cast<uintptr_t>(__builtin_frame_address(0));
         observations.ran = true;
 
         switch (shape)
