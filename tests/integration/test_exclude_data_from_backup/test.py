@@ -817,6 +817,116 @@ def test_except_data_from_materialized_postgresql_nested_table():
     pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
 
 
+def test_except_data_from_materialized_postgresql_restore_into_replacing_mergetree():
+    """`EXCEPT DATA FROM TABLE` on a standalone `MaterializedPostgreSQL` table, carried through `RESTORE`.
+
+    `test_except_data_from_materialized_postgresql_nested_table` only inspects the files inside the backup.
+    This test takes the same exclusion all the way through a restore, because "the definition is backed up,
+    so the table restores empty" does not hold for this engine. `RESTORE` refuses to recreate a
+    `MaterializedPostgreSQL` table at all: it would start replicating from the live PostgreSQL source as soon
+    as it was created, mixing the backup snapshot with the current remote state, so
+    `registerStorageMaterializedPostgreSQL` throws `NOT_IMPLEMENTED` before the table exists. That rejection
+    is a property of the engine - an ordinary full backup hits it just the same - and is what
+    `docs/concepts/features/backup-restore/overview.mdx` documents, rather than promising an empty restored
+    table for every engine.
+
+    The supported flow is a restore under a different name into a `ReplacingMergeTree` created beforehand
+    with the structure of the nested table (including the `_sign` and `_version` columns). Both halves are
+    pinned here: with the clause that target stays empty, and without it the same restore brings the rows
+    across - so the empty result cannot be passing for some unrelated reason.
+    """
+    pg_table = "mpg_except_data_restore"
+    rows = 50
+
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+    pg_manager.create_postgres_table(pg_table)
+    instance.query(
+        f"INSERT INTO postgres_database.{pg_table} SELECT number, number FROM numbers({rows})"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE default.{pg_table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', '{pg_table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        pg_table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    control_backup = new_backup_name()
+    excluded_backup = new_backup_name()
+    instance.query(f"BACKUP TABLE default.{pg_table} TO {control_backup}")
+    instance.query(
+        f"BACKUP TABLE default.{pg_table} EXCEPT DATA FROM TABLE default.{pg_table} "
+        f"TO {excluded_backup}"
+    )
+
+    def make_target(name):
+        instance.query(f"DROP TABLE IF EXISTS default.{name} SYNC")
+        instance.query(
+            f"""
+            CREATE TABLE default.{name}
+            (
+                key Int32,
+                value Int32,
+                _sign Int8 MATERIALIZED 1,
+                _version UInt64 MATERIALIZED 1
+            )
+            ENGINE = ReplacingMergeTree(_version) ORDER BY key
+            """
+        )
+
+    # 1. Control: the plain backup restores the rows into a pre-created ReplacingMergeTree.
+    # `allow_different_table_def` is required because the definition in the backup is the
+    # MaterializedPostgreSQL engine, which is deliberately restored into a plain ReplacingMergeTree.
+    make_target("mpg_restored_control")
+    instance.query(
+        f"RESTORE TABLE default.{pg_table} AS default.mpg_restored_control "
+        f"FROM {control_backup} SETTINGS allow_different_table_def = 1"
+    )
+    assert rows == int(
+        instance.query("SELECT count() FROM default.mpg_restored_control")
+    ), "the supported restore path must bring the rows across without the clause"
+    assert "1225" == instance.query(
+        "SELECT sum(key) FROM default.mpg_restored_control"
+    ).strip()
+
+    # 2. With the clause the very same restore succeeds and leaves the target empty.
+    make_target("mpg_restored_excluded")
+    instance.query(
+        f"RESTORE TABLE default.{pg_table} AS default.mpg_restored_excluded "
+        f"FROM {excluded_backup} SETTINGS allow_different_table_def = 1"
+    )
+    assert 0 == int(
+        instance.query("SELECT count() FROM default.mpg_restored_excluded")
+    ), "EXCEPT DATA FROM TABLE must leave the restored target empty"
+
+    # 3. Restoring the table in place is rejected either way - this is the claim the docs no longer make.
+    # The target has to be dropped first, otherwise RESTORE fails because the table already exists.
+    instance.query(f"DROP TABLE default.{pg_table} SYNC")
+    error = instance.query_and_get_error(
+        f"RESTORE TABLE default.{pg_table} FROM {excluded_backup}",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "from a backup is not supported" in error, error
+    assert "MaterializedPostgreSQL" in error, error
+    assert "0" == instance.query(f"EXISTS TABLE default.{pg_table}").strip(), (
+        "the rejected restore must fail closed before creating the table, leaving no live "
+        "MaterializedPostgreSQL table replicating from the live PostgreSQL source"
+    )
+
+    instance.query("DROP TABLE IF EXISTS default.mpg_restored_control SYNC")
+    instance.query("DROP TABLE IF EXISTS default.mpg_restored_excluded SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+
+
 def test_except_data_overlapping_table_and_database_elements_keep_data():
     """A table's data survives when another element of the same query asks for the table itself.
 
