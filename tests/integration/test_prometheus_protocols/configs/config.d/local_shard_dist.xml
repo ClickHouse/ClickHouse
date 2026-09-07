@@ -23,5 +23,17 @@
                 </replica>
             </shard>
         </local_shard_two_replicas>
+        <!-- The same local replica under credentials of its own, holding no grant at all: a shard that is
+             this server itself is checked, read and written in-process on the caller's context, never as them. -->
+        <local_shard_restricted>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <user>prom_cluster_nobody</user>
+                    <password></password>
+                </replica>
+            </shard>
+        </local_shard_restricted>
     </remote_servers>
 </clickhouse>

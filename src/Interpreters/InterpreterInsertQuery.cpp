@@ -1312,7 +1312,7 @@ BlockIO InterpreterInsertQuery::execute()
                 table->getStorageID().getNameForLogs(),
                 table->getName(),
                 expected_engine);
-        context->setSetting("insert_expected_table_engine", "");
+        context->setSetting("insert_expected_table_engine", String{});
     }
 
     if (!allow_materialized)

@@ -327,7 +327,7 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
         context_->setSetting("prefer_localhost_replica", true);
         /// Each shard's insert refuses the table it resolves unless it is still a TimeSeries table: the check in
         /// write() runs first, on the initiator, so a table swapped in under the name after it is not taken.
-        context_->setSetting("insert_expected_table_engine", "TimeSeries");
+        context_->setSetting("insert_expected_table_engine", String("TimeSeries"));
     }
     else
         /// A shard-local table's version is checked by its own write on the shard.
