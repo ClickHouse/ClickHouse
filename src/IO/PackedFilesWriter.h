@@ -42,7 +42,7 @@ public:
     using OutBufferPtr = std::unique_ptr<WriteBufferFromFileBase>;
 
     PackedFilesWriter() = default;
-    PackedFilesWriter(WriteSettings write_settings, std::function<void()> cancellation_hook = {});
+    explicit PackedFilesWriter(WriteSettings write_settings, std::function<void()> cancellation_hook = {});
 
     /// Sets settings for the archive destination.
     void setArchiveWriteSettings(WriteSettings write_settings, std::function<void()> cancellation_hook = {});
