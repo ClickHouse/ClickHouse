@@ -26,9 +26,11 @@ CREATE TABLE tags_table
 CREATE TABLE samples_table
 (
     id UInt64,
-    timestamp DateTime64(3),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
+    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
+    bucket DateTime64(3),
+    min_time SimpleAggregateFunction(min, DateTime64(3)),
+    max_time SimpleAggregateFunction(max, DateTime64(3))
+) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket);
 
 CREATE TABLE prometheus ENGINE = TimeSeries
 SAMPLES samples_table TAGS tags_table;

@@ -270,22 +270,31 @@ def test_multi_component_id():
 
 
 # Checks that timestamps can be stored with microsecond precision (`DateTime64(6)`).
+# The `samples` column type is printed with line breaks (escaped as `\n` in the TSV output), so the regexes allow them.
 def test_microsecond_precision():
     node.query("CREATE TABLE prometheus (time_series Array(Tuple(DateTime64(6), Float64))) ENGINE=TimeSeries")
     check(eps=1e-9) # Here eps > 0 because otherwise the check will fail because of different precisions.
     assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`timestamp` DateTime64\(6\)", create_query)
-    assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`samples` SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(6\),(?:\s|\\n)*value Float64\)\)\)", create_query)
+    assert re.search(r"(?s)\bsamples\s+SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(6\),(?:\s|\\n)*value Float64\)\)\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
 
     drop_prometheus_table()
 
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(6))")
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float64))))"
+    )
     check(eps=1e-9)
     assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`timestamp` DateTime64\(6\)", create_query)
-    assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`samples` SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(6\),(?:\s|\\n)*value Float64\)\)\)", create_query)
+    assert re.search(r"(?s)\bsamples\s+SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(6\),(?:\s|\\n)*value Float64\)\)\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+
+    # The columns of the older layout of the samples table are rejected.
+    assert "INCORRECT_QUERY" in node.query_and_get_error(
+        "CREATE TABLE prometheus2 ENGINE=TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(6))"
+    )
 
 
 # Checks that scalar values can be stored as `Float32` instead of the default `Float64`.
@@ -294,25 +303,28 @@ def test_float32_scalar():
     check()
     assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`value` Float32", create_query)
-    assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`samples` SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(3\),(?:\s|\\n)*value Float32\)\)\)", create_query)
+    assert re.search(r"(?s)\bsamples\s+SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(3\),(?:\s|\\n)*value Float32\)\)\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
 
     drop_prometheus_table()
 
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SAMPLES INNER COLUMNS (value Float32)")
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float32))))"
+    )
     check()
     assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`value` Float32", create_query)
-    assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`samples` SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(3\),(?:\s|\\n)*value Float32\)\)\)", create_query)
+    assert re.search(r"(?s)\bsamples\s+SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(3\),(?:\s|\\n)*value Float32\)\)\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
 
 
-# Checks that custom compression codecs can be applied to the `id`, `timestamp`, and `value` columns.
+# Checks that custom compression codecs can be applied to the `id` and `samples` columns.
 def test_custom_codecs():
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "TAGS INNER COLUMNS (id UUID CODEC(ZSTD)) "
-        "SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta), value Float64 CODEC(Gorilla))"
+        "SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(5)))"
     )
     check()
 
@@ -326,13 +338,8 @@ def test_custom_codecs():
 
     assert node.query(
         f"SELECT type, compression_codec FROM system.columns "
-        f"WHERE database = currentDatabase() AND table = '{samples_table}' AND name = 'timestamp'"
-    ) == TSV([["DateTime64(3)", "CODEC(DoubleDelta)"]])
-
-    assert node.query(
-        f"SELECT type, compression_codec FROM system.columns "
-        f"WHERE database = currentDatabase() AND table = '{samples_table}' AND name = 'value'"
-    ) == TSV([["Float64", "CODEC(Gorilla(8))"]])
+        f"WHERE database = currentDatabase() AND table = '{samples_table}' AND name = 'samples'"
+    ) == TSV([["SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))", "CODEC(ZSTD(5))"]])
 
 
 # Checks that a TimeSeries table can be created as a copy of another TimeSeries table,
@@ -347,25 +354,27 @@ def test_create_as_table():
 def test_inner_engines():
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SAMPLES ENGINE=MergeTree ORDER BY (id, timestamp) "
+        "SAMPLES ENGINE=AggregatingMergeTree ORDER BY (id, bucket) "
         "TAGS ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
         "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
     )
     check()
 
 
-# Checks that the `samples_index_granularity` and `tags_index_granularity` settings
-# set `index_granularity` of the samples and tags inner tables.
+# Checks that the `samples_index_granularity`, `samples_index_granularity_bytes` and `tags_index_granularity` settings
+# set `index_granularity` and `index_granularity_bytes` of the samples and tags inner tables.
 def test_index_granularity():
-    # The default value of `samples_index_granularity` is 32768,
+    # The default value of `samples_index_granularity` is 512, the default value of `samples_index_granularity_bytes` is 512 KiB,
     # the default value of `tags_index_granularity` is 8192.
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
     check()
 
-    assert "index_granularity = 32768" in node.query(
+    samples_engine = node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
     )
+    assert "index_granularity = 512" in samples_engine
+    assert "index_granularity_bytes = 524288" in samples_engine
     assert "index_granularity = 8192" in node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"
@@ -375,14 +384,16 @@ def test_index_granularity():
 
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SETTINGS samples_index_granularity = 16384, tags_index_granularity = 4096"
+        "SETTINGS samples_index_granularity = 16384, samples_index_granularity_bytes = 4194304, tags_index_granularity = 4096"
     )
     check()
 
-    assert "index_granularity = 16384" in node.query(
+    samples_engine = node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
     )
+    assert "index_granularity = 16384" in samples_engine
+    assert "index_granularity_bytes = 4194304" in samples_engine
     assert "index_granularity = 4096" in node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"
@@ -393,8 +404,13 @@ def test_index_granularity():
 # instead of its own inner tables.
 def test_external_tables():
     node.query(
-        "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64) "
-        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+        "CREATE TABLE mysamples ("
+        "id UUID, "
+        "samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), "
+        "bucket DateTime64(3), "
+        "min_time SimpleAggregateFunction(min, DateTime64(3)), "
+        "max_time SimpleAggregateFunction(max, DateTime64(3))) "
+        "ENGINE=AggregatingMergeTree ORDER BY (id, bucket)"
     )
 
     node.query(
@@ -424,7 +440,7 @@ def test_external_tables():
 def test_data_keyword():
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "DATA ENGINE=MergeTree ORDER BY (id, timestamp) "
+        "DATA ENGINE=AggregatingMergeTree ORDER BY (id, bucket) "
         "TAGS ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
         "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
     )
@@ -433,8 +449,13 @@ def test_data_keyword():
     drop_prometheus_table()
 
     node.query(
-        "CREATE TABLE mydata (id UUID, timestamp DateTime64(3), value Float64) "
-        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+        "CREATE TABLE mydata ("
+        "id UUID, "
+        "samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), "
+        "bucket DateTime64(3), "
+        "min_time SimpleAggregateFunction(min, DateTime64(3)), "
+        "max_time SimpleAggregateFunction(max, DateTime64(3))) "
+        "ENGINE=AggregatingMergeTree ORDER BY (id, bucket)"
     )
     node.query(
         "CREATE TABLE mytags ("
