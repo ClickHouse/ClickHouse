@@ -30,11 +30,10 @@ SELECT extract(create_table_query, 'TAGS INNER ENGINE.*?(index_granularity = \d+
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_derived';
 
 -- The `job` column comes with the copied inner columns anyway, so check that it's actually filled -
--- that needs the `tags_to_columns` setting. The database is passed explicitly because with parallel
--- replicas the query can go to a replica where the current database is different.
+-- that needs the `tags_to_columns` setting.
 SELECT '-- the copied `tags_to_columns` fills the dedicated column';
 INSERT INTO ts_derived (metric_name, tags, time_series) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
-SELECT metric_name, job FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_derived') ORDER BY metric_name;
+SELECT metric_name, job FROM timeSeriesTags(ts_derived) ORDER BY metric_name;
 DROP TABLE ts_derived;
 
 SELECT '-- `AS` without `ENGINE`: the engine is taken from `ts_src` and the settings are merged the same way';
