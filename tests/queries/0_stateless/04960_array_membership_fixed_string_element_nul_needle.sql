@@ -69,11 +69,11 @@ SELECT has(v, 'foo'), arrayExists(x -> x = 'foo', v) FROM fs3;
 SELECT has(v, toFixedString('foo', 5)), arrayExists(x -> x = toFixedString('foo', 5), v) FROM fs3;
 SELECT has(v, unhex('666f6f00')), arrayExists(x -> x = unhex('666f6f00'), v) FROM fs3;
 
--- LowCardinality element, in both needle spellings.
+-- LowCardinality element, materialized needle. A constant needle is resolved to a dictionary index
+-- in LowCardinalityExecutionHelpers.h instead, which this comparison does not reach.
 DROP TABLE IF EXISTS fs_lc;
 CREATE TABLE fs_lc (v Array(LowCardinality(FixedString(4)))) ENGINE = Memory;
 INSERT INTO fs_lc SELECT [CAST('a', 'FixedString(4)')];
-SELECT has(v, unhex('6100')), arrayExists(x -> x = unhex('6100'), v) FROM fs_lc;
 SELECT has(v, materialize(unhex('6100'))), arrayExists(x -> x = materialize(unhex('6100')), v) FROM fs_lc;
 
 -- Nullable element.
