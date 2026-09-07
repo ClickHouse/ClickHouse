@@ -8,6 +8,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <Common/StackTrace.h>
 #include <Common/TraceSender.h>
 #include <Common/setThreadName.h>
@@ -115,7 +116,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     }
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
-    writePODBinary(CurrentThread::isInitialized() ? CurrentThread::get().getProfileTracesId() : UInt64{0}, out);
+    writePODBinary(
+        CurrentThread::isInitialized() && !ProfileTracesBlocker::isBlocked() ? CurrentThread::get().getProfileTracesId() : UInt64{0}, out);
 
     writeBinary(static_cast<uint8_t>(query_id.size()), out);
     out.write(query_id.data(), query_id.size());

@@ -305,7 +305,7 @@ void IFramingFormat::pumpProfileTraces(bool force)
     if (!force && profile_traces_watch.elapsedMicroseconds() < profile_traces_period_us)
         return;
 
-    /// Serializing memory samples must not generate more samples of the telemetry itself.
+    /// Serializing samples must not generate more samples of the telemetry itself.
     ProfileTracesBlocker blocker;
 
     if (force)
