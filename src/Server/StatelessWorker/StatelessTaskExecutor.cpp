@@ -241,13 +241,6 @@ Block drainLogs(const InternalTextLogsQueuePtr & logs_queue)
 
     Block block = InternalTextLogsQueue::getSampleBlock();
     block.setColumns(std::move(logs_columns));
-
-
-    for (size_t r = 0; r < block.rows(); ++r)                                   // TEMP
-        LOG_DEBUG(getLogger("drainLogs"), "drained[{}] {} <{}> {}", r,          // TEMP
-            block.getByName("query_id").column->getDataAt(r),                   // TEMP
-            block.getByName("priority").column->getDataAt(r),                   // TEMP (raw byte; ignore)
-            block.getByName("text").column->getDataAt(r));                      // TEMP
     return block;
 }
 
