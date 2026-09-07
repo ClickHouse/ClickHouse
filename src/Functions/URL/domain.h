@@ -166,7 +166,13 @@ done:
     if (has_sub_delims)
         return std::string_view{};
     if (has_open_bracket && has_end_bracket)
+    {
+        Pos after_bracket = pos + 1;
+        if (after_bracket < end && *after_bracket != ':' && *after_bracket != '/'
+            && *after_bracket != '?' && *after_bracket != '#')
+            return std::string_view{};
         return std::string_view(start_of_host, pos - start_of_host);
+    }
     if (!has_at_symbol)
         pos = colon_pos ? colon_pos : pos;
     return checkAndReturnHost(pos, dot_pos, start_of_host);

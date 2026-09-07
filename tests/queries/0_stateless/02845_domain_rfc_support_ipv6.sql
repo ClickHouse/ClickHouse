@@ -5,6 +5,9 @@ SELECT domainRFC('[2001:db8::1]') FORMAT CSV;
 SELECT domainRFC('http://user@[2001:db8::1]:80') FORMAT CSV;
 SELECT domainRFC('http://user:password@[2001:db8::1]:80') FORMAT CSV;
 SELECT domainRFC('user@[2001:db8::1]:80') FORMAT CSV;
+-- Nothing may follow the closing bracket of an IP-literal except a delimiter or end of input.
+SELECT domainRFC('http://[2001:db8::1]evil.com') FORMAT CSV;
+SELECT domainRFC('http://user@[2001:db8::1]evil.com') FORMAT CSV;
 -- Does not conform to the IPv6 format.
 SELECT domainRFC('[2001db81]:80') FORMAT CSV;
 SELECT domainRFC('[20[01:db8::1]:80') FORMAT CSV;
