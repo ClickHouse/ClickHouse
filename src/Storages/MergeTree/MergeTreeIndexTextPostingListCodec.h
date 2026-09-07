@@ -125,17 +125,12 @@ public:
 
     /// Encode a batch of sorted unique row ids (increasing across calls), appending
     /// to the open segment and starting a new one every `segment_size` row ids.
-    /// Values are converted to deltas (gaps) and compressed in blocks of BLOCK_SIZE
-    /// values into `compressed_data`. Every call, except the final one, must contain
-    /// a multiple of BLOCK_SIZE row ids, so that only the very last block is partial.
     void append(std::span<const UInt32> row_ids, size_t segment_size);
 
-    /// Serialize all buffered postings to `out` and update TokenPostingsInfo.
-    /// Writes per-segment headers followed by the segment payload bytes.
-    void encode(WriteBuffer & out, TokenPostingsInfo & info) const
-    {
-        serializeTo(out, info);
-    }
+    /// Write all segments to output and fill TokenPostingsInfo:
+    /// - offsets: byte offsets in output where each segment begins
+    /// - ranges: [row_begin, row_end] row range for each segment
+    void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
 
     /// Total number of row ids added so far.
     size_t cardinality() const { return total_row_ids; }
@@ -168,11 +163,6 @@ public:
     void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer);
 
 private:
-    /// Write all segments to output and fill TokenPostingsInfo:
-    /// - offsets: byte offsets in output where each segment begins
-    /// - ranges: [row_begin, row_end] row range for each segment
-    void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
-
     /// Encodes one block of up to BLOCK_SIZE row ids as deltas and appends it to `compressed_data`.
     ///
     /// Block layout:

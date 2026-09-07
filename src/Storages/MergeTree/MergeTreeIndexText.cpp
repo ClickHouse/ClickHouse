@@ -1597,8 +1597,7 @@ void PostingListBuilder::Large::flush(const PostingListBuildContext & context)
     if (values.empty())
         return;
 
-    /// Created lazily: tokens whose posting lists end up raw or embedded never need an encoder
-    /// (with positions enabled every token starts in `Large`, so most builders never flush).
+    /// Created lazily: tokens whose posting lists end up raw or embedded never need an encoder.
     if (!encoder)
         encoder = context.codec.createEncoder();
 

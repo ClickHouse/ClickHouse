@@ -306,16 +306,17 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
     , postings_serialization(createPostingsSerialization(*index_ptr))
 {
-    cursors.resize(segments.size());
+    tokens_cursors.resize(segments.size());
     inputs.resize(segments.size());
     input_streams.resize(segments.size());
 
     SortDescription postings_sort_description;
     postings_sort_description.emplace_back("row_id");
 
-    /// The sort cursor of every postings cursor is built once and points at the cursor's
-    /// own column; a segment refill only rewinds it (see resetToColumnStart).
+    /// The sort cursor of every postings cursor is built once and points at the cursor's own column.
+    /// A segment refill only rewinds it (see resetToColumnStart).
     postings_merge_cursors.resize(segments.size());
+
     for (size_t i = 0; i < postings_merge_cursors.size(); ++i)
     {
         auto & cursor = postings_merge_cursors[i];
@@ -365,8 +366,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         stream->seekToStart();
         /// Only the version and codecs are needed here, so skip deserializing the sparse index.
         auto header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
-        source_postings_serializations.emplace_back(
-            PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
+        source_postings_serializations.emplace_back(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
     }
 }
 
@@ -380,14 +380,14 @@ Block MergeTextIndexesTask::getHeader() const
     return Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "token"}};
 }
 
-void MergeTextIndexesTask::initializeQueue()
+void MergeTextIndexesTask::initializeTokensQueue()
 {
     SortDescription description;
     description.emplace_back("token");
 
     for (size_t source_num = 0; source_num < inputs.size(); ++source_num)
     {
-        cursors[source_num] = SortCursorImpl(getHeader(), description, source_num);
+        tokens_cursors[source_num] = SortCursorImpl(getHeader(), description, source_num);
         readDictionaryBlock(source_num);
     }
 }
@@ -402,8 +402,8 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
 
     inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer);
     const auto & tokens = inputs[source_num].tokens;
-    cursors[source_num].reset({tokens}, getHeader(), tokens->size());
-    queue.push(cursors[source_num]);
+    tokens_cursors[source_num].reset({tokens}, getHeader(), tokens->size());
+    tokens_queue.push(tokens_cursors[source_num]);
 }
 
 UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) const
@@ -440,8 +440,8 @@ void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenS
 
     if (info.embedded_postings.empty() && !has_positions)
     {
-        bool refilled = advanceCursorSegment(cursor);
-        chassert(refilled);
+        bool advanced = advanceCursorSegment(cursor);
+        chassert(advanced);
         return;
     }
 
@@ -451,10 +451,14 @@ void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenS
     row_ids.clear();
 
     if (!info.embedded_postings.empty())
+    {
         row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
+    }
     else
+    {
         for (size_t i = 0; i < info.offsets.size(); ++i)
             readPostingsSegment(source, i, row_ids);
+    }
 
     if (has_positions)
         readAndAppendPositions(source, {row_ids.data(), row_ids.size()});
@@ -482,6 +486,7 @@ bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
     row_ids.clear();
     readPostingsSegment(source, cursor.next_segment, row_ids);
     adjustPartOffsets({row_ids.data(), row_ids.size()}, segments[source.source_num].part_index);
+
     ++cursor.next_segment;
     cursor.resetToColumnStart();
 
@@ -594,15 +599,13 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
     const auto * codec = postings_serialization.getPostingListCodec();
     size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
     auto encoder = codec->createEncoder();
-    constexpr size_t max_buffered_size = IPostingListEncoder::append_granularity * 16;
+    constexpr size_t max_buffered_size = IPostingListEncoder::append_granularity * 64;
 
     output_postings_buffer.clear();
     output_postings_buffer.reserve(max_buffered_size);
 
     mergePostings([&](std::span<const UInt32> row_ids)
     {
-        /// A granularity-aligned chunk arriving on an empty buffer (typically a whole
-        /// segment of the only or a disjoint source) goes to the encoder directly, without staging.
         if (output_postings_buffer.empty() && row_ids.size() % IPostingListEncoder::append_granularity == 0)
         {
             encoder->append(row_ids, segment_size);
@@ -646,11 +649,14 @@ void MergeTextIndexesTask::readAndAppendPositions(const TokenSource & source, st
 
     /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
     const size_t file_size = stream->getFileSize();
-    if ((token_info.position_bytes == 0) || (token_info.position_offset > file_size)
+    if ((token_info.position_bytes == 0)
+        || (token_info.position_offset > file_size)
         || (token_info.position_bytes > file_size - token_info.position_offset))
+    {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
             token_info.position_bytes, token_info.position_offset, file_size);
+    }
 
     stream->seekToMark({token_info.position_offset, 0});
 
@@ -775,7 +781,7 @@ bool MergeTextIndexesTask::executeStep()
     if (!is_initialized)
     {
         is_initialized = true;
-        initializeQueue();
+        initializeTokensQueue();
 
         /// Write marks for compatibility with other skip indexes.
         /// An empty part carries no marks at all, exactly like every other skip index on an empty part.
@@ -787,7 +793,7 @@ bool MergeTextIndexesTask::executeStep()
         }
     }
 
-    if (!queue.isValid())
+    if (!tokens_queue.isValid())
     {
         finalize();
         return false;
@@ -797,7 +803,7 @@ bool MergeTextIndexesTask::executeStep()
 
     do
     {
-        auto [current_ptr, batch_size] = queue.current();
+        auto [current_ptr, batch_size] = tokens_queue.current();
         TokenSortCursor & current = *current_ptr;
 
         size_t source_num = current->order;
@@ -829,14 +835,14 @@ bool MergeTextIndexesTask::executeStep()
 
         if (!current->isLast(batch_size))
         {
-            queue.next(batch_size);
+            tokens_queue.next(batch_size);
         }
         else
         {
-            queue.removeTop();
+            tokens_queue.removeTop();
             readDictionaryBlock(source_num);
         }
-    } while (queue.isValid() && watch.elapsedMilliseconds() < step_time_ms);
+    } while (tokens_queue.isValid() && watch.elapsedMilliseconds() < step_time_ms);
 
     return true;
 }

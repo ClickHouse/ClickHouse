@@ -202,7 +202,7 @@ void SegmentedPostingListEncoder::finalize(WriteBuffer & out, TokenPostingsInfo 
 {
     using enum PostingsSerialization::Flags;
 
-    impl.encode(out, info);
+    impl.serializeTo(out, info);
 
     info.header |= IsCompressed;
     info.header |= HasBlockIndex;

@@ -67,8 +67,7 @@ public:
     Type getType() const { return type; }
 
     /// Returns the effective segment size for the requested `posting_list_block_size`.
-    /// Codecs may round the requested size (e.g. `bitpacking` aligns it to the size of
-    /// the physical block expected by the SIMD bit-packing implementation).
+    /// Codecs may round the requested size.
     virtual size_t getSegmentSize(size_t posting_list_block_size) const { return posting_list_block_size; }
 
     /// Creates an accumulator that encodes segments of row ids into this codec's format.
