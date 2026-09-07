@@ -77,6 +77,7 @@ namespace FailPoints
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_receive_packet_pause[];
     extern const char remote_query_executor_finish_drain_pause[];
+    extern const char remote_query_executor_finish_drain_hold[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -474,6 +475,22 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
+
+    /// Plan-level execution limits are serialized beginning with version 10. Before that version,
+    /// sending a plan would silently lose them. Use the original SQL request for old replicas: it
+    /// carries the query settings and lets the remote server build a plan with the same limits.
+    /// This keeps `serialize_query_plan` usable while a cluster is being upgraded.
+    if (query_plan
+        && (query_plan->getMaxThreads() || query_plan->getConcurrencyControl())
+        && !connections->supportsQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS))
+    {
+        LOG_DEBUG(
+            log,
+            "Sending query as SQL because a replica does not support query-plan serialization version {} required for execution limits",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+        query_plan.reset();
+        stage = query_plan_fallback_stage;
+    }
 
     const auto & settings = context->getSettingsRef();
     if (isReplicaUnavailable() || needToSkipUnavailableShard())
@@ -989,6 +1006,13 @@ void RemoteQueryExecutor::finish()
         return;
     }
 
+    /// Published only once the `tryCancel` above has returned, so a `cancel` that observes it has
+    /// nothing left to send.
+    drain_in_progress = true;
+    SCOPE_EXIT({ drain_in_progress = false; });
+
+    FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_hold);
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
@@ -1061,6 +1085,11 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
+    /// While `finish` drains it has already sent the `Cancel` packet, and the external-table flags
+    /// `cancelUnlocked` sets have no reader until it releases `was_cancelled_mutex`.
+    if (drain_in_progress)
+        return;
+
     LockAndBlocker guard(was_cancelled_mutex);
     cancelUnlocked();
 }
