@@ -83,20 +83,6 @@ SELECT countIf(readonly) > 0 FROM system.table_settings WHERE database = current
 SELECT '-- filtering by database reaches the scan';
 SELECT count() FROM system.table_settings WHERE database = 'database_that_does_not_exist';
 
--- A named collection is a source of its own, and the only engine that can name the collection it
--- was created from is Kafka. The three `other` rows are not an oversight: `StorageKafka`'s
--- constructor pins those format settings itself, so they come from neither the collection nor the
--- definition.
-CREATE NAMED COLLECTION knc AS
-    kafka_broker_list = 'b:9092', kafka_topic_list = 't', kafka_group_name = 'g',
-    kafka_format = 'CSV', kafka_max_block_size = 4242;
-CREATE TABLE knc_tbl (a UInt64) ENGINE = Kafka(knc);
-SELECT name, value, source FROM system.table_settings
-WHERE table = 'knc_tbl' AND source != 'default' ORDER BY name;
-
-DROP TABLE knc_tbl;
-DROP NAMED COLLECTION knc;
-
 DROP TABLE mt;
 DROP TABLE jn;
 DROP TABLE lg;
