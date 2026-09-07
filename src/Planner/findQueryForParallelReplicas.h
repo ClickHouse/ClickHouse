@@ -20,7 +20,7 @@ struct SelectQueryOptions;
 const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 /// Find a table from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
-/// The result is either a table or a table function which returns a table (like `timeSeriesTags`).
+/// The result is either a table or a table function which returns a table (like `timeSeriesTags` or `timeSeriesSamples`).
 const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 class IStorage;

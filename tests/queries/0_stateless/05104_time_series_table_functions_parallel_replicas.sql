@@ -30,6 +30,11 @@ SELECT '-- the same with a local plan';
 SELECT count() FROM (SELECT * FROM timeSeriesTags(ts)) SETTINGS optimize_trivial_count_query = 0, parallel_replicas_local_plan = 1;
 SELECT count() FROM (SELECT * FROM timeSeriesSamples(ts)) SETTINGS optimize_trivial_count_query = 0, parallel_replicas_local_plan = 1;
 
+-- FINAL is not supported with parallel replicas: the query is rejected when they are forced and runs without them otherwise.
+SELECT '-- FINAL';
+SELECT count() FROM (SELECT * FROM timeSeriesTags(ts) FINAL) SETTINGS optimize_trivial_count_query = 0; -- { serverError SUPPORT_IS_DISABLED }
+SELECT count() FROM (SELECT * FROM timeSeriesTags(ts) FINAL) SETTINGS optimize_trivial_count_query = 0, enable_parallel_replicas = 1;
+
 -- A JOIN with a MergeTree table on the left side is sent to the replicas as a whole,
 -- so the table functions on the right side must get the table name qualified with the database too.
 SELECT '-- table functions on the right side of a JOIN';
