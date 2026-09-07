@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -88,15 +87,6 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
-            /// The `eval` table function hides its real query inside an opaque string argument, so the
-            /// generated query cannot be inspected here. Treat it as non-deterministic (and, in
-            /// HasSystemTablesMatcher, as touching a system table) to keep such queries out of the cache,
-            /// e.g. `eval('SELECT now()')` must not be cached as if it were deterministic.
-            if (function->name == "eval")
-            {
-                data.has_non_deterministic_functions = true;
-                return;
-            }
             if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
             {
                 if (!func->isDeterministic())
@@ -105,14 +95,9 @@ struct HasNonDeterministicFunctionsMatcher
             }
             if (const auto udf_sql = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
             {
-                /// Driver-created executable functions are also persisted in the SQL-object storage,
-                /// but their determinism is described by the generated executable UDF configuration checked below.
-                if (!udf_sql->as<ASTCreateFunctionWithDriverQuery>())
-                {
-                    /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
-                    data.has_non_deterministic_functions = true;
-                    return;
-                }
+                /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
+                data.has_non_deterministic_functions = true;
+                return;
             }
             if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
             {
@@ -166,13 +151,6 @@ struct HasSystemTablesMatcher
         ///     [...]
         else if (const auto * function = node->as<ASTFunction>())
         {
-            /// See HasNonDeterministicFunctionsMatcher: the query behind `eval` is opaque here, so
-            /// conservatively assume it may read a system table (e.g. `eval('SELECT * FROM system.processes')`).
-            if (function->name == "eval")
-            {
-                data.has_system_tables = true;
-                return;
-            }
             if (function->name == "clusterAllReplicas")
             {
                 const ASTs & function_children = function->children;

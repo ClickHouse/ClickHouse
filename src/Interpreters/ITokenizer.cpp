@@ -1,16 +1,11 @@
 #include <Interpreters/ITokenizer.h>
 
-#include "config.h"
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <Functions/Regexps.h>
-
-#include <limits>
 
 #if defined(__SSE2__)
 #  include <emmintrin.h>
@@ -19,28 +14,12 @@
 #  endif
 #endif
 
-#if USE_ICU
-#  include <unicode/ubrk.h>
-#  include <unicode/utext.h>
-#  include <unicode/utypes.h>
-
-/// ICU renames its entry points via self-referential macros (e.g. `u_errorName` expands to
-/// `U_ICU_ENTRY_POINT_RENAME(u_errorName)`), which trips `-Wdisabled-macro-expansion`.
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-#endif
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-#if USE_ICU
-    extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_STRING_SIZE;
-#endif
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -318,82 +297,6 @@ String SplitByStringTokenizer::getDescription() const
     return result + "])";
 }
 
-SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_)
-    : ITokenizerHelper(Type::SplitByRegexp)
-    , regexp_str(regexp_)
-    /// `no_capture = true`: only the whole match (group 0) is ever read via `nextRegexpMatch`, so tracking
-    /// capture groups would only waste work (a larger `MatchVec` resized on every match).
-    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, true, false>(regexp_)))
-{
-}
-
-bool SplitByRegexpTokenizer::nextInStringImpl(
-    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
-{
-    while (pos <= length)
-    {
-        const size_t token_begin = pos;
-        size_t match_start = 0;
-        size_t match_length = 0;
-
-        if (nextRegexpMatch(*regexp, data, length, pos, match_start, match_length, matches))
-        {
-            /// The token is the text preceding the separator; `pos` has already advanced past the separator.
-            if (match_start > token_begin)
-            {
-                token_start = token_begin;
-                token_length = match_start - token_begin;
-                return true;
-            }
-            /// Empty piece (leading or consecutive separators): skip it and keep scanning.
-        }
-        else
-        {
-            /// No further separator: the remaining tail is the last token. An empty tail is not emitted.
-            pos = length + 1; /// Mark exhausted so subsequent calls return false.
-            if (token_begin < length)
-            {
-                token_start = token_begin;
-                token_length = length - token_begin;
-                return true;
-            }
-            return false;
-        }
-    }
-
-    return false;
-}
-
-bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
-{
-    /// Allocates the RE2 match scratch per call. This is only used by the (constant-only, documented as
-    /// inefficient) `stringToTokens` / `stringToBloomFilter` paths. The hot path - `forEachToken`, used by
-    /// index build, search and the `tokens` function - goes through `forEachTokenImpl`, which reuses a single
-    /// scratch buffer across all tokens of a string.
-    OptimizedRegularExpression::MatchVec matches;
-    return nextInStringImpl(data, length, pos, token_start, token_length, matches);
-}
-
-bool SplitByRegexpTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::nextInStringLike is not implemented");
-}
-
-void SplitByRegexpTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToBloomFilter is not implemented");
-}
-
-void SplitByRegexpTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToTokens is not implemented");
-}
-
-String SplitByRegexpTokenizer::getDescription() const
-{
-    return fmt::format("{}({})", getName(), quoteString(regexp_str));
-}
-
 bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
 {
     if (pos == 0)
@@ -532,7 +435,7 @@ VectorWithMemoryTracking<String> SparseGramsTokenizer::compactTokens(const Vecto
 
         for (const auto & existing_token : result)
         {
-            if (existing_token.contains(token))
+            if (existing_token.find(token) != std::string::npos)
             {
                 is_covered = true;
                 break;
@@ -575,13 +478,6 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     auto tokens_offsets = ColumnArray::ColumnOffsets::create();
     tokens_offsets->reserve(rows);
 
-    /// Reserve token character storage to avoid repeated reallocations of the chars buffer as tokens are appended.
-    if (const auto * col_string = typeid_cast<const ColumnString *>(&input))
-    {
-        const auto & str_offsets = col_string->getOffsets();
-        tokens_data->getChars().reserve(str_offsets[from + rows - 1] - str_offsets[from - 1]);
-    }
-
     auto tokenize = [&](std::string_view doc)
     {
         forEachToken(tokenizer, doc.data(), doc.size(),
@@ -596,7 +492,7 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     {
         const IColumn & data = col_array->getData();
         const IColumn::Offsets & src_offsets = col_array->getOffsets();
-        const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(data);
+        const bool data_is_nullable = data.isNullable();
 
         for (size_t i = from; i < from + rows; ++i)
         {
@@ -889,201 +785,4 @@ void AsciiCJKTokenizer::substringToTokens(
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
-#if USE_JIEBA
-bool ChineseTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
-{
-    /// All hot-path tokenization for `ChineseTokenizer` goes through `stringToTokens` /
-    /// `stringToBloomFilter` (and the substring variants which delegate to them), each of
-    /// which calls the segmenter directly with per-call local state. There is no
-    /// streaming, stateful entry point for this tokenizer.
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInString is not supported");
 }
-
-bool ChineseTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
-{
-    /// LIKE/ILIKE tokenization is intentionally unsupported for the `chinese` tokenizer
-    /// (`supportsStringLike()` returns `false`). `nextInStringLike` is the streaming entry
-    /// point that extracts index tokens from a LIKE pattern, splitting it on the `%`/`_`
-    /// wildcards and emitting the literal fragments between them. That model assumes a
-    /// tokenizer whose tokens are delimited by characters in the text (splitByNonAlpha,
-    /// ngrams, ...). Chinese word segmentation has no such delimiters: words are inferred
-    /// from a dictionary/HMM over a whole sentence, and a LIKE fragment cut at an arbitrary
-    /// wildcard boundary is generally not a word boundary, so the fragments would not match
-    /// the indexed tokens. We therefore reject it instead of producing wrong tokens; use
-    /// `tokens(value, 'chinese')` with `hasAnyTokens`/`hasAllTokens` instead of LIKE.
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInStringLike is not supported");
-}
-
-void ChineseTokenizer::stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
-{
-    const auto tokens = JiebaSegmenter::instance().tokenize({data, length}, granularity);
-    for (const auto & token : tokens)
-        bloom_filter.add(token.data(), token.size());
-}
-
-void ChineseTokenizer::stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const
-{
-    const auto words = JiebaSegmenter::instance().tokenize({data, length}, granularity);
-    tokens.reserve(tokens.size() + words.size());
-    for (const auto & word : words)
-        tokens.emplace_back(word);
-}
-
-void ChineseTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
-{
-    /// Substring/prefix/suffix paths are gated by `supportsStringLike()` everywhere
-    /// they are called from (`startsWith`, `endsWith`, `like`, `match`,
-    /// `multiSearchAny`, `multiMatchAny` in `MergeTreeIndexConditionText`), and
-    /// `ChineseTokenizer::supportsStringLike()` returns `false`. Reaching this
-    /// method indicates a bug in the index-condition machinery, not a user error,
-    /// so fail loud rather than silently returning an empty filter that would
-    /// over-prune granules.
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToBloomFilter is not supported");
-}
-
-void ChineseTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
-{
-    /// See the comment on `substringToBloomFilter`.
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToTokens is not supported");
-}
-#endif
-
-
-#if USE_ICU
-namespace
-{
-
-using UBreakIteratorPtr = std::unique_ptr<UBreakIterator, decltype(&ubrk_close)>;
-
-/// A word break iterator is stateful and not thread-safe, while tokenizers are shared as `const`
-/// pointers across threads. Keeping one iterator per (thread, locale) makes the tokenizer itself
-/// stateless (it only stores the locale) and avoids re-creating the iterator for every string.
-UBreakIterator * getThreadLocalIcuWordIterator(const String & locale)
-{
-    static constexpr size_t max_cached_iterators = 32;
-    thread_local std::unordered_map<String, UBreakIteratorPtr> iterators;
-
-    auto it = iterators.find(locale);
-    if (it == iterators.end())
-    {
-        /// Coarse bound: the locale comes from user SQL, so cap per-thread state. Cleared entries are
-        /// lazily re-created on their next use.
-        if (iterators.size() >= max_cached_iterators)
-            iterators.clear();
-
-        UErrorCode status = U_ZERO_ERROR;
-        UBreakIteratorPtr iterator(ubrk_open(UBRK_WORD, locale.c_str(), nullptr, 0, &status), &ubrk_close);
-
-        if (U_FAILURE(status))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot create ICU word break iterator for locale '{}': {}",
-                locale, u_errorName(status));
-
-        it = iterators.emplace(locale, std::move(iterator)).first;
-    }
-
-    return it->second.get();
-}
-
-/// Holds the UTF-8 `UText` currently bound to the thread-local break iterator.
-struct IcuTextBinding
-{
-    UText * utext = nullptr;
-    const char * data = nullptr;
-    const UBreakIterator * iterator = nullptr;
-
-    ~IcuTextBinding()
-    {
-        if (utext)
-            utext_close(utext);
-    }
-};
-
-}
-#endif
-
-#if USE_ICU
-String IcuTokenizer::getDescription() const
-{
-    return fmt::format("icu({})", quoteString(locale));
-}
-
-bool IcuTokenizer::nextInString(
-    const char * data,
-    size_t length,
-    size_t & __restrict pos,
-    size_t & __restrict token_start,
-    size_t & __restrict token_length) const
-{
-    /// ICU break iteration exposes only 32-bit offsets, so a value past INT32_MAX would silently
-    /// stop tokenizing at 2 GiB. Reject it explicitly instead of returning truncated results.
-    if (length > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "The 'icu' tokenizer cannot process values larger than {} bytes",
-            std::numeric_limits<int32_t>::max());
-
-    UBreakIterator * iterator = getThreadLocalIcuWordIterator(locale);
-
-    /// The iterator's text is (re)bound at the start of each new string (`pos == 0`); afterwards
-    /// `nextInString` is called repeatedly with an increasing `pos` until the string is exhausted.
-    thread_local IcuTextBinding binding;
-
-    if (pos == 0 || data != binding.data || iterator != binding.iterator)
-    {
-        UErrorCode status = U_ZERO_ERROR;
-        binding.utext = utext_openUTF8(binding.utext, data, static_cast<int64_t>(length), &status);
-        if (U_FAILURE(status))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot open ICU UTF-8 text: {}", u_errorName(status));
-
-        ubrk_setUText(iterator, binding.utext, &status);
-        if (U_FAILURE(status))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set ICU break iterator text: {}", u_errorName(status));
-
-        binding.data = data;
-        binding.iterator = iterator;
-    }
-
-    auto start = static_cast<int32_t>(pos);
-    int32_t end = 0;
-    while ((end = ubrk_following(iterator, start)) != UBRK_DONE)
-    {
-        if (ubrk_getRuleStatus(iterator) >= UBRK_WORD_NONE_LIMIT)
-        {
-            token_start = static_cast<size_t>(start);
-            token_length = static_cast<size_t>(end - start);
-            pos = static_cast<size_t>(end);
-            return true;
-        }
-
-        start = end;
-    }
-
-    pos = length;
-    return false;
-}
-
-bool IcuTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IcuTokenizer::nextInStringLike is not implemented");
-}
-
-void IcuTokenizer::substringToBloomFilter(
-    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
-{
-    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
-}
-
-void IcuTokenizer::substringToTokens(
-    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
-{
-    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
-}
-#endif
-
-}
-
-#if USE_ICU
-#  pragma clang diagnostic pop
-#endif
