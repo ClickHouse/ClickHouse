@@ -13,7 +13,6 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -339,7 +338,7 @@ public:
     }
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
-    /// The source must be a distinct filter. Merges involving the same filters are serialized.
+    /// The source must be a distinct filter. Both filters are locked in stable address order.
     void merge(const RuntimeFilter & source);
 
     /// Opt in to collecting build-side metadata for storage index analysis.
@@ -353,7 +352,6 @@ public:
     const RuntimeFilterConfig & getConfig() const { return evaluation_state.getConfig(); }
 
 private:
-    mutable std::mutex merge_mutex;
     RuntimeFilterEvaluationState evaluation_state;
     MutexProtected<Data> data;
 };

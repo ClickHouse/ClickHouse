@@ -712,9 +712,7 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
     if (&source == this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge a runtime filter with itself");
 
-    std::scoped_lock merge_locks(merge_mutex, source.merge_mutex);
-    auto source_data = source.data.getReadOnly();
-    auto destination_data = data.getWriteEnabled();
+    auto [source_data, destination_data] = DB::LockOrderedAccessorPair(readOnly(source.data), writeEnabled(data));
 
     /// `HashJoin::publishSharedRuntimeFilters` may have already replaced this lookup entry with a
     /// prebuilt shared fixed-hash-table filter: the publication step can run as soon as the last
