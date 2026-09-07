@@ -101,14 +101,14 @@ _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES = (
 )
 
 
-def any_bugfix_validation_passed():
-    """Return True iff at least one per-arch Bugfix Validation job in the
-    current workflow result reported a success status (OK / XFAIL).
+def per_arch_validation_states():
+    """Return the per-arch Bugfix Validation sub-results of the current workflow
+    result, in report order. Empty when none is present or the file is unreadable.
 
-    SKIPPED jobs do NOT count as a pass: a job that filter_job skipped
-    because the corresponding test type wasn't changed has no opinion on
-    whether the bug was validated. We use `is_success()` (strict - OK or
-    XFAIL only) rather than `is_ok()` (which treats SKIPPED as OK).
+    This is the snapshot as this post-hook sees it, which is not necessarily a job's
+    final status: `_finish_workflow` runs the post-hooks before it reconciles jobs
+    that GitHub has not completed, so a job read here as `PENDING` can end up
+    `ERROR` in the published report.
     """
     info = Info()
     try:
@@ -120,24 +120,55 @@ def any_bugfix_validation_passed():
             f"WARNING: failed to read workflow result for "
             f"[{info.workflow_name}]: {e}"
         )
-        return False
-    matched = []
-    passed = []
-    for sub in workflow_result.results:
-        if sub.name in _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES:
-            matched.append((sub.name, sub.status))
-            if sub.is_success():
-                passed.append(sub.name)
-    if matched:
-        print(
-            f"Bugfix validation per-arch jobs: {matched} - "
-            f"passed: {passed if passed else 'none'}"
+        return []
+    return [
+        sub
+        for sub in workflow_result.results
+        if sub.name in _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES
+    ]
+
+
+def describe_per_arch_validation(states):
+    """Render the observed per-arch state, one line per job, with the reason the job
+    recorded for itself: its own `info`, then every note attached to it. A job dropped
+    behind a failed dependency carries an empty `info` and names the upstream job that
+    failed in a note instead. The `info` is what tells apart a `SKIPPED` that
+    `filter_job` produced because this PR changed no test of that type from a
+    `SKIPPED` the validator produced because the test still passed on master HEAD.
+    """
+    if not states:
+        return (
+            "No per-arch Bugfix validation job is present in the workflow result "
+            "as seen by this check."
         )
-    else:
-        print(
-            "WARNING: no Bugfix Validation per-arch jobs found in workflow "
-            "result - were they all filtered/skipped?"
+    lines = ["Bugfix validation as seen by this check:"]
+    for sub in states:
+        recorded = [sub.info] + [
+            str(note.get("message", ""))
+            for note in ((sub.ext or {}).get("notes") or [])
+        ]
+        reason = " | ".join(
+            part.strip()
+            for chunk in recorded
+            for part in chunk.splitlines()
+            if part.strip()
         )
+        lines.append(f"  {sub.name}: {sub.status}" + (f" ({reason})" if reason else ""))
+    return "\n".join(lines)
+
+
+def any_bugfix_validation_passed(states=None):
+    """Return True iff at least one per-arch Bugfix Validation job reported a
+    success status: `OK` or `XFAIL`, i.e. `Result.is_success` rather than `Result.is_ok`,
+    which would also accept `SKIPPED`. A job that `filter_job` skipped because the
+    corresponding test type wasn't changed has no opinion on whether the bug was
+    validated, so `SKIPPED` cannot count as a pass.
+    """
+    if states is None:
+        states = per_arch_validation_states()
+    passed = [sub.name for sub in states if sub.is_success()]
+    if passed:
+        print(f"Bugfix validation passed on: {passed}")
     return bool(passed)
 
 
@@ -197,16 +228,16 @@ def check():
     # HEAD and is fixed on the PR). The presence of an additional unit
     # test alongside FT/IT does not relax this requirement either.
     if has_ft or has_it:
-        if any_bugfix_validation_passed():
+        states = per_arch_validation_states()
+        if any_bugfix_validation_passed(states):
             print(
                 "At least one per-arch Bugfix Validation job validated the bug - pass"
             )
             return True
+        print(describe_per_arch_validation(states))
         print(
-            "No per-arch Bugfix Validation job validated the bug - the test "
-            "either passes on master HEAD on every arch (so it's not actually "
-            "a regression test for the fix) or every arch errored out. See "
-            "the per-arch Bugfix validation jobs in the report."
+            "A bug fix is validated when at least one per-arch Bugfix validation "
+            "job reports OK or XFAIL; none did."
         )
         return False
 

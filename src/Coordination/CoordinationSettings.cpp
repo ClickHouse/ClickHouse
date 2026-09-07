@@ -1,9 +1,12 @@
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperConstants.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <base/sanitizer_defs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -15,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** These settings represent fine tunes for internal details of Coordination storages
@@ -64,6 +68,7 @@ namespace ErrorCodes
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     DECLARE(Bool, compress_logs, false, "Write compressed coordination logs in ZSTD format", 0) \
     DECLARE(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \
+    DECLARE(Int64, snapshot_zstd_compression_level, DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL, "ZSTD compression level for snapshots. Lower levels use less CPU but produce larger snapshots. Used only when compress_snapshots_with_zstd_format is enabled.", 0) \
     DECLARE(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0) \
     DECLARE(UInt64, max_log_file_size, 50 * 1024 * 1024, "Max size of the Raft log file. If possible, each created log file will preallocate this amount of bytes on disk. Set to 0 to disable the limit", 0) \
     DECLARE(UInt64, log_file_overallocate_size, 50 * 1024 * 1024, "If max_log_file_size is not set to 0, this value will be added to it for preallocating bytes on disk. If a log record is larger than this value, it could lead to uncaught out-of-space issues so a larger value is preferred", 0) \
@@ -172,6 +177,14 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
     if ((*this)[CoordinationSetting::commit_logs_cache_size_threshold].changed
         && !(*this)[CoordinationSetting::log_readahead_commit_window_bytes].changed)
         (*this)[CoordinationSetting::log_readahead_commit_window_bytes] = (*this)[CoordinationSetting::commit_logs_cache_size_threshold];
+
+#if defined(MEMORY_SANITIZER)
+    if ((*this)[CoordinationSetting::commit_profiler_real_time_period_ns].changed
+        && (*this)[CoordinationSetting::commit_profiler_real_time_period_ns].value != 0)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The Keeper setting `commit_profiler_real_time_period_ns` is not supported in a MemorySanitizer build");
+#endif
 }
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())

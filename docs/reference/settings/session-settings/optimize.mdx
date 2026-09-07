@@ -175,6 +175,21 @@ Avoid repeated inverse dictionary lookup by doing faster lookups into a precompu
 
 Replace 'multiIf' with only one condition to 'if'.
 
+## optimize_mutations_with_partition_pruning {#optimize_mutations_with_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to automatically prune partitions for mutations based on WHERE clause"}]}]}/>
+
+When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of `ALTER TABLE UPDATE`/`DELETE` mutations and lightweight `UPDATE`/`DELETE` statements on tables of the `ReplicatedMergeTree` family and only processes the affected partitions instead of all partitions.
+
+This automatic pruning currently applies only to replicated tables. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit a mutation to specific partitions.
+
+Possible values:
+
+- 0 — Disabled. Mutations and lightweight updates will process all partitions.
+- 1 — Enabled. Mutations and lightweight updates will only process partitions that match the WHERE condition.
+
 ## optimize_normalize_count_variants {#optimize_normalize_count_variants}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -272,6 +287,19 @@ Possible values:
 **See Also**
 
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
+
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."}]}]}/>
+
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables. Takes effect only when [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order) is also enabled.
+
+Possible values:
+
+- 0 — Reading in reverse order with `FINAL` is disabled.
+- 1 — Reading in reverse order with `FINAL` is enabled.
 
 ## optimize_respect_aliases {#optimize_respect_aliases}
 

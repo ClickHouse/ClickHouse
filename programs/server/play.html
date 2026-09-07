@@ -1300,6 +1300,16 @@
 
         #query-backdrop .q-active { background-color: var(--current-query-background-color); }
 
+        /* Browsers stop painting the text selection as soon as the textarea loses focus, so the
+           range that `Run selected` (or a copy) will act on becomes invisible while the user is
+           reaching for a button. Repaint it ourselves in the backdrop — which is what the user
+           actually sees — with the same colors as the native selection. */
+        #query-backdrop::highlight(query-selection)
+        {
+            color: var(--selection-color);
+            background-color: var(--selection-background-color);
+        }
+
         /* Per-token syntax highlighting classes. The color value here is the raw color
            painted in the backdrop; the visible color the user sees is the difference
            between this and --text-color-active (see the comment on .has-backdrop). */
@@ -16464,7 +16474,7 @@ const SQL_KEYWORDS = new Set([
     'CROSS', 'CUBE', 'CURRENT',
     'DATABASE', 'DATABASES', 'DAY', 'DEDUPLICATE', 'DEFAULT', 'DELETE', 'DESC', 'DESCENDING',
     'DESCRIBE', 'DETACH', 'DICTIONARIES', 'DICTIONARY', 'DISK', 'DISTINCT', 'DISTRIBUTED',
-    'DROP', 'ELSE', 'END', 'ENGINE', 'ESTIMATE', 'EVENTS', 'EXCEPT', 'EXCHANGE', 'EXISTS',
+    'DROP', 'ELSE', 'END', 'ENGINE', 'ESTIMATE', 'EXCEPT', 'EXCHANGE', 'EXISTS',
     'EXPLAIN', 'EXPRESSION', 'EXTENDED', 'EXTRACT',
     'FALSE', 'FETCH', 'FETCHES', 'FILE', 'FILESYSTEM', 'FINAL', 'FIRST', 'FLUSH', 'FOLLOWING',
     'FOR', 'FOREIGN', 'FORMAT', 'FREEZE', 'FROM', 'FULL', 'FUNCTION',
@@ -16485,13 +16495,13 @@ const SQL_KEYWORDS = new Set([
     'RETURNS', 'REVOKE', 'RIGHT', 'ROLE', 'ROLLBACK', 'ROLLUP', 'ROW', 'ROWS',
     'SAMPLE', 'SECOND', 'SELECT', 'SEMI', 'SENDS', 'SET', 'SETS', 'SETTINGS', 'SHARD',
     'SHOW', 'SIGNED', 'SOURCE', 'SQL_SECURITY', 'START', 'STEP', 'STORAGE', 'STRICT',
-    'STRICTLY_ASCENDING', 'SUBPARTITION', 'SUBSTRING', 'SUSPEND', 'SYNC', 'SYNTAX', 'SYSTEM',
+    'SUBPARTITION', 'SUBSTRING', 'SUSPEND', 'SYNC', 'SYNTAX', 'SYSTEM',
     'TABLE', 'TABLES', 'TEMPORARY', 'TEST', 'THEN', 'TIES', 'TIMESTAMP', 'TO', 'TOP',
     'TOTALS', 'TRACKING', 'TRAILING', 'TRANSACTION', 'TRIGGER', 'TRIM', 'TRUE', 'TRUNCATE',
     'TYPE',
     'UNBOUNDED', 'UNFREEZE', 'UNION', 'UNIQUE', 'UNSIGNED', 'UPDATE', 'USE', 'USING',
     'UUID', 'VALUES', 'VARYING', 'VIEW', 'VIRTUAL', 'VISIBLE',
-    'WATCH', 'WEEK', 'WHEN', 'WHERE', 'WINDOW', 'WITH', 'WORK', 'WRITABLE',
+    'WEEK', 'WHEN', 'WHERE', 'WINDOW', 'WITH', 'WORK', 'WRITABLE',
     'XOR', 'YEAR', 'ZKPATH',
 ]);
 
@@ -16876,6 +16886,57 @@ function updateQueryBackdrop(text, tokens, boundaries) {
     renderQueryBackdrop();
 }
 
+/// Name of the CSS custom highlight that repaints the text selection in the backdrop while the
+/// textarea is not focused (see the `#query-backdrop::highlight(query-selection)` rule).
+const INACTIVE_SELECTION_HIGHLIGHT = 'query-selection';
+
+/// The browser paints the selection inside the textarea only while it has focus: clicking
+/// `Run selected` (or any other control) makes the selected range invisible, although it is still
+/// what the button acts on. Mirror the selection onto the backdrop, whose text is what the user
+/// sees, using the CSS Custom Highlight API. Must be called after every backdrop re-render,
+/// because replacing the backdrop's content invalidates the ranges.
+function highlightInactiveSelection() {
+    if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined') return;
+
+    const start = query_area.selectionStart;
+    const end = query_area.selectionEnd;
+
+    /// Nothing to paint: no selection, the backdrop is not shown, or the textarea has focus and
+    /// the browser paints the selection itself.
+    if (start === end || queryBackdrop.style.display === 'none' || document.activeElement === query_area) {
+        CSS.highlights.delete(INACTIVE_SELECTION_HIGHLIGHT);
+        return;
+    }
+
+    /// Map the textarea's character offsets onto the backdrop's text nodes. The backdrop holds the
+    /// same characters split across per-token spans (plus a possible trailing space for a final
+    /// newline, which is past the end of any selection).
+    const range = document.createRange();
+    let offset = 0;
+    let has_start = false;
+    let has_end = false;
+    const walker = document.createTreeWalker(queryBackdrop, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const length = node.data.length;
+        if (!has_start && start <= offset + length) {
+            range.setStart(node, start - offset);
+            has_start = true;
+        }
+        if (has_start && end <= offset + length) {
+            range.setEnd(node, end - offset);
+            has_end = true;
+            break;
+        }
+        offset += length;
+    }
+
+    if (has_start && has_end) {
+        CSS.highlights.set(INACTIVE_SELECTION_HIGHLIGHT, new Highlight(range));
+    } else {
+        CSS.highlights.delete(INACTIVE_SELECTION_HIGHLIGHT);
+    }
+}
+
 function renderQueryBackdrop() {
     const text = currentBackdropText;
     const tokens = currentTokens;
@@ -16888,6 +16949,7 @@ function renderQueryBackdrop() {
     if (!text || tokens.length === 0) {
         queryBackdrop.style.display = 'none';
         query_area.classList.remove('has-backdrop');
+        highlightInactiveSelection();
         if (!inRenderBackdrop) updateCompletions();
         return;
     }
@@ -17026,6 +17088,9 @@ function renderQueryBackdrop() {
 
     queryBackdrop.scrollTop = query_area.scrollTop;
     queryBackdrop.scrollLeft = query_area.scrollLeft;
+
+    /// Replacing the backdrop's content dropped the ranges of the selection highlight; recompute.
+    highlightInactiveSelection();
 
     /// Keep autocompletion in sync with the freshly rendered text/cursor (unless this render
     /// was itself triggered by the completion code, which would recurse).

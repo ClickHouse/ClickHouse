@@ -218,7 +218,6 @@ SELECT sleep(2);
 ┌─sleep(2)─┐
 │        0 │
 └──────────┘
-1 row in set. Elapsed: 2.012 sec.
             )"
         },
     };

@@ -6,6 +6,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
@@ -548,6 +550,105 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     }
 
     return new_inputs;
+}
+
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true};
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
+        return {};
+
+    const auto function_name = node.function_base->getName();
+    ActionsDAGLineageKind kind{};
+    if ((function_name == "materialize" || function_name == "toNullable") && node.children.size() == 1)
+        kind = ActionsDAGLineageKind::ValuePreserving;
+    else if (function_name == "_CAST" || function_name == "CAST")
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    else if (node.children.size() == 1 && node.function_base->isDeterministic())
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    else
+        return {};
+
+    /// NDV counts only non-null values. A hop turning a Nullable first argument into a
+    /// non-Nullable result can map NULL to one additional counted value.
+    const bool collapses_null
+        = isNullableOrLowCardinalityNullable(node.children[0]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
+    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
+        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
+    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
+}
+
+std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
+{
+    using TraceState = std::optional<ActionsDAGInputLineage>;
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> input_positions;
+    const auto & inputs = actions.getInputs();
+    for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
+        input_positions[inputs[input_position]] = input_position;
+
+    std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
+    const auto & outputs = actions.getOutputs();
+    for (const auto * output : outputs)
+    {
+        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
+        nodes_to_process.push({output, false});
+        while (!nodes_to_process.empty())
+        {
+            auto [node, child_pushed] = nodes_to_process.top();
+            if (traced.contains(node))
+            {
+                nodes_to_process.pop();
+                continue;
+            }
+
+            if (auto input = input_positions.find(node); input != input_positions.end())
+            {
+                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
+                nodes_to_process.pop();
+                continue;
+            }
+
+            const auto hop = describeActionsDAGLineageHop(*node);
+            if (hop && !child_pushed)
+            {
+                nodes_to_process.top().second = true;
+                nodes_to_process.push({node->children[0], false});
+                continue;
+            }
+
+            TraceState result;
+            if (hop)
+            {
+                const auto & child = traced.at(node->children[0]);
+                if (child)
+                {
+                    ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
+                    if (hop->kind == ActionsDAGLineageKind::DistinctValuesBound
+                        || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
+                        kind = ActionsDAGLineageKind::DistinctValuesBound;
+                    else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
+                        || child->kind == ActionsDAGLineageKind::ValuePreserving)
+                        kind = ActionsDAGLineageKind::ValuePreserving;
+                    result = ActionsDAGInputLineage{
+                        child->input_position,
+                        kind,
+                        child->ndv_delta + hop->ndv_delta,
+                        child->preserves_width && hop->preserves_width};
+                }
+            }
+            traced[node] = result;
+            nodes_to_process.pop();
+        }
+    }
+
+    std::vector<ActionsDAGOutputLineage> result;
+    result.reserve(outputs.size());
+    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
+        result.push_back({output_position, traced.at(outputs[output_position])});
+    return result;
 }
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)

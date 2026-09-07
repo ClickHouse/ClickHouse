@@ -19,6 +19,10 @@ from typing import List, Optional
 # Failpoint that delays every background mutation by a bounded random amount.
 MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
 
+# GNU `tar` exit statuses: 0 - success, 1 - some files differ (a file changed
+# or shrank while it was being read), 2 and above - a fatal error.
+TAR_EXIT_DIFFERS = 1
+
 
 class ServerDied(Exception):
     pass
@@ -376,18 +380,38 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("join_use_nulls=1")
 
     if i % 2 == 1:
-        join_alg_num = i // 2
-        if join_alg_num % 5 == 0:
-            client_options.append("join_algorithm='parallel_hash'")
-        if join_alg_num % 5 == 1:
-            client_options.append("join_algorithm='partial_merge'")
-        if join_alg_num % 5 == 2:
-            client_options.append("join_algorithm='full_sorting_merge'")
-        if join_alg_num % 5 == 3 and not upgrade_check:
-            # Some crashes are not fixed in 23.2 yet, so ignore the setting in Upgrade check
-            client_options.append("join_algorithm='grace_hash'")
-        if join_alg_num % 5 == 4:
-            client_options.append("join_algorithm='auto'")
+        # `join_algorithm` accepts a comma-separated priority list: for each query the
+        # first applicable algorithm is used. Pick a random subset in random order, so
+        # every algorithm meets every worker mode (plain, join_use_nulls, replicated
+        # database) and the multi-algorithm fallback paths are covered too.
+        join_algorithms = [
+            "hash",
+            "parallel_hash",
+            "partial_merge",
+            "full_sorting_merge",
+            "grace_hash",
+            "auto",
+        ]
+        if not upgrade_check:
+            # The Upgrade check runs the pre-upgrade load against the previous
+            # release server, which rejects join_algorithm values it does not
+            # know yet and would fail every query, so skip the values that are
+            # newer than the previous release.
+            join_algorithms += ["parallel_full_sorting_merge", "ie_join"]
+        selected = random.sample(
+            join_algorithms, k=random.randint(1, len(join_algorithms))
+        )
+        if selected == ["ie_join"]:
+            # ie_join applies only to inequality joins; alone it would fail every plain
+            # equality join with NOT_IMPLEMENTED.
+            selected.append("hash")
+        client_options.append("join_algorithm='{}'".format(",".join(selected)))
+        if selected[0] == "auto":
+            # The low limit makes auto switch from hash to partial_merge. It is safe
+            # only when auto is actually selected: the planner takes the first
+            # buildable algorithm from the list, and max_rows_in_join applies to
+            # every join implementation, so with e.g. 'hash,auto' the hash join
+            # would run under the cap and fail with SET_SIZE_LIMIT_EXCEEDED.
             client_options.append("max_rows_in_join=1000")
 
     # Rarely enable the query cache; independently, half the time also pin the
@@ -695,11 +719,41 @@ def run_func_test(
 
 
 def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
-    cmd = (
-        f"cd {output_path} && tar --zstd --create --file=stress_run_logs.tar.zst "
-        f"{files_prefix}* && rm {files_prefix}*"
+    """Archive the per-process `clickhouse-test` logs into a single file.
+
+    A log can still be growing while it is archived: when the global time
+    limit is reached, `clickhouse-test` force-kills its workers and exits,
+    but a worker - or a `clickhouse client` the worker spawned - can outlive
+    it and keep appending through the inherited stdout descriptor. `tar`
+    notices the size change and exits with `TAR_EXIT_DIFFERS`, which used to
+    fail the whole stress test job right before the hung check, even though
+    the archive itself is written and only the tail of one log is missing.
+    Only a fatal `tar` status is treated as a failure here.
+    """
+    archive = "stress_run_logs.tar.zst"
+    result = subprocess.run(
+        f"cd {output_path} && tar --zstd --create --file={archive} {files_prefix}*",
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    check_output(cmd, shell=True)
+    if result.returncode == TAR_EXIT_DIFFERS:
+        logging.warning(
+            "Some logs changed while %s was being created: %s",
+            archive,
+            result.stderr.strip(),
+        )
+    elif result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to create {archive}, tar exit code {result.returncode}:\n"
+            f"{result.stdout}\n{result.stderr}"
+        )
+
+    # Not chained after `tar` with `&&`: the logs have to be removed on the
+    # `TAR_EXIT_DIFFERS` path as well, otherwise they are uploaded twice.
+    for path in output_path.glob(f"{files_prefix}*"):
+        path.unlink()
 
 
 def call_with_retry(
@@ -801,9 +855,6 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START VIEWS"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
-    # Issue #21004, window views are experimental, so let's just suppress it
-    call_with_retry(make_query_command("KILL QUERY WHERE upper(query) LIKE 'WATCH %'"))
-
     # Kill other queries which known to be slow
     # It's query from 01232_preparing_sets_race_condition_long,
     # it may take up to 1000 seconds in slow builds
@@ -883,16 +934,22 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client --receive_timeout=30 -q "SELECT count() FROM system.processes where elapsed > 300" '
         output = (
-            check_output(query, shell=True, stderr=STDOUT, timeout=30)
+            check_output(
+                make_query_command(
+                    "SELECT count() FROM system.processes where elapsed > 300"
+                ),
+                shell=True,
+                stderr=STDOUT,
+                timeout=30,
+            )
             .decode("utf-8")
             .strip()
         )
         if int(output) == 0:
             return False
-    except:
-        pass
+    except Exception as ex:
+        logging.error("Failed to check for long running queries: %s", str(ex))
     return True
 
 
@@ -998,11 +1055,6 @@ def run_stress_test(args: argparse.Namespace) -> None:
                     # NOTE: memory_profiler_step should be also adjusted, because:
                     #
                     #     untracked_memory_limit = min(settings.max_untracked_memory, settings.memory_profiler_step)
-                    #
-                    # NOTE: that if there will be queries with GROUP BY, this trick
-                    # will not work due to CurrentMemoryTracker::check() from
-                    # Aggregator code.
-                    # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
                     "--client-option",
                     "max_untracked_memory=1Gi",
                     "max_memory_usage_for_user=0",

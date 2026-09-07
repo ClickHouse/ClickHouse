@@ -6,6 +6,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -231,12 +232,18 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
         else
         {
+            /// ROLLUP and CUBE derive their grouping sets from the number of aggregation keys, and
+            /// `GROUPING` is resolved against the full key list, so dropping a constant key here would
+            /// lose grouping levels: `GROUP BY CUBE(1, number)` would produce the sets of a single key.
+            bool keep_constant_keys = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube();
+
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
                 const auto * constant_key = group_by_key_node->as<ConstantNode>();
                 group_by_with_constant_keys |= (constant_key != nullptr);
 
-                if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
+                if (constant_key && !keep_constant_keys && !aggregates_descriptions.empty()
+                    && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                     continue;
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
@@ -560,8 +567,24 @@ SortAnalysisResult analyzeSort(
         /// so here we add materialized ORDER BY columns manually, and append everything else after.
         ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
         for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
-            if (!before_sort_actions_dag_output_node_names.contains(out.name))
-                before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
+        {
+            if (before_sort_actions_dag_output_node_names.contains(out.name))
+                continue;
+
+            /** The `Set` placeholder of an `IN` and the `Function` column of a lambda are not values: no
+              * `INTERPOLATE` expression can name them (their names are internal), and they cannot be
+              * materialized. Keeping one as an output carries it past the filter that consumes it into every
+              * step above, including ones that build rows out of the whole header: the `FINAL` merge of a
+              * `WITH FILL INTERPOLATE` query then failed with `CORRUPTED_DATA` ("Cannot get value from Set"),
+              * and the virtual row of an in-order read with `NOT_IMPLEMENTED` ("Cannot insert element into
+              * Set", #111831).
+              */
+            const WhichDataType which_type(out.type);
+            if (which_type.isSet() || which_type.isFunction())
+                continue;
+
+            before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
+        }
 
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {

@@ -4,6 +4,7 @@ import os
 import random
 import subprocess
 import zlib
+from collections.abc import Mapping
 from pathlib import Path
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
@@ -25,6 +26,23 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
+# Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
+# server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and
+# `C_STACKTRACES_LOG` in tests/clickhouse-test.
+STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
+
+
+def collect_stacktrace_logs(cwd):
+    """Existing stacktrace dumps under `cwd`, for attaching to the job result.
+
+    `clickhouse-test` writes them relative to its own cwd, which is the repo
+    root for this job (the test command has no `cd`, unlike fast_test's). They
+    exist only after an abort, so a green run yields nothing.
+    """
+    return [
+        str(Path(cwd) / name) for name in STACKTRACE_LOGS if (Path(cwd) / name).exists()
+    ]
+
 
 def stateless_memory_limit(source):
     """Per-test cgroup memory limit (`clickhouse-test --memory-limit`) for a run
@@ -37,6 +55,32 @@ def stateless_memory_limit(source):
     (and the private `amd_ubsan` lane, an ASan+UBSan binary) lack that substring.
     """
     return 10 * 2**30 if any(san in source for san in SANITIZERS) else 5 * 2**30
+
+
+# Fraction of the job budget one stateful-prep statement may take. Derived from
+# the budget rather than fixed so it follows a retuned job timeout.
+STATEFUL_PREP_STEP_TIMEOUT_RATIO = 0.35
+
+
+def stateful_prep_step_timeout(info):
+    """Per-statement bound for `prepare_stateful_data`, in seconds.
+
+    None on a local run, which leaves the prep unbounded. `JOB_CONFIG` survives
+    serialization as a plain dict, so it is read as a mapping.
+    """
+    if info.is_local_run:
+        return None
+    job_config = info.job_config
+    job_timeout = (
+        job_config.get("timeout")
+        if isinstance(job_config, Mapping)
+        else getattr(job_config, "timeout", None)
+    )
+    if not isinstance(job_timeout, (int, float)) or job_timeout <= 0:
+        raise RuntimeError(
+            f"Cannot derive the stateful prep bound: job timeout is [{job_timeout!r}]"
+        )
+    return int(job_timeout * STATEFUL_PREP_STEP_TIMEOUT_RATIO)
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -155,7 +199,6 @@ def run_tests(
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
-    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -219,9 +262,11 @@ def filter_selected_tests_by_flavor(tests, keep_sequential):
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
 
-    A plain (non-sanitizer) binary job runs the whole suite, where every worker
-    picks a different test and most tests are light, so oversubscribing the
-    runner shortens the job without making any single test noticeably slower.
+    A plain (non-sanitizer) binary or release job runs the whole suite, where every
+    worker picks a different test and most tests are light, so oversubscribing the
+    runner shortens the job without making any single test noticeably slower. The
+    `release` full suite may be batched (`amd_release, parallel, 1/2`), which adds a
+    third `N/M` option, so allow up to three options for these lanes.
 
     A flaky/targeted check is the opposite case: every worker runs the *same*
     changed test, so `--jobs N` multiplies that one test's resource use by `N`.
@@ -234,7 +279,7 @@ def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_ch
     """
     if is_flaky_check or is_targeted_check:
         return False
-    return "binary" in options and len(test_options) < 3
+    return ("binary" in options or "release" in options) and len(test_options) <= 3
 
 
 def invert_bugfix_validation_status(test_result: Result) -> bool:
@@ -611,7 +656,13 @@ def main():
     elif is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --llvm-coverage"
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
+        # %c enables continuous mode: counters are memory-mapped into the file,
+        # so the profile is valid at every instant instead of being written only
+        # by an interruptible exit-time dump (see integration_test_job.py).
+        # It also releases the static counter section to the OS, and per-test coverage reads
+        # that section in the server process, so the two modes are mutually exclusive.
+        profile_pattern = "%2m" if is_per_test_coverage else "%c%2m"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-{profile_pattern}.profraw"
         if is_per_test_coverage:
             runner_options += " --collect-per-test-coverage"
         else:
@@ -865,6 +916,7 @@ def main():
         is_db_replicated=is_database_replicated,
         is_shared_catalog=is_shared_catalog,
         is_per_test_coverage=is_per_test_coverage,
+        is_llvm_coverage=is_llvm_coverage,
     )
     # `run_tests` runs `clickhouse-test` without changing directory, so clients
     # it spawns inherit the repository root and dump their cores there.
@@ -1009,6 +1061,7 @@ def main():
                     build_type=(
                         build_types[0] if is_bugfix_validation else args.options
                     ),
+                    step_timeout=stateful_prep_step_timeout(info),
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -1036,6 +1089,13 @@ def main():
         for note in setup_notes:
             results[-1].set_info(note)
         res = results[-1].is_ok()
+
+    # `clickhouse-test` appends and `git clean -ffd` keeps these gitignored
+    # paths. Outside the `res` guard below: a setup failure skips the tests but
+    # still reaches the attach, uploading a previous job's dump as this run's.
+    if JobStages.TEST in stages:
+        for stale in collect_stacktrace_logs(Utils.cwd()):
+            Path(stale).unlink()
 
     test_result = None
     if res and JobStages.TEST in stages:
@@ -1229,6 +1289,7 @@ def main():
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
                             build_type=bugfix_bt,
+                            step_timeout=stateful_prep_step_timeout(info),
                         ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic
@@ -1447,7 +1508,10 @@ def main():
     # The collect-logs gate must see the run's real outcome, or a bugfix
     # validation job that reproduced a crash would attach neither its cores nor
     # its full logs.
-    test_run_failed = bool(test_result) and not test_result.is_ok()
+    # A setup failure never reaches the test stage, so `test_result` stays None
+    # and a predicate reading it alone sees "nothing failed".
+    setup_failed = test_result is None and not res
+    test_run_failed = (bool(test_result) and not test_result.is_ok()) or setup_failed
 
     # invert result status for bugfix validation
     bugfix_validation_no_repro = False
@@ -1519,12 +1583,10 @@ def main():
     if test_result:
         test_result.sort()
 
-    # On a test timeout or a failed hung check the full server stacktrace
-    # dumps land in the working directory (stdout keeps a trimmed preview).
-    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
-        stacktrace_log_path = Path(stacktrace_log)
-        if stacktrace_log_path.exists():
-            debug_files.append(stacktrace_log_path)
+    # Attach the abort-time stacktrace dumps: they are outside the server log
+    # dir `prepare_logs` globs, and stdout keeps only a trimmed preview. Outside
+    # the COLLECT_LOGS stage, which per-test-coverage jobs remove entirely.
+    debug_files += collect_stacktrace_logs(Utils.cwd())
 
     R = Result.create_from(
         results=results,
@@ -1554,6 +1616,53 @@ def main():
         )
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
 
+        # Name the profile after this job's own coverage artifact, so the
+        # aggregation can tell which shards arrived from the filenames alone.
+        # JOB_CONFIG has been through dump()/get() by the time a job body runs,
+        # so it is a plain dict here.
+        _provides = (info.job_config or {}).get("provides")
+        assert (
+            isinstance(_provides, list)
+            and len(_provides) == 1
+            and isinstance(_provides[0], str)
+            and _provides[0]
+        ), f"expected exactly one provided artifact name, got {_provides!r}"
+        merged_file = f"./{_provides[0]}.profdata"
+
+        # llvm-profdata truncates its -o target in place instead of replacing it,
+        # so a stale profile at the target name must be removed before deciding
+        # whether to merge at all - otherwise a skipped or failed merge would let
+        # the uploader publish the stale file as this shard's contribution.
+        if os.path.exists(merged_file):
+            print(f"Removing pre-existing {merged_file}")
+            os.unlink(merged_file)
+
+        # A missing test_result means the test stage never ran, and a runner-level
+        # ERROR means it terminated unexpectedly; either way the .profraw files
+        # understate coverage. FAIL is a completed run and still publishes.
+        if test_result is None or test_result.is_error():
+            _gate_reason = (
+                "the test stage did not run"
+                if test_result is None
+                else "the test runner terminated unexpectedly (runner-level ERROR)"
+            )
+            print(
+                f"ERROR: {_gate_reason}, so this shard's coverage is incomplete; "
+                f"publishing no profile"
+            )
+            profraw_files = []
+
+        # A zero-length .profraw is silently accepted by llvm-profdata at every
+        # --failure-mode, so it would drop one process's coverage with no signal.
+        # Treat it as an incomplete shard and publish no profile.
+        _empty_files = [f for f in profraw_files if os.path.getsize(f) == 0]
+        if _empty_files:
+            print(
+                f"ERROR: {len(_empty_files)} .profraw files are empty, so this shard's "
+                f"coverage is incomplete; publishing no profile: {', '.join(_empty_files)}"
+            )
+            profraw_files = []
+
         if profraw_files:
             print(f"Found {len(profraw_files)} .profraw files:")
             for f in profraw_files:
@@ -1576,34 +1685,22 @@ def main():
             else:
                 print(f"Using {llvm_profdata} to merge coverage files")
 
-                # Merge all profraw files to current directory
-                joined_test_options = "_".join(test_options) if test_options else "all"
-                joined_test_options = joined_test_options.replace(" ", "_").replace("/", "_")
-                merged_file = f"./ft-{joined_test_options}.profdata"
-                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
+                # --failure-mode=any makes the merge all-or-nothing: on any invalid
+                # input it exits non-zero and writes no file, so the shard is simply
+                # absent (and the aggregate job reports SKIPPED with the shard name)
+                # instead of contributing a silently short profile.
+                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=any {' '.join(profraw_files)} -o {merged_file} 2>&1"
                 merge_output = Shell.get_output(merge_cmd, verbose=True)
-
-                # Check for corrupted files in the output
-                corrupted_files = [
-                    line
-                    for line in merge_output.split("\n")
-                    if "invalid instrumentation profile" in line
-                    or "file header is corrupt" in line
-                ]
-                if corrupted_files:
-                    print(
-                        f"WARNING: Found {len(corrupted_files)} corrupted profraw files:"
-                    )
-                    for corrupted in corrupted_files:
-                        print(f"  {corrupted}")
 
                 # Attach profdata file to the result report so it is uploaded
                 # unconditionally (even when tests fail) and visible in the CI report.
                 if os.path.exists(merged_file):
                     R.files.append(merged_file)
+                else:
+                    print(f"ERROR: coverage merge produced no profile:\n{merge_output}")
 
         else:
-            print("No .profraw files found for coverage")
+            print("No usable .profraw files found for coverage")
 
     if reset_success:
         # coverage job ignores test failures

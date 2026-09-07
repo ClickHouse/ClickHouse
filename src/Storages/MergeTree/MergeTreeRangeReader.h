@@ -201,12 +201,12 @@ private:
         /// Returns the number of rows added to block.
         /// NOTE: have to return number of rows because block has broken invariant:
         ///       some columns may have different size (for example, default columns may be zero size).
-        size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
+        size_t read(MutableColumns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
         size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
-        size_t finalize(Columns & columns);
+        size_t finalize(MutableColumns & columns);
 
         bool isFinished() const { return is_finished; }
 
@@ -225,7 +225,7 @@ private:
 
         /// Current position from the beginning of file in rows
         size_t position() const;
-        size_t readRows(Columns & columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, size_t num_rows);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -237,8 +237,8 @@ private:
         Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
-        size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
-        size_t finalize(Columns & columns);
+        size_t read(MutableColumns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+        size_t finalize(MutableColumns & columns);
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
@@ -271,7 +271,7 @@ private:
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
         void checkNoDelayedRows() const;
 
-        size_t readRows(Columns & columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
     };

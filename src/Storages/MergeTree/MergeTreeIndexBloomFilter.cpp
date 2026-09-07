@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -98,10 +99,11 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
     for (auto & filter : bloom_filters)
     {
         filter->resize(bytes_size);
+        /// Big-endian granules hold whole `BloomFilter::UnderType` words, so only the payload size
+        /// differs there. The read itself is unconditional: guarding it too leaves the filter zeroed.
         if constexpr (std::endian::native == std::endian::big)
             read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
+        istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
     }
 }
 
@@ -116,10 +118,10 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
     {
+        /// Mirrors `deserializeBinary`: the size is byte-order dependent, the write is not.
         if constexpr (std::endian::native == std::endian::big)
             write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
+        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
     }
 }
 
@@ -132,6 +134,24 @@ void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, c
 
 namespace
 {
+
+/// True when the index column is an `Array` and the set holds an empty array. A set column that is
+/// not a `ColumnArray` cannot be inspected, so it counts as holding one.
+bool setHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & set_column, size_t row_size)
+{
+    if (!WhichDataType(index_type).isArray())
+        return false;
+
+    const auto * array_column = checkAndGetColumn<ColumnArray>(set_column.get());
+    if (!array_column)
+        return true;
+
+    for (size_t row = 0; row < row_size; ++row)
+        if (array_column->getSize(row) == 0)
+            return true;
+
+    return false;
+}
 
 ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 {
@@ -548,6 +568,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
+/// True when converting the constant to the element type yields the exact bytes the index holds, so
+/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
+static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
+{
+    if (!value_type)
+        return false;
+
+    auto value = removeLowCardinalityAndNullable(value_type);
+    auto element = removeLowCardinalityAndNullable(nested_type);
+
+    if (isFloat(value) || isFloat(element))
+        return false;
+
+    return (isInteger(value) && isInteger(element)) || value->equals(*element);
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -564,6 +600,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
+
+        /// An `Array` index holds one hash per element, so a set array is looked up by its elements
+        /// and an empty one has no hash that can stand for it. Contribute no predicate at all: a
+        /// tuple `IN` shares this element, and a sibling component would re-enable the lookup.
+        if ((function_name == "in" || function_name == "globalIn")
+            && setHasEmptyArray(index_type, converted_column, row_size))
+            return false;
+
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")
@@ -698,7 +742,35 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return true;
     }
 
-    return false;
+    /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
+    /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
+    if (function_name != "in" && function_name != "globalIn")
+        return false;
+    if (!column)
+        return false;
+
+    auto array_join_argument = key_node.getArrayJoinArgument();
+    if (!array_join_argument)
+        return false;
+
+    auto array_column_name = array_join_argument->getColumnName();
+    if (!header.has(array_column_name))
+        return false;
+
+    size_t position = header.getPositionByName(array_column_name);
+    const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
+    if (!array_type)
+        return false;
+
+    const auto & array_nested_type = array_type->getNestedType();
+    if (!bloomFilterHashDomainMatches(type, array_nested_type))
+        return false;
+
+    const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+    out.predicate.emplace_back(
+        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
+    out.function = RPNElement::FUNCTION_HAS_ANY;
+    return true;
 }
 
 
@@ -901,6 +973,32 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 {
     auto key_column_name = key_node.getColumnName();
 
+    /// `arrayJoin(col) = const` needs an element equal to the constant, same as `has(col, const)`.
+    /// `notEquals` is not derivable: a granule holding the constant still yields differing rows.
+    if (function_name == "equals")
+    {
+        if (auto array_join_argument = key_node.getArrayJoinArgument())
+        {
+            auto array_column_name = array_join_argument->getColumnName();
+            if (header.has(array_column_name))
+            {
+                size_t position = header.getPositionByName(array_column_name);
+                const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
+                if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
+                {
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    if (converted_field.isNull())
+                        return false;
+
+                    out.function = RPNElement::FUNCTION_HAS;
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                    return true;
+                }
+            }
+        }
+    }
+
     if (header.has(key_column_name))
     {
         size_t position = header.getPositionByName(key_column_name);
@@ -964,18 +1062,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
 
-            /// `String`/`FixedString` equality compares zero-padded, so a constant of M bytes matches
-            /// the whole family `value` + trailing '\0'*, while the index holds one hash per exact
-            /// stored value. The index is sound only where that family collapses to a single indexed
-            /// value: a `FixedString(N)` index with `N >= M` pads the constant into the one stored
-            /// form, while a `String` index, or a narrower `FixedString`, leaves the family unbounded
-            /// because `convertFieldToType` pads but never truncates.
-            /// The constant type is unwrapped here because `tryGetConstant` peels only an outer
-            /// `Nullable`. `Variant` and `Dynamic` keep their declared wrapper while handing out the
-            /// nested padded value, so an active `FixedString` alternative is indistinguishable from
-            /// a `String` one and both must be treated as possibly padded.
+            /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
+            /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
+            /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
             if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
             {
+                /// A `Variant` or `Dynamic` constant carries the nested padded value under its
+                /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
                 const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
                 const bool constant_may_be_fixed_string
                     = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
@@ -1257,6 +1350,22 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
+
+    /// The index hashing rejects an array of nullable elements (see `unwrapArraySlice` in
+    /// `BloomFilterHash.h`), which `assertIndexColumnsType` does not notice because it looks at the
+    /// primitive type only. Such an index is accepted at DDL and then fails every insert, merge and
+    /// mutation of the table, and the natural recovery - `DROP INDEX` - is refused while one of those
+    /// failed mutations is pending. Reject it here, like a nested array already is. Not on `ATTACH`:
+    /// a table created before this check must still load, so that its index can be dropped.
+    if (!attach)
+    {
+        for (const auto & type : index.sample_block.getDataTypes())
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+            if (array_type && array_type->getNestedType()->isNullable())
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
+        }
+    }
 
     if (index.arguments && index.arguments->children.size() > 1)
     {

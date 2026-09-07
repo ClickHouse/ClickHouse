@@ -89,6 +89,18 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
             const UInt8 * res_data = res_column_uint8.getData().data();
             size_t size = res_column_uint8.size();
 
+            /// The loop below cross-indexes the chunk's own columns by the result column's position, so
+            /// an expression that changes the number of rows would read past the end of the chunk (or
+            /// blame a violation on the wrong row). Fresh DDL rejects such an expression - see
+            /// `ConstraintsDescription::assertPreserveRowCount` - but metadata stored before that check
+            /// existed still has to fail comprehensibly rather than out of bounds.
+            if (size != chunk.getNumRows())
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Constraint {} for table {} returns {} values for a block of {} rows. Expression: ({}). "
+                    "A constraint expression must not change the number of rows",
+                    backQuote(constraint_ptr->name), table_id.getNameForLogs(), size, chunk.getNumRows(),
+                    constraint_ptr->expr->formatForErrorMessage());
+
             /// Is violated.
             if (!memoryIsByte(res_data, 0, size, 1))
             {

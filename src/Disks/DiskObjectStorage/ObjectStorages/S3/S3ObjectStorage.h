@@ -161,6 +161,9 @@ private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
+    std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
+    std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;
+
     const S3::URI uri;
 
     std::string disk_name;

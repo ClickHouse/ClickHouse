@@ -203,14 +203,14 @@ class StorageMySQLSink final : public SinkToStorage
 {
 public:
     explicit StorageMySQLSink(
-        const StorageMySQL & storage_,
+        std::shared_ptr<const StorageMySQL> storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
-        , storage{storage_}
+        , storage{std::move(storage_)}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
         , remote_table_name{remote_table_name_}
@@ -244,17 +244,17 @@ public:
     void writeBlockData(const Block & block)
     {
         WriteBufferFromOwnString sqlbuf;
-        sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
+        sqlbuf << (storage->replace_query ? "REPLACE" : "INSERT") << " INTO ";
         if (!remote_database_name.empty())
             sqlbuf << backQuoteMySQL(remote_database_name) << ".";
         sqlbuf << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext());
         writer->write(block);
 
-        if (!storage.on_duplicate_clause.empty())
-            sqlbuf << " ON DUPLICATE KEY " << storage.on_duplicate_clause;
+        if (!storage->on_duplicate_clause.empty())
+            sqlbuf << " ON DUPLICATE KEY " << storage->on_duplicate_clause;
 
         sqlbuf << ";";
 
@@ -305,7 +305,12 @@ public:
     }
 
 private:
-    const StorageMySQL & storage;
+    /// The sink owns a `mysqlxx::PoolWithFailover::Entry` pointing into the pool that the storage owns,
+    /// so it has to keep the storage alive: a pipeline can outlive its `QueryPipeline` resource holders
+    /// (`BlockIO::onException` releases the pipeline while the executor still owns the processors), and
+    /// the destruction order of the processors is not defined - the sink must not be destroyed after the
+    /// pool it borrows a connection from.
+    std::shared_ptr<const StorageMySQL> storage;
     StorageMetadataPtr metadata_snapshot;
     std::string remote_database_name;
     std::string remote_table_name;
@@ -320,7 +325,7 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a MySQL table representing the result of a query");
 
     return std::make_shared<StorageMySQLSink>(
-        *this,
+        std::static_pointer_cast<const StorageMySQL>(shared_from_this()),
         metadata_snapshot,
         remote_database_name,
         remote_table_or_query.getTableName(),
@@ -734,7 +739,7 @@ This is useful to push down joins, aggregations or any other processing to MySQL
 :::note
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter on the columns of the table is rejected with an exception instead of being applied locally, because it cannot be pushed into the passed query. The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of this table is not a case for this setting: this table engine do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. With the analyzer (the default), the check runs only where a filter could be pushed down at all: when this table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of this table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side or mixes it with this table inside one non-`AND` expression (for example an `OR`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected. With the old analyzer (`enable_analyzer = 0`) this scoping does not apply: the whole outer filter is checked when this table is the first table of the join tree, including a predicate on the joined side, and a joined right-hand table is not checked.
 :::
 
 Supports multiple replicas that must be listed by `|`. For example:

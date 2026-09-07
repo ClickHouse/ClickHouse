@@ -627,6 +627,7 @@ struct integer<Bits, Signed>::_impl
         // Calculate remainder: t - floor(alpha) * max_int
         // On platforms with >64-bit mantissa, round the multiplication to 64-bit precision
         // to match x86's 80-bit extended behavior
+        using std::floor;
         T remainder_subtrahend = floor(alpha) * static_cast<T>(max_int);
 #if (LDBL_MANT_DIG > 64)
         if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)
@@ -1235,6 +1236,25 @@ public:
         if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
+
+            /// Both operands in a single limb is a 64-bit division, which the 128 / 128 division
+            /// below cannot become: every target without a double-word divide instruction calls
+            /// __udivti3, whose 128 / 64 kernel tests only the divisor for a zero high word, so a
+            /// 64 / 64 division still runs Knuth's algorithm over 32-bit digits.
+            if ((numerator.items[little(1)] | denominator.items[little(1)]) == 0)
+            {
+                const base_type a_low = numerator.items[little(0)];
+                const base_type b_low = denominator.items[little(0)];
+
+                integer<Bits, Signed> res;
+                res.items[little(0)] = a_low / b_low;
+                res.items[little(1)] = 0;
+
+                numerator.items[little(0)] = a_low % b_low;
+                numerator.items[little(1)] = 0;
+
+                return res;
+            }
 
             CompilerUInt128 a = (CompilerUInt128(numerator.items[little(1)]) << 64) + numerator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 b = (CompilerUInt128(denominator.items[little(1)]) << 64) + denominator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)

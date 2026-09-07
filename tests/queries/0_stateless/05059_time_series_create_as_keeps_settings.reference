@@ -1,0 +1,14 @@
+-- `AS` without a `SETTINGS` clause: `job` comes from the copied `tags_to_columns`,
+-- and there is no `min_time`/`max_time` because the copied `store_min_time_and_max_time` is 0
+`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String)
+-- `AS` with a `SETTINGS` clause: the written `store_min_time_and_max_time` overrides the copied one so
+-- `min_time`/`max_time` appear, the written `aggregate_min_time_and_max_time` is added so they are not
+-- aggregated, and `tags_to_columns` is still copied from `ts_src`
+`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String), `min_time` Nullable(DateTime64(3)), `max_time` Nullable(DateTime64(3))
+-- the copied `tags_to_columns` fills the dedicated column
+m1	j1
+-- `AS` with a reset: the copied `store_min_time_and_max_time = 0` is not inherited, so the setting
+-- gets its default value and `min_time`/`max_time` appear, while `tags_to_columns` is still copied
+`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String), `min_time` Nullable(DateTime64(3)), `max_time` Nullable(DateTime64(3))
+-- a written value wins over a reset of the same setting, so there is no `min_time`/`max_time`
+`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `job` String, `tags` Map(LowCardinality(String), String)

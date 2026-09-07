@@ -1,6 +1,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 
 #include <algorithm>
 #include <chrono>
@@ -66,6 +67,48 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
+bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
+{
+    /// `cctz` synthesizes a zone for every name of the form `Fixed/UTC±HH:MM:SS` without consulting the
+    /// time zone database, and it accepts any offset up to 24 hours, which is 172801 distinct names.
+    /// Every name that gets loaded permanently costs ~4.6 MiB in the `DateLUT` cache, and that cache
+    /// never evicts anything because callers keep bare references into it. Accepting the whole family
+    /// therefore lets untrusted input - `toDateTime(x, '<name>')`, the `session_timezone` setting,
+    /// binary type decoding, the time zone of an Arrow or ORC timestamp column - make the server
+    /// allocate memory that it never gives back.
+    ///
+    /// So accept only the offsets a time zone can actually have: a whole number of quarters of an hour,
+    /// no further from UTC than 14 hours. That covers every offset in the time zone database - the last
+    /// one that was not a multiple of 15 minutes ended in 1972 - and leaves 113 such names, which bounds
+    /// the cache. `Values::OffsetChangeFactor` already assumes the same granularity for the offset
+    /// changes within a zone.
+    static constexpr std::string_view fixed_zone_prefix = "Fixed/";
+    if (!time_zone_name.starts_with(fixed_zone_prefix))
+        return true;
+
+    /// The remainder has to be exactly `UTC±HH:MM:SS`, the only spelling `cctz` understands.
+    std::string_view offset_name = time_zone_name.substr(fixed_zone_prefix.size());
+    if (offset_name.size() != 12 || !offset_name.starts_with("UTC")
+        || (offset_name[3] != '+' && offset_name[3] != '-') || offset_name[6] != ':' || offset_name[9] != ':')
+        return false;
+
+    auto parse_two_digits = [&](size_t pos) -> int
+    {
+        if (!isNumericASCII(offset_name[pos]) || !isNumericASCII(offset_name[pos + 1]))
+            return -1;
+        return (offset_name[pos] - '0') * 10 + (offset_name[pos + 1] - '0');
+    };
+
+    const int hours = parse_two_digits(4);
+    const int minutes = parse_two_digits(7);
+    const int seconds = parse_two_digits(10);
+    if (hours < 0 || minutes < 0 || seconds < 0)
+        return false;
+
+    const int offset = (hours * 60 + minutes) * 60 + seconds;
+    return offset % (15 * 60) == 0 && offset <= 14 * 3600;
+}
+
 DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
     : time_zone(time_zone_)
 {
@@ -73,6 +116,13 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     /// 1. It is too heavy.
     if (&inside_main)
         chassert(inside_main);
+
+    if (!isSupportedTimeZoneName(time_zone))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Time zone {} is not supported: a fixed UTC offset is spelled `Fixed/UTC±HH:MM:SS` and "
+            "has to be a whole number of quarters of an hour, no further from UTC than 14 hours",
+            time_zone_);
 
     /// The loaded time zone is kept as a member, so the out-of-range escape paths can use cctz directly.
     cctz_time_zone = std::make_unique<cctz::time_zone>();
@@ -93,6 +143,14 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_is_whole_number_of_hours_during_epoch = true;
     offset_is_whole_number_of_minutes_during_epoch = true;
     offset_is_fixed = true;
+    offset_is_fixed_during_epoch = true;
+    offset_minute_of_hour_is_constant_during_epoch = true;
+
+    /// The UTC time of day at which a local day begins: 66600 for `Asia/Kolkata`, whose +05:30 puts local
+    /// midnight at 18:30 the day before.
+    const Time utc_time_of_day_at_local_midnight = ((-offset_at_start_of_epoch) % 86400 + 86400) % 86400;
+    hour_of_day_offset_addend = 86400 - utc_time_of_day_at_local_midnight;
+    minute_of_hour_offset_addend = 3600 - utc_time_of_day_at_local_midnight % 3600;
 
     cctz::civil_day date = lut_start;
     cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
@@ -165,6 +223,22 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
 
         if (offset_is_whole_number_of_minutes_during_epoch && start_of_day > 0 && start_of_day % 60)
             offset_is_whole_number_of_minutes_during_epoch = false;
+
+        /// The epoch-scoped flags are derived from the local days that can contain a non-negative time point;
+        /// west of UTC that day starts before the epoch.
+        if (start_of_day > -86400)
+        {
+            Time time_of_day = start_of_day % 86400;
+            if (time_of_day < 0)
+                time_of_day += 86400;
+
+            if (values.amount_of_offset_change_value != 0 || (i != 0 && values.date - lut[i - 1].date != 86400))
+                offset_is_fixed_during_epoch = false;
+
+            if (time_of_day % 60 != 0 || time_of_day % 3600 != utc_time_of_day_at_local_midnight % 3600
+                || values.amount_of_offset_change() % 3600 != 0)
+                offset_minute_of_hour_is_constant_during_epoch = false;
+        }
 
         /// An offset change at midnight makes consecutive days start more or less than 86400 seconds apart;
         /// a change at any other time is recorded in amount_of_offset_change_value of the affected day.

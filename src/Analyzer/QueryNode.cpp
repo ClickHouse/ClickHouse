@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -165,8 +166,11 @@ DataTypePtr QueryNode::getResultType() const
             return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
         }
         else
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+            /// Reachable from plain SQL: dropping `EXISTS` from `NOT EXISTS (SELECT * FROM t WHERE t.a = o.b)`
+            /// leaves a correlated subquery of several columns where a single value is expected, so describe
+            /// the query rather than the method that could not answer for it.
+            throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "A correlated subquery used as an expression must return exactly one column, but it returns {}",
                 projection_columns.size());
     }
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");

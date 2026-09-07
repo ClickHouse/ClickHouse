@@ -513,7 +513,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
         /// the logic regarding finding suitable tables is a bit below
-        if (!truncate || !query.has_tables || query.like.empty())
+        if (!truncate || !query.has_tables || !query.has_like)
         {
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
             /// since in this case getTablesIterator() may do some additional work,
@@ -689,7 +689,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     }
 
     /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
-    if (truncate && query.has_tables && !query.like.empty())
+    if (truncate && query.has_tables && query.has_like)
     {
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
@@ -709,7 +709,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 
-            if (!query.like.empty())
+            if (query.has_like)
             {
                 bool match = matchesLikePattern(tname, query.like, query.case_insensitive_like);
                 if (query.not_like)
@@ -852,10 +852,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
-        else if (drop.kind == ASTDropQuery::Kind::Drop)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
+        /// `DROP`, `DETACH` and `TRUNCATE` of a database are all authorized by `DROP DATABASE`,
+        /// which is the single privilege `executeToDatabaseImpl` requires for each of them.
+        required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)
     {
@@ -879,7 +878,8 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 }
 
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
-                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard)
+                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard,
+                                            bool propagate_metadata_transaction)
 {
     auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name, nullptr) : nullptr);
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
@@ -912,7 +912,8 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
             /// For Replicated database
             drop_context->setQueryKindReplicatedDatabaseInternal();
             drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
-            drop_context->initZooKeeperMetadataTransaction(txn, true);
+            if (propagate_metadata_transaction)
+                drop_context->initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();

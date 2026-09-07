@@ -18,7 +18,6 @@
 #include <Parsers/stripQuerySettings.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
 #include <string_view>
@@ -701,8 +700,49 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "throws Only one identified with is permitted"
         },
         {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077-01-01' GRANTS (SELECT(id) ON db.tbl, INSERT ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077\-01\-01' GRANTS \(SELECT\(id\) ON db\.tbl, INSERT ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.*), plaintext_password BY 'def123'",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.\*\), plaintext_password BY 'def123')"
+        },
+        {
+            "ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.tbl)",
+            R"(ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 NOT IDENTIFIED GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH no_password GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS ()",
+            "throws Syntax error"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS SELECT ON db.table",
+            "throws Syntax error"
+        },
+        {
+            /// An explicit no-privileges clause is preserved (it makes a deny-all token) and does not
+            /// collapse to an unparseable `GRANTS ()`.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (USAGE ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(USAGE ON \*\.\*\))"
+        },
+        {
             "CREATE USER user1 VALID UNTIL '2025-01-01'",
             "CREATE USER user1 VALID UNTIL '2025-01-01'"
+        },
+        {
+            /// The `GRANTS` clause of an authentication method is parsed after its deadline clause, and the
+            /// `VALID FOR` interval is parsed as a general expression - which must not swallow the `GRANTS`
+            /// keyword and its parenthesized list as a function call.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR INTERVAL 1 DAY GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR toIntervalDay\(1\) GRANTS \(SELECT ON db\.tbl\))"
         },
         {
             /// The expected output is matched as a regular expression, so the parentheses and the

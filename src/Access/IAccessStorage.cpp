@@ -1,5 +1,6 @@
 #include <Access/IAccessStorage.h>
 #include <Access/Authentication.h>
+#include <Access/Common/AuthenticationType.h>
 #include <Access/Credentials.h>
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
@@ -630,13 +631,30 @@ std::optional<AuthResult> IAccessStorage::authenticate(
     return authenticateImpl(credentials, address, external_authenticators, client_info, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
 }
 
+/// `check_valid_until = false` answers "does this credential match this method?" without the expiry gate.
+/// The fail-close ambiguity scan below needs that: an already-expired matching method must still shorten
+/// the combined `VALID UNTIL` of the session instead of silently disappearing from the combination.
 Authentication::CredentialsCheckResult areCredentialsValid(
     const std::string & user_name,
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings);
+    SettingsChanges & settings,
+    bool check_valid_until = true);
+
+/// A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method is ignored entirely when the corresponding server setting disables it
+/// (`allow_no_password` / `allow_plaintext_password`). Both the primary authentication loop and the fail-close ambiguity
+/// scan below must apply this gate, otherwise a disabled method could still narrow the `GRANTS` or shorten the
+/// `VALID UNTIL` of an allowed login, contradicting the "skip this authentication type entirely" contract.
+static bool authenticationTypeIsAllowed(AuthenticationType type, bool allow_no_password, bool allow_plaintext_password)
+{
+    if (type == AuthenticationType::NO_PASSWORD)
+        return allow_no_password;
+    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
+        return allow_plaintext_password;
+    return true;
+}
 
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
@@ -658,11 +676,11 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             bool skipped_not_allowed_authentication_methods = false;
 
             bool need_second_factor = false;
+            const AuthenticationData * matched_authentication_method = nullptr;
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
-                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+                if (!authenticationTypeIsAllowed(auth_type, allow_no_password, allow_plaintext_password))
                 {
                     skipped_not_allowed_authentication_methods = true;
                     continue;
@@ -671,11 +689,109 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 auto cred_check_result = areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings);
                 if (cred_check_result == Authentication::CredentialsCheckResult::Success)
                 {
-                    auth_result.authentication_data = auth_method;
-                    return auth_result;
+                    matched_authentication_method = &auth_method;
+                    break;
                 }
                 if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)
                     need_second_factor = true;
+            }
+
+            if (matched_authentication_method)
+            {
+                /// `AlwaysAllowCredentials` are used only after an internal caller has authenticated the user, for
+                /// example with an interserver secret. They do not identify any particular authentication method, so
+                /// applying one method's `GRANTS` or `VALID UNTIL` here would incorrectly make those method-specific
+                /// limits affect the internal connection. Preserve the matched method's type for session logging.
+                if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
+                {
+                    auth_result.authentication_data = *matched_authentication_method;
+                    auth_result.authentication_data.setGrants({});
+                    auth_result.authentication_data.setValidUntil(0);
+                    return auth_result;
+                }
+
+                auth_result.authentication_data = *matched_authentication_method;
+
+                /// Fail-close against ambiguous credentials. Authentication returns the first matching method, but the
+                /// same effective credential can be accepted by more than one method (for example `IDENTIFIED BY 'p', BY 'p'`
+                /// stores two `sha256_password` methods with different random salts). If a broader or earlier method could
+                /// shadow a later token-style method, a limited credential would silently regain the full rights (or lifetime)
+                /// of the other method. To prevent that, the session is limited to the intersection of the `GRANTS` of all
+                /// matching methods and expires at the earliest of their `VALID UNTIL`. The scan matches credentials
+                /// while ignoring expiry: an already-expired method that accepts the credential must still shorten the
+                /// combined `VALID UNTIL` (rejecting the login below), otherwise the expiry of a token method would
+                /// silently hand the shared credential the rights and lifetime of the broader method.
+                ///
+                /// Methods that neither restrict the grants nor set an expiry cannot narrow anything and are skipped without
+                /// an extra credential check. Methods verified against an external system (`LDAP`/`KERBEROS`/`HTTP`/`JWT`) are
+                /// also skipped, so authentication never performs an extra external probe here: a probe with the same credential
+                /// could fail against a different server and, for example, trip an account lockout there. This skip cannot lose
+                /// a `GRANTS` narrowing, because a `GRANTS` clause on an externally verified method is rejected at creation
+                /// (see `AuthenticationData::fromAST`); it can only lose a `VALID UNTIL` of such a method, matching the
+                /// pre-existing first-match behavior of per-method `VALID UNTIL`.
+                std::optional<AccessRights> combined_grants;
+                if (!matched_authentication_method->getGrants().structurallyEmpty())
+                    combined_grants.emplace(matched_authentication_method->getGrants());
+                bool another_method_restricts_grants = false;
+                time_t combined_valid_until = matched_authentication_method->getValidUntil();
+
+                for (const auto & other_method : user->authentication_methods)
+                {
+                    if (&other_method == matched_authentication_method)
+                        continue;
+
+                    /// A method disabled by `allow_no_password` / `allow_plaintext_password` must be ignored here too,
+                    /// exactly as in the primary loop above; otherwise it could narrow or expire an otherwise allowed login.
+                    if (!authenticationTypeIsAllowed(other_method.getType(), allow_no_password, allow_plaintext_password))
+                        continue;
+
+                    const bool restricts_grants = !other_method.getGrants().structurallyEmpty();
+                    const time_t other_valid_until = other_method.getValidUntil();
+                    if (!restricts_grants && other_valid_until == 0)
+                        continue;
+                    if (!authenticationTypeIsVerifiedLocally(other_method.getType()))
+                        continue;
+
+                    SettingsChanges discarded_settings;
+                    if (areCredentialsValid(user->getName(), other_method, credentials, external_authenticators, client_info, discarded_settings, /* check_valid_until = */ false)
+                        != Authentication::CredentialsCheckResult::Success)
+                        continue;
+
+                    if (restricts_grants)
+                    {
+                        another_method_restricts_grants = true;
+                        AccessRights other_grants{other_method.getGrants()};
+                        if (combined_grants)
+                            combined_grants->makeIntersection(other_grants);
+                        else
+                            combined_grants.emplace(std::move(other_grants));
+                    }
+
+                    if (other_valid_until != 0 && (combined_valid_until == 0 || other_valid_until < combined_valid_until))
+                        combined_valid_until = other_valid_until;
+                }
+
+                /// The earliest `VALID UNTIL` among the matching methods wins even when it has already passed:
+                /// the shared credential is expired as a whole, exactly as if the single matched method had expired.
+                if (combined_valid_until != 0)
+                {
+                    const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                    if (now > combined_valid_until)
+                        throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
+                }
+
+                if (another_method_restricts_grants)
+                {
+                    AccessRightsElements limited = combined_grants->getElements();
+                    if (limited.structurallyEmpty())
+                        limited.emplace_back(); /// Empty intersection means deny all (`USAGE ON *.*`), not "no limit".
+                    auth_result.authentication_data.setGrants(std::move(limited));
+                }
+
+                if (combined_valid_until != matched_authentication_method->getValidUntil())
+                    auth_result.authentication_data.setValidUntil(combined_valid_until);
+
+                return auth_result;
             }
 
             if (skipped_not_allowed_authentication_methods)
@@ -702,7 +818,8 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings)
+    SettingsChanges & settings,
+    bool check_valid_until)
 {
     if (!credentials.isReady())
         return Authentication::CredentialsCheckResult::Fail;
@@ -710,13 +827,16 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     if (credentials.getUserName() != user_name)
         return Authentication::CredentialsCheckResult::Fail;
 
-    auto valid_until = authentication_method.getValidUntil();
-    if (valid_until)
+    if (check_valid_until)
     {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        auto valid_until = authentication_method.getValidUntil();
+        if (valid_until)
+        {
+            const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-        if (now > valid_until)
-            return Authentication::CredentialsCheckResult::Fail;
+            if (now > valid_until)
+                return Authentication::CredentialsCheckResult::Fail;
+        }
     }
 
     return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, client_info, settings);

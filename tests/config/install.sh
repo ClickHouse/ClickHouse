@@ -20,7 +20,6 @@ BUGFIX_VALIDATE_CHECK=0
 PREVIOUS_RELEASE_CONFIG=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
-WASM_ENGINE=""
 REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 
@@ -45,7 +44,6 @@ while [[ "$#" -gt 0 ]]; do
         --previous-release) PREVIOUS_RELEASE_CONFIG=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
-        --wasm-engine) WASM_ENGINE=$2 && shift ;;
         --remote-database-disk) REMOTE_DATABASE_DISK=1 ;;
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
@@ -104,8 +102,18 @@ mkdir -p $DEST_CLIENT_PATH
 # Patching configs which are symbolic links can affect source files,
 # need to delete links created by previous script versions
 # Also this is generally good (least astonishment principle) not to retain any old configs
+# `system_logs_export.yaml` is the exception: it is not a config of the test suite. A
+# `system.*_sender` `Distributed` table stays in the server metadata, and restoring a queued
+# insert of one resolves the cluster, so a start without the definition aborts (`Code: 701`).
+LOG_EXPORT_CONFIG=system_logs_export.yaml
+if [ -f "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG" ]; then
+    mv "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG" "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG"
+fi
 rm -rf "$DEST_SERVER_PATH"/config.d
 mkdir -p $DEST_SERVER_PATH/config.d/
+if [ -f "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG" ]; then
+    mv "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG" "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG"
+fi
 
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/core_dump.yaml $DEST_SERVER_PATH/config.d/
@@ -147,6 +155,12 @@ ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
+# `enable_silk_runtime` and the `silk` section first exist in 26.9, so an older server rejects
+# them as unknown config elements and refuses to start. Gate the drop-in on the installed
+# server's version to keep the upgrade check's previous-release server bootable.
+if check_clickhouse_version 26.9; then
+    ln -sf $SRC_PATH/config.d/silk.xml $DEST_SERVER_PATH/config.d/
+fi
 
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
@@ -221,7 +235,6 @@ esac
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
 function is_sanitizer_build()
 {
     # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test for
@@ -229,6 +242,13 @@ function is_sanitizer_build()
     # vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
     [ "$(clickhouse local --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
 }
+function is_memory_sanitizer_build()
+{
+    [ "$(clickhouse local --query "SELECT value LIKE '%-fsanitize=memory%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
+}
+if ! is_memory_sanitizer_build; then
+    ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
+fi
 if is_sanitizer_build; then
     ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
 fi
@@ -565,12 +585,6 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
 fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
-
-if [ ! -z "$WASM_ENGINE" ]; then
-    # ensure that default entry exists and we correctly replace it
-    grep -q -F ">wasmtime<" $DEST_SERVER_PATH/config.d/wasm_udf.xml || exit 1
-    sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
-fi
 
 if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; then
     function remove_keeper_config()

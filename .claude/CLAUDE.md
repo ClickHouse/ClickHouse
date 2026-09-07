@@ -76,7 +76,7 @@ python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickH
 python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --tsv
 
 # Also accepts CI HTML URLs
-python3 .claude/tools/fetch_perf_report.py "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=12345&sha=abc123"
+python3 .claude/tools/fetch_perf_report.py "https://s3.amazonaws.com/clickhouse-test-reports/praktika.html?PR=12345&sha=abc123"
 ```
 
 Key options: `--arch <amd|arm|all>` to filter architecture, `--metric <name>` to change metric (default `client_time`), `--shard <n>` for a specific shard, `--test <name>` / `--query <text>` for substring filtering, `--sort <diff|times|threshold|test>` for ordering, `--summary` for shard-level overview only, `--json` / `--tsv` for machine-readable output.
@@ -151,6 +151,16 @@ When removing a feature, do not write tests asserting that the feature no longer
 When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
+
+Run the style check locally before you push, and never hand over a change that you have not style-checked. It is the cheapest CI job to reproduce and by far the most common reason an otherwise finished pull request comes back red, which costs a full CI round-trip to learn something a local command answers in a second.
+
+```bash
+pip install -r ci/docker/style-test/requirements.txt
+sudo apt-get install libxml2-utils ripgrep
+
+mkdir -p ci/tmp  # praktika keeps its local state here, the job fails without it
+PYTHONPATH=./ci:. python3 ci/jobs/check_style.py
+```
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 

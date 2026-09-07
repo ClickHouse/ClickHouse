@@ -151,7 +151,7 @@
 	url = https://github.com/ClickHouse/NuRaft
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
-	url = https://github.com/apache/datasketches-cpp
+	url = https://github.com/ClickHouse/datasketches-cpp
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse/yaml-cpp
@@ -342,12 +342,6 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
-[submodule "contrib/wasmedge"]
-	path = contrib/wasmedge
-	url = https://github.com/WasmEdge/WasmEdge.git
-[submodule "contrib/spdlog"]
-	path = contrib/spdlog
-	url = https://github.com/gabime/spdlog.git
 [submodule "contrib/wasmtime"]
 	path = contrib/wasmtime
 	url = https://github.com/ClickHouse/wasmtime
@@ -393,6 +387,9 @@
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
+[submodule "contrib/sql-console"]
+	path = contrib/sql-console
+	url = https://github.com/ClickHouse/clickhouse-sql-console.git
 [submodule "contrib/librseq"]
 	path = contrib/librseq
 	url = https://github.com/compudj/librseq.git
@@ -426,3 +423,6 @@
 [submodule "contrib/MeCab"]
 	path = contrib/MeCab
 	url = https://github.com/taku910/mecab
+[submodule "contrib/substrait"]
+	path = contrib/substrait
+	url = https://github.com/substrait-io/substrait.git

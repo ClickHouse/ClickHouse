@@ -6,6 +6,8 @@ from typing import Dict, Iterable, List, Optional
 
 @dataclasses.dataclass
 class _Settings:
+    PROJECT_SLUG: str = ""
+
     ######################################
     #    Pipeline generation settings    #
     ######################################
@@ -13,13 +15,14 @@ class _Settings:
     CI_PATH = "./ci"
     WORKFLOW_PATH_PREFIX: str = "./.github/workflows"
     WORKFLOWS_DIRECTORY: str = f"{CI_PATH}/workflows"
-    SETTINGS_DIRECTORY: str = f"{CI_PATH}/settings"
+    SETTINGS_DIRECTORY: str = "./ci/settings"
     CI_CONFIG_JOB_NAME = "Config Workflow"
 
     # Enables a single job (DOCKER_BUILD_MANIFEST_JOB_NAME) for building all platforms and merge
     ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
     DOCKER_BUILD_ARM_LINUX_JOB_NAME = "Dockers Build (arm)"
     DOCKER_BUILD_AMD_LINUX_JOB_NAME = "Dockers Build (amd)"
+    DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME = "Dockers Build and Merge (amd)"
     DOCKER_BUILD_MANIFEST_JOB_NAME = "Dockers Build (multiplatform manifest)"
     DOCKER_MERGE_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_ARM_RUNS_ON: Optional[List[str]] = None
@@ -38,13 +41,39 @@ class _Settings:
     ######################################
     MAX_RETRIES_S3 = 3
     MAX_RETRIES_GH = 3
-    # PR label that bypasses all job filtering (filter hooks and changed-file filtering)
+    # PR label that bypasses all job filtering (filter hooks, changed-file
+    # filtering and cache lookup) to force a full rerun of every job.
     CI_FORCE_ALL_LABEL: str = "ci-force-all"
+    # How many times the orchestrator retries its startup (AI advisor +
+    # workflow plan build) on an infra error before giving up and finalizing
+    # the check as failed. The job loop itself is never retried.
+    MAX_RETRIES_ORCHESTRATOR = 3
+    # Runner controller heartbeat write interval, in seconds. Each runner
+    # writes heartbeat.json for its current job at this cadence.
+    HEARTBEAT_INTERVAL_S = 30
+    # Maximum time, in seconds, a dispatched job may stay QUEUED without any
+    # runner heartbeat. This covers SQS wait time, ASG scale-out, EC2 boot,
+    # controller startup, and the runner's first task pickup.
+    RUNNER_PICKUP_TIMEOUT_S = 3600
+    # First stage of RUNNING liveness: after this long without a heartbeat the
+    # runner is flagged unresponsive and the check says a retry is pending, but
+    # the job is NOT failed. Surfaces a lost runner quickly (well before the
+    # hard timeout) without turning a recoverable blip into a red check.
+    HEARTBEAT_STALL_S = 300
+    # Hard timeout: a RUNNING job silent this long is declared dead. Held well
+    # above the runner queue's visibility timeout so a runner that dies mid-job
+    # is recovered by redelivery first: the job_task reappears once the
+    # visibility window lapses (up to visibility_timeout later), a fresh runner
+    # - cold-launched by the autoscaler if the pool is empty - picks it up, and
+    # its first heartbeat (written at pickup, before checkout) resets the clock
+    # before this timeout. The gap above visibility_timeout budgets that
+    # redelivery plus a cold ASG launch and boot.
+    HEARTBEAT_TIMEOUT_S = 900
 
     ######################################
     #   S3 (artifact storage) settings   #
     ######################################
-    S3_ARTIFACT_PATH: str = ""
+    S3_ARTIFACT_BUCKET: str = ""
 
     ######################################
     #        CI workspace settings       #
@@ -55,12 +84,10 @@ class _Settings:
     INPUT_DIR: str = f"{TEMP_DIR}"
     PYTHON_INTERPRETER: str = "python3"
     PYTHON_PACKET_MANAGER: str = "pip3"
-    PYTHON_VERSION: str = "3.9"
-    PYTHONPATHS: str = ""
-    INSTALL_PYTHON_FOR_NATIVE_JOBS: bool = False
-    INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS: str = "./ci/requirements.txt"
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
+
+    SECRET_GH_APP: str = "gh-app"
 
     ######################################
     #      Host metrics (CPU/RAM)        #
@@ -88,11 +115,6 @@ class _Settings:
     # short jobs on small runners are too noisy and not worth right-sizing.
     HOST_METRICS_MIN_LABEL_DURATION_SEC: int = 1800
     HOST_METRICS_MIN_LABEL_MEM_GB: int = 15
-
-    SECRET_GH_APP_ID: str = ""
-    SECRET_GH_APP_PEM_KEY: str = ""
-    SECRET_GH_APP_INSTALLATION_ID: str = ""
-    SECRET_GH_APP_REGION: str = ""
     GH_AUTH_LAMBDA_NAME: str = ""
     GH_AUTH_LAMBDA_REGION: str = ""
 
@@ -125,12 +147,13 @@ class _Settings:
     S3_REPORT_BUCKET: str = ""
     # Optional: upstream report bucket to merge issue catalogs from (e.g. "clickhouse-test-reports")
     S3_UPSTREAM_REPORT_BUCKET: str = ""
-    HTML_PAGE_FILE: str = "./ci/praktika/json.html"
+    HTML_PAGE_FILE: str = "./ci/praktika/praktika.html"
     S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
     TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
     # Compress if text file size exceeds this threshold (in MB, 0 - disable compression)
     COMPRESS_THRESHOLD_MB: int = 0
 
+    SECRET_DOCKER_REGISTRY: str = ""
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
     DOCKER_LAYER_COMPRESSION: str = "zstd"
@@ -139,9 +162,13 @@ class _Settings:
     ######################################
     #        CI DB Settings              #
     ######################################
-    SECRET_CI_DB_URL: str = ""
-    SECRET_CI_DB_USER: str = ""
-    SECRET_CI_DB_PASSWORD: str = ""
+    # SSM/secret name holding a JSON connection blob:
+    #   {"url": "http://host:8123", "user": null, "password": null}
+    # Auto-published by Components.CIDBCluster.deploy() for CIDB
+    # instances praktika manages. Null/empty user+password means "send no
+    # auth header" — runners rely on the server-side <no_password/> ACL
+    # gated by VPC CIDR.
+    SECRET_CI_DB_CONNECTION: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
     KEEPER_STRESS_METRICS_DB_NAME = "keeper_stress_tests"
@@ -161,21 +188,29 @@ class _Settings:
     ######################################
     #        Infrastructure Settings     #
     ######################################
-    CLOUD_INFRASTRUCTURE_CONFIG_PATH: str = ""
+    CLOUD_INFRASTRUCTURE_CONFIG_PATH: str = "./ci/infrastructure/projects.py"
     AWS_REGION: str = ""
+    AWS_ACCOUNT_ID: str = ""
+    AWS_PROFILE: str = ""
     # S3 path for Slack feed events storage (format: bucket/prefix)
     # Used by EventFeed and FeedSubscription for PR notification subscriptions
     EVENT_FEED_S3_PATH: str = ""
+    # Optional prebaked base venv name shared by both workflow and job sides.
+    # The selected env is expected to already contain praktika.
+    PRAKTIKA_BASE_VENV: str = ""
 
 
 _USER_DEFINED_SETTINGS = [
-    "S3_ARTIFACT_PATH",
+    "PROJECT_SLUG",
+    "S3_ARTIFACT_BUCKET",
     "CACHE_S3_PATH",
     "S3_REPORT_BUCKET",
     "S3_UPSTREAM_REPORT_BUCKET",
     "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
     "EVENT_FEED_S3_PATH",
     "AWS_REGION",
+    "AWS_ACCOUNT_ID",
+    "AWS_PROFILE",
     "S3_BUCKET_TO_HTTP_ENDPOINT",
     "TEXT_CONTENT_EXTENSIONS",
     "TEMP_DIR",
@@ -188,37 +223,33 @@ _USER_DEFINED_SETTINGS = [
     "ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB",
     "CI_CONFIG_JOB_NAME",
     "PYTHON_INTERPRETER",
-    "PYTHON_VERSION",
     "PYTHON_PACKET_MANAGER",
-    "INSTALL_PYTHON_FOR_NATIVE_JOBS",
-    "INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS",
     "MAX_RETRIES_S3",
     "MAX_RETRIES_GH",
-    "CI_FORCE_ALL_LABEL",
+    "MAX_RETRIES_ORCHESTRATOR",
+    "HEARTBEAT_INTERVAL_S",
+    "RUNNER_PICKUP_TIMEOUT_S",
+    "HEARTBEAT_STALL_S",
+    "HEARTBEAT_TIMEOUT_S",
+    "DEAD_JOB_MAX_REDISPATCH",
     "VALIDATE_FILE_PATHS",
+    "SECRET_DOCKER_REGISTRY",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
     "DOCKER_LAYER_COMPRESSION",
     "DOCKER_LAYER_COMPRESSION_LEVEL",
     "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
-    "SECRET_CI_DB_URL",
-    "SECRET_CI_DB_USER",
-    "SECRET_CI_DB_PASSWORD",
+    "SECRET_CI_DB_CONNECTION",
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "KEEPER_STRESS_METRICS_DB_NAME",
     "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "SECRET_GH_APP_ID",
-    "SECRET_GH_APP_PEM_KEY",
-    "SECRET_GH_APP_INSTALLATION_ID",
-    "SECRET_GH_APP_REGION",
     "GH_AUTH_LAMBDA_NAME",
     "GH_AUTH_LAMBDA_REGION",
     "MAIN_BRANCH",
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",
-    "PYTHONPATHS",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
     "ENABLE_SUBMODULE_CACHE",
@@ -226,6 +257,7 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
+    "PRAKTIKA_BASE_VENV",
     "HOST_METRICS_ENABLED",
     "HOST_METRICS_SAMPLE_INTERVAL_SEC",
     "HOST_METRICS_FINE_INTERVAL_SEC",
@@ -237,31 +269,30 @@ _USER_DEFINED_SETTINGS = [
 ]
 
 
+def _load_settings_module(path: Path, res: "_Settings") -> None:
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec and spec.loader
+    foo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foo)
+    for setting in _USER_DEFINED_SETTINGS:
+        try:
+            res.__setattr__(setting, getattr(foo, setting))
+        except AttributeError:
+            pass
+
+
 def _get_settings() -> _Settings:
     res = _Settings()
+    settings_dir = Path(_Settings.SETTINGS_DIRECTORY)
 
-    directory = Path(_Settings.SETTINGS_DIRECTORY)
+    # Primary settings file
+    primary = settings_dir / "settings.py"
+    if primary.is_file():
+        _load_settings_module(primary, res)
 
-    py_files = list(directory.glob("*.py"))
-    # Support for overriding settings (if for whatever reason you need to override setting(s) in your fork)
-    # Sort: First files without "overrides", then files with "overrides"
-    sorted_files = sorted(py_files, key=lambda f: "_overrides" in f.name)
-
-    for py_file in sorted_files:
-        module_name = py_file.name.removeprefix(".py")
-        spec = importlib.util.spec_from_file_location(module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}")
-        assert spec
-        foo = importlib.util.module_from_spec(spec)
-        assert spec.loader
-        spec.loader.exec_module(foo)
-        for setting in _USER_DEFINED_SETTINGS:
-            try:
-                value = getattr(foo, setting)
-                res.__setattr__(setting, value)
-                # print(f"- read user defined setting [{setting} = {value}]")
-            except Exception:
-                # print(f"Exception while read user settings: {e}")
-                pass
+    # Optional override files, applied in sorted order
+    for override in sorted(settings_dir.glob("*_overrides.py")):
+        _load_settings_module(override, res)
 
     return res
 

@@ -4,6 +4,7 @@
 #if USE_MYSQL
 #    include <filesystem>
 #    include <string>
+#    include <Poco/Net/NetException.h>
 #    include <Columns/IColumn.h>
 #    include <Core/Settings.h>
 #    include <DataTypes/DataTypeDateTime.h>
@@ -40,6 +41,7 @@
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
+#    include <Core/LogsLevel.h>
 
 #if CLICKHOUSE_CLOUD
 #    include <Interpreters/SharedDatabaseCatalog.h>
@@ -94,13 +96,15 @@ LogsLevel mysqlToleratedConnectionFailureLogLevel()
     {
         return LogsLevel::warning;
     }
+    catch (const Poco::Net::NetException &)
+    {
+        return LogsLevel::warning;  // Expected during network connectivity issues
+    }
     catch (const Exception & e)
     {
         return e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED ? LogsLevel::warning : LogsLevel::error;
     }
-    /// Ok to not report anything here: the exception stays active and the caller logs it at the
-    /// level returned from here.
-    catch (...)
+    catch (...)  // Ok - Unexpected failures (logic bugs, disk errors, etc.) must stay loud
     {
         return LogsLevel::error;
     }
@@ -188,6 +192,31 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_cont
             tables[table_name] = modify_time_and_storage.second;
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+}
+
+/// Note: DatabaseMySQL does not own the underlying data -- it lives on the remote MySQL server.
+/// dropTable() is implemented as detachTablePermanently() for this engine, so a "dropped" table
+/// here is really just a locally-detached, remotely-recoverable table (same semantics as an
+/// explicit DETACH TABLE PERMANENTLY). It is therefore correct for such tables to show up here
+/// with is_permanently = 1, tracked via remove_or_detach_tables.
+DatabaseDetachedTablesSnapshotIteratorPtr DatabaseMySQL::getDetachedTablesIterator(
+    ContextPtr /* context */, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+{
+    SnapshotDetachedTables snapshot;
+    std::lock_guard lock(mutex);
+    for (const auto & table_name : remove_or_detach_tables)
+    {
+        if (filter_by_table_name && !filter_by_table_name(table_name))
+            continue;
+        SnapshotDetachedTable snapshot_table;
+        snapshot_table.database = database_name;
+        snapshot_table.table = table_name;
+        auto db_disk = getDisk();
+        fs::path remove_flag_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+        snapshot_table.is_permanently = db_disk->existsFile(remove_flag_path);
+        snapshot.emplace(table_name, std::move(snapshot_table));
+    }
+    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(snapshot));
 }
 
 bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) const
@@ -314,6 +343,42 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
         {
             outdated_tables.emplace_back(iterator->second.second);
             iterator = local_tables_cache.erase(iterator);
+        }
+    }
+
+    /// Reconcile remove_or_detach_tables with the live remote schema:
+    /// - If a table was only ordinarily DETACH'd (no .remove_flag marker), and the remote table
+    ///   has disappeared, the entry is pruned (nothing left to ATTACH).
+    /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .remove_flag exists),
+    ///   the marker and entry are preserved even if the remote table disappears. This ensures that
+    ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
+    ///   explicit ATTACH TABLE — matching the documented behavior.
+    /// Mirrors DatabasePostgreSQL::removeOutdatedTables logic for permanent detach.
+    auto db_disk = getDisk();
+    for (auto iterator = remove_or_detach_tables.begin(); iterator != remove_or_detach_tables.end();)
+    {
+        if (tables_with_modification_time.contains(*iterator))
+            ++iterator;
+        else
+        {
+            const auto & table_name = *iterator;
+            fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+            bool is_permanent = persistent && db_disk->existsFile(remove_flag);
+
+            /// Only prune non-permanent detach entries when the remote table disappears.
+            /// Permanent detach markers (.remove_flag) are preserved so a recreated remote table
+            /// stays hidden until explicit ATTACH TABLE.
+            if (!is_permanent)
+            {
+                if (persistent)
+                    db_disk->removeFileIfExists(remove_flag);
+                iterator = remove_or_detach_tables.erase(iterator);
+            }
+            else
+            {
+                /// Permanent detach: preserve the marker and keep the table in remove_or_detach_tables
+                ++iterator;
+            }
         }
     }
 }
@@ -454,6 +519,89 @@ void DatabaseMySQL::cleanOutdatedTables()
                 (*iterator)->flushAndShutdown();
                 (*iterator)->is_dropped = true;
                 iterator = outdated_tables.erase(iterator);
+            }
+        }
+
+        /// Background reconciliation: reconcile remove_or_detach_tables with the live remote schema.
+        /// - If a table was only ordinarily DETACH'd (no .remove_flag marker), and the remote table
+        ///   has disappeared, the entry is pruned (nothing left to ATTACH).
+        /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .remove_flag exists),
+        ///   the marker and entry are preserved even if the remote table disappears. This ensures that
+        ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
+        ///   explicit ATTACH TABLE — matching the documented behavior.
+        /// Skip reconciliation if there are no detached tables, or if all detached tables are
+        /// permanent markers (which can never be pruned), to avoid unnecessary network I/O and
+        /// spurious error-level logging during expected remote outages.
+        bool has_non_permanent_detach = false;
+        if (!remove_or_detach_tables.empty() && persistent)
+        {
+            auto db_disk = getDisk();
+            for (const auto & table_name : remove_or_detach_tables)
+            {
+                fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+                if (!db_disk->existsFile(remove_flag))
+                {
+                    has_non_permanent_detach = true;
+                    break;
+                }
+            }
+        }
+        else if (!remove_or_detach_tables.empty() && !persistent)
+        {
+            has_non_permanent_detach = true;  /// All entries are non-permanent in non-persistent mode
+        }
+
+        if (has_non_permanent_detach)
+        {
+            try
+            {
+                /// Release mutex before network I/O to avoid blocking other operations
+                lock.unlock();
+
+                auto tables_on_remote = fetchTablesWithModificationTime(getContext());
+
+                /// Re-acquire mutex to update remove_or_detach_tables
+                lock.lock();
+
+                auto db_disk = getDisk();
+                for (auto iter = remove_or_detach_tables.begin(); iter != remove_or_detach_tables.end();)
+                {
+                    if (!tables_on_remote.contains(*iter))
+                    {
+                        const auto & table_name = *iter;
+                        fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+                        bool is_permanent = persistent && db_disk->existsFile(remove_flag);
+
+                        /// Only prune non-permanent detach entries when the remote table disappears.
+                        /// Permanent detach markers (.remove_flag) are preserved so a recreated remote table
+                        /// stays hidden until explicit ATTACH TABLE.
+                        if (!is_permanent)
+                        {
+                            if (persistent)
+                                db_disk->removeFileIfExists(remove_flag);
+                            iter = remove_or_detach_tables.erase(iter);
+                        }
+                        else
+                        {
+                            /// Permanent detach: preserve the marker and keep the table in remove_or_detach_tables
+                            ++iter;
+                        }
+                    }
+                    else
+                        ++iter;
+                }
+            }
+            catch (...)
+            {
+                /// Determine appropriate log level: connection failures during MySQL outages are expected
+                /// and logged at warning level, while logic bugs or unexpected errors remain at error level
+                /// for visibility.
+                auto log_level = mysqlToleratedConnectionFailureLogLevel();
+                tryLogCurrentException("DatabaseMySQL", "Background reconciliation failed to fetch remote schema",
+                                       log_level);
+                /// Ensure we re-acquire the lock before wait_for
+                if (!lock.owns_lock())
+                    lock.lock();
             }
         }
 

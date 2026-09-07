@@ -54,6 +54,8 @@ Structure of the `users` section:
         </auth_methods>
 
         <access_management>0|1</access_management>
+        <named_collection_control>0|1</named_collection_control>
+        <show_named_collections_secrets>0|1</show_named_collections_secrets>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -292,6 +294,46 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 0.
+
+### named_collection_control {#named_collection_control-user-setting}
+
+This setting enables or disables the management of [named collections](/concepts/features/configuration/server-config/named-collections) for the user.
+It corresponds to the `NAMED COLLECTION ADMIN` privilege, except for `SHOW NAMED COLLECTIONS SECRETS`, which is controlled separately by [`show_named_collections_secrets`](#show_named_collections_secrets-user-setting).
+
+`named_collection_admin` is accepted as a synonym of this setting.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+### show_named_collections_secrets {#show_named_collections_secrets-user-setting}
+
+This setting enables or disables the `SHOW NAMED COLLECTIONS SECRETS` privilege for the user, which allows the user to see the values stored in [named collections](/concepts/features/configuration/server-config/named-collections), for example in the [`system.named_collections`](/reference/system-tables/named_collections) table.
+
+It is disabled by default: being able to manage named collections does not mean being able to read back the credentials that are already stored in them.
+
+This setting only has an effect together with `named_collection_control`, because with `named_collection_control` disabled all named collection privileges, including `SHOW NAMED COLLECTIONS SECRETS`, are revoked anyway.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+<Note>
+A user can only grant the privileges that they have themselves, so a user for whom any of `access_management`, `named_collection_control` and `show_named_collections_secrets` is disabled does not have the complete set of privileges and cannot pass it on to somebody else. For example, `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` is rejected for a user with only `access_management` and `named_collection_control` enabled:
+
+```text
+Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+(Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+```
+
+Enable all three settings to make the user a complete administrator.
+</Note>
 
 ### grants {#grants-user-setting}
 

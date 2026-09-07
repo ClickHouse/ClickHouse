@@ -28,7 +28,12 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <IO/SharedThreadPools.h>
+#include <base/sleep.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -63,6 +68,7 @@ namespace FailPoints
 {
     extern const char database_catalog_throw_on_table_shutdown[];
     extern const char database_catalog_throw_on_table_prepare_shutdown[];
+    extern const char database_catalog_shutdown_sleep_per_table[];
 }
 namespace
 {
@@ -457,8 +463,92 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 {
 }
 
+void DatabaseWithOwnTablesBase::setDeferredPopulation(std::function<void(IDatabase &)> populate)
+{
+    std::lock_guard lock(populate_mutex);
+    deferred_populate = std::move(populate);
+    deferred_shadowing_candidates.clear();
+
+    if (deferred_populate)
+    {
+        std::lock_guard tables_lock(mutex);
+        for (const auto & [table_name, _] : tables)
+            deferred_shadowing_candidates.insert(table_name);
+    }
+
+    has_deferred_population.store(deferred_populate != nullptr, std::memory_order_release);
+}
+
+bool DatabaseWithOwnTablesBase::mayShadowDeferredTable(const String & table_name) const
+{
+    if (!has_deferred_population.load(std::memory_order_acquire))
+        return false;
+    if (deferred_populate_failed.load(std::memory_order_acquire))
+        return true;
+    return deferred_shadowing_candidates.contains(table_name);
+}
+
+void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    if (!has_deferred_population.load(std::memory_order_acquire))
+        return;
+
+    std::unique_lock lock(populate_mutex);
+
+    if (populating && populating_thread == std::this_thread::get_id())
+        return;
+
+    populated.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !populating; });
+
+    if (deferred_populate_error)
+        std::rethrow_exception(deferred_populate_error);
+
+    if (!deferred_populate)
+        return;
+
+    auto populate = std::move(deferred_populate);
+    deferred_populate = nullptr;
+    populating = true;
+    populating_thread = std::this_thread::get_id();
+    lock.unlock();
+
+    auto finish = [this](std::exception_ptr error)
+    {
+        {
+            std::lock_guard finish_lock(populate_mutex);
+            populating = false;
+            populating_thread = {};
+            deferred_populate_error = error;
+            if (error)
+                deferred_populate_failed.store(true, std::memory_order_release);
+            else
+                has_deferred_population.store(false, std::memory_order_release);
+        }
+        populated.notify_all();
+    };
+
+    try
+    {
+        populate(const_cast<DatabaseWithOwnTablesBase &>(*this));
+    }
+    catch (...)
+    {
+        finish(std::current_exception());
+        throw;
+    }
+    finish(nullptr);
+}
+
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
+    if (!mayShadowDeferredTable(table_name))
+    {
+        std::lock_guard lock(mutex);
+        if (tables.contains(table_name))
+            return true;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return tables.contains(table_name);
 }
@@ -471,6 +561,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
 
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
         return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
@@ -486,6 +577,7 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(
     ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
         return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(snapshot_detached_tables);
@@ -503,12 +595,20 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetached
 
 bool DatabaseWithOwnTablesBase::empty() const
 {
+    {
+        std::lock_guard lock(mutex);
+        if (!tables.empty())
+            return false;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return tables.empty();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return detachTableUnlocked(table_name);
 }
@@ -602,16 +702,16 @@ void DatabaseWithOwnTablesBase::shutdown()
         tables_snapshot = tables;
     }
 
-    /// If a table throws while shutting down (e.g. a ZooKeeper timeout), we must still release the
-    /// references this catalog holds on every table: the UUID -> storage mapping keeps the storage
-    /// (and this database) alive otherwise, so it would be destroyed only when DatabaseCatalog is
-    /// destroyed at process exit - after the Poco logger registry and the static thread pools are
-    /// already gone, which aborts. Remember the first error and rethrow it after the cleanup.
+    /// A failing table shutdown must still release the references the catalog holds (the UUID ->
+    /// storage mappings): otherwise the storage stays alive until DatabaseCatalog is destroyed at
+    /// process exit, after loggers and static pools are gone, which aborts. Record the first error
+    /// and rethrow it once all cleanup has run.
     std::exception_ptr first_error;
 
-    /// The prepare phase can throw too: e.g. StorageReplicatedMergeTree::flushAndPrepareForShutdown
-    /// catches preparation failures, sets an immediate deadline and rethrows. Keep going so the
-    /// cleanup below still runs for every table.
+    /// Prepare phase runs sequentially. Some tables flush into other tables here (e.g. a Buffer
+    /// table flushes to its destination in flushAndPrepareForShutdown); doing this in parallel
+    /// could write into a table that has already entered shutdown-prepared read-only mode and
+    /// silently drop rows. This phase is cheap relative to the shutdown drain below.
     for (const auto & kv : tables_snapshot)
     {
         auto table_id = kv.second->getStorageID();
@@ -632,31 +732,120 @@ void DatabaseWithOwnTablesBase::shutdown()
         }
     }
 
-    for (const auto & kv : tables_snapshot)
+    /// Shutdown phase runs in parallel. IStorage::shutdown is the expensive, table-independent work
+    /// (ZooKeeper sessions, interserver endpoints, background pools) and is documented safe to call
+    /// concurrently. Prepare already ran above, so call shutdown() directly rather than
+    /// flushAndShutdown() — that avoids re-running the prepare/flush and racing dependent tables.
+    if (!tables_snapshot.empty())
     {
-        auto table_id = kv.second->getStorageID();
-        try
+        Stopwatch watch;
+        const auto db_name = getDatabaseName();
+        /// Tables carrying a UUID require the database to have one too (memory-backed databases
+        /// like system / information_schema have neither).
+        if (tables_snapshot.begin()->second->getStorageID().hasUUID())
+            chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+
+        /// Errors from the parallel tasks are collected here. Held in a shared_ptr so a task that
+        /// somehow outlives this frame cannot dangle a reference into it.
+        struct ErrorRecorder
         {
-            fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
+            std::mutex mutex;
+            std::exception_ptr error;
+            void record(std::exception_ptr e)
             {
-                /// Test-only: emulate a table flushAndShutdown that throws (e.g. a ZooKeeper timeout).
-                /// Skip predefined databases so only the user table under test triggers it.
-                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id.getNameForLogs());
-            });
-            kv.second->flushAndShutdown();
-        }
-        catch (...)
+                std::lock_guard lock(mutex);
+                if (!error)
+                    error = e;
+            }
+        };
+        auto recorder = std::make_shared<ErrorRecorder>();
+
+        /// Lazy-init for non-server binaries (client/keeper) that reach this via a Database destructor.
+        auto & shared_pool = getDatabaseCatalogShutdownTablesThreadPool();
+        shared_pool.initializeWithDefaultSettingsIfNotInitialized();
+        ThreadPoolCallbackRunnerLocal<void> runner(shared_pool.get(), ThreadName::SHUTDOWN_TABLES);
+        /// Reserve so enqueueAndKeepTrack can't fail while tracking an already-scheduled task,
+        /// which would make the inline fallback run a duplicate.
+        runner.reserve(tables_snapshot.size());
+
+        for (const auto & kv : tables_snapshot)
         {
+            /// Capture only owned state (shared_ptr / logger), never `this` or the stack frame.
+            auto run_task = [log_ptr = log, table = kv.second, recorder]
+            {
+                std::optional<StorageID> table_id;
+                try
+                {
+                    table_id = table->getStorageID();
+                }
+                catch (...)
+                {
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, "Failed to read storage ID during shutdown");
+                    return;
+                }
+
+                try
+                {
+                    fiu_do_on(FailPoints::database_catalog_shutdown_sleep_per_table,
+                    {
+                        /// Skip predefined databases so a test enabling this failpoint only slows
+                        /// the user database under test.
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
+                            sleepForSeconds(1);
+                    });
+
+                    fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
+                    {
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id->getNameForLogs());
+                    });
+                    table->shutdown();
+                }
+                catch (...)
+                {
+                    recorder->record(std::current_exception());
+                    tryLogCurrentException(log_ptr, fmt::format("Failed to shut down table {}", table_id->getNameForLogs()));
+                }
+
+                /// Release the catalog's reference even if shutdown() threw.
+                if (table_id->hasUUID())
+                {
+                    try
+                    {
+                        DatabaseCatalog::instance().removeUUIDMapping(table_id->uuid);
+                    }
+                    catch (...)
+                    {
+                        recorder->record(std::current_exception());
+                        tryLogCurrentException(log_ptr, fmt::format("Failed to remove UUID mapping for table {}", table_id->getNameForLogs()));
+                    }
+                }
+            };
+
+            try
+            {
+                runner.enqueueAndKeepTrack(run_task);
+            }
+            catch (...)
+            {
+                /// Scheduling failed (fault injector, pool exhausted). Run inline so this table is
+                /// still shut down and its reference released. Reserve above guarantees this only
+                /// happens when the task was never scheduled, so there is no duplicate.
+                tryLogCurrentException(log, "Failed to schedule shutdown task, running inline");
+                run_task();
+            }
+        }
+        runner.waitForAllToFinish();
+
+        {
+            std::lock_guard lock(recorder->mutex);
             if (!first_error)
-                first_error = std::current_exception();
-            tryLogCurrentException(log, fmt::format("Failed to shut down table {}", table_id.getNameForLogs()));
+                first_error = recorder->error;
         }
-        if (table_id.hasUUID())
-        {
-            chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
-        }
+
+        LOG_INFO(log, "Shut down {} tables in {} in {} ms",
+            tables_snapshot.size(), backQuoteIfNeed(db_name), watch.elapsedMilliseconds());
     }
 
     {
@@ -737,6 +926,15 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_name) const
 {
+    if (!mayShadowDeferredTable(table_name))
+    {
+        std::lock_guard lock(mutex);
+        auto it = tables.find(table_name);
+        if (it != tables.end())
+            return it->second;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end())

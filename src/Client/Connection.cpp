@@ -38,7 +38,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/FailPoint.h>
 #include <Client/JWTProvider.h>
@@ -48,6 +49,7 @@
 #include "config.h"
 
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL
@@ -116,6 +118,7 @@ Connection::Connection(const String & host_, UInt16 port_,
 #if USE_JWT_CPP && USE_SSL
     , std::shared_ptr<JWTProvider> jwt_provider_
 #endif
+    , SocketFactory socket_factory_
 )
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
@@ -135,6 +138,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , secure(secure_)
     , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
+    , socket_factory(std::move(socket_factory_))
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -143,6 +147,19 @@ Connection::Connection(const String & host_, UInt16 port_,
         user = "default";
 
     setDescription();
+}
+
+std::unique_ptr<Poco::Net::StreamSocket> Connection::defaultSocketFactory(bool secure)
+{
+    if (secure)
+    {
+#if USE_SSL
+        return std::make_unique<Poco::Net::SecureStreamSocket>();
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
+#endif
+    }
+    return std::make_unique<Poco::Net::StreamSocket>();
 }
 
 
@@ -202,11 +219,11 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
         if (isConnected())
             disconnect();
 
+        socket = socket_factory(static_cast<bool>(secure));
+
         if (static_cast<bool>(secure))
         {
 #if USE_SSL
-            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
-
             /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
             /// work we need to pass host name separately. It will be send into TLS Hello packet to let
             /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
@@ -228,8 +245,6 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
         }
         else
         {
-            socket = std::make_unique<Poco::Net::StreamSocket>();
-
             if (!bind_host.empty())
             {
                 Poco::Net::SocketAddress socket_address(bind_host, 0);
@@ -968,6 +983,31 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 }
 
 
+CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings)
+{
+    if (!settings)
+        return CompressionCodecFactory::instance().getDefaultCodec();
+
+    std::optional<int> level;
+    std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
+
+    /// Bad custom logic
+    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+    /// be broken afterwards.
+    if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    /// More bad custom logic
+    if (method == "ZSTD")
+        level = (*settings)[Setting::network_zstd_compression_level];
+
+    CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
+    return CompressionCodecFactory::instance().get(method, level);
+}
+
+
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -1023,28 +1063,7 @@ void Connection::sendQuery(
     socket->setReceiveTimeout(timeouts.receive_timeout);
     socket->setSendTimeout(timeouts.send_timeout);
 
-    if (settings)
-    {
-        std::optional<int> level;
-        std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
-
-        /// Bad custom logic
-        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
-        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
-        /// be broken afterwards.
-        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
-
-        /// More bad custom logic
-        if (method == "ZSTD")
-            level = (*settings)[Setting::network_zstd_compression_level];
-
-        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
-        compression_codec = CompressionCodecFactory::instance().get(method, level);
-    }
-    else
-        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+    compression_codec = chooseNetworkCompressionCodec(settings);
 
     query_id = query_id_;
 
@@ -1406,7 +1425,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     for (auto & elem : data)
     {
-        PipelineExecutorPtr executor;
+        CompletedPipelineExecutor * executor = nullptr;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
         if (!elem->pipe)
@@ -1422,8 +1441,13 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
                 return nullptr;
             return sink;
         });
-        executor = pipeline.execute();
-        executor->execute(/*num_threads = */ 1, false);
+        auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        query_pipeline.setNumThreads(1);
+        query_pipeline.setConcurrencyControl(false);
+        query_pipeline.disableReadProgress();
+        CompletedPipelineExecutor completed_executor(query_pipeline);
+        executor = &completed_executor;
+        completed_executor.execute();
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;

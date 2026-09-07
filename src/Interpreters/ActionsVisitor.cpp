@@ -1467,6 +1467,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(node.name);
         if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
         {
+            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(current_context);
             function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
             is_user_defined_wasm_function = function_builder != nullptr;
         }

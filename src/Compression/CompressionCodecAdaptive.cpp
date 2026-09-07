@@ -43,11 +43,17 @@ constexpr std::array T64_TYPES = {
     TypeIndex::Time64, TypeIndex::Decimal32, TypeIndex::Decimal64, TypeIndex::IPv4,
 };
 
+constexpr std::array ALP_TYPES = {TypeIndex::Float32, TypeIndex::Float64};
+
 /// Candidate codecs for the adaptive pool, grouped by codec expression.
-/// TODO: extend candidates as codecs as we see some proof they are faster than the default and can compress better.
 /// TODO: play around with chains to see if they are worth it (could be too slow). Until then, they are banned.
-constexpr std::array<CandidateGroup, 1> CANDIDATES = {{
-    {"T64", T64_TYPES}, /// T64 defaults to the byte flavour (over bit). Good: same size + faster [de]compression.
+constexpr std::array<CandidateGroup, 3> CANDIDATES = {{
+    /// T64 defaults to the byte flavour (over bit). Good: same size + faster [de]compression.
+    {"T64", T64_TYPES},
+    /// Do not use AUTO as it picks STD or RD per block from a sample. With sampled adaptive compression, that is sample of a sample.
+    /// STD before RD because STD decompressed faster (we want it in case of tie).
+    {"ALP(STD)", ALP_TYPES},
+    {"ALP(RD)", ALP_TYPES},
 }};
 
 /// Build the codec described by `expr` for `type` so type-aware codecs get the type they need.
@@ -100,40 +106,25 @@ private:
 
 }
 
-Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default)
+Codecs AdaptiveCodec::poolForType(const DataTypePtr & type, const CompressionCodecPtr & deployment_default)
 {
     /// An encrypting default must not reach here as substituting a codec would drop the encryption. Must handle this in the caller.
     if (deployment_default->isEncryption())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec pool must not be built from an encrypting default");
 
-    Codecs pool{CompressionCodecFactory::instance().get("NONE", {}), deployment_default};
-    const TypeIndex type_id = type.getTypeId();
+    static const CompressionCodecPtr none_codec = CompressionCodecFactory::instance().get("NONE", {});
+    Codecs pool{none_codec, deployment_default};
+    if (!type)
+        return pool;
+
+    const TypeIndex type_id = type->getTypeId();
     for (const auto & [codec_expr, types] : CANDIDATES)
         if (std::ranges::find(types, type_id) != types.end())
-            pool.push_back(buildCodecForType(codec_expr, type));
+            pool.push_back(buildCodecForType(codec_expr, *type));
     return pool;
 }
 
-VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
-{
-    VectorWithMemoryTracking<TypeIndex> result;
-    for (const auto & [codec_expr, types] : CANDIDATES)
-        for (const TypeIndex type_id : types)
-            if (std::ranges::find(result, type_id) == result.end()) /// distinct: a type may appear in more than one group
-                result.push_back(type_id);
-    return result;
-}
-
-bool AdaptiveCodec::isCandidateType(const IDataType & type)
-{
-    const TypeIndex type_id = type.getTypeId();
-    for (const auto & [codec_expr, types] : CANDIDATES)
-        if (std::ranges::find(types, type_id) != types.end())
-            return true;
-    return false;
-}
-
-CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default)
+CompressionCodecAdaptive::CompressionCodecAdaptive(const DataTypePtr & type, const CompressionCodecPtr & deployment_default)
     : pool(AdaptiveCodec::poolForType(type, deployment_default))
 {
     chassert(!pool.empty());

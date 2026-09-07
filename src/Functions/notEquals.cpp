@@ -9,6 +9,8 @@ namespace DB
 using FunctionNotEquals = FunctionComparison<NotEqualsOp, NameNotEquals>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 extern template class FunctionComparison<EqualsOp, NameEquals>;
+/// Used through `FunctionIsNotDistinctFrom` in `executeArrayLexicographic`; instantiated in isNotDistinctFrom.cpp.
+extern template class FunctionComparison<EqualsOp, NameEquals, true>;
 
 REGISTER_FUNCTION(NotEquals)
 {

@@ -27,6 +27,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <base/insertAtEnd.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -58,6 +59,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
     extern const SettingsBool restore_replace_external_engines_to_null;
+}
+
+namespace FailPoints
+{
+    extern const char restore_pause_before_data_restore_tasks[];
 }
 
 namespace ErrorCodes
@@ -1038,6 +1044,10 @@ void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 
 void RestorerFromBackup::runDataRestoreTasks()
 {
+    /// Every earlier stage has joined its own tasks, so this is the first point where a test can
+    /// arm a fail point and be sure the next task to reach it is one of several concurrent ones.
+    FailPointInjection::pauseFailPoint(FailPoints::restore_pause_before_data_restore_tasks);
+
     /// Iterations are required here because data restore tasks are allowed to call addDataRestoreTask() and add other data restore tasks.
     for (;;)
     {

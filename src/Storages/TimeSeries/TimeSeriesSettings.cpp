@@ -7,6 +7,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <unordered_set>
 
@@ -29,10 +30,11 @@ namespace ErrorCodes
     DECLARE(Bool, aggregate_min_time_and_max_time, true, "When creating an inner target 'tags' table, this flag enables using 'SimpleAggregateFunction(min, Nullable(DateTime64(3)))' instead of just 'Nullable(DateTime64(3))' as the type of the 'min_time' column, and the same for the 'max_time' column", 0) \
     DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
     DECLARE(UInt64, samples_index_granularity, 32768, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
-    DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, recent_samples_ttl_seconds, 345600, "Retention of the additional 'recent samples' target table, which every inserted sample is written to as well. An inner recent samples table always gets 'TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)' derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data, which is the user's responsibility. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting 'time_series_prefer_recent_samples_table'). The default is 4 days; set to 0 to disable the recent samples table", 0) \
-    DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. If not set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
-    DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
+    DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
+    DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)
@@ -105,6 +107,14 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {
+    UInt64 version = settings[TimeSeriesSetting::version];
+
+    if (!isTimeSeriesVersionSupported(version))
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} of the `version` setting: this server supports TimeSeries versions from {} to {}. "
+            "A table definition with another version was written by a different version of ClickHouse",
+            version, TimeSeriesVersion::MIN_SUPPORTED, TimeSeriesVersion::LATEST);
+
     if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds])
     {
         /// Settings of the recent samples table make no sense without the table itself.
@@ -172,6 +182,57 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
                     "Setting `tags_to_columns` has duplicate column name `{}`", column_name);
         }
     }
+}
+
+bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query)
+{
+    return query.storage && query.storage->settings
+        && query.storage->settings->changes.tryGet("recent_samples_ttl_seconds");
+}
+
+UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query)
+{
+    if (query.storage && query.storage->settings)
+    {
+        if (const auto * value = query.storage->settings->changes.tryGet("recent_samples_ttl_seconds"))
+        {
+            /// The conversion must be the same as in the `recent_samples_ttl_seconds` setting itself,
+            /// so that every value the setting accepts (e.g. a string literal) is recognized here too.
+            return SettingFieldUInt64{*value}.value;
+        }
+    }
+    return TimeSeriesSettings{}[TimeSeriesSetting::recent_samples_ttl_seconds];
+}
+
+UInt64 getTimeSeriesSettingVersion(const ASTCreateQuery & query)
+{
+    if (query.storage && query.storage->settings)
+    {
+        if (const auto * value = query.storage->settings->changes.tryGet("version"))
+            return SettingFieldUInt64{*value}.value;
+    }
+    return TimeSeriesVersion::LATEST;
+}
+
+bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query)
+{
+    return query.storage && query.storage->settings
+        && query.storage->settings->changes.tryGet("version");
+}
+
+void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version)
+{
+    if (!query.storage)
+        query.set(query.storage, make_intrusive<ASTStorage>());
+
+    if (!query.storage->settings)
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        query.storage->set(query.storage->settings, settings_ast);
+    }
+
+    query.storage->settings->changes.setSetting("version", Field{version});
 }
 
 }

@@ -215,7 +215,7 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the first element of the source array for which `λ` is true, otherwise returns the default value of `T`."};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayFirst(x, y -> x=y, ['a', 'b', 'c'], ['c', 'b', 'a'])", "b"},
-        {"No match", "SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "0 UInt8"}
+        {"No match", "SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "0\tUInt8"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
@@ -237,7 +237,7 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     FunctionDocumentation::ReturnedValue returned_value_orNull = {"Returns the first element of the source array for which `func` is true, otherwise returns `NULL`."};
     FunctionDocumentation::Examples examples_orNull = {
         {"Usage example", "SELECT arrayFirstOrNull(x, y -> x=y, ['a', 'b', 'c'], ['c', 'b', 'a'])", "b"},
-        {"No match", "SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "NULL Nullable(UInt8)"}
+        {"No match", "SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "\\N\tNullable(UInt8)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_orNull = {1, 1};
     FunctionDocumentation::Category category_orNull = FunctionDocumentation::Category::Array;
@@ -262,7 +262,7 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
         {
             "No match",
             "SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)",
-            "0 UInt8"
+            "0\tUInt8"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in_last = {1, 1};
@@ -287,7 +287,7 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
         {
             "No match",
             "SELECT arrayLastOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)",
-            "NULL Nullable(UInt8)"
+            "\\N\tNullable(UInt8)"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in_last_null = {1, 1};

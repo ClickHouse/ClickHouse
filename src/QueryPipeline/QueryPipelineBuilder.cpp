@@ -11,9 +11,9 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/DelayedPortsProcessor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>
@@ -370,7 +370,38 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
         right->pipe.resize(1);
     }
     else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());
+    {
+        /// `MergeJoinTransform` below takes exactly one input per side. The streams are already sorted by the
+        /// join keys, so a sorted merge on those keys preserves the order it requires.
+        auto merge_to_single_sorted_stream = [&](std::unique_ptr<QueryPipelineBuilder> & pipeline, const Names & key_names)
+        {
+            if (pipeline->getNumStreams() <= 1)
+                return;
+
+            SortDescription sort_description;
+            sort_description.reserve(key_names.size());
+            for (const auto & key_name : key_names)
+                sort_description.emplace_back(key_name);
+
+            auto transform = std::make_shared<MergingSortedTransform>(
+                pipeline->getSharedHeader(),
+                pipeline->getNumStreams(),
+                sort_description,
+                max_block_size,
+                /*max_block_size_bytes=*/ 0,
+                /*max_dynamic_subcolumns=*/ std::nullopt,
+                SortingQueueStrategy::Default);
+
+            /// Report the merge to the caller's collector so that `EXPLAIN PIPELINE` lists it.
+            pipeline->pipe.collected_processors = collected_processors;
+            pipeline->addTransform(std::move(transform));
+            pipeline->pipe.collected_processors = nullptr;
+        };
+
+        const auto & on_clause = join->getTableJoin().getOnlyClause();
+        merge_to_single_sorted_stream(left, on_clause.key_names_left);
+        merge_to_single_sorted_stream(right, on_clause.key_names_right);
+    }
 
     if (left->hasTotals() || right->hasTotals())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
@@ -600,13 +631,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     ///  - the second for the NonJoinedBlocksTransforms until the first DelayedPorts finishes
     bool use_parallel_non_joined = join->supportParallelNonJoinedBlocksProcessing();
 
-    /// When delayed blocks exist, JoiningTransform still needs a finish_counter so it can emit
-    /// non-joined rows for the main bucket (GraceHashJoin spilled case).
-    /// When only parallel non-joined (no delayed blocks), nullptr disables non-joined emission
-    /// inside JoiningTransform entirely (the parallel NonJoinedBlocksTransform handles it).
-    auto joining_finish_counter = (use_parallel_non_joined && !delayed_root)
-        ? nullptr
-        : std::make_shared<FinishCounter>(num_streams);
+    /// When delayed blocks exist, JoiningTransform still needs non-joined rows emission for the main bucket (GraceHashJoin spilled case).
+    /// When only parallel non-joined (no delayed blocks), non-joined emission inside JoiningTransform
+    /// is entirely disabled (the parallel NonJoinedBlocksTransform handles it).
+    const bool emit_non_joined = !use_parallel_non_joined || delayed_root != nullptr;
+    /// finish_counter is needed for non-joined rows emission and for publishing probe runtime statistics.
+    auto joining_finish_counter = std::make_shared<FinishCounter>(num_streams);
+    auto joining_right_rows_match_counter = std::make_shared<RightRowsMatchCounter>();
 
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)
@@ -621,7 +652,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         }
 
         auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter);
+            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
 
         connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
@@ -806,8 +837,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto finish_counter = std::make_shared<FinishCounter>(1);
-        auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, joins[i], max_block_size, false, false, finish_counter);
+        auto match_counter = std::make_shared<RightRowsMatchCounter>();
+        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, joins[i], max_block_size, false, false, finish_counter, match_counter);
 
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
@@ -913,14 +944,6 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatusPtr elem)
 void QueryPipelineBuilder::setProgressCallback(ProgressCallback callback)
 {
     progress_callback = callback;
-}
-
-PipelineExecutorPtr QueryPipelineBuilder::execute()
-{
-    if (!isCompleted())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute pipeline because it is not completed");
-
-    return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }
 
 Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources)

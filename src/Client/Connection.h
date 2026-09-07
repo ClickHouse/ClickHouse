@@ -2,6 +2,9 @@
 
 #include <Poco/Net/StreamSocket.h>
 
+#include <functional>
+#include <memory>
+
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
 #include <Common/SettingsChanges.h>
@@ -41,6 +44,13 @@ using Connections = std::vector<ConnectionPtr>;
 class NativeReader;
 class NativeWriter;
 
+/// The codec for the compressed packets this side originates (e.g. `INSERT` data and external tables
+/// sent by the client). Reads the network compression settings by value, regardless of their `changed`
+/// flags — in particular, values derived from `compatibility` apply even though they are not serialized
+/// to the server (see `ClientBase::settingsWithoutCompatibilityDerived`). With no settings, the built-in
+/// default codec is used.
+CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings);
+
 /** Connection with database server, to use by client.
   * How to use - see Core/Protocol.h
   * (Implementation of server end - see Server/TCPHandler.h)
@@ -53,6 +63,10 @@ class Connection : public IServerConnection
     friend class MultiplexedConnections;
 
 public:
+    using SocketFactory = std::function<std::unique_ptr<Poco::Net::StreamSocket>(bool secure)>;
+
+    static std::unique_ptr<Poco::Net::StreamSocket> defaultSocketFactory(bool secure);
+
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
@@ -70,6 +84,7 @@ public:
 #if USE_JWT_CPP && USE_SSL
         , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
 #endif
+        , SocketFactory socket_factory_ = &Connection::defaultSocketFactory
     );
 
     ~Connection() override;
@@ -287,6 +302,7 @@ private:
     Protocol::Secure secure;             /// Enable data encryption for communication.
     String tls_sni_override;             /// Override for TLS SNI field.
     String bind_host;
+    SocketFactory socket_factory;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionCodecPtr compression_codec;

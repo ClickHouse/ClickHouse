@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -120,7 +120,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -160,9 +160,12 @@ ALTER TABLE table DROP INDEX text_idx;
   The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
-- `splitByRegexp(re)` splits strings along a user-defined regular expression separator `re` (see function [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
-  The `re` argument is mandatory, for example, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  Unlike the fixed separator strings of `splitByString`, a regular expression separator can preserve tokens containing special characters (such as `C++` or `C#`) which the other tokenizers would split apart.
+- `splitByRegexp(regexp[, match_tokens])` splits strings according to a user-defined regular expression `regexp`.
+  The `regexp` argument is mandatory, for example, `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
+  The optional `match_tokens` argument (`false` by default; `0`/`1` are also accepted) controls what `regexp` represents:
+  - with `match_tokens = false` (the default), `regexp` represents separators: the tokens are the (non-empty) pieces of text between successive matches (same semantics as function [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  - with `match_tokens = true`, `regexp` is matched directly instead: each match contributes at most one token - its first capture group, or the whole match if `regexp` has no capture group - and everything outside the matches is discarded. For example, `tokenizer = splitByRegexp('tag:(\w+)', true)` indexes `hello` and `world` from `tag:hello tag:world`, dropping the `tag:` prefix. Matching uses [RE2](https://github.com/google/re2), the same engine every regex-based function in ClickHouse uses; only the first capture group is ever used, so further groups merely constrain what matches. A capture group that did not participate in the match, or that matched an empty string, contributes no token, and scanning always resumes after the whole match rather than after the captured span (so matches never overlap).
+  With `match_tokens = true`, note that search needles in text search functions are tokenized with the index's own tokenizer, so a plain string needle that does not itself match `regexp` yields no tokens and therefore no results. Needles passed as arrays to text search functions are not tokenized, and are therefore recommended for use with regexp tokenizers.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
 - `chinese[(granularity)]` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens). This yields more meaningful tokens for Chinese text and higher search quality. For general/mixed text, please use `asciiCJK`, for Chinese-only text, please use `chinese`. The optional `granularity` argument is either `'coarse_grained'` (the default if not specified) or `'fine_grained'`. The latter additionally enumerates overlapping sub-words for example `北京邮电大学` also yields `北京`, `邮电`, `大学`. Fine-grained tokenization improves recall at the cost of a larger index.
   Search a `chinese` text index with [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) (which tokenize the needle with the `chinese` tokenizer), not `hasToken` (which splits on ASCII separators only).
@@ -528,8 +531,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
-| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
+| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
 | [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
@@ -542,13 +545,18 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
 
 ¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
-`LIKE` additionally supports a *direct read (without hint)* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
+`LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
+A `%value%` pattern is then a *direct read (without hint)*, while `value%` and `%value` patterns remain a hint, see [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
-² `ILIKE` is only supported via direct read (without hint) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
-There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
+² `ILIKE` is only supported via evaluation by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
+There is no fallback to using the index as a hint for patterns the dictionary scan does not support: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
 ³ `hasPhrase` on a `splitByRegexp` text index does **not** support a postprocessor: the combination is rejected with an exception, because the postprocessor row-level rewrite assumes whitespace-splitting `splitByNonAlpha`-style tokens. Without a postprocessor, `splitByRegexp` is fully supported by `hasPhrase`.
+
+⁴ `startsWith` and `endsWith` search the complete tokens of the needle, and the token at the open end of the needle is incomplete because the value continues there: `startsWith(col, 'ClickHouse is')` searches the token `ClickHouse`, while `startsWith(col, 'ClickHouse')` has no complete token to search.
+The latter is instead evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer, no preprocessor or postprocessor), which is also the path taken by `col LIKE 'ClickHouse%'` because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) rewrites it into `startsWith`.
+See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 **Experimental: Support phrase search argument (optional)**.
 
@@ -782,7 +790,7 @@ The case-insensitive variants `hasTokenCaseInsensitive` and `hasTokenCaseInsensi
 
 Function [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken) matches against a single given token.
 
-Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
+Unlike `hasAnyTokens` and `hasAllTokens`, it does not tokenize the search term (it assumes the input is a single token).
 
 Example:
 
@@ -1393,9 +1401,19 @@ This ordering enables skipping even more data granules than the granules skipped
 
 ### LIKE/ILIKE queries {#like-ilike-queries-perf}
 
-When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%` and the text index tokenizer is `splitByNonAlpha` or `array`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
+When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` or `%<alpha-numeric-characters-without-spaces>` and the text index tokenizer is `splitByNonAlpha` or `array`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
+
+How the result of the dictionary scan is used depends on where the needle is anchored:
+- `%value%` matches a row if and only if it matches one of the row's tokens, so the index decides the query on its own: a [direct read (without hint)](#direct-read) that removes the original predicate.
+- `value%` and `%value` anchor the needle at the whole value, whereas the dictionary scan can only anchor it at a token, so the scan returns a superset of the matching rows and is used as a [direct read as a hint](#direct-read).
+
+The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'value')` when the needle has no complete token to search.
+This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
+Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
 
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
+
+The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. Needles that match rows in every granule prune nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
 
 The optimization is controlled by a setting:
 - [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
@@ -1404,7 +1422,7 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-This optimization supports only functions `like` and `ilike`.
+This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
 
 ### Trivial count queries {#count-queries-perf}
 

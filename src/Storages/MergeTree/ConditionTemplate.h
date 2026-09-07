@@ -48,6 +48,9 @@ public:
     /// Substitutes nothing.
     const Cond & generateUnsubstituted() const;
 
+    /// The filter DAG this template was built from, i.e. the predicates that participated in index analysis.
+    const ActionsDAGWithInversionPushDown * getFilterDAG() const { return dag.get(); }
+
     /// Substitutes partition level constants into dag.
     const Cond & generateForPart(const MergeTreeDataPartPtr & part) const;
     const Cond & generateForPart(const IMergeTreeDataPartInfoForReader & part_info) const;
