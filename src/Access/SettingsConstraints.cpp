@@ -309,12 +309,14 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 
 void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
 {
-    /// If we filter out settings that match the current default here, `compatibility` will silently override them.
-    /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
-    bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
+    /// Dropping a change that matches the current value is only sound if nothing applied later moves that
+    /// value. `compatibility` replays old defaults and `profile` applies a settings profile, so when either
+    /// is in the same change set, unchanged settings are kept and re-applied in their original position.
+    bool keep_unchanged_settings
+        = changes.tryGet("compatibility") != nullptr || changes.tryGet("profile") != nullptr;
     std::erase_if(changes, [&](SettingChange & change)
     {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
+        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/keep_unchanged_settings);
     });
 }
 
@@ -444,7 +446,12 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         Field current_value;
         if (getCurrentValueOfSetting(current_settings, change.name, current_value)
             && new_value == castValueOfSetting<Settings>(change.name, current_value))
-            return true;
+        {
+            /// A kept change becomes a real one once the mover shifts the value, so the restriction on
+            /// which sources may set the setting still holds. The value constraints in force here have
+            /// already admitted that value: it is the one the setting has.
+            return getSettingSourceRestrictions(setting_name).isSourceAllowed(source);
+        }
     }
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);

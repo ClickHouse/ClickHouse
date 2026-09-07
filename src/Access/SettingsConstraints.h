@@ -162,8 +162,9 @@ private:
         }
     };
 
-    /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
-    /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
+    /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged
+    /// settings (unless `compatibility` or `profile` is present) and differ only in whether violations
+    /// throw or get clamped to the nearest bound.
     void
     checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
 
