@@ -1966,7 +1966,7 @@ void TCPHandler::sendInsertProfileEvents(QueryState & state)
     sendProfileEvents(state);
 }
 
-void TCPHandler::updateProfileTracesQueue(QueryState & state)
+void TCPHandler::updateProfileTracesQueue(QueryState & state) const
 {
     const bool enabled = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_PROFILE_TRACES
         && state.query_context->getSettingsRef()[Setting::send_profile_traces];
