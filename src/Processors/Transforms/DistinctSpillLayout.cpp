@@ -90,6 +90,7 @@ ColumnPtr serializeValues(const IColumn & column)
         const char * begin = nullptr;
         const auto value = column.serializeValueIntoArena(row, arena, begin, /*settings=*/ nullptr);
         serialized->insertData(value.data(), value.size());
+        arena.rollback(value.size());
     }
     return serialized;
 }
