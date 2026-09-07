@@ -2,12 +2,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 
 namespace DB
 {
-class FunctionInitialQueryStartTime final : public IFunction
+class FunctionInitialQueryStartTime : public IFunction
 {
     const time_t initial_query_start_time;
 public:
@@ -58,9 +57,9 @@ INSERT INTO tmp (*) VALUES ('a');
 SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
         )",
         R"(
-┌─countDistinct(t)─┐
-│                1 │
-└──────────────────┘
+┌─count(DISTINCT t)─┐
+│                 1 │
+└───────────────────┘
         )"
     }
     };

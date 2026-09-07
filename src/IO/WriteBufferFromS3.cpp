@@ -11,14 +11,13 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
-#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
 #include <Common/BlobStorageLogWriter.h>
-#include <Common/getRandomASCIIString.h>
 
 #include <utility>
 
@@ -28,6 +27,7 @@ namespace ProfileEvents
     extern const Event WriteBufferFromS3Bytes;
     extern const Event WriteBufferFromS3Microseconds;
     extern const Event WriteBufferFromS3RequestsErrors;
+    extern const Event S3WriteBytes;
 
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
@@ -67,9 +67,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Custom object metadata key carrying the write token, see WriteBufferFromS3::write_token.
-static constexpr auto WRITE_TOKEN_METADATA_KEY = "clickhouse-write-token";
-
 struct WriteBufferFromS3::PartData
 {
     Memory<> memory;
@@ -88,7 +85,7 @@ struct WriteBufferFromS3::PartData
     }
 };
 
-static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings[S3RequestSetting::strict_upload_part_size];
@@ -109,7 +106,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     size_t buf_size_,
     const S3::S3RequestSettings & request_settings_,
     BlobStorageLogWriterPtr blob_log_,
-    std::optional<ObjectAttributes> object_metadata_,
+    std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
@@ -119,7 +116,6 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , write_token(write_settings.object_storage_write_if_none_match.empty() ? "" : getRandomASCIIString(32))
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -200,11 +196,6 @@ void WriteBufferFromS3::preFinalize()
     else
     {
         writeMultipartUpload();
-        task_tracker->addFinal([this]()
-        {
-            if (completeMultipartUpload())
-                multipart_upload_finished = true;
-        });
     }
 }
 
@@ -228,6 +219,12 @@ void WriteBufferFromS3::finalizeImpl()
     task_tracker->waitAll();
 
     span.addAttributeIfNotZero("clickhouse.multipart_upload_parts", multipart_tags.size());
+
+    if (!multipart_upload_id.empty())
+    {
+        completeMultipartUpload();
+        multipart_upload_finished = true;
+    }
 
     if (request_settings[S3RequestSetting::check_objects_after_upload])
     {
@@ -420,14 +417,8 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Metadata set here lands on the completed object, so a HEAD after completion sees the token.
-    if (auto metadata = metadataWithWriteToken())
-        req.SetMetadata(*metadata);
-
-    /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
-    /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
-    if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+    if (object_metadata.has_value())
+        req.SetMetadata(object_metadata.value());
 
     client_ptr->setKMSHeaders(req);
 
@@ -623,7 +614,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     task_tracker->add(std::move(upload_worker));
 }
 
-bool WriteBufferFromS3::completeMultipartUpload()
+void WriteBufferFromS3::completeMultipartUpload()
 {
     LOG_TEST(limited_log, "Completing multipart upload. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
 
@@ -632,13 +623,13 @@ bool WriteBufferFromS3::completeMultipartUpload()
                 ErrorCodes::LOGICAL_ERROR,
                 "Failed to complete multipart upload. No parts have uploaded");
 
-    for (const auto & tag : multipart_tags)
+    for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
+        const auto tag = multipart_tags.at(i);
         if (tag.empty())
-        {
-            // One of the earlier uploads failed.
-            return false;
-        }
+            throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Failed to complete multipart upload. Part {} haven't been uploaded.", i);
     }
 
     S3::CompleteMultipartUploadRequest req;
@@ -665,8 +656,6 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetMultipartUpload(multipart_upload);
 
     size_t max_retry = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
-    Aws::S3::S3Errors last_error_type = Aws::S3::S3Errors::NO_SUCH_KEY;
-    String last_error_details;
     for (size_t i = 0; i < max_retry; ++i)
     {
         ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
@@ -687,45 +676,30 @@ bool WriteBufferFromS3::completeMultipartUpload()
         if (outcome.IsSuccess())
         {
             LOG_TRACE(limited_log, "Multipart upload has completed. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
-            return true;
+            return;
         }
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
 
-        const auto & error = outcome.GetError();
-
-        /// A 412, or a NO_SUCH_UPLOAD reporting an upload id the server already consumed, on our own
-        /// object means this completion was replayed after it had succeeded. Anything we cannot prove
-        /// we wrote is a pre-existing object and must still throw.
-        const bool replayed_after_success = error.GetExceptionName() == "PreconditionFailed"
-            || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
-        if (replayed_after_success && isObjectWrittenByThisBuffer())
+        if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         {
-            LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write ({}). {}, Parts: {}",
-                     error.GetExceptionName(), getShortLogDetails(), multipart_tags.size());
-            return true;
-        }
-
-        if (isTransientCompleteMultipartUploadError(error))
-        {
-            last_error_type = error.GetErrorType();
-            last_error_details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
-            LOG_INFO(log, "Multipart upload failed with a transient error ({}), will retry. {}, Parts: {}",
-                     last_error_details, getVerboseLogDetails(), multipart_tags.size());
+            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it here, DB::S3::Client take care of it
+            LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error, will retry. {}, Parts: {}", getVerboseLogDetails(), multipart_tags.size());
         }
         else
         {
             throw S3Exception(
-                error.GetErrorType(),
+                outcome.GetError().GetErrorType(),
                 "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                error.GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
+                outcome.GetError().GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
         }
     }
 
     throw S3Exception(
-        last_error_type,
-        "Message: Multipart upload failed with a transient error ({}), retries {}, Key: {}, Bucket: {}",
-        last_error_details, max_retry, key, bucket);
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        "Message: Multipart upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
+        max_retry, key, bucket);
 }
 
 S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
@@ -738,8 +712,8 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    if (auto metadata = metadataWithWriteToken())
-        req.SetMetadata(*metadata);
+    if (object_metadata.has_value())
+        req.SetMetadata(object_metadata.value());
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
@@ -755,35 +729,6 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     client_ptr->setKMSHeaders(req);
 
     return req;
-}
-
-std::optional<ObjectAttributes> WriteBufferFromS3::metadataWithWriteToken() const
-{
-    if (write_token.empty())
-        return object_metadata;
-
-    auto metadata = object_metadata.value_or(ObjectAttributes{});
-    metadata[WRITE_TOKEN_METADATA_KEY] = write_token;
-    return metadata;
-}
-
-bool WriteBufferFromS3::isObjectWrittenByThisBuffer() const
-{
-    if (write_token.empty())
-        return false;
-
-    try
-    {
-        auto info = S3::getObjectInfoIfExists(*client_ptr, bucket, key, /* version_id = */ {}, /* with_metadata = */ true);
-        auto it = info.metadata.find(WRITE_TOKEN_METADATA_KEY);
-        return it != info.metadata.end() && it->second == write_token;
-    }
-    catch (...)
-    {
-        /// Report the original write error rather than a confusing read error.
-        tryLogCurrentException(log, "Failed to verify the write token of " + key);
-        return false;
-    }
 }
 
 void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data)
@@ -839,19 +784,8 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
                 /// not a genuine error — the caller handles it.
                 if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
-                {
-                    /// A 412 on our own object means this PUT was replayed after it had succeeded.
-                    /// Anything we cannot prove we wrote is a pre-existing object and must still throw.
-                    if (isObjectWrittenByThisBuffer())
-                    {
-                        LOG_INFO(log, "Single part upload has completed by an earlier attempt of this write. {}, size {}",
-                                 getShortLogDetails(), content_length);
-                        return;
-                    }
-
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
-                }
                 else
                     LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);

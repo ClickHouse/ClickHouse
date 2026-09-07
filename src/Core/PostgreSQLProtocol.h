@@ -10,25 +10,15 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
-#include <Common/quoteString.h>
-#include <Common/StringUtils.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
-#include <Parsers/Lexer.h>
 #include <Parsers/ParserPreparedStatement.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
-#include <chrono>
-#include <limits>
-#include <optional>
-#include <string_view>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
@@ -239,7 +229,7 @@ public:
 
     void dropMessage()
     {
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, *in);
         if (size < 4)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -304,7 +294,7 @@ class CancelRequest : public FirstMessage
 {
 public:
     Int32 process_id = 0;
-    UInt32 secret_key = 0;
+    Int32 secret_key = 0;
 
     explicit CancelRequest(int payload_size_) : FirstMessage(payload_size_) {}
 
@@ -434,7 +424,7 @@ public:
     String user;
     String database;
     // includes username, may also include database and other runtime parameters
-    UnorderedMapWithMemoryTracking<String, String> parameters;
+    std::unordered_map<String, String> parameters;
 
     explicit StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
 
@@ -534,12 +524,12 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
+        UInt8 message_type;
         readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, in);
         readNullTerminated(auth_method, in);
-        Int32 size_sasl_mechanism = 0;
+        Int32 size_sasl_mechanism;
         readBinaryBigEndian(size_sasl_mechanism, in);
         /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
         if (size_sasl_mechanism < -1)
@@ -594,9 +584,9 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
+        UInt8 message_type;
         readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, in);
         if (size < 4)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -640,7 +630,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(password, in);
     }
@@ -686,10 +676,10 @@ class BackendKeyData : BackendMessage
 {
 private:
     Int32 process_id;
-    UInt32 secret_key;
+    Int32 secret_key;
 
 public:
-    BackendKeyData(Int32 process_id_, UInt32 secret_key_)
+    BackendKeyData(Int32 process_id_, Int32 secret_key_)
     : process_id(process_id_)
     , secret_key(secret_key_)
     {}
@@ -720,7 +710,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -736,27 +726,18 @@ class ParseQuery : FrontMessage
 public:
     String function_name;
     String sql_query;
-    Int16 num_params{};
-    /// Parameter type OIDs from `Parse`; 0 requests inference.
-    VectorWithMemoryTracking<Int32> parameter_types;
+    Int16 num_params;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
-        if (num_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter count {} in Parse message, it must not be negative", num_params);
-        parameter_types.reserve(num_params);
-        Int32 oid_param = 0;
+        Int32 oid_param;
         for (int i = 0; i < num_params; ++i)
-        {
             readBinaryBigEndian(oid_param, in);
-            parameter_types.push_back(oid_param);
-        }
     }
 
     MessageType getMessageType() const override
@@ -792,39 +773,27 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    /// Raw `Bind` values; `std::nullopt` represents protocol `NULL`.
-    VectorWithMemoryTracking<std::optional<String>> parameters;
-    Int16 num_params{};
-    /// Set after reading the full message; `attachBindQuery` rejects it.
-    bool has_binary_format_param = false;
+    std::vector<String> parameters;
+    Int16 num_params;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
-        /// Read all format codes before rejecting binary values to preserve stream alignment.
-        Int16 num_format_params = 0;
+        Int16 num_format_params;
         readBinaryBigEndian(num_format_params, in);
-        if (num_format_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter format code count {} in Bind message, it must not be negative", num_format_params);
-        Int16 format_param = 0;
+        Int16 format_param;
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
-            if (format_param != 0)
-                has_binary_format_param = true;
         }
         readBinaryBigEndian(num_params, in);
-        if (num_params < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong parameter count {} in Bind message, it must not be negative", num_params);
         for (int i = 0; i < num_params; ++i)
         {
-            Int32 sz_param = 0;
+            Int32 sz_param;
             readBinaryBigEndian(sz_param, in);
             /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
             /// any other negative value is malformed.
@@ -833,21 +802,17 @@ public:
                                 "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
             if (sz_param == -1)
             {
-                parameters.emplace_back(std::nullopt);
+                parameters.emplace_back("NULL");
                 continue;
             }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
-            parameters.push_back(std::move(current_param));
+            parameters.push_back(current_param);
         }
 
-        /// Consume result format codes; this implementation always returns text.
-        Int16 num_format_params_result = 0;
+        Int16 num_format_params_result;
         readBinaryBigEndian(num_format_params_result, in);
-        if (num_format_params_result < 0)
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong result format code count {} in Bind message, it must not be negative", num_format_params_result);
-        Int16 format_param_result = 0;
+        Int16 format_param_result;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);
     }
@@ -883,12 +848,12 @@ public:
 class DescribeQuery : FrontMessage
 {
 public:
-    char describe{};
+    char describe;
     String function_name;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
@@ -905,11 +870,11 @@ class ExecuteQuery : FrontMessage
 {
 public:
     String portal_name;
-    Int32 max_rows{};
+    Int32 max_rows;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
@@ -952,16 +917,13 @@ class CloseQuery : FrontMessage
 {
 public:
     String function_name;
-    /// 'S' for prepared statement, 'P' for portal
-    char close_target = 0;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
-        Int8 byte = 0;
+        Int8 byte;
         readBinaryBigEndian(byte, in);
-        close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
     }
 
@@ -974,13 +936,9 @@ public:
 class CloseQueryComplete : BackendMessage
 {
 public:
-    CloseQueryComplete() = default;
-
     void serialize(WriteBuffer & out) const override
     {
-        /// 'C' is `CommandComplete`; `CloseComplete` is tagged with '3' per
-        /// the PostgreSQL message protocol.
-        out.write('3');
+        out.write('C');
         writeBinaryBigEndian(size(), out);
     }
 
@@ -1000,7 +958,7 @@ class SyncQuery : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
     }
 
@@ -1048,10 +1006,10 @@ public:
 class RowDescription : BackendMessage
 {
 private:
-    const VectorWithMemoryTracking<FieldDescription> & fields_descr;
+    const std::vector<FieldDescription> & fields_descr;
 
 public:
-    explicit RowDescription(const VectorWithMemoryTracking<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
+    explicit RowDescription(const std::vector<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1108,10 +1066,10 @@ public:
 class DataRow : BackendMessage
 {
 private:
-    const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row;
+    const std::vector<std::shared_ptr<ISerializable>> & row;
 
 public:
-    explicit DataRow(const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
+    explicit DataRow(const std::vector<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1149,7 +1107,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -1219,7 +1177,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         if (sz < static_cast<Int32>(sizeof(Int32)))
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -1227,7 +1185,7 @@ public:
         query.reserve(sz - sizeof(Int32));
         for (size_t i = 0; i < sz - sizeof(Int32); ++i)
         {
-            char byte = 0;
+            char byte;
             readBinary(byte, in);
             query.push_back(byte);
         }
@@ -1244,7 +1202,7 @@ class CopyDone : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
     }
 
@@ -1256,9 +1214,9 @@ public:
 
 class CopyOutData : public BackendMessage
 {
-    VectorWithMemoryTracking<char> data;
+    std::vector<char> data;
 public:
-    explicit CopyOutData(VectorWithMemoryTracking<char> data_)
+    explicit CopyOutData(std::vector<char> data_)
         : data(data_)
     {
     }
@@ -1361,7 +1319,7 @@ private:
     String value;
 
 public:
-    CommandComplete(Command cmd_, UInt64 rows_count_)
+    CommandComplete(Command cmd_, Int32 rows_count_)
     {
         value = enum_to_string[cmd_];
 
@@ -1379,14 +1337,6 @@ public:
                 add = " 0 ";  // OID (always 0 for ClickHouse tables)
             value += add + std::to_string(rows_count_);
         }
-    }
-
-    /// Construct a CommandComplete carrying an explicit command tag verbatim.
-    /// Used for driver-specific commands (e.g. `RESET ALL`, `UNLISTEN *`) that
-    /// ClickHouse accepts as no-ops and for which no row count applies.
-    explicit CommandComplete(String tag_)
-        : value(std::move(tag_))
-    {
     }
 
     void serialize(WriteBuffer & out) const override
@@ -1436,7 +1386,7 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        static const VectorWithMemoryTracking<std::pair<String, Command>> query_patterns = {
+        static const std::vector<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
             {"CREATE DATABASE", Command::CREATE_DATABASE},
@@ -1497,11 +1447,6 @@ protected:
     }
 
 public:
-    virtual bool isSupportedForUser(const String &, Session &) const
-    {
-        return true;
-    }
-
     virtual void authenticate(
         const String & user_name,
         Session & session,
@@ -1562,137 +1507,6 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
-    enum class ScramSaltKind : uint8_t
-    {
-        /// The user has no `scram_sha256_password` at all.
-        NoScram,
-        /// Live verifiers sharing a single salt, which PostgreSQL SCRAM can offer on the wire.
-        Live,
-        /// Only expired verifiers: the salt is still usable to run the exchange and report invalid credentials.
-        ExpiredOnly,
-        /// A live verifier that PostgreSQL SCRAM cannot represent: a second factor, several different salts to
-        /// choose from, or another method that narrows the session and which a SCRAM client proof cannot be checked
-        /// against.
-        UnsupportedConfiguration,
-    };
-
-    struct ScramSalt
-    {
-        ScramSaltKind kind = ScramSaltKind::NoScram;
-        String salt;
-        /// The user has another live authentication method that the PostgreSQL protocol can offer on the wire.
-        bool has_live_alternative = false;
-    };
-
-    /// A method that limits the session (`GRANTS`) or its lifetime (`VALID UNTIL`) takes part in the fail-close
-    /// combination of `IAccessStorage::authenticateImpl` when it accepts the same credential.
-    static bool methodNarrowsSession(const AuthenticationData & auth_method)
-    {
-        return auth_method.getValidUntil() != 0 || !auth_method.getGrants().structurallyEmpty();
-    }
-
-    ScramSalt getScramSalt(const String & user_name, Session & session) const
-    {
-        const auto & access_control = session.globalContext()->getAccessControl();
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-
-        ScramSalt result;
-        std::optional<String> expired_scram_salt;
-        std::optional<String> live_scram_salt;
-        bool unsupported_configuration = false;
-
-        if (auto id = access_control.find<User>(user_name))
-        {
-            if (auto user = access_control.tryRead<User>(*id))
-            {
-                /// First pass: choose the salt that `AuthenticationSASLContinue` would send.
-                for (const auto & auth_method : user->authentication_methods)
-                {
-                    if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
-                        continue;
-
-                    const auto valid_until = auth_method.getValidUntil();
-                    if (valid_until && now > valid_until)
-                    {
-                        if (!expired_scram_salt)
-                            expired_scram_salt = auth_method.getSalt();
-                        continue;
-                    }
-
-                    /// PostgreSQL SCRAM cannot represent a second factor.
-                    if (auth_method.getOneTimePassword())
-                    {
-                        unsupported_configuration = true;
-                        continue;
-                    }
-
-                    /// Several live verifiers are representable as long as they agree on the salt: the exchange sends a
-                    /// single salt in `AuthenticationSASLContinue`, and the client proof derived from it is then checked
-                    /// against every stored salted password of the user. Differing salts cannot be represented, because
-                    /// only one of them can be sent on the wire.
-                    if (live_scram_salt && *live_scram_salt != auth_method.getSalt())
-                    {
-                        unsupported_configuration = true;
-                        continue;
-                    }
-
-                    live_scram_salt = auth_method.getSalt();
-                }
-
-                /// Second pass: look for the other authentication methods of the user.
-                for (const auto & auth_method : user->authentication_methods)
-                {
-                    const auto type = auth_method.getType();
-                    const auto valid_until = auth_method.getValidUntil();
-                    const bool expired = valid_until && now > valid_until;
-
-                    /// The only other authentication methods the PostgreSQL protocol can offer on the wire.
-                    if (!expired
-                        && (type == AuthenticationType::NO_PASSWORD || type == AuthenticationType::PLAINTEXT_PASSWORD))
-                        result.has_live_alternative = true;
-
-                    if (!live_scram_salt)
-                        continue;
-
-                    /// `IAccessStorage::authenticateImpl` fails close for ambiguous credentials: when the same
-                    /// credential is accepted by several methods, the session is limited to the intersection of their
-                    /// `GRANTS` and expires at the earliest of their `VALID UNTIL`, even when that moment has already
-                    /// passed. That scan re-checks the credential against the other methods, but a SCRAM client proof
-                    /// can only be checked against a `scram_sha256_password` method that uses the very salt sent in
-                    /// `AuthenticationSASLContinue`: the proof is derived from the salted password and the salt is part
-                    /// of the authentication message. A method that could narrow the session but cannot be matched by
-                    /// the proof would silently drop out of the combination, so a password shared with such a method
-                    /// would be accepted over PostgreSQL while the native protocol rejects it as expired or grants it
-                    /// less. Refuse to run the exchange in that case instead of authenticating with weaker checks.
-                    if (!methodNarrowsSession(auth_method))
-                        continue;
-                    /// Methods verified against an external system never take part in the combination.
-                    if (!authenticationTypeIsVerifiedLocally(type))
-                        continue;
-                    if (type == AuthenticationType::SCRAM_SHA256_PASSWORD && auth_method.getSalt() == *live_scram_salt)
-                        continue;
-
-                    unsupported_configuration = true;
-                }
-            }
-        }
-
-        if (unsupported_configuration)
-            result.kind = ScramSaltKind::UnsupportedConfiguration;
-        else if (live_scram_salt)
-        {
-            result.kind = ScramSaltKind::Live;
-            result.salt = *live_scram_salt;
-        }
-        else if (expired_scram_salt)
-        {
-            result.kind = ScramSaltKind::ExpiredOnly;
-            result.salt = *expired_scram_salt;
-        }
-
-        return result;
-    }
-
     static size_t findPatternPosition(const String & key, const String & pattern)
     {
         size_t pos = key.size();
@@ -1744,22 +1558,6 @@ class ScrambleSHA256Auth : public AuthenticationMethod
     }
 
 public:
-    bool isSupportedForUser(const String & user_name, Session & session) const override
-    {
-        const auto scram_salt = getScramSalt(user_name, session);
-
-        if (scram_salt.kind == ScramSaltKind::NoScram)
-            return false;
-        if (scram_salt.kind == ScramSaltKind::Live)
-            return true;
-
-        /// Neither an expired verifier nor a configuration that the protocol cannot represent can lead to a successful
-        /// login. Select SCRAM in these cases only if nothing else can succeed either, so that an expired verifier is
-        /// reported as invalid credentials and an unsupported configuration is reported as such, instead of shadowing
-        /// a method that would have worked.
-        return !scram_salt.has_live_alternative;
-    }
-
     static String generateNonce()
     {
         static constexpr size_t nonce_length = 16;
@@ -1819,11 +1617,6 @@ public:
 
         String auth_message;
 
-        const auto scram_salt = getScramSalt(user_name, session);
-        if (scram_salt.kind == ScramSaltKind::UnsupportedConfiguration || scram_salt.kind == ScramSaltKind::NoScram)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
-
         mt.send(Messaging::AuthenticationSASL(), true);
         auto rsp = mt.receive<Messaging::SASLInitialResponse>();
 
@@ -1832,7 +1625,19 @@ public:
         auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
         auto nonce = client_nonce + server_nonce;
 
-        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, scram_salt.salt, num_iterations);
+        String salt;
+        const auto& access_control = session.globalContext()->getAccessControl();
+        if (auto id = access_control.find<User>(user_name))
+        {
+            if (auto user = access_control.tryRead<User>(*id))
+            {
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    salt = auth_method.getSalt();
+                }
+            }
+        }
+        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();
@@ -1854,10 +1659,10 @@ class AuthenticationManager
 {
 private:
     LoggerPtr log = getLogger("AuthenticationManager");
-    UnorderedMapWithMemoryTracking<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
+    std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
-    explicit AuthenticationManager(const VectorWithMemoryTracking<std::shared_ptr<AuthenticationMethod>> & auth_methods)
+    explicit AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
     {
         for (const std::shared_ptr<AuthenticationMethod> & method : auth_methods)
         {
@@ -1877,7 +1682,7 @@ public:
 
             for (auto user_authentication_type : user_authentication_types)
             {
-                if (type_to_method.contains(user_authentication_type) && type_to_method[user_authentication_type]->isSupportedForUser(user_name, session))
+                if (type_to_method.contains(user_authentication_type))
                 {
                     type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
                     mt.send(Messaging::AuthenticationOk(), true);
@@ -1886,14 +1691,10 @@ public:
                 }
             }
         }
-        catch (const Exception & e)
+        catch (const Exception&)
         {
-            const bool unsupported_authentication_configuration = e.code() == ErrorCodes::NOT_IMPLEMENTED;
-            mt.send(Messaging::ErrorOrNoticeResponse(
-                Messaging::ErrorOrNoticeResponse::ERROR,
-                unsupported_authentication_configuration ? "0A000" : "28P01",
-                unsupported_authentication_configuration ? "Authentication configuration is not supported by the PostgreSQL protocol" : "Invalid user or password"),
-                true);
+            mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
+                    true);
 
             throw;
         }
@@ -1922,406 +1723,66 @@ public:
         if (limit_statements && statements.size() + 1 >= limit_statements.value())
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Statements limit exceeded");
 
-        statements[statement->function_name] =
-            PreparedStatement{statement->function_body, statement->parameter_types, countPlaceholders(statement->function_body)};
+        statements[statement->function_name] = statement->function_body;
     }
 
     String getStatement(ASTExecute * execute)
     {
-        auto it = statements.find(execute->function_name);
-        if (it == statements.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
-        /// Require one argument for each referenced placeholder.
-        if (execute->arguments.size() != it->second.parameter_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "EXECUTE supplies {} argument(s) but the prepared statement has {} parameter(s)",
-                execute->arguments.size(), it->second.parameter_count);
-
-        /// `EXECUTE` arguments are bare literals, so spaces keep them separate from adjacent tokens.
-        VectorWithMemoryTracking<String> arguments;
-        arguments.reserve(execute->arguments.size());
-        for (const auto & argument : execute->arguments)
-            arguments.push_back(fmt::format(" {} ", argument));
-        return substitute(it->second.body, arguments);
+        return getStatement(execute->function_name, execute->arguments);
     }
 
-    void deleteStatement(const String & function_name)
+    void deleteStatement(ASTDeallocate * query)
     {
-        auto it = statements.find(function_name);
+        auto it = statements.find(query->function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
     }
 
-    /// `Close` on an unknown statement is a successful no-op.
-    void tryDeleteStatement(const String & function_name)
-    {
-        statements.erase(function_name);
-    }
-
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        /// A single bind slot can represent only the unnamed portal.
-        if (!query->portal_name.empty())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Named portals are not supported in the PostgreSQL wire protocol, "
-                "got portal name '{}'", query->portal_name);
+        if (bind_query)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Query is already binded");
 
-        /// Binary values require type-specific decoding, which is not implemented.
-        if (query->has_binary_format_param)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Binary format parameters are not supported in Bind messages, use the text format");
-
-        /// A portal keeps the statement snapshot resolved by `Bind`.
-        auto it = statements.find(query->function_name);
-        if (it == statements.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
-
-        /// OID count is not arity because `Parse` can omit inferred parameter types.
-        if (query->parameters.size() != it->second.parameter_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Bind supplies {} parameter value(s) but the prepared statement has {} parameter(s)",
-                query->parameters.size(), it->second.parameter_count);
-
-        /// A new `Bind` replaces the unnamed portal.
-        bound_statement = it->second;
         bind_query = std::move(query);
     }
 
     String getStatmentFromBind()
     {
-        if (!bind_query || !bound_statement.has_value())
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
+        auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
-        const auto & parameter_types = bound_statement->parameter_types;
-
-        /// Convert every value to a safe SQL fragment before substitution.
-        VectorWithMemoryTracking<String> arguments;
-        arguments.reserve(bind_query->parameters.size());
-        for (size_t i = 0; i < bind_query->parameters.size(); ++i)
-        {
-            const auto & parameter = bind_query->parameters[i];
-            if (!parameter.has_value())
-            {
-                arguments.emplace_back("NULL");
-                continue;
-            }
-            /// OID 0 requests inference; unmapped declared OIDs become strings.
-            const Int32 oid = i < parameter_types.size() ? parameter_types[i] : 0;
-            if (auto formatted = formatTypedParameter(oid, *parameter))
-                arguments.push_back(std::move(*formatted));
-            else if (oid == 0)
-                arguments.push_back(formatInferredParameter(*parameter));
-            else
-                arguments.push_back(quoteString(*parameter));
-        }
-
-        return substitute(bound_statement->body, arguments);
+        return result;
     }
 
-    void resetBindQuery()
+    void resetBindQuery(const String& function_name)
     {
+        statements.erase(function_name);
         bind_query.reset();
-        bound_statement.reset();
     }
 
 private:
-    struct PreparedStatement
-    {
-        String body;
-        /// Empty for the simple `PREPARE`/`EXECUTE` path.
-        VectorWithMemoryTracking<Int32> parameter_types;
-        /// Highest referenced `$N`, which defines `Bind` arity.
-        size_t parameter_count = 0;
-    };
-
-    /// Return the highest `$N` placeholder token in the statement.
-    static size_t countPlaceholders(const String & body)
-    {
-        size_t max_index = 0;
-        Lexer lexer(body.data(), body.data() + body.size());
-        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        {
-            if (token.isError())
-                break;
-            std::string_view text(token.begin, token.size());
-            if (token.type != TokenType::BareWord || text.size() <= 1 || text[0] != '$')
-                continue;
-            size_t index = 0;
-            for (size_t i = 1; i < text.size(); ++i)
-            {
-                if (text[i] < '0' || text[i] > '9')
-                {
-                    index = 0;
-                    break;
-                }
-                /// An overflowing index cannot reference a supplied argument.
-                if (index > (std::numeric_limits<size_t>::max() - 9) / 10)
-                {
-                    index = 0;
-                    break;
-                }
-                index = index * 10 + static_cast<size_t>(text[i] - '0');
-            }
-            max_index = std::max(max_index, index);
-        }
-        return max_index;
-    }
-
-    UnorderedMapWithMemoryTracking<String, PreparedStatement> statements;
+    std::unordered_map<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
-    /// Statement snapshot owned by the unnamed portal.
-    std::optional<PreparedStatement> bound_statement;
 
-    /// Match one decimal literal: `[sign] digits [. digits] [(e|E) [sign] digits]`.
-    static bool isSingleNumericLiteral(const String & value)
+    String getStatement(const String & function_name, const std::vector<String> & arguments)
     {
-        std::string_view remaining = value;
-        if (remaining.empty())
-            return false;
+        auto it = statements.find(function_name);
+        if (it == statements.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
-        if (remaining[0] == '+' || remaining[0] == '-')
-            remaining.remove_prefix(1);
-
-        bool has_mantissa_digit = false;
-        while (!remaining.empty() && remaining[0] >= '0' && remaining[0] <= '9')
+        auto body = it->second;
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            has_mantissa_digit = true;
-            remaining.remove_prefix(1);
-        }
-        if (!remaining.empty() && remaining[0] == '.')
-        {
-            remaining.remove_prefix(1);
-            while (!remaining.empty() && remaining[0] >= '0' && remaining[0] <= '9')
+            auto templ = "$" + std::to_string(i + 1);
+            auto pos = body.find(templ);
+            if (pos != std::string::npos)
             {
-                has_mantissa_digit = true;
-                remaining.remove_prefix(1);
+                body.replace(pos, templ.size(), arguments[i]);
             }
         }
-        if (!has_mantissa_digit)
-            return false;
-
-        if (!remaining.empty() && (remaining[0] == 'e' || remaining[0] == 'E'))
-        {
-            remaining.remove_prefix(1);
-            if (!remaining.empty() && (remaining[0] == '+' || remaining[0] == '-'))
-                remaining.remove_prefix(1);
-            bool has_exponent_digit = false;
-            while (!remaining.empty() && remaining[0] >= '0' && remaining[0] <= '9')
-            {
-                has_exponent_digit = true;
-                remaining.remove_prefix(1);
-            }
-            if (!has_exponent_digit)
-                return false;
-        }
-
-        return remaining.empty();
-    }
-
-    /// Maximum `Decimal256` precision.
-    static constexpr UInt32 DECIMAL256_MAX_PRECISION = 76;
-
-    /// Reject unreasonable exponents before arithmetic or zero-padding.
-    static constexpr Int64 MAX_ABS_EXPONENT = 1000;
-
-    /// Convert a validated numeric literal to an exact exponent-free decimal and scale.
-    /// Return `std::nullopt` if it exceeds `Decimal256`.
-    static std::optional<std::pair<String, UInt32>> normalizeDecimal(const String & value)
-    {
-        std::string_view remaining = value;
-        if (remaining.empty())
-            return std::nullopt;
-
-        bool negative = remaining[0] == '-';
-        if (remaining[0] == '+' || negative)
-            remaining.remove_prefix(1);
-
-        /// Collect mantissa digits and scale.
-        String digits;
-        Int64 point_from_right = 0;
-        bool seen_point = false;
-        while (!remaining.empty() && ((remaining[0] >= '0' && remaining[0] <= '9') || remaining[0] == '.'))
-        {
-            if (remaining[0] == '.')
-            {
-                seen_point = true;
-                remaining.remove_prefix(1);
-                continue;
-            }
-            digits += remaining[0];
-            if (seen_point)
-                ++point_from_right;
-            remaining.remove_prefix(1);
-        }
-
-        /// Shift the decimal point by the exponent.
-        if (!remaining.empty() && (remaining[0] == 'e' || remaining[0] == 'E'))
-        {
-            remaining.remove_prefix(1);
-            bool exp_negative = false;
-            if (!remaining.empty() && (remaining[0] == '+' || remaining[0] == '-'))
-            {
-                exp_negative = (remaining[0] == '-');
-                remaining.remove_prefix(1);
-            }
-            Int64 exp = 0;
-            while (!remaining.empty() && remaining[0] >= '0' && remaining[0] <= '9')
-            {
-                exp = exp * 10 + (remaining[0] - '0');
-                /// Bound work and prevent exponent overflow.
-                if (exp > MAX_ABS_EXPONENT)
-                    return std::nullopt;
-                remaining.remove_prefix(1);
-            }
-            point_from_right += exp_negative ? exp : -exp;
-        }
-
-        /// Strip leading zeros from the integer part but keep at least one digit.
-        size_t first_significant = 0;
-        while (first_significant + 1 < digits.size()
-               && digits[first_significant] == '0'
-               && static_cast<Int64>(digits.size() - first_significant) > point_from_right)
-            ++first_significant;
-        digits.erase(0, first_significant);
-
-        /// Materialize trailing zeros for a negative scale.
-        while (point_from_right < 0)
-        {
-            digits += '0';
-            ++point_from_right;
-        }
-        UInt32 scale = static_cast<UInt32>(point_from_right);
-
-        /// Add a leading zero when the scale covers all digits.
-        if (scale >= digits.size())
-            digits.insert(0, String(scale - digits.size() + 1, '0'));
-
-        if (scale > DECIMAL256_MAX_PRECISION || digits.size() > DECIMAL256_MAX_PRECISION)
-            return std::nullopt;
-
-        String plain;
-        if (negative)
-            plain += '-';
-        const size_t int_len = digits.size() - scale;
-        const std::string_view digits_view{digits};
-        plain += digits_view.substr(0, int_len);
-        if (scale > 0)
-        {
-            plain += '.';
-            plain += digits_view.substr(int_len);
-        }
-        return std::make_pair(std::move(plain), scale);
-    }
-
-    /// Map OIDs whose PostgreSQL text form ClickHouse parses without conversion.
-    static const char * clickhouseTypeForOID(Int32 oid)
-    {
-        switch (oid)
-        {
-            case 16:   return "Bool";           /// bool
-            case 21:   return "Int16";          /// int2
-            case 23:   return "Int32";          /// int4
-            case 20:   return "Int64";          /// int8
-            case 26:   return "UInt32";         /// oid (unsigned)
-            case 700:  return "Float32";        /// float4
-            case 701:  return "Float64";        /// float8
-            case 1082: return "Date32";         /// date
-            case 1114: return "DateTime64(6)";  /// timestamp
-            /// Preserve `timestamptz` UTC semantics.
-            case 1184: return "DateTime64(6, 'UTC')";  /// timestamptz
-            case 2950: return "UUID";           /// uuid
-            default:   return nullptr;
-        }
-    }
-
-    /// Format a declared type with `accurateCast` so validation cannot wrap values.
-    /// `numeric` is normalized to an exact `Decimal256`; unsupported OIDs return
-    /// `std::nullopt`. Values remain quoted and escaped in every cast.
-    static std::optional<String> formatTypedParameter(Int32 oid, const String & value)
-    {
-        if (oid == 1700) /// numeric
-        {
-            if (!isSingleNumericLiteral(value))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Invalid value {} for a numeric prepared-statement parameter", quoteString(value));
-            auto normalized = normalizeDecimal(value);
-            if (!normalized)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Value {} for a numeric prepared-statement parameter exceeds the maximum "
-                                "representable Decimal precision", quoteString(value));
-            return fmt::format("accurateCast({}, 'Decimal256({})')", quoteString(normalized->first), normalized->second);
-        }
-
-        if (const char * type = clickhouseTypeForOID(oid))
-            /// Quote both arguments because a type name can contain quotes.
-            return fmt::format("accurateCast({}, {})", quoteString(value), quoteString(type));
-
-        return std::nullopt;
-    }
-
-    /// Match only the case-insensitive boolean keywords `true` and `false`.
-    static bool isBooleanLiteral(const String & value)
-    {
-        auto ci_equals = [](std::string_view input, std::string_view keyword)
-        {
-            const auto [input_it, keyword_it] = std::ranges::mismatch(
-                input, keyword, [](char character, char expected) { return character == expected || character == expected - 'a' + 'A'; });
-            return input_it == input.end() && keyword_it == keyword.end();
-        };
-        return ci_equals(value, "true") || ci_equals(value, "false");
-    }
-
-    /// Preserve unambiguous numeric and boolean literals for OID 0 inference.
-    /// Quote all other values. Spaces keep bare values separate from adjacent tokens.
-    static String formatInferredParameter(const String & value)
-    {
-        if (isSingleNumericLiteral(value) || isBooleanLiteral(value))
-            return fmt::format(" {} ", value);
-        return quoteString(value);
-    }
-
-    /// Substitute placeholder tokens only; arguments must already be safe SQL fragments.
-    /// The lexer excludes placeholders inside strings, identifiers, comments, and heredocs.
-    static String substitute(const String & body, const VectorWithMemoryTracking<String> & arguments)
-    {
-        String result;
-        result.reserve(body.size());
-        Lexer lexer(body.data(), body.data() + body.size());
-        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        {
-            if (token.isError())
-            {
-                /// Malformed SQL: emit the rest verbatim and let the parser report it.
-                result.append(token.begin, body.data() + body.size());
-                break;
-            }
-
-            std::string_view text(token.begin, token.size());
-            if (token.type == TokenType::BareWord && text.size() > 1 && text[0] == '$')
-            {
-                /// Reject non-digits and stop before the index can overflow.
-                size_t index = 0;
-                for (size_t i = 1; i < text.size(); ++i)
-                {
-                    if (text[i] < '0' || text[i] > '9' || index > arguments.size())
-                    {
-                        index = 0;
-                        break;
-                    }
-                    index = index * 10 + static_cast<size_t>(text[i] - '0');
-                }
-                if (index >= 1 && index <= arguments.size())
-                {
-                    result += arguments[index - 1];
-                    continue;
-                }
-            }
-            result.append(token.begin, token.size());
-        }
-        return result;
+        return body;
     }
 
 };
