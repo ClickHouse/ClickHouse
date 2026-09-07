@@ -138,6 +138,12 @@ public:
     /// Passing `require_extractable_keys_ = true` guarantees the method choice.
     std::unique_ptr<KeyExtractor> extractKeys() &&;
 
+    /// Initializes the set and checks growth assuming every input row introduces a new key. If growth
+    /// is projected, returns `false` when available user/server memory cannot cover its buffer allocations
+    /// plus `spill_headroom_bytes`. The caller then releases or spills the set and processes this chunk
+    /// without inserting it. Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
+    bool prepareForInsert(Chunk & chunk, size_t spill_headroom_bytes);
+
     /// Inserts unseen keys and retains their first rows, preserving chunk information.
     /// `max_rows_in_distinct` and `max_bytes_in_distinct` apply after insertion. `THROW` raises an
     /// exception when exceeded; `BREAK` retains the crossing chunk and sets `isLimitReached`, so the
@@ -151,6 +157,8 @@ public:
     bool isLimitReached() const { return limit_reached; }
 
 private:
+    void initialize(const ColumnRawPtrs & key_columns);
+
     const ColumnNumbers key_columns_pos;
     /// Types of the key columns (following `key_columns_pos`), for the key extraction.
     DataTypes key_types;

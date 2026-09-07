@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <DataTypes/NullableUtils.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/assert_cast.h>
 
 #include <unordered_map>
@@ -405,6 +406,40 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from an uninitialized DISTINCT set");
 }
 
+void DistinctSetFilter::initialize(const ColumnRawPtrs & key_columns)
+{
+    auto type = SetVariants::chooseMethod(key_columns, key_sizes);
+    /// Generic keys must retain their values when the consumer extracts them for spilling.
+    if (require_extractable_keys && type == SetVariants::Type::hashed)
+    {
+        type = SetVariants::Type::serialized;
+        hash_method_context = decltype(data->serialized)::element_type::createContext();
+    }
+    data->init(type);
+}
+
+bool DistinctSetFilter::prepareForInsert(Chunk & chunk, size_t spill_headroom_bytes)
+{
+    if (data->empty())
+    {
+        removeSpecialColumnRepresentations(chunk);
+        convertToFullIfConst(chunk);
+        ColumnRawPtrs key_columns;
+        key_columns.reserve(key_columns_pos.size());
+        for (const auto pos : key_columns_pos)
+            key_columns.push_back(chunk.getColumns()[pos].get());
+        initialize(key_columns);
+    }
+
+    const auto available = getMostStrictAvailableSystemMemory();
+    if (!available)
+        return true;
+
+    const size_t growth_memory = data->estimateGrowthMemory(chunk.getNumRows());
+    return growth_memory == 0
+        || (spill_headroom_bytes <= *available && growth_memory <= *available - spill_headroom_bytes);
+}
+
 Chunk DistinctSetFilter::filter(Chunk chunk)
 {
     /// Convert to full columns, because `SetVariants` for sparse and const columns is not implemented.
@@ -475,17 +510,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
         mask = &keep;
 
     if (data->empty())
-    {
-        auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
-        /// The generic method keeps only a hash per key; a consumer that materializes the keys back needs
-        /// them stored (see `SetMethodSerialized`).
-        if (require_extractable_keys && type == SetVariants::Type::hashed)
-        {
-            type = SetVariants::Type::serialized;
-            hash_method_context = decltype(data->serialized)::element_type::createContext();
-        }
-        data->init(type);
-    }
+        initialize(column_ptrs);
 
     const auto old_set_size = data->getTotalRowCount();
     IColumn::Filter filter_values(num_rows);

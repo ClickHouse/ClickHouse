@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <set>
+#include <thread>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -17,6 +18,9 @@
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/iota.h>
 
 namespace DB::ErrorCodes
 {
@@ -618,5 +622,36 @@ TEST(DistinctSetFilterExtraction, ReturnedColumnsSurviveEarlyExtractorDestructio
         EXPECT_TRUE(key == "first" || key == "second" || key == "third");
         if (key_count == 2)
             EXPECT_EQ((*batch[1])[0].safeGet<String>(), key + " suffix");
+    }
+}
+
+TEST(DistinctSetFilterGrowth, LeavesPendingInputAndRetainedKeysUnchangedWhenGrowthDoesNotFit)
+{
+    for (const bool populated : {false, true})
+    {
+        for (const size_t spill_headroom_bytes : {0, 1024 * 1024})
+        {
+            MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+            MemoryTracker query{&user, VariableContext::Process, false};
+            std::thread([&]
+            {
+                ThreadStatus thread_status;
+                thread_status.memory_tracker.setParent(&query);
+                thread_status.untracked_memory_limit = 0;
+                const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+                DistinctSetFilter filter(header, {}, SizeLimits{}, false, true);
+                if (populated)
+                    filter.filter(Chunk({makeColumn({1, 2, 3, 4})}, 4));
+                auto column = ColumnUInt64::create();
+                column->getData().resize(262144);
+                iota(column->getData().data(), column->size(), UInt64(0));
+                Chunk input(Columns{std::move(column)}, 262144);
+                user.setHardLimit(user.get() + 1024 * 1024);
+                EXPECT_FALSE(filter.prepareForInsert(input, spill_headroom_bytes));
+                EXPECT_EQ(filter.getTotalRowCount(), populated ? 4 : 0);
+                EXPECT_EQ(input.getNumRows(), 262144);
+                EXPECT_EQ(input.getColumns().front()->getUInt(262143), 262143);
+            }).join();
+        }
     }
 }
