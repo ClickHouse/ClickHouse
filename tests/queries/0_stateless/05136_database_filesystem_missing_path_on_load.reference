@@ -1,0 +1,6 @@
+--- first run: create the database over an existing directory ---
+fsdb
+--- second run: the directory is gone; the database still loads, serves no tables and drops ---
+fsdb
+0
+0
