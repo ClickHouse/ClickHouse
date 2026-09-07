@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 from pathlib import Path
 import struct
 import subprocess
@@ -37,7 +36,7 @@ def main():
         if digest(stage / name) != expected:
             raise ValueError(f'Staged source hash differs: {name}')
     binary = out / 'validate_adapter'
-    command = [a.compiler, '-std=c++20', '-O1', '-g', '-pthread', '-fno-omit-frame-pointer', '-I', str(stage/'src/Common'), str(source), '-o', str(binary)]
+    command = [a.compiler, '-std=c++20', '-O1', '-g', '-pthread', '-fno-omit-frame-pointer', '-I', str(stage/'src'), str(source), '-o', str(binary)]
     if a.sanitizers != 'none':
         command.append('-fsanitize=' + a.sanitizers)
     with (out/'build.log').open('w') as log:

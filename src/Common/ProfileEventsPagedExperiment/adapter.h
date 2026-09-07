@@ -1,7 +1,7 @@
 #pragma once
 
-#include "hot_paged.h"
-#include "catalogue.h"
+#include <Common/ProfileEventsPagedExperiment/hot_paged.h>
+#include <Common/ProfileEventsPagedExperiment/catalogue.h>
 
 #include <atomic>
 #include <cerrno>
@@ -141,7 +141,8 @@ struct Configuration
                     break;
                 used += static_cast<size_t>(bytes);
             }
-            ::close(fd);
+            if (const int result = ::close(fd); result != 0)
+                COUNTER_EXPERIMENT_FAIL("Counter experiment: cannot close layout", 78);
             std::array<bool, PagedExperimentStorage::EventCount> seen{};
             size_t position = 0;
             size_t slot = 0;
@@ -191,7 +192,8 @@ struct Configuration
             if (fd < 0 || ::ftruncate(fd, sizeof(Diagnostics)) != 0)
                 COUNTER_EXPERIMENT_FAIL("Counter experiment: cannot create diagnostics", 78);
             void * memory = ::mmap(nullptr, sizeof(Diagnostics), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-            ::close(fd);
+            if (const int result = ::close(fd); result != 0)
+                COUNTER_EXPERIMENT_FAIL("Counter experiment: cannot close diagnostics", 78);
             if (memory == MAP_FAILED)
                 COUNTER_EXPERIMENT_FAIL("Counter experiment: cannot map diagnostics", 78);
             diagnostics = new (memory) Diagnostics;

@@ -3,7 +3,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
 #if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
-#include "ProfileEventsPagedExperiment/adapter.h"
+#include <Common/ProfileEventsPagedExperiment/adapter.h>
 #endif
 #include <Common/PerCPU.h>
 #include <Common/CurrentThread.h>

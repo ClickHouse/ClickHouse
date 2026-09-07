@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.h"
+#include <Common/ProfileEventsPagedExperiment/common.h>
 
 #include <atomic>
 #include <cstddef>
