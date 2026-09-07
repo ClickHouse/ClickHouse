@@ -167,6 +167,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(nats_pause_before_building_insert_pipeline) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
@@ -371,6 +372,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
     PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
     ONCE(hash_join_throw_after_data_release) \
+    ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
