@@ -103,9 +103,10 @@ function assert_query_gone()
 
 ########## Scenario A: cancel arrives while finish is already parked in its drain ##########
 
-arm "$FP_RECV" && arm "$FP_HOLD"
+armed=0
+arm "$FP_RECV" && arm "$FP_HOLD" && armed=1
 
-if [ "$failed" -eq 0 ]; then
+if [ "$armed" -eq 1 ]; then
     start_query "$query_id"
 
     # Without both parks the interleaving never happened and the assertion below would be vacuous.
@@ -167,9 +168,11 @@ query_id_b="${CLICKHOUSE_TEST_UNIQUE_NAME}_gate_order"
 kill_done="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.kill_done"
 rm -f "$kill_done"
 
-arm "$FP_RECV" && arm "$FP_ENTRY" && arm "$FP_GATE" && arm "$FP_HOLD"
+armed=0
+arm "$FP_RECV" && arm "$FP_ENTRY" && arm "$FP_GATE" && arm "$FP_HOLD" && armed=1
 
-if [ "$failed" -eq 0 ]; then
+# Independent of scenario A's outcome, so one failing scenario cannot hide the other.
+if [ "$armed" -eq 1 ]; then
     start_query "$query_id_b"
 
     # The parked shard's `finish` must be held at the very top of the function, before it publishes
