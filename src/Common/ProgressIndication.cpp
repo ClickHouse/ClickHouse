@@ -44,6 +44,7 @@ void ProgressIndication::resetProgress()
         std::lock_guard lock(profile_events_mutex);
         watch.restart();
         cpu_usage_meter.reset(static_cast<double>(getElapsedNanoseconds()));
+        waited_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         hosts_data.clear();
     }
 }
@@ -65,18 +66,28 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
     constexpr UInt64 us_to_ns = 1000;
 
     UInt64 total_cpu_ns = 0;
+    UInt64 total_waited_ns = 0;
     for (auto & new_host : new_hosts_data)
     {
         total_cpu_ns += us_to_ns * new_host.second.time();
+        total_waited_ns += us_to_ns * new_host.second.waited_us;
         hosts_data[new_host.first] = new_host.second;
     }
-    cpu_usage_meter.add(static_cast<double>(getElapsedNanoseconds()), static_cast<double>(total_cpu_ns));
+    double now = static_cast<double>(getElapsedNanoseconds());
+    cpu_usage_meter.add(now, static_cast<double>(total_cpu_ns));
+    waited_meter.add(now, static_cast<double>(total_waited_ns));
 }
 
 double ProgressIndication::getCPUUsage()
 {
     std::lock_guard lock(profile_events_mutex);
     return cpu_usage_meter.rate(static_cast<double>(getElapsedNanoseconds()));
+}
+
+double ProgressIndication::getWaitedUsage()
+{
+    std::lock_guard lock(profile_events_mutex);
+    return waited_meter.rate(static_cast<double>(getElapsedNanoseconds()));
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
@@ -174,10 +185,16 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     std::string profiling_msg;
 
     double cpu_usage = getCPUUsage();
+    double waited = getWaitedUsage();
     auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
     auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = getTempDataOnDiskUsage();
 
-    if (cpu_usage > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
+    /// Mostly waiting instead of working: yellow bar instead of green.
+    bool stalled = waited > cpu_usage;
+    const char * bar_color = stalled ? "\033[0;33m" : "\033[0;32m";
+    const char * bar_overlay_color = stalled ? "\033[30;43m" : "\033[30;42m";
+
+    if (cpu_usage > 0 || waited > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
 
@@ -186,6 +203,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
         profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
 
+        if (waited > 0)
+            profiling_msg_builder << ", " << fmt::format("{:.1f}", waited) << " waited";
         if (memory_usage > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
         if (max_host_usage < memory_usage)
@@ -244,7 +263,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
                     if (profiling_msg.empty())
                     {
-                        message << "\033[0;32m" << bar << "\033[0m"
+                        message << bar_color << bar << "\033[0m"
                             << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
                     }
                     else
@@ -255,15 +274,15 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
                         {
                             /// Render profiling_msg at left on top of the progress bar.
 
-                            message << "\033[30;42m" << profiling_msg << "\033[0m"
-                                << "\033[0;32m" << bar.substr(profiling_msg.size() * UNICODE_BAR_CHAR_SIZE) << "\033[0m"
+                            message << bar_overlay_color << profiling_msg << "\033[0m"
+                                << bar_color << bar.substr(profiling_msg.size() * UNICODE_BAR_CHAR_SIZE) << "\033[0m"
                                 << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
                         }
                         else
                         {
                             /// Render profiling_msg at right after the progress bar.
 
-                            message << "\033[0;32m" << bar << "\033[0m"
+                            message << bar_color << bar << "\033[0m"
                                 << std::string(width_of_progress_bar - bar_width_in_terminal - profiling_msg.size(), ' ')
                                 << "\033[2m" << profiling_msg << "\033[0m";
                         }
