@@ -731,6 +731,7 @@ void ReadFromRemote::addLazyPipe(
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
         remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
+        remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
@@ -826,9 +827,7 @@ void ReadFromRemote::addPipe(
                 priority_func);
             remote_query_executor->setLogger(log);
             remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
-            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
-            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -858,12 +857,10 @@ void ReadFromRemote::addPipe(
             shard.query_plan);
         remote_query_executor->setLogger(log);
         remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
+        remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
-        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
-        // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
-        // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
         //
         // In every other case a replica executes the whole query, so there should be a single connection
         // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
