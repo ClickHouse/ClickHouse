@@ -15,7 +15,7 @@ doc_type: 'guide'
 
 ClickHouse accepte les en-têtes HTTP de contexte de trace, comme décrit dans la [recommandation du W3C](https://www.w3.org/TR/trace-context/). Il accepte également le contexte de trace via un protocole natif utilisé pour la communication entre les serveurs ClickHouse, ou entre le client et le serveur. Pour les tests manuels, vous pouvez fournir à `clickhouse-client` des en-têtes de contexte de trace conformes à la recommandation Trace Context à l&#39;aide des options `--opentelemetry-traceparent` et `--opentelemetry-tracestate`.
 
-Si aucun contexte de trace parent n&#39;est fourni, ou si le contexte de trace fourni n&#39;est pas conforme à la norme W3C ci-dessus, ClickHouse peut démarrer une nouvelle trace, avec une probabilité contrôlée par le paramètre [opentelemetry&#95;start&#95;trace&#95;probability](/fr/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
+Si aucun contexte de trace parent n&#39;est fourni, ou si le contexte de trace fourni n&#39;est pas conforme à la norme W3C ci-dessus, ClickHouse peut démarrer une nouvelle trace, avec une probabilité contrôlée par le paramètre [opentelemetry&#95;start&#95;trace&#95;probability](/fr/reference/settings/session-settings#opentelemetry_start_trace_probability).
 
 <div id="propagating-the-trace-context">
   ## Propagation du contexte de trace
@@ -102,7 +102,7 @@ Les tags ou attributs sont enregistrés sous forme de deux tableaux parallèles 
   ## Paramètres de journalisation des requêtes
 </div>
 
-Le paramètre [log&#95;query&#95;settings](/fr/reference/settings/session-settings/log-query#log_query_settings) permet de consigner les modifications des paramètres de requête pendant l’exécution d’une requête. Lorsqu’il est activé, toute modification apportée aux paramètres de requête est enregistrée dans le journal du span OpenTelemetry. Cette fonctionnalité est particulièrement utile dans les environnements de production pour suivre les changements de configuration susceptibles d’affecter les performances des requêtes.
+Le paramètre [log&#95;query&#95;settings](/fr/reference/settings/session-settings) permet de consigner les modifications des paramètres de requête pendant l’exécution d’une requête. Lorsqu’il est activé, toute modification apportée aux paramètres de requête est enregistrée dans le journal du span OpenTelemetry. Cette fonctionnalité est particulièrement utile dans les environnements de production pour suivre les changements de configuration susceptibles d’affecter les performances des requêtes.
 
 <div id="integration-with-monitoring-systems">
   ## Intégration avec les systèmes de supervision
