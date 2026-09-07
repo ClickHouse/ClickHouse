@@ -273,7 +273,13 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             cloned_part_storage = part->getDataPartStorage().clonePart(
-                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log, cancellation_hook);
+                path_to_clone,
+                part->getDataPartStorage().getPartDirectory(),
+                disk,
+                read_settings,
+                write_settings,
+                log,
+                cancellation_hook);
         }
     }
     else

@@ -241,6 +241,10 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
+IMPLEMENT_SETTING_ENUM(ProjectionStorageFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"legacy_nested", ProjectionStorageFormat::LEGACY_NESTED},
+     {"flat", ProjectionStorageFormat::FLAT}})
+
 IMPLEMENT_SETTING_ENUM(UniqueKeyProbeImplementation, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", UniqueKeyProbeImplementation::Auto},
      {"simple", UniqueKeyProbeImplementation::Simple}})

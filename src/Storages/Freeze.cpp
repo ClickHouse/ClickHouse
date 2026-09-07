@@ -1,6 +1,7 @@
 #include <Storages/Freeze.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
@@ -214,9 +215,41 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
         if (!disk->existsDirectory(table_directory))
             continue;
 
+        /// Group projection siblings by owner up front: one directory scan instead of one per part.
+        std::unordered_map<String, Strings> siblings_by_owner;
+        NameSet part_directories;
+        for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())
+        {
+            if (auto owner = IDataPartStorage::Projection::owner(table_directory, it->name()); !owner.empty())
+                siblings_by_owner[owner].push_back(it->name());
+            else if (IDataPartStorage::Projection::dirNameType(it->name()) == IDataPartStorage::Projection::Status::None)
+                part_directories.insert(it->name());
+        }
+
+        /// A crash between freeze's sibling and parent copies (commit-last) leaves an owner-less sibling
+        /// here; no other cleanup visits shadow/, so reap it under the same partition matcher.
+        for (const auto & [owner, siblings] : siblings_by_owner)
+        {
+            if (part_directories.contains(owner))
+                continue;
+            auto owner_partition_sep = owner.find('_');
+            if (owner_partition_sep == std::string::npos || !matcher(owner.substr(0, owner_partition_sep)))
+                continue;
+            for (const auto & sibling : siblings)
+            {
+                LOG_WARNING(log, "Removing frozen projection sibling {} whose part directory {} does not exist", sibling, owner);
+                /// No per-part freeze metadata to consult here: keep blobs whenever the disk could share them.
+                disk->removeSharedRecursive(fs::path(table_directory) / sibling / "", disk->supportZeroCopyReplication(), {});
+            }
+        }
+
         for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())
         {
             const auto & partition_directory = it->name();
+
+            /// FLAT projection siblings are not parts: each is removed with its owner below, under the owner's keep_shared decision.
+            if (IDataPartStorage::Projection::dirNameType(partition_directory) != IDataPartStorage::Projection::Status::None)
+                continue;
 
             /// Partition ID is prefix of part directory name: <partition id>_<rest of part directory name>
             auto found = partition_directory.find('_');
@@ -230,6 +263,15 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
             const auto & path = it->path();
 
             bool keep_shared = removeFrozenPart(disk, path, partition_directory, local_context, zookeeper);
+
+            if (auto sibling_it = siblings_by_owner.find(partition_directory); sibling_it != siblings_by_owner.end())
+            {
+                for (const auto & sibling : sibling_it->second)
+                {
+                    disk->removeSharedRecursive(fs::path(table_directory) / sibling / "", keep_shared, {});
+                    LOG_DEBUG(log, "Unfrozen projection sibling {} of part {}, keep shared data: {}", sibling, partition_directory, keep_shared);
+                }
+            }
 
             result.push_back(PartitionCommandResultInfo{
                 .command_type = "UNFREEZE PART",

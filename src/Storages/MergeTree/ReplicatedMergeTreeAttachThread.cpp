@@ -197,6 +197,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    storage.clearOrphanProjectionSiblings(/*max_age_seconds=*/ 0);
 
     storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
     storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
