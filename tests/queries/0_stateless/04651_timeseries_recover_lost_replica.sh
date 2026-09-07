@@ -118,7 +118,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${D
 # and re-create leaves the inner tables empty, so a regression that made the eager inner drop a
 # silent no-op would leave these rows in place.
 SAMPLES_TABLE=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.samples.%'")
-${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` (timestamp, value) SELECT now64(3), number FROM numbers(50)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` (samples) SELECT [(now64(3), toFloat64(number))] FROM numbers(50)"
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
 
 diverge_from_keeper ts

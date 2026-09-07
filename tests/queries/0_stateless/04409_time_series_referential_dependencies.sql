@@ -14,9 +14,11 @@ DROP TABLE IF EXISTS metrics_table;
 CREATE TABLE samples_table
 (
     id UInt64,
-    timestamp DateTime64(3),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
+    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
+    bucket DateTime64(3),
+    min_time SimpleAggregateFunction(min, DateTime64(3)),
+    max_time SimpleAggregateFunction(max, DateTime64(3))
+) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket);
 
 CREATE TABLE tags_table
 (
@@ -73,9 +75,11 @@ DROP TABLE IF EXISTS recent_table_renamed;
 CREATE TABLE recent_table
 (
     id Tuple(UInt64, UUID),
-    timestamp DateTime64(3),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
+    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
+    bucket DateTime64(3),
+    min_time SimpleAggregateFunction(min, DateTime64(3)),
+    max_time SimpleAggregateFunction(max, DateTime64(3))
+) ENGINE = AggregatingMergeTree() ORDER BY (id, bucket);
 
 CREATE TABLE ts_recent ENGINE = TimeSeries
 SETTINGS version = 8, recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_table;

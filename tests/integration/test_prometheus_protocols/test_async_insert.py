@@ -125,14 +125,14 @@ def test_async_insert_acknowledged_after_flush():
 
 
 def test_async_insert_no_acknowledgement_on_failure():
-    # Every sample goes to its own partition of the samples table, and the request limits
-    # an insert block to one partition, so a request with two samples fails.
+    # Every bucket of samples goes to its own partition of the samples table, and the request limits
+    # an insert block to one partition, so a request with two samples in different buckets fails.
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SAMPLES INNER ENGINE=MergeTree PARTITION BY timestamp ORDER BY (id, timestamp)"
+        "SAMPLES INNER ENGINE=AggregatingMergeTree PARTITION BY bucket ORDER BY (id, bucket)"
     )
 
-    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5, 1724112001: 2.5})]
+    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5, 1724115601: 2.5})]
     response = get_response_to_remote_write(
         node.ip_address,
         9093,

@@ -18,12 +18,12 @@ CREATE TABLE p_samples_05210 AS timeSeriesSamples(ts_05210); -- { serverError BA
 CREATE TABLE p_tags_05210 AS timeSeriesTags(ts_05210); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE p_metric_families_05210 AS timeSeriesMetricFamilies(ts_05210); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE p_metrics_05210 AS timeSeriesMetrics(ts_05210); -- { serverError BAD_ARGUMENTS }
-CREATE TABLE p_cols_05210 (id Tuple(UInt64, LowCardinality(UUID)), timestamp DateTime64(3), value Float64)
+CREATE TABLE p_cols_05210 (id Tuple(UInt64, LowCardinality(UUID)), samples Array(Tuple(DateTime64(3), Float64)), bucket DateTime64(3), min_time DateTime64(3), max_time DateTime64(3))
     AS timeSeriesData(ts_05210); -- { serverError BAD_ARGUMENTS }
 
 -- A target with the Memory engine is refused the same way. Both properties the proxy asserts hold for a Memory
--- table, so nothing there would stop the in-memory rename.
-CREATE TABLE ts_memory_05210 ENGINE = TimeSeries SAMPLES INNER ENGINE = Memory;
+-- table, so nothing there would stop the in-memory rename. (A samples table of version 10 can use the Memory engine.)
+CREATE TABLE ts_memory_05210 ENGINE = TimeSeries SETTINGS version = 10 SAMPLES INNER ENGINE = Memory;
 CREATE TABLE p_memory_05210 AS timeSeriesData(ts_memory_05210); -- { serverError BAD_ARGUMENTS }
 
 -- No persisted definition over a TimeSeries table may survive this test: such a definition can fail
