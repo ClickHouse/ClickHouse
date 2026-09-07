@@ -731,13 +731,6 @@ bool containsSourceColumn(const ASTPtr & node, const SourceColumnNames & source_
     return false;
 }
 
-bool isTruePredicate(const ASTPtr & node)
-{
-    const auto * literal = node ? node->as<ASTLiteral>() : nullptr;
-    UInt64 value = 0;
-    return literal && literal->value.tryGet<UInt64>(value) && value == 1;
-}
-
 String transformQueryForExternalDatabaseImpl(
     ASTPtr clone_query,
     Names used_columns,
@@ -997,7 +990,20 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         return;
 
     const auto * select = clone_query->as<ASTSelectQuery>();
-    if (select && ((select->where() && !isTruePredicate(select->where())) || (select->prewhere() && !isTruePredicate(select->prewhere()))))
+    if (!select)
+        return;
+
+    /// Only a predicate over the source's own columns is a filter the user expects to be pushed down.
+    /// A surviving predicate that references no column of this source is not a filter on the source at
+    /// all: it is either constant-true (`WHERE 1`, `WHERE 1 = 1`) or a source-free condition such as
+    /// `WHERE 1 = 1 AND other_table.x = 1` left over after the predicates of other sources were pruned.
+    /// Such a predicate is evaluated locally over whatever the passed query returns, and rejecting it
+    /// would make `external_table_strict_query` fail queries that push nothing down in the first place.
+    const auto source_columns = getSourceColumnNames(*select, available_columns, source_storage_id, local_only_columns);
+
+    auto filters_on_source = [&](const ASTPtr & node) { return node && containsSourceColumn(node, source_columns); };
+
+    if (filters_on_source(select->where()) || filters_on_source(select->prewhere()))
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "The query contains a filter that cannot be pushed down to the external database, because the data "
