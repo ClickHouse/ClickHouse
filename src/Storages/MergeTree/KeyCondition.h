@@ -357,6 +357,11 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// Set for a set-membership atom that compares a NULL as an ordinary element (`nullIn`,
+        /// `notNullIn`, their `global` forms, `has`, `notHas`), so it answers true or false for a
+        /// NULL key value rather than NULL.
+        bool null_is_ordinary_value = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
