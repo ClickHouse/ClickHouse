@@ -866,12 +866,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
         /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
         /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
-        /// Full definitions introduced by user DDL must receive strict text-index validation. A
-        /// replicated database executes the initial query as `SECONDARY_CREATE`, while a full-definition
-        /// `ATTACH TABLE ... (...)` uses `ATTACH`. Recovery may use the same modes to replay metadata
-        /// which has already been accepted by an older server and must remain loadable.
-        const bool validate_text_indices_as_new = (args.mode == LoadingStrictnessLevel::SECONDARY_CREATE
-                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
+        /// A full-definition `ATTACH TABLE ... (...)` is user input and must receive strict text-index
+        /// validation. A replicated database validates its initial DDL as `CREATE`; followers replay
+        /// the committed definition as `SECONDARY_CREATE`, which may have been accepted by an older
+        /// server and must remain loadable during a rolling upgrade.
+        const bool validate_text_indices_as_new = args.mode == LoadingStrictnessLevel::ATTACH
+            && !args.query.attach_short_syntax
             && !args.is_restore_from_backup
             && !args.getLocalContext()->isRecoveryFromStoredMetadata();
 
