@@ -193,7 +193,7 @@ if [ "$sync_ok" -eq 1 ]; then
     # the gate. It cannot return until the gate is released, so it is polled in step 3 rather than
     # bounded here.
     ( $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$query_id_b' FORMAT Null" \
-        >/dev/null 2>&1; echo done > "$kill_done" ) &
+        >/dev/null 2>&1; touch "$kill_done" ) &
 
     if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_GATE PAUSE" 2>"$err"; then
         echo "wait for failpoint $FP_GATE failed, so cancel never reached the gate:"
