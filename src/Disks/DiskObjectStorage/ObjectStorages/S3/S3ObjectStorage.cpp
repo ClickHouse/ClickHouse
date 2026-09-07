@@ -237,6 +237,24 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     bool use_external_buffer,
     bool restrict_seek) const
 {
+    return readObjectImpl(object, read_settings, use_external_buffer, restrict_seek, {});
+}
+
+std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjectForCopy(
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    const std::function<void()> & cancellation_hook) const
+{
+    return readObjectImpl(object, read_settings, /*use_external_buffer=*/ false, /*restrict_seek=*/ false, cancellation_hook);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjectImpl(
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    bool use_external_buffer,
+    bool restrict_seek,
+    const std::function<void()> & cancellation_hook) const
+{
     auto settings_ptr = s3_settings.get();
 
     /// A query can override request settings (from its SETTINGS clause or profile). Apply them to a
@@ -275,7 +293,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         credentials_refresh_callback,
         std::move(blob_storage_log),
-        object.etag);
+        object.etag,
+        cancellation_hook);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -609,7 +628,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 read_settings_to_use,
                 BlobStorageLogWriter::create(disk_name),
                 scheduler,
-                [&, this] { return readObject(object_from, read_settings_to_use); },
+                [&, this] { return readObjectForCopy(object_from, read_settings_to_use, cancellation_hook); },
                 object_to_attributes,
                 cancellation_hook);
             return;

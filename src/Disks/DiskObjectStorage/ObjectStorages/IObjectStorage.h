@@ -467,6 +467,13 @@ public:
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 
+protected:
+    /// A copy-owned reader can observe operation cancellation independently of query cancellation.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readObjectForCopy(
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        const std::function<void()> & cancellation_hook) const;
+
 private:
     mutable std::mutex io_scheduling_mutex;
     String read_resource_name;

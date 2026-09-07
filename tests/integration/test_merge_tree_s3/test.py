@@ -1008,6 +1008,67 @@ def test_cancelling_untouched_mutation_copy_stops_s3_retries(
     node.query(f"DROP TABLE {table} SYNC")
 
 
+@pytest.mark.parametrize("request_kind", ["object_head", "object_read"])
+def test_cancelling_mutation_copy_source_stops_s3_retries(
+    cluster, broken_s3, request_kind
+):
+    node = cluster.instances["node"]
+    table = f"cancel_mutation_copy_source_{request_kind}"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String) "
+        "ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3', always_use_copy_instead_of_hardlinks=1, "
+        "min_bytes_for_full_part_storage=0"
+    )
+    try:
+        node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
+        assert node.query(
+            f"SELECT part_storage_type FROM system.parts WHERE database=currentDatabase() AND table='{table}' AND active"
+        ).strip() == "Full"
+
+        # Hold the copy at its size probe, after mutation predicate evaluation.
+        # This prevents the GET case from accidentally testing ordinary mutation reads.
+        broken_s3.reset()
+        broken_s3.setup_at_object_head(action="internal_error", count=10000)
+        request = node.get_query_request(
+            f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
+            timeout=30,
+        )
+        deadline = time.monotonic() + 10
+        while broken_s3.get_request_counts()["object_head"] == 0 and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert broken_s3.get_request_counts()["object_head"] > 0
+
+        if request_kind == "object_read":
+            broken_s3.setup_at_object_copy(action="access_denied", count=10000)
+            broken_s3.setup_at_object_read(action="internal_error", count=10000)
+            broken_s3.setup_at_object_head(count=0)
+            deadline = time.monotonic() + 10
+            while broken_s3.get_request_counts()["object_read"] == 0 and time.monotonic() < deadline:
+                time.sleep(0.1)
+            assert broken_s3.get_request_counts()["object_read"] > 0
+            assert broken_s3.get_request_counts()["object_copy"] > 0
+
+        node.query(f"SYSTEM STOP MERGES {table}")
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'",
+            "0",
+            retry_count=20,
+            sleep_time=0.1,
+        )
+        assert "ABORTED" in request.get_error()
+
+        counts = broken_s3.get_request_counts()
+        time.sleep(0.5)
+        assert broken_s3.get_request_counts() == counts
+    finally:
+        broken_s3.reset()
+        node.query(f"SYSTEM START MERGES {table}")
+        node.query(f"DROP TABLE {table} SYNC")
+
+
 @pytest.mark.parametrize("node_name", ["node"])
 def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
     node = cluster.instances[node_name]

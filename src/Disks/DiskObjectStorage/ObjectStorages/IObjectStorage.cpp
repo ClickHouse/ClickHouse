@@ -88,11 +88,21 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
     }
 
-    auto in = readObject(object_from, read_settings);
+    auto in = readObjectForCopy(object_from, read_settings, cancellation_hook);
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     out->setCancellationHook(cancellation_hook);
     copyData(*in, *out, cancellation_hook);
     out->finalize();
+}
+
+std::unique_ptr<ReadBufferFromFileBase> IObjectStorage::readObjectForCopy(
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    const std::function<void()> & cancellation_hook) const
+{
+    if (cancellation_hook)
+        cancellation_hook();
+    return readObject(object, read_settings);
 }
 
 const std::string & IObjectStorage::getCacheName() const

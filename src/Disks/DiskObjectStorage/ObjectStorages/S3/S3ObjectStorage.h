@@ -162,6 +162,18 @@ private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
+    std::unique_ptr<ReadBufferFromFileBase> readObjectForCopy(
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        const std::function<void()> & cancellation_hook) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readObjectImpl(
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        bool use_external_buffer,
+        bool restrict_seek,
+        const std::function<void()> & cancellation_hook) const;
+
     const S3::URI uri;
 
     std::string disk_name;

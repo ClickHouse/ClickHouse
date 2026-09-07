@@ -65,6 +65,15 @@ class MockControl:
     def setup_at_object_upload(self, **kwargs):
         self.setup_action("at_object_upload", **kwargs)
 
+    def setup_at_object_head(self, **kwargs):
+        self.setup_action("at_object_head", **kwargs)
+
+    def setup_at_object_read(self, **kwargs):
+        self.setup_action("at_object_read", **kwargs)
+
+    def setup_at_object_copy(self, **kwargs):
+        self.setup_action("at_object_copy", **kwargs)
+
     def setup_at_part_upload(self, **kwargs):
         self.setup_action("at_part_upload", **kwargs)
 
@@ -249,6 +258,14 @@ class _ServerRuntime:
             )
             request_handler.write_error(500, data)
 
+    class AccessDeniedAction:
+        def inject_error(self, request_handler):
+            request_handler.write_error(
+                403,
+                "<Error><Code>AccessDenied</Code>"
+                "<Message>mock s3 denied native copy</Message></Error>",
+            )
+
     class SlowDownAction:
         def inject_error(self, request_handler):
             data = (
@@ -402,6 +419,8 @@ class _ServerRuntime:
                 self.error_handler = _ServerRuntime.RedirectAction(*self.action_args)
             elif self.action == "internal_error":
                 self.error_handler = _ServerRuntime.InternalErrorAction()
+            elif self.action == "access_denied":
+                self.error_handler = _ServerRuntime.AccessDeniedAction()
             elif self.action == "slow_down":
                 self.error_handler = _ServerRuntime.SlowDownAction(*self.action_args)
             elif self.action == "qps_limit_exceeded":
@@ -450,10 +469,16 @@ class _ServerRuntime:
         self.lock = threading.Lock()
         self.at_part_upload = None
         self.at_object_upload = None
+        self.at_object_head = None
+        self.at_object_read = None
+        self.at_object_copy = None
         self.request_counts = {
             "object_upload": 0,
             "part_upload": 0,
             "abort_multipart_upload": 0,
+            "object_head": 0,
+            "object_read": 0,
+            "object_copy": 0,
         }
         self.fake_put_when_length_bigger = None
         self.fake_uploads = dict()
@@ -476,10 +501,16 @@ class _ServerRuntime:
         with self.lock:
             self.at_part_upload = None
             self.at_object_upload = None
+            self.at_object_head = None
+            self.at_object_read = None
+            self.at_object_copy = None
             self.request_counts = {
                 "object_upload": 0,
                 "part_upload": 0,
                 "abort_multipart_upload": 0,
+                "object_head": 0,
+                "object_read": 0,
+                "object_copy": 0,
             }
             self.fake_put_when_length_bigger = None
             self.fake_uploads = dict()
@@ -546,7 +577,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/xml")
         self.send_header("Content-Length", str(content_length))
         self.end_headers()
-        if data:
+        if data and self.command != "HEAD":
             self.wfile.write(bytes(data, "UTF-8"))
 
     def _fake_put_ok(self):
@@ -639,6 +670,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set at_object_upload %s", _runtime.at_object_upload)
             return self._ok()
 
+        if path[1] in ("at_object_head", "at_object_read", "at_object_copy"):
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            action = _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
+            setattr(_runtime, path[1], action)
+            self.log_message("set %s %s", path[1], action)
+            return self._ok()
+
         if path[1] == "fake_puts":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.fake_put_when_length_bigger = int(
@@ -715,6 +753,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             if _runtime.at_listing.has_effect():
                 return _runtime.at_listing.inject_error(self)
 
+        if not is_listing:
+            with _runtime.lock:
+                _runtime.request_counts["object_read"] += 1
+            if _runtime.at_object_read is not None and _runtime.at_object_read.has_effect():
+                return _runtime.at_object_read.inject_error(self)
+
         if not is_listing and _runtime.slow_get is not None:
             timeout = _runtime.slow_get.get_timeout()
             if timeout is not None:
@@ -726,6 +770,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_PUT(self):
         content_length = int(self.headers.get("Content-Length", 0))
+
+        if self.headers.get("x-amz-copy-source") is not None:
+            with _runtime.lock:
+                _runtime.request_counts["object_copy"] += 1
+            if _runtime.at_object_copy is not None and _runtime.at_object_copy.has_effect():
+                return _runtime.at_object_copy.inject_error(self)
 
         if _runtime.slow_put is not None:
             timeout = _runtime.slow_put.get_timeout(content_length)
@@ -803,6 +853,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         return self.redirect()
 
     def do_HEAD(self):
+        with _runtime.lock:
+            _runtime.request_counts["object_head"] += 1
+        if _runtime.at_object_head is not None and _runtime.at_object_head.has_effect():
+            return _runtime.at_object_head.inject_error(self)
+
         if _runtime.slow_get is not None:
             timeout = _runtime.slow_get.get_timeout()
             if timeout is not None:
