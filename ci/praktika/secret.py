@@ -3,8 +3,6 @@ import json
 import os
 from typing import List, Union
 
-from .utils import Shell
-
 
 class Secret:
 
@@ -25,6 +23,26 @@ class Secret:
 
         def is_gh_var(self):
             return self.type == Secret.Type.GH_VAR
+
+        def _resolve_region(self):
+            from .settings import Settings
+
+            return (
+                self.region
+                or getattr(Settings, "AWS_REGION", "")
+                or os.environ.get("AWS_DEFAULT_REGION", "")
+                or os.environ.get("AWS_REGION", "")
+            )
+
+        def _boto3_client(self, service):
+            import boto3
+
+            region = self._resolve_region()
+            if not region:
+                raise RuntimeError(
+                    f"AWS region is not set for secret [{self.name}]"
+                )
+            return boto3.client(service, region_name=region)
 
         def get_value(self):
             if self.type == Secret.Type.AWS_SSM_PARAMETER:
@@ -49,58 +67,51 @@ class Secret:
                 assert False, f"Not supported secret type, secret [{self}]"
 
         def get_aws_ssm_parameter(self):
-            region = ""
-            if self.region:
-                region = f" --region {self.region}"
-            res = Shell.get_output(
-                f"aws ssm get-parameter --name {self.name} --with-decryption --output text --query Parameter.Value {region}",
-                strict=True,
+            client = self._boto3_client("ssm")
+            res = client.get_parameter(
+                Name=self.name,
+                WithDecryption=True,
             )
-            return res
+            value = res.get("Parameter", {}).get("Value", "")
+            if not value:
+                raise RuntimeError(f"Empty value for parameter [{self.name}]")
+            return value
 
         def get_aws_ssm_parameters(self):
             """
             Request multiple parameters at once to avoid rate limiting
             """
-            region = ""
-            if self.region:
-                region = f" --region {self.region}"
             assert isinstance(self.name, list)
-            res = Shell.get_output(
-                f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}",
-                strict=True,
+            client = self._boto3_client("ssm")
+            res = client.get_parameters(
+                Names=self.name,
+                WithDecryption=True,
             )
-            name_value_pairs = res.split("\n")
-            names = [n.split("\t")[0].strip() for n in name_value_pairs]
-            values = [n.split("\t")[1].strip() for n in name_value_pairs]
+            name_to_value = {
+                parameter.get("Name", ""): parameter.get("Value", "")
+                for parameter in res.get("Parameters", [])
+            }
 
             for n in self.name:
-                if n not in names:
+                if n not in name_to_value:
                     raise RuntimeError(f"Failed to get value for parameter [{n}]")
+                if not name_to_value[n]:
+                    raise RuntimeError(f"Empty value for parameter [{n}]")
 
-            # Sort to match requested order and validate values:
-            name_value_pairs = list(zip(names, values))
-            name_value_pairs.sort(key=lambda x: self.name.index(x[0]))
-
-            for name, value in name_value_pairs:
-                if not value:
-                    raise RuntimeError(f"Empty value for parameter [{name}]")
-
-            values = [pair[1] for pair in name_value_pairs]
-            return values
+            return [name_to_value[name] for name in self.name]
 
         def get_aws_ssm_secret(self):
             name, secret_key_name = self.name, ""
             if "." in self.name:
                 name, secret_key_name = self.name.split(".", 1)
-            region = ""
-            if self.region:
-                region = f" --region {self.region}"
-            cmd = f"aws secretsmanager get-secret-value --secret-id  {name} --query SecretString --output text {region}"
+            client = self._boto3_client("secretsmanager")
+            res = client.get_secret_value(SecretId=name)
+            secret_string = res.get("SecretString", "")
+            if not secret_string:
+                raise RuntimeError(f"Empty value for secret [{name}]")
             if secret_key_name:
-                cmd += f" | jq -r '.[\"{secret_key_name}\"]'"
-            res = Shell.get_output(cmd, verbose=True, strict=True)
-            return res
+                return json.loads(secret_string)[secret_key_name]
+            return secret_string
 
         def get_aws_ssm_secrets_batched(self):
             """
@@ -111,8 +122,6 @@ class Secret:
             """
             assert isinstance(self.name, list)
 
-            region = f" --region {self.region}" if self.region else ""
-
             # Parse each name into (root, key); key is None when there is no dot
             parsed = [(n.split(".", 1) if "." in n else (n, None)) for n in self.name]
 
@@ -122,15 +131,22 @@ class Secret:
                 root_to_indices.setdefault(root, []).append(i)
 
             results = [None] * len(self.name)
+            client = self._boto3_client("secretsmanager")
 
             for root, indices in root_to_indices.items():
-                cmd = f"aws secretsmanager get-secret-value --secret-id {root} --query SecretString --output text{region}"
-                secret_string = Shell.get_output(cmd, verbose=True, strict=True)
+                res = client.get_secret_value(SecretId=root)
+                secret_string = res.get("SecretString", "")
+                if not secret_string:
+                    raise RuntimeError(f"Empty value for secret [{root}]")
                 keys = [parsed[idx][1] for idx in indices]
                 # Only parse JSON when at least one entry requests a specific key;
                 # keyless requests return the raw secret string to stay compatible
                 # with non-JSON secrets.
-                secret_data = json.loads(secret_string) if any(k is not None for k in keys) else None
+                secret_data = (
+                    json.loads(secret_string)
+                    if any(k is not None for k in keys)
+                    else None
+                )
                 for idx, key in zip(indices, keys):
                     results[idx] = secret_data[key] if key is not None else secret_string
 
@@ -139,8 +155,9 @@ class Secret:
         def get_gh_secret(self):
             res = os.getenv(f"{self.name}")
             if not res:
-                print(f"ERROR: Failed to get secret [{self.name}]")
-                raise RuntimeError()
+                raise RuntimeError(
+                    f"Failed to get GH_SECRET [{self.name}]: env var is unset or empty"
+                )
             return res
 
         def join_with(self, other):
