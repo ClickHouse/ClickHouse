@@ -53,12 +53,6 @@ DISTRIBUTED_SETTINGS = (
 )
 
 # A dispatched worker task runs under current_query_id = '<initiator_uuid>::<stage_name>'
-# (built as `toString(unique_query_id) + "::" + task.task_id` in DistributedPlanExecutor and
-# set as the task's current_query_id in StatelessTaskExecutor::startTask). The initiator's own
-# query id is a plain UUID with no '::', so a '::' inside the '{query_id}' braces that the
-# client prints ('[host] {query_id} <level> ...') marks a line produced by a dispatched task.
-# We match a reading stage ('::stage_N...') specifically: those tasks do the ReadFromMergeTree
-# work and reliably emit trace lines (the 'main' merge task exists but may be quiet).
 TASK_LOG_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\}")
 TASK_ERROR_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\} <Error>")
 
