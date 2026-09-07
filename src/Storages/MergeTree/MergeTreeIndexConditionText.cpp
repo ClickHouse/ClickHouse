@@ -1146,6 +1146,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNodeImpl(
     }
     else if (canUseJSONAllValuesIndexForNode(index_column_node))
     {
+        /// `JSONAllValues` omits missing paths, but their scalar value can equal the type's default.
+        /// Check the original typed constant before converting it to the indexed text representation.
+        if (function_name == "equals" && !isJSONPathFilterSafe(index_column_node.getDAGNode()->result_type, value_field))
+            return false;
+
         matches_json_all_values_subcolumn = true;
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
