@@ -2612,9 +2612,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     const MergeTreePartInfo & part_info,
     const String & part_name,
     const DiskPtr & part_disk_ptr,
+    const PartLoadingTree::NodePtr & part_loading_node,
     MergeTreeDataPartState to_state,
-    DB::SharedMutex & part_loading_mutex,
-    const PartLoadingTree::NodePtr & part_loading_node)
+    DB::SharedMutex & part_loading_mutex)
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::loadDataPart");
     LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
@@ -2759,12 +2759,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     const MergeTreePartInfo & part_info,
     const String & part_name,
     const DiskPtr & part_disk_ptr,
+    const PartLoadingTree::NodePtr & part_loading_node,
     MergeTreeDataPartState to_state,
     DB::SharedMutex & part_loading_mutex,
     size_t initial_backoff_ms,
     size_t max_backoff_ms,
-    size_t max_tries,
-    const PartLoadingTree::NodePtr & part_loading_node)
+    size_t max_tries)
 {
     auto handle_exception = [&, this](std::exception_ptr exception_ptr, size_t try_no)
     {
@@ -2783,7 +2783,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     {
         try
         {
-            return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex, part_loading_node);
+            return loadDataPart(part_info, part_name, part_disk_ptr, part_loading_node, to_state, part_loading_mutex);
         }
         catch (...)
         {
@@ -2848,7 +2848,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                 /// Pass a separate mutex to guard the set of parts, because this lambda
                 /// is called concurrently but with already locked @data_parts_mutex.
                 auto res = loadDataPartWithRetries(
-                    part->info, part->name, part->disk,
+                    part->info, part->name, part->disk, /*part_loading_node=*/nullptr,
                     DataPartState::Active, part_loading_mutex, loading_parts_initial_backoff_ms,
                     loading_parts_max_backoff_ms, loading_parts_max_tries);
 
@@ -3404,7 +3404,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     for (const auto & my_part : parts_to_add)
     {
         auto res = loadDataPartWithRetries(
-            my_part->info, my_part->name, my_part->disk,
+            my_part->info, my_part->name, my_part->disk, /*part_loading_node=*/nullptr,
             DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
@@ -3630,9 +3630,9 @@ try
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
             auto res = loadDataPartWithRetries(
-                my_part->info, my_part->name, my_part->disk,
+                my_part->info, my_part->name, my_part->disk, my_part,
                 DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-                loading_parts_max_backoff_ms, loading_parts_max_tries, my_part);
+                loading_parts_max_backoff_ms, loading_parts_max_tries);
 
             ++num_loaded_parts;
             if (res.is_broken)

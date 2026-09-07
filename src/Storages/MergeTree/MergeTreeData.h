@@ -2279,20 +2279,20 @@ private:
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
+        const PartLoadingTree::NodePtr & part_loading_node,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex,
-        const PartLoadingTree::NodePtr & part_loading_node = nullptr);
+        DB::SharedMutex & part_loading_mutex);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
+        const PartLoadingTree::NodePtr & part_loading_node,
         MergeTreeDataPartState to_state,
         DB::SharedMutex & part_loading_mutex,
         size_t backoff_ms,
         size_t max_backoff_ms,
-        size_t max_tries,
-        const PartLoadingTree::NodePtr & part_loading_node = nullptr);
+        size_t max_tries);
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
