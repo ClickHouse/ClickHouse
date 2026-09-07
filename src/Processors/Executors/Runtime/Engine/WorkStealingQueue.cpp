@@ -27,14 +27,27 @@ Task WorkStealingQueue::pop()
     return task;
 }
 
-size_t WorkStealingQueue::stealFrom(WorkStealingQueue & victim, size_t max_to_steal)
+size_t WorkStealingQueue::takeFront(WorkStealingQueue & victim, size_t max_to_take)
 {
     if (&victim == this)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "WorkStealingQueue cannot steal from itself");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "WorkStealingQueue cannot take from itself");
 
-    size_t count = std::min((victim.tasks.size() + 1) / 2, max_to_steal);
-    std::span stolen = std::span(victim.tasks).last(count);
-    tasks.insert(tasks.end(), stolen.begin(), stolen.end());
+    size_t count = std::min((victim.tasks.size() + 1) / 2, max_to_take);
+    std::span taken = std::span(victim.tasks).first(count);
+    tasks.insert(tasks.end(), taken.begin(), taken.end());
+    victim.tasks.erase(victim.tasks.begin(), victim.tasks.begin() + count);
+
+    return count;
+}
+
+size_t WorkStealingQueue::takeBack(WorkStealingQueue & victim, size_t max_to_take)
+{
+    if (&victim == this)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "WorkStealingQueue cannot take from itself");
+
+    size_t count = std::min((victim.tasks.size() + 1) / 2, max_to_take);
+    std::span taken = std::span(victim.tasks).last(count);
+    tasks.insert(tasks.end(), taken.begin(), taken.end());
     victim.tasks.erase(victim.tasks.end() - count, victim.tasks.end());
 
     return count;
