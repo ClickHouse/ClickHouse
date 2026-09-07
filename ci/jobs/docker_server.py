@@ -14,6 +14,7 @@ from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika import Secret
 from ci.praktika.docker import (
     BUILDX_TRANSIENT_ERRORS,
+    is_apt_index_failure,
     is_apt_mirror_failure,
     terminal_build_failure,
 )
@@ -325,7 +326,11 @@ def should_try_next_mirror(info: str) -> bool:
     has to reach the next mirror too - it is only reached once the build is failing
     anyway, and `buildx_timeout` keeps the extra attempt inside the job's own cap.
     """
-    return is_apt_mirror_failure(info) or is_buildx_timeout(info)
+    return (
+        is_apt_mirror_failure(info)
+        or is_apt_index_failure(info)
+        or is_buildx_timeout(info)
+    )
 
 
 def buildx_args(
