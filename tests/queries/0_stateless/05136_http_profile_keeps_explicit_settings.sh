@@ -21,7 +21,10 @@ ${CLICKHOUSE_CLIENT} -q "
 Q="SELECT getSetting('wait_for_async_insert'), getSetting('max_result_rows')"
 
 echo "-- no profile"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "$Q"
+# max_result_rows is given a non-default value by the CI test configuration, so assert only what
+# the arms below need of the pre-profile value: it is neither the profile's 5 nor the explicit 7.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" \
+    -d "SELECT getSetting('wait_for_async_insert'), toBool(getSetting('max_result_rows') NOT IN (5, 7))"
 
 echo "-- the profile alone moves both settings"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&profile=${profile}" -d "$Q"

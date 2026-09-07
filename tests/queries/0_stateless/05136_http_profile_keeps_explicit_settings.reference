@@ -1,5 +1,5 @@
 -- no profile
-true	0
+true	true
 -- the profile alone moves both settings
 false	5
 -- an explicit value equal to the pre-profile value survives
