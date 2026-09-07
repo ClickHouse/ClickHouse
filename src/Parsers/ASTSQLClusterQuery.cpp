@@ -46,6 +46,7 @@ void ASTSQLClusterReplica::formatImpl(WriteBuffer & ostr, const FormatSettings &
 ASTPtr ASTSQLClusterShard::clone() const
 {
     auto res = make_intrusive<ASTSQLClusterShard>(*this);
+    res->replicas.clear();
     res->replicas.reserve(replicas.size());
     for (const auto & replica : replicas)
         res->replicas.push_back(replica->clone());
@@ -79,6 +80,7 @@ void ASTSQLClusterShard::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 ASTPtr ASTSQLClusterDefinition::clone() const
 {
     auto res = make_intrusive<ASTSQLClusterDefinition>(*this);
+    res->shards.clear();
     res->shards.reserve(shards.size());
     for (const auto & shard : shards)
         res->shards.push_back(shard->clone());
