@@ -24,7 +24,7 @@ ALTER CLUSTER [IF EXISTS] name [ON CLUSTER cluster] (
 
 ## Description {#description}
 
-`ALTER CLUSTER` replaces the entire cluster topology. The new definition is stored as a `CREATE CLUSTER` statement in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters#storing-sql-cluster-metadata) and applied immediately in memory.
+`ALTER CLUSTER` replaces the entire cluster topology. Incremental updates are not supported: you cannot add or remove individual shards or replicas, or change only part of the definition. Provide the full target topology in every `ALTER CLUSTER` statement. The new definition is stored as a `CREATE CLUSTER` statement in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters#storing-sql-cluster-metadata) and applied immediately.
 
 Property names and semantics are the same as in [`CREATE CLUSTER`](/reference/statements/create/cluster).
 

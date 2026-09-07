@@ -38,6 +38,8 @@ ALTER CLUSTER [IF EXISTS] name [ON CLUSTER clickhouse_cluster] (
 DROP CLUSTER [IF EXISTS] name [ON CLUSTER clickhouse_cluster];
 ```
 
+`ALTER CLUSTER` replaces the entire cluster definition. It does not support incremental updates: you cannot add or remove individual shards or replicas, or change only part of the topology. Every `ALTER CLUSTER` statement must specify the complete target definition, using the same syntax as `CREATE CLUSTER`.
+
 Each `SHARD` block describes one shard. A shard can contain:
 
 - one or more `REPLICA (...)` blocks, or
@@ -95,7 +97,7 @@ With local storage, metadata exists independently on each server. Use `ON CLUSTE
 </clickhouse>
 ```
 
-For Keeper storage, `path` is required. Metadata is shared through Keeper, and `SQLClusterFactory` reloads changes on other nodes automatically. In this case, running the DDL on a single node is enough; `ON CLUSTER` is optional.
+For Keeper storage, `path` is required. Metadata is shared through Keeper, and other nodes reload changes automatically in the background. In this case, running the DDL on a single node is enough; `ON CLUSTER` is optional.
 
 An optional `update_timeout_ms` parameter controls how long the background sync waits for Keeper changes. It defaults to `5000`.
 
@@ -151,4 +153,4 @@ Cluster names are also listed by [`SHOW CLUSTERS`](/reference/statements/show#sh
 
 Clusters can still be defined in the server configuration under `<remote_servers>`. See [Clusters](/reference/engines/table-engines/special/distributed#distributed-clusters) in the `Distributed` table engine documentation.
 
-SQL-managed and config-defined clusters can coexist. If the same cluster name exists in both places, the SQL-managed definition in `Context` takes precedence for queries using that name.
+SQL-managed and config-defined clusters can coexist. If the same cluster name exists in both places, the SQL-managed definition takes precedence for queries using that name.

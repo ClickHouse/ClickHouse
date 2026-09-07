@@ -132,7 +132,7 @@ Instead of the database name, you can use a constant expression that returns a s
 
 Clusters can be defined in the [server configuration file](/concepts/features/configuration/server-config/configuration-files) or with SQL using [`CREATE CLUSTER`](/reference/statements/create/cluster). SQL-managed clusters are stored in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters) and appear in [`system.clusters`](/reference/system-tables/clusters) with `source = 'SQL'`.
 
-The XML format below is still supported and remains the usual way to define clusters in ClickHouse Cloud:
+The XML format below is still supported:
 
 ```xml
 <remote_servers>
