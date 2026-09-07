@@ -89,7 +89,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         /// A sorted input relies on its stream order (`DistinctSortedStreamTransform`), and the size limits
         /// are global, so both keep the merge. A single thread gains nothing from the partitioning either.
         const bool has_size_limits = set_size_limits.max_rows != 0 || set_size_limits.max_bytes != 0;
-        if (settings.allow_parallel_final_distinct && pipeline.getNumStreams() > 1 && pipeline.getNumThreads() > 1
+        /// Every partition costs one connection per input stream, so cap the partition count by the step-wide
+        /// fan-out instead of failing on a plan with many streams; the merge is always a valid alternative.
+        const size_t num_streams = pipeline.getNumStreams();
+        const size_t num_partitions = std::min(pipeline.getNumThreads(), scatter_connection_count_limit / num_streams);
+        if (settings.allow_parallel_final_distinct && num_streams > 1 && num_partitions > 1
             && distinct_sort_desc.empty() && !has_size_limits)
         {
             const auto & header = pipeline.getHeader();
@@ -104,7 +108,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 for (const auto & column : columns)
                     key_columns.push_back(header.getPositionByName(column));
             }
-            scatterByPartition(pipeline, pipeline.getNumStreams(), key_columns);
+            scatterByPartition(pipeline, num_partitions, key_columns);
         }
         else
             pipeline.resize(1);
