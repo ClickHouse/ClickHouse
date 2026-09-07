@@ -21,7 +21,6 @@ public:
 
     const SharedHeader & getSpillHeader() const { return spill_header; }
     const SharedHeader & getMergedHeader() const { return merged_header; }
-    const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
     const SortDescription & getKeySortDescription() const { return key_sort_description; }
     const SortDescription & getRunSortDescription() const { return run_sort_description; }
     const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }

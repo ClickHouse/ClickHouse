@@ -13,7 +13,7 @@ namespace DB
 {
 
 class MergeSorter;
-class MergingSortedTransform;
+class DistinctSortedTransform;
 
 /// The final hash-based `DISTINCT` streams first occurrences until tracked query memory exceeds its
 /// spill threshold or projected table growth leaves insufficient user/server memory for spilling.
@@ -24,10 +24,10 @@ class MergingSortedTransform;
 /// The set is released after its last keys are extracted. Further input becomes sorted, locally deduplicated
 /// runs, and output waits until all input is consumed. `DistinctSpillLayout` owns the column conversions.
 ///
-/// `MergingSortedTransform` merges the runs, including any in-memory tail, and `DistinctSortedFilter`
-/// removes duplicate keys and keys emitted before spilling. Runs are ordered by key and then by the
-/// already-emitted flag descending, placing suppression rows first in each equal-key range. Ordinary
-/// runs follow in arrival order, preserving the first payload among equal keys through input-index ties.
+/// `DistinctSortedTransform` merges the runs and the unique in-memory tail, removing duplicate keys
+/// and keys emitted before spilling. Runs are ordered by key and then by the already-emitted flag
+/// descending, placing suppression rows first in each equal-key range. Ordinary runs follow in arrival
+/// order, preserving the first payload among equal keys through input-index ties.
 ///
 /// When input order must be preserved, `DistinctSpillLayout` attaches arrival numbers to spilled rows.
 /// After merging and deduplication, `MergeSortingTransform` restores that order and can itself spill.
@@ -129,7 +129,7 @@ private:
 
     size_t temporary_files_num = 0;
     std::unique_ptr<MergeSorter> merge_sorter;
-    std::shared_ptr<MergingSortedTransform> external_merging_sorted;
+    std::shared_ptr<DistinctSortedTransform> distinct_merger;
     std::optional<PendingPipelineUpdate> pending_pipeline_update;
 
     InputPort * merged_input = nullptr;

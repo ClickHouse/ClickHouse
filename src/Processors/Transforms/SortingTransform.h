@@ -54,8 +54,10 @@ private:
 class MergeSorterSource final : public ISource
 {
 public:
-    MergeSorterSource(SharedHeader header, Chunks chunks, const SortDescription & description, size_t max_merged_block_size, UInt64 limit)
-        : ISource(header), merge_sorter(header, std::move(chunks), description, max_merged_block_size, limit)
+    MergeSorterSource(
+        SharedHeader header, Chunks chunks, const SortDescription & description, size_t max_merged_block_size,
+        UInt64 limit, MergeSorter::Mode mode = MergeSorter::Mode::PreserveRows)
+        : ISource(header), merge_sorter(header, std::move(chunks), description, max_merged_block_size, limit, mode)
     {
     }
 
