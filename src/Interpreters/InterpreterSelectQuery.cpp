@@ -161,6 +161,7 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool group_by_each_block_no_merge;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_analyze_depth;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -3111,7 +3112,8 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]};
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        settings[Setting::group_by_each_block_no_merge]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -3170,6 +3172,11 @@ void InterpreterSelectQuery::executeAggregation(
 
     const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
         && (settings[Setting::distributed_aggregation_memory_efficient] || settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
+
+    if (aggregator_params.group_by_each_block_no_merge && should_produce_results_in_order_of_bucket_number)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `group_by_each_block_no_merge` is not supported with bucket-ordered aggregation results");
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentHeader(),

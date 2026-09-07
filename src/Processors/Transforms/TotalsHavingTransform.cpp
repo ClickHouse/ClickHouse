@@ -161,7 +161,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
         if (agg_info->is_overflows)
         {
-            overflow_aggregates = std::move(chunk);
+            overflow_aggregates.emplace_back(std::move(chunk));
             return;
         }
     }
@@ -282,13 +282,16 @@ void TotalsHavingTransform::prepareTotals()
 {
     /// If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
     /// not passed max_rows_to_group_by.
-    if (overflow_aggregates)
+    if (!overflow_aggregates.empty())
     {
         if (totals_mode == TotalsMode::BEFORE_HAVING
             || totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE
             || (totals_mode == TotalsMode::AFTER_HAVING_AUTO
                 && static_cast<double>(passed_keys) / static_cast<double>(total_keys) >= auto_include_threshold))
-            addToTotals(overflow_aggregates, nullptr);
+        {
+            for (const auto & overflow_chunk : overflow_aggregates)
+                addToTotals(overflow_chunk, nullptr);
+        }
     }
 
     totals = Chunk(std::move(current_totals), 1);

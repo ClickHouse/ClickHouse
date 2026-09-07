@@ -74,7 +74,9 @@ private:
 
     /// Here are the values that did not pass max_rows_to_group_by.
     /// They are added or not added to the current_totals, depending on the totals_mode.
-    Chunk overflow_aggregates;
+    /// Normally the aggregator emits at most one overflow chunk, but with `group_by_each_block_no_merge`
+    /// every input block can produce its own, so all of them have to be accumulated.
+    Chunks overflow_aggregates;
 
     /// Here, total values are accumulated. After the work is finished, they will be placed in totals.
     MutableColumns current_totals;

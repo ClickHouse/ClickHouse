@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"group_by_each_block_no_merge", false, false, "New setting to process `GROUP BY` in a streaming fashion: aggregate, finalize and flush the result for every block separately, without merging across blocks."},
             {"query_plan_optimize_join_order_use_cd_a_conflict_detector", false, false, "New setting to use the CD-A conflict detector for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_cd_c_conflict_detector", false, false, "New setting to use the CD-C (correct and complete) conflict detector for join reordering validity in the DPsub join order algorithm."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
