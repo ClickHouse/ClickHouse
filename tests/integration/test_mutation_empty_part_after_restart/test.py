@@ -25,8 +25,9 @@ def state(table):
         f"WHERE database = currentDatabase() AND table = '{table}' ORDER BY name"
     )
     mutations = node.query(
-        "SELECT mutation_id, is_done, latest_fail_reason FROM system.mutations "
-        f"WHERE database = currentDatabase() AND table = '{table}' ORDER BY mutation_id"
+        "SELECT mutation_id, is_done, latest_fail_reason, parts_postpone_reasons "
+        f"FROM system.mutations WHERE database = currentDatabase() AND table = '{table}' "
+        "ORDER BY mutation_id"
     )
     return f"{table} parts:\n{parts}{table} mutations:\n{mutations}"
 
@@ -48,7 +49,7 @@ def arm(table):
         CREATE TABLE {table} (a String, b String, c String MATERIALIZED concat(a, '!'))
         ENGINE = MergeTree ORDER BY a
         SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-                 old_parts_lifetime = 10000, sleep_before_loading_outdated_parts_ms = 15000
+                 old_parts_lifetime = 10000, sleep_before_loading_outdated_parts_ms = 30000
         """
     )
     node.query(f"INSERT INTO {table} VALUES ('x', 'y')")
@@ -118,6 +119,15 @@ def test_mutation_of_empty_part_after_restart(started_cluster):
         timeout=10,
     ), f"the empty part was not revived as active by the restart\n{state('t_wedge')}"
 
+    # Still inside that window: the mutation must be reported as postponed for this part, which is
+    # what a user reads to tell a skipped empty part from a stalled mutation.
+    assert poll(
+        "SELECT parts_postpone_reasons['all_1_1_1'] FROM system.mutations "
+        "WHERE database = currentDatabase() AND table = 't_wedge' AND command ILIKE '%MODIFY COLUMN%'",
+        "Empty part will be dropped instead of mutated",
+        timeout=15,
+    ), f"the skip did not record a postpone reason\n{state('t_wedge')}"
+
     assert poll(
         "SELECT countIf(is_done = 0) = 0 AND countIf(latest_fail_reason != '') = 0 "
         "FROM system.mutations WHERE database = currentDatabase() AND table = 't_wedge'",
@@ -186,3 +196,41 @@ def test_mutation_of_empty_part_with_cleanup_stopped(started_cluster):
     finally:
         node.query(f"SYSTEM START CLEANUP {table}")
         node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_mutation_of_empty_part_with_cleanup_interval_deferred(started_cluster):
+    table = "t_long_interval"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    # The period the periodic part cleanups share is pushed out of the run, so the empty part can
+    # only be removed by a request that does not wait for it.
+    node.query(
+        f"CREATE TABLE {table} (a UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS merge_tree_clear_old_parts_interval_seconds = 100000"
+    )
+    try:
+        node.query(f"INSERT INTO {table} VALUES (1)")
+        # The source part is not empty, so this mutation is run rather than skipped, and it leaves
+        # the empty part behind.
+        node.query(f"ALTER TABLE {table} DELETE WHERE 1 SETTINGS mutations_sync = 1")
+
+        empty_parts = node.query(
+            "SELECT count() FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active AND rows = 0"
+        ).strip()
+        assert empty_parts == "1", f"no empty part to mutate\n{state(table)}"
+
+        # `max_execution_time` bounds the wait, so a mutation that is skipped without anything
+        # dropping the part fails here in a minute instead of hanging for the pinned interval.
+        node.query(
+            f"ALTER TABLE {table} DELETE WHERE a = 1 "
+            "SETTINGS mutations_sync = 1, max_execution_time = 60"
+        )
+        assert (
+            node.query(
+                "SELECT countIf(is_done = 0) FROM system.mutations "
+                f"WHERE database = currentDatabase() AND table = '{table}'"
+            ).strip()
+            == "0"
+        ), state(table)
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")

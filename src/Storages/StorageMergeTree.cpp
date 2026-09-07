@@ -1949,6 +1949,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         if (merger_mutator.merges_blocker.isCancelledForPartition(part->info.getPartitionId()))
             continue;
 
+        auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+        if (mutations_begin_it == mutations_end_it)
+            continue;
+
         /// An empty part is disposed of by `clearEmptyParts`, not by mutation: mutating it would
         /// only produce another empty part, while the mutation tag holds off the removal. Skipping
         /// it is correct only while something still runs that removal, hence the cleanup check.
@@ -1958,13 +1962,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 || part->version->isVisible(TransactionLog::instance().getLatestSnapshot())))
         {
             current_parts_postpone_reasons[part->name] = PostponeReasons::EMPTY_PART_WILL_BE_DROPPED;
-            cleanup_thread.wakeup();
+            cleanup_thread.requestEmptyPartsCleanup();
             continue;
         }
-
-        auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-        if (mutations_begin_it == mutations_end_it)
-            continue;
 
         fiu_do_on(FailPoints::mt_select_parts_to_mutate_max_part_size, { max_source_part_size = 1; });
         if (max_source_part_size < part->getBytesOnDisk())
