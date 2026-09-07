@@ -39,13 +39,17 @@ SELECT indexOfAssumeSorted(v, unhex('6161')), indexOf(v, unhex('6161')) FROM fs_
 SELECT indexOfAssumeSorted(v, unhex('6162')), indexOf(v, unhex('6162')) FROM fs_sorted;
 SELECT indexOfAssumeSorted(v, unhex('62')), indexOf(v, unhex('62')) FROM fs_sorted;
 
--- A needle read from a column, and a per-row needle that matches in one row only.
+-- A needle read from a column. The `a` and `b` rows arrive in one block and carry their own needle
+-- each, so a comparison that reads the block's first needle for every row answers `b` wrongly; the
+-- `c` row is the one whose needle does not match. `max_block_size` keeps the two rows together.
 DROP TABLE IF EXISTS fs_needle_col;
 CREATE TABLE fs_needle_col (v Array(FixedString(4)), s String, f FixedString(2)) ENGINE = Memory;
-INSERT INTO fs_needle_col SELECT [CAST('a', 'FixedString(4)')], unhex('6100'), toFixedString('a', 2);
-INSERT INTO fs_needle_col SELECT [CAST('b', 'FixedString(4)')], unhex('6100'), toFixedString('a', 2);
-SELECT has(v, s), arrayExists(x -> x = s, v) FROM fs_needle_col ORDER BY v[1];
-SELECT has(v, f), arrayExists(x -> x = f, v) FROM fs_needle_col ORDER BY v[1];
+INSERT INTO fs_needle_col
+SELECT [CAST(c, 'FixedString(4)')], concat(c, unhex('00')), toFixedString(c, 2)
+FROM (SELECT arrayJoin(['a', 'b']) AS c);
+INSERT INTO fs_needle_col SELECT [CAST('c', 'FixedString(4)')], unhex('6100'), toFixedString('a', 2);
+SELECT has(v, s), arrayExists(x -> x = s, v) FROM fs_needle_col ORDER BY v[1] SETTINGS max_block_size = 1000;
+SELECT has(v, f), arrayExists(x -> x = f, v) FROM fs_needle_col ORDER BY v[1] SETTINGS max_block_size = 1000;
 
 -- Elements that are all zero bytes, or carry a zero byte in the middle.
 DROP TABLE IF EXISTS fs_zero;
@@ -102,7 +106,10 @@ SELECT has(v, n), 1 FROM fs_null_both WHERE isNull(v[1]);
 DROP TABLE IF EXISTS fs_map_key;
 CREATE TABLE fs_map_key (m Map(FixedString(4), UInt8)) ENGINE = Memory;
 INSERT INTO fs_map_key SELECT map(CAST('a', 'FixedString(4)'), 1);
-SELECT mapContainsKey(m, unhex('6100')), arrayExists(x -> x = unhex('6100'), mapKeys(m)) FROM fs_map_key;
+-- Pinned: with the setting on, `mapContainsKey` is rewritten to `has(m.keys, needle)` and the Map
+-- adapter is not the function under test any more.
+SELECT mapContainsKey(m, unhex('6100')), arrayExists(x -> x = unhex('6100'), mapKeys(m)) FROM fs_map_key
+SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT has(m, unhex('6100')), arrayExists(x -> x = unhex('6100'), mapKeys(m)) FROM fs_map_key;
 
 DROP TABLE IF EXISTS fs_map_value;
