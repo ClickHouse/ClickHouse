@@ -75,15 +75,37 @@ function arm()
     fi
 }
 
+# `SYSTEM WAIT FAILPOINT ... PAUSE` blocks until someone parks, so every wait here is bounded: a
+# configuration in which the fixture cannot form must fail with a diagnosis, not sit until the
+# runner's own timeout kills the test.
+function wait_pause()
+{
+    local status
+    timeout 60 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $1 PAUSE" 2>"$err"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        return 0
+    fi
+    if [ "$status" -eq 124 ]; then
+        echo "failpoint $1 was never reached, so the interleaving was never established"
+    else
+        echo "wait for failpoint $1 failed:"
+        cat "$err"
+    fi
+    return 1
+}
+
 # `LIMIT 1` without `ORDER BY`: the shard that is not parked delivers a row and closes the output
 # ports, so `onUpdatePorts` calls `finish` on the parked shard's executor and reaches the drain.
 # `enable_parallel_replicas=0` keeps `drain_was_skipped` false, which is what leads into the drain.
+# `--max_threads` is pinned: the interleaving needs both shards' readers runnable at once, so do not
+# let a randomized thread count decide whether the fixture is reachable.
 function start_query()
 {
     $CLICKHOUSE_CLIENT \
         --query_id "$1" \
         --enable_parallel_replicas=0 --async_socket_for_remote=0 \
-        --max_block_size=1 --prefer_localhost_replica=0 \
+        --max_block_size=1 --prefer_localhost_replica=0 --max_threads=2 \
         --query "SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1 FORMAT Null" 2>"$err" &
 }
 
@@ -112,9 +134,7 @@ if [ "$armed" -eq 1 ]; then
     # Without both parks the interleaving never happened and the assertion below would be vacuous.
     sync_ok=1
     for fp in "$FP_RECV" "$FP_HOLD"; do
-        if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $fp PAUSE" 2>"$err"; then
-            echo "wait for failpoint $fp failed:"
-            cat "$err"
+        if ! wait_pause "$fp"; then
             failed=1
             sync_ok=0
         fi
@@ -166,7 +186,7 @@ $CLICKHOUSE_CLIENT --query "SELECT 'ok'"
 sync_ok=0
 query_id_b="${CLICKHOUSE_TEST_UNIQUE_NAME}_gate_order"
 kill_done="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.kill_done"
-rm -f "$kill_done"
+rm -f "$kill_done" "$kill_done.part"
 
 armed=0
 arm "$FP_RECV" && arm "$FP_ENTRY" && arm "$FP_GATE" && arm "$FP_HOLD" && armed=1
@@ -179,9 +199,7 @@ if [ "$armed" -eq 1 ]; then
     # itself. Both waits must succeed or the interleaving below was never established.
     sync_ok=1
     for fp in "$FP_RECV" "$FP_ENTRY"; do
-        if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $fp PAUSE" 2>"$err"; then
-            echo "wait for failpoint $fp failed:"
-            cat "$err"
+        if ! wait_pause "$fp"; then
             failed=1
             sync_ok=0
         fi
@@ -192,12 +210,14 @@ if [ "$sync_ok" -eq 1 ]; then
     # The `KILL` thread runs `cancel`, which finds no `finish` announced yet and parks holding only
     # the gate. It cannot return until the gate is released, so it is polled in step 3 rather than
     # bounded here.
+    # The sentinel carries the client's status, and is renamed into place so that seeing the file
+    # implies seeing a complete status: a `KILL` that fails fast returns too, and must not read as
+    # one that completed.
     ( $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$query_id_b' FORMAT Null" \
-        >/dev/null 2>&1; touch "$kill_done" ) &
+        >/dev/null 2>&1; echo "$?" > "$kill_done.part"; mv "$kill_done.part" "$kill_done" ) &
 
-    if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_GATE PAUSE" 2>"$err"; then
-        echo "wait for failpoint $FP_GATE failed, so cancel never reached the gate:"
-        cat "$err"
+    if ! wait_pause "$FP_GATE"; then
+        echo "cancel never reached the gate"
         failed=1
         sync_ok=0
     fi
@@ -211,8 +231,16 @@ if [ "$sync_ok" -eq 1 ]; then
     # Assertion 1: `finish` must not reach its drain, because the gate `cancel` holds admits it only
     # after `cancel` owns `was_cancelled_mutex`. The drain park is executor-local, so only the parked
     # shard can satisfy this wait.
-    if timeout 10 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_HOLD PAUSE" 2>/dev/null; then
+    timeout 10 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_HOLD PAUSE" 2>"$err"
+    hold_status=$?
+    if [ "$hold_status" -eq 0 ]; then
         echo "finish reached its drain while cancel held the gate"
+        failed=1
+    elif [ "$hold_status" -ne 124 ]; then
+        # Only `timeout`'s 124 means the wait ran its course; any other status is a broken rig
+        # rather than the property under test, so it must not read as a pass.
+        echo "wait for failpoint $FP_HOLD ended with status $hold_status, not the expected timeout:"
+        cat "$err"
         failed=1
     fi
 
@@ -231,6 +259,9 @@ if [ "$sync_ok" -eq 1 ]; then
     if [ "$kill_ok" -ne 1 ]; then
         echo "KILL QUERY did not return after the cancel gate was released"
         failed=1
+    elif [ "$(cat "$kill_done")" != "0" ]; then
+        echo "KILL QUERY returned status $(cat "$kill_done") after the cancel gate was released"
+        failed=1
     fi
 fi
 
@@ -245,10 +276,10 @@ fi
 
 # Negative control: with nothing armed the same query still returns its row.
 $CLICKHOUSE_CLIENT --enable_parallel_replicas=0 --async_socket_for_remote=0 \
-    --max_block_size=1 --prefer_localhost_replica=0 \
+    --max_block_size=1 --prefer_localhost_replica=0 --max_threads=2 \
     --query "SELECT count() FROM (SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1)"
 
-rm -f "$err" "$kill_done"
+rm -f "$err" "$kill_done" "$kill_done.part"
 
 # Separate liveness check: the server survived.
 $CLICKHOUSE_CLIENT --query "SELECT 'ok'"

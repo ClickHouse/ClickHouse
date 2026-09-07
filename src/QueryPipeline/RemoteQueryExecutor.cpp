@@ -1020,7 +1020,9 @@ void RemoteQueryExecutor::finish()
         return;
     }
 
-    FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_hold);
+    /// Test-only. Guarded like the entry hold above, so a sibling shard cannot consume the one shot.
+    if (in_receive_packet_window)
+        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_hold);
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
