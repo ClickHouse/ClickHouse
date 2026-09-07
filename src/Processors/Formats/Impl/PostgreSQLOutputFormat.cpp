@@ -2,11 +2,10 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ProcessList.h>
-#include <Processors/Formats/PostgreSQLArrayText.h>
 
 #include <Processors/Port.h>
 
@@ -16,6 +15,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace FailPoints
+{
+extern const char postgresql_output_format_mid_loop_pause[];
 }
 
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
@@ -31,7 +35,7 @@ PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader 
 void PostgreSQLOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
-    data_types = header.getDataTypes();
+    auto data_types = header.getDataTypes();
 
     if (header.columns())
     {
@@ -62,6 +66,9 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
         if (isCancelled())
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
+        if (i == 5)
+            FailPointInjection::pauseFailPoint(FailPoints::postgresql_output_format_mid_loop_pause);
+
         const Columns & columns = chunk.getColumns();
         VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
         row.reserve(chunk.getNumColumns());
@@ -73,12 +80,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
             else
             {
                 WriteBufferFromOwnString ostr;
-                if (isArray(data_types[j]))
-                    /// Arrays must be emitted in PostgreSQL array-literal form (`{...}`) so that a
-                    /// self-connected `postgresql(..., 'arr_table')` can read them back.
-                    writePostgreSQLArrayText(*columns[j], *data_types[j], i, ostr, format_settings);
-                else
-                    serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
+                serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
                 row.push_back(std::make_shared<PostgreSQLProtocol::Messaging::StringField>(std::move(ostr.str())));
             }
         }

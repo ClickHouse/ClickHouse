@@ -2,7 +2,7 @@
 -- on the merged data, so the merged part gets a freshly retrained codebook: two source parts (two codebooks) collapse
 -- to one part with one codebook, and the two-stage search stays correct against it.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000000;

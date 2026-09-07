@@ -1,0 +1,164 @@
+---
+sidebarTitle: 'SeaweedFS'
+slug: /integrations/seaweedfs
+description: 'ClickHouse에서 SeaweedFS S3 호환 객체 스토리지 사용'
+title: 'SeaweedFS 사용'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+keywords: ['s3', 'seaweedfs', '객체 스토리지', '데이터 로딩', '호환 스토리지']
+---
+
+import SelfManaged from '/snippets/ko/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+ClickHouse의 `s3` 테이블 함수와 `S3` 디스크 유형은 S3 호환 게이트웨이를 제공하는 오픈 소스 분산 객체 저장소 [SeaweedFS](https://github.com/seaweedfs/seaweedfs)와 호환됩니다. SeaweedFS는 경로 스타일 요청을 네이티브로 지원하므로 자체 호스팅 저장소에서 와일드카드 DNS가 필요하지 않습니다. SeaweedFS는 Iceberg 테이블도 지원합니다. 테이블 버킷에는 테이블 데이터가 Parquet 파일로 저장되고, 내장 Iceberg REST 카탈로그는 테이블 메타데이터를 제공합니다. 동일한 엔드포인트를 통해 이를 쿼리하는 방법은 [SeaweedFS 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/seaweedfs-catalog)를 참조하십시오.
+
+[SeaweedFS 4.42](https://github.com/seaweedfs/seaweedfs/releases/tag/4.42) 이상을 사용하십시오. 이전 버전에서는 비어 있어 삭제 중인 상위 폴더에 쓰기가 커밋되는 객체가 삭제될 수 있으며, 이 경우 쓰기가 성공한 직후 `Object ... suddenly disappeared`가 표시됩니다.
+
+<div id="running-seaweedfs-locally">
+  ## 로컬에서 SeaweedFS 실행하기
+</div>
+
+로컬 테스트 환경에서는 S3 자격 증명이 포함된 `s3config.json` 파일을 생성합니다:
+
+```json
+{
+  "identities": [
+    {
+      "name": "analyst",
+      "credentials": [
+        {
+          "accessKey": "your_access_key_id",
+          "secretKey": "your_secret_access_key"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
+```
+
+그런 다음 하나의 컨테이너에서 전체 SeaweedFS 스택을 시작합니다. `-bucket` 플래그는 시작 시 버킷을 생성합니다:
+
+```bash
+docker run -d --name seaweedfs -p 8333:8333 \
+  -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
+  chrislusf/seaweedfs:latest \
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse -admin.port=12646
+```
+
+`-admin.port=12646`은 SeaweedFS가 여기서 파생하는 관리자 gRPC 포트가 Linux 임시 포트 범위보다 낮게 유지되도록 하여, 시작 시 연결이 해당 포트를 먼저 점유하지 못하게 합니다.
+
+S3 엔드포인트가 포트 8333에서 응답할 때까지 기다린 후 계속하십시오:
+
+```bash
+until curl -s -o /dev/null http://localhost:8333; do sleep 1; done
+```
+
+`echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell`을 사용하여 언제든지 버킷을 추가로 만들 수 있습니다.
+
+기본적으로 쓰기 작업은 운영 체제에 전달되면 완료된 것으로 확인됩니다. 확인하기 전에 모든 쓰기 작업을 디스크에 fsync하려면 버킷에서 fsync를 활성화하십시오:
+
+```bash
+echo "fs.configure -locationPrefix=/buckets/clickhouse/ -fsync -apply" | \
+  docker exec -i seaweedfs weed shell
+```
+
+<div id="s3-backed-mergetree">
+  ## S3 기반 MergeTree
+</div>
+
+S3 기반 MergeTree 구성은 약간의 수정만으로 사용할 수 있습니다:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://seaweedfs:8333/clickhouse/tables/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  엔드포인트에는 버킷 이름(`clickhouse`) 뒤에 테이블 데이터의 경로 접두사(`tables/`)가 포함됩니다. SeaweedFS에는 Region이 필요하지 않으므로 태그는 비워 둘 수 있습니다. `seaweedfs`를 S3 게이트웨이를 실행 중인 호스트로 대체하십시오.
+</Tip>
+
+이제 테이블은 스토리지 정책을 통해 SeaweedFS에 데이터를 저장합니다:
+
+```sql
+CREATE TABLE trips (id UInt64, rider String, fare Float64)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main';
+```
+
+자주 읽는 데이터를 로컬에 캐시하려면 `SETTINGS disk = 's3_cache'`를 사용하여 테이블을 생성하십시오. 위에서 정의한 캐시 디스크는 S3 디스크를 래핑합니다.
+
+<div id="the-s3-table-function">
+  ## s3 테이블 함수
+</div>
+
+`s3` 테이블 함수는 동일한 엔드포인트에서 객체를 읽고 쓸 수 있습니다:
+
+```sql
+INSERT INTO FUNCTION s3(
+    'http://seaweedfs:8333/clickhouse/sample/trips.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+)
+SELECT number AS id, concat('rider_', toString(number % 10)) AS rider, number * 1.5 AS fare
+FROM numbers(1000);
+
+SELECT count()
+FROM s3(
+    'http://seaweedfs:8333/clickhouse/sample/*.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+);
+```
+
+글롭 패턴을 사용하면 여러 객체를 읽을 수 있습니다.
+
+<div id="backup-and-restore">
+  ## 백업 및 복원
+</div>
+
+`BACKUP` 및 `RESTORE`는 SeaweedFS 엔드포인트를 S3 대상으로 지원합니다:
+
+```sql
+BACKUP TABLE trips
+TO S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+
+--- DROP TABLE trips;
+
+RESTORE TABLE trips
+FROM S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+```

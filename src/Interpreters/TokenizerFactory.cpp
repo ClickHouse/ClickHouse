@@ -1,5 +1,7 @@
 #include <Interpreters/TokenizerFactory.h>
 
+#include "config.h"
+
 #include <Common/Exception.h>
 #include <Interpreters/ITokenizer.h>
 #if USE_MECAB
@@ -36,6 +38,22 @@ Type castAs(const Field & field, std::string_view argument_name)
             argument_name, fieldTypeToString(expected_type), field.getTypeName());
     }
     return field.safeGet<Type>();
+}
+
+/// Accepts a `Bool` literal or `UInt64` (`0`/`1`), like `checkAndGetLiteralArgument<bool>`.
+template <>
+bool castAs<bool>(const Field & field, std::string_view argument_name)
+{
+    if (field.getType() == Field::Types::Bool)
+        return field.safeGet<bool>();
+
+    if (field.getType() == Field::Types::UInt64)
+        return field.safeGet<UInt64>() != 0;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Tokenizer argument '{}' expected to be of type Bool, but got type: {}",
+        argument_name, field.getTypeName());
 }
 
 void assertParamsCount(size_t params_count, size_t max_count, std::string_view tokenizer)
@@ -214,6 +232,33 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(SplitByStringTokenizer::getName(), ITokenizer::Type::SplitByString, split_by_string_creator);
 
+    auto split_by_regexp_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = SplitByRegexpTokenizer::getExternalName();
+        assertParamsCount(args.size(), 2, tokenizer_name);
+
+        if (args.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'{}' tokenizer requires a regular expression argument",
+                tokenizer_name);
+
+        auto regexp = castAs<String>(args[0], "regexp");
+        if (regexp.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Incorrect parameter of tokenizer '{}': the regular expression cannot be empty",
+                tokenizer_name);
+
+        bool match_tokens = false;
+        if (args.size() > 1)
+            match_tokens = castAs<bool>(args[1], "match_tokens");
+
+        return std::make_unique<SplitByRegexpTokenizer>(regexp, match_tokens);
+    };
+
+    factory.registerTokenizer(SplitByRegexpTokenizer::getName(), ITokenizer::Type::SplitByRegexp, split_by_regexp_creator);
+
     auto array_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
         assertParamsCount(args.size(), 0, ArrayTokenizer::getExternalName());
@@ -221,6 +266,7 @@ static void registerTokenizers(TokenizerFactory & factory)
     };
 
     factory.registerTokenizer(ArrayTokenizer::getName(), ITokenizer::Type::Array, array_creator);
+    factory.registerTokenizer("keyword", ITokenizer::Type::Array, array_creator); /// compat with Elasticsearch, OpenSearch, Lucene, Solr
 
     auto sparse_grams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
@@ -284,6 +330,61 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+    factory.registerTokenizer("unicode_word", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+
+#if USE_JIEBA
+    auto chinese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = ChineseTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        ChineseTokenizationGranularity granularity = ChineseTokenizationGranularity::Coarse;
+        if (!args.empty())
+        {
+            auto granularity_str = castAs<String>(args[0], "granularity");
+            if (granularity_str == "fine_grained")
+                granularity = ChineseTokenizationGranularity::Fine;
+            else if (granularity_str == "coarse_grained")
+                granularity = ChineseTokenizationGranularity::Coarse;
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Tokenizer '{}' supports only granularities 'coarse_grained' or 'fine_grained', got: '{}'",
+                    tokenizer_name,
+                    granularity_str);
+        }
+
+        return std::make_unique<ChineseTokenizer>(granularity);
+    };
+
+    factory.registerTokenizer(ChineseTokenizer::getName(), ITokenizer::Type::Chinese, chinese_creator);
+#endif
+
+#if USE_ICU
+    auto icu_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = IcuTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        /// The locale is mandatory; there is no default.
+        if (args.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tokenizer '{}' requires a mandatory locale argument, e.g. {}('en')",
+                tokenizer_name, tokenizer_name);
+
+        auto locale = castAs<String>(args[0], "locale");
+        if (locale.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Incorrect parameter of tokenizer '{}': the locale must not be empty",
+                tokenizer_name);
+
+        return std::make_unique<IcuTokenizer>(locale);
+    };
+
+    factory.registerTokenizer(IcuTokenizer::getName(), ITokenizer::Type::Icu, icu_creator);
+#endif
 
 #if USE_MECAB
     auto japanese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>

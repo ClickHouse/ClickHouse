@@ -121,17 +121,17 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 
 
 void applyParentNullMapToExtractedSubcolumn(
-    const MutableColumnPtr & column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset)
+    IColumn & column, const NullMap & parent_null_map, size_t column_offset, size_t parent_null_map_offset)
 {
-    chassert(column_offset <= column->size());
-    const size_t length = column->size() - column_offset;
+    chassert(column_offset <= column.size());
+    const size_t length = column.size() - column_offset;
     chassert(parent_null_map_offset + length <= parent_null_map.size());
 
     /// A non-nullable `LowCardinality(T)` read from disk has no NULL placeholder in its dictionary, so
     /// promote it to `LowCardinality(Nullable(T))` in place. The extracted subcolumn's type is
     /// `LowCardinality(Nullable(T))` (see `create(DataTypePtr)`), so this keeps the (type, column) pair
     /// consistent even for ranges that contain no parent NULLs (handled before the early-out below).
-    if (auto * low_cardinality_to_promote = typeid_cast<ColumnLowCardinality *>(column.get());
+    if (auto * low_cardinality_to_promote = typeid_cast<ColumnLowCardinality *>(&column);
         low_cardinality_to_promote && !low_cardinality_to_promote->nestedIsNullable())
         low_cardinality_to_promote->convertDictionaryToNullableInplace();
 
@@ -146,32 +146,32 @@ void applyParentNullMapToExtractedSubcolumn(
     for (size_t i = 0; i < length; ++i)
         keep_mask[i] = !parent_null_map[parent_null_map_offset + i];
 
-    if (auto * nullable = typeid_cast<ColumnNullable *>(column.get()))
+    if (auto * nullable = typeid_cast<ColumnNullable *>(&column))
     {
         nullable->applyNegatedNullMap(keep_mask, column_offset);
         return;
     }
 
-    if (auto * variant = typeid_cast<ColumnVariant *>(column.get()))
+    if (auto * variant = typeid_cast<ColumnVariant *>(&column))
     {
         variant->applyNegatedNullMap(keep_mask, column_offset);
         return;
     }
 
-    if (auto * dynamic = typeid_cast<ColumnDynamic *>(column.get()))
+    if (auto * dynamic = typeid_cast<ColumnDynamic *>(&column))
     {
         dynamic->applyNegatedNullMap(keep_mask, column_offset);
         return;
     }
 
-    if (auto * low_cardinality = typeid_cast<ColumnLowCardinality *>(column.get()))
+    if (auto * low_cardinality = typeid_cast<ColumnLowCardinality *>(&column))
     {
         low_cardinality->applyNegatedNullMap(keep_mask, column_offset);
         return;
     }
 
     throw Exception(
-        ErrorCodes::LOGICAL_ERROR, "Cannot apply the parent null map to subcolumn {} that cannot represent NULL values", column->getName());
+        ErrorCodes::LOGICAL_ERROR, "Cannot apply the parent null map to subcolumn {} that cannot represent NULL values", column.getName());
 }
 
 
@@ -218,13 +218,12 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
     if (null_map)
     {
         const auto & outer_null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-
         /// The extracted subcolumn cannot be wrapped into Nullable, but if it can already represent NULL
         /// itself, mark rows that are NULL in the outer column as NULL in it.
         if (canContainNull(*prev))
         {
             auto mutable_column = IColumn::mutate(prev);
-            applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0);
+            applyParentNullMapToExtractedSubcolumn(*mutable_column, outer_null_map_data, 0, 0);
             return mutable_column;
         }
 
@@ -235,7 +234,7 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
         if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()))
         {
             auto mutable_column = prev_lc->cloneNullable();
-            applyParentNullMapToExtractedSubcolumn(mutable_column, outer_null_map_data, 0, 0);
+            applyParentNullMapToExtractedSubcolumn(*mutable_column, outer_null_map_data, 0, 0);
             return mutable_column;
         }
     }
