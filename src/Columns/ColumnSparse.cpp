@@ -54,7 +54,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
             "Size of sparse column ({}) should be greater than last position of non-default value ({})",
                 _size, offsets_concrete->getData().back());
 
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     const auto & offsets_data = getOffsetsData();
     const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
     if (it != offsets_data.end())
@@ -78,6 +78,15 @@ MutableColumnPtr ColumnSparse::cloneResized(size_t new_size) const
 bool ColumnSparse::isDefaultAt(size_t n) const
 {
     return getValueIndex(n) == 0;
+}
+
+bool ColumnSparse::hasOnlyTypeDefaults() const
+{
+    if (_size == 0)
+        return true;
+    /// All rows map to values[0] when offsets is empty, but values[0] may
+    /// not be the type-default (e.g. after deserialization), so verify it.
+    return getOffsetsData().empty() && values->isDefaultAt(0);
 }
 
 bool ColumnSparse::isNullAt(size_t n) const
@@ -176,11 +185,6 @@ std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColu
 void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
-}
-
-void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
-{
-    values->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

@@ -1,0 +1,284 @@
+---
+slug: /use-cases/observability/clickstack/url-parameters
+title: 'ディープリンク'
+sidebarTitle: 'ディープリンク'
+description: 'URL クエリパラメータを使用して ClickStack ページに直接リンクする'
+doc_type: 'reference'
+keywords: ['ClickStack', 'URL parameters', 'query parameters', 'ディープリンク', 'パーマリンク', 'HyperDX']
+---
+
+ClickStack ページは、URL クエリパラメータを使用したディープリンクで開けます。これにより、外部システム (アラート通知、ランブック、CI ジョブ、チャットメッセージなど) から特定の検索、ダッシュボード、またはパネルに直接移動できます。
+
+このページの例では `<YOUR_CLICKSTACK_URL>` を使用しています。これを ClickStack の URL に置き換えてください。たとえば、ローカルのオープンソースデプロイメントの場合は `http://localhost:8080`、ClickHouse Cloud の Managed ClickStack の場合は `https://hyperdx.clickhouse.cloud` を使用します。
+
+<Note>
+  例では、読みやすさのためクエリパラメータを URL エンコードせずに示しています。プログラムでリンクを構築する場合は、各クエリパラメータ値を URL エンコードしてください。
+</Note>
+
+<Info>
+  **Managed ClickStack サービス ID パラメータ**
+
+  ClickHouse Cloud で Managed ClickStack を使用する場合、リンクをたどる認証済みユーザーが複数の ClickHouse Cloud サービスを使用する権限を持つときは、読み込む ClickHouse Cloud サービスを識別するため、リンクに `?chcServiceId=` パラメータを含める必要があります。
+
+  例: 特定の Cloud サービスを対象に Search を開く
+
+  ```text
+  https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
+  ```
+</Info>
+
+<div id="search">
+  ## Search — `/search`
+</div>
+
+主要なログ／トレース検索ビューです。検索構文の詳細については、[Search](/ja/clickstack/features/search)を参照してください。
+
+| パラメータ           | フォーマット                                                                     | 説明                                                                                                |
+| --------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `source`        | string                                                                     | 検索対象のログソース。ログソース ID またはログソースの**名前** (例: `Logs`) を指定できます。このページでサポートされるのは Log および Trace のログソースのみです。 |
+| `where`         | string                                                                     | Lucene または SQL 構文で記述するフィルターのクエリテキスト (`whereLanguage`を参照) 。                                        |
+| `whereLanguage` | `lucene` | `sql`                                                           | `where`の記述に使用するクエリ言語。                                                                             |
+| `select`        | string                                                                     | 結果テーブルに表示する SQL カラム／式のリスト。                                                                        |
+| `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | `where`に加えて適用する構造化ファセットフィルター。                                                                     |
+| `orderBy`       | string                                                                     | 結果テーブルの SQL ソート式。                                                                                 |
+| `mode`          | `results` | `delta` | `pattern`                                            | アクティブな分析モード。`delta`はトレースログソースでのみ使用できます。                                                           |
+| `isLive`        | `true` | `false`                                                           | ライブテールが有効かどうか (デフォルトは`true`) 。                                                                    |
+| `traceId`       | string                                                                     | 指定したトレース ID のトレースウォーターフォールビューに直接移動します。                                                            |
+| `from`, `to`    | エポックミリ秒                                                                    | 絶対時間範囲。省略した場合、デフォルトで直近 15 分間が使用されます。                                                              |
+
+保存済み検索は、`/search/<savedSearchId>`から直接開くこともできます。
+
+<div id="example-search-errors">
+  ### 例: 時間範囲を指定して `Logs` ログソース内の `checkout` サービスのエラーを検索する
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
+```
+
+<div id="example-search-trace">
+  ### 例: トレースのウォーターフォールビューを直接開く
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
+```
+
+<div id="saved-searches">
+  ## 保存済み検索 — `/search/list`
+</div>
+
+保存済み検索の一覧。
+
+| パラメータ | フォーマット | 説明                        |
+| ----- | ------ | ------------------------- |
+| `tag` | string | このタグが付いた保存済み検索に一覧を絞り込みます。 |
+
+<div id="example-saved-searches-tag">
+  ### 例: `production` タグが付いた保存済み検索を一覧表示する
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search/list?tag=production
+```
+
+<div id="dashboards">
+  ## ダッシュボード — `/dashboards/<dashboardId>`
+</div>
+
+保存済みのダッシュボードです。`<dashboardId>`を省略して (`/dashboards`) 、一時的な未保存のダッシュボードを開くことができます。ダッシュボードの作成について詳しくは、[ダッシュボード](/ja/clickstack/features/dashboards/overview)を参照してください。
+
+| パラメータ               | フォーマット                                                                                                                              | 説明                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `from`, `to`        | エポックミリ秒                                                                                                                             | すべてのタイルに適用される時間範囲です。省略した場合は、直近15分がデフォルトになります。                 |
+| `where`             | 文字列                                                                                                                                 | すべてのタイルに適用されるダッシュボードレベルのフィルタークエリテキストです。                       |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | `where`の記述に使用するクエリ言語です。                                       |
+| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | 構造化されたダッシュボードフィルター値です。`ServiceName`フィルターのドロップダウンで2つの項目を選択します。 |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 時系列タイルのバケットサイズです。`auto`は、選択した時間範囲に基づいてバケットサイズを決定します。          |
+| `highlightedTileId` | 文字列                                                                                                                                 | 特定のタイルまでスクロールして強調表示します。alertからリンクする場合に便利です。                   |
+
+<div id="example-dashboard-highlight">
+  ### 例: 1 つのタイルを強調表示した状態で、指定した時間範囲のダッシュボードを開く
+</div>
+
+アラート通知から、発火したタイルに直接リンクする際に便利です。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+<div id="dashboards-list">
+  ## ダッシュボード一覧 — `/dashboards/list`
+</div>
+
+| パラメータ | フォーマット | 説明                   |
+| ----- | ------ | -------------------- |
+| `tag` | string | タグでダッシュボード一覧を絞り込みます。 |
+
+<div id="example-dashboards-list-tag">
+  ### 例: `infra` タグが付いたダッシュボードを一覧表示する
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
+```
+
+<div id="chart-explorer">
+  ## Chart Explorer — `/chart`
+</div>
+
+アドホックな共有可能チャートビルダー。
+
+| パラメータ        | フォーマット  | 説明                                                                                 |
+| ------------ | ------- | ---------------------------------------------------------------------------------- |
+| `config`     | JSON    | 完全なチャート設定 (ログソース、select、where、チャートタイプなど) 。通常は手動で記述するのではなく、アプリ内の「Share」リンクから生成されます。 |
+| `from`, `to` | エポックミリ秒 | 時間範囲。省略した場合、デフォルトでは直近15分間になります。                                                    |
+
+<div id="example-chart-config">
+  ### 例: 指定した時間範囲の p99 レイテンシチャート設定を開く
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
+```
+
+<div id="alerts">
+  ## アラート — `/alerts`
+</div>
+
+アラートの作成と管理について詳しくは、[Alerts](/ja/clickstack/features/alerts)を参照してください。
+
+| パラメータ     | フォーマット | 説明                            |
+| --------- | ------ | ----------------------------- |
+| `search`  | string | アラート名または説明を対象とするフリーテキストフィルター。 |
+| `tag`     | string | タグでフィルタリングします。                |
+| `creator` | string | アラート作成者の名前でフィルタリングします。        |
+
+<div id="example-alerts-filter">
+  ### 例: `on-call` タグ付きのアラートを一覧表示する
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/alerts?tag=on-call
+```
+
+<div id="session-replay">
+  ## セッションリプレイ — `/sessions`
+</div>
+
+セッションリプレイの閲覧と再生。機能の詳細については、[セッションリプレイ](/ja/clickstack/features/session-replay)を参照してください。
+
+| パラメータ           | フォーマット           | 説明                                     |
+| --------------- | ---------------- | -------------------------------------- |
+| `sessionSource` | string           | セッションログソースの ID または名前。                  |
+| `where`         | string           | セッションリストに対するフィルタークエリテキスト。              |
+| `whereLanguage` | `lucene` | `sql` | `where` の記述に使用するクエリ言語。                 |
+| `from`, `to`    | エポックミリ秒          | セッションリストの時間範囲。省略した場合、直近 15 分間がデフォルトです。 |
+| `sid`           | string           | ID で特定のセッションを開きます。                     |
+| `sfrom`, `sto`  | エポックミリ秒          | 開いたセッションの時間ウィンドウ (`sid` とともに使用) 。      |
+
+<div id="example-sessions-time-range">
+  ### 例: 指定した期間内のセッションリプレイを閲覧する
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
+```
+
+<div id="example-sessions-open">
+  ### 例: 記録された時間範囲で特定のセッションリプレイを開く
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
+```
+
+<div id="service-map">
+  ## サービスマップ — `/service-map`
+</div>
+
+機能の詳細については、[サービスマップ](/ja/clickstack/service-maps)を参照してください。
+
+| パラメータ            | フォーマット  | 説明                                                          |
+| ---------------- | ------- | ----------------------------------------------------------- |
+| `source`         | string  | トレースログソースの ID または名前。                                        |
+| `samplingFactor` | integer | トレースサンプリングの除数 (`1` = トレース全体の 100%、`2` = 50%、`4` = 25% など) 。 |
+| `from`, `to`     | エポックミリ秒 | 時間範囲。省略した場合、直近 15 分間がデフォルトになります。                            |
+
+<div id="example-service-map">
+  ### 例: 時間範囲を指定してサービスマップを表示する
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
+```
+
+<div id="services">
+  ## サービス — `/services`
+</div>
+
+サービスごとの HTTP、データベース、エラーのダッシュボード。
+
+| パラメータ           | フォーマット                                                                     | 説明                                            |
+| --------------- | -------------------------------------------------------------------------- | --------------------------------------------- |
+| `tab`           | `http` | `database` | `errors`                                             | 表示するサービスダッシュボードのサブタブ。デフォルト: `http`            |
+| `source`        | string                                                                     | トレースログソース ID。                                   |
+| `service`       | string                                                                     | 選択したサービス名。                                    |
+| `where`         | string                                                                     | フィルター用のクエリテキスト。                               |
+| `whereLanguage` | `lucene` | `sql`                                                           | `where` の記述に使用するクエリ言語 (このページではデフォルトで `sql`) 。 |
+| `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | ダッシュボードのフィルターバーの値。                            |
+| `from`, `to`    | エポックミリ秒                                                                    | 時間範囲。省略した場合は直近 15 分間がデフォルトです。                 |
+
+<div id="example-services-database">
+  ### 例: 指定した期間のサービスのデータベースダッシュボードを表示する
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
+```
+
+<div id="example-services-errors">
+  ### 例: サービスのエラーダッシュボードを表示する
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
+```
+
+<div id="kubernetes">
+  ## Kubernetes — `/kubernetes`
+</div>
+
+| パラメータ                                  | フォーマット                           | 説明                                                                  |
+| -------------------------------------- | -------------------------------- | ------------------------------------------------------------------- |
+| `logSource`, `metricSource`            | string                           | ログおよびメトリクスのログソース ID。いずれか一方のみを指定した場合、もう一方は相関付けられたログソースがデフォルトで使用されます。 |
+| `tab`                                  | 例: `pods`, `nodes`, `namespaces` | アクティブなサブビュー。                                                        |
+| `q`                                    | string                           | リソースリスト用の Lucene クエリ。                                               |
+| `podName`, `nodeName`, `namespaceName` | string                           | 特定のポッド、ノード、またはネームスペースの詳細パネルを開きます。                                   |
+| `from`, `to`                           | エポックミリ秒                          | 時間範囲。省略した場合、直近 15 分間がデフォルトで使用されます。                                  |
+
+<div id="example-kubernetes-pod">
+  ### 例: 特定のポッドの詳細パネルを開く
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
+```
+
+<div id="notebooks">
+  ## Notebooks — `/notebook/<notebookId>`
+</div>
+
+<Info>
+  **Managed ClickStack のみ**
+
+  Notebooks は、Managed ClickStack のデプロイメントでのみ利用できます。機能の詳細については、[AIノートブック](/ja/clickstack/notebooks)を参照してください。
+</Info>
+
+<div id="example-notebook-open">
+  ### 例: 指定した Cloud サービスで特定の notebook を開く
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
+```

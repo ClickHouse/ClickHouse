@@ -6,6 +6,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
@@ -24,6 +25,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/TransactionLog.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -213,6 +215,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
         Field max_val;
         serialization->deserializeBinary(max_val, *file, format_settings);
 
+        normalizeBoolFields(min_val);
+        normalizeBoolFields(max_val);
+
         // NULL_LAST
         if (min_val.isNull())
             min_val = POSITIVE_INFINITY;
@@ -244,16 +249,44 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
     WrittenFiles written_files;
 
+    /// This index is materialized as a prefix of `columns_to_write`, never as an arbitrary subset of it.
+    /// The columns come in a fixed order, grouped into segments that are appended as the index is extended -
+    /// see the note on `MergeTreePartMinMaxIndexColumns` in `Core/SettingsEnums.h` - and everything that
+    /// reads the index expresses "how much of it this part has" as a single width rather than as a set of
+    /// columns: `merge` truncates to the shorter of two indices, `getProbablyWrittenFiles` derives the file
+    /// names from the leading columns, and `KeyCondition::checkInHyperrectangle` treats every column past
+    /// the width as unknown. So both loops below stop rather than skip ahead: a part that materialized
+    /// column `k + 1` but not column `k` cannot be described by a width.
     size_t i = 0;
     for (const auto & [column_name, column_type] : columns_to_write)
     {
+        /// The caller's index is narrower than the current set of minmax columns: it was built before the
+        /// index was extended, and the columns it does not know about are not materialized yet.
         if (i >= hyperrectangle.size())
             break;
 
+        /// An unknown range: `load` gives the whole universe to a column whose file is missing, and its
+        /// infinite bounds cannot be serialized into a non-nullable column. Stopping here is not only what
+        /// the prefix rule demands, it is also the only sound thing to do, because this guard is per column
+        /// type: a `Nullable` column further down the list would not hit it, and its whole-universe range
+        /// would serialize as `NULL, NULL` - which `load` reads back, under `NULL_LAST`, as `[+inf, +inf]`,
+        /// the range of a part holding nothing but `NULL`s, and the part would be pruned away from queries
+        /// whose result it belongs to.
         if (!isNullableOrLowCardinalityNullable(column_type) && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
             break;
 
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
+
+        /// The caller may have carried the file over already — a mutation that does not rewrite the whole
+        /// part hardlinks the source part's files, so the file in the new part shares its inode with the
+        /// source part and writing through it would corrupt the source part. The column is materialized
+        /// either way, so the prefix does not end here and the remaining columns are still written.
+        if (out_checksums.files.contains(file_name))
+        {
+            ++i;
+            continue;
+        }
+
         auto serialization = column_type->getDefaultSerialization();
 
         auto out = part_storage.writeFile(file_name, 4096, {});
@@ -339,6 +372,62 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
                 ? other.hyperrectangle[i].right
                 : hyperrectangle[i].right;
         }
+    }
+}
+
+/// A part that was mutated before the index started to be materialized for mutated parts has no
+/// `minmax__block_number.idx` of its own, and `load` is not allowed to synthesize the range for it, so the
+/// range came back as the whole universe; a part loaded before `part_minmax_index_columns` was widened to
+/// cover the block columns carries an index without their slots at all. Re-deriving the ranges here heals
+/// the part on the next column-only mutation or merge instead of carrying the lost ranges forward.
+///
+/// The repaired `_block_number` range is the block range of the source part's own name,
+/// `[min_block, max_block]`: the `_block_number` of every row is the number of the block that inserted it,
+/// and merges and mutations only ever combine parts whose blocks lie within the resulting part's range (a
+/// part without a physically stored `_block_number` column even reads the column back as the constant
+/// `min_block`). For a part that still covers a single block the range degenerates to the exact value
+/// `load` would have synthesized.
+///
+/// The `_block_offset` range is repairable only while the source part is a single never-mutated block -
+/// exactly the shape `load` still synthesizes the range for. Such a part holds every row of its block, so
+/// the offsets are `[0, rows_count - 1]`, and a mutation that does not rewrite the whole part or an
+/// ordinary non-row-reducing merge keeps every row, so the range carries over to the new part unchanged.
+/// Once the chain has passed through a row-dropping mutation, rows may have been dropped and the row count
+/// of the original block is no longer recoverable, so the range is left as the whole universe, which does
+/// not prune but is not wrong either.
+void IMergeTreeDataPart::MinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot)
+{
+    const auto & source_info = source_part.info;
+    if (!initialized || source_part.isProjectionPart() || source_info.isPatch())
+        return;
+
+    const auto columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), source_part.storage.getSettings());
+
+    /// The inherited index may be narrower than the current set of minmax columns: the block columns are
+    /// appended to the set when `part_minmax_index_columns` is widened, and changing the setting does not
+    /// reload the parts already in memory, so a part loaded (or written) before the change carries an index
+    /// without the block column slots at all. Grow it with unknown (whole universe) ranges - the same value
+    /// `load` gives a column whose file is missing - so the block columns are repaired and stored too.
+    while (hyperrectangle.size() < columns.size())
+        hyperrectangle.emplace_back(Range::createWholeUniverse());
+
+    const bool source_offsets_are_whole_block
+        = source_info.getBlocksCount() == 1 && source_info.level == 0 && source_info.mutation == 0 && source_part.rows_count != 0;
+
+    size_t i = 0;
+    for (const auto & [column_name, _] : columns)
+    {
+        if (hyperrectangle[i].left.isNegativeInfinity())
+        {
+            if (column_name == BlockNumberColumn::name && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name))
+                hyperrectangle[i] = Range(source_info.min_block, true, source_info.max_block, true);
+
+            if (column_name == BlockOffsetColumn::name && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name)
+                && source_offsets_are_whole_block)
+                hyperrectangle[i] = Range(Field(UInt64(0)), true, Field(UInt64(source_part.rows_count - 1)), true);
+        }
+
+        ++i;
     }
 }
 
@@ -847,7 +936,7 @@ String IMergeTreeDataPart::getProjectionName() const
 StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 {
     if (info.isPatch())
-        return storage.getPatchPartMetadata(getColumnsDescription(), info.getPartitionId(), storage.getContext());
+        return storage.getPatchPartMetadata(*this, storage.getContext()).metadata;
 
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)
@@ -958,7 +1047,9 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(*this, index_name);
+        /// Physical, not usability: marks cached before an ALTER made this index unreadable still have
+        /// to be evicted, so the keys must be derived from what is actually on disk.
+        auto index_format = skip_index->getPhysicalFormat(*this, index_name);
 
         if (!index_format)
             continue;
@@ -1386,15 +1477,14 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    /// Long-lived per-part metadata (columns substreams, checksums, index granularity, primary
-    /// index, per-column sizes, partition / minmax index, TTL infos, projections) is routed into
-    /// the dedicated parts arena by the inner block below. Deliberately kept OUT of that arena:
+    /// Long-lived per-part metadata (columns substreams, checksums, index granularity, patch part
+    /// index, primary index, per-column sizes, partition / minmax index, TTL infos, projections)
+    /// is routed into the dedicated parts arena by the inner block below. Deliberately kept OUT
+    /// of that arena:
     ///   - `loadColumns`: its file read and text/JSON parsing are short-lived scratch; the
     ///     persistent columns/serializations it produces are arena-scoped inside `setColumns`.
     ///   - `checkConsistency`: pure file-existence/size verification, allocates nothing persistent.
     ///   - `loadDefaultCompressionCodec`: a tiny per-part codec pointer.
-    /// (`loadSourcePartsSet` runs after this block but scopes itself into the arena, as its
-    /// patch-part metadata is part-lifetime.)
     /// These paths churn many short-lived allocations; keeping them in the default per-CPU arenas
     /// avoids serializing that churn on the single arena's locks under many concurrent merges.
 
@@ -1413,6 +1503,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadInvalidatedSystemColumns();
             loadChecksums(require_columns_checksums);
             loadIndexGranularity();
+
+            /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata takes
+            /// the sort-key columns from it, and the index cannot be deserialized without them.
+            loadPatchPartIndex();
 
             /// It's important to load index after index granularity.
             if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
@@ -1450,7 +1544,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
-        loadSourcePartsSet();
     }
     catch (...)
     {
@@ -1757,9 +1850,21 @@ bool IMergeTreeDataPart::isSystemColumnInvalidated(const String & column_name) c
     return invalidated_system_columns.contains(column_name);
 }
 
+NameSet IMergeTreeDataPart::getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info)
+{
+    if (part_info.isPatch())
+        return {};
+
+    return {BlockNumberColumn::name, BlockOffsetColumn::name};
+}
+
 void IMergeTreeDataPart::loadInvalidatedSystemColumns()
 {
     if (parent_part)
+        return;
+
+    /// Patch parts must never have invalidated system columns: _block_number and _block_offset are their payload.
+    if (info.isPatch())
         return;
 
     if (auto file_buf = readFileIfExists(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
@@ -1852,18 +1957,35 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         String codec_line;
         readEscapedStringUntilEOL(codec_line, *file_buf);
 
+        /// A column-only mutation can hardlink all data columns from a part whose default codec was
+        /// only recovered approximately. In particular, a legacy part with explicitly coded columns
+        /// has no column that can prove its default on the next load. Keep an explicit durable marker
+        /// for that unknown state instead of trying to recover it from the new `checksums.txt`, whose
+        /// compression describes this version of ClickHouse rather than the old part's data.
+        if (codec_line == UNKNOWN_DEFAULT_COMPRESSION_CODEC)
+        {
+            default_codec = CompressionCodecFactory::instance().getDefaultCodec();
+            default_codec_is_approximate = true;
+            return;
+        }
+
         ReadBufferFromString buf(codec_line);
 
         if (!checkString("CODEC", buf))
         {
             LOG_WARNING(
                 storage.log,
-                "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be deduced "
-                "automatically, from data on disk",
+                "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be recovered "
+                "from data on disk.",
                 name,
                 path,
                 codec_line);
-            default_codec = detectDefaultCompressionCodec();
+            /// The codec file is present but malformed, so its recorded default cannot be parsed. When
+            /// no column proves the codec either, determine whether this is a legacy part from
+            /// `checksums.txt`. A post-change part with an unusable codec file has no authoritative
+            /// fallback and must not be silently relabelled with an unrelated codec.
+            default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
+            return;
         }
 
         try
@@ -1874,27 +1996,96 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         }
         catch (const DB::Exception & ex)
         {
-            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be deduced automatically, from data on disk.", name, path, codec_line, ex.what());
-            default_codec = detectDefaultCompressionCodec();
+            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be recovered from data on disk.", name, path, codec_line, ex.what());
+            /// Same recovery as the malformed-content branch above and the missing-file branch
+            /// below. A post-change part with no column proof must fail closed rather than report
+            /// an unrelated default codec.
+            default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
         }
     }
     else
-        default_codec = detectDefaultCompressionCodec();
+    {
+        /// The `default_compression_codec.txt` file is missing. When no column proves the codec
+        /// (every column has an explicit `CODEC`), only a legacy pre-change part can be recovered
+        /// safely. A post-change part must contain this file; otherwise its actual default is no
+        /// longer recorded on disk, so fail closed instead of reporting a guess.
+        default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
+    }
 }
 
-void IMergeTreeDataPart::loadSourcePartsSet()
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodecFromChecksums() const
+{
+    /// Called when the part's `default_compression_codec.txt` is unusable (missing or malformed) and
+    /// no column proves the codec. `checksums.txt` is written with the built-in default, not the
+    /// part's selected default, so it cannot recover an arbitrary modern part. It can establish
+    /// that the part predates the change: older compressed checksums frames use `LZ4`, while new
+    /// ones use `ZSTD`. For a new-format frame, the missing codec file is corruption and must fail
+    /// closed rather than misreporting a size-aware, configured, or recompressed part as `ZSTD`.
+    /// Only an uncompressed legacy `checksums.txt` (version < 4) proves that `LZ4` is safe. A
+    /// missing or regenerated file has no trustworthy write-time provenance and must fail closed.
+    auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
+
+    /// If `checksums.txt` was missing and `loadChecksums` regenerated it earlier in this load, the file
+    /// now on disk is a fresh frame compressed with the *current* built-in default codec, not the one
+    /// the part was written with. Reading its codec family would recover the current default (e.g.
+    /// `ZSTD(3)` -> `ZSTD(1)`) rather than the write-time codec, defeating the purpose of this recovery.
+    /// It has no trustworthy write-time provenance, so fail closed.
+    if (checksums_were_regenerated)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot recover the default compression codec for part {}: {} was regenerated", name, DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    auto buf = readFileIfExists("checksums.txt");
+    if (!buf)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot recover the default compression codec for part {}: {} is missing", name, DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    if (!checkString("checksums format version: ", *buf))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot recover the default compression codec for part {}: {} has an unknown format", name, DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    size_t format_version = 0;
+    readText(format_version, *buf);
+    assertChar('\n', *buf);
+
+    /// Only the compressed format carries a codec frame to read; earlier versions are plain text.
+    if (format_version < 4)
+        return lz4;
+
+    /// `getCompressionCodecForFile` reads the codec family from the compressed frame. Before this
+    /// change the built-in default was always `LZ4`; any other frame denotes a part written after
+    /// the codec-file contract was introduced.
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    auto codec = getCompressionCodecForFile(*buf, size_compressed, size_decompressed, /* skip_to_next_block */ false);
+    if (codec->getMethodByte() == lz4->getMethodByte())
+        return lz4;
+
+    throw Exception(
+        ErrorCodes::CORRUPTED_DATA,
+        "Cannot recover the default compression codec for part {}: {} is missing or malformed and the part was written after the codec-file contract was introduced",
+        name,
+        DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+}
+
+void IMergeTreeDataPart::setPatchPartIndex(PatchPartIndex patch_part_index_)
+{
+    patch_part_index = std::move(patch_part_index_);
+}
+
+const PatchPartIndex & IMergeTreeDataPart::getPatchPartIndex() const
+{
+    if (!patch_part_index)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part index is not initialized for part {}", name);
+
+    return *patch_part_index;
+}
+
+void IMergeTreeDataPart::loadPatchPartIndex()
 {
     if (!info.isPatch())
         return;
 
-    /// For patch parts `source_parts_set` (`min_max_versions_by_part` / `source_parts_by_version`)
-    /// is part-lifetime metadata, so route it into the dedicated arena like the other loaders.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-    if (auto in = readFileIfExists(SourcePartsSetForPatch::FILENAME))
-        source_parts_set.readBinary(*in);
+    if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
+        patch_part_index = PatchPartIndex::readBinary(*in);
     else
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", SourcePartsSetForPatch::FILENAME, name);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }
 
 template <typename Writer>
@@ -1969,47 +2160,143 @@ void IMergeTreeDataPart::removeMetadataVersion()
     getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
 }
 
-CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std::function<CompressionCodecPtr()> & get_fallback_codec) const
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    /// Consult the metadata that actually describes this part's columns: for a projection part the
+    /// table's columns say nothing about the projection's columns (which can be expressions such as
+    /// aggregates), so resolve through `getMetadataSnapshot`, which returns the projection's own
+    /// metadata for it.
+    auto metadata_snapshot = getMetadataSnapshot();
 
     const auto & storage_columns = metadata_snapshot->getColumns();
-    CompressionCodecPtr result = nullptr;
-    for (const auto & part_column : getColumns())
+
+    /// A column with no CODEC at all, and a column whose codec pipeline contains a `Default` stage
+    /// (`CODEC(Default)`, `CODEC(Delta, Default)`, ...), are both compressed with the part's default
+    /// codec in their generic-compression stage, so their data proves the default codec family. Only
+    /// a column with an explicit non-default codec must be skipped (its data does not represent the
+    /// default codec).
+    auto is_default_coded = [&](const String & column_name)
     {
-        /// It was compressed with default codec and it's not empty
-        auto column_size = getColumnSize(part_column.name);
-        if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
+        return !storage_columns.hasCompressionCodec(column_name)
+            || storage_columns.hasExplicitDefaultCompressionCodec(column_name);
+    };
+
+    /// The column proof is sound only when the codec declarations consulted above are the ones the
+    /// part was written under. After `ALTER TABLE ... MODIFY COLUMN ... CODEC(...)` (or a change
+    /// adding or removing a `Default` stage in a pipeline), the current declarations can make the
+    /// proof skip the only genuinely default-coded column - or, worse, read the frame of a column
+    /// that was explicitly coded at write time as proof of the default. Historical metadata is not
+    /// available here, so when the part records a metadata version different from the current one,
+    /// do not trust the column proof at all and take the approximate fallback. The fence is
+    /// best-effort: only `ReplicatedMergeTree` increments the metadata version on `ALTER` (for plain
+    /// `MergeTree` it stays 0), and a legacy part with no version recorded on disk had it fabricated
+    /// from the current metadata in `loadColumns` (`old_part_with_no_metadata_version_on_disk`), so
+    /// in both cases a mismatch is undetectable and the proof is kept, as before.
+    bool column_data_proves_default_codec = old_part_with_no_metadata_version_on_disk
+        || metadata_version == metadata_snapshot->getMetadataVersion();
+
+    /// In a Compact part all columns share a single data file, and `getCompressionCodecForFile`
+    /// reads that file's first frame, which belongs to whichever column was written first - not
+    /// necessarily to the column being inspected. The first frame proves the default codec only when
+    /// every stored column is default-coded; with mixed codecs the frame cannot be attributed to a
+    /// particular column, so the column proof must be skipped in favor of the fallback.
+    if (column_data_proves_default_codec && getType() == MergeTreeDataPartType::Compact)
+    {
+        for (const auto & part_column : getColumns())
         {
-            String path_to_data_file;
-            getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            if (!is_default_coded(part_column.name))
             {
+                column_data_proves_default_codec = false;
+                break;
+            }
+        }
+    }
+
+    CompressionCodecPtr result = nullptr;
+    if (column_data_proves_default_codec)
+    {
+        for (const auto & part_column : getColumns())
+        {
+            /// It was compressed with default codec and it's not empty.
+            auto column_size = getColumnSize(part_column.name);
+            /// Compact parts account all column data in the shared `data.bin`, so their per-column
+            /// compressed sizes are always zero. After verifying above that every stored column is
+            /// default-coded, its nonempty shared file proves the codec independently of those sizes.
+            if ((column_size.data_compressed != 0 || getType() == MergeTreeDataPartType::Compact) && is_default_coded(part_column.name))
+            {
+                String path_to_data_file;
+                getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    if (path_to_data_file.empty())
+                    {
+                        auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                        if (!stream_name)
+                            return;
+
+                        auto file_name = *stream_name + ".bin";
+                        /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                        if (getDataPartStorage().getFileSize(file_name) != 0)
+                            path_to_data_file = file_name;
+                    }
+                });
+
                 if (path_to_data_file.empty())
                 {
-                    auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
-                    if (!stream_name)
-                        return;
-
-                    auto file_name = *stream_name + ".bin";
-                    /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                    if (getDataPartStorage().getFileSize(file_name) != 0)
-                        path_to_data_file = file_name;
+                    LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but all data files don't exist or empty", name, backQuoteIfNeed(part_column.name));
+                    continue;
                 }
-            });
 
-            if (path_to_data_file.empty())
-            {
-                LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but all data files don't exist or empty", name, backQuoteIfNeed(part_column.name));
-                continue;
+                auto recovered = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
+
+                /// The default codec is the column's generic-compression stage. For a column coded
+                /// with the default codec alone the recovered frame codec is that stage itself; for a
+                /// pipeline (`CODEC(Delta, Default)`) the frame is a `Multiple` chain and the default
+                /// codec is its single generic-compression stage (a valid pipeline has at most one).
+                /// A structural substream (`Array` offsets, null map, ...) is written with the
+                /// generic stages only, dropping the rest of the pipeline, so search for the generic
+                /// stage instead of matching the declared pipeline by position. `NONE` counts too:
+                /// it is not a generic compression, but a default of `NONE` produces a plain `NONE`
+                /// frame that identifies the default exactly.
+                if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(recovered.get()))
+                {
+                    for (const auto & stage : multiple->getCodecs())
+                    {
+                        if (stage->isGenericCompression())
+                        {
+                            result = stage;
+                            break;
+                        }
+                    }
+                }
+                else if (recovered->isGenericCompression() || recovered->isNone())
+                    result = recovered;
+
+                /// No generic-compression stage in the frame: it cannot prove the default codec
+                /// (e.g. a pipeline whose generic stage was substituted by a `NONE` default), so try
+                /// the next column.
+                if (!result)
+                    continue;
+
+                /// `getCompressionCodecForFile` reconstructs codecs from the frame's method bytes
+                /// only. A method byte identifies neither the codec's numeric parameters (a
+                /// `ZSTD(3)` default reads back as `ZSTD(1)`) nor even always the exact family
+                /// (`LZ4` and `LZ4HC` share the byte `0x82`, see `CompressionInfo.h`, so an
+                /// `LZ4HC(N)` default reads back as plain `LZ4`). The recovery is therefore never
+                /// provably exact - mark `default_codec` approximate, for the same reasons as the
+                /// `!result` fallback below: consumers must treat it as "unknown" rather than trust
+                /// a descriptor that the on-disk frame does not preserve.
+                default_codec_is_approximate = true;
+
+                break;
             }
-
-            result = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
-            break;
         }
     }
 
     if (!result)
-        result = CompressionCodecFactory::instance().getDefaultCodec();
+    {
+        result = get_fallback_codec();
+        default_codec_is_approximate = true;
+    }
 
     return result;
 }
@@ -2083,6 +2370,12 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         /// Check the data while we are at it.
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+
+        /// The file we are about to write is compressed with the *current* built-in default codec, so
+        /// its frame reflects that codec, not the one the part was written with. Remember that it was
+        /// regenerated so `detectDefaultCompressionCodecFromChecksums` does not mistake it for
+        /// write-time provenance (it runs later in `loadColumnsChecksumsIndexes`, after `loadChecksums`).
+        checksums_were_regenerated = true;
 
         bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
@@ -2286,10 +2579,10 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         size_t rows_to_read = index_granularity->getMarkRows(current_mark);
         continue_reading = (current_mark != 0);
 
-        Columns result;
+        MutableColumns result;
         result.resize(1);
 
-        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, 0, result);
+        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, result);
         if (!rows_read)
         {
             LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
@@ -2368,6 +2661,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
         for (auto & column : loaded_columns)
             setVersionToAggregateFunctions(column.type, true);
+
+        if (!info.isPatch())
+            attachQuantizeSerializations(loaded_columns, getMetadataSnapshot()->getColumns());
     }
     else
     {
@@ -2446,7 +2742,7 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
     /// `getMinMaxIndex` build, and the in-place merge/update sites in MergeTask): here it is either not
     /// yet populated (merge/mutation) or would be reset again later (zero-level virtual columns).
     if (info.isPatch())
-        reallocateByCopy(source_parts_set);
+        reallocateByCopy(patch_part_index);
 }
 
 void IMergeTreeDataPart::loadColumnsSubstreams()
@@ -3400,10 +3696,10 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
-    Columns result;
+    MutableColumns result;
     result.resize(1);
-    reader->readRows(0, false, 0, 0, result);
-    return result[0];
+    reader->readRows(0, false, 0, result);
+    return std::move(result[0]);
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

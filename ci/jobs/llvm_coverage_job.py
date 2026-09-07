@@ -5,13 +5,54 @@ import shlex
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
+from ci.defs.defs import (
+    LLVM_ARTIFACTS_LIST,
+    S3_BUCKET_HTTP_ENDPOINT,
+    S3_REPORT_BUCKET_HTTP_ENDPOINT,
+)
 
 CURRENT_DIR = Utils.cwd()
 TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
+
+
+def expected_profile_files(artifact_names) -> list[str]:
+    """Profile filenames this run must merge, one per coverage shard artifact.
+
+    Every producer names its profile after its own artifact
+    (`<artifact>.profdata`), so the filename carries the shard identity and
+    completeness is a plain set comparison against this list.
+    """
+    return sorted(f"{name}.profdata" for name in artifact_names)
+
+
+def present_profile_files(directory: str) -> list[str]:
+    """Profile filenames present in `directory`.
+
+    Must be snapshotted BEFORE the aggregate merge runs: the merge writes its
+    own merged.profdata into the same directory.
+    """
+    if not os.path.isdir(directory):
+        return []
+    return sorted(
+        name
+        for name in os.listdir(directory)
+        if name.endswith(".profdata")
+        and os.path.isfile(os.path.join(directory, name))
+    )
+
+
+def missing_profile_files(expected: list[str], present: list[str]) -> list[str]:
+    """Expected shard profiles that did not arrive.
+
+    Extra files in `present` (e.g. a stale merged.profdata) are deliberately not
+    an error: the merge is given exactly the expected list, so they are never
+    folded into the total.
+    """
+    return sorted(set(expected) - set(present))
 
 
 def get_lcov_summary(
@@ -71,6 +112,122 @@ def get_lcov_summary(
 
 
 COVERAGE_DROP_TOLERANCE = 0.3
+
+
+def report_s3_base():
+    """Base URL of the artifacts this run uploads itself. Praktika owns the
+    prefix layout, so ask it instead of restating PRs/<pr>/<sha>."""
+    return f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{Info().env.get_s3_prefix()}"
+
+
+def master_coverage_url(sha):
+    """Link to the `llvm_coverage.info` published by `MasterCI` at master
+    commit `sha`."""
+    prefix = _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+    )
+    return f"https://{S3_BUCKET_HTTP_ENDPOINT}/{prefix}/llvm_coverage/llvm_coverage.info"
+
+
+# generate_diff_coverage_report.sh writes one of these tokens before every exit 0.
+DIFF_OUTCOME_MARKER_FILE = "diff_outcome.txt"
+
+
+class DiffOutcome:
+    """The mutually exclusive outcomes of generate_diff_coverage_report.sh.
+
+    SCRIPT_REPORTED holds the states the script names in its marker file. FAILED
+    and UNKNOWN carry no marker: the script exited non-zero, or exited 0 without
+    naming a state.
+    """
+
+    REPORT_GENERATED = "report_generated"
+    NO_CPP_CHANGES = "no_cpp_changes"
+    NO_COVERAGE_DATA = "no_coverage_data"
+    CURRENT_COVERAGE_EMPTY = "current_coverage_empty"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+    SCRIPT_REPORTED = (
+        REPORT_GENERATED,
+        NO_CPP_CHANGES,
+        NO_COVERAGE_DATA,
+        CURRENT_COVERAGE_EMPTY,
+    )
+
+
+def read_diff_outcome_marker(temp_dir: str) -> str:
+    """Return the token the diff script reported, or "" if it reported none."""
+    marker = Path(temp_dir) / DIFF_OUTCOME_MARKER_FILE
+    if not marker.exists():
+        return ""
+    token = marker.read_text(encoding="utf-8", errors="replace").strip()
+    return token if token in DiffOutcome.SCRIPT_REPORTED else ""
+
+
+def classify_diff_outcome(script_ok: bool, marker: str, report_ready: bool) -> str:
+    """Which of the six outcomes the diff step had.
+
+    Exit status alone decides failure. This run's marker wins over `report_ready`,
+    which is consulted only when there is no marker at all, so that a script
+    predating the marker still reports a report it did generate.
+    """
+    if not script_ok:
+        return DiffOutcome.FAILED
+    if marker in DiffOutcome.SCRIPT_REPORTED:
+        return marker
+    if report_ready:
+        return DiffOutcome.REPORT_GENERATED
+    return DiffOutcome.UNKNOWN
+
+
+# Total over DiffOutcome: each entry completes a "<what did not happen>:
+# <reason>." sentence. The helpers below index it directly, so an outcome missing
+# from here is a crash rather than a silently empty reason.
+_DIFF_OUTCOME_REASON = {
+    DiffOutcome.REPORT_GENERATED: "a report was generated but not detected",
+    DiffOutcome.NO_CPP_CHANGES: (
+        "No coverable C/C++ source files changed"
+        " (contrib/ is excluded from coverage)"
+    ),
+    DiffOutcome.NO_COVERAGE_DATA: (
+        "No coverage data for the changed C/C++ source files"
+        " (they may be new or not instrumented)"
+    ),
+    DiffOutcome.CURRENT_COVERAGE_EMPTY: (
+        "Current coverage is empty for the changed C/C++ source files"
+        " (tests may have been removed or disabled)"
+    ),
+    DiffOutcome.FAILED: (
+        "bash ci/jobs/scripts/generate_diff_coverage_report.sh failed"
+        " (its output is on the Generate LLVM Coverage Diff Report result)"
+    ),
+    DiffOutcome.UNKNOWN: (
+        "bash ci/jobs/scripts/generate_diff_coverage_report.sh reported no outcome"
+    ),
+}
+
+
+def diff_report_message(outcome: str) -> str:
+    reason = _DIFF_OUTCOME_REASON[outcome]
+    return f"Differential coverage report was not generated: {reason}."
+
+
+def uncovered_code_message(outcome: str) -> str:
+    reason = _DIFF_OUTCOME_REASON[outcome]
+    return f"Uncovered code analysis did not run: {reason}."
+
+
+def coverage_comment_message(outcome: str) -> str:
+    reason = _DIFF_OUTCOME_REASON[outcome]
+    return f"Skipping coverage comment: {reason}."
+
+
+def coverage_marker_reason(outcome: str) -> str:
+    """Completes the hook's "No coverage measurement for commit <sha>: <reason>."
+    warning, so the reason starts lowercase and carries no trailing period."""
+    reason = _DIFF_OUTCOME_REASON[outcome]
+    return reason[:1].lower() + reason[1:]
 
 
 def coverage_drop(baseline_cov: float, current_cov: float) -> float:
@@ -200,40 +357,156 @@ if __name__ == "__main__":
     os.environ["REPO_NAME"] = repo_name
     os.environ["PR_NUMBER"] = str(pr_number)
     os.environ["PREV_30_COMMITS"] = ",".join(master_track_commits)
+    os.environ["PREV_COVERAGE_URLS"] = ",".join(
+        master_coverage_url(sha) for sha in master_track_commits
+    )
 
     is_master_branch = branch == "master"
     _diff_ran = False
 
     results = []
 
-    gen_report_res = Result.from_commands_run(
-        name="Generate LLVM Coverage Report",
-        command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
+    # A verdict may only be derived from a COMPLETE measurement: all expected
+    # shard profiles present and merged all-or-nothing. On any shortfall the job
+    # reports SKIPPED with the reason and withholds every comparative output -
+    # in particular llvm_coverage.info, so that "an .info exists for a master
+    # commit" keeps meaning "that commit's measurement was complete" (the diff
+    # gate selects its baseline by exactly that existence test), and the CI DB
+    # row, so an incomplete master run cannot poison the baseline series.
+    _expected_profiles = expected_profile_files(LLVM_ARTIFACTS_LIST)
+    _present_profiles = present_profile_files(TEMP_DIR)
+    _missing_profiles = missing_profile_files(_expected_profiles, _present_profiles)
+    print(
+        f"Coverage shard profiles: expected {len(_expected_profiles)}, "
+        f"present {len(_present_profiles)}, missing {len(_missing_profiles)}"
     )
 
-    # Compress and attach the full HTML report archive + files to the generate result.
-    # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
-    # computes common_root = llvm_coverage_html_report/, so relative links stay intact.
-    Utils.compress_gz(
-        f"{TEMP_DIR}/llvm_coverage_html_report",
-        f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
-    )
-    gen_report_res.files.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
-    _html_files, _html_assets = collect_html_report_files("llvm_coverage_html_report")
-    gen_report_res.files.extend(_html_files)
-    gen_report_res.assets.extend(_html_assets)
+    measurement_ok = True
+    skip_reason = ""
+    if _missing_profiles:
+        measurement_ok = False
+        skip_reason = (
+            f"incomplete coverage measurement: {len(_missing_profiles)} of "
+            f"{len(_expected_profiles)} shard profiles are missing: "
+            f"{', '.join(_missing_profiles)}"
+        )
+        merge_res = Result.create_from(
+            name="Merge LLVM Coverage Profiles",
+            status=Result.Status.SKIPPED,
+            info=skip_reason,
+        )
+        merge_res.set_comment(skip_reason)
+    else:
+        _merge_env = f"MERGE_PROFDATA_FILES={shlex.quote(' '.join(_expected_profiles))}"
+        merge_res = Result.from_commands_run(
+            name="Merge LLVM Coverage Profiles",
+            command=[f"{_merge_env} bash ci/jobs/scripts/merge_llvm_coverage.sh merge"],
+        )
+        _merge_status_file = Path(TEMP_DIR) / "merge_profdata.status"
+        _merge_status = (
+            _merge_status_file.read_text().strip()
+            if _merge_status_file.exists()
+            else ""
+        )
+        if merge_res.is_ok() and _merge_status == "ok":
+            pass
+        elif merge_res.is_ok():
+            # The merge ran and rejected an input (--failure-mode=any): an
+            # incomplete measurement, not a tooling failure.
+            measurement_ok = False
+            skip_reason = (
+                "the aggregate profile merge rejected an invalid shard profile, "
+                "so this run has no complete measurement (see the merge step log)"
+            )
+            merge_res.set_status(Result.Status.SKIPPED)
+            merge_res.set_info(skip_reason)
+            merge_res.set_comment(skip_reason)
+        else:
+            # The merge step itself broke (missing tool, bad invocation): a
+            # tooling failure, so merge_res stays FAIL and the job reddens.
+            measurement_ok = False
+            skip_reason = "the aggregate profile merge step failed"
+    results.append(merge_res)
+    if not measurement_ok:
+        print(f"NOTE: {skip_reason}")
+
+    if measurement_ok:
+        gen_report_res = Result.from_commands_run(
+            name="Generate LLVM Coverage Report",
+            command=["bash ci/jobs/scripts/merge_llvm_coverage.sh report"],
+        )
+        # Compress and attach the full HTML report archive + files to the generate result.
+        # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
+        # computes common_root = llvm_coverage_html_report/, so relative links stay intact.
+        # The directory is absent when the report phase failed; that failure is
+        # already RED, so do not compound it with an exception here.
+        if Path(f"{TEMP_DIR}/llvm_coverage_html_report").exists():
+            Utils.compress_gz(
+                f"{TEMP_DIR}/llvm_coverage_html_report",
+                f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
+            )
+            gen_report_res.files.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
+            _html_files, _html_assets = collect_html_report_files("llvm_coverage_html_report")
+            gen_report_res.files.extend(_html_files)
+            gen_report_res.set_assets(_html_assets)
+    else:
+        gen_report_res = Result.create_from(
+            name="Generate LLVM Coverage Report",
+            status=Result.Status.SKIPPED,
+            info=skip_reason,
+        )
+        gen_report_res.set_comment(skip_reason)
     results.append(gen_report_res)
 
-    if not is_master_branch:
+    if not is_master_branch and not measurement_ok:
+        # No verdict may be produced from an incomplete measurement: skip the
+        # comparison, the uncovered-code analysis, the GitHub comment and the
+        # CI DB row. SKIPPED counts as OK, so an infra shortfall the PR author
+        # cannot act on does not block the PR.
+        _skip_msg = f"Coverage comparison skipped: {skip_reason}"
+        print(_skip_msg)
+        diff_res = Result.create_from(
+            name="Generate LLVM Coverage Diff Report",
+            status=Result.Status.SKIPPED,
+            info=_skip_msg,
+        )
+        diff_res.set_comment(_skip_msg)
+        results.append(diff_res)
+        print_res = Result.create_from(
+            name="Print Uncovered Code",
+            status=Result.Status.SKIPPED,
+            info=_skip_msg,
+        )
+        print_res.set_comment(_skip_msg)
+        results.append(print_res)
+        if not is_local_run:
+            # The post-hook updates the PR comment's coverage section from this
+            # file. Without it, a skipped run would leave the previous commit's
+            # numbers in the comment with nothing to say they are stale. The
+            # hook renders this marker above the last complete run's numbers.
+            with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
+                json.dump(
+                    {
+                        "skipped_reason": skip_reason,
+                        "commit_sha": current_commit_sha,
+                    },
+                    f,
+                )
+    elif not is_master_branch:
         diff_res = Result.from_commands_run(
             name="Generate LLVM Coverage Diff Report",
             command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
         )
 
-        # The diff script exits 0 without running genhtml when no C/C++ files changed.
-        # Use the presence of its output directory as the authoritative indicator.
+        # The diff script leaves no report directory in four distinct outcomes, so
+        # the outcome comes from its own marker plus its exit status.
         _diff_report_dir = Path(TEMP_DIR) / "llvm_coverage_diff_html_report"
-        _diff_ran = _diff_report_dir.exists()
+        _diff_outcome = classify_diff_outcome(
+            script_ok=diff_res.is_ok(),
+            marker=read_diff_outcome_marker(TEMP_DIR),
+            report_ready=(_diff_report_dir / "index.html").exists(),
+        )
+        _diff_ran = _diff_outcome == DiffOutcome.REPORT_GENERATED
 
         b_line_cov = c_line_cov = b_function_cov = c_function_cov = b_branch_cov = c_branch_cov = delta = 0.0
         b_line_hit = b_line_total = c_line_hit = c_line_total = 0
@@ -290,16 +563,60 @@ if __name__ == "__main__":
                 "llvm_coverage_diff_html_report", entry_point="index_diff.html"
             )
             diff_res.files.extend(_diff_files)
-            diff_res.assets.extend(_diff_assets)
+            diff_res.set_assets(_diff_assets)
         else:
-            print("No C/C++ source files changed — differential coverage report was not generated.")
+            _diff_msg = diff_report_message(_diff_outcome)
+            print(_diff_msg)
+            # A failed result's own info carries the command log, so keep it.
+            if diff_res.is_ok():
+                diff_res.info = _diff_msg
+
+        # When the PR changes no coverable C/C++ source file (a tests-only PR
+        # forced with the `ci-coverage` label, or a CI-scripts-only PR touching
+        # the coverage pipeline), the compiled binary is identical to master and
+        # the per-changed-line analysis above has no input. The global comparison
+        # against the master baseline is still meaningful: added tests show up as
+        # newly covered lines. base_llvm_coverage.info is already on disk in this
+        # outcome - the diff script downloads it before classifying the outcome.
+        _global_comparison_ok = False
+        if _diff_outcome == DiffOutcome.NO_CPP_CHANGES:
+            _baseline_info_file = Path(TEMP_DIR) / "base_llvm_coverage.info"
+            _current_info_file = Path(TEMP_DIR) / "llvm_coverage.info"
+            if _baseline_info_file.exists() and _current_info_file.exists():
+                (b_line_cov, b_line_hit, b_line_total), \
+                (b_function_cov, b_func_hit, b_func_total), \
+                (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
+                    str(_baseline_info_file)
+                )
+                (c_line_cov, c_line_hit, c_line_total), \
+                (c_function_cov, c_func_hit, c_func_total), \
+                (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(
+                    str(_current_info_file)
+                )
+                delta = c_line_cov - b_line_cov
+                print(f"Baseline coverage : {b_line_cov:.2f}%")
+                print(f"Current coverage  : {c_line_cov:.2f}%")
+                print(f"Delta             : {delta:+.2f}%")
+                # No degradation gate here: the binary is unchanged, so a drop
+                # can only be baseline noise (flaky tests, async code), never a
+                # regression this PR could have introduced.
+                _global_comparison_ok = True
+            else:
+                print(
+                    "NOTE: baseline or current tracefile is missing, "
+                    "skipping the global coverage comparison"
+                )
 
         results.append(diff_res)
 
         # Generate report for changed blocks only
         _print_log = f"{TEMP_DIR}{Utils.normalize_string('Print Uncovered Code')}.log"
+        # print_uncovered_code.py needs this run's own non-empty coverage slice,
+        # which only the report outcome has. Elsewhere the file is absent, holds no
+        # records, or is an earlier run's in the same directory.
         _diff_inputs_exist = (
-            Path(TEMP_DIR + "changes.diff").exists()
+            _diff_outcome == DiffOutcome.REPORT_GENERATED
+            and Path(TEMP_DIR + "changes.diff").exists()
             and Path(TEMP_DIR + "current.changed.info").exists()
         )
         if _diff_inputs_exist:
@@ -309,11 +626,17 @@ if __name__ == "__main__":
             )
             print_res = Result.from_fs("Print Uncovered Code")
         else:
-            msg = "No C/C++ source files changed — skipping uncovered code analysis."
+            msg = uncovered_code_message(_diff_outcome)
             print(msg)
+            # Only a skip the script reported is a success; an analysis missed
+            # because the script failed is not.
             print_res = Result.create_from(
                 name="Print Uncovered Code",
-                status=Result.Status.OK,
+                status=(
+                    Result.Status.OK
+                    if _diff_outcome in DiffOutcome.SCRIPT_REPORTED
+                    else Result.Status.FAIL
+                ),
                 info=msg,
             )
             print_res.set_comment(msg)
@@ -337,16 +660,55 @@ if __name__ == "__main__":
             print_res.files.append(_print_log)
         results.append(print_res)
 
+        # Line-level transitions vs the master baseline, the tests-only PR
+        # counterpart of the uncovered-code analysis above. Runs only in the
+        # NO_CPP_CHANGES outcome with both tracefiles present.
+        _newly_covered_stats = None
+        _newly_covered_log = (
+            f"{TEMP_DIR}{Utils.normalize_string('Newly Covered Lines')}.log"
+        )
+        if _global_comparison_ok:
+            from ci.jobs.scripts.newly_covered_lines import generate_report
+
+            _sw = Utils.Stopwatch()
+            try:
+                _newly_covered_stats = generate_report(
+                    current_info=str(_current_info_file),
+                    baseline_info=str(_baseline_info_file),
+                    output_path=_newly_covered_log,
+                )
+                _newly_info = (
+                    f"{_newly_covered_stats['newly_covered']} newly covered lines in "
+                    f"{_newly_covered_stats['newly_covered_files']} files, "
+                    f"{_newly_covered_stats['lost_coverage']} lines lost coverage"
+                )
+                print(f"Newly covered lines analysis: {_newly_info}")
+                newly_res = Result.create_from(
+                    name="Newly Covered Lines",
+                    status=Result.Status.OK,
+                    info=_newly_info,
+                    stopwatch=_sw,
+                )
+                newly_res.files.append(_newly_covered_log)
+            except Exception as e:
+                # A tooling failure reddens the job, same as a Print Uncovered
+                # Code failure would; the comment JSON below simply omits the
+                # newly-covered numbers.
+                print(f"ERROR: newly covered lines analysis failed: {e}")
+                _newly_covered_stats = None
+                newly_res = Result.create_from(
+                    name="Newly Covered Lines",
+                    status=Result.Status.FAIL,
+                    info=f"analysis failed: {e}",
+                    stopwatch=_sw,
+                )
+            results.append(newly_res)
+
         if not is_local_run:
             # Construct S3 artifact URLs from the known upload path structure:
             #   HTML files/assets → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(sub_result)>/<rel_path>
             #   log files         → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(result)>/<log_basename>
-            _s3_prefix = (
-                f"PRs/{pr_number}/{current_commit_sha}"
-                if pr_number > 0
-                else f"REFs/{branch}/{current_commit_sha}"
-            )
-            _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
+            _s3_base = report_s3_base()
             _log_name = f"{Utils.normalize_string(print_res.name)}.log"
             uncovered_code_url = f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}"
 
@@ -356,15 +718,38 @@ if __name__ == "__main__":
             _changed_lines_covered = print_res.ext.get("changed_lines_covered", 0)
             _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
-            # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # the diff HTML report was generated (i.e. C/C++ source files changed).
-            # Tests-only PRs never reach this job at all - the coverage family is
-            # auto-skipped for them (see filter_job.py) since the compiled binary,
-            # and therefore coverage, cannot have moved.
-            _has_coverage_data = _diff_ran
+            # Full coverage numbers exist in two outcomes: the diff HTML report
+            # was generated (C++ changed), or the global comparison ran (the
+            # NO_CPP_CHANGES outcome: a tests-only PR forced with `ci-coverage`,
+            # or a CI-scripts-only PR touching the coverage pipeline - see
+            # filter_job.py). The other outcomes have no numbers to report.
+            _has_coverage_data = _diff_ran or _global_comparison_ok
             if not _has_coverage_data:
-                print("No coverage-relevant changes detected (no C/C++ source changes) — skipping coverage comment.")
+                print(coverage_comment_message(_diff_outcome))
+                # The hook renders this marker as a stale-numbers warning in the
+                # PR comment's coverage section and skips the CI DB insert.
+                with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
+                    json.dump(
+                        {
+                            "skipped_reason": coverage_marker_reason(_diff_outcome),
+                            "commit_sha": current_commit_sha,
+                        },
+                        f,
+                    )
             else:
+                _newly_covered_info = ""
+                _newly_covered_url = ""
+                if _newly_covered_stats is not None:
+                    _newly_covered_info = (
+                        f"+{_newly_covered_stats['newly_covered']} lines in "
+                        f"{_newly_covered_stats['newly_covered_files']} files "
+                        f"(-{_newly_covered_stats['lost_coverage']} lines lost coverage)"
+                    )
+                    _newly_covered_url = (
+                        f"{_s3_base}/llvm_coverage/"
+                        f"{Utils.normalize_string('Newly Covered Lines')}/"
+                        f"{Path(_newly_covered_log).name}"
+                    )
                 _comment_data = {
                     # GitHub comment fields
                     "b_line_cov": b_line_cov,
@@ -394,6 +779,10 @@ if __name__ == "__main__":
                     # actually ran (i.e. C/C++ source files changed). For tests-only PRs
                     # the log doesn't exist on S3, so don't surface a 404 link.
                     "uncovered_code_url": uncovered_code_url if _diff_inputs_exist else "",
+                    # Filled only in the NO_CPP_CHANGES outcome, the counterpart
+                    # of the changed-lines fields above.
+                    "newly_covered_info": _newly_covered_info,
+                    "newly_covered_url": _newly_covered_url,
                     # CIDB fields
                     "check_start_time": datetime.now(timezone.utc).strftime(
                         "%Y-%m-%d %H:%M:%S"
@@ -414,7 +803,15 @@ if __name__ == "__main__":
             print("Local run, skipping CI DB update with coverage results")
     else:
         print("On master branch, skipping diff coverage generation")
-        if not is_local_run:
+        if not is_local_run and not measurement_ok:
+            # The post-hook inserts this row into the coverage CI DB table,
+            # which is the series later baselines and trends read. An
+            # incomplete master measurement must not enter it.
+            print(
+                "This master run's coverage measurement is incomplete, "
+                "skipping the CI DB row so it cannot poison the baseline series."
+            )
+        elif not is_local_run:
             try:
                 (m_line_cov, m_line_hit, m_line_total), \
                 (m_function_cov, m_func_hit, m_func_total), \
@@ -422,8 +819,7 @@ if __name__ == "__main__":
                     f"{TEMP_DIR}/llvm_coverage.info"
                 )
                 print(f"Master coverage: lines={m_line_cov:.2f}% ({m_line_hit}/{m_line_total}) functions={m_function_cov:.2f}% ({m_func_hit}/{m_func_total}) branches={m_branch_cov:.2f}% ({m_branch_hit}/{m_branch_total})")
-                _s3_prefix = f"REFs/{branch}/{current_commit_sha}"
-                _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
+                _s3_base = report_s3_base()
                 _master_data = {
                     "check_start_time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                     "pull_request_number": 0,
@@ -467,27 +863,35 @@ if __name__ == "__main__":
     # the URL is deterministic: llvm_coverage/<normalize(sub_result_name)>/<filename>.
     report_links = []
     if not is_local_run:
-        _s3_prefix = (
-            f"PRs/{pr_number}/{current_commit_sha}"
-            if pr_number > 0
-            else f"REFs/{branch}/{current_commit_sha}"
-        )
-        _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
-        report_links.append(
-            f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
-        )
+        _s3_base = report_s3_base()
+        # Only publish a link when the artifact it addresses exists: on an
+        # incomplete measurement no report is generated, and an unconditional
+        # append would point the intended green SKIPPED result at a 404.
+        if Path(f"{TEMP_DIR}/llvm_coverage_html_report/index.html").exists():
+            report_links.append(
+                f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
+            )
         if _diff_ran:
             report_links.append(
                 f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             )
 
-    archives = [f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz"]
-    if _diff_ran:
-        archives.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
+    archives = [
+        a
+        for a in [
+            f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
+            f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz" if _diff_ran else None,
+        ]
+        if a and Path(a).exists()
+    ]
+
+    _job_info = "LLVM Coverage Job Completed"
+    if not measurement_ok:
+        _job_info = f"{_job_info} ({skip_reason})"
 
     Result.create_from(
         results=results,
         files=archives,
         links=report_links,
-        info="LLVM Coverage Job Completed",
+        info=_job_info,
     ).complete_job(disable_attached_files_sorting=True)

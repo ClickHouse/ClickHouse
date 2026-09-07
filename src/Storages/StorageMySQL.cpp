@@ -361,6 +361,19 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
                 key, contents_key);
         }
 
+        /// An empty contents override never replaces the stored credential with another one - it can
+        /// only silently drop whatever form of it the collection carries, a path or the contents
+        /// alike. Checked before the empty fast path below so a credential the collection stores in
+        /// the contents form is protected too. When the collection stores no credential at all
+        /// (neither the path - a query cannot override it, so `value` is the collection's own - nor
+        /// the contents, read in its pre-override form), there is nothing to drop and the empty
+        /// override stays the no-op it is for the direct arguments.
+        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty()
+            && (!value.empty() || !named_collection.getValueBeforeQueryOverride(contents_key).value_or("").empty()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden with an empty `{}`", key, contents_key);
+
         if (value.empty())
             return value;
 
@@ -380,13 +393,6 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
             /// replaced through the contents form either.
             if (!named_collection.isOverridable(key, /* default_value= */ true))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-
-            /// Empty contents would not replace the configured path with another credential but
-            /// silently drop it, which is the same as overriding the path itself with ''.
-            if (named_collection.getOrDefault<String>(contents_key, "").empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "`{}` cannot be overridden with an empty `{}`", key, contents_key);
 
             return String{};
         }
@@ -662,7 +668,7 @@ SETTINGS
 ;
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 The table structure can differ from the original MySQL table structure:
 
@@ -682,7 +688,7 @@ The table structure can differ from the original MySQL table structure:
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
     To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
@@ -723,12 +729,12 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b F
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/sql-reference/table-functions/mysql) table function.
+This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/reference/functions/table-functions/mysql) table function.
 
 :::note
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter on the columns of the table is rejected with an exception instead of being applied locally, because it cannot be pushed into the passed query. The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of this table is not a case for this setting: this table engine do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. With the analyzer (the default), the check runs only where a filter could be pushed down at all: when this table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of this table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side or mixes it with this table inside one non-`AND` expression (for example an `OR`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected. With the old analyzer (`enable_analyzer = 0`) this scoping does not apply: the whole outer filter is checked when this table is the first table of the join tree, including a predicate on the joined side, and a joined right-hand table is not checked.
 :::
 
 Supports multiple replicas that must be listed by `|`. For example:
@@ -773,7 +779,7 @@ CREATE TABLE mysql_table
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 
-Or using [named collections](/operations/named-collections.md):
+Or using [named collections](/concepts/features/configuration/server-config/named-collections):
 
 ```sql
 CREATE NAMED COLLECTION creds AS
@@ -900,7 +906,7 @@ SETTINGS enable_compression = 1;
 ## See also {#see-also}
 
 - [The mysql table function](/reference/functions/table-functions/mysql)
-- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
+- [Using MySQL as a dictionary source](/reference/statements/create/dictionary/sources/mysql)
 )DOCS_MD",
         .syntax = "ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, on_duplicate_clause])",
         .related = {"PostgreSQL", "SQLite", "MongoDB"}});

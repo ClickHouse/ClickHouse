@@ -15,6 +15,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 如果您需要获取静态 IP 列表，可以使用以下 ClickHouse Cloud API 端点：[`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json)。该 API 提供 ClickHouse Cloud 服务的端点信息，例如按区域和云划分的入站/出站 IP 以及 S3 端点。
 
+对于可使用 [ClickPipes](/zh/integrations/clickpipes/home) 的区域，每个条目还包含 `clickpipes_egress_ips` 字段，其中列出了 ClickPipes 用于出站连接到您的数据源的静态 NAT IP 地址。通过 ClickPipes 摄取数据时，请将这些 IP 地址添加到您的数据源允许列表中。有关详细信息，请参阅 [ClickPipes 静态 IP 列表](/zh/integrations/clickpipes/networking/static-ips)。
+
 如果您使用的是 MySQL 或 PostgreSQL Engine 之类的集成，可能需要授权 ClickHouse Cloud 访问您的实例。您可以使用此 API 获取公网 IP，并将其配置到 GCP 的 `firewalls` 或 `Authorized networks` 中，或者配置到 Azure、AWS 的 `Security Groups` 中，或您正在使用的任何其他基础设施出站流量管理系统中。
 
 例如，要允许来自托管在 AWS 上、位于 `ap-south-1` 区域的 ClickHouse Cloud 服务的访问，您可以添加该区域的 `egress_ips` 地址：
@@ -24,6 +26,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 {
   "aws": [
     {
+      "clickpipes_egress_ips": [
+        "13.203.140.189",
+        "13.232.213.12",
+        "13.235.145.208",
+        "35.154.167.40",
+        "65.0.39.245",
+        "65.1.225.89"
+      ],
       "egress_ips": [
         "3.110.39.68",
         "15.206.7.77",
