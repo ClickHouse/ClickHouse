@@ -780,8 +780,8 @@ static bool versionLess(UInt64 lhs, UInt64 rhs, bool is_signed)
     return lhs < rhs;
 }
 
-/// The version of the value in the given column of the row: the entry of the per-column versions
-/// map when present, the row's version column otherwise.
+/// The version of the value in the given column: the entry of the hidden _column_versions map
+/// (filled by finishGroup, read back from merged parts), or the row's version column when absent.
 static UInt64 rowColumnVersion(
     const SummingSortedAlgorithm::ColumnsDefinition & def, const ColumnRawPtrs & raw_columns, size_t row, const String & column_name)
 {

@@ -1970,6 +1970,18 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "is_deleted column {} does not exist in table declaration.", is_deleted_column);
     };
 
+    /// A version column in the sorting or partition key would split rows with different versions
+    /// into different merge groups, so the version-based resolution would silently never happen.
+    auto check_version_not_in_key = [&](bool is_defined, const KeyDescription & key, const char * key_name)
+    {
+        if (!is_defined)
+            return;
+        const auto key_columns = key.expression->getRequiredColumns();
+        if (std::find(key_columns.begin(), key_columns.end(), version_column) != key_columns.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The version column ({}) cannot be a part of the {} key", version_column, key_name);
+    };
+
 
     if (mode == MergingParams::Collapsing)
         check_sign_column(false, "CollapsingMergeTree");
@@ -2057,20 +2069,6 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
                             "The version column ({}) cannot be listed in the columns to coalesce", version_column);
 
         check_version_column(false, "VersionedCoalescingMergeTree");
-
-        /// A version column in the sorting key would split rows with different versions into different
-        /// merge groups, and in the partition key it would split them into different partitions,
-        /// so the version-based resolution would silently never happen.
-        auto check_version_not_in_key = [&](bool is_defined, const KeyDescription & key, const char * key_name)
-        {
-            if (!is_defined)
-                return;
-            const auto key_columns = key.expression->getRequiredColumns();
-            if (std::find(key_columns.begin(), key_columns.end(), version_column) != key_columns.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "The version column ({}) cannot be a part of the {} key", version_column, key_name);
-        };
-
         check_version_not_in_key(metadata.isSortingKeyDefined(), metadata.getSortingKey(), "sorting");
         check_version_not_in_key(metadata.isPartitionKeyDefined(), metadata.getPartitionKey(), "partition");
     }
