@@ -1,8 +1,0 @@
---- row count ---
-10
---- engine-written file: string column annotation ---
-a	None
-b	String
---- table-function-written file: annotation and compression ---
-a	None	GZIP
-b	String	GZIP

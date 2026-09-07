@@ -13,7 +13,6 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 SET use_statistics = 0;
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_prewhere_map_cost;
 CREATE TABLE t_prewhere_map_cost (id UInt64, modality LowCardinality(String), h Map(String, String))
@@ -35,3 +34,15 @@ SELECT count() FROM t_prewhere_map_cost WHERE modality = '' AND h['k'] = 'nope';
 SELECT count() FROM t_prewhere_map_cost WHERE modality = '' AND h['k'] = 'nope'
 SETTINGS allow_reorder_prewhere_conditions = 0;
 
+-- Same check through the legacy InterpreterSelectQuery PREWHERE path
+-- (disable both the analyzer and the plan-based PREWHERE optimizer).
+SET enable_analyzer = 0;
+SET query_plan_optimize_prewhere = 0;
+
+SELECT '-- legacy InterpreterSelectQuery path: cheap filter first';
+SELECT position(explain, 'modality') > 0 AND position(explain, 'modality') < position(explain, 'arrayElement') AS cheap_first
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_map_cost WHERE modality = '' AND h['k'] = 'nope'
+) WHERE explain LIKE '%Prewhere filter column%';
+
+DROP TABLE t_prewhere_map_cost;

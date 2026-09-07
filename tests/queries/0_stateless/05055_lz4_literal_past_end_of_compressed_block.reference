@@ -1,3 +1,0 @@
-well-formed block: 200
-literal past the end of the payload: CANNOT_DECOMPRESS
-the same, after a block that primes the slack: CANNOT_DECOMPRESS

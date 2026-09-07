@@ -33,12 +33,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 struct Settings;
-
-/// The constant is arbitrary (matches `windowFunnel`).
-static constexpr size_t MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE = 100'000'000;
 
 
 template <typename T>
@@ -102,7 +98,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & set = this->data(place).value;
         const auto & rhs_set = this->data(rhs).value;
@@ -155,11 +151,7 @@ public:
         size_t size = 0;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
-        if (size > MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large array size ({}) in groupArrayIntersect deserialization", size);
-        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
-        set.reserve(std::min(size, buf.available() / sizeof(T)));
+        set.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             T key{};
@@ -277,7 +269,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         const auto & rhs_value = this->data(rhs).value;
@@ -331,12 +323,7 @@ public:
         size_t size = 0;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
-        if (size > MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large array size ({}) in groupArrayIntersect deserialization", size);
-        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
-        /// Elements are variable length, so the divisor is the size of a slot, not of an element.
-        set.reserve(std::min(size, buf.available() / sizeof(typename State::Set::cell_type)));
+        set.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);
@@ -474,9 +461,9 @@ INSERT INTO numbers VALUES
 SELECT groupArrayIntersect(a) AS intersection FROM numbers;
             )",
             R"(
-┌─intersection─┐
-│ [1,2]        │
-└──────────────┘
+┌─intersection──────┐
+│ [1, 2]            │
+└───────────────────┘
             )"
         }
     };

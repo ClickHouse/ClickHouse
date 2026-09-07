@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -14,8 +13,6 @@ public:
 
     String function_name;
     String function_body;
-    /// Ordered parameter OIDs for the extended `Bind` path.
-    VectorWithMemoryTracking<Int32> parameter_types;
 
     String getID(char) const override { return "PreparedStatement"; }
 
@@ -28,7 +25,7 @@ public:
     ASTExecute() = default;
 
     String function_name;
-    VectorWithMemoryTracking<String> arguments;
+    std::vector<String> arguments;
 
     String getID(char) const override { return "Execute"; }
 
