@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <numeric>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -243,7 +244,8 @@ Chunk DistinctSpillLayout::serializeKeysAndAddServiceColumns(
         std::iota(arrival_numbers->getData().begin(), arrival_numbers->getData().end(), first_arrival_number);
         columns.emplace_back(std::move(arrival_numbers));
     }
-    columns.emplace_back(ColumnUInt8::create(num_rows, static_cast<UInt8>(already_emitted)));
+    /// The flag stays constant while sorting and deduplication can reduce the chunk's row count.
+    columns.emplace_back(ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(already_emitted)), num_rows));
 
     return Chunk(std::move(columns), num_rows);
 }
