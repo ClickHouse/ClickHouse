@@ -150,6 +150,7 @@ static struct InitFiu
     REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(merge_tree_read_pool_pause_after_cancel) \
     PAUSEABLE_ONCE(merge_tree_reader_pause_before_report_broken) \
+    PAUSEABLE_ONCE(merge_tree_sink_after_commit_part) \
     REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \

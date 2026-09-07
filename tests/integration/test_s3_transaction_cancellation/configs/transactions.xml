@@ -1,0 +1,11 @@
+<clickhouse>
+    <allow_experimental_transactions>42</allow_experimental_transactions>
+    <transactions_info_log>
+        <database>system</database>
+        <table>transactions_info_log</table>
+    </transactions_info_log>
+    <blob_storage_log>
+        <database>system</database>
+        <table>blob_storage_log</table>
+    </blob_storage_log>
+</clickhouse>
