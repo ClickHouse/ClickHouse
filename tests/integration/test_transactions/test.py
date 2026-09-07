@@ -463,8 +463,7 @@ def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
     node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
 
     # DROP PARTITION never returns: it renames the empty covering part into place and then blocks at
-    # the failpoint, holding the parts lock.  The executor must outlive the assertion, because
-    # shutdown(wait=True) would block forever on a worker parked in the wait.
+    # the failpoint, holding the parts lock.
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
     try:
         # A mistyped name would otherwise only surface as BAD_ARGUMENTS on the waiting thread below.
@@ -496,7 +495,9 @@ def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
         # restart has cleared it.
         node.query_and_get_answer_with_error(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
         node.query_and_get_answer_with_error("SYSTEM START MERGES")
-        pool.shutdown(wait=False, cancel_futures=True)
+        # The disable above releases the parked commit and the wait, so joining is bounded, and the
+        # module-scoped node must be handed on with no DROP PARTITION still in flight on `mt4`.
+        pool.shutdown(wait=True, cancel_futures=True)
 
     node.query("SYSTEM WAIT LOADING PARTS mt4")
 
