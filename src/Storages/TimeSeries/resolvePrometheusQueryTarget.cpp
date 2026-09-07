@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -39,6 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -130,25 +132,22 @@ namespace
     /// Asks every replica itself, not one per shard as cluster() would, and afresh on every request: a verdict kept
     /// for later would let a same-schema table swapped in under the name meanwhile take a write unchecked.
     void checkShardTargets(
-        const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, bool refuse_unavailable)
+        const IStorage & storage,
+        const PrometheusQueryDistributedTarget & target,
+        const ContextPtr & context,
+        const ClusterPtr & cluster,
+        bool refuse_unavailable)
     {
         const auto & remote_id = target.remote_time_series_storage_id;
-        const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
         const auto metadata = storage.getInMemoryMetadataPtr(context, false);
         const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
-        /// An undeclared database is each replica's own default, except on a replica that is this server itself: the
-        /// read and the write pin prefer_localhost_replica on and parallel replicas off, so it runs on this context.
-        auto make_probe_query = [&](bool runs_on_the_caller)
-        {
-            const String database_predicate = !remote_id.database_name.empty()
-                ? quoteString(remote_id.database_name)
-                : (runs_on_the_caller ? quoteString(context->getCurrentDatabase()) : "currentDatabase()");
-            const String table_predicate = quoteString(remote_id.table_name);
-            return "SELECT (SELECT engine FROM system.tables WHERE database = " + database_predicate + " AND name = " + table_predicate
-                + ") AS engine, (SELECT type FROM system.columns WHERE database = " + database_predicate + " AND table = " + table_predicate
-                + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries) + ") AS ts_type";
-        };
+        /// An undeclared database is each replica's own default.
+        const String database_predicate = remote_id.database_name.empty() ? "currentDatabase()" : quoteString(remote_id.database_name);
+        const String table_predicate = quoteString(remote_id.table_name);
+        const String probe_query = "SELECT (SELECT engine FROM system.tables WHERE database = " + database_predicate
+            + " AND name = " + table_predicate + ") AS engine, (SELECT type FROM system.columns WHERE database = " + database_predicate
+            + " AND table = " + table_predicate + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries) + ") AS ts_type";
         const auto nullable_string = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
         const auto probe_header = std::make_shared<const Block>(Block{{nullable_string, "engine"}, {nullable_string, "ts_type"}});
 
@@ -165,10 +164,44 @@ namespace
         std::set<String> wrong_types;
         /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
         Strings unavailable_replicas;
+        auto judge = [&](const String & replica, const Field & engine, const Field & ts_type)
+        {
+            if (engine.isNull())
+                unavailable_replicas.push_back(fmt::format("{} (no table {})", replica, backQuoteIfNeed(remote_id.table_name)));
+            else if (engine.safeGet<String>() != "TimeSeries")
+                ++wrong_engine_replicas;
+            /// Not exposed to the probe, or not there at all: the type went unchecked either way.
+            else if (ts_type.isNull())
+                unavailable_replicas.push_back(fmt::format(
+                    "{} (no `{}` column on {})", replica, TimeSeriesColumnNames::TimeSeries, backQuoteIfNeed(remote_id.table_name)));
+            else if (ts_type.safeGet<String>() != time_series_type)
+            {
+                ++wrong_type_replicas;
+                wrong_types.insert(ts_type.safeGet<String>());
+            }
+        };
+
         for (const auto [shard_info, shard_addresses] : std::views::zip(cluster->getShardsInfo(), cluster->getShardsAddresses()))
             for (const auto [pool, address] : std::views::zip(shard_info.per_replica_pools, shard_addresses))
             {
-                RemoteQueryExecutor probe(pool, make_probe_query(address.is_local), probe_header, probe_context);
+                /// A replica that is this server itself is read and written in-process on this context (both pin
+                /// prefer_localhost_replica on, the read parallel replicas off), so its table is resolved here, as they will.
+                if (address.is_local)
+                {
+                    Field engine;
+                    Field ts_type;
+                    if (const auto table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(remote_id), context))
+                    {
+                        engine = table->getName();
+                        const auto local_metadata = table->getInMemoryMetadataPtr(context, false);
+                        if (const auto * column = local_metadata->columns.tryGet(TimeSeriesColumnNames::TimeSeries))
+                            ts_type = column->type->getName();
+                    }
+                    judge(pool->getAddress(), engine, ts_type);
+                    continue;
+                }
+
+                RemoteQueryExecutor probe(pool, probe_query, probe_header, probe_context);
                 bool answered = false;
                 try
                 {
@@ -176,23 +209,7 @@ namespace
                     {
                         block = convertBLOBColumns(block);
                         answered = true;
-                        const Field engine = (*block.getByPosition(0).column)[0];
-                        const Field ts_type = (*block.getByPosition(1).column)[0];
-                        if (engine.isNull())
-                            unavailable_replicas.push_back(
-                                fmt::format("{} (no table {})", pool->getAddress(), backQuoteIfNeed(remote_id.table_name)));
-                        else if (engine.safeGet<String>() != "TimeSeries")
-                            ++wrong_engine_replicas;
-                        /// Not exposed to the probe, or not there at all: the type went unchecked either way.
-                        else if (ts_type.isNull())
-                            unavailable_replicas.push_back(fmt::format(
-                                "{} (no `{}` column on {})", pool->getAddress(), TimeSeriesColumnNames::TimeSeries,
-                                backQuoteIfNeed(remote_id.table_name)));
-                        else if (ts_type.safeGet<String>() != time_series_type)
-                        {
-                            ++wrong_type_replicas;
-                            wrong_types.insert(ts_type.safeGet<String>());
-                        }
+                        judge(pool->getAddress(), (*block.getByPosition(0).column)[0], (*block.getByPosition(1).column)[0]);
                     }
                 }
                 catch (const NetException &)
@@ -275,14 +292,17 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
 
     /// The read pins prefer_localhost_replica on and parallel replicas off, so a shard that is this server itself
     /// runs in-process on the caller's context: the selector's own grants are asked for here, before the probe.
-    if (typeid_cast<const StorageDistributed &>(storage).getCluster()->getLocalShardCount())
+    const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
+    if (cluster->getLocalShardCount())
     {
-        context->checkAccess(AccessType::SELECT, context->resolveStorageID(target->remote_time_series_storage_id));
+        /// A name that resolves to nothing is left to the probe, which reports it as a target the read has not got.
+        if (const auto local_id = context->tryResolveStorageID(target->remote_time_series_storage_id))
+            context->checkAccess(AccessType::SELECT, local_id);
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
     }
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
-    checkShardTargets(storage, *target, context, /* refuse_unavailable = */ false);
+    checkShardTargets(storage, *target, context, cluster, /* refuse_unavailable = */ false);
 }
 
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context)
@@ -300,7 +320,23 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
             "samples are routed by the table's sharding key alone",
             storage.getStorageID().getNameForLogs());
 
-    checkShardTargets(storage, *target, context, /* refuse_unavailable = */ true);
+    /// The write pins prefer_localhost_replica on, so a shard that is this server itself is written in-process on the
+    /// caller's context: the sink's own INSERT grant on that table, with the columns it sends, is asked for before the probe.
+    const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
+    if (cluster->getLocalShardCount())
+    {
+        /// A name that resolves to nothing is left to the probe, which refuses the write as having no target here.
+        if (const auto local_id = context->tryResolveStorageID(target->remote_time_series_storage_id))
+        {
+            const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+            const auto columns_to_send = settings[Setting::insert_allow_materialized_columns]
+                ? metadata->getSampleBlock().getNames()
+                : metadata->getSampleBlockNonMaterialized().getNames();
+            context->checkAccess(AccessType::INSERT, local_id, columns_to_send);
+        }
+    }
+
+    checkShardTargets(storage, *target, context, cluster, /* refuse_unavailable = */ true);
 }
 
 }

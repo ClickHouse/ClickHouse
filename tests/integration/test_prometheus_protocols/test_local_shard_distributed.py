@@ -36,10 +36,14 @@ START_TIME = 1724112000
 # Pauses a remote write between its shard-target check and its INSERT.
 BEFORE_INSERT = "prometheus_remote_write_before_insert"
 
-# The probe's own connection authenticates as `default`, whose current database is `default`;
+# A caller whose current database is `default` resolves `ts_local` to the MergeTree table there;
 # this caller's is `metrics`, and that is where its writes and reads land.
 CALLER = "?user=prom_metrics&password="
 CALLER_PARAMS = {"user": "prom_metrics", "password": ""}
+
+# The user of the `local_shard_restricted` cluster entry, granted nothing: a shard that is this
+# server itself is checked, written and read in-process on the caller's context, never as them.
+CLUSTER_NOBODY = "prom_cluster_nobody"
 
 # Callers whose current database is `default`, where `ts_local` is the MergeTree table, each
 # missing one grant that the in-process read of the local shard enforces.
@@ -91,6 +95,14 @@ def start_cluster():
         node.query(
             "CREATE TABLE default.prom_swap AS default.ts_swap "
             "ENGINE = Distributed(local_shard_dist, '', ts_swap)"
+        )
+
+        # The cluster entry names this user, so it exists before the wrapper is first used; it may
+        # not even read system.tables, which is what the old probe over its connection selected from.
+        node.query(f"CREATE USER {CLUSTER_NOBODY} IDENTIFIED WITH no_password")
+        node.query(
+            "CREATE TABLE metrics.prom_restricted AS metrics.ts_local "
+            "ENGINE = Distributed(local_shard_restricted, '', ts_local)"
         )
 
         # Both may read the wrapper and call cluster(); each lacks one grant of the local shard's read.
@@ -245,10 +257,48 @@ def test_reads_keep_the_local_shard_in_process_whatever_the_caller_fans_out(
     assert_denied_without_leaking(denied, "SELECT ON default.ts_local")
 
 
-def test_remote_write_refuses_a_local_shard_target_swapped_after_the_check():
-    """Written in-process by name, the local shard still refuses a same-schema MergeTree table swapped
-    in under the name as it would write it: nothing lands, and the write is not acknowledged.
+def test_local_shard_is_checked_on_the_callers_context_not_the_cluster_users():
+    """A shard that is this server itself is checked, written and read on the caller's context: the
+    credentials of its cluster entry play no part, and here they hold no grant at all.
     """
+    # The premise: as the cluster user, the old probe's SELECT from system.tables was denied.
+    denied = node.query_and_get_error(
+        "SELECT count() FROM system.tables WHERE database = 'metrics'",
+        user=CLUSTER_NOBODY,
+    )
+    assert "Not enough privileges" in denied, denied
+
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        f"/restricted/write{CALLER}",
+        one_sample("restricted_metric"),
+    )
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM timeSeriesTags(metrics.ts_local) WHERE metric_name = 'restricted_metric'",
+        "1",
+    )
+
+    result = json.loads(
+        execute_query_via_http_api(
+            node.ip_address,
+            9093,
+            "/restricted_api/query",
+            "restricted_metric",
+            START_TIME,
+            params=CALLER_PARAMS,
+        )
+    )["result"]
+    assert [sample["value"][1] for sample in result] == ["1"]
+
+    sql = f"SELECT count() FROM prometheusQuery(metrics.prom_restricted, 'restricted_metric', {START_TIME})"
+    assert node.query(sql, user="prom_metrics").strip() == "1"
+
+
+def test_remote_write_goes_to_the_local_shard_table_it_checked_not_the_name():
+    """The check resolves the local shard's table on the caller's context, and the write goes to that
+    table: not to whatever the name means by the time the INSERT runs."""
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     swapped = False
     try:
@@ -265,23 +315,25 @@ def test_remote_write_refuses_a_local_shard_target_swapped_after_the_check():
         swapped = True
         node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
         response = pending.result(timeout=60)
-        assert response.status_code >= 500, response.text
-        assert "UNEXPECTED_TABLE_ENGINE" in response.text
-        # The shard names the engine it found under the name and the one the INSERT expects.
-        assert "engine MergeTree" in response.text
-        assert "expects TimeSeries" in response.text
+        assert response.status_code == 204, response.text
+        # The samples are in the TimeSeries table the check saw, now under the other name; the
+        # MergeTree table swapped in under the checked name took nothing.
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM timeSeriesTags(metrics.ts_swap) WHERE metric_name = 'held_metric'",
+            "1",
+        )
+        assert int(node.query("SELECT count() FROM metrics.ts_local")) == 0
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
         pool.shutdown(wait=True)
         if swapped:
             node.query("EXCHANGE TABLES metrics.ts_local AND metrics.ts_swap")
 
-    # The MergeTree table took nothing under the TimeSeries name, nothing reached the TimeSeries
-    # table, and the retry lands once the name is right again.
-    assert int(node.query("SELECT count() FROM metrics.ts_swap")) == 0
-    count = "SELECT count() FROM timeSeriesTags(metrics.ts_local) WHERE metric_name = 'held_metric'"
-    assert int(node.query(count)) == 0
-    send_protobuf_to_remote_write(
-        node.ip_address, 9093, f"/local/write{CALLER}", one_sample("held_metric")
+    # Under their own names again.
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM timeSeriesTags(metrics.ts_local) WHERE metric_name = 'held_metric'",
+        "1",
     )
-    assert_eq_with_retry(node, count, "1")
+    assert int(node.query("SELECT count() FROM metrics.ts_swap")) == 0
