@@ -1,0 +1,40 @@
+{
+	"meta":
+	[
+		{
+			"name": "s",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		["s0"],
+		["s0"],
+		["s0"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 9999
+}
+{
+	"meta":
+	[
+		{
+			"name": "s",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		["s0"],
+		["s0"],
+		["s0"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 9999
+}

@@ -1,0 +1,6 @@
+0	49500
+estimate local	t_05062	1	1000	1
+estimate distributed	t_05062	1	1000	1
+estimate strict	t_05062	1	1000	1
+estimate cascades	t_05062	1	1000	1
+estimate fallback	t_05062	1	1000	1

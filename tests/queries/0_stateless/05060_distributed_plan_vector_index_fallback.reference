@@ -1,0 +1,32 @@
+plain
+1
+2
+0
+distance in select
+1	0.283
+2	1.131
+0	1.697
+where
+1
+2
+0
+offset
+2
+0
+3
+subquery
+3
+rescoring
+1
+2
+0
+strict
+1
+2
+0
+strict rescoring
+1
+2
+0
+plan has gather exchange
+1

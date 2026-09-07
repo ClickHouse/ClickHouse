@@ -1,0 +1,42 @@
+-- local
+0	0
+1	1
+2	2
+3	3
+4	4
+-- distributed, ORDER BY v ASC
+0	0
+1	1
+2	2
+3	3
+4	4
+-- distributed, ORDER BY v DESC
+8999	8999
+8998	8998
+8997	8997
+8996	8996
+8995	8995
+-- distributed, ORDER BY v, k LIMIT 5 OFFSET 2
+2	2
+3	3
+4	4
+5	5
+6	6
+-- distributed, sort column only
+0
+1
+2
+3
+4
+-- distributed, strict (no fallback to local execution)
+0	0
+1	1
+2	2
+3	3
+4	4
+-- distributed, use_skip_indexes_for_top_k = 0
+0	0
+1	1
+2	2
+3	3
+4	4
