@@ -813,7 +813,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// Re-enter so that a `FixedString` target still zero-pads the name to its width.
         if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
             return convertFieldToTypeImpl(
-                enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
+                enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
 
         return applyVisitor(FieldVisitorToString(), src);
     }
