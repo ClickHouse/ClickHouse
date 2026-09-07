@@ -6,19 +6,28 @@ env:
 
 concurrency:
   group: cherry-pick
-  # Never run two cherry-pick jobs at the same time: a new scheduled run waits
-  # for the in-progress one to finish instead of cancelling it.
+  # Never cancel the run that is already looping. GitHub keeps exactly one newer
+  # run pending, so it takes over the moment this one exits, and it cancels any
+  # pending run older than that: the in-progress loop is never interrupted and no
+  # more than one successor is ever waiting.
   cancel-in-progress: false
 on: # yamllint disable-line rule:truthy
   schedule:
     # Every 20 minutes. Offset from round values (e.g. */20 -> :00/:20/:40),
     # which are popular and get their launches delayed by GitHub.
+    #
+    # A tick that fires while the Python loop is running is not wasted work: it is
+    # the successor that starts as soon as the loop exits, and it is what restarts
+    # the loop within 20 minutes if a run dies early.
     - cron: '9,29,49 * * * *'
   workflow_dispatch:
 
 jobs:
   CherryPick:
     runs-on: [self-hosted, style-checker-aarch64]
+    # The loop stops on its own well before this; the timeout only bounds a
+    # single hung iteration.
+    timeout-minutes: 200
     steps:
       - name: Set envs
         # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings
@@ -41,9 +50,8 @@ jobs:
       - name: Debug Info
         uses: ./.github/actions/debug
       - name: Cherry pick
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 cherry_pick.py
+        working-directory: tests/ci
+        run: python3 cherry_pick.py --loop
       - name: Cleanup
         if: always()
         run: |
