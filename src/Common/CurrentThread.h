@@ -6,7 +6,6 @@
 #include <base/defines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/IThrottler.h>
-#include <Common/FiberLocal.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <memory>
@@ -43,7 +42,7 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
  * - https://en.cppreference.com/w/cpp/language/constinit
  * - https://github.com/ClickHouse/ClickHouse/pull/40078
  */
-extern constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
+extern thread_local constinit ThreadStatus * current_thread;
 
 /** Collection of static methods to work with thread-local objects.
   * Allows to attach and detach query/process (thread group) to a thread

@@ -36,7 +36,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-&quot;Ok.&quot;는 [`http_server_default_response`](/ko/reference/settings/server-settings/settings/http#http_server_default_response)에 정의된 기본값으로, 필요에 따라 변경할 수 있습니다.
+&quot;Ok.&quot;는 [`http_server_default_response`](/ko/reference/settings/server-settings/settings#http_server_default_response)에 정의된 기본값으로, 필요에 따라 변경할 수 있습니다.
 
 참고: [HTTP 응답 코드 주의사항](#http_response_codes_caveats).
 
@@ -201,7 +201,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-`default_format` URL 매개변수를 사용하면 `TabSeparated` 이외의 포맷을 기본값으로 지정할 수 있습니다. `X-ClickHouse-Format` 헤더는 응답 포맷을 명시적으로 지정합니다. 이는 `output_format` 설정의 별칭이므로 쿼리의 `FORMAT` 절도 재정의합니다. 이 헤더는 `INSERT` 요청 본문을 파싱하는 방식은 절대 변경하지 않습니다. 이를 위해서는 `input_format` 또는 `format`을 사용하십시오.
+`default_format` URL 매개변수 또는 `X-ClickHouse-Format` 헤더를 사용하면 `TabSeparated` 이외의 포맷을 기본값으로 지정할 수 있습니다.
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -219,150 +219,6 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 
 7
 ```
-
-<div id="tables-as-files">
-  ## URL 경로로 테이블에 액세스하고 쿼리 구성
-</div>
-
-ClickHouse 26.8 이상에서 사용할 수 있습니다.
-
-HTTP 인터페이스는 URL 경로를 데이터베이스, 테이블, 출력 형식, 압축 메서드로 해석할 수 있습니다. URL 매개변수로 결과를 조정할 수 있으므로 간단한 읽기 요청에는 SQL이 필요하지 않습니다. 이러한 기능은 기본적으로 비활성화되어 있으므로 명시적으로 활성화해야 합니다.
-
-<div id="enabling-path-routing">
-  ### 경로 라우팅 활성화
-</div>
-
-경로 해석은 두 단계에서 활성화해야 합니다.
-
-1. HTTP 인터페이스가 경로 형식의 요청을 쿼리 핸들러로 라우팅할 수 있도록 서버 수준의 `http_allow_path_requests` 구성 설정을 활성화합니다.
-
-```xml
-<clickhouse>
-    <http_allow_path_requests>1</http_allow_path_requests>
-</clickhouse>
-```
-
-2. 필요한 사용자별 설정을 활성화합니다.
-
-| 설정                                                  | 효과                                                                           |
-| --------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `http_allow_table_as_file`                          | 마지막 경로 구성 요소를 `table`, `table.format` 또는 `table.format.compression`으로 해석합니다. |
-| `http_allow_database_as_path`                       | 앞부분의 `/database/` 경로 구성 요소를 현재 데이터베이스로 해석합니다.                                |
-| `http_allow_filters_as_path`                        | Hive 스타일의 `/name=value/` 경로 구성 요소를 `WHERE` 필터로 해석합니다.                        |
-| `http_allow_filters_as_unrecognized_url_parameters` | 인식되지 않은 URL 매개변수를 `WHERE` 필터로 해석합니다.                                         |
-
-<Note>
-  라우팅은 인증 전에 수행되므로 사용자별 설정에 따라 달라질 수 없습니다. `http_allow_path_requests`가 비활성화되어 있으면 알 수 없는 경로는 인증 전 `404`를 반환합니다. 라우팅과 인증이 완료된 후에는 사용자별 설정에 따라 경로 해석 방식이 결정되므로 특정 사용자, 역할 또는 프로필에만 이 기능을 선택적으로 활성화할 수 있습니다.
-</Note>
-
-<div id="table-as-file-examples">
-  ### 파일로 테이블에 액세스
-</div>
-
-`http_allow_table_as_file`를 활성화하면 `/table.format.compression` 요청이 `SELECT * FROM table`로 처리됩니다. `/database/table.format.compression`을 사용하려면 `http_allow_database_as_path`를 활성화하십시오.
-
-```bash
-# SELECT * FROM my_db.hits, formatted as CSV
-curl 'http://localhost:8123/my_db/hits.csv'
-
-# The same result, compressed with gzip
-curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
-```
-
-포맷 및 압축 확장자는 대소문자를 구분하지 않으므로 `hits.csv`와 `hits.CSV`는 동일합니다.
-
-명시적으로 지정한 `format` 또는 `output_format` URL 매개변수는 경로에 지정된 포맷을 재정의합니다. `default_format`은 그렇지 않습니다. 다른 방법으로 포맷이 선택되지 않은 경우에만 사용할 포맷을 지정하며, 경로 확장자가 더 구체적입니다. 명시적으로 지정한 `compression` 매개변수는 경로의 압축과 일치해야 하며, 값이 충돌하면 예외가 발생합니다.
-
-<div id="query-construction">
-  ### 쿼리 구성
-</div>
-
-다음 설정은 기본 쿼리를 파생 테이블로 감쌉니다. 이 설정들은 서로 조합할 수 있으며 기존 쿼리와도 함께 사용할 수 있습니다. HTTP URL 매개변수, 쿼리 내 `SETTINGS` 절 또는 사용자 프로필을 통해 지정할 수 있습니다.
-
-| 설정                                                                                                                            | 효과                                                                                                                                         |
-| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `select`                                                                                                                      | `SELECT <expression_list> FROM (…)`                                                                                                        |
-| `filter`                                                                                                                      | `WHERE <expression>`을 추가합니다. 여러 `filter` URL 매개변수는 `AND`로 결합됩니다.                                                                           |
-| `order`                                                                                                                       | `ORDER BY <expression_list>`를 추가합니다.                                                                                                       |
-| `sort`                                                                                                                        | 쉼표로 구분된 식별자 또는 컬럼 위치 목록을 기반으로 `ORDER BY`를 추가합니다. 각 항목에는 `sort=a,-b`처럼 선택적으로 `+`(오름차순) 또는 `-`(내림차순) 접두사를 붙일 수 있습니다. `order`와 함께 사용할 수 없습니다. |
-| [`limit`](/ko/reference/settings/session-settings/other#limit) and [`offset`](/ko/reference/settings/session-settings/other#offset) | `LIMIT <n> OFFSET <m>`을 추가합니다. 둘 다 마지막 항목 선택을 위한 음수 값과 전체 행에서 차지하는 비율을 나타내는 소수 값을 허용합니다.                                                   |
-| `page`                                                                                                                        | `offset = limit * (page - 1)`로 설정합니다. `limit`가 필요하며 `offset`과 함께 사용할 수 없습니다.                                                               |
-
-```bash
-# Filter my_db.hits, sort by a descending, and return the first 10 rows
-curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
-
-# Return the second page of 100 rows
-curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
-```
-
-<div id="modify-an-existing-query">
-  #### 기존 쿼리 수정
-</div>
-
-구성 설정은 경로 요청에만 적용되는 것이 아니라 직접 작성한 쿼리의 형태에도 영향을 줍니다. 쿼리는 파생 테이블이 되므로 설정은 쿼리에 병합되지 않고 쿼리 결과에 적용됩니다. 예를 들어, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10`은 다음과 같이 실행됩니다:
-
-```sql
-SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
-```
-
-저장된 dashboard 쿼리, `predefined_query_handler`, 또는 URL 매개변수만 추가할 수 있는 클라이언트 등 다른 곳에 정의된 쿼리의 결과를 페이지 단위로 조회하거나, 정렬하거나, 범위를 좁힐 때 유용합니다:
-
-```bash
-# Page through the result of an arbitrary query without editing the query text
-curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
-
-# Keep only some of the resulting columns and rows
-curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
-
-# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
-curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
-```
-
-설정은 쿼리를 다시 작성하지 않고 감싸므로 `FORMAT` 절 및 쿼리 내 `ORDER BY`와 함께 사용할 수 있으며, `INSERT`가 쓰는 행을 변경하지 않습니다. `INSERT ... SELECT` 문에 지정한 구성 설정은 소스 `SELECT`가 아니라 문 자체의 (빈) 결과를 구성합니다. 소스를 구성하려면 설정을 `SELECT` 자체의 `SETTINGS` 절에 지정하십시오:
-
-```sql
--- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
-INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
-
--- Inserts 2 rows: `limit` applies to the SELECT itself
-INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
-```
-
-<Warning>
-  `filter`는 액세스 제어 메커니즘이 아닙니다. 래핑하는 하위 쿼리에 `WHERE` 절을 추가하므로 필터가 적용되기 전에 원본 데이터를 읽고 처리할 수 있습니다. 사용자가 액세스할 수 있는 행을 제한하려면 [행 정책](/ko/concepts/features/security/access-rights#row-policy-management) 또는 [`additional_table_filters`](/ko/reference/settings/session-settings/additional#additional_table_filters)를 사용하십시오.
-</Warning>
-
-<div id="format-and-compression-overrides">
-  ### 포맷 및 압축 재정의
-</div>
-
-| 설정               | 효과                                                                                                                |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `output_format`  | 출력 형식을 재정의합니다. 쿼리의 `FORMAT` 절, 경로 확장자, `format`, `default_format`보다 우선합니다. `X-ClickHouse-Format` 헤더로도 설정할 수 있습니다. |
-| `input_format`   | `INSERT`의 입력 형식을 재정의합니다. 쿼리의 `FORMAT` 절 및 `format`보다 우선합니다.                                                       |
-| `format`         | 방향별 설정이 지정되지 않은 경우 양방향 포맷을 재정의합니다.                                                                                |
-| `default_format` | 쿼리에 `FORMAT` 절이나 경로 확장자, 기타 포맷 재정의가 없을 때 출력 형식을 설정합니다.                                                            |
-| `compression`    | 예를 들어 `compression=gz`를 사용해 응답 본문을 압축합니다. 이는 HTTP `Content-Encoding` 및 ClickHouse 네이티브 `compress` 매개변수와는 별개입니다.   |
-
-포맷 설정은 네이티브 클라이언트와 `clickhouse-local`을 비롯한 다른 프로토콜에서도 작동합니다. `input_format` 및 `output_format`은 `--input-format` 및 `--output-format` 옵션에 해당합니다. `--format` 옵션은 `clickhouse-local`에서는 양방향 `format` 설정에 매핑되지만, `clickhouse-client`에서는 기존의 출력 전용 의미를 유지하며 `output_format`에 매핑됩니다.
-
-`compression`은 HTTP 응답 형식 지정에만 사용되며 쿼리 실행 전에 처리됩니다. HTTP URL 매개변수, 경로 확장자 또는 사용자 프로필을 통해 지정하십시오. 쿼리 내 `SETTINGS` 절에서는 사용할 수 없습니다.
-
-바이너리 및 압축된 HTTP 응답에는 `Content-Disposition: attachment; filename=…` 헤더가 포함됩니다. 파일 이름은 URL 경로를 기반으로 생성되며, 경로에서 파일 이름을 제공하지 않으면 `result.<format>.<compression>`이 사용됩니다.
-
-<div id="implicit-table">
-  ### 쿼리와 함께 경로 테이블 사용
-</div>
-
-경로가 테이블을 가리키고 `query` 매개변수도 제공된 경우, 경로 테이블은 [`implicit_table_at_top_level`](/ko/reference/settings/session-settings/implicit#implicit_table_at_top_level)을 통해 노출됩니다. `FROM` 절 없이 사용하는 `SELECT`는 경로 테이블을 읽습니다:
-
-```bash
-# Read columns a and b from my_db.hits without a FROM clause
-curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
-```
-
-쿼리에 이미 `FROM` 절이 있으면 경로 구성 요소는 다운로드할 파일 이름만 지정합니다.
 
 <div id="insert-queries">
   ## HTTP/HTTPS를 통한 삽입 쿼리
@@ -442,7 +298,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 데이터를 전송할 때 ClickHouse 내부 압축 포맷을 사용할 수 있습니다. 압축된 데이터는 비표준 포맷이므로, 이를 처리하려면 `clickhouse-compressor` 프로그램이 필요합니다. 이 프로그램은 `clickhouse-client` 패키지와 함께 기본적으로 설치됩니다.
 
-데이터 삽입 효율을 높이려면 [`http_native_compression_disable_checksumming_on_decompress`](/ko/reference/settings/session-settings/http#http_native_compression_disable_checksumming_on_decompress) 설정을 사용하여 서버 측 체크섬 검증을 비활성화하십시오.
+데이터 삽입 효율을 높이려면 [`http_native_compression_disable_checksumming_on_decompress`](/ko/reference/settings/session-settings#http_native_compression_disable_checksumming_on_decompress) 설정을 사용하여 서버 측 체크섬 검증을 비활성화하십시오.
 
 URL에 `compress=1`을 지정하면 서버가 전송하는 데이터를 압축합니다. URL에 `decompress=1`을 지정하면 서버는 `POST` 메서드로 전달된 데이터의 압축을 해제합니다.
 
@@ -461,7 +317,7 @@ URL에 `compress=1`을 지정하면 서버가 전송하는 데이터를 압축�
 
 ClickHouse가 응답을 압축하도록 하려면 요청에 `Accept-Encoding: compression_method` 헤더를 추가하십시오.
 
-모든 압축 메서드에 대해 [`http_zlib_compression_level`](/ko/reference/settings/session-settings/http#http_zlib_compression_level) 설정을 사용하여 데이터 압축 수준을 구성할 수 있습니다.
+모든 압축 메서드에 대해 [`http_zlib_compression_level`](/ko/reference/settings/session-settings#http_zlib_compression_level) 설정을 사용하여 데이터 압축 수준을 구성할 수 있습니다.
 
 <Info>
   일부 HTTP 클라이언트는 기본적으로 서버가 보낸 데이터(`gzip` 및 `deflate`)의 압축을 해제할 수 있으므로, 압축 설정을 올바르게 사용하더라도 압축 해제된 데이터를 받게 될 수 있습니다.
@@ -594,7 +450,7 @@ HTTP 프로토콜에서도 ClickHouse 세션을 사용할 수 있습니다. 이�
 
 세션 상태를 확인하려면 `session_check=1` 매개변수를 사용하십시오. 하나의 세션에서는 한 번에 하나의 쿼리만 실행할 수 있습니다.
 
-`X-ClickHouse-Progress` 응답 헤더에서 쿼리 진행 상태 정보를 받을 수 있습니다. 이렇게 하려면 [`send_progress_in_http_headers`](/ko/reference/settings/session-settings/send#send_progress_in_http_headers)를 활성화하십시오.
+`X-ClickHouse-Progress` 응답 헤더에서 쿼리 진행 상태 정보를 받을 수 있습니다. 이렇게 하려면 [`send_progress_in_http_headers`](/ko/reference/settings/session-settings#send_progress_in_http_headers)를 활성화하십시오.
 
 아래는 헤더 시퀀스의 예시입니다:
 
@@ -620,10 +476,10 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 다음과 같은 선택적 매개변수가 있습니다.
 
-| Parameters             | Description                                                                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `query_id` (optional)  | 쿼리 ID로 전달할 수 있습니다(임의의 문자열). [`replace_running_query`](/ko/reference/settings/session-settings/replace-running-query#replace_running_query) |
-| `quota_key` (optional) | 쿼터 키로 전달할 수 있습니다(임의의 문자열). [&quot;쿼터&quot;](/ko/concepts/features/configuration/server-config/quotas)                                      |
+| Parameters             | Description                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `query_id` (optional)  | 쿼리 ID로 전달할 수 있습니다(임의의 문자열). [`replace_running_query`](/ko/reference/settings/session-settings#replace_running_query) |
+| `quota_key` (optional) | 쿼터 키로 전달할 수 있습니다(임의의 문자열). [&quot;쿼터&quot;](/ko/concepts/features/configuration/server-config/quotas)                |
 
 HTTP 인터페이스에서는 쿼리를 위해 외부 데이터(외부 임시 테이블)를 전달할 수 있습니다. 자세한 내용은 [&quot;쿼리 처리용 외부 데이터&quot;](/ko/reference/engines/table-engines/special/external-data)를 참조하십시오.
 
@@ -638,8 +494,8 @@ HTTP 인터페이스에서는 쿼리를 위해 외부 데이터(외부 임시 �
 
 다음 설정도 사용할 수 있습니다.
 
-* [`http_response_buffer_size`](/ko/reference/settings/session-settings/http-response#http_response_buffer_size)
-* [`http_wait_end_of_query`](/ko/reference/settings/session-settings/http#http_wait_end_of_query)
+* [`http_response_buffer_size`](/ko/reference/settings/session-settings#http_response_buffer_size)
+* [`http_wait_end_of_query`](/ko/reference/settings/session-settings#http_wait_end_of_query)
 
 `buffer_size`는 결과를 서버 메모리에 버퍼링할 바이트 수를 결정합니다. 결과 본문이 이 임계값보다 크면 버퍼는 HTTP 채널에 기록되고, 나머지 데이터는 HTTP 채널로 직접 전송됩니다.
 
@@ -711,7 +567,7 @@ Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while 
 
 이 동작은 사용한 포맷과 무관하며, `Native`, `TSV`, `JSON` 중 어떤 것을 사용하든 오류 메시지는 항상 응답 스트림의 중간에 나타납니다.
 
-이 문제는 `wait_end_of_query=1`([응답 버퍼링](#response-buffering))을 활성화하여 완화할 수 있습니다. 이 경우 전체 쿼리 처리가 끝날 때까지 HTTP 헤더 전송이 지연됩니다. 하지만 이렇게 해도 문제가 완전히 해결되지는 않습니다. 결과는 여전히 [`http_response_buffer_size`](/ko/reference/settings/session-settings/http-response#http_response_buffer_size) 안에 들어가야 하며, [`send_progress_in_http_headers`](/ko/reference/settings/session-settings/send#send_progress_in_http_headers) 같은 다른 설정이 헤더 전송 지연에 영향을 줄 수 있기 때문입니다.
+이 문제는 `wait_end_of_query=1`([응답 버퍼링](#response-buffering))을 활성화하여 완화할 수 있습니다. 이 경우 전체 쿼리 처리가 끝날 때까지 HTTP 헤더 전송이 지연됩니다. 하지만 이렇게 해도 문제가 완전히 해결되지는 않습니다. 결과는 여전히 [`http_response_buffer_size`](/ko/reference/settings/session-settings#http_response_buffer_size) 안에 들어가야 하며, [`send_progress_in_http_headers`](/ko/reference/settings/session-settings#send_progress_in_http_headers) 같은 다른 설정이 헤더 전송 지연에 영향을 줄 수 있기 때문입니다.
 
 <Tip>
   모든 오류를 포착하는 유일한 방법은 필요한 포맷으로 파싱하기 전에 HTTP 본문을 분석하는 것입니다.
@@ -967,7 +823,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `query` 값은 `predefined_query_handler`의 미리 정의된 쿼리이며, HTTP 요청과 일치하면 ClickHouse가 이를 실행하고 쿼리 결과를 반환합니다. 반드시 지정해야 하는 구성입니다.
 
-다음 예시는 [`max_threads`](/ko/reference/settings/session-settings/max-threads#max_threads) 및 [`max_final_threads`](/ko/reference/settings/session-settings/max#max_final_threads) 설정 값을 지정한 다음, 시스템 테이블(system table)을 쿼리하여 이러한 설정이 성공적으로 적용되었는지 확인합니다.
+다음 예시는 [`max_threads`](/ko/reference/settings/session-settings#max_threads) 및 [`max_final_threads`](/ko/reference/settings/session-settings#max_final_threads) 설정 값을 지정한 다음, 시스템 테이블(system table)을 쿼리하여 이러한 설정이 성공적으로 적용되었는지 확인합니다.
 
 <Note>
   `query`, `play`, `ping`과 같은 기본 `handlers`를 유지하려면 `<defaults/>` 규칙을 추가하십시오.
@@ -1049,7 +905,7 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
 
 ClickHouse는 HTTP 요청 URL에서 `query_param_name`에 해당하는 값을 추출해 실행합니다. `query_param_name`의 기본값은 `/query`입니다. 이는 선택적 구성입니다. 설정 파일에 정의되어 있지 않으면 이 매개변수는 전달되지 않습니다.
 
-이 기능을 시험해 보기 위해, 다음 예시에서는 [`max_threads`](/ko/reference/settings/session-settings/max-threads#max_threads)와 `max_final_threads` 값을 정의하고, 설정이 올바르게 적용되었는지 `queries`로 확인합니다.
+이 기능을 시험해 보기 위해, 다음 예시에서는 [`max_threads`](/ko/reference/settings/session-settings#max_threads)와 `max_final_threads` 값을 정의하고, 설정이 올바르게 적용되었는지 `queries`로 확인합니다.
 
 예시:
 
@@ -1333,7 +1189,7 @@ ClickHouse에서는 구성할 수 있는 모든 유형의 핸들러에 적용할
 
 HTTP를 통해 쿼리를 실행하는 동안 데이터의 일부가 이미 전송된 후 예외가 발생할 수 있습니다. 일반적으로 예외는 일반 텍스트로 클라이언트에 전송됩니다.
 데이터를 출력할 때 특정 데이터 포맷을 사용했더라도, 그 결과가 지정된 데이터 포맷 기준으로는 유효하지 않게 될 수 있습니다.
-이를 방지하려면 [`http_write_exception_in_output_format`](/ko/reference/settings/session-settings/http#http_write_exception_in_output_format) 설정(기본적으로 비활성화됨)을 사용할 수 있습니다. 이 설정을 사용하면 ClickHouse가 지정된 포맷으로 예외를 기록합니다(현재 XML 및 JSON* 포맷 지원).
+이를 방지하려면 [`http_write_exception_in_output_format`](/ko/reference/settings/session-settings#http_write_exception_in_output_format) 설정(기본적으로 비활성화됨)을 사용할 수 있습니다. 이 설정을 사용하면 ClickHouse가 지정된 포맷으로 예외를 기록합니다(현재 XML 및 JSON* 포맷 지원).
 
 예시:
 

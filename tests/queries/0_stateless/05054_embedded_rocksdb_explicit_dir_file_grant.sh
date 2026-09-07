@@ -133,9 +133,11 @@ echo "--- a RESTORE carries a fresh definition and is checked like CREATE ---"
 # checked rather than replayed.
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON FILE TO ${USER}"
 # Reading a Disk(...) backup location needs READ ON DISK, and that check runs before the
-# WRITE ON FILE one this arm asserts on. Grant it up front so the denial below is the
-# EmbeddedRocksDB FILE check and not the backup location's own.
-${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO ${USER}"
+# WRITE ON FILE one this arm asserts on. Only where that source exists: on a branch without
+# it the location is unchecked anyway, and the grant would be a syntax error.
+if [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.privileges WHERE privilege = 'DISK'")" != "0" ]; then
+    ${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO ${USER}"
+fi
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${POC}.restore_src (k String, v String) ENGINE = EmbeddedRocksDB(0, '${RESTORE_DIR}') PRIMARY KEY k"
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${POC}.restore_src TO ${BACKUP} FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${POC}.restore_src SYNC"

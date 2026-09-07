@@ -2,8 +2,6 @@
 title: Managed Ingestion の設定
 ---
 
-import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_example_otel.mdx';
-
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
 「Start Ingestion」を選択すると、インジェストソースを選択するよう求められます。Managed ClickStack では、主要なインジェストソースとして OpenTelemetry と [Vector](https://vector.dev/) をサポートしています。一方で、ユーザーは [ClickHouse Cloud でサポートされているインテグレーション](/ja/integrations/home) のいずれかを使用して、独自のスキーマでデータを ClickHouse に直接送信することもできます。
@@ -13,8 +11,8 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_e
 <Info>
   **OpenTelemetry を推奨**
 
-  インジェスト形式として、OpenTelemetry の使用を強く推奨します。
-  ClickStack で効率的に動作するよう特別に設計された、すぐに使えるスキーマが用意されており、最もシンプルで最適化された利用体験を提供します。
+  インジェスト形式としては、OpenTelemetry の使用を強く推奨します。
+  ClickStack で効率的に動作するよう特別に設計された、すぐに使えるスキーマが用意されており、最もシンプルかつ最適化された利用体験を提供します。
 </Info>
 
 <Tabs>
@@ -53,7 +51,7 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_e
 
     この用途のために、適切な設定で ClickHouse exporter を使用し、OTLP receiver を公開する OpenTelemetry Collector の設定例が提供されています。この設定は、ClickStack distribution で想定されているインターフェイスと動作に合わせています。
 
-    <ManagedIngestionExampleOtelConfig />
+    <ExampleOTelConfig />
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 

@@ -7,11 +7,11 @@ keywords: ['Postgres 扩展', 'postgis', 'pgvector', 'pg_cron', 'PostgreSQL 扩�
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.extensions-beta" />
 
-ClickHouse Managed Postgres 提供了一组精选扩展，用于增强数据库功能。以下是可用扩展列表。
+Managed Postgres 提供了一组精选扩展，用于增强数据库功能。以下是可用扩展列表。
 
 <div id="installing-extensions">
   ## 安装扩展
@@ -141,7 +141,7 @@ SELECT * FROM pg_available_extensions;
   ## pg_clickhouse 扩展
 </div>
 
-`pg_clickhouse` 扩展预装在每个 ClickHouse Managed Postgres 实例中。它允许你直接从 PostgreSQL 查询 ClickHouse 数据库，从而为事务处理和分析提供统一的查询层。
+`pg_clickhouse` 扩展预装在每个 Managed Postgres 实例中。它允许你直接从 PostgreSQL 查询 ClickHouse 数据库，从而为事务处理和分析提供统一的查询层。
 
 有关设置说明和使用详情，请参阅 [pg&#95;clickhouse 文档](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction)。
 
@@ -149,10 +149,10 @@ SELECT * FROM pg_available_extensions;
   ## pg_stat_ch 扩展
 </div>
 
-`pg_stat_ch` 扩展为你的 ClickHouse Managed Postgres 实例提供查询级可观测性。它会捕获每条查询的遥测数据 (耗时、行数、缓冲区、WAL、错误) ，并将其发送到 ClickHouse Cloud UI，在那里呈现为慢查询、错误和工作负载视图。无需额外设置。
+`pg_stat_ch` 扩展为你的 Managed Postgres 实例提供查询级可观测性。它会捕获每条查询的遥测数据 (耗时、行数、缓冲区、WAL、错误) ，并将其发送到 ClickHouse Cloud UI，在那里呈现为慢查询、错误和工作负载视图。无需额外设置。
 
 <div id="pg-re2">
   ## pg_re2 扩展
 </div>
 
-`pg_re2` 扩展为 ClickHouse Managed Postgres 添加了与 ClickHouse 兼容的正则表达式函数，底层由 Google 的 RE2 引擎提供支持。在两者之间迁移查询，或运行需要两端具有一致模式匹配语义的混合工作负载时，它会非常有用。
+`pg_re2` 扩展为 Managed Postgres 添加了与 ClickHouse 兼容的正则表达式函数，底层由 Google 的 RE2 引擎提供支持。在两者之间迁移查询，或运行需要两端具有一致模式匹配语义的混合工作负载时，它会非常有用。
