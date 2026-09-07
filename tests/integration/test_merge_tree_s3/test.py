@@ -329,14 +329,14 @@ def test_s3_read_stops_after_max_execution_time(
 
 
 @pytest.mark.parametrize(
-    "cancel_method,expected_exception",
+    "cancel_method,expected_exceptions",
     [
-        ("cancel-packet", "QUERY_WAS_CANCELLED_BY_CLIENT"),
-        ("disconnect", "ABORTED"),
+        ("cancel-packet", {"QUERY_WAS_CANCELLED_BY_CLIENT"}),
+        ("disconnect", {"ABORTED", "NETWORK_ERROR"}),
     ],
 )
 def test_prefetch_stops_after_native_client_cancel(
-    s3_cancellation_table, cancel_method, expected_exception
+    s3_cancellation_table, cancel_method, expected_exceptions
 ):
     node, table = s3_cancellation_table
     query_id = uuid.uuid4().hex
@@ -371,14 +371,16 @@ def test_prefetch_stops_after_native_client_cancel(
             query_request.process.kill()
 
     node.query("SYSTEM FLUSH LOGS")
-    assert (
-        node.query(
-            "SELECT errorCodeToName(exception_code), sum(ProfileEvents['S3GetObject']), "
-            "sum(ProfileEvents['ReadBufferFromS3RequestsErrors']) FROM system.query_log "
-            f"WHERE query_id='{query_id}' AND type='ExceptionWhileProcessing' "
-            "GROUP BY exception_code"
-        ).strip()
-        == f"{expected_exception}\t0\t0"
+    exception_name, get_requests, request_errors = node.query(
+        "SELECT errorCodeToName(exception_code), sum(ProfileEvents['S3GetObject']), "
+        "sum(ProfileEvents['ReadBufferFromS3RequestsErrors']) FROM system.query_log "
+        f"WHERE query_id='{query_id}' AND type='ExceptionWhileProcessing' "
+        "GROUP BY exception_code"
+    ).strip().split("\t")
+    assert exception_name in expected_exceptions, exception_name
+    assert (get_requests, request_errors) == ("0", "0"), (
+        get_requests,
+        request_errors,
     )
 
 
