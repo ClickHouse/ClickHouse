@@ -117,6 +117,9 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
             has_sub_delims = false;
             has_at_symbol = true;
             start_of_host = pos + 1;
+            colon_pos = nullptr;
+            dot_pos = nullptr;
+            has_terminator_after_colon = false;
             if (start_of_host < end && *start_of_host == '[') /// user@[2001:db8::1]:80
             {
                 has_open_bracket = true;
