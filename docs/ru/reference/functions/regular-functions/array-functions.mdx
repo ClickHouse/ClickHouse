@@ -679,8 +679,8 @@ arrayDotProduct(v1, v2)
 
 **Аргументы**
 
-* `v1` — Первый вектор. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ru/reference/data-types/array) или [`Tuple((U)Int* | Float* | Decimal)`](/ru/reference/data-types/tuple)
-* `v2` — Второй вектор. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ru/reference/data-types/array) или [`Tuple((U)Int* | Float* | Decimal)`](/ru/reference/data-types/tuple)
+* `v1` — Первый вектор. [`Array((U)Int* | Float* | Decimal)`](/ru/reference/data-types/array) или [`Tuple((U)Int* | Float* | Decimal)`](/ru/reference/data-types/tuple)
+* `v2` — Второй вектор. [`Array((U)Int* | Float* | Decimal)`](/ru/reference/data-types/array) или [`Tuple((U)Int* | Float* | Decimal)`](/ru/reference/data-types/tuple)
 
 **Возвращаемое значение**
 
@@ -688,7 +688,6 @@ arrayDotProduct(v1, v2)
 
 <Note>
   Возвращаемый тип определяется типами аргументов. Если Array или Tuple содержат элементы разных типов, то тип результата — супертип.
-  Два массива `BFloat16` накапливаются и возвращают значение типа `Float32` (то же правило, что и для двух массивов `Float32`).
 </Note>
 
 [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal`](/ru/reference/data-types/decimal)
@@ -722,15 +721,8 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 Добавленный в: v1.1.0
 
 Возвращает элемент указанного массива с индексом `n`, где `n` может быть любым целочисленным типом.
-Если индекс выходит за границы массива, возвращается значение по умолчанию (0 для чисел, пустая строка для строк и т. д.),
+Если индекс выходит за пределы массива, возвращается значение по умолчанию (0 для чисел, пустая строка для строк и т. д.),
 за исключением случаев, когда аргументом является неконстантный массив, а индекс 0 — константа. В этом случае возникнет ошибка `Array indices are 1-based`.
-
-Если `n` является массивом целых чисел, возвращает массив элементов в указанных позициях (операция выборки).
-Это эквивалентно `arrayMap(i -> arr[i], n)`, но имеет отдельную, более эффективную реализацию.
-Для позиций за границами массива возвращается значение по умолчанию, как и для скалярного индекса.
-Элементы индекса могут быть nullable. Индекс `NULL` возвращает `NULL` (и делает тип элемента результата nullable), если тип элемента можно
-обернуть в `Nullable`; для типов элементов, которые не могут находиться внутри `Nullable` (таких как `Array`, `Map`), индекс `NULL` вместо этого возвращает
-значение по умолчанию. Это то же поведение, что и для скалярного индекса `NULL`.
 
 <Note>
   Массивы в ClickHouse индексируются с 1.
@@ -748,11 +740,11 @@ arrayElement(arr, n)
 
 **Аргументы**
 
-* `arr` — Массив, в котором выполняется поиск. [`Array(T)`](/ru/reference/data-types/array). - `n` — Позиция элемента, который требуется получить, или массив позиций. Позиции могут быть Nullable. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Array((U)Int*)`](/ru/reference/data-types/array).
+* `arr` — Массив, в котором выполняется поиск. [`Array(T)`](/ru/reference/data-types/array). - `n` — Позиция элемента, который требуется получить. [`(U)Int*`](/ru/reference/data-types/int-uint).
 
 **Возвращаемое значение**
 
-Если `n` — скаляр, возвращает элемент типа `T`. Если `n` — массив, возвращает `Array(Nullable(T))`, если элементы индекса могут быть Nullable и `T` можно обернуть в `Nullable`, в противном случае — `Array(T)`. [`Any`](/ru/reference/data-types/index) или [`Array(T)`](/ru/reference/data-types/array) или [`Array(Nullable(T))`](/ru/reference/data-types/array)
+Возвращает один объединённый массив из переданных массивов-аргументов [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -766,7 +758,7 @@ SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)
 2
 ```
 
-**Индексация с отрицательными индексами**
+**Отрицательные индексы**
 
 ```sql title=Query
 SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)
@@ -796,16 +788,6 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 0
 ```
 
-**Массив индексов**
-
-```sql title=Query
-SELECT [10, 20, 30, 40][[2, 4, 1]]
-```
-
-```response title=Response
-[20,40,10]
-```
-
 <div id="arrayElementOrNull">
   ## arrayElementOrNull
 </div>
@@ -813,13 +795,7 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 Добавленный в: v1.1.0
 
 Возвращает элемент указанного массива по индексу `n`, где `n` может иметь любой целочисленный тип.
-Если индекс выходит за границы массива, вместо значения по умолчанию возвращается `NULL`,
-если тип результата может быть Nullable. Для типов элементов, которые ещё не являются Nullable и не могут быть
-помещены внутрь `Nullable` (таких как `Array`, `Map`), вместо этого возвращается значение по умолчанию для типа элемента.
-
-Если `n` является массивом целых чисел, возвращает массив элементов в указанных позициях.
-Это эквивалентно `arrayMap(i -> arrayElementOrNull(arr, i), n)`, но имеет отдельную, более эффективную реализацию.
-Позиции за пределами массива и индексы `NULL` дают значения `NULL` в результирующем массиве в соответствии с тем же правилом, что и для скалярного индекса.
+Если индекс выходит за границы массива, вместо значения по умолчанию возвращается `NULL`.
 
 <Note>
   Массивы в ClickHouse индексируются с 1.
@@ -830,16 +806,16 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 **Синтаксис**
 
 ```sql
-arrayElementOrNull(arr, n)
+arrayElementOrNull(arrays)
 ```
 
 **Аргументы**
 
-* `arr` — массив для поиска. [`Array(T)`](/ru/reference/data-types/array). - `n` — позиция извлекаемого элемента или массив позиций. Позиции могут быть Nullable. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Array((U)Int*)`](/ru/reference/data-types/array).
+* `arrays` — Произвольное количество аргументов типа массив. [`Array`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Если `n` — скаляр, возвращает `Nullable(T)`, если `T` можно обернуть в `Nullable`, в противном случае — `T`. Если `n` — массив, возвращает `Array(Nullable(T))`, если `T` можно обернуть в `Nullable`, в противном случае — `Array(T)`. [`Any`](/ru/reference/data-types/index) или [`Nullable(T)`](/ru/reference/data-types/nullable) или [`Array(T)`](/ru/reference/data-types/array) или [`Array(Nullable(T))`](/ru/reference/data-types/array)
+Возвращает один общий массив, объединяющий переданные аргументы-массивы. [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -863,7 +839,7 @@ SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)
 3
 ```
 
-**Индекс выходит за границы массива**
+**Индекс выходит за пределы массива**
 
 ```sql title=Query
 SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
@@ -871,16 +847,6 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 
 ```response title=Response
 NULL
-```
-
-**Массив индексов**
-
-```sql title=Query
-SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
-```
-
-```response title=Response
-[10,NULL,20]
 ```
 
 <div id="arrayEnumerate">
@@ -1765,16 +1731,6 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 Все значения в столбцах просто копируются, за исключением значений в столбце, к которому применяется эта функция;
 они заменяются соответствующим значением массива.
 
-`arrayJoin`, в том числе через его псевдоним `unnest`, нельзя использовать в условии `JOIN ON`, которое вычисляется во время выполнения JOIN, поскольку такое условие должно
-сохранять количество строк. Условие, применимое только к одной стороне, а также ключ равенства с `arrayJoin`
-извлекаются до JOIN и не затрагиваются. Условие `ALL INNER JOIN` без дизъюнкции также не затрагивается,
-поскольку в этом случае условие применяется уже после JOIN.
-Если разворачивание зависит только от одной стороны, перенесите его в `ARRAY JOIN` в подзапросе до JOIN; условие, аргумент `arrayJoin` которого обращается к столбцам с обеих сторон, необходимо реструктурировать.
-
-<Note>
-  Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
-</Note>
-
 **Синтаксис**
 
 ```sql
@@ -1810,7 +1766,7 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 **arrayJoin влияет на все части запроса**
 
 ```sql title=Query
--- The arrayJoin function affects all sections of the query, including the WHERE section. Notice the result 2, even though the subquery returned 1 row.
+-- Функция arrayJoin влияет на все секции запроса, включая секцию WHERE. Обратите внимание: результат равен 2, хотя подзапрос вернул 1 строку.
 
 SELECT sum(1) AS impressions
 FROM
@@ -1829,7 +1785,7 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 **Использование нескольких вызовов функции arrayJoin**
 
 ```sql title=Query
--- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+- В запросе можно использовать несколько функций arrayJoin. В этом случае преобразование выполняется несколько раз, а строки перемножаются.
 
 SELECT
     sum(1) AS impressions,
@@ -1844,33 +1800,30 @@ FROM
 GROUP BY
     2,
     3
-ORDER BY
-    city,
-    browser
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
 │           1 │ Bobruisk │ Firefox │
-│           2 │ Istanbul │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
 **Неожиданные результаты из-за оптимизации**
 
 ```sql title=Query
--- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
--- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
--- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+-- Использование нескольких arrayJoin с одним и тем же выражением может не дать ожидаемого результата из-за оптимизаций.
+-- В таких случаях рекомендуется изменить повторяющееся выражение массива, добавив дополнительные операции, не влияющие на результат JOIN.
+- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
-    /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
-    arrayJoin(arrayConcat(dice, [])) as second_throw -- intentionally changed expression to force re-evaluation
+    /* arrayJoin(dice) as second_throw */ -- технически корректно, но уничтожит результирующий набор
+    arrayJoin(arrayConcat(dice, [])) as second_throw -- выражение намеренно изменено для принудительного повторного вычисления
 FROM (
     SELECT [1, 2, 3, 4, 5, 6] as dice
 );
@@ -1920,8 +1873,8 @@ FROM (
 **Использование синтаксиса ARRAY JOIN**
 
 ```sql title=Query
--- Note the ARRAY JOIN syntax in the `SELECT` query below, which provides broader possibilities.
--- ARRAY JOIN allows you to convert multiple arrays with the same number of elements at a time.
+-- Обратите внимание на синтаксис ARRAY JOIN в запросе `SELECT` ниже — он открывает более широкие возможности.
+-- ARRAY JOIN позволяет одновременно преобразовывать несколько массивов с одинаковым количеством элементов.
 
 SELECT
     sum(1) AS impressions,
@@ -1939,23 +1892,20 @@ ARRAY JOIN
 GROUP BY
     2,
     3
-ORDER BY
-    2,
-    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
 **Использование типа Tuple**
 
 ```sql title=Query
--- You can also use Tuple
+-- Также можно использовать Tuple
 
 SELECT
     sum(1) AS impressions,
@@ -1970,16 +1920,13 @@ FROM
 GROUP BY
     2,
     3
-ORDER BY
-    2,
-    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -2375,10 +2322,6 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
   Чтобы сохранить только отсортированные элементы, используйте `arrayResize`.
 </Tip>
 
-<Note>
-  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
-</Note>
-
 **Синтаксис**
 
 ```sql
@@ -2463,10 +2406,6 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
   Эта функция не материализует константы.
 
   Значение `limit` должно находиться в диапазоне `[1..N]`. Значения вне этого диапазона эквивалентны полному [`arrayShuffle`](#arrayShuffle).
-</Note>
-
-<Note>
-  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
 </Note>
 
 **Синтаксис**
@@ -2559,10 +2498,6 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 <Tip>
   Чтобы сохранить только отсортированные элементы, используйте `arrayResize`.
 </Tip>
-
-<Note>
-  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
-</Note>
 
 **Синтаксис**
 
@@ -2903,10 +2838,6 @@ SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 
 Возвращает подмножество из `samples` случайно выбранных элементов входного массива. Если `samples` превышает размер входного массива, размер выборки ограничивается размером массива, то есть возвращаются все элементы массива, но их порядок не гарантируется. Функция поддерживает как плоские, так и вложенные массивы.
 
-<Note>
-  Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
-</Note>
-
 **Синтаксис**
 
 ```sql
@@ -3157,7 +3088,7 @@ SELECT arrayResize([1], 3, NULL);
 Изменяет порядок элементов заданного массива на обратный.
 
 <Note>
-  Функция `reverse(arr)` выполняет ту же операцию, но работает и с другими типами данных
+  Функция `reverse(arr)` выполняет ту же операцию, но работает и с другими типами данных,
   помимо массивов.
 </Note>
 
@@ -3580,10 +3511,6 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
 
 <Note>
   Эта функция не материализует константы.
-</Note>
-
-<Note>
-  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
 </Note>
 
 **Синтаксис**
@@ -4287,7 +4214,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 Массив считается пустым, если не содержит ни одного элемента.
 
 <Note>
-  Можно оптимизировать, включив [настройку `optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT empty(arr) FROM TABLE;` преобразуется в `SELECT arr.size0 = 0 FROM TABLE;`.
+  Можно оптимизировать, включив [настройку `optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT empty(arr) FROM TABLE;` преобразуется в `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 Функция также работает со строками и UUID.
@@ -4345,7 +4272,7 @@ emptyArrayDate()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayDate()
+SELECT emptyArrayDate
 ```
 
 ```response title=Response
@@ -4379,7 +4306,7 @@ emptyArrayDateTime()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayDateTime()
+SELECT emptyArrayDateTime
 ```
 
 ```response title=Response
@@ -4413,7 +4340,7 @@ emptyArrayFloat32()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayFloat32()
+SELECT emptyArrayFloat32
 ```
 
 ```response title=Response
@@ -4447,7 +4374,7 @@ emptyArrayFloat64()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayFloat64()
+SELECT emptyArrayFloat64
 ```
 
 ```response title=Response
@@ -4481,7 +4408,7 @@ emptyArrayInt16()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayInt16()
+SELECT emptyArrayInt16
 ```
 
 ```response title=Response
@@ -4515,7 +4442,7 @@ emptyArrayInt32()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayInt32()
+SELECT emptyArrayInt32
 ```
 
 ```response title=Response
@@ -4549,7 +4476,7 @@ emptyArrayInt64()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayInt64()
+SELECT emptyArrayInt64
 ```
 
 ```response title=Response
@@ -4583,7 +4510,7 @@ emptyArrayInt8()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayInt8()
+SELECT emptyArrayInt8
 ```
 
 ```response title=Response
@@ -4617,7 +4544,7 @@ emptyArrayString()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayString()
+SELECT emptyArrayString
 ```
 
 ```response title=Response
@@ -4697,7 +4624,7 @@ emptyArrayUInt16()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayUInt16()
+SELECT emptyArrayUInt16
 ```
 
 ```response title=Response
@@ -4731,7 +4658,7 @@ emptyArrayUInt32()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayUInt32()
+SELECT emptyArrayUInt32
 ```
 
 ```response title=Response
@@ -4765,7 +4692,7 @@ emptyArrayUInt64()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayUInt64()
+SELECT emptyArrayUInt64
 ```
 
 ```response title=Response
@@ -4799,7 +4726,7 @@ emptyArrayUInt8()
 **Пример использования**
 
 ```sql title=Query
-SELECT emptyArrayUInt8()
+SELECT emptyArrayUInt8
 ```
 
 ```response title=Response
@@ -5176,11 +5103,6 @@ SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 
 Элементы со значением `NULL` обрабатываются как обычные значения.
 
-Элементы `NaN` не подчиняются указанному выше правилу для `NULL`.
-Скалярное сравнение двух значений `NaN` (`NaN = NaN`) равно `0`, однако `indexOf` всё же может считать элемент `NaN` найденным.
-Это зависит от деталей реализации. Не полагайтесь на конкретное поведение.
-Чтобы найти такой элемент, выполните проверку: `arrayFirstIndex(x -> isNaN(x), arr)` возвращает его позицию, а `arrayExists(x -> isNaN(x), arr)` — флаг.
-
 **Синтаксис**
 
 ```sql
@@ -5190,7 +5112,7 @@ indexOf(arr, x)
 **Аргументы**
 
 * `arr` — Массив, в котором выполняется поиск `x`. [`Array(T)`](/ru/reference/data-types/array)
-* `x` — Значение первого совпадающего элемента в `arr`, индекс которого нужно вернуть. [`UInt64`](/ru/reference/data-types/int-uint)
+* `x` — Значение первого совпавшего элемента в `arr`, индекс которого нужно вернуть. [`UInt64`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
@@ -5259,6 +5181,78 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 5
 ```
 
+<div id="kql_array_sort_asc">
+  ## kql_array_sort_asc
+</div>
+
+Добавленный в: v23.10.0
+
+Сортирует один или несколько массивов по возрастанию. Первый массив сортируется, а последующие массивы переупорядочиваются в соответствии с отсортированным порядком первого массива. Значения NULL помещаются в конец. Это функция совместимости с KQL (Kusto Query Language).
+
+**Синтаксис**
+
+```sql
+kql_array_sort_asc(array1[, array2, ..., nulls_last])
+```
+
+**Аргументы**
+
+* `array1` — Массив, который нужно отсортировать. [`Array(T)`](/ru/reference/data-types/array)
+* `array2` — Необязательно. Дополнительные массивы, которые переупорядочиваются в соответствии с порядком сортировки `array1`. [`Array(T)`](/ru/reference/data-types/array)
+* `nulls_last` — Необязательно. Логическое значение, указывающее, должны ли значения NULL располагаться в конце. По умолчанию — true. [`UInt8`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Возвращает кортеж массивов, отсортированных по возрастанию. [`Tuple(Array, ...)`](/ru/reference/data-types/tuple)
+
+**Примеры**
+
+**Базовое использование**
+
+```sql title=Query
+SELECT kql_array_sort_asc([3, 1, 2])
+```
+
+```response title=Response
+([1, 2, 3])
+```
+
+<div id="kql_array_sort_desc">
+  ## kql_array_sort_desc
+</div>
+
+Добавленный в: v23.10.0
+
+Сортирует один или несколько массивов по убыванию. Первый массив сортируется, а последующие переупорядочиваются в соответствии с отсортированным порядком первого массива. Значения NULL помещаются в конец. Это функция совместимости с KQL (Kusto Query Language).
+
+**Синтаксис**
+
+```sql
+kql_array_sort_desc(array1[, array2, ..., nulls_last])
+```
+
+**Аргументы**
+
+* `array1` — Массив, который нужно отсортировать. [`Array(T)`](/ru/reference/data-types/array)
+* `array2` — Необязательные дополнительные массивы, которые переупорядочиваются в соответствии с порядком сортировки `array1`. [`Array(T)`](/ru/reference/data-types/array)
+* `nulls_last` — Необязательное логическое значение, указывающее, должны ли значения NULL располагаться в конце. По умолчанию — true. [`UInt8`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Возвращает кортеж массивов, отсортированных по убыванию. [`Tuple(Array, ...)`](/ru/reference/data-types/tuple)
+
+**Примеры**
+
+**Базовое использование**
+
+```sql title=Query
+SELECT kql_array_sort_desc([3, 1, 2])
+```
+
+```response title=Response
+([3, 2, 1])
+```
+
 <div id="length">
   ## length
 </div>
@@ -5269,8 +5263,7 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 
 * Для аргументов String или FixedString: вычисляет число байтов в строке.
 * Для аргументов Array: вычисляет число элементов в массиве.
-* Для аргументов QBit: вычисляет размерность вектора.
-* Если функция применяется к аргументу FixedString или QBit, она является константным выражением.
+* Если функция применяется к аргументу FixedString, она является константным выражением.
 
 Обратите внимание, что число байтов в строке — это не то же самое, что число
 Unicode &quot;кодовых точек&quot;, и не то же самое, что число Unicode &quot;графемных кластеров&quot;
@@ -5284,15 +5277,15 @@ Unicode &quot;кодовых точек&quot;, и не то же самое, ч�
 length(x)
 ```
 
-**Псевдонимы**: `OCTET_LENGTH`, `CARDINALITY`
+**Псевдонимы**: `CARDINALITY`, `OCTET_LENGTH`
 
 **Аргументы**
 
-* `x` — значение, для которого вычисляется число байтов (для `String`/`FixedString`), элементов (для `Array`) или размерность (для `QBit`). [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Array(T)`](/ru/reference/data-types/array) или [`QBit`](/ru/reference/data-types/qbit)
+* `x` — значение, для которого вычисляется число байтов (для `String`/`FixedString`) или элементов (для `Array`). [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает число байтов в `String`/`FixedString` `x`, число элементов в массиве `x` или размерность `QBit` `x` [`UInt64`](/ru/reference/data-types/int-uint)
+Возвращает число байтов в `String`/`FixedString` `x` или число элементов в массиве `x` [`UInt64`](/ru/reference/data-types/int-uint)
 
 **Примеры**
 
@@ -5314,16 +5307,6 @@ SELECT length(['Hello', 'world'])
 
 ```response title=Response
 2
-```
-
-**Пример QBit**
-
-```sql title=Query
-SELECT length([0, 0, 0, 0, 0, 0, 0, 0]::QBit(Float32, 8))
-```
-
-```response title=Response
-8
 ```
 
 **пример с constexpr**
@@ -5379,7 +5362,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 Массив считается непустым, если содержит хотя бы один элемент.
 
 <Note>
-  Можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT notEmpty(arr) FROM table` преобразуется в `SELECT arr.size0 != 0 FROM TABLE`.
+  Можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT notEmpty(arr) FROM table` преобразуется в `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 Функция также работает для строк и UUID.
@@ -5410,172 +5393,6 @@ SELECT notEmpty([1,2]);
 1
 ```
 
-<div id="notHas">
-  ## notHas
-</div>
-
-Добавлено в: v26.8.0
-
-Возвращает, не содержит ли массив указанный элемент, map — указанный ключ или объект JSON — указанный путь. Отрицание `has`.
-
-**Синтаксис**
-
-```sql
-notHas(haystack, needle)
-```
-
-**Аргументы**
-
-* `haystack` — Исходный массив, Map или JSON. [`Array`](/ru/reference/data-types/array), [`Map`](/ru/reference/data-types/map) или [`JSON`](/ru/reference/data-types/newjson)
-* `needle` — Искомое значение (элемент массива, ключ в Map или строка пути в JSON).
-
-**Возвращаемое значение**
-
-Возвращает `1`, если `haystack` не содержит указанный `needle`, иначе — `0`. [`UInt8`](/ru/reference/data-types/int-uint)
-
-**Примеры**
-
-**Базовое использование Array**
-
-```sql title=Query
-SELECT notHas([1, 2, 3], 2)
-```
-
-```response title=Response
-0
-```
-
-**Массив не найден**
-
-```sql title=Query
-SELECT notHas([1, 2, 3], 4)
-```
-
-```response title=Response
-1
-```
-
-**Базовое использование Map**
-
-```sql title=Query
-SELECT notHas(map('a', 1, 'b', 2), 'c')
-```
-
-```response title=Response
-1
-```
-
-**Базовое использование JSON**
-
-```sql title=Query
-SELECT notHas('{"a" : 1, "b" : {"c" : 2}}'::JSON, 'b.c')
-```
-
-```response title=Response
-0
-```
-
-<div id="randomHadamardTransform">
-  ## randomHadamardTransform
-</div>
-
-Добавленный в: v26.7.0
-
-Применяет случайное преобразование Адамара к вектору чисел с плавающей запятой: `y = (1/sqrt(k)) * (H * D * x)`, где
-`D` — диагональная матрица детерминированных знаков +/-1, выбираемых по `seed`, а `H` — преобразование Уолша-Адамара.
-
-Это преобразование представляет собой ортогональное **сохраняющее норму** вращение, которое равномерно распределяет энергию вектора
-по координатам, делая распределение каждой координаты приблизительно гауссовым и
-независимым от данных. Оно полезно как этап предварительной обработки перед скалярным квантованием, а -- в
-усечённом виде -- как случайная проекция Джонсона — Линденштрауса / subsampled-randomized-Hadamard (SRHT).
-
-Полное преобразование (без усечения) сохраняет длину входа. Оно точно для следующих длин:
-
-* степень двойки (обычное быстрое преобразование Уолша-Адамара);
-* `2^k * m`, где `m` принадлежит `{12, 20}` (порядки, для которых существует матрица Адамара `+/-1`, например `768 = 64 * 12`,
-  `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), применяется как точное преобразование Кронекера
-  `H_(2^k) (x) H_m` (без умножений с плавающей запятой);
-* `2^k * m`, где `m` — любое другое нечётное число до `64` (порядки, для которых матрицы Адамара `+/-1` не существует --
-  они есть только для порядков `1`, `2` и чисел, кратных `4`), применяется как точное преобразование Кронекера
-  `H_(2^k) (x) C_m`, где `C_m` — вещественная ортогональная матрица дискретного преобразования Хартли. Это покрывает
-  оставшиеся семейства эмбеддингов, такие как `3584 = 512 * 7`, `1152 = 128 * 9`, `1408 = 128 * 11`.
-
-Полное преобразование для длины, у которой наибольший нечётный множитель превышает `64`, не имеет точной формы и потребовало бы
-дополнения нулями до большей степени двойки; вместо того чтобы молча
-возвращать более длинный вектор, оно **завершается с исключением**. Используйте поддерживаемую длину или передайте `output_dims`, чтобы вычислить усечённую
-проекцию для произвольной длины (см. ниже).
-
-Результат имеет тот же тип элементов, что и вход; пустой входной массив возвращает пустой массив
-(`output_dims` к нему не применяется).
-
-* `seed` (необязательно, по умолчанию `0`): выбирает схему знаков; один и тот же seed всегда даёт одно и то же
-  преобразование.
-* `output_dims` (необязательно, по умолчанию длина преобразования): сохраняет только первые `output_dims`
-  координат, превращая преобразование в случайную проекцию, которая принимает **любую** длину. Масштабирование
-  `1/sqrt(output_dims)` сохраняет норму результата для полного преобразования и
-  сохраняет её в математическом ожидании при усечении. Значение не должно превышать длину преобразования. Поскольку
-  усечённый префикс фактора дискретного преобразования Хартли `C_m` не обладает такой же равномерностью leverage, как
-  матрица Адамара `+/-1`, усечение через `output_dims` для длины из семейства Хартли (или для любой длины
-  без точного разложения) использует дополненное нулями преобразование степени двойки, которое это свойство сохраняет.
-
-**Синтаксис**
-
-```sql
-randomHadamardTransform(vector[, seed[, output_dims]])
-```
-
-**Аргументы**
-
-* `vector` — Вектор для преобразования. [`Array(BFloat16)`](/ru/reference/data-types/array) или [`Array(Float32)`](/ru/reference/data-types/array) или [`Array(Float64)`](/ru/reference/data-types/array)
-* `seed` — Необязательно. seed для детерминированных знаков +/-1 (по умолчанию 0). [`UInt*`](/ru/reference/data-types/int-uint)
-* `output_dims` — Необязательно. Обрезает результат до указанного числа начальных координат (по умолчанию: полная длина преобразования, которая совпадает с длиной входного вектора для любой поддерживаемой размерности). Передача output&#95;dims также включает преобразование для длин, у которых нет точной формы полного преобразования. [`UInt*`](/ru/reference/data-types/int-uint)
-
-**Возвращаемое значение**
-
-Преобразованный вектор (с тем же типом элементов, что и у входного вектора). Его длина равна длине преобразования (длине входного вектора для полного преобразования поддерживаемой размерности) и при необходимости обрезается до output&#95;dims. [`Array(BFloat16)`](/ru/reference/data-types/array) или [`Array(Float32)`](/ru/reference/data-types/array) или [`Array(Float64)`](/ru/reference/data-types/array)
-
-**Примеры**
-
-**Полное преобразование для длины, равной степени двойки**
-
-```sql title=Query
-SELECT length(randomHadamardTransform([1, 2, 3, 4]::Array(Float32)))
-```
-
-```response title=Response
-4
-```
-
-**Норма сохраняется**
-
-```sql title=Query
-SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30, 4)
-```
-
-```response title=Response
-0
-```
-
-**Проекция, сокращённая до 3 размерностей (принимает вектор любой длины)**
-
-```sql title=Query
-SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))
-```
-
-```response title=Response
-3
-```
-
-**Точное преобразование для размерности `2^k * m` сохраняет длину входного вектора (без дополнения)**
-
-```sql title=Query
-SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
-```
-
-```response title=Response
-1152
-```
-
 <div id="range">
   ## range
 </div>
@@ -5592,7 +5409,7 @@ SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
 
 * Все аргументы `start`, `end`, `step` должны относиться к одному из поддерживаемых выше типов. Элементы возвращаемого массива будут супертипом аргументов.
 
-* Генерируется исключение, если функция возвращает массив, общая длина которого превышает количество элементов, заданное настройкой [`function_range_max_elements_in_block`](/ru/reference/settings/session-settings/function#function_range_max_elements_in_block).
+* Генерируется исключение, если функция возвращает массив, общая длина которого превышает количество элементов, заданное настройкой [`function_range_max_elements_in_block`](/ru/reference/settings/session-settings#function_range_max_elements_in_block).
 
 * Возвращает `NULL`, если любой аргумент имеет тип Nullable(nothing). Генерируется исключение, если любой аргумент имеет значение `NULL` (тип Nullable(T)).
 

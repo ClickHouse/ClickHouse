@@ -4,7 +4,6 @@
 #include <Processors/IProcessor.h>
 #include <Common/SharedMutex.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <atomic>
 #include <list>
 #include <mutex>
 #include <queue>
@@ -141,7 +140,6 @@ public:
     explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
     const Processors & getProcessors() const { return *processors; }
-    String dump(bool with_profile_counters = true) const;
 
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue, Queue & async_queue);
@@ -166,7 +164,7 @@ private:
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
-    std::pair<const Node *, std::unordered_set<const void *>> removeNode(ProcessorPtr processor);
+    Node * removeNode(ProcessorPtr processor);
 
     /// Add single edge to edges list. Check processor is known.
     Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
@@ -179,32 +177,15 @@ private:
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-    std::unordered_set<const void *> removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes);
+    bool removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus updatePipeline(boost::container::devector<Node *> & stack, Node & node);
+    UpdateNodeStatus updatePipeline(boost::container::devector<Node *> & stack, Node & node, Processors & delayed_destruction);
 
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;
     std::mutex processors_mutex;
-
-    struct PendingRemovalGroup
-    {
-        Processors processors;
-        std::atomic<size_t> not_finished = 0;
-    };
-    std::unordered_map<ProcessorPtr, std::shared_ptr<PendingRemovalGroup>> removed_processors;
-
-    struct RemoveGroupResult
-    {
-        std::unordered_set<const Node *> removed_nodes;
-        std::unordered_set<const void *> removed_edges;
-    };
-    RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
-    RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
-    std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
-    void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
 
     /// Monotonic counter for assigning Node::processors_id.
     uint64_t next_node_id = 0;

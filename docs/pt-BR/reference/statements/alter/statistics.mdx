@@ -6,7 +6,7 @@ title: 'Manipulação de estatísticas de coluna'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -33,7 +33,7 @@ Além disso, eles são replicados, sincronizando os metadados das estatísticas 
 Adicionando dois tipos de estatísticas a duas colunas:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
 ```
 
 <Note>

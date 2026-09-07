@@ -30,11 +30,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 A exclusão leve é implementada como uma [mutação](/pt-BR/reference/statements/alter/index#mutations) que marca linhas como excluídas, mas não as remove fisicamente de imediato.
 
-Por padrão, as instruções `DELETE` aguardam até que a marcação das linhas como excluídas seja concluída antes de retornar. Isso pode levar bastante tempo se o volume de dados for grande. Como alternativa, você pode executá-lo de forma assíncrona em segundo plano usando a configuração [`lightweight_deletes_sync`](/pt-BR/reference/settings/session-settings/lightweight#lightweight_deletes_sync). Se ela estiver desabilitada, a instrução `DELETE` retornará imediatamente, mas os dados ainda poderão ficar visíveis para consultas até que a mutação em segundo plano seja concluída.
+Por padrão, as instruções `DELETE` aguardam até que a marcação das linhas como excluídas seja concluída antes de retornar. Isso pode levar bastante tempo se o volume de dados for grande. Como alternativa, você pode executá-lo de forma assíncrona em segundo plano usando a configuração [`lightweight_deletes_sync`](/pt-BR/reference/settings/session-settings#lightweight_deletes_sync). Se ela estiver desabilitada, a instrução `DELETE` retornará imediatamente, mas os dados ainda poderão ficar visíveis para consultas até que a mutação em segundo plano seja concluída.
 
 A mutação não exclui fisicamente as linhas que foram marcadas como excluídas; isso só acontece durante o próximo merge. Como resultado, é possível que, por um período indefinido, os dados não sejam de fato removidos do armazenamento e apenas fiquem marcados como excluídos.
 
-Se você precisar garantir que seus dados sejam excluídos do armazenamento em um prazo previsível, considere usar a configuração de tabela [`min_age_to_force_merge_seconds`](/pt-BR/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds). Ou você pode usar o comando [ALTER TABLE ... DELETE](/pt-BR/reference/statements/alter/delete). Observe que excluir dados usando `ALTER TABLE ... DELETE` pode consumir recursos significativos, pois recria todas as partes afetadas.
+Se você precisar garantir que seus dados sejam excluídos do armazenamento em um prazo previsível, considere usar a configuração de tabela [`min_age_to_force_merge_seconds`](/pt-BR/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds). Ou você pode usar o comando [ALTER TABLE ... DELETE](/pt-BR/reference/statements/alter/delete). Observe que excluir dados usando `ALTER TABLE ... DELETE` pode consumir recursos significativos, pois recria todas as partes afetadas.
 
 <div id="deleting-large-amounts-of-data">
   ## Exclusão de grandes volumes de dados

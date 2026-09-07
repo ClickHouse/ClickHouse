@@ -13,26 +13,37 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
-from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
-    _IMAGE_PULL_RETRIES,
-    _IMAGE_PULL_RETRY_ERRORS,
-    _IMAGE_PULL_TIMEOUT_S,
-    Docker,
-)
 from .event import EventFeed
 from .gh import GH
-from .gh_auth import GHAuth
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
-from .host_metrics import HostMetricsCollector
 from .info import Info
 from .native_jobs import _check_and_link_open_issues, _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
-from .usage import ComputeUsage, PipelineUtilization, StorageUsage
+from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
+
+_GH_authenticated = False
+
+
+def _GH_Auth():
+    global _GH_authenticated
+    if _GH_authenticated:
+        return True
+    if not Settings.USE_CUSTOM_GH_AUTH:
+        return True
+    from .gh_auth import GHAuth
+
+    try:
+        GHAuth.auth_from_settings()
+        _GH_authenticated = True
+        return True
+    except Exception as e:
+        print(f"WARNING: GH auth failed: {e}")
+        return False
 
 
 class Runner:
@@ -323,7 +334,7 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            if not GHAuth.auth(workflow, no_strict=True):
+            if not _GH_Auth():
                 Utils.raise_with_error("GH auth failed - required by job")
 
         print("INFO: disk status before running a job:")
@@ -473,80 +484,51 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        if job.run_in_docker and not no_docker:
-            # Retry the pull `docker run` would otherwise do implicitly and only once.
-            # Bounded per attempt: job.timeout only starts with TeePopen below. Guarded:
-            # a present image needs no registry. Non-fatal: local-only images have no pull.
-            if not Shell.check(f"docker image inspect {docker}", verbose=False):
+        with TeePopen(
+            cmd,
+            timeout=job.timeout,
+            preserve_stdio=preserve_stdio,
+            timeout_shell_cleanup=job.timeout_shell_cleanup,
+        ) as process:
+            Utils.timestamp()
 
-                def _warn_pull_retried(matched, attempt, attempts):
-                    # `env` is this frame's object and nothing dumps it after this
-                    # point, so the message survives. Info() would read a second
-                    # copy from disk, which a later stale dump can silently drop.
-                    env.add_workflow_warning(
-                        f"Job image pull failed with [{matched}] and was retried "
-                        f"({attempt}/{attempts}): {docker}"
+            exit_code = process.wait()
+
+            # When running Docker containers as root (non-rootless mode), any files
+            # created by the job will be owned by root.  Fix ownership here, before
+            # reading the result file or writing the host-side result, so that the
+            # host user can open them without a PermissionError.
+            if job.run_in_docker and not no_docker and from_root:
+                print("--- Fixing file ownership after running docker as root")
+                uid = os.getuid()
+                gid = os.getgid()
+                chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+                Shell.run(chown_cmd)
+
+            result = Result.from_fs(job.name)
+            if exit_code != 0:
+                if not result.is_completed():
+                    if process.timeout_exceeded:
+                        print(
+                            f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
+                        )
+                        result.add_error(ResultInfo.TIMEOUT)
+                    elif result.is_running():
+                        info = f"Job killed, exit code [{exit_code}]"
+                        print(f"ERROR: {info}")
+                        result.add_error(info)
+                    else:
+                        info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
+                        print(f"ERROR: {info}")
+                        result.add_error(info)
+                    result.set_status(Result.Status.ERROR)
+                    result.set_info(
+                        process.get_latest_log(max_lines=20)
                     )
+            result.dump()
 
-                Docker.pull_image(docker, on_retry=_warn_pull_retried)
-
-        # Sample whole-VM CPU/RAM usage in the background for the duration of the
-        # job (see HostMetricsCollector). Runs on the host, so metrics cover the
-        # whole VM even when the job itself runs inside Docker.
-        host_metrics_collector = HostMetricsCollector().start()
-        try:
-            with TeePopen(
-                cmd,
-                timeout=job.timeout,
-                preserve_stdio=preserve_stdio,
-                timeout_shell_cleanup=job.timeout_shell_cleanup,
-            ) as process:
-                Utils.timestamp()
-
-                exit_code = process.wait()
-                host_metrics = host_metrics_collector.stop()
-
-                # When running Docker containers as root (non-rootless mode), any files
-                # created by the job will be owned by root.  Fix ownership here, before
-                # reading the result file or writing the host-side result, so that the
-                # host user can open them without a PermissionError.
-                if job.run_in_docker and not no_docker and from_root:
-                    print("--- Fixing file ownership after running docker as root")
-                    uid = os.getuid()
-                    gid = os.getgid()
-                    chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                    Shell.run(chown_cmd)
-
-                result = Result.from_fs(job.name)
-                if host_metrics:
-                    result.add_ext_key_value("metrics", host_metrics)
-                    # Flag over/under-utilized runners, but not for skipped jobs -
-                    # they did no real work, so their metrics are meaningless.
-                    if not result.is_skipped():
-                        for label, hint in HostMetricsCollector.classify(host_metrics):
-                            result.set_label(label, hint=hint)
-                if exit_code != 0:
-                    if not result.is_completed():
-                        if process.timeout_exceeded:
-                            print(
-                                f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
-                            )
-                            result.add_error(ResultInfo.TIMEOUT)
-                        elif result.is_running():
-                            info = f"Job killed, exit code [{exit_code}]"
-                            print(f"ERROR: {info}")
-                            result.add_error(info)
-                        else:
-                            info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
-                            print(f"ERROR: {info}")
-                            result.add_error(info)
-                        result.set_status(Result.Status.ERROR)
-                        result.set_info(process.get_latest_log(max_lines=20))
-                result.dump()
-        finally:
-            # Idempotent: a no-op if stop() already ran above; guarantees the
-            # sampling thread is always joined even if TeePopen raised.
-            host_metrics_collector.stop()
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         return exit_code
 
@@ -607,37 +589,6 @@ class Runner:
         return result
 
     @staticmethod
-    def _pipeline_status(result) -> str:
-        """The GH Actions `pipeline_status` output for a finished job.
-
-        These are GH Actions output values matched by workflow YAML conditions,
-        not Result.Status values - they must stay lowercase "success"/"failure".
-        A "failure" skips the job's whole transitive downstream closure.
-        `hook_html` decides whether to mark dependees `DROPPED` from the same
-        flag and must reach the same verdict as this function.
-        """
-        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
-            return "failure"
-        return "success"
-
-    @staticmethod
-    def _pipeline_job_counts(job_results) -> dict:
-        """Break the pipeline's jobs down by status for CIDB attributes.
-
-        ``run`` counts jobs that actually ran (neither skipped nor dropped).
-        """
-        return {
-            "total": len(job_results),
-            "run": sum(
-                1 for j in job_results if not (j.is_skipped() or j.is_dropped())
-            ),
-            "success": sum(1 for j in job_results if j.is_success()),
-            "failed": sum(1 for j in job_results if j.is_failure() or j.is_error()),
-            "skipped": sum(1 for j in job_results if j.is_skipped()),
-            "dropped": sum(1 for j in job_results if j.is_dropped()),
-        }
-
-    @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
         """Whether a providing artifact that matched no file may be skipped.
 
@@ -678,12 +629,6 @@ class Runner:
                 print(f"Job provides s3 artifacts [{providing_artifacts}]")
                 artifact_links = []
                 s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
-                # Every object uploaded to the artifact bucket must carry a
-                # "retention" tag: S3 lifecycle filters cannot match "objects
-                # without a tag", so untagged objects would be covered by no
-                # rule. Default to short retention; per-artifact tags (e.g.
-                # retention=long) override on the "retention" key.
-                default_tags = {"retention": "default"}
                 for artifact in providing_artifacts:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
@@ -713,12 +658,11 @@ class Runner:
                                     f"Artifact {artifact_path} not found"
                                 )
                             Shell.check(f"ls -l {artifact_path}", verbose=True)
-                            tags = {**default_tags, **(artifact.ext.get("tags") or {})}
                             for file_path in matched:
                                 link = S3.copy_file_to_s3(
                                     s3_path=s3_path,
                                     local_path=file_path,
-                                    tags=tags,
+                                    tags=artifact.ext.get("tags"),
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)
@@ -737,9 +681,7 @@ class Runner:
                     with open(artifact_report_file, "w", encoding="utf-8") as f:
                         json.dump(artifact_report, f)
                     link = S3.copy_file_to_s3(
-                        s3_path=s3_path,
-                        local_path=artifact_report_file,
-                        tags=default_tags,
+                        s3_path=s3_path, local_path=artifact_report_file
                     )
                     result.set_link(link)
 
@@ -870,7 +812,7 @@ class Runner:
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            if GHAuth.auth(workflow, no_strict=True):
+            if _GH_Auth():
                 if not GH.post_commit_status(
                     name=job.name,
                     status=result.status,
@@ -888,7 +830,7 @@ class Runner:
             status_updated = HtmlRunnerHooks.post_run(workflow, job)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                if GHAuth.auth(workflow, no_strict=True):
+                if _GH_Auth():
                     GH.post_commit_status(
                         name=workflow.name,
                         status=status_updated,
@@ -898,29 +840,27 @@ class Runner:
 
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
-                # run after HtmlRunnerHooks.post_run(), when the workflow Result
-                # has up-to-date storage/compute/pipeline-utilization data. All
-                # three are written as a single workflow-level summary row into
-                # the `attributes` JSON column.
-                ci_db.insert_workflow_usage(
-                    pipeline_utilization=PipelineUtilization.from_dict(
-                        workflow_result.ext.get("pipeline_utilization", {})
-                    ),
-                    storage_usage=StorageUsage.from_dict(
-                        workflow_result.ext.get("storage_usage", {})
-                    ),
-                    compute_usage=ComputeUsage.from_dict(
-                        workflow_result.ext.get("compute_usage", {})
-                    ),
-                    job_counts=self._pipeline_job_counts(workflow_result.results),
-                    start_time=workflow_result.start_time,
-                    duration_s=workflow_result.update_duration().duration,
-                    workflow_status=workflow_result.status,
+                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+                workflow_storage_usage = StorageUsage.from_dict(
+                    workflow_result.ext.get("storage_usage", {})
                 )
+                workflow_compute_usage = ComputeUsage.from_dict(
+                    workflow_result.ext.get("compute_usage", {})
+                )
+                if workflow_storage_usage:
+                    print(
+                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_storage_usage(workflow_storage_usage)
+                if workflow_compute_usage:
+                    print(
+                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
+                    )
+                    ci_db.insert_compute_usage(workflow_compute_usage)
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ) and GHAuth.auth(workflow, no_strict=True):
+        ) and _GH_Auth():
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -945,7 +885,7 @@ class Runner:
             and workflow.is_event_pull_request()
         ):
             try:
-                GHAuth.auth(workflow, no_strict=True)
+                _GH_Auth()
                 workflow_result = Result.from_fs(workflow.name)
                 if workflow_result.is_ok():
                     if not GH.merge_pr():
@@ -959,7 +899,15 @@ class Runner:
                 traceback.print_exc()
 
         # finally, set the status flag for GH Actions
-        pipeline_status = self._pipeline_status(result)
+        # These are GH Actions output values matched by workflow YAML conditions,
+        # not Result.Status values — must stay lowercase "success"/"failure".
+        pipeline_status = "success"
+        if not result.is_ok():
+            if result.is_failure() and result.do_not_block_pipeline_on_failure():
+                # job explicitly says to not block ci even though result is failure
+                pass
+            else:
+                pipeline_status = "failure"
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"pipeline_status={pipeline_status}",
@@ -1204,10 +1152,6 @@ class Runner:
                 print("=== Post run script finished ===")
 
             result.dump()
-
-        # After the post hooks, so the numbers describe the disk the next job inherits.
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
 
         if not res and not job.force_success:
             sys.exit(1)

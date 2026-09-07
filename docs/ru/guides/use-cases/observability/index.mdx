@@ -1,13 +1,10 @@
 ---
 slug: /use-cases/observability
 title: 'Обсервабилити'
-sidebarTitle: 'Обзор'
 description: 'Обзорная страница руководства по сценарию использования обсервабилити'
 keywords: ['обсервабилити', 'журналы', 'трассировки', 'метрики', 'OpenTelemetry', 'Grafana', 'OTel']
 doc_type: 'guide'
 ---
-
-import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ClickHouse предлагает непревзойденную скорость, масштабируемость и экономическую эффективность для задач обсервабилити. В этом руководстве представлены два варианта — в зависимости от ваших потребностей:
 
@@ -45,11 +42,3 @@ ClickHouse предлагает непревзойденную скорость,
 | [Интеграция с OpenTelemetry](/ru/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | Сбор и экспорт журналов и трассировок с помощью OpenTelemetry и ClickHouse.                                                                                                          |
 | [Использование инструментов визуализации](/ru/guides/use-cases/observability/build-your-own/grafana)      | Узнайте, как использовать инструменты визуализации для задач обсервабилити в ClickHouse, включая HyperDX и Grafana.                                                                  |
 | [Демо-приложение](/ru/guides/use-cases/observability/build-your-own/demo-application)                     | Ознакомьтесь с демо-приложением OpenTelemetry, адаптированным для работы с журналами и трассировками в ClickHouse.                                                                   |
-
-<div id="prometheus-metrics">
-  ## Метрики Prometheus
-</div>
-
-<CloudNotSupportedBadge />
-
-ClickHouse может хранить метрики Prometheus в таблице [`TimeSeries`](/ru/reference/engines/table-engines/integrations/time-series) и выполнять запросы PromQL. Сведения о настройке ингестии, запросов и визуализации см. в разделе [Протоколы Prometheus и PromQL](/ru/concepts/features/interfaces/prometheus).

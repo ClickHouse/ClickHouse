@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "Несовместимые изменения"
+sidebarTitle: "Несовместимые изменения"
+description: "Несовместимые изменения для компонентов ClickHouse Private, зависящие от версии."
+---
+
+Несовместимые изменения для компонентов ClickHouse Private, зависящие от версии. Просмотрите эту страницу перед обновлением.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11245-shared-catalog-and-stateless-servers-enabled-by-default">
+  ## `helm/onprem-clickhouse-cluster` версии `1.1.245` — Shared Catalog и серверы без сохранения состояния включены по умолчанию
+</div>
+
+Начиная с версии чарта `1.1.245`, параметры `featureFlags.enableSharedCatalog` и `featureFlags.disableMetadataPersistentVolumes` по умолчанию имеют значение `true`. В новых установках по умолчанию будут использоваться движок базы данных [Shared](https://clickhouse.com/docs/engines/database-engines/shared) и серверные узлы без сохранения состояния.
+
+**Новые установки** не требуют никаких действий — новые значения по умолчанию применяются автоматически.
+
+**В существующих установках, которые еще не используют Shared Catalog,** необходимо явно указать прежние значения, чтобы избежать непреднамеренной миграции при обновлении:
+
+```yaml
+featureFlags:
+  enableSharedCatalog: false
+  disableMetadataPersistentVolumes: false
+```
+
+Когда будете готовы к миграции, воспользуйтесь руководством [Migrate to Shared Catalog](/ru/products/clickhouse-private/guides/migrate-to-shared-catalog).
+
+**Для существующих установок, уже использующих Shared Catalog,** никаких действий не требуется — новые значения по умолчанию соответствуют вашей текущей конфигурации.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11210">
+  ## `helm/onprem-clickhouse-cluster` версия `1.1.210`
+</div>
+
+Начиная с версии чарта `1.1.210`, новые ограничения конфигурации включены по умолчанию. Если вы используете версию сервера ClickHouse **ниже 25.10**, необходимо исключить эти ограничения, добавив следующее в конфигурацию сервера:
+
+```yaml
+server:
+  excludeConfigConstraints:
+    - allow_experimental_qbit_type
+    - rewrite_in_to_join
+    - allow_experimental_alias_table_engine
+```
+
+Без этой конфигурации ClickHouse не запустится, так как в версиях ниже 25.10 эти настройки не поддерживаются.

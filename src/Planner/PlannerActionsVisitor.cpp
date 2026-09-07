@@ -94,22 +94,6 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
     return buffer.str();
 }
 
-bool containsQueryOrUnionInSourceExpression(const QueryTreeNodePtr & node)
-{
-    if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
-        return true;
-
-    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression()
-        && containsQueryOrUnionInSourceExpression(constant->getSourceExpression()))
-        return true;
-
-    for (const auto & child : node->getChildren())
-        if (child && containsQueryOrUnionInSourceExpression(child))
-            return true;
-
-    return false;
-}
-
 class ActionNodeNameHelper
 {
 public:
@@ -195,7 +179,8 @@ public:
                 {
                     // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
                     if (constant_node.hasSourceExpression()
-                        && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
                     {
                         if (constant_node.receivedFromInitiatorServer())
                             result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -372,15 +357,15 @@ public:
                 WriteBufferFromOwnString buffer;
 
                 const auto & lambda_node = node->as<LambdaNode &>();
-                const auto & lambda_argument_names = lambda_node.getArguments().getNames();
-                const auto & lambda_argument_types = lambda_node.getArguments().getTypes();
+                const auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
 
-                size_t lambda_arguments_nodes_size = lambda_argument_names.size();
+                size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
                 for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
                 {
-                    buffer << lambda_argument_names[i];
+                    const auto & lambda_argument_node = lambda_arguments_nodes[i];
+                    buffer << calculateActionNodeName(lambda_argument_node);
                     buffer << ' ';
-                    buffer << lambda_argument_types[i]->getName();
+                    buffer << lambda_argument_node->as<ColumnNode &>().getResultType()->getName();
 
                     if (i + 1 != lambda_arguments_nodes_size)
                         buffer << ", ";
@@ -851,16 +836,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
 
         auto column_source = column_node.getColumnSourceOrNull();
-        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+        if (column_source &&
+            column_source->getNodeType() == QueryTreeNodeType::LAMBDA &&
+            actions_stack[i].getScopeNode().get() == column_source.get())
         {
-            /// Lambda argument columns are sourced from the lambda's arguments node,
-            /// while the scope node on the actions stack is the owning lambda itself.
-            const auto & scope_node = actions_stack[i].getScopeNode();
-            if (scope_node && scope_node->getNodeType() == QueryTreeNodeType::LAMBDA &&
-                &scope_node->as<LambdaNode &>().getArguments() == column_source.get())
-            {
-                return {column_node_name, Levels(i)};
-            }
+            return {column_node_name, Levels(i)};
         }
 
         /// When a table column's name collides with a lambda argument name (possible
@@ -878,7 +858,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
         {
             const auto & lambda_node = scope->as<LambdaNode &>();
-            const auto & arg_names = lambda_node.getArguments().getNames();
+            const auto & arg_names = lambda_node.getArgumentNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
                 const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
@@ -910,7 +890,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                     if (outer_scope && outer_scope->getNodeType() == QueryTreeNodeType::LAMBDA)
                     {
                         const auto & outer_lambda = outer_scope->as<LambdaNode &>();
-                        const auto & outer_arg_names = outer_lambda.getArguments().getNames();
+                        const auto & outer_arg_names = outer_lambda.getArgumentNames();
                         outer_lambda_shadows = std::find(outer_arg_names.begin(), outer_arg_names.end(), column_node_name) != outer_arg_names.end();
                     }
 
@@ -996,7 +976,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
         // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
         if (constant_node.hasSourceExpression()
-            && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
         {
             if (constant_node.receivedFromInitiatorServer())
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -1029,14 +1010,17 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             "Lambda {} is not resolved during query analysis",
             lambda_node.formatASTForErrorMessage());
 
-    const auto & lambda_argument_names = lambda_node.getArguments().getNames();
-    const auto & lambda_argument_types = lambda_node.getArguments().getTypes();
-    size_t lambda_arguments_nodes_size = lambda_argument_names.size();
+    auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
+    size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
 
     NamesAndTypesList lambda_arguments_names_and_types;
 
     for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
-        lambda_arguments_names_and_types.emplace_back(lambda_argument_names[i], lambda_argument_types[i]);
+    {
+        const auto & lambda_argument_name = lambda_node.getArgumentNames().at(i);
+        auto lambda_argument_type = lambda_arguments_nodes[i]->getResultType();
+        lambda_arguments_names_and_types.emplace_back(lambda_argument_name, std::move(lambda_argument_type));
+    }
 
     ActionsDAG lambda_actions_dag;
     actions_stack.emplace_back(lambda_actions_dag, node);
@@ -1052,6 +1036,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     actions_stack.pop_back();
     levels.reset(actions_stack.size());
     size_t level = levels.max();
+
+    const auto & lambda_argument_names = lambda_node.getArgumentNames();
 
     for (const auto & required_column_name : required_column_names)
     {

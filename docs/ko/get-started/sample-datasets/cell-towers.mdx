@@ -52,7 +52,7 @@ OpenCelliD Project는 Creative Commons Attribution-ShareAlike 4.0 International 
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="기지국 데이터셋 로드" />
 
-    ### cell&#95;towers 테이블의 스키마 확인
+    ### cell_towers 테이블의 스키마 확인
 
     ```sql
     DESCRIBE TABLE cell_towers
@@ -332,7 +332,7 @@ Superset에서는 데이터베이스 유형을 선택한 다음 연결 정보를
   ### 테이블 **cell_towers**를 Superset **데이터셋**으로 추가하기
 </div>
 
-Superset에서 **데이터셋**은 데이터베이스 내 테이블에 해당합니다. &quot;add a dataset&quot;를 클릭한 다음 ClickHouse 서비스, 테이블이 포함된 데이터베이스(`default`), 그리고 `cell_towers` 테이블을 선택합니다:
+Superset에서 **데이터셋**은 데이터베이스의 테이블에 해당합니다. &quot;add a dataset&quot;를 클릭한 다음 ClickHouse 서비스, 테이블이 포함된 데이터베이스(`default`), 그리고 `cell_towers` 테이블을 선택합니다:
 
 <Image img="/images/getting-started/example-datasets/superset-add-dataset.webp" size="md" alt="cell_towers 테이블을 데이터셋으로 추가" />
 
@@ -340,7 +340,7 @@ Superset에서 **데이터셋**은 데이터베이스 내 테이블에 해당합
   ### 몇 가지 **차트** 만들기
 </div>
 
-Superset에서 차트를 추가할 때는 데이터셋(`cell_towers`)과 차트 유형을 지정해야 합니다. OpenCelliD 데이터셋은 기지국의 경도와 위도 좌표를 제공하므로 **Map** 차트를 만들겠습니다. **deck.gL Scatterplot** 유형은 지도상의 고밀도 데이터 포인트를 표시하는 데 적합하므로 이 데이터셋에 잘 맞습니다.
+Superset에서 차트를 추가할 때는 데이터셋(`cell_towers`)과 차트 유형을 지정해야 합니다. OpenCelliD 데이터셋은 기지국의 경도와 위도 좌표를 제공하므로 **Map** 차트를 만들겠습니다. **deck.gL Scatterplot** 유형은 지도 위의 밀집된 데이터 포인트를 표현하는 데 적합하므로 이 데이터셋에 잘 맞습니다.
 
 <Image img="/images/getting-started/example-datasets/superset-create-map.webp" size="md" alt="Superset에서 지도 만들기" />
 
@@ -374,7 +374,7 @@ deck.gl Scatterplot에는 경도와 위도가 필요하며, 쿼리에 하나 이
 
 이 스크린샷은 LTE, UMTS, GSM 라디오를 사용하는 기지국의 위치를 보여줍니다. 차트는 모두 같은 방식으로 만들고, 이를 대시보드에 추가합니다.
 
-<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="mcc 204의 무선 유형별 기지국 대시보드" />
+<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="mcc 204의 라디오 유형별 기지국 대시보드" />
 
 <Tip>
   이 데이터는 [Playground](https://sql.clickhouse.com)에서 대화형 쿼리로도 확인할 수 있습니다.

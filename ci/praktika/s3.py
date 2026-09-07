@@ -5,7 +5,7 @@ import os
 import time
 from pathlib import Path
 from typing import Dict
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from ._environment import _Environment
 from .settings import Settings
@@ -111,67 +111,80 @@ class S3:
         if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
 
-        # boto3 is required for S3 uploads. The AWS CLI fallback is deprecated
-        # (and does not support upload-time object tagging), so uploads must go
-        # through boto3 to keep the "all artifacts are retention-tagged"
-        # invariant. TODO: drop the remaining AWS CLI paths in this module.
-        assert (
-            BOTO3_AVAILABLE and cls._get_boto3_client()
-        ), "boto3 is required for S3 uploads (the AWS CLI fallback is deprecated)"
+        # Use boto3 if available, otherwise fall back to AWS CLI
+        if BOTO3_AVAILABLE and cls._get_boto3_client():
+            try:
+                s3_full_path_clean = str(s3_full_path).removeprefix("s3://")
+                bucket, key = s3_full_path_clean.split("/", maxsplit=1)
 
-        try:
-            s3_full_path_clean = str(s3_full_path).removeprefix("s3://")
-            bucket, key = s3_full_path_clean.split("/", maxsplit=1)
+                # Prepare ExtraArgs for upload_file
+                extra_args = {}
 
-            # Prepare ExtraArgs for upload_file
-            extra_args = {}
+                inferred_content_type = ""
+                if not content_type and not (text and not content_type):
+                    inferred_content_type, _ = mimetypes.guess_type(key)
 
-            inferred_content_type = ""
-            if not content_type and not (text and not content_type):
-                inferred_content_type, _ = mimetypes.guess_type(key)
+                if text and not content_type:
+                    extra_args["ContentType"] = "text/plain; charset=utf-8"
+                elif content_type:
+                    extra_args["ContentType"] = content_type
+                elif inferred_content_type:
+                    extra_args["ContentType"] = inferred_content_type
+                if content_encoding:
+                    extra_args["ContentEncoding"] = content_encoding
 
+                def _upload():
+                    client = cls._get_boto3_client()
+                    if extra_args:
+                        client.upload_file(
+                            str(local_path), bucket, key, ExtraArgs=extra_args
+                        )
+                    else:
+                        client.upload_file(str(local_path), bucket, key)
+                    if tags:
+                        tag_set = [{"Key": k, "Value": v} for k, v in tags.items()]
+                        client.put_object_tagging(
+                            Bucket=bucket, Key=key, Tagging={"TagSet": tag_set}
+                        )
+
+                # Retry on transient credential failures
+                cls._retry_on_no_credentials(_upload)
+
+            except NoCredentialsError as e:
+                print(
+                    f"ERROR: Failed to upload to S3 using boto3 (no credentials): {e}"
+                )
+                if not no_strict:
+                    raise
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                print(f"ERROR: Failed to upload to S3 using boto3: {error_code}")
+                if not no_strict:
+                    raise
+            except Exception as e:
+                print(f"ERROR: Failed to upload to S3 using boto3: {e}")
+                if not no_strict:
+                    raise
+        else:
+            # boto3 not available, use AWS CLI
+            cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
             if text and not content_type:
-                extra_args["ContentType"] = "text/plain; charset=utf-8"
+                cmd += ' --content-type "text/plain; charset=utf-8"'
             elif content_type:
-                extra_args["ContentType"] = content_type
-            elif inferred_content_type:
-                extra_args["ContentType"] = inferred_content_type
+                cmd += f" --content-type {content_type}"
             if content_encoding:
-                extra_args["ContentEncoding"] = content_encoding
+                cmd += f" --content-encoding {content_encoding}"
+            _ = cls.run_command_with_retries(cmd, no_strict=no_strict)
+
+            # Apply tags if provided
             if tags:
-                # Attach tags to the upload request itself (URL-encoded
-                # querystring) instead of a follow-up put_object_tagging
-                # call, so the object is never left untagged by a tagging
-                # step that fails after a successful upload.
-                extra_args["Tagging"] = urlencode(tags)
-
-            def _upload():
-                client = cls._get_boto3_client()
-                if extra_args:
-                    client.upload_file(
-                        str(local_path), bucket, key, ExtraArgs=extra_args
-                    )
-                else:
-                    client.upload_file(str(local_path), bucket, key)
-
-            # Retry on transient credential failures
-            cls._retry_on_no_credentials(_upload)
-
-        except NoCredentialsError as e:
-            print(
-                f"ERROR: Failed to upload to S3 using boto3 (no credentials): {e}"
-            )
-            if not no_strict:
-                raise
-        except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code", "")
-            print(f"ERROR: Failed to upload to S3 using boto3: {error_code}")
-            if not no_strict:
-                raise
-        except Exception as e:
-            print(f"ERROR: Failed to upload to S3 using boto3: {e}")
-            if not no_strict:
-                raise
+                bucket = s3_full_path.split("/")[0]
+                key = "/".join(s3_full_path.split("/")[1:])
+                # Use JSON format for tagging to ensure correct syntax
+                tag_set = [{"Key": k, "Value": v} for k, v in tags.items()]
+                tagging_json = json.dumps({"TagSet": tag_set})
+                tag_cmd = f"aws s3api put-object-tagging --bucket {bucket} --key {key} --tagging '{tagging_json}'"
+                cls.run_command_with_retries(tag_cmd, no_strict=True)
 
         # Common cleanup and return for both paths
         try:
@@ -260,16 +273,11 @@ class S3:
                 break
             elif "Unknown options" in stderr:
                 print("ERROR: Invalid AWS CLI command or CLI client version:")
-                print(f"  | aws error: {stderr}")
+                print(f"  | awc error: {stderr}")
                 break
-            elif (
-                "PreconditionFailed" in stderr
-                or "ConditionalRequestConflict" in stderr
-            ):
-                # Lost optimistic-lock race. Suppress the raise and return False so the caller retries.
-                no_strict = True
-                print("AWS API conditional request failed (concurrent write detected)")
-                print(f"  | aws error: {stderr}")
+            elif "PreconditionFailed" in stderr:
+                print("ERROR: AWS API Call Precondition Failed")
+                print(f"  | awc error: {stderr}")
                 break
             if ret_code != 0:
                 print(
@@ -662,8 +670,8 @@ class S3:
 
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code", "")
-                if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
-                    print(f"{error_code} (concurrent write detected)")
+                if error_code == "PreconditionFailed":
+                    print("Precondition failed (concurrent write detected)")
                     return False
                 print(f"ERROR: Failed to upload file using boto3: {error_code}")
                 if not no_strict:
