@@ -38,6 +38,8 @@ join algorithms without semi joins keep the set-operation step
 inside IN and a CTE
 2000
 200	100	299
+    QUERY id: 3, alias: __table1, is_subquery: 1, is_cte: 1, is_materialized: 1, is_distinct: 1, cte_name: both
+both AS __table1
 ALL modes keep the set-operation step
 0
 1

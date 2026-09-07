@@ -154,6 +154,9 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, JoinStrictness str
     auto & result_query = left.node->as<QueryNode &>();
     result_query.setIsDistinct(true);
     result_query.setIsSubquery(union_node.isSubquery());
+    result_query.setIsCTE(union_node.isCTE());
+    result_query.setCTEName(union_node.getCTEName());
+    result_query.setIsMaterialized(union_node.isMaterialized());
     if (union_node.hasAlias())
         result_query.setAlias(union_node.getAlias());
     result_query.setOriginalAST(union_node.getOriginalAST());
