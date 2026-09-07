@@ -533,7 +533,7 @@ void ExternalDistinctTransform::consume(Chunk chunk)
             return;
         }
 
-        if (distinct_set->getTotalRowCount() > 0 && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))
+        if (getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))
             startFirstSpill();
     }
     else

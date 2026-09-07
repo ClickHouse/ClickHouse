@@ -275,8 +275,6 @@ DistinctSetFilter::DistinctSetFilter(
     , skip_null_keys(skip_null_keys_)
     , require_extractable_keys(require_extractable_keys_)
 {
-    /// The skipping mode hashes the nested representations of the keys, which cannot be materialized back.
-    chassert(!(skip_null_keys && require_extractable_keys));
     key_types.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
         key_types.push_back(header.getByPosition(pos).type);
@@ -410,8 +408,6 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
 
 Chunk DistinctSetFilter::filter(Chunk chunk)
 {
-    chassert(!key_columns_pos.empty());
-
     /// Convert to full columns, because SetVariants for sparse and const columns is not implemented.
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);

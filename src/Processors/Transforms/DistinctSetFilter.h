@@ -152,7 +152,7 @@ public:
     /// the users of this class share one semantics.
     /// In the skip_null_keys mode the rows with a NULL in any key component are dropped.
     /// The result may have no rows (nothing new in the chunk, or all rows had NULL keys). Chunk infos
-    /// are preserved.
+    /// are preserved. Requires `hasKeyColumns` to be true.
     Chunk filter(Chunk chunk);
 
     /// Whether a size limit with the 'break' overflow mode was reached: no new key can be added to the
