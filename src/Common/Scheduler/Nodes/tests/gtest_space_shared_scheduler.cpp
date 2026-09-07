@@ -3053,10 +3053,12 @@ TEST(SchedulerSpaceShared, EvictionProtectionIsLastFallback)
     ResourceAllocation::MemoryPressurePolicy protected_policy;
     protected_policy.protect_from_eviction = true;
     auto protected_allocation = std::make_unique<ManualAllocation>(
-        queue, "protected", 7000, true, protected_policy);
-    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 2000);
+        queue, "protected", 6000, true, protected_policy);
+    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 3000);
     ManualAllocation requester(queue, "requester", 1000);
 
+    /// Keep the ordinary victim's key strictly above the requester's resulting allocation.
+    /// Equal keys would exercise the creation-order tie-breaker and allow self-eviction.
     requester.increaseAsync(1000);
 
     ASSERT_TRUE(ordinary->waitKillsFor(1, std::chrono::seconds(5)));
@@ -3064,7 +3066,7 @@ TEST(SchedulerSpaceShared, EvictionProtectionIsLastFallback)
     EXPECT_EQ(requester.killCount(), 0u);
 
     ordinary.reset();
-    requester.waitSynced();
+    ASSERT_TRUE(requester.waitSyncedFor(std::chrono::seconds(5)));
 }
 
 
@@ -3536,7 +3538,11 @@ TEST(SchedulerSpaceShared, SiblingLimitsSharePolicySuctionSlot)
                 first_limit->attachChild(first_queue);
                 policy->attachChild(first_limit);
 
-                auto second_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+                /// `PrecedenceAllocation` requires distinct keys for its direct children;
+                /// equal-precedence workloads are grouped under `FairAllocation` in production.
+                SchedulerNodeInfo second_info;
+                second_info.setPrecedence(1);
+                auto second_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, second_info, 10000);
                 second_limit->basename = "second";
                 auto second_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
                 second_queue->basename = "queue";
