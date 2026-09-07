@@ -207,9 +207,10 @@ void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<Names> & hint_columns)
 {
-    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns, canonicalize_key_types);
+    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns, canonicalize_key_types, hint_columns);
 }
 
 void KeyDescription::recalculateWithNewColumns(
@@ -289,7 +290,8 @@ KeyDescription KeyDescription::getKeyFromAST(
     const VirtualColumnsDescription & virtuals,
     const ContextPtr & context,
     const NamesAndTypesList & additional_columns,
-    bool canonicalize_key_types)
+    bool canonicalize_key_types,
+    const std::optional<Names> & hint_columns)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
@@ -309,7 +311,13 @@ KeyDescription KeyDescription::getKeyFromAST(
         auto key_context = canonicalize_key_types ? createKeyExpressionContext(context) : context;
         auto expr = result.expression_list_ast->clone();
         auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
-        auto syntax_result = TreeRewriter(key_context).analyze(expr, all_columns);
+        /// Subcolumns and virtual columns are legal in a key wherever the caller has put them into `columns`
+        /// and `virtuals`, so by default a typo may be resolved to any of them; a caller that accepts less
+        /// narrows the suggestions down.
+        TreeRewriter tree_rewriter(key_context);
+        if (hint_columns)
+            tree_rewriter.setHintColumns(*hint_columns);
+        auto syntax_result = tree_rewriter.analyze(expr, all_columns);
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, key_context).getActions(false);
         /// In sample block we use just key columns

@@ -7,6 +7,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/VirtualColumnsDescription.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -77,13 +79,19 @@ struct KeyDescription
     /// must pass false, otherwise the validated type diverges from the type the expression actually
     /// produces at runtime. This applies to query-time validators (parallel_replicas_custom_key) and to
     /// the sampling key, whose read-time filter (MergeTreeDataSelectExecutor) is built in the query context.
+    ///
+    /// `hint_columns` restricts the `maybe you meant` suggestions for an unknown identifier in the key to
+    /// these names, for a caller whose subsequent check accepts only a part of the columns (@sa
+    /// `TreeRewriterResult::hint_columns`). Unset means every column, subcolumn and virtual column
+    /// the key is analyzed over is a candidate.
     static KeyDescription getKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         const VirtualColumnsDescription & virtuals,
         const ContextPtr & context,
         const NamesAndTypesList & additional_columns = {},
-        bool canonicalize_key_types = true);
+        bool canonicalize_key_types = true,
+        const std::optional<Names> & hint_columns = {});
 
     /// Build a primary key description from an explicit PRIMARY KEY. The PRIMARY KEY names a
     /// prefix of the sorting key but cannot express per-column directions (`DESC`); the physical
@@ -114,7 +122,8 @@ struct KeyDescription
         const ASTPtr & new_ast,
         const ColumnsDescription & columns,
         const VirtualColumnsDescription & virtuals,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const std::optional<Names> & hint_columns = {});
 
     ASTPtr getOriginalExpressionList() const;
 
