@@ -31,8 +31,8 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
@@ -114,6 +114,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_pause_after_reserving_tmp_dir[];
 }
 
 namespace Setting
@@ -141,6 +142,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_rows_to_activate;
@@ -239,23 +241,16 @@ private:
     std::shared_ptr<BuildStatisticsTransform> transform;
 };
 
-/// `PullingPipelineExecutor::pull` returns `false` both on a genuine end-of-stream and when the
-/// pipeline is cancelled (query kill or a soft `max_execution_time` with `timeout_overflow_mode = 'break'`).
-/// A merge that ran with the user query's limits (e.g. `OPTIMIZE ... DRY RUN`, which executes the merge
-/// synchronously in the query) can therefore be silently truncated. If we treat that as a normal finish,
-/// the merge finalizes a partial part and the row-count invariants in the merge stages fire a LOGICAL_ERROR.
-/// Detect the cancellation here and throw the proper error instead.
-static void throwIfMergePipelineCancelled(const PullingPipelineExecutor & executor)
+static void throwIfPipelineCancelled(const QueryPipeline & pipeline)
 {
-    switch (executor.getExecutionStatus())
-    {
-        case PipelineExecutor::ExecutionStatus::CancelledByTimeout:
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while merging parts");
-        case PipelineExecutor::ExecutionStatus::CancelledByUser:
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while merging parts");
-        default:
-            break;
-    }
+    const auto process_list_element = pipeline.getProcessListElement();
+    if (!process_list_element || process_list_element->checkTimeLimitSoft())
+        return;
+
+    if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
 }
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
@@ -542,6 +537,20 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     global_ctx->need_block_offset_in_merge |= key_columns.contains(BlockOffsetColumn::name);
 }
 
+String MergeTask::buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix)
+{
+    if (suffix.empty() || !suffix.starts_with(DRY_RUN_TEMP_INFIX))
+        return prefix + part_name + suffix;
+
+    /// `OPTIMIZE ... DRY RUN` leaves the result part name out: the name must not collide with the
+    /// merge of those parts, and its length must not follow the part name, which is not capped. What
+    /// is left is a fixed-size name, kept as short as uniqueness allows so that a dry run runs out of
+    /// filename budget as late as possible - no earlier than the corresponding real merge for any
+    /// part whose name is 15 characters or longer. Keeps `prefix`, which the temporary directory cleaner and the
+    /// startup skip logic select by, and is never parsed back into a part name.
+    return prefix + suffix;
+}
+
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
@@ -551,7 +560,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
     String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
 
-    const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
+    /// Honor an explicitly supplied suffix for top-level merges too, not only projections.
+    /// Real top-level merges pass an empty suffix; `OPTIMIZE ... DRY RUN` passes a unique one.
+    const String local_tmp_suffix = global_ctx->suffix;
 
     global_ctx->checkOperationIsNotCanceled();
 
@@ -576,7 +587,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     global_ctx->disk = global_ctx->space_reservation->getDisk();
-    auto local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
+    auto local_tmp_part_basename = buildTempPartBasename(local_tmp_prefix, global_ctx->future_part->name, local_tmp_suffix);
 
     /// The `SingleDiskVolume`, `DataPartStorageOnDiskFull`, and `IMergeTreeDataPart` constructed
     /// here are stored on the merged part and live for its whole lifetime, so route them into the
@@ -587,6 +598,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// interrupted merge. Projection merges write nested inside the parent's directory, which has no claim.
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
+
+    LOG_TRACE(ctx->log, "Reserved temporary directory {} for the merge", local_tmp_part_basename);
+
+    /// Test-only: widen the window between reserving the temporary merge directory and the rest
+    /// of the merge, to deterministically race two `OPTIMIZE ... DRY RUN` over the same parts.
+    /// Scoped to dry-run merges so an unrelated background merge cannot consume the pause.
+    if (local_tmp_suffix.starts_with(DRY_RUN_TEMP_INFIX))
+        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_reserving_tmp_dir);
 
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -895,12 +914,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
+    MergeTreeSerializationInfoVersion output_serialization_version
+        = (*merge_tree_settings)[MergeTreeSetting::serialization_info_version];
+    if (std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
+        { return !part->getSerializationInfos().getMissingColumns().empty(); }))
+    {
+        output_serialization_version = std::max(
+            output_serialization_version,
+            MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+    }
+
     SerializationInfo::Settings info_settings
     {
         static_cast<double>((*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*merge_tree_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
-        (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
+        output_serialization_version,
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
@@ -910,6 +939,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
+    /// A source marker prevents the column from expiring during a normal merge,
+    /// so carrying its union reproduces the same lazy type-default materialization.
+    NameSet source_missing_column_names;
+    /// Resolve marker names to the merged schema.
+    std::map<String, SerializationInfoByName::MissingColumnInfo> source_missing_map;
     for (const auto & part : global_ctx->future_part->parts)
     {
         if (!info_settings.isAlwaysDefault())
@@ -926,11 +960,57 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+        auto part_alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
 #if CLICKHOUSE_CLOUD
             , nullptr
 #endif
-            ));
+            );
+
+        for (const auto & mc : part->getSerializationInfos().getMissingColumns())
+        {
+            String current_name = mc.name;
+            if (part_alter_conversions->columnHasNewName(mc.name))
+                current_name = part_alter_conversions->getColumnNewName(mc.name);
+
+            /// Pending DROP/CLEAR invalidates either spelling of the marker.
+            bool share_nested = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+            if (part_alter_conversions->isColumnDropped(mc.name, share_nested)
+                || part_alter_conversions->isColumnDropped(current_name, share_nested))
+                continue;
+
+            source_missing_column_names.insert(current_name);
+            if (!source_missing_map.contains(current_name))
+            {
+                auto entry = mc;
+                entry.name = current_name;
+                source_missing_map.emplace(current_name, std::move(entry));
+            }
+        }
+
+        global_ctx->alter_conversions.push_back(std::move(part_alter_conversions));
+    }
+
+    if (!source_missing_column_names.empty())
+    {
+        NameSet final_columns;
+        for (const auto & column : global_ctx->storage_columns)
+            final_columns.insert(column.name);
+
+        SerializationInfoByName::MissingColumns merged_missing;
+        for (const auto & name : source_missing_column_names)
+        {
+            if (!final_columns.contains(name))
+            {
+                auto it = source_missing_map.find(name);
+                if (it != source_missing_map.end())
+                    merged_missing.push_back(it->second);
+            }
+        }
+
+        if (!merged_missing.empty())
+        {
+            infos.setMissingColumns(std::move(merged_missing));
+        }
     }
 
     if (global_ctx->new_data_part->info.isPatch())
@@ -960,13 +1040,43 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
-        global_ctx->metadata_snapshot,
-        global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        global_ctx->new_data_part->ttl_infos,
-        global_ctx->time_of_merge);
-    global_ctx->compression_codec = std::move(part_compression_codec.codec);
-    global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
+    /// The parent's default codec is worth inheriting only when it is a fact. When the parent part
+    /// lost its `default_compression_codec.txt` and the codec was merely recovered from
+    /// `checksums.txt` (`IMergeTreeDataPart::default_codec_is_approximate`), inheriting it would
+    /// compress this freshly written projection with a guess and record that guess as authoritative
+    /// in the projection's own codec file. Choose the codec for the projection independently in that
+    /// case - nothing of the parent is reused here, the projection data is written from scratch.
+    const bool inherit_parent_codec = global_ctx->projection && !global_ctx->parent_part->default_codec_is_approximate;
+
+    if (inherit_parent_codec)
+    {
+        /// When merging existing projection parts, inherit the default codec of the parent part
+        /// they belong to. Choosing it from the projection's own (much smaller) combined size would
+        /// leave a projection of a large (`ZSTD`) parent part on the size-aware `LZ4` - and would
+        /// even downgrade a projection that was already written as `ZSTD` back to `LZ4`. The parent
+        /// resolves its codec before its projections are merged. Preserve whether the parent codec
+        /// came from an explicit `RECOMPRESS` TTL: adaptive codec selection must not replace that
+        /// codec while rewriting the projection data.
+        chassert(global_ctx->parent_part->default_codec);
+        global_ctx->compression_codec = global_ctx->parent_part->default_codec;
+        global_ctx->is_explicit_recompression = global_ctx->parent_part->default_codec_is_explicit_recompression;
+    }
+    else
+    {
+        auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
+            global_ctx->metadata_snapshot,
+            global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
+            global_ctx->new_data_part->ttl_infos,
+            global_ctx->time_of_merge);
+        global_ctx->compression_codec = std::move(part_compression_codec.codec);
+        global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
+    }
+
+    /// Record the chosen codec on the part so that its projections (merged by the sub-merge above,
+    /// or rebuilt via `writeTempProjectionPart`) inherit the same codec, together with whether it
+    /// was asked for by an explicit `RECOMPRESS` TTL.
+    global_ctx->new_data_part->default_codec = global_ctx->compression_codec;
+    global_ctx->new_data_part->default_codec_is_explicit_recompression = global_ctx->is_explicit_recompression;
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -1529,7 +1639,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
+            global_ctx->compression_codec, ++ctx->projection_block_num,
+            /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1571,7 +1683,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
+                global_ctx->compression_codec, ++ctx->projection_block_num,
+                /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -1716,7 +1830,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfMergePipelineCancelled(*global_ctx->merging_executor);
+                throwIfPipelineCancelled(global_ctx->merged_pipeline);
             finalize();
             return false;
         }
@@ -2094,7 +2208,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfMergePipelineCancelled(*ctx->executor);
+                throwIfPipelineCancelled(ctx->column_parts_pipeline);
             return false;
         }
 

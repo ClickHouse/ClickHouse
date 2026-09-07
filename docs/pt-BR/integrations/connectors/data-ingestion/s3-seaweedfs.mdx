@@ -47,8 +47,10 @@ Em seguida, inicie toda a stack do SeaweedFS em um único contêiner — a flag 
 docker run -d --name seaweedfs -p 8333:8333 \
   -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
   chrislusf/seaweedfs:latest \
-  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse -admin.port=12646
 ```
+
+`-admin.port=12646` mantém a porta gRPC de administração derivada pelo SeaweedFS abaixo do intervalo de portas efêmeras do Linux, evitando que uma conexão de inicialização a ocupe primeiro.
 
 O endpoint do S3 está disponível na porta 8333; aguarde até que ele responda antes de continuar:
 
@@ -58,7 +60,7 @@ until curl -s -o /dev/null http://localhost:8333; do sleep 1; done
 
 Mais buckets podem ser criados a qualquer momento com `echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell`.
 
-Por padrão, uma gravação é confirmada assim que é passada ao sistema operacional. Para executar o fsync de cada gravação no disk antes de confirmá-la, habilite o fsync no bucket:
+Por padrão, uma gravação é confirmada assim que é passada ao sistema operacional. Para executar o fsync de cada gravação no disco antes de confirmá-la, habilite o fsync no bucket:
 
 ```bash
 echo "fs.configure -locationPrefix=/buckets/clickhouse/ -fsync -apply" | \
