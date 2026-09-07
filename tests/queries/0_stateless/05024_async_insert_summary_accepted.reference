@@ -6,6 +6,8 @@ progress headers must not contain accepted fields:
 0
 progress headers must not be emitted empty by the accepted-only update:
 0
-empty fire-and-forget must not emit progress headers:
+zero-row query still reports its final memory_usage progress header:
+1
+empty fire-and-forget must not emit a counterless progress header:
 0
 total_rows	12

@@ -32,7 +32,7 @@ bool Progress::empty() const
         && total_rows_to_read == 0
         && result_rows == 0
         && result_bytes == 0;
-    /// Ignore values that should not trigger progress reporting on their own.
+    /// We deliberately don't include "elapsed_ns" and "memory_usage" as a volatile value.
 }
 
 
