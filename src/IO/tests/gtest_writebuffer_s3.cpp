@@ -58,6 +58,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
 }
@@ -987,6 +988,102 @@ INSTANTIATE_TEST_SUITE_P(WBS3
         std::string name = info_param.param ? "async" : "sync";
         return name;
   });
+
+namespace
+{
+
+enum class PostUploadCheck
+{
+    UploadExists,
+    UploadSize,
+    CopyExists,
+};
+
+struct CancelDuringHead : MockS3::InjectionModel
+{
+    explicit CancelDuringHead(size_t successful_heads_) : successful_heads(successful_heads_)
+    {
+    }
+
+    size_t successful_heads;
+    bool cancelled = false;
+
+    std::optional<Aws::S3::Model::HeadObjectOutcome> call(const Aws::S3::Model::HeadObjectRequest & request) override
+    {
+        if (successful_heads)
+        {
+            --successful_heads;
+            return std::nullopt;
+        }
+
+        /// Exercise the retry callback, not the cancellation check after a successful HEAD.
+        const auto & retry = request.GetRequestRetryHandler();
+        EXPECT_TRUE(retry);
+        if (retry)
+        {
+            cancelled = true;
+            retry(request);
+        }
+        return std::nullopt;
+    }
+};
+
+class PostUploadCancellation : public WBS3Test, public ::testing::WithParamInterface<PostUploadCheck>
+{
+};
+
+}
+
+TEST_P(PostUploadCancellation, StopsVerification)
+{
+    const bool check_size = GetParam() == PostUploadCheck::UploadSize;
+    auto injection = std::make_shared<CancelDuringHead>(check_size ? 1 : 0);
+    setInjectionModel(injection);
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    const auto cancel = [injection]
+    {
+        if (injection->cancelled)
+            throw Exception(ErrorCodes::ABORTED, "Test operation cancelled");
+    };
+
+    try
+    {
+        if (GetParam() == PostUploadCheck::CopyExists)
+        {
+            client->store->GetBucketStore(bucket).PutObject("source", "x");
+            S3::S3RequestSettings request_settings;
+            request_settings.updateFromSettings(getSettings(), true, false);
+            copyS3File(client, bucket, "source", 1, client, bucket, "destination",
+                request_settings, ReadSettings{}, nullptr, {}, {}, std::nullopt, cancel);
+        }
+        else
+        {
+            auto buffer = getWriteBuffer();
+            buffer->setCancellationHook(cancel);
+            buffer->write('x');
+            buffer->finalize();
+        }
+        FAIL() << "Post-upload verification ignored cancellation";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ABORTED);
+    }
+    EXPECT_EQ(client->counters.headObject, check_size ? 2 : 1);
+}
+
+INSTANTIATE_TEST_SUITE_P(S3, PostUploadCancellation,
+    ::testing::Values(PostUploadCheck::UploadExists, PostUploadCheck::UploadSize, PostUploadCheck::CopyExists),
+    [](const ::testing::TestParamInfo<PostUploadCheck> & info_param)
+    {
+        switch (info_param.param)
+        {
+            case PostUploadCheck::UploadExists: return "UploadExists";
+            case PostUploadCheck::UploadSize: return "UploadSize";
+            case PostUploadCheck::CopyExists: return "CopyExists";
+        }
+        UNREACHABLE();
+    });
 
 TEST_P(SyncAsync, ExceptionOnHead) {
     setInjectionModel(std::make_shared<MockS3::HeadObjectFailIngection>());

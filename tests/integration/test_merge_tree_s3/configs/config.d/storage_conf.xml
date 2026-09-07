@@ -93,19 +93,6 @@
                 <path>encrypted/</path>
                 <skip_access_check>true</skip_access_check>
             </encrypted_broken_s3_long_retries_always_multi_part>
-            <broken_s3_verification>
-                <type>s3</type>
-                <endpoint>http://resolver:8085/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <skip_access_check>true</skip_access_check>
-                <s3_retry_attempts>100</s3_retry_attempts>
-                <s3_check_objects_after_upload>true</s3_check_objects_after_upload>
-                <connect_timeout_ms>20000</connect_timeout_ms>
-                <request_timeout_ms>20000</request_timeout_ms>
-                <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
-                <persistent_removal_log>true</persistent_removal_log>
-            </broken_s3_verification>
             <hdd>
                 <type>local</type>
                 <path>/</path>
@@ -241,13 +228,6 @@
                     </main>
                 </volumes>
             </encrypted_broken_s3_long_retries_always_multi_part>
-            <broken_s3_verification>
-                <volumes>
-                    <main>
-                        <disk>broken_s3_verification</disk>
-                    </main>
-                </volumes>
-            </broken_s3_verification>
         </policies>
     </storage_configuration>
 

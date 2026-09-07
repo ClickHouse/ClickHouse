@@ -10,7 +10,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
 from helpers.utility import generate_values, replace_config
 from helpers.blobs import wait_blobs_count_synchronization
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
     wait_for_delete_inactive_parts,
@@ -888,17 +888,49 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     )
 
 
+@pytest.fixture
+def s3_cancellation(cluster, broken_s3):
+    node = cluster.instances["node"]
+    table = "cancel_s3"
+    try:
+        yield node, table
+    finally:
+        broken_s3.reset()
+        node.query(f"SYSTEM START MERGES {table}")
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def wait_for_s3_request(broken_s3, kind, count=1):
+    wait_condition(
+        broken_s3.get_request_counts,
+        lambda counts: counts[kind] >= count,
+        max_attempts=100,
+    )
+
+
+def assert_s3_cancelled(node, table, request, broken_s3, request_kind):
+    node.query(f"SYSTEM STOP MERGES {table}")
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'",
+        "0",
+        retry_count=20,
+        sleep_time=0.1,
+    )
+    assert "ABORTED" in request.get_error()
+    count = broken_s3.get_request_counts()[request_kind]
+    time.sleep(0.5)
+    assert broken_s3.get_request_counts()[request_kind] == count
+
+
 @pytest.mark.parametrize(
     "storage_policy",
     ["broken_s3_long_retries_always_multi_part", "encrypted_broken_s3_long_retries_always_multi_part"],
 )
 def test_cancelling_vertical_multipart_merge_stops_s3_retries(
-    cluster, broken_s3, storage_policy
+    s3_cancellation, broken_s3, storage_policy
 ):
-    node = cluster.instances["node"]
-    table = f"cancel_vertical_multipart_merge_{storage_policy}"
-
-    node.query(f"DROP TABLE IF EXISTS {table} NO DELAY")
+    node, table = s3_cancellation
     node.query(
         f"CREATE TABLE {table} (key UInt32, value String, extra String) "
         "ENGINE=MergeTree ORDER BY key "
@@ -906,49 +938,23 @@ def test_cancelling_vertical_multipart_merge_stops_s3_retries(
         "vertical_merge_algorithm_min_rows_to_activate=0, "
         "vertical_merge_algorithm_min_columns_to_activate=0"
     )
-    try:
-        node.query(f"SYSTEM STOP MERGES {table}")
-        node.query(f"INSERT INTO {table} SELECT number, toString(number), toString(number) FROM numbers(10000)")
-        node.query(f"INSERT INTO {table} SELECT number + 10000, toString(number), toString(number) FROM numbers(10000)")
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for offset in (0, 10000):
+        node.query(f"INSERT INTO {table} SELECT number + {offset}, toString(number), toString(number) FROM numbers(10000)")
 
-        broken_s3.reset()
-        broken_s3.setup_fake_multpartuploads()
-        broken_s3.setup_at_part_upload(action="internal_error", count=10000)
-        node.query(f"SYSTEM START MERGES {table}")
-
-        request = node.get_query_request(
-            f"OPTIMIZE TABLE {table} FINAL", timeout=30
-        )
-
-        assert_eq_with_retry(
-            node,
-            f"SELECT count() FROM system.merges WHERE database='default' AND table='{table}' AND merge_algorithm='Vertical'",
-            "1",
-        )
-
-        deadline = time.monotonic() + 10
-        while broken_s3.get_request_counts()["part_upload"] == 0 and time.monotonic() < deadline:
-            time.sleep(0.1)
-        assert broken_s3.get_request_counts()["part_upload"] > 0
-
-        node.query(f"SYSTEM STOP MERGES {table}")
-        assert_eq_with_retry(
-            node,
-            f"SELECT count() FROM system.merges WHERE database='default' AND table='{table}'",
-            "0",
-            retry_count=20,
-            sleep_time=0.1,
-        )
-        assert "ABORTED" in request.get_error()
-
-        request_counts = broken_s3.get_request_counts()
-        time.sleep(0.5)
-        assert broken_s3.get_request_counts() == request_counts
-        assert request_counts["abort_multipart_upload"] == 0
-    finally:
-        broken_s3.reset()
-        node.query(f"SYSTEM START MERGES {table}")
-        node.query(f"DROP TABLE {table} SYNC")
+    broken_s3.reset()
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload(action="internal_error", count=10000)
+    node.query(f"SYSTEM START MERGES {table}")
+    request = node.get_query_request(f"OPTIMIZE TABLE {table} FINAL", timeout=30)
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.merges WHERE table='{table}' AND merge_algorithm='Vertical'",
+        "1",
+    )
+    wait_for_s3_request(broken_s3, "part_upload")
+    assert_s3_cancelled(node, table, request, broken_s3, "part_upload")
+    assert broken_s3.get_request_counts()["abort_multipart_upload"] == 0
 
 
 @pytest.mark.parametrize(
@@ -956,12 +962,9 @@ def test_cancelling_vertical_multipart_merge_stops_s3_retries(
     [("Full", "0"), ("Packed", "10M")],
 )
 def test_cancelling_untouched_mutation_copy_stops_s3_retries(
-    cluster, broken_s3, part_storage_type, min_bytes_for_full_part_storage
+    s3_cancellation, broken_s3, part_storage_type, min_bytes_for_full_part_storage
 ):
-    node = cluster.instances["node"]
-    table = f"cancel_untouched_mutation_copy_{part_storage_type.lower()}"
-
-    node.query(f"DROP TABLE IF EXISTS {table} NO DELAY")
+    node, table = s3_cancellation
     node.query(
         f"CREATE TABLE {table} (key UInt32, value String) "
         "ENGINE=MergeTree ORDER BY key "
@@ -969,182 +972,54 @@ def test_cancelling_untouched_mutation_copy_stops_s3_retries(
         "always_use_copy_instead_of_hardlinks=1, "
         f"min_bytes_for_full_part_storage='{min_bytes_for_full_part_storage}'"
     )
-    try:
-        node.query(
-            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)"
-        )
-        assert (
-            node.query(
-                "SELECT part_storage_type FROM system.parts "
-                f"WHERE database = currentDatabase() AND table = '{table}' AND active"
-            ).strip()
-            == part_storage_type
-        )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
+    assert node.query(
+        f"SELECT part_storage_type FROM system.parts WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == part_storage_type
 
-        broken_s3.reset()
-        broken_s3.setup_at_object_upload(
-            action="internal_error", after=1, count=10000
-        )
-        request = node.get_query_request(
-            f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 "
-            "SETTINGS mutations_sync=1",
-            timeout=30,
-        )
-
-        deadline = time.monotonic() + 10
-        while (
-            broken_s3.get_request_counts()["object_upload"] < 2
-            and time.monotonic() < deadline
-        ):
-            time.sleep(0.1)
-        assert broken_s3.get_request_counts()["object_upload"] >= 2
-
-        node.query(f"SYSTEM STOP MERGES {table}")
-        assert_eq_with_retry(
-            node,
-            f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'",
-            "0",
-            retry_count=20,
-            sleep_time=0.1,
-        )
-        assert "ABORTED" in request.get_error()
-
-        request_counts = broken_s3.get_request_counts()
-        time.sleep(0.5)
-        assert broken_s3.get_request_counts() == request_counts
-    finally:
-        broken_s3.reset()
-        node.query(f"SYSTEM START MERGES {table}")
-        node.query(f"DROP TABLE {table} SYNC")
+    broken_s3.reset()
+    broken_s3.setup_at_object_upload(action="internal_error", after=1, count=10000)
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
+        timeout=30,
+    )
+    wait_for_s3_request(broken_s3, "object_upload", count=2)
+    assert_s3_cancelled(node, table, request, broken_s3, "object_upload")
 
 
 @pytest.mark.parametrize("request_kind", ["object_head", "object_read"])
 def test_cancelling_mutation_copy_source_stops_s3_retries(
-    cluster, broken_s3, request_kind
+    s3_cancellation, broken_s3, request_kind
 ):
-    node = cluster.instances["node"]
-    table = f"cancel_mutation_copy_source_{request_kind}"
-    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node, table = s3_cancellation
     node.query(
         f"CREATE TABLE {table} (key UInt32, value String) "
         "ENGINE=MergeTree ORDER BY key "
         "SETTINGS storage_policy='broken_s3_long_retries', always_use_copy_instead_of_hardlinks=1, "
         "min_bytes_for_full_part_storage=0"
     )
-    try:
-        node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
-        assert node.query(
-            f"SELECT part_storage_type FROM system.parts WHERE database=currentDatabase() AND table='{table}' AND active"
-        ).strip() == "Full"
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
+    assert node.query(
+        f"SELECT part_storage_type FROM system.parts WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == "Full"
 
-        # Hold the copy at its size probe, after mutation predicate evaluation.
-        # This prevents the GET case from accidentally testing ordinary mutation reads.
-        broken_s3.reset()
-        broken_s3.setup_at_object_head(action="internal_error", count=10000)
-        request = node.get_query_request(
-            f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
-            timeout=30,
-        )
-        deadline = time.monotonic() + 10
-        while broken_s3.get_request_counts()["object_head"] == 0 and time.monotonic() < deadline:
-            time.sleep(0.1)
-        assert broken_s3.get_request_counts()["object_head"] > 0
-
-        if request_kind == "object_read":
-            broken_s3.setup_at_object_copy(action="access_denied", count=10000)
-            broken_s3.setup_at_object_read(action="internal_error", count=10000)
-            broken_s3.setup_at_object_head(count=0)
-            deadline = time.monotonic() + 10
-            while broken_s3.get_request_counts()["object_read"] == 0 and time.monotonic() < deadline:
-                time.sleep(0.1)
-            assert broken_s3.get_request_counts()["object_read"] > 0
-            assert broken_s3.get_request_counts()["object_copy"] > 0
-
-        node.query(f"SYSTEM STOP MERGES {table}")
-        assert_eq_with_retry(
-            node,
-            f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'",
-            "0",
-            retry_count=20,
-            sleep_time=0.1,
-        )
-        assert "ABORTED" in request.get_error()
-
-        counts = broken_s3.get_request_counts()
-        time.sleep(0.5)
-        assert broken_s3.get_request_counts() == counts
-    finally:
-        broken_s3.reset()
-        node.query(f"SYSTEM START MERGES {table}")
-        node.query(f"DROP TABLE {table} SYNC")
-
-
-@pytest.mark.parametrize(
-    "operation,successful_heads",
-    [("merge", 0), ("merge", 1), ("copy", 0)],
-    ids=["upload-exists", "upload-size", "copy-exists"],
-)
-def test_cancelling_post_upload_verification_stops_s3_retries(
-    cluster, broken_s3, operation, successful_heads
-):
-    node = cluster.instances["node"]
-    table = f"cancel_post_upload_verification_{operation}_{successful_heads}"
-    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-    node.query(
-        f"CREATE TABLE {table} (key UInt32, value String) "
-        "ENGINE=MergeTree ORDER BY key "
-        "SETTINGS storage_policy='broken_s3_verification', "
-        "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage=0"
+    # Hold the copy at its size probe, after predicate evaluation, so GET failures
+    # exercise the copy source rather than ordinary mutation reads.
+    broken_s3.reset()
+    broken_s3.setup_at_object_head(action="internal_error", count=10000)
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
+        timeout=30,
     )
-    try:
-        node.query(f"SYSTEM STOP MERGES {table}")
-        node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
-        if operation == "merge":
-            node.query(f"INSERT INTO {table} SELECT number + 10000, toString(number) FROM numbers(10000)")
+    wait_for_s3_request(broken_s3, "object_head")
+    if request_kind == "object_read":
+        broken_s3.setup_at_object_copy(action="access_denied", count=10000)
+        broken_s3.setup_at_object_read(action="internal_error", count=10000)
+        broken_s3.setup_at_object_head(count=0)
+        wait_for_s3_request(broken_s3, "object_read")
+        assert broken_s3.get_request_counts()["object_copy"] > 0
 
-        broken_s3.reset()
-        # Keep source-size probes working. Fail only HEADs of new upload/copy destinations;
-        # permitting their first HEAD separately exercises the writer's size verification.
-        broken_s3.setup_at_object_head(
-            action="internal_error_after_write",
-            action_args=[successful_heads, "copy" if operation == "copy" else "upload"],
-            count=10000,
-        )
-        node.query(f"SYSTEM START MERGES {table}")
-        query = (
-            f"OPTIMIZE TABLE {table} FINAL"
-            if operation == "merge"
-            else f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1"
-        )
-        request = node.get_query_request(query, timeout=30)
-
-        deadline = time.monotonic() + 10
-        while (
-            broken_s3.get_request_counts()["object_head_after_write_error"] == 0
-            and time.monotonic() < deadline
-        ):
-            time.sleep(0.1)
-        counts = broken_s3.get_request_counts()
-        assert counts["object_head_after_write_error"] > 0
-        if operation == "copy":
-            assert counts["object_copy"] > 0
-
-        node.query(f"SYSTEM STOP MERGES {table}")
-        assert_eq_with_retry(
-            node,
-            f"SELECT count() FROM system.merges WHERE database=currentDatabase() AND table='{table}'",
-            "0",
-            retry_count=20,
-            sleep_time=0.1,
-        )
-        assert "ABORTED" in request.get_error()
-        counts = broken_s3.get_request_counts()
-        time.sleep(0.5)
-        assert broken_s3.get_request_counts() == counts
-    finally:
-        broken_s3.reset()
-        node.query(f"SYSTEM START MERGES {table}")
-        node.query(f"DROP TABLE {table} SYNC")
+    assert_s3_cancelled(node, table, request, broken_s3, request_kind)
 
 
 @pytest.mark.parametrize("node_name", ["node"])

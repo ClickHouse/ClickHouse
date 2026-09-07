@@ -258,30 +258,6 @@ class _ServerRuntime:
             )
             request_handler.write_error(500, data)
 
-    class InternalErrorAfterWriteAction(InternalErrorAction):
-        def __init__(self, successful_heads="0", write_kind="any"):
-            self.successful_heads = int(successful_heads)
-            self.write_kind = write_kind
-            self.heads_by_path = {}
-
-        def inject_error(self, request_handler):
-            path = urllib.parse.urlsplit(request_handler.path).path
-            with _runtime.lock:
-                # Source objects predate reset; only newly written copy/upload targets qualify.
-                kind = _runtime.written_objects.get(path)
-                if kind is not None and (self.write_kind == "any" or self.write_kind == kind):
-                    heads = self.heads_by_path.get(path, 0)
-                    self.heads_by_path[path] = heads + 1
-                    fail = heads >= self.successful_heads
-                else:
-                    fail = False
-                if fail:
-                    _runtime.request_counts["object_head_after_write_error"] += 1
-            if fail:
-                super().inject_error(request_handler)
-            else:
-                request_handler.redirect()
-
     class AccessDeniedAction:
         def inject_error(self, request_handler):
             request_handler.write_error(
@@ -443,10 +419,6 @@ class _ServerRuntime:
                 self.error_handler = _ServerRuntime.RedirectAction(*self.action_args)
             elif self.action == "internal_error":
                 self.error_handler = _ServerRuntime.InternalErrorAction()
-            elif self.action == "internal_error_after_write":
-                self.error_handler = _ServerRuntime.InternalErrorAfterWriteAction(
-                    *self.action_args
-                )
             elif self.action == "access_denied":
                 self.error_handler = _ServerRuntime.AccessDeniedAction()
             elif self.action == "slow_down":
@@ -500,13 +472,11 @@ class _ServerRuntime:
         self.at_object_head = None
         self.at_object_read = None
         self.at_object_copy = None
-        self.written_objects = {}
         self.request_counts = {
             "object_upload": 0,
             "part_upload": 0,
             "abort_multipart_upload": 0,
             "object_head": 0,
-            "object_head_after_write_error": 0,
             "object_read": 0,
             "object_copy": 0,
         }
@@ -534,13 +504,11 @@ class _ServerRuntime:
             self.at_object_head = None
             self.at_object_read = None
             self.at_object_copy = None
-            self.written_objects = {}
             self.request_counts = {
                 "object_upload": 0,
                 "part_upload": 0,
                 "abort_multipart_upload": 0,
                 "object_head": 0,
-                "object_head_after_write_error": 0,
                 "object_read": 0,
                 "object_copy": 0,
             }
@@ -802,10 +770,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_PUT(self):
         content_length = int(self.headers.get("Content-Length", 0))
-        with _runtime.lock:
-            _runtime.written_objects[urllib.parse.urlsplit(self.path).path] = (
-                "copy" if self.headers.get("x-amz-copy-source") is not None else "upload"
-            )
 
         if self.headers.get("x-amz-copy-source") is not None:
             with _runtime.lock:
