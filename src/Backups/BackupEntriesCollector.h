@@ -218,6 +218,12 @@ private:
         /// here is never enumerated, so no later decision about its data can bring it back.
         bool isTableSelectedByAnyElement(const String & table_name) const;
 
+        /// Whether any element covers this table at all, before its own `EXCEPT TABLES` is applied. This is
+        /// the candidate set the inner-table classification runs over, and it is wider than the selection on
+        /// purpose: an inner table is recognised through the table which owns it, and an exclusion can name
+        /// that owner. `findTablesInDatabase` narrows to the selection once the classification is done.
+        bool isTableCoveredByAnyElement(const String & table_name) const;
+
         /// Whether any element of the query named this table in its own EXCEPT DATA FROM TABLE/TABLES clause,
         /// as opposed to merely covering it. Asked about a table which turned out to be an inner table, to
         /// reject a clause written on it instead of silently ignoring the clause.

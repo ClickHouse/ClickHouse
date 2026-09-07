@@ -679,19 +679,29 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     checkIsQueryCancelled();
 
-    /// A `MaterializedPostgreSQL` nested table is recognised through the table which owns it, so an
-    /// enumeration without that owner cannot tell one from an ordinary table of the same name. A `DATABASE`
-    /// or `ALL` element enumerates the whole database and always has it; an element naming the nested table
-    /// alone selects nothing else, and the owner is precisely what it lacks.
+    /// This enumeration is the candidate set the inner-table classification runs over, not the set of tables
+    /// the backup ends up with. The two differ, and they have to: a `MaterializedPostgreSQL` nested table is
+    /// recognised through the table which owns it, so an enumeration without that owner cannot tell one from
+    /// an ordinary table of the same name - and everything the query says about what it does *not* want can
+    /// name the owner.
     ///
-    /// So when some element names a table shaped like a nested table, the database is enumerated in full and
-    /// narrowed to the selected tables afterwards, once the definitions are in hand. `mayBeNestedTableName`
-    /// is a syntactic test on a name the query already carries, so an ordinary `BACKUP TABLE db.t` still
+    /// So nothing is excluded here. `isTableCoveredByAnyElement` ignores the `EXCEPT TABLES` of the element
+    /// it asks, which otherwise removed the owner before the classification could use it: a `DATABASE`
+    /// element with `EXCEPT TABLES db.pg` enumerated everything but `db.pg`, nothing in that set owned
+    /// `<uuid of db.pg>_nested`, and the hidden table went into the backup as a table of its own - handed to
+    /// the user who had just excluded the table it belongs to. `EXCEPT TABLES` names are written out by hand,
+    /// so admitting them costs one create query each.
+    ///
+    /// An element naming the nested table alone covers nothing else, and the owner is precisely what it
+    /// lacks, so that case widens further: the database is enumerated in full. `mayBeNestedTableName` is a
+    /// syntactic test on a name the query already carries, so an ordinary `BACKUP TABLE db.t` still
     /// enumerates only what it asks for.
     ///
-    /// This is what keeps the answer a property of the snapshot rather than of this replica: the owner is
-    /// read from the same listing as the table itself - for a `Replicated` database, from Keeper - so a
-    /// replica which has not created the owner locally classifies the name exactly as any other replica does.
+    /// Reading the owner from this listing - for a `Replicated` database, from Keeper - is also what keeps
+    /// the answer a property of the snapshot rather than of this replica: a replica which has not created the
+    /// owner locally classifies the name exactly as any other replica does.
+    ///
+    /// `db_tables` is narrowed to `isTableSelectedByAnyElement` below, once the classification is done.
     const bool enumerate_all_to_classify = std::ranges::any_of(
         database_info.tables,
         [](const auto & table_name_and_params) { return BackupUtils::mayBeNestedTableName(table_name_and_params.first); });
@@ -705,7 +715,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
         if (BackupUtils::isInnerTable(database_name, table_name))
             return false;
 
-        return enumerate_all_to_classify || database_info.isTableSelectedByAnyElement(table_name);
+        return enumerate_all_to_classify || database_info.isTableCoveredByAnyElement(table_name);
     };
 
     std::vector<std::pair<ASTPtr, StoragePtr>> db_tables;
@@ -730,18 +740,16 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     /// created the outer table yet a hidden table would be backed up as a table of its own.
     auto inner_table_names = BackupUtils::findInnerTables(db_tables);
 
-    /// The classification is done, so the tables that were enumerated only to make it possible go away here.
-    /// Everything below sees exactly the tables the query selects, as it would have without the widening.
-    if (enumerate_all_to_classify)
-    {
-        std::erase_if(
-            db_tables,
-            [&](const std::pair<ASTPtr, StoragePtr> & db_table)
-            {
-                const auto * create = db_table.first->as<ASTCreateQuery>();
-                return create && !database_info.isTableSelectedByAnyElement(create->getTable());
-            });
-    }
+    /// The classification is done, so the tables that were enumerated only to make it possible go away here
+    /// and the exclusions finally apply. Everything below - and the backup itself - sees exactly the tables
+    /// the query selects, which is the one question `isTableSelectedByAnyElement` answers for everyone.
+    std::erase_if(
+        db_tables,
+        [&](const std::pair<ASTPtr, StoragePtr> & db_table)
+        {
+            const auto * create = db_table.first->as<ASTCreateQuery>();
+            return create && !database_info.isTableSelectedByAnyElement(create->getTable());
+        });
 
     for (const auto & inner_table_name : inner_table_names)
     {
@@ -1126,6 +1134,17 @@ bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const Str
     }
 
     return false;
+}
+
+bool BackupEntriesCollector::DatabaseInfo::isTableCoveredByAnyElement(const String & table_name) const
+{
+    if (tables.contains(table_name))
+        return true;
+
+    /// A DATABASE or ALL element covers every table of the database. Which of them it *selects* is what its
+    /// own `EXCEPT TABLES` decides, and that is deliberately not asked here: the classification has to see
+    /// the excluded tables too, because one of them may be the table that owns an inner table.
+    return !all_tables_elements.empty();
 }
 
 bool BackupEntriesCollector::DatabaseInfo::isTableNamedByExceptDataClause(const String & table_name) const
