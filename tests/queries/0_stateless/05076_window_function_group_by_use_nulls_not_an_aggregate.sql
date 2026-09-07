@@ -59,6 +59,21 @@ SELECT '-- the resolved type of a window aggregate over the key, on a query that
 SELECT k, toTypeName(min(k) OVER ()) AS t
 FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP ORDER BY ALL;
 
+SELECT '-- an aggregate parameter folded from the key type now matches the same expression outside the window';
+SELECT length(groupArray(toUInt8(isNullable(k)) + 1)(42) OVER ()) AS folded_parameter,
+    toUInt8(isNullable(k)) + 1 AS outside_the_window
+FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP ORDER BY ALL;
+
+SELECT '-- a frame offset folded from the key type now matches the named window, which always folded it this way';
+SELECT count() OVER (ORDER BY 1 ROWS BETWEEN length(toTypeName(k)) - 5 PRECEDING AND CURRENT ROW) AS inline_frame,
+    count() OVER w AS named_frame
+FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP
+WINDOW w AS (ORDER BY 1 ROWS BETWEEN length(toTypeName(k)) - 5 PRECEDING AND CURRENT ROW) ORDER BY ALL;
+
+SELECT '-- and a frame offset that is only constant while the key is not Nullable is rejected, as under a named window';
+SELECT count() OVER (ORDER BY 1 ROWS BETWEEN toUInt8(k IS NULL) PRECEDING AND CURRENT ROW)
+FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP; -- { serverError BAD_ARGUMENTS }
+
 -- Guards below: these already worked and must keep working unchanged.
 
 SELECT '-- WITH TOTALS, where `group_by_use_nulls` does not reach the key today';

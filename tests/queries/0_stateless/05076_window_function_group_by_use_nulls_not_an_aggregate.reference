@@ -40,6 +40,15 @@ b	1	1
 a	Nullable(String)
 b	Nullable(String)
 \N	Nullable(String)
+-- an aggregate parameter folded from the key type now matches the same expression outside the window
+2	2
+2	2
+2	2
+-- a frame offset folded from the key type now matches the named window, which always folded it this way
+1	1
+2	2
+3	3
+-- and a frame offset that is only constant while the key is not Nullable is rejected, as under a named window
 -- WITH TOTALS, where `group_by_use_nulls` does not reach the key today
 a	1
 b	1
