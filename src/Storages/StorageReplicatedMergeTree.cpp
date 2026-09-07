@@ -227,7 +227,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_merge_selecting_sleep_ms;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
-    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 max_replicated_fetches_network_bandwidth;
     extern const MergeTreeSettingsUInt64 max_replicated_merges_in_queue;
     extern const MergeTreeSettingsUInt64 max_replicated_merges_with_ttl_in_queue;
@@ -238,6 +237,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 min_relative_delay_to_measure;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 parts_to_delay_insert;
     extern const MergeTreeSettingsBool remote_fs_zero_copy_path_compatible_mode;
     extern const MergeTreeSettingsString remote_fs_zero_copy_zookeeper_path;

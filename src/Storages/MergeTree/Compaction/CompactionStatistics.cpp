@@ -21,8 +21,8 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
-    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
 }
