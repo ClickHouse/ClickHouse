@@ -111,7 +111,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     const bool only_analyze_subquery = early_short_circuit_type_inference_in_process
         || (only_analyze
             && !table_function_arguments_in_resolve_process
-            && !parameterized_view_arguments_in_resolve_process);
+            && !parameterized_view_arguments_in_resolve_process
+            && !constant_expression_in_resolve_process);
 
     if (early_short_circuit_type_inference_in_process && (execute_for_exists || !query_node))
     {
