@@ -117,6 +117,9 @@ namespace ProfileEvents
         friend struct ProfileEventsPerCPUInitializer;
 
         Counters(Counters && src) noexcept;
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+        ~Counters();
+#endif
 
         double getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset = false);
 

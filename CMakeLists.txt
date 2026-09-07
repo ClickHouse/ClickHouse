@@ -169,6 +169,16 @@ option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests"
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
+# Research-only: deliberately restricted failure/signal semantics; not suitable for production.
+option(ENABLE_PROFILE_EVENTS_PAGED_EXPERIMENT "Build the non-production paged process-counter experiment" OFF)
+if (ENABLE_PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (NOT (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64)))
+        message(FATAL_ERROR "The paged ProfileEvents experiment requires Linux x86-64 or AArch64")
+    endif()
+    message(WARNING "Paged ProfileEvents experiment enabled: non-production signal and allocation-failure semantics")
+    add_compile_definitions(PROFILE_EVENTS_PAGED_EXPERIMENT=1)
+endif()
+
 if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT USE_MUSL)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)

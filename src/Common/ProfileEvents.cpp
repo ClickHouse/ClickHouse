@@ -2,6 +2,9 @@
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+#include "ProfileEventsPagedExperiment/adapter.h"
+#endif
 #include <Common/PerCPU.h>
 #include <Common/CurrentThread.h>
 #include <Common/TraceSender.h>
@@ -1759,6 +1762,25 @@ namespace ProfileEvents
     APPLY_FOR_EVENTS(M)
 #undef M
 constexpr Event END = Event(__COUNTER__);
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+static_assert(static_cast<size_t>(END) == PagedExperimentStorage::EventCount);
+
+std::array<uint16_t, 10> PagedExperiment::requiredHotEvents() noexcept
+{
+    return {
+        static_cast<uint16_t>(QueryProfilerConcurrencyOverruns),
+        static_cast<uint16_t>(QueryProfilerSignalOverruns),
+        static_cast<uint16_t>(QueryProfilerErrors),
+        static_cast<uint16_t>(QueryProfilerRuns),
+        static_cast<uint16_t>(CannotWriteToWriteBufferDiscard),
+        static_cast<uint16_t>(MemoryAllocatedWithoutCheck),
+        static_cast<uint16_t>(MemoryAllocatedWithoutCheckBytes),
+        static_cast<uint16_t>(QueryMemoryLimitExceeded),
+        static_cast<uint16_t>(GlobalMemoryLimitExceeded),
+        static_cast<uint16_t>(PageCacheOvercommitResize),
+    };
+}
+#endif
 
 /// Row stride padded so each per-CPU row ends on a cache-line boundary. Without this the last
 /// few events of one row share a cache line with the first events of the next row, causing
@@ -1859,11 +1881,25 @@ Counters::Counters(VariableContext level_, Counters * parent_)
     /// other levels stay single-row (`cpus == 0`). `cpus` is read once and the allocation is
     /// sized from it, so the layout and the row count cannot disagree.
     : cpus(level_ == VariableContext::User ? user_counters_cpus.load(std::memory_order_relaxed) : 0)
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    , counters_holder(level_ == VariableContext::Process
+            && PagedExperiment::configuration().mode != PagedExperiment::Mode::Dense
+        ? AlignedCounters{} : allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
+#else
     , counters_holder(allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
+#endif
     , parent(parent_)
     , level(level_)
 {
     counters = counters_holder.get();
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (level == VariableContext::Process)
+    {
+        if (!counters)
+            counters = PagedExperiment::create();
+        PagedExperiment::constructed(counters, sizeof(Counters));
+    }
+#endif
 }
 
 Counters::Counters(Counters && src) noexcept
@@ -1878,10 +1914,29 @@ Counters::Counters(Counters && src) noexcept
 {
 }
 
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+Counters::~Counters()
+{
+    if (level == VariableContext::Process && counters)
+    {
+        PagedExperiment::destroyed(counters);
+        if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
+            PagedExperiment::destroy(std::exchange(counters, nullptr));
+    }
+}
+#endif
+
 void Counters::resetCounters()
 {
     if (!counters)
         return;
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
+    {
+        PagedExperiment::reset(counters);
+        return;
+    }
+#endif
     const size_t total = cellCount(cpus.load(std::memory_order_relaxed));
     for (size_t i = 0; i < total; ++i)
         std::atomic_ref<Count>(counters[i]).store(0, std::memory_order_relaxed);
@@ -1889,6 +1944,10 @@ void Counters::resetCounters()
 
 Count Counters::load(Event event) const
 {
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
+        return PagedExperiment::load(counters, static_cast<PagedExperimentStorage::Event>(event));
+#endif
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
     if (!rows)
         return cell(counters, 0, event).load(std::memory_order_relaxed);
@@ -1924,6 +1983,13 @@ void Counters::setTraceAllProfileEvents()
 
 void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
 {
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
+    {
+        PagedExperiment::add(counters, static_cast<PagedExperimentStorage::Event>(event), amount);
+        return;
+    }
+#endif
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
     if (rows)
     {
@@ -1969,6 +2035,13 @@ Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
+    {
+        PagedExperiment::snapshot(counters, res.counters_holder.get());
+        return res;
+    }
+#endif
     for (Event i = Event(0); i < num_counters; ++i)
         res.counters_holder[i] = load(i);
     return res;
@@ -2207,7 +2280,14 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
     do
     {
-        current->fetchAdd(event, amount, -1);
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+        if (PagedExperiment::kind(current->counters) != PagedExperiment::Mode::Dense)
+        {
+            PagedExperiment::addSignalSafe(current->counters, static_cast<PagedExperimentStorage::Event>(event), amount);
+        }
+        else
+#endif
+            current->fetchAdd(event, amount, -1);
         current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
