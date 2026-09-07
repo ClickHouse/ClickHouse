@@ -83,14 +83,6 @@ bool ExecutableSettings::hasBuiltin(std::string_view name)
     return ExecutableSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings ExecutableSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return ExecutableSettings{}.enumerateSettings();
-}
-TableSettings ExecutableSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(ExecutableSettings)
 
 }

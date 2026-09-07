@@ -33,10 +33,7 @@ struct RocksDBSettings
     void loadFromQuery(const ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
-    TableSettings enumerateSettings() const;
-    /// The engine's own settings, for `system.engine_settings`.
-    static TableSettings enumerateEngineSettings(ContextPtr context);
+    DECLARE_SETTINGS_ENUMERATION(RocksDBSettings)
     static void checkCanSet(std::string_view name, const Field & value);
 
 private:

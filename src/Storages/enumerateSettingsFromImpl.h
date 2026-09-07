@@ -34,4 +34,9 @@ TableSettings enumerateSettingsFromImpl(const SettingsImplType & impl)
     return result;
 }
 
+/// Defines what `DECLARE_SETTINGS_ENUMERATION` declares. Belongs in the settings struct's .cpp,
+/// the only place its `Impl` type is complete.
+#define IMPLEMENT_SETTINGS_ENUMERATION(TYPE) \
+    TableSettings TYPE::enumerateSettings() const { return enumerateSettingsFromImpl(*impl); }
+
 }

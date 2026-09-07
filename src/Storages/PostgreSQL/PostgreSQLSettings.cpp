@@ -111,15 +111,6 @@ bool PostgreSQLSettings::hasBuiltin(std::string_view name)
     return PostgreSQLSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings PostgreSQLSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return PostgreSQLSettings{}.enumerateSettings();
-}
-
-TableSettings PostgreSQLSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(PostgreSQLSettings)
 
 }

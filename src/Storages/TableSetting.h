@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/SettingsTierType.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 
 #include <optional>
@@ -61,5 +62,16 @@ struct TableSetting
 };
 
 using TableSettings = std::vector<TableSetting>;
+
+/// The two entry points a settings struct exposes to `system.engine_settings` and
+/// `system.table_settings`. Goes in the struct's body, paired with
+/// `IMPLEMENT_SETTINGS_ENUMERATION` in its .cpp, where the settings implementation is complete.
+///
+/// `enumerateEngineSettings` is defined here because it is the same for every engine that has no
+/// server-level settings instance: the compiled defaults are what such an engine uses. The two
+/// that do have one, `MergeTree` and `Distributed`, declare and define their own.
+#define DECLARE_SETTINGS_ENUMERATION(TYPE) \
+    static TableSettings enumerateEngineSettings(ContextPtr) { return TYPE{}.enumerateSettings(); } \
+    TableSettings enumerateSettings() const;
 
 }

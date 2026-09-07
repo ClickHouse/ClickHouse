@@ -69,10 +69,7 @@ struct HiveSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
-    TableSettings enumerateSettings() const;
-    /// The engine's own settings, for `system.engine_settings`.
-    static TableSettings enumerateEngineSettings(ContextPtr context);
+    DECLARE_SETTINGS_ENUMERATION(HiveSettings)
 
 private:
     std::unique_ptr<HiveSettingsImpl> impl;

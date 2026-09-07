@@ -126,14 +126,6 @@ bool RabbitMQSettings::hasBuiltin(std::string_view name)
     return RabbitMQSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings RabbitMQSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return RabbitMQSettings{}.enumerateSettings();
-}
-TableSettings RabbitMQSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(RabbitMQSettings)
 
 }

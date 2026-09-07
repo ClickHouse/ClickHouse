@@ -70,14 +70,6 @@ void RocksDBSettings::checkCanSet(std::string_view name, const Field & value)
     RocksDBSettingsImpl::checkCanSet(name, value);
 }
 
-TableSettings RocksDBSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return RocksDBSettings{}.enumerateSettings();
-}
-TableSettings RocksDBSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(RocksDBSettings)
 
 }

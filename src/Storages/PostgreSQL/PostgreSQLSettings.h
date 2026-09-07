@@ -50,10 +50,7 @@ struct PostgreSQLSettings
     void loadFromQueryContext(const Context & context);
 
     static bool hasBuiltin(std::string_view name);
-    /// Every setting of this instance, for the settings tables. The caller refines `origin`.
-    TableSettings enumerateSettings() const;
-    /// The engine's own settings, for `system.engine_settings`.
-    static TableSettings enumerateEngineSettings(ContextPtr context);
+    DECLARE_SETTINGS_ENUMERATION(PostgreSQLSettings)
 
 private:
     std::unique_ptr<PostgreSQLSettingsImpl> impl;

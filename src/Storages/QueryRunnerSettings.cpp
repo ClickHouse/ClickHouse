@@ -57,15 +57,6 @@ bool QueryRunnerSettings::hasBuiltin(std::string_view name)
     return QueryRunnerSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings QueryRunnerSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return QueryRunnerSettings{}.enumerateSettings();
-}
-
-TableSettings QueryRunnerSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(QueryRunnerSettings)
 
 }

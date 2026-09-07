@@ -244,14 +244,6 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings ObjectStorageQueueSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return ObjectStorageQueueSettings{}.enumerateSettings();
-}
-TableSettings ObjectStorageQueueSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
 
 }

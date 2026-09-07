@@ -97,15 +97,7 @@ bool MemorySettings::hasBuiltin(std::string_view name)
     return MemorySettingsImpl::hasBuiltin(name);
 }
 
-TableSettings MemorySettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return MemorySettings{}.enumerateSettings();
-}
-TableSettings MemorySettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(MemorySettings)
 
 }
 

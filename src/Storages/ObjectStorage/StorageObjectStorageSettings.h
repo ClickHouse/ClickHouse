@@ -66,10 +66,7 @@ struct StorageObjectStorageSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
-    /// Every setting of this instance, for the settings tables. The caller refines `origin`.
-    TableSettings enumerateSettings() const;
-    /// The engine's own settings, for `system.engine_settings`.
-    static TableSettings enumerateEngineSettings(ContextPtr context);
+    DECLARE_SETTINGS_ENUMERATION(StorageObjectStorageSettings)
 
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;

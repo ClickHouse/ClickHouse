@@ -93,15 +93,7 @@ bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
     return MaterializedPostgreSQLSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings MaterializedPostgreSQLSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return MaterializedPostgreSQLSettings{}.enumerateSettings();
-}
-TableSettings MaterializedPostgreSQLSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(MaterializedPostgreSQLSettings)
 
 }
 

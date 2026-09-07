@@ -62,10 +62,7 @@ struct RabbitMQSettings
     SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
-    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
-    TableSettings enumerateSettings() const;
-    /// The engine's own settings, for `system.engine_settings`.
-    static TableSettings enumerateEngineSettings(ContextPtr context);
+    DECLARE_SETTINGS_ENUMERATION(RabbitMQSettings)
 
 private:
     std::unique_ptr<RabbitMQSettingsImpl> impl;

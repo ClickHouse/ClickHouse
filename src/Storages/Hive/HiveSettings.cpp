@@ -96,15 +96,7 @@ bool HiveSettings::hasBuiltin(std::string_view name)
     return HiveSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings HiveSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return HiveSettings{}.enumerateSettings();
-}
-TableSettings HiveSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(HiveSettings)
 
 }
 #endif

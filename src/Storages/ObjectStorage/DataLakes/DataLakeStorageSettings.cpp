@@ -74,15 +74,6 @@ DataLakeStorageSettings DataLakeStorageSettings::deserialize(ReadBuffer & in)
     return result;
 }
 
-TableSettings DataLakeStorageSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return DataLakeStorageSettings{}.enumerateSettings();
-}
-
-TableSettings DataLakeStorageSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(DataLakeStorageSettings)
 
 }

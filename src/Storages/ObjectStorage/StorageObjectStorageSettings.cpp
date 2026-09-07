@@ -56,15 +56,6 @@ void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges
     }
 }
 
-TableSettings StorageObjectStorageSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return StorageObjectStorageSettings{}.enumerateSettings();
-}
-
-TableSettings StorageObjectStorageSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(StorageObjectStorageSettings)
 
 }

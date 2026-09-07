@@ -77,10 +77,7 @@ struct KafkaSettings
     void sanityCheck(ContextPtr global_context) const;
 
     static bool hasBuiltin(std::string_view name);
-    /// The engine's own settings, for `system.engine_settings`.
-    static TableSettings enumerateEngineSettings(ContextPtr context);
-    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
-    TableSettings enumerateSettings() const;
+    DECLARE_SETTINGS_ENUMERATION(KafkaSettings)
 
 private:
     std::unique_ptr<KafkaSettingsImpl> impl;

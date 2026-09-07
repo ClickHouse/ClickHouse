@@ -107,16 +107,6 @@ bool YTsaurusSettings::hasBuiltin(std::string_view name)
     return YTsaurusSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings YTsaurusSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return YTsaurusSettings{}.enumerateSettings();
-}
-
-
-TableSettings YTsaurusSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(YTsaurusSettings)
 
 }

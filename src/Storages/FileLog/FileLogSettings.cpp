@@ -83,14 +83,6 @@ bool FileLogSettings::hasBuiltin(std::string_view name)
     return FileLogSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings FileLogSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return FileLogSettings{}.enumerateSettings();
-}
-TableSettings FileLogSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(FileLogSettings)
 
 }

@@ -70,14 +70,6 @@ bool SetSettings::hasBuiltin(std::string_view name)
     return SetSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings SetSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return SetSettings{}.enumerateSettings();
-}
-TableSettings SetSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(SetSettings)
 
 }

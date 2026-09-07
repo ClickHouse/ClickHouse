@@ -138,14 +138,6 @@ bool MySQLSettings::hasBuiltin(std::string_view name)
     return MySQLSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings MySQLSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return MySQLSettings{}.enumerateSettings();
-}
-TableSettings MySQLSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(MySQLSettings)
 
 }

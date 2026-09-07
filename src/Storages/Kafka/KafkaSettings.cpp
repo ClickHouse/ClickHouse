@@ -178,14 +178,5 @@ bool KafkaSettings::hasBuiltin(std::string_view name)
     return KafkaSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings KafkaSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
-
-TableSettings KafkaSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return KafkaSettings{}.enumerateSettings();
-}
+IMPLEMENT_SETTINGS_ENUMERATION(KafkaSettings)
 }

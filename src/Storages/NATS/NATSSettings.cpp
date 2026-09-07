@@ -125,14 +125,6 @@ bool NATSSettings::hasBuiltin(std::string_view name)
     return NATSSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings NATSSettings::enumerateEngineSettings(ContextPtr)
-{
-    /// No server-level instance: the compiled defaults are what the engine uses.
-    return NATSSettings{}.enumerateSettings();
-}
-TableSettings NATSSettings::enumerateSettings() const
-{
-    return enumerateSettingsFromImpl(*impl);
-}
+IMPLEMENT_SETTINGS_ENUMERATION(NATSSettings)
 
 }
