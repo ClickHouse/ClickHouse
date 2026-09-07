@@ -33,7 +33,7 @@ using Poco::Net::Impl::IPv4SocketAddressImpl;
 #ifdef POCO_HAVE_IPv6
 using Poco::Net::Impl::IPv6SocketAddressImpl;
 #endif
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
+#ifdef POCO_OS_FAMILY_UNIX
 using Poco::Net::Impl::LocalSocketAddressImpl;
 #endif
 
@@ -62,7 +62,7 @@ const SocketAddress::Family SocketAddress::IPv4;
 #if defined(POCO_HAVE_IPv6)
 const SocketAddress::Family SocketAddress::IPv6;
 #endif
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
+#if defined(POCO_OS_FAMILY_UNIX)
 const SocketAddress::Family SocketAddress::UNIX_LOCAL;
 #endif
 
@@ -141,7 +141,7 @@ SocketAddress::SocketAddress(const SocketAddress& socketAddress)
 	else if (socketAddress.family() == IPv6)
 		newIPv6(reinterpret_cast<const sockaddr_in6*>(socketAddress.addr()));
 #endif
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
+#if defined(POCO_OS_FAMILY_UNIX)
 	else if (socketAddress.family() == UNIX_LOCAL)
 		newLocal(reinterpret_cast<const sockaddr_un*>(socketAddress.addr()));
 #endif
@@ -156,7 +156,7 @@ SocketAddress::SocketAddress(const struct sockaddr* sockAddr, poco_socklen_t len
 	else if (length == sizeof(struct sockaddr_in6) && sockAddr->sa_family == AF_INET6)
 		newIPv6(reinterpret_cast<const struct sockaddr_in6*>(sockAddr));
 #endif
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
+#if defined(POCO_OS_FAMILY_UNIX)
 	else if (length > 0 && length <= sizeof(struct sockaddr_un) && sockAddr->sa_family == AF_UNIX)
 		newLocal(reinterpret_cast<const sockaddr_un*>(sockAddr));
 #endif
@@ -173,7 +173,7 @@ bool SocketAddress::operator < (const SocketAddress& socketAddress) const
 {
 	if (family() < socketAddress.family()) return true;
 	if (family() > socketAddress.family()) return false;
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
+#if defined(POCO_OS_FAMILY_UNIX)
 	if (family() == UNIX_LOCAL) return toString() < socketAddress.toString();
 #endif
 	if (host() < socketAddress.host()) return true;
@@ -192,7 +192,7 @@ SocketAddress& SocketAddress::operator = (const SocketAddress& socketAddress)
 		else if (socketAddress.family() == IPv6)
 			newIPv6(reinterpret_cast<const sockaddr_in6*>(socketAddress.addr()));
 #endif
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
+#if defined(POCO_OS_FAMILY_UNIX)
 		else if (socketAddress.family() == UNIX_LOCAL)
 			newLocal(reinterpret_cast<const sockaddr_un*>(socketAddress.addr()));
 #endif
@@ -310,7 +310,7 @@ void SocketAddress::init(Family fam, const std::string& hostAddress, Poco::UInt1
 
 void SocketAddress::init(Family fam, const std::string& address)
 {
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
+#if defined(POCO_OS_FAMILY_UNIX)
 	if (fam == UNIX_LOCAL)
 	{
 		newLocal(address);
@@ -354,7 +354,7 @@ void SocketAddress::init(const std::string& hostAndPort)
 	std::string::const_iterator it  = hostAndPort.begin();
 	std::string::const_iterator end = hostAndPort.end();
 
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
+#if defined(POCO_OS_FAMILY_UNIX)
 	if (*it == '/')
 	{
 		newLocal(hostAndPort);

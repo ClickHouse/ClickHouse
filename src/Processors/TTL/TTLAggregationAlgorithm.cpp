@@ -24,11 +24,10 @@ namespace Setting
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
@@ -117,12 +116,10 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_software_prefetch_in_aggregation],
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
-        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
+        static_cast<float>(settings[Setting::min_chunk_bytes_for_parallel_parsing]),
         /*stats_collecting_params_=*/{},
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte],
-        /*enable_parallel_single_level_merge_=*/false,
-        settings[Setting::enable_packed_string_keys_in_aggregation]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 

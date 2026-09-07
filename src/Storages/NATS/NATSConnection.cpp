@@ -22,9 +22,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
         natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
         natsOptions_SetToken(options.get(), configuration.token.c_str());
-    if (!configuration.credentials.empty())
-        natsOptions_SetUserCredentialsFromMemory(options.get(), configuration.credentials.c_str());
-    else if (!configuration.credential_file.empty())
+    if (!configuration.credential_file.empty())
         natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
 
     if (configuration.secure)

@@ -44,7 +44,7 @@ def run_check_concurrent(check_name, check_function, files, nproc=NPROC):
 
     result = Result(
         name=check_name,
-        status=Result.Status.OK if not results else Result.Status.FAIL,
+        status=Result.Status.SUCCESS if not results else Result.Status.FAILED,
         start_time=stop_watch.start_time,
         duration=stop_watch.duration,
         info="\n".join(results) if results else "",
@@ -65,25 +65,6 @@ def check_duplicate_includes(file_path):
     if duplicates:
         return f"{file_path}: {duplicates}"
     return ""
-
-
-def _embedded_doc_lines(lines):
-    """Return the set of 0-based indices of lines covered by R"DOCS_MD( ... )DOCS_MD"
-    raw-string literals (verbatim Markdown documentation embedded into source files)."""
-    exempt = set()
-    in_raw = False
-    for i, line in enumerate(lines):
-        if not in_raw:
-            idx = line.find('R"DOCS_MD(')
-            if idx != -1:
-                exempt.add(i)
-                if ')DOCS_MD"' not in line[idx + len('R"DOCS_MD('):]:
-                    in_raw = True
-        else:
-            exempt.add(i)
-            if ')DOCS_MD"' in line:
-                in_raw = False
-    return exempt
 
 
 def check_whitespaces(files) -> str:
@@ -117,18 +98,9 @@ def check_whitespaces(files) -> str:
             violations.append(f"{file}: could not read file: {e}")
             continue
 
-        # Skip the verbatim Markdown documentation embedded as R"DOCS_MD( ... )DOCS_MD"
-        # raw-string literals in the format source files: it contains aligned Markdown
-        # tables that legitimately have double spaces.
-        embedded_doc = _embedded_doc_lines(lines)
-
         # Need previous and next line for alignment checks, so skip first/last
         for i in range(1, len(lines) - 1):
             line = lines[i]
-
-            # Skip lines inside embedded documentation raw strings
-            if i in embedded_doc:
-                continue
 
             # Skip exception lines entirely
             if any(p.search(line) for p in EXCEPTIONS):
@@ -203,17 +175,6 @@ def check_functional_test_cases(files):
                     f"event_date should be filtered using >=yesterday() in {test_case} (to avoid flakiness)"
                 )
 
-            if "0_stateless" in test_case:
-                name = os.path.basename(test_case)
-                has_streaming_queries_in_name = "_streaming_queries_" in name
-                has_streaming_in_content = re.search(r"enable_streaming_queries\s*=?\s*(0|1|true|false)\b", file_content) or "streaming.lib" in file_content
-
-                if has_streaming_in_content and not has_streaming_queries_in_name:
-                    errors.append(f"{test_case} uses enable_streaming_queries or streaming.lib but has no _streaming_queries_ in its name")
-
-                if has_streaming_queries_in_name and not has_streaming_in_content:
-                    errors.append(f"{test_case} has _streaming_queries_ in its name but uses neither enable_streaming_queries nor streaming.lib")
-
         except Exception as e:
             errors.append(f"Error checking {test_case}: {e}")
 
@@ -274,6 +235,15 @@ def check_cpp_code():
     return out
 
 
+def check_repo_submodules():
+    res, out, err = Shell.get_res_stdout_stderr(
+        "./ci/jobs/scripts/check_style/check_submodules.sh"
+    )
+    if err:
+        out += err
+    return out
+
+
 def check_other():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/various_checks.sh"
@@ -283,11 +253,18 @@ def check_other():
     return out
 
 
-def check_embedded_doc_snippets():
-    # A shared `docs/snippets/*.mdx` is hand-embedded into the built-in help surfaces
-    # (TerminalMarkdownRenderer.cpp and docs.html); fail if those copies drift from the source.
+def check_codespell():
     res, out, err = Shell.get_res_stdout_stderr(
-        "python3 ./ci/jobs/scripts/check_style/check_embedded_doc_snippets.py"
+        "./ci/jobs/scripts/check_style/check_typos.sh"
+    )
+    if err:
+        out += err
+    return out
+
+
+def check_aspell():
+    res, out, err = Shell.get_res_stdout_stderr(
+        "./ci/jobs/scripts/check_style/check_aspell.sh"
     )
     if err:
         out += err
@@ -306,19 +283,6 @@ def check_mypy():
 def check_pylint():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check-pylint"
-    )
-    if err:
-        out += err
-    return out
-
-
-def check_ruff():
-    # Configuration lives under [tool.ruff] in pyproject.toml.
-    # --quiet suppresses the "All checks passed!" success message so the result
-    # framework (which treats a truthy return value as failure) sees an empty
-    # string on success.
-    res, out, err = Shell.get_res_stdout_stderr(
-        "ruff check --output-format=concise --quiet"
     )
     if err:
         out += err
@@ -534,211 +498,6 @@ def check_file_names(files):
     return ""
 
 
-def check_compose_images(files) -> str:
-    """Ensure every image referenced in docker compose files is served from Docker Hub.
-
-    CI runners pull Docker Hub images through the dockerhub-proxy cache (see
-    tests/ci/terraform/dockerhub-proxy.md). Images hosted on other registries
-    (ghcr.io, mcr.microsoft.com, quay.io, ...) bypass that proxy and are pulled
-    directly, exposing CI to those registries' anonymous rate limits. Mirror such
-    images into the clickhouse/ Docker Hub namespace (see
-    tests/integration/compose/mirror-images.sh) and reference the mirror instead.
-    """
-    image_re = re.compile(r"^\s*image:\s*(.+?)\s*$")
-    # ${VAR:-default} -> default; used to resolve compose variable interpolation.
-    var_default_re = re.compile(r"\$\{[^}:]+:-([^}]*)\}")
-    hub_aliases = {"docker.io", "registry-1.docker.io", "index.docker.io"}
-
-    violations = []
-    for file in files:
-        try:
-            with open(file, "r", encoding="utf-8", errors="replace") as fh:
-                lines = fh.readlines()
-        except OSError as e:
-            violations.append(f"{file}: could not read file: {e}")
-            continue
-
-        for i, line in enumerate(lines):
-            m = image_re.match(line)
-            if not m:
-                continue
-
-            # Strip trailing inline comment and surrounding quotes.
-            value = re.sub(r"\s+#.*$", "", m.group(1)).strip().strip("'\"")
-            # Resolve ${VAR:-default} interpolations to their default value.
-            ref = var_default_re.sub(r"\1", value)
-            # A bare ${VAR} without default leaves the registry undeterminable; skip.
-            if "${" in ref:
-                continue
-
-            # Docker's rule: the first path component is a registry host only when
-            # it contains a '.' or ':' or equals 'localhost'. Otherwise it is a
-            # Docker Hub namespace/official image.
-            first = ref.split("/", 1)[0] if "/" in ref else ""
-            is_registry_host = first and (
-                "." in first or ":" in first or first == "localhost"
-            )
-            if is_registry_host and first not in hub_aliases:
-                violations.append(
-                    f"{file}:{i + 1}: image '{ref}' is not from Docker Hub "
-                    f"(registry '{first}'). Mirror it into the clickhouse/ namespace "
-                    f"via tests/integration/compose/mirror-images.sh and reference the mirror."
-                )
-
-    return "\n".join(violations)
-
-
-def check_settings_changes_history():
-    """Every setting added, value-changed, removed, moved to another block, or sitting in a
-    block whose `addSettingsChanges` header changed, in src/Core/SettingsChangesHistory.cpp by
-    this change must be recorded under the CURRENT version block (in addition to any older block
-    used for backports), so the settings history stays consistent with the release version
-    (together with the 03999_stateless_settings_history functional test, which checks that
-    the recorded value matches the final Settings state).
-
-    Removals count too: the functional test only compares the current default with the NEWEST
-    recorded value, so a change that reverts a default to an older value could delete the record
-    of the original change instead of recording the revert, and both guards would stay green
-    while `compatibility` would hand out the wrong value for the release that shipped the other
-    default. Deleting a phantom record stays possible - see the gate below, it is a change that
-    touches this file alone. Moves count for the same reason: re-adding an unchanged record under
-    an older block leaves the newest recorded value intact, so the functional test passes while
-    `compatibility` attributes the default flip to the wrong release. A block header edit does
-    the same to every record of that block at once, without touching a single entry line, so
-    such a change reports the whole block.
-
-    A record RENAMED in place - removed and re-added in the same block, identical apart from the
-    setting name - is reported under the new name only (see `parse_settings_history_changes`).
-    The old name cannot be demanded here: the setting is gone, and 03999_stateless_settings_history
-    rejects a documented name that no longer exists, so requiring it would leave no history file
-    that satisfies both guards.
-
-    Runs only when that file changed; the list of changed setting names is provided by the
-    store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
-    success or a non-empty error string on failure (consumed by Result.from_commands_run).
-    Pure text parsing - no C++ syntax analysis.
-
-    A change that touches no C++ source at all besides SettingsChangesHistory.cpp cannot have
-    changed any setting's compiled default, so it is a historical correction - fixing what a past
-    release recorded - not a default change made now, and it is allowed (the check skips).
-    Requiring it under the current version block would tell `compatibility` the value changed
-    again in this release. The gate deliberately keys off any src/ source file rather than the
-    declaration files alone: a default can come from a constant defined elsewhere (for example
-    `DEFAULT_INSERT_BLOCK_SIZE` or `DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC` in src/Core/Defines.h),
-    and a narrower gate would let such a change be recorded in an older block unnoticed. Build
-    definitions are treated the same way: defaults also switch on compile definitions such as
-    `CLICKHOUSE_CLOUD` and `ENABLE_DISTRIBUTED_CACHE`, which come from CMake files and config
-    templates, so changes to CMakeLists.txt / *.cmake / *.h.in also enforce the rule.
-
-    Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
-    queue), fail rather than silently pass - a green here would defeat the purpose."""
-    path = "src/Core/SettingsChangesHistory.cpp"
-    kv = Info().get_kv_data() or {}
-    changed_files = kv.get("changed_files")
-
-    if changed_files is None:
-        # changed_files is stored fail-close by the store_data.py hook for every PR and
-        # merge-queue run; its absence means the check cannot know whether the file changed.
-        return (
-            "Could not determine changed files (no 'changed_files' recorded by the "
-            "store_data.py workflow hook); refusing to pass the settings-history check."
-        )
-    if path not in changed_files:
-        # The history file was not changed in this run - nothing to validate.
-        return ""
-
-    # A change that touches no default-bearing source besides this file cannot have changed any
-    # setting's compiled default, so it is a historical correction (fixing what a past release
-    # recorded), not a default change made now - it must not be forced into the current version
-    # block. Enforce the current-block rule as soon as any other source file changed: defaults
-    # are not only written in the declaration files, they can come from constants defined
-    # anywhere (for example src/Core/Defines.h). Build definitions count as sources too:
-    # defaults switch on compile definitions such as `CLICKHOUSE_CLOUD` and
-    # `ENABLE_DISTRIBUTED_CACHE`, which are driven by CMake files and config templates
-    # (CMakeLists.txt, *.cmake, src/Common/config.h.in), so anything narrower would leave a
-    # silent hole. The price is over-strictness for a change that corrects an old entry and
-    # edits unrelated code in the same commit - the message below says how to proceed.
-    def is_default_bearing_source(f):
-        if f == path:
-            return False
-        if f.startswith("src/") and f.endswith((".h", ".cpp", ".inc")):
-            return True
-        return f.rsplit("/", 1)[-1] == "CMakeLists.txt" or f.endswith(
-            (".cmake", ".cmake.in", ".h.in", ".hpp.in")
-        )
-
-    other_sources_changed = any(is_default_bearing_source(f) for f in changed_files)
-    if not other_sources_changed:
-        return ""
-
-    fetch_error = kv.get("settings_history_fetch_error")
-    changed = kv.get("settings_history_changed_settings")
-    if fetch_error or changed is None:
-        return (
-            f"{path} changed but its diff could not be fetched to validate the settings "
-            f"history (the check must not be skipped when the file changed). "
-            f"Error: {fetch_error or 'no data recorded by the store_data.py workflow hook'}."
-        )
-    if not changed:
-        # The file changed but no setting record was added, value-edited, removed or moved and
-        # no block header changed (e.g. only reason-text edits, or entries reordered inside one
-        # block) - nothing to validate against the current version block.
-        return ""
-
-    version_txt = Path("cmake/autogenerated_versions.txt").read_text(encoding="utf-8")
-    current_version = "{}.{}".format(
-        re.search(r"SET\(VERSION_MAJOR (\d+)\)", version_txt).group(1),
-        re.search(r"SET\(VERSION_MINOR (\d+)\)", version_txt).group(1),
-    )
-
-    namespace_by_map = {
-        "settings_changes_history": "Session",
-        "merge_tree_settings_changes_history": "MergeTree",
-    }
-    block_re = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"([\d.]+)"')
-    entry_re = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
-
-    # Names recorded under the current version block, per namespace, from the final file.
-    current_block = {"Session": set(), "MergeTree": set()}
-    namespace, version = None, None
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            mb = block_re.search(line)
-            if mb and mb.group(1) in namespace_by_map:
-                namespace, version = namespace_by_map[mb.group(1)], mb.group(2)
-                continue
-            me = entry_re.match(line)
-            if me and namespace and version == current_version:
-                current_block[namespace].add(me.group(1))
-
-    # `changed` is a list of {"namespace", "name"} records produced by the hook, where the
-    # namespace is taken from the block the added line sits in - so an overlapping name
-    # changed only in one namespace is not spuriously required in the other.
-    violations = []
-    for item in changed:
-        namespace, name = item["namespace"], item["name"]
-        if name not in current_block.get(namespace, set()):
-            violations.append(
-                f"  {namespace} setting '{name}' must be recorded in the '{current_version}' block"
-            )
-
-    if violations:
-        return (
-            f"These settings were added, value-changed, removed, moved to another block, or "
-            f"sit in a block whose `addSettingsChanges` header changed, in {path}, "
-            f"but are not recorded "
-            f"under the current version ('{current_version}') block of "
-            f"SettingsChangesHistory.cpp. Add "
-            f"an entry for each under the '{current_version}' block (older blocks may keep their "
-            f"entries for backports). If this is a correction of what an older release recorded "
-            f"and not a default change made here, split it into a change that touches only "
-            f"{path}. If you RENAMED a setting, keep its record in the same block and change "
-            f"only the name in it - the values and the reason text must stay identical for the "
-            f"rename to be recognized:\n" + "\n".join(sorted(set(violations)))
-        )
-    return ""
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
     parser.add_argument("--test", help="Sub check name", default="")
@@ -776,12 +535,6 @@ if __name__ == "__main__":
         include_paths=["./tests/queries"],
         exclude_paths=[],
         file_suffixes=[".sql", ".sh", ".py", ".j2"],
-    )
-
-    compose_files = Utils.traverse_paths(
-        include_paths=["./tests/integration/compose"],
-        exclude_paths=[],
-        file_suffixes=[".yml", ".yaml"],
     )
 
     testname = "whitespace_check"
@@ -856,29 +609,20 @@ if __name__ == "__main__":
                 files=cpp_files,
             )
         )
-    testname = "compose_images_from_dockerhub"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_compose_images,
-                files=compose_files,
-            )
-        )
-    testname = "settings_changes_history"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_settings_changes_history,
-            )
-        )
     testname = "cpp"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
                 name=testname,
                 command=check_cpp_code,
+            )
+        )
+    testname = "submodules"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_repo_submodules,
             )
         )
     testname = "various"
@@ -889,20 +633,20 @@ if __name__ == "__main__":
                 command=check_other,
             )
         )
-    testname = "embedded_doc_snippets"
+    testname = "codespell"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
                 name=testname,
-                command=check_embedded_doc_snippets,
+                command=check_codespell,
             )
         )
-    testname = "ruff"
+    testname = "aspell"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
                 name=testname,
-                command=check_ruff,
+                command=check_aspell,
             )
         )
 

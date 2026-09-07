@@ -8,7 +8,7 @@ import subprocess
 import time
 import struct
 from os import path as p
-from typing import List, Optional, Sequence, Union
+from typing import Iterable, List, Optional, Sequence, Union
 
 from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
@@ -155,7 +155,7 @@ class KeeperClient(object):
         while True:
             events = self.poller.poll(timeout)
             if not events:
-                raise TimeoutError("Keeper client returned no output")
+                raise TimeoutError(f"Keeper client returned no output")
 
             # Process stderr events before stdout to ensure errors are
             # collected before checking the stdout separator.
@@ -314,38 +314,12 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_se
         else:
             client.send(cmd.encode())
 
-        # The server closes the connection after writing the full response, but a single
-        # recv() call is not guaranteed to return the whole payload at once (e.g. `pfev`
-        # can be tens of KB). Keep reading until the peer closes the socket.
-        chunks = []
-        while True:
-            chunk = client.recv(100_000)
-            if not chunk:
-                break
-            chunks.append(chunk)
-        data = b"".join(chunks).decode()
+        data = client.recv(100_000)
+        data = data.decode()
         return data
     finally:
         if client is not None:
             client.close()
-
-
-def get_profile_events(cluster, node, port=9181):
-    """Send the `pfev` 4LW command and parse its "<name>\t<value>\t<docs>" lines into a dict."""
-    data = send_4lw_cmd(cluster, node, "pfev", port)
-    result = {}
-    for line in data.strip().split("\n"):
-        if not line:
-            continue
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        name, value = parts[0], parts[1]
-        try:
-            result[name] = int(value)
-        except ValueError:
-            continue
-    return result
 
 
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"

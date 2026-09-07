@@ -1,10 +1,6 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Planner/CollectSets.h>
 
 #include <Storages/StorageSet.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/StorageSharedSetJoin.h>
-#endif
 
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -35,7 +31,6 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -55,32 +50,20 @@ public:
             const auto & table_function_name = table_node->getTableFunctionName();
             const auto & context = planner_context.getQueryContext();
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, context);
+            auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
 
             const auto & table_function_arguments = table_node->getArguments().getNodes();
+            size_t table_function_arguments_size = table_function_arguments.size();
 
-            if (!table_function_ptr)
+            for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
             {
-                /// The name is not a table function: it is a parameterized view resolved as a `TableFunctionNode`.
-                /// Its arguments are view parameter values substituted into the view query, not expressions to
-                /// collect sets from, so skip all of them. This also avoids traversing into unresolved nodes.
-                for (const auto & table_function_argument : table_function_arguments)
-                    skip_children.insert(table_function_argument);
-            }
-            else
-            {
-                auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
-                size_t table_function_arguments_size = table_function_arguments.size();
+                const auto & table_function_argument = table_function_arguments[table_function_argument_index];
 
-                for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
+                auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), table_function_argument_index);
+                if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
                 {
-                    const auto & table_function_argument = table_function_arguments[table_function_argument_index];
-
-                    auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), table_function_argument_index);
-                    if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
-                    {
-                        skip_children.insert(table_function_argument);
-                        continue;
-                    }
+                    skip_children.insert(table_function_argument);
+                    continue;
                 }
             }
         }
@@ -94,13 +77,6 @@ public:
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
-
-        if (function_node->getArguments().getNodes().size() < 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function '{}' is expected to have at least 2 arguments, got {}",
-                function_node->getFunctionName(),
-                function_node->getArguments().getNodes().size());
 
         auto in_first_argument = function_node->getArguments().getNodes().at(0);
         auto in_second_argument = function_node->getArguments().getNodes().at(1);
@@ -125,7 +101,7 @@ public:
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set = getSetElementsForConstantValue(
-                in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(),
+                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(),
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
@@ -153,11 +129,6 @@ public:
                 return;
 
             auto ast = in_second_argument->toAST();
-#if CLICKHOUSE_CLOUD
-            if (storage_set->getName() == "SharedSet")
-                sets.addFromStorage(set_key, std::move(ast), static_cast<StorageSharedSet *>(storage_set)->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
-            else
-#endif
             sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
@@ -170,7 +141,7 @@ public:
 
             auto subquery_to_execute = in_second_argument;
             if (in_second_argument->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(static_pointer_cast<TableNode>(subquery_to_execute), planner_context.getQueryContext());
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
             auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
             sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);

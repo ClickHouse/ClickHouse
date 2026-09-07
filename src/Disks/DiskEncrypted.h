@@ -7,6 +7,7 @@
 
 #include <Disks/IDisk.h>
 #include <Common/MultiVersion.h>
+#include <Disks/FakeDiskTransaction.h>
 #include <Disks/DiskEncryptedTransaction.h>
 #include <Disks/MetadataStorageWithPathWrapper.h>
 
@@ -125,11 +126,10 @@ public:
         const WriteSettings & write_settings,
         const std::function<void()> & cancellation_hook) override;
 
-    void prepareRead(
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -342,6 +342,13 @@ public:
 
     DiskTransactionPtr createTransaction() override
     {
+        if (use_fake_transaction)
+        {
+            return std::make_shared<FakeDiskTransaction>(*this);
+        }
+
+        /// Need to overwrite explicetly because this disk change
+        /// a lot of "delegate" methods.
         return createEncryptedTransaction();
     }
 
@@ -413,6 +420,7 @@ private:
     const String disk_path;
     const String disk_absolute_path;
     MultiVersion<DiskEncryptedSettings> current_settings;
+    bool use_fake_transaction;
 
     /// Lazily-initialized stable wrapper returned by getMetadataStorage(); see the comment there.
     std::once_flag metadata_storage_init_flag;
