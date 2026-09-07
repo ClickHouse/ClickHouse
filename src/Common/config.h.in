@@ -92,6 +92,7 @@
 #cmakedefine01 USE_CLIENT_AI
 #cmakedefine01 USE_LIBCOTP
 #cmakedefine01 USE_WASMTIME
+#cmakedefine01 USE_IPCRYPT
 #cmakedefine01 USE_OPENSSL_FIPS
 #cmakedefine01 USE_LIBRSEQ
 #cmakedefine01 WITH_COVERAGE
