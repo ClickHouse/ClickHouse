@@ -176,7 +176,7 @@ private:
 
                 size_t block_idx = matching_blocks[next_matching_block++];
                 dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
             }
             else /// Sequential reading without filtering.
             {
@@ -186,7 +186,7 @@ private:
                     continue;
                 }
 
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
             }
         }
     }

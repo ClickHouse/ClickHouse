@@ -20,16 +20,12 @@ Les clients peuvent avoir besoin de supprimer une intégration SAML d&#39;une or
 Les organisations doivent disposer d&#39;un utilisateur administrateur avec une autre méthode d&#39;authentification afin de pouvoir réinviter des utilisateurs au sein de l&#39;organisation après la suppression de SAML. Un utilisateur ClickHouse Cloud disposant des privilèges Admin est requis pour effectuer ces étapes.
 
 <Steps>
-  <Step>
-    ### Activer les invitations
-
+  <Step title="Activer les invitations" id="enable-invitations">
     Connectez-vous à [ClickHouse Cloud](https://console.clickhouse.cloud) et ouvrez un ticket auprès du support avec l&#39;objet `Enable invitations for SAML organization`. Il s&#39;agit de demander la possibilité d&#39;ajouter des utilisateurs à l&#39;aide d&#39;une méthode autre que SAML.
   </Step>
 
-  <Step>
-    ### Identifier les utilisateurs à réinviter
-
-    Cliquez sur le nom de l&#39;organisation en bas à gauche, puis sélectionnez `Users and Roles`. Vérifiez la colonne `Provider` pour chaque utilisateur ; tout utilisateur affichant `Signed in with SSO` devra être réinvité dans l&#39;organisation après la suppression de SAML.
+  <Step title="Identifier les utilisateurs à réinviter" id="note-users-to-be-reinvited">
+    Cliquez sur le nom de l&#39;organisation en bas à gauche, puis sélectionnez `Utilisateurs et rôles`. Vérifiez la colonne `Provider` pour chaque utilisateur ; tout utilisateur affichant `Signed in with SSO` devra être réinvité dans l&#39;organisation après la suppression de SAML.
 
     Assurez-vous que les utilisateurs savent qu&#39;ils devront accepter les nouvelles invitations avant de pouvoir accéder au compte une fois SAML supprimé.
   </Step>
@@ -40,15 +36,11 @@ Les organisations doivent disposer d&#39;un utilisateur administrateur avec une 
 </div>
 
 <Steps>
-  <Step>
-    ### Inviter des utilisateurs
-
-    Cliquez sur le nom de l’organisation en bas à gauche, puis sélectionnez `Users and Roles`. Suivez les instructions pour [inviter des utilisateurs](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users).
+  <Step title="Inviter des utilisateurs" id="invite-users">
+    Cliquez sur le nom de l’organisation en bas à gauche, puis sélectionnez `Utilisateurs et rôles`. Suivez les instructions pour [inviter des utilisateurs](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users).
   </Step>
 
-  <Step>
-    ### Les utilisateurs acceptent l’invitation
-
+  <Step title="Les utilisateurs acceptent l’invitation" id="accept-invitation">
     Les utilisateurs doivent être complètement déconnectés de toute session SAML avant d’accepter l’invitation. Pour accepter l’invitation via Google ou Microsoft, ils doivent cliquer sur les boutons `Continue with Google` ou `Continue with Microsoft`. Les utilisateurs qui se connectent avec une adresse e-mail et un mot de passe doivent se rendre sur https://console.clickhouse.cloud/?with=email pour se connecter et accepter l’invitation.
 
     <Note>
@@ -56,9 +48,7 @@ Les organisations doivent disposer d&#39;un utilisateur administrateur avec une 
     </Note>
   </Step>
 
-  <Step>
-    ### Enregistrer les requêtes et les tableaux de bord
-
+  <Step title="Enregistrer les requêtes et les tableaux de bord" id="save-queries-and-dashboards">
     Une fois connectés avec leur nouvelle identité, les utilisateurs doivent se déconnecter, puis se reconnecter avec leur compte SAML afin de partager les requêtes enregistrées ou tableaux de bord avec cette nouvelle identité. Ils doivent enregistrer une copie sous leur nouvelle identité pour finaliser le processus.
   </Step>
 </Steps>

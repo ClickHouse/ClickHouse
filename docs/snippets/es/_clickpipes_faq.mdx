@@ -11,14 +11,18 @@ title: Preguntas frecuentes de ClickPipes
   En los ClickPipes de streaming, las réplicas de ClickPipes acceden a las fuentes de datos remotas (p. ej., un broker de Kafka),
   extraen los datos, los procesan y los ingieren en el servicio de ClickHouse de destino.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="Réplicas de ClickPipes - ClickPipes de streaming" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" alt="Réplicas de ClickPipes - ClickPipes de streaming" />
+  </Frame>
 
   En el caso de los ClickPipes de almacenamiento de objetos,
   la réplica de ClickPipes orquesta la tarea de carga de datos
   (identificar los archivos que se deben copiar, mantener el estado y mover particiones),
   mientras que los datos se extraen directamente desde el servicio de ClickHouse.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="Réplicas de ClickPipes - ClickPipes de almacenamiento de objetos" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" alt="Réplicas de ClickPipes - ClickPipes de almacenamiento de objetos" />
+  </Frame>
 </Accordion>
 
 <Accordion title="¿Cuál es el número predeterminado de réplicas y su tamaño?">
@@ -38,7 +42,9 @@ title: Preguntas frecuentes de ClickPipes
   Ten en cuenta que, para los ClickPipes de Kafka, también debes escalar las particiones del broker de Kafka en consecuencia.
   Los controles de escalado están disponibles en &quot;settings&quot; para cada ClickPipe de streaming.
 
-  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="Réplicas de ClickPipes - ¿Cuántas réplicas de ClickPipes necesito?" border force />
+  <Frame>
+    <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" alt="Réplicas de ClickPipes - ¿Cuántas réplicas de ClickPipes necesito?" />
+  </Frame>
 </Accordion>
 
 <Accordion title="¿Cómo es la estructura de precios de ClickPipes?">
@@ -73,7 +79,7 @@ title: Preguntas frecuentes de ClickPipes
   sino únicamente orquestando la transferencia, que realiza el servicio de ClickHouse subyacente:
 
   $$
-  0.25 \times 0.20 \times 24 = $1.2
+  0.25 \times 0,20 \times 24 = $1.2
   $$
 </Accordion>
 

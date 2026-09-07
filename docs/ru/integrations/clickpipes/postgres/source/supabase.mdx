@@ -62,7 +62,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-Публикация `clickpipes` будет содержать набор событий изменений, сгенерированных указанными таблицами, и позже будет использоваться для приёма потока репликации.
+Публикация `clickpipes` определяет набор таблиц, события изменений из которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не планируете реплицировать все таблицы, поскольку включение лишних таблиц увеличивает объём WAL-трафика из Postgres в ClickPipes и снижает общую эффективность репликации.
 
 <div id="increase-max_slot_wal_keep_size">
   ## Увеличьте `max_slot_wal_keep_size`

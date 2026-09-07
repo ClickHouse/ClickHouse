@@ -42,6 +42,34 @@ namespace DimensionalMetrics
         {"part_state", "part_type", "part_is_projection"}
     );
 
+    MetricFamily & ObjectStorageQueueFailures = Factory::instance().registerMetric(
+        "object_storage_queue_failures_total",
+        "Number of ObjectStorageQueue (S3Queue/AzureQueue) failures, labelled by database, table, processing stage (read, set_processing, insert, commit) and error code.",
+        {"database", "table", "stage", "error_code"},
+        {},
+        MetricType::Counter
+    );
+
+    MetricFamily & ObjectStorageQueuePermanentlyFailedFiles = Factory::instance().registerMetric(
+        "object_storage_queue_permanently_failed_files_total",
+        "Number of ObjectStorageQueue (S3Queue/AzureQueue) files given up on for good after exhausting retries (or with retries disabled), labelled by database and table. Each of these represents a file whose data will never be processed.",
+        {"database", "table"},
+        {},
+        MetricType::Counter
+    );
+
+    MetricFamily & ObjectStorageQueueNewestSeenTimestamp = Factory::instance().registerMetric(
+        "object_storage_queue_newest_seen_object_timestamp_seconds",
+        "Unix timestamp of the last-modified time of the newest object seen so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_committed_object_timestamp_seconds to estimate pipeline lag.",
+        {"database", "table"}
+    );
+
+    MetricFamily & ObjectStorageQueueNewestCommittedTimestamp = Factory::instance().registerMetric(
+        "object_storage_queue_newest_committed_object_timestamp_seconds",
+        "Unix timestamp of the last-modified time of the newest object fully processed so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_seen_object_timestamp_seconds to estimate pipeline lag.",
+        {"database", "table"}
+    );
+
     void Metric::set(Value value_)
     {
         value.store(value_, std::memory_order_relaxed);

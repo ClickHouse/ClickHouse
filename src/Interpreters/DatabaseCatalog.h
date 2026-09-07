@@ -72,9 +72,11 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     StoragePtr getTable() const;
 
+    std::shared_ptr<IDatabase> getDatabase() const;
+
     operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
 
-    IDatabase * temporary_tables = nullptr;
+    std::weak_ptr<IDatabase> temporary_tables;
     UUID id = UUIDHelpers::Nil;
     FutureSetFromSubqueryPtr future_set;
 };
@@ -229,7 +231,7 @@ public:
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
-    void undropTable(StorageID table_id);
+    void undropTable(StorageID table_id, std::function<void()> throw_if_cancelled = {});
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 
