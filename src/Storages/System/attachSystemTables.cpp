@@ -124,6 +124,7 @@
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
+#include <Storages/System/StorageSystemJemallocSampledAllocations.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperCluster.h>
@@ -3223,6 +3224,8 @@ ProfileEvents:     {'Query':5,'SelectQuery':5,'QueriesWithSubqueries':38,'Select
 Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas.
 These statistics might not be absolutely accurate because of thread local caching in jemalloc.
 
+For small size classes the slab columns (`slab_size`, `nonfull_slabs` and the `waste` alias) measure memory lost to slab fragmentation.
+
 .examples
 Find the sizes of allocations that contributed the most to the current overall memory usage.
 
@@ -3251,10 +3254,18 @@ LIMIT 10
 │    36 │     1 │    16384 │        22431 │         21970 │                461 │         7553024 │
 └───────┴───────┴──────────┴──────────────┴───────────────┴────────────────────┴─────────────────┘
 ```
-)DOCS_MD");
+)DOCS_MD", /*per_arena_=*/ false);
+    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_arena_bins", R"DOCS_MD(
+.description
+Same as `system.jemalloc_bins` but with one row per (arena, bin) instead of aggregating over arenas. Slabs belong to a single arena, so this table locates fragmentation in a specific arena (including the dedicated `MergeTree` metadata, JIT and cache arenas) and joins to `system.jemalloc_sampled_allocations` on both `arena` and size class.
+)DOCS_MD", /*per_arena_=*/ true);
     attachNoDescription<StorageSystemJemallocProfileText>(context, system_database, "jemalloc_profile_text", R"DOCS_MD(
 .description
 Displays the symbolized jemalloc heap profile. Run 'SYSTEM JEMALLOC FLUSH PROFILE' to generate a profile first.
+)DOCS_MD");
+    attachNoDescription<StorageSystemJemallocSampledAllocations>(context, system_database, "jemalloc_sampled_allocations", R"DOCS_MD(
+.description
+One row per live sampled allocation from the jemalloc heap profiler; reading the table flushes a fresh heap profile. Only threads with the profiler armed contribute (`jemalloc_enable_profiler` setting or `jemalloc_enable_global_profiler` config); each row represents roughly `weight` similar allocations.
 )DOCS_MD");
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", R"DOCS_MD(
 .description

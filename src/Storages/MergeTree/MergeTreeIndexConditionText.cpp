@@ -8,6 +8,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -1037,6 +1038,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
+    auto stripped_value_type = removeLowCardinality(value_type);
+    if (!value_field.isNull())
+        stripped_value_type = removeNullable(stripped_value_type);
+    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
+    /// padding, which string equality ignores, so the index would discard matching granules.
+    if (WhichDataType(stripped_value_type).isString())
+        value_type = stripped_value_type;
+
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
@@ -1631,7 +1640,14 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN)
+                    return false;
+
+                auto unwrapped_result_type = removeLowCardinality(const_key_argument->result_type);
+                const bool key_is_null = const_key_argument->column->isNullAt(0);
+                if (!key_is_null)
+                    unwrapped_result_type = removeNullable(unwrapped_result_type);
+                if (key_is_null || !isStringOrFixedString(unwrapped_result_type))
                     return false;
 
                 key_const_value = std::string{const_key_argument->column->getDataAt(0)};
