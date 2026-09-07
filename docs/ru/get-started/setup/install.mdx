@@ -7,14 +7,23 @@ title: 'Инструкция по установке'
 doc_type: 'guide'
 ---
 
-import {galaxyOnClick} from "/snippets/ru/lib/galaxy.jsx";
-
-<Card title="ClickHouse Cloud" icon="cloud" href="/ru/get-started/setup/cloud" cta="Открыть руководство">
-  Начните работу сразу, без необходимости заниматься сайзингом и масштабированием кластера. ClickHouse Cloud берет на себя сайзинг, масштабирование
-  , безопасность, надежность и обновления.
-</Card>
-
-<br />
+<div className="ch-install-cloud-card">
+  <span className="ch-install-cloud-badge">Рекомендуется</span>
+  <span className="ch-install-cloud-icon" aria-hidden="true"></span>
+  <p className="ch-install-cloud-title">ClickHouse Cloud</p>
+  <p className="ch-install-cloud-description">
+    Начните работу сразу, без необходимости заниматься сайзингом и масштабированием кластера. ClickHouse Cloud берет на себя сайзинг, масштабирование
+    , безопасность, надежность и обновления.
+  </p>
+  <div className="ch-install-cloud-actions">
+    <a className="ch-install-cloud-cta" href="https://clickhouse.cloud/signUp?loc=docs-install-page-banner">
+      Начать бесплатно
+    </a>
+    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href="/ru/get-started/setup/cloud">
+      Прочитать руководство по быстрому старту
+    </a>
+  </div>
+</div>
 
 Если вы предпочитаете самостоятельное управление, выберите один из вариантов ClickHouse с открытым исходным кодом ниже.
 Используйте скрипт быстрой установки или CLI `clickhousectl` для локального развертывания либо установите
