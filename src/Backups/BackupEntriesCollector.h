@@ -217,6 +217,16 @@ private:
         /// `findTablesInDatabase` and `isTableDataExcluded` ask this, and they must agree: a table dropped
         /// here is never enumerated, so no later decision about its data can bring it back.
         bool isTableSelectedByAnyElement(const String & table_name) const;
+
+        /// The partitions of this table whose data reaches the backup, over *every* kind of element naming
+        /// it - the single-table elements in `tables` and the wide elements in `all_tables_elements` alike.
+        ///
+        /// Asked instead of `TableParams::partitionsWithData` because that one sees only the single-table
+        /// elements, while `isTableDataExcluded` already consults both. The two must agree about the same
+        /// table: whoever makes the data eligible for backup also decides how much of it is written, and
+        /// letting them disagree is what backed up a single partition of a table a DATABASE element had
+        /// asked for in full.
+        std::optional<ASTs> partitionsWithData(const String & table_name) const;
     };
 
     struct TableInfo

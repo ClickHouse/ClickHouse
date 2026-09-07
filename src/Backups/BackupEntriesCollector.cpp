@@ -644,11 +644,12 @@ void BackupEntriesCollector::gatherTablesMetadata()
             continue;
 
         const auto & database_info = database_infos.at(qualified_name.database);
-        auto it = database_info.tables.find(qualified_name.table);
-        if (it == database_info.tables.end())
-            continue;
 
-        if (it->second.anyElementNamedPartitions() && res_table_info.storage && !res_table_info.storage->supportsBackupPartition())
+        /// Only a single-table element can name partitions, so the engines that cannot back them up are
+        /// validated against those elements alone.
+        auto it = database_info.tables.find(qualified_name.table);
+        if (it != database_info.tables.end() && it->second.anyElementNamedPartitions() && res_table_info.storage
+            && !res_table_info.storage->supportsBackupPartition())
         {
             throw Exception(
                 ErrorCodes::CANNOT_BACKUP_TABLE,
@@ -656,7 +657,8 @@ void BackupEntriesCollector::gatherTablesMetadata()
                 res_table_info.storage->getName(),
                 tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
         }
-        res_table_info.partitions = it->second.partitionsWithData();
+
+        res_table_info.partitions = database_info.partitionsWithData(qualified_name.table);
     }
 }
 
@@ -984,6 +986,29 @@ std::optional<ASTs> BackupEntriesCollector::DatabaseInfo::TableParams::partition
 bool BackupEntriesCollector::DatabaseInfo::TableParams::isDataExcluded() const
 {
     return std::ranges::all_of(elements, [](const auto & element) { return element.except_data; });
+}
+
+std::optional<ASTs> BackupEntriesCollector::DatabaseInfo::partitionsWithData(const String & table_name) const
+{
+    /// A DATABASE or ALL element cannot name partitions - only a single-table element can - so such an
+    /// element selecting the table without excluding its data is asking for the table's data in full, and
+    /// that subsumes any partition a single-table element named. Least exclusion wins here as everywhere
+    /// else: naming a partition asks for more data, it never licenses dropping the rest.
+    for (const auto & element : all_tables_elements)
+    {
+        /// The element does not select the table at all, so it expresses no wish about its data.
+        if (element.except_table_names.contains(table_name))
+            continue;
+
+        if (!element.except_data_table_names.contains(table_name))
+            return {};
+    }
+
+    auto it = tables.find(table_name);
+    if (it == tables.end())
+        return {};
+
+    return it->second.partitionsWithData();
 }
 
 bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const String & table_name) const
