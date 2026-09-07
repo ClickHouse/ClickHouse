@@ -59,5 +59,14 @@ output=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
 status=$?
 echo "${status} $(printf '%s' "${output}" | grep -cF 'Exception')"
 
+# `OPTIMIZE TABLE ... MANIFEST` takes a different route - `IcebergMetadata::optimizeManifestFiles` ->
+# `compactIcebergManifests` -> `isCurrentManifestListAboveThreshold` - which reads
+# `current-snapshot-id` with its own `has` check. It has to reach the same no-snapshot path.
+output=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
+    --allow_experimental_iceberg_compaction=1 \
+    --query "OPTIMIZE TABLE ${TABLE} MANIFEST" 2>&1)
+status=$?
+echo "${status} $(printf '%s' "${output}" | grep -cF 'Exception')"
+
 # The no-op left the table readable, still as empty.
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}"

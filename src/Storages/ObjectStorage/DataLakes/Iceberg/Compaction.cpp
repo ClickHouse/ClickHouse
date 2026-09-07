@@ -155,7 +155,7 @@ static bool isCurrentManifestListAboveThreshold(
 {
     LoggerPtr log = getLogger("IcebergCompaction::isCurrentManifestListAboveThreshold");
 
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
         return false;
     Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (current_snapshot_id < 0)
@@ -434,7 +434,7 @@ static bool writeConsolidatedManifestFile(
     auto log = getLogger("IcebergManifestConsolidation");
 
     // Derive current snapshot info directly from the metadata file.
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
         return true;
