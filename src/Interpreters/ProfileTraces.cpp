@@ -7,8 +7,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileTracesBlocker.h>
 #include <Common/SymbolIndex.h>
+#include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 #include <base/getFQDNOrHostName.h>
@@ -24,7 +26,31 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char profile_traces_flush_ack_timeout[];
+}
+
+namespace
+{
+
+bool isSupportedTraceType(TraceType type)
+{
+    switch (type)
+    {
+        case TraceType::CPU:
+        case TraceType::Real:
+        case TraceType::Memory:
+        case TraceType::MemorySample:
+        case TraceType::MemoryPeak:
+            return true;
+        default:
+            return false;
+    }
+}
+
 }
 
 struct ProfileTracesRegistry
@@ -99,6 +125,9 @@ void InternalProfileTracesQueue::collect(
     const std::shared_ptr<ProfileTracesRegistry> & registry, UInt64 id, TraceType trace_type,
     UInt64 thread_id, UInt64 event_time_microseconds, const std::vector<UInt64> & trace, Int64 size)
 {
+    if (!isSupportedTraceType(trace_type))
+        return;
+
     if (auto queue = registry->find(id))
     {
         queue->push(Sample{
@@ -116,6 +145,7 @@ void InternalProfileTracesQueue::collect(
 
 void InternalProfileTracesQueue::acknowledgeFlush(const std::shared_ptr<ProfileTracesRegistry> & registry, UInt64 id)
 {
+    fiu_do_on(FailPoints::profile_traces_flush_ack_timeout, { return; });
     if (auto queue = registry->find(id))
     {
         {
@@ -128,6 +158,7 @@ void InternalProfileTracesQueue::acknowledgeFlush(const std::shared_ptr<ProfileT
 
 void InternalProfileTracesQueue::finish()
 {
+    ProfileTracesBlocker blocker;
     {
         std::lock_guard lock(mutex);
         if (finished)
@@ -136,19 +167,33 @@ void InternalProfileTracesQueue::finish()
 
     /// This runs on the transport thread, never in a profiler signal handler. The pipe marker
     /// orders the final drain after all samples accepted before query execution finished.
-    if (TraceSender::flushProfileTraces(id))
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto result = TraceSender::flushProfileTraces(id, deadline);
     {
         std::unique_lock lock(mutex);
-        if (!flushed.wait_for(lock, std::chrono::seconds(10), [&] { return flush_acknowledged; }))
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timed out flushing profile traces");
+        if (result == TraceSender::ProfileTracesFlushResult::MarkerSent
+            && !flushed.wait_until(lock, deadline, [&] { return flush_acknowledged; }))
+            result = TraceSender::ProfileTracesFlushResult::TimedOut;
+
         finished = true;
+        if (result == TraceSender::ProfileTracesFlushResult::TimedOut)
+        {
+            samples.clear();
+            buffered_bytes = 0;
+        }
     }
-    else
-    {
-        /// Servers without a sampling collector can still forward samples from remote servers.
-        std::lock_guard lock(mutex);
-        finished = true;
-    }
+
+    if (result == TraceSender::ProfileTracesFlushResult::TimedOut)
+        LOG_WARNING(getLogger("ProfileTraces"), "Timed out flushing profile traces for query {}; remaining samples were discarded", query_id);
+}
+
+void InternalProfileTracesQueue::cancel()
+{
+    ProfileTracesBlocker blocker;
+    std::lock_guard lock(mutex);
+    finished = true;
+    samples.clear();
+    buffered_bytes = 0;
 }
 
 Block InternalProfileTracesQueue::getSampleBlock()
@@ -247,10 +292,15 @@ void InternalProfileTracesQueue::pushBlock(const Block & block)
 
     for (size_t row = 0; row < block.rows(); ++row)
     {
+        const auto type_name = types.getDataAt(row);
+        const auto type = magic_enum::enum_cast<TraceType>(type_name);
+        if (!type || !isSupportedTraceType(*type))
+            continue;
+
         Sample sample{
             .host_name = String(hosts.getDataAt(row)),
             .query_id = String(query_ids.getDataAt(row)),
-            .trace_type = String(types.getDataAt(row)),
+            .trace_type = String(type_name),
             .thread_id = threads[row],
             .event_time_microseconds = times[row],
             .trace = {},

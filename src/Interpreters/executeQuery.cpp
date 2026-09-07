@@ -3953,6 +3953,7 @@ void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQue
     }
     else if (queues.profile_traces_queue)
     {
+        queues.profile_traces_queue->cancel();
         CurrentThread::attachInternalProfileTracesQueue(nullptr);
         queues.profile_traces_queue.reset();
     }

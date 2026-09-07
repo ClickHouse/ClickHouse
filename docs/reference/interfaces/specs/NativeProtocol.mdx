@@ -768,14 +768,14 @@ The envelope is a packet-type `VarUInt` of `19`, an empty `table_name` binary st
 |---|------|------|-------------|
 | 1 | `host_name` | `String` | Host that collected the sample, preserved when forwarded. |
 | 2 | `query_id` | `String` | Query that produced the sample, including remote query IDs. |
-| 3 | `trace_type` | `String` | Sample type, such as `CPU`, `Real`, or `MemorySample`. |
+| 3 | `trace_type` | `String` | One of `CPU`, `Real`, `Memory`, `MemorySample`, or `MemoryPeak`. Other trace types are excluded. |
 | 4 | `thread_id` | `UInt64` | OS thread ID on the originating host. |
 | 5 | `event_time_microseconds` | `UInt64` | Sample timestamp in microseconds since the Unix epoch. |
 | 6 | `trace` | `Array(UInt64)` | Normalized instruction addresses, ordered from the leaf frame outward. |
 | 7 | `symbols` | `Array(String)` | Symbol corresponding to each address; an empty string denotes an unresolved frame. |
 | 8 | `size` | `Int64` | Allocation or deallocation size for memory samples; zero for time samples. |
 
-Packets may be interleaved with query results and INSERT metadata. The server drains accepted samples before `EndOfStream`, and before a query exception when the connection is still usable. Clients must continue receiving until the terminal packet; a `ProfileTraces` block is never a result block or a completion marker. Delivery uses bounded queues, so samples may be dropped when a consumer cannot keep up.
+Packets may be interleaved with query results and INSERT metadata. The server drains accepted samples before `EndOfStream`, and before a query exception when the connection is still usable. The final drain waits at most ten seconds for the collector. If that deadline expires, remaining samples are discarded and a server warning is logged; the original query result or exception is preserved. Clients must continue receiving until the terminal packet; a `ProfileTraces` block is never a result block or a completion marker. Delivery uses bounded queues, so samples may be dropped when a consumer cannot keep up. Disabling delivery discards queued samples without waiting for the collector. Excluded trace types, including `ProfileEvent` and `JemallocSample`, can still be collected in `system.trace_log` under their own settings.
 
 Wire settings enable collection before query analysis. A `send_profile_traces` value supplied only in SQL `SETTINGS` takes effect when execution starts after analysis. Distributed SELECT queries forward remote trace blocks with their original host and query identifiers. Remote INSERT uploads disable delivery to avoid blocking while both peers are sending data. When connecting to a server below revision `54493`, the native client omits the `send_profile_traces` wire setting, and an older client never receives this packet from a newer server.
 
@@ -1114,7 +1114,7 @@ The `*_native_*` settings are the exception: they change the bytes inside native
 
 **Packet** — a wire message: a VarUInt packet type code followed by a body whose format depends on the type. See [packet envelope](#packet-envelope).
 
-**Packet type code** — the leading VarUInt of a packet that identifies its format. Values 0–18 are currently assigned. See the [packet type reference](#packet-type-reference).
+**Packet type code** — the leading VarUInt of a packet that identifies its format. Values 0–19 are currently assigned. See the [packet type reference](#packet-type-reference).
 
 **Response stream** — the sequence of packets the server emits during a query. Open-ended in length, terminated by exactly one `EndOfStream` (success) or `Exception` (failure). See the [query phase](#query-phase).
 

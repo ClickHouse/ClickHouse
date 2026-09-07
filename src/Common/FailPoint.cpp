@@ -174,6 +174,8 @@ static struct InitFiu
     PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(framing_finalize_throw) \
+    REGULAR(profile_traces_flush_write_timeout) \
+    REGULAR(profile_traces_flush_ack_timeout) \
     ONCE(framing_throw_after_writing_packet) \
     ONCE(framing_throw_during_payload_reset) \
     ONCE(framing_throw_before_totals_boundary) \

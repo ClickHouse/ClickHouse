@@ -1977,7 +1977,7 @@ void TCPHandler::updateProfileTracesQueue(QueryState & state) const
     }
     else if (!enabled && state.profile_traces_queue)
     {
-        state.profile_traces_queue->finish();
+        state.profile_traces_queue->cancel();
         CurrentThread::attachInternalProfileTracesQueue(nullptr);
         state.profile_traces_queue.reset();
     }
@@ -1988,6 +1988,12 @@ void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
     if (!state.profile_traces_queue)
         return;
 
+    if (!state.query_context->getSettingsRef()[Setting::send_profile_traces])
+    {
+        state.profile_traces_queue->cancel();
+        return;
+    }
+
     if (!finish && state.after_send_profile_traces.elapsedMicroseconds()
         < state.query_context->getSettingsRef()[Setting::interactive_delay])
         return;
@@ -1997,9 +2003,6 @@ void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
 
     if (finish)
         state.profile_traces_queue->finish();
-
-    if (!state.query_context->getSettingsRef()[Setting::send_profile_traces])
-        return;
 
     do
     {

@@ -30,8 +30,12 @@ public:
     void pushBlock(const Block & block);
 
     /// Wait for samples already written to the collector pipe, then close this subscription.
-    /// The queued samples remain available to the final transport drain.
+    /// On success the queued samples remain available to the final transport drain.
+    /// On timeout they are discarded and a warning is logged without failing the query.
     void finish();
+
+    /// Disable delivery immediately, discarding queued samples without waiting for the collector.
+    void cancel();
 
 private:
     friend class TraceCollector;

@@ -1,0 +1,2 @@
+native: MemorySample streamed; real JemallocSample retained only in trace_log
+HTTP: MemorySample streamed; real JemallocSample retained only in trace_log

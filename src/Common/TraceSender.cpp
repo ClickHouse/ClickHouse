@@ -3,6 +3,7 @@
 #include <Common/CPUID.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
@@ -37,7 +38,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
-    extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char profile_traces_flush_write_timeout[];
 }
 
 LazyPipeFDs TraceSender::pipe;
@@ -146,32 +151,34 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     chassert(out.getFlushCount() == 1);
 }
 
-bool TraceSender::flushProfileTraces(UInt64 subscription_id)
+TraceSender::ProfileTracesFlushResult TraceSender::flushProfileTraces(
+    UInt64 subscription_id, std::chrono::steady_clock::time_point deadline)
 {
     in_flight.fetch_add(1);
     SCOPE_EXIT(in_flight.fetch_sub(1));
     if (shutdown.load())
-        return false;
+        return ProfileTracesFlushResult::NotRunning;
 
     /// Keep the marker in one atomic write, just like a sampled stack. The ordinary sender
     /// drops samples on a full pipe, but a final drain needs a delivered ordering marker.
     char buffer[1 + sizeof(subscription_id)];
     buffer[0] = 2;
     memcpy(buffer + 1, &subscription_id, sizeof(subscription_id));
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    fiu_do_on(FailPoints::profile_traces_flush_write_timeout, { deadline = std::chrono::steady_clock::now(); });
     while (true)
     {
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0)
+            return ProfileTracesFlushResult::TimedOut;
+
         auto written = ::write(pipe.fds_rw[1], buffer, sizeof(buffer));
         if (written == static_cast<ssize_t>(sizeof(buffer)))
-            return true;
+            return ProfileTracesFlushResult::MarkerSent;
         if (written < 0 && errno != EINTR && errno != EAGAIN)
             throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot flush profile traces");
         if (written >= 0)
             throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Incomplete profile trace flush marker");
 
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
-        if (remaining <= 0)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timed out writing profile trace flush marker");
         pollfd descriptor{pipe.fds_rw[1], POLLOUT, 0};
         int result = ::poll(&descriptor, 1, static_cast<int>(remaining));
         if (result < 0 && errno != EINTR)
