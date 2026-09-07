@@ -66,7 +66,6 @@ void checkExtractionRoundTrip(
         }
     }
 
-    ASSERT_TRUE(filter->supportsKeyExtraction());
     const size_t expected_count = filter->getTotalRowCount();
     auto extractor = std::move(*filter).extractKeys();
     filter.reset();
@@ -250,20 +249,6 @@ TEST(DistinctSetFilterExtraction, FloatBitPatternsSurviveExtraction)
     const auto & extracted = assert_cast<const ColumnFloat64 &>(*batch[0]).getData();
     ASSERT_EQ(extracted.size(), 2u);
     EXPECT_NE(std::signbit(extracted[0]), std::signbit(extracted[1]));
-}
-
-TEST(DistinctSetFilterExtraction, HashedMethodDoesNotSupportExtraction)
-{
-    /// Two variable-width key columns fall back to the `hashed` method, which is irreversible.
-    const Block header
-        = {ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "a"),
-           ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "b")};
-
-    DistinctSetFilter filter(header, {}, SizeLimits{});
-    Chunk filtered = filter.filter(Chunk({makeStringColumn({"x", "y"}), makeStringColumn({"u", "v"})}, 2));
-    ASSERT_EQ(filtered.getNumRows(), 2u);
-
-    EXPECT_FALSE(filter.supportsKeyExtraction());
 }
 
 TEST(DistinctSetFilterSemantics, ThrowModeAllowsReachingTheLimitExactly)

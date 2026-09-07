@@ -101,10 +101,9 @@ public:
     /// Set class exposes). For real DISTINCT a NULL is a value, so the flag must only be enabled when
     /// the consumer drops such rows anyway. The remaining keys are then hashed by their nested,
     /// non-nullable columns, the same way the set fill hashes them.
-    /// `require_extractable_keys_` guarantees supportsKeyExtraction: the generic set method, which keeps
-    /// only a hash per key, is replaced by the one that stores the serialized keys (see
-    /// SetMethodSerialized), at the price of the memory for the keys. Only for a consumer that
-    /// materializes the keys back (ExternalDistinctTransform); incompatible with `skip_null_keys_`.
+    /// `require_extractable_keys_` replaces generic hash-only storage with `SetMethodSerialized` so
+    /// that `extractKeys` can recover the retained keys. This requires storage for the key values and
+    /// is incompatible with `skip_null_keys_`.
     DistinctSetFilter(
         const Block & header,
         const Names & columns,
@@ -125,13 +124,6 @@ public:
     /// The memory occupied by the set and by the LowCardinality fast path.
     size_t getTotalByteCount() const;
 
-    /// Whether the keys can be materialized back into columns from the set itself. True for every set
-    /// method except `hashed`, which keeps only a 128-bit hash per key (chosen for multi-column keys
-    /// with variable-width or LowCardinality types) - and which is never chosen when the extractable
-    /// keys were required. Meaningful once at least one chunk was filtered (the method is chosen by the
-    /// first one).
-    bool supportsKeyExtraction() const;
-
     /// Reads owning key columns from a frozen set in hash-table iteration order.
     class KeyExtractor
     {
@@ -147,7 +139,8 @@ public:
     /// Transfers the hash table, arena, and key metadata into an extractor. The columns it returns
     /// follow `getKeyColumnsPositions` and own their values independently of the extractor. The table
     /// is released after its final key is materialized, or when the extractor is destroyed early.
-    /// The set must support key extraction and contain at least one retained key.
+    /// Requires at least one retained key, an extractable set method, and `skip_null_keys_ = false`.
+    /// Passing `require_extractable_keys_ = true` guarantees the method choice.
     std::unique_ptr<KeyExtractor> extractKeys() &&;
 
     /// Filters the chunk leaving only the rows whose key was not seen before (and inserts their keys

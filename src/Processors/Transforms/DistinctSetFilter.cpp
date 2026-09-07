@@ -306,13 +306,6 @@ size_t DistinctSetFilter::getTotalByteCount() const
     return data->getTotalByteCount() + lc_filter.getTotalByteCount();
 }
 
-bool DistinctSetFilter::supportsKeyExtraction() const
-{
-    /// In the skip_null_keys mode the set stores the nested (non-nullable) key representations, which
-    /// do not match the (nullable) key column types, so the keys cannot be materialized back.
-    return !skip_null_keys && data->type != SetVariants::Type::EMPTY && data->type != SetVariants::Type::hashed;
-}
-
 namespace
 {
 
