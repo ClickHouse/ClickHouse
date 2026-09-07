@@ -2645,6 +2645,56 @@ TEST_F(MetadataPlainRewritableDiskTest, HardLinkThenWriteInSameTransaction)
     EXPECT_EQ(listAllBlobs("HardLinkThenWriteInSameTransaction").size(), 4u);  /// two prefix.path, f1 and new
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkAndRewriteInSameTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string test = "CreateHardLinkAndRewriteInSameTransaction";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The file is created, hard-linked and rewritten by the same transaction. The rewrite has to go to a new blob,
+    /// otherwise it would clobber the contents that the link is supposed to keep.
+    {
+        auto tx = metadata->createTransaction();
+
+        const auto first_key = tx->generateObjectKeyForPath("A/f1").serialize();
+        size_t first_size = writeObject(object_storage, first_key, "old");
+        tx->createMetadataFile("A/f1", {StoredObject(first_key, "A/f1", first_size)});
+
+        tx->createHardLink("A/f1", "B/f1");
+
+        const auto second_key = tx->generateObjectKeyForPath("A/f1").serialize();
+        EXPECT_NE(second_key, first_key);
+        size_t second_size = writeObject(object_storage, second_key, "new!");
+        tx->createMetadataFile("A/f1", {StoredObject(second_key, "A/f1", second_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f1").front().remote_path), "new!");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "old");
+    EXPECT_EQ(metadata->getFileSize("A/f1"), 4u);
+    EXPECT_EQ(metadata->getFileSize("B/f1"), 3u);
+    /// The two files do not share a blob anymore.
+    EXPECT_EQ(metadata->getHardlinkCount("A/f1"), 0);
+    EXPECT_EQ(metadata->getHardlinkCount("B/f1"), 0);
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f1").front().remote_path), "new!");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "old");
+    EXPECT_EQ(metadata->getFileSize("A/f1"), 4u);
+    EXPECT_EQ(metadata->getFileSize("B/f1"), 3u);
+    EXPECT_EQ(listAllBlobs(test).size(), 4u);  /// two prefix.path and two blobs
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabled)
 {
     thread_local_rng.seed(42);

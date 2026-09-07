@@ -21,8 +21,10 @@ public:
     void moveDirectory(const std::string & path_from, const std::string & path_to);
 
     /// File operations are not replayed on the uncommitted state, except for the facts that affect
-    /// the choice of object keys for new blobs: the directories that are going to get an explicit file list
-    /// and the blobs that are going to be shared.
+    /// the choice of object keys for new blobs: the files that are going to be created together with the keys
+    /// of their blobs, the directories that are going to get an explicit file list, and the blobs
+    /// that are going to be shared.
+    void recordCreatedFile(const std::string & path, const std::string & blob_key);
     void markDirectoryExplicit(const std::string & path);
     void addBlobLink(const std::string & blob_key);
 

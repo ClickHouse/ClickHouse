@@ -149,6 +149,31 @@ void UncommittedState::moveDirectory(const std::string & path_from, const std::s
     tx_snapshot->moveDirectory(path_from, path_to);
 }
 
+void UncommittedState::recordCreatedFile(const std::string & path, const std::string & blob_key)
+{
+    const auto normalized_path = normalizePath(path);
+    const auto directory = tx_snapshot->getDirectoryRemoteInfo(normalized_path.parent_path());
+    if (!directory)
+        return;
+
+    const auto file_name = normalized_path.filename().string();
+    FileRemoteInfo info{.blob_key = blob_key};
+    const auto new_blob_key = getBlobKey(*directory, file_name, info);
+
+    /// Rewriting a file: it stops referencing its previous blob, unless the blob is reused in place.
+    if (const auto it = directory->files.find(file_name); it != directory->files.end())
+    {
+        const auto previous_blob_key = getBlobKey(*directory, file_name, it->second);
+        /// The count is tracked only for the blobs that have more than one link, so the last link is not subtracted.
+        if (previous_blob_key != new_blob_key && tx_snapshot->getBlobLinkCount(previous_blob_key) > 1)
+            tx_snapshot->removeBlobLink(previous_blob_key);
+
+        tx_snapshot->removeFile(path);
+    }
+
+    tx_snapshot->recordFile(path, std::move(info));
+}
+
 void UncommittedState::markDirectoryExplicit(const std::string & path)
 {
     if (!tx_snapshot->getDirectoryRemoteInfo(path))
