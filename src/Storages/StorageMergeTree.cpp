@@ -2416,6 +2416,10 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
     std::optional<DataPartsVector> parts_for_visibility;
 
     size_t done_count = 0;
+    /// `clearOldMutations` erases the leading `done_count` entries without re-checking them, so the
+    /// count must stay an unbroken run of entries it may erase: finished, and not transactional -
+    /// a transactional entry may be erased only once its transaction has committed.
+    bool erasable_prefix = true;
     for (auto & [mutation_version, entry] : current_mutations_by_version)
     {
         if (entry.tid.isNonTransactional())
@@ -2426,7 +2430,10 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
             /// rather than breaking costs nothing and still lets the transactional entries behind
             /// this one reach the visibility check, which that bound does not decide.
             if (done_below != std::numeric_limits<Int64>::max() && static_cast<Int64>(mutation_version) > done_below)
+            {
+                erasable_prefix = false;
                 continue;
+            }
         }
         else
         {
@@ -2434,7 +2441,7 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
             /// (`selectPartsToMutate`), so it is finished once none of them is left below its
             /// version - the rule `getMutationsStatus` already reports. Stopping at the first such
             /// entry instead left it permanently unfinished here, so its counters were never
-            /// decremented and `clearOldMutations` could trim neither it nor anything after it.
+            /// decremented and no entry behind it was ever marked done either.
             if (!parts_for_visibility)
                 parts_for_visibility = getDataPartsVectorForInternalUsage();
 
@@ -2446,7 +2453,10 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
                         && part->version && part->version->isVisible(entry.tid.start_csn, entry.tid);
                 });
             if (visible_part_left)
+            {
+                erasable_prefix = false;
                 continue;
+            }
         }
 
         if (!entry.is_done)
@@ -2467,7 +2477,10 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         if (!entry.finish_time && mutation_version >= first_just_completed_version)
             entry.finish_time = now;
 
-        ++done_count;
+        if (!entry.tid.isNonTransactional())
+            erasable_prefix = false;
+        if (erasable_prefix)
+            ++done_count;
     }
 
     return done_count;
