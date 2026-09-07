@@ -487,7 +487,7 @@ void validateInputSchemaMatchesCurrentIcebergSchema(
     /// Compare names and types positionally via the shared schema processor (same converter
     /// that produced the cached ClickHouse columns), avoiding converter-quirk false positives.
     schema_processor->addIcebergTableSchema(current_schema);
-    const auto expected_columns = schema_processor->getClickhouseTableSchemaById(current_schema_id);
+    const auto expected_columns = schema_processor->getClickHouseTableSchemaById(current_schema_id);
     auto input_it = input_columns.begin();
     auto expected_it = expected_columns->begin();
     for (; input_it != input_columns.end(); ++input_it, ++expected_it)
