@@ -42,7 +42,11 @@ bool AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute)
 void AsyncTaskExecutor::setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept
 {
     std::lock_guard guard(span_attributes_mutex);
-    if (span_status != OpenTelemetry::SpanStatus::UNSET)
+    /// ERROR is final. OK is provisional: callers buffer it ahead of a cancel, and a cancel
+    /// that fails must still be able to turn it into ERROR before the span is logged.
+    if (span_status == OpenTelemetry::SpanStatus::ERROR || status == OpenTelemetry::SpanStatus::UNSET)
+        return;
+    if (span_status == OpenTelemetry::SpanStatus::OK && status == OpenTelemetry::SpanStatus::OK)
         return;
     span_status = status;
     span_status_message = std::move(message);
@@ -108,7 +112,17 @@ void AsyncTaskExecutor::cancel()
     is_cancelled = true;
     {
         SCOPE_EXIT({ destroyCoroutine(); });
-        cancelBefore();
+        try
+        {
+            cancelBefore();
+        }
+        catch (...)
+        {
+            /// The coroutine is destroyed on scope exit and logs the span right away. A cancellation
+            /// that fails is this task's failure, so record it before the buffered OK is flushed.
+            setSpanStatus(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            throw;
+        }
     }
     cancelAfter();
 }

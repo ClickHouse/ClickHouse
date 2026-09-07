@@ -62,11 +62,10 @@ public:
         UInt64 initial_span_id_ = 0);
 
     /// Add an attribute to the span covering the current (and any future) execution of the task in a thread-safe way.
-    /// return false for any allocation failure, because losing a span attribute must not fail the task itself.
     bool addSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept;
 
-    /// Record the outcome of the current task execution on its span in a thread-safe way. The status is buffered and
-    /// applied to the span when the routine exits.
+    /// Record the outcome of the current task execution on its span in a thread-safe way.
+    /// The status is buffered and applied to the span when the routine exits.
     void setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept;
 
     /// Resume task execution. This method returns when task is completed or suspended.

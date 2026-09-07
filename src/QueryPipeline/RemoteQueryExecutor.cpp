@@ -351,7 +351,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::~RemoteQueryExecutor()
 {
     /// Backstop for the fragment span: an executor destroyed without finish() or cancel() reaches
-    /// here with no outcome recorded yet. For failure paths this is a no-op: the outcome is write-once.
+    /// here with no outcome recorded yet. An ERROR recorded earlier is kept, and if the cancel
+    /// below fails, `AsyncTaskExecutor::cancel` turns this OK into ERROR before the span is logged.
     finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
 
     /// We should finish establishing connections to disconnect it later,
@@ -1271,7 +1272,7 @@ void RemoteQueryExecutor::finishUnlocked()
 
                     /// Stop draining: the server terminated the query with this exception.
                     /// Record it before the enclosing `SCOPE_EXIT` backstop stamps the span OK
-                    /// (both finish paths are write-once, so the first recorded outcome wins).
+                    /// (an ERROR recorded on either finish path is final and cannot be downgraded to OK).
                     finished = true;
                     finishFragmentSpanForSkippedShard(packet.exception->message());
                     break;
