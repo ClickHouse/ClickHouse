@@ -1,4 +1,5 @@
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>
@@ -382,4 +383,43 @@ GTEST_TEST(NestedUtils, extractCaseCollidingElementPairsColumnWithItsOwnDeclared
     ASSERT_FALSE(col->column->isNullAt(0));
     ASSERT_TRUE(col->column->isNullAt(1));
     ASSERT_FALSE(col->column->isNullAt(2));
+}
+
+GTEST_TEST(NestedUtils, extractPathsOfRootWhoseSubcolumnsCannotBeListed)
+{
+    DataTypePtr json_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=8, a UInt32)");
+    auto column = json_type->createColumn();
+    column->insert(Object{{"a", Field{1u}}, {"b", Field{2u}}});
+
+    Block block;
+    block.insert({std::move(column), json_type, "j"});
+
+    NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
+
+    auto typed = extractor.extractColumn("j.a");
+    ASSERT_TRUE(typed.has_value());
+    ASSERT_EQ(typed->name, "j.a");
+    ASSERT_EQ(typed->type->getName(), "UInt32");
+    ASSERT_EQ(applyVisitor(FieldVisitorToString(), (*typed->column)[0]), "1");
+
+    /// `b` is carried by the row rather than declared, and `c` is neither, yet both are addressable
+    /// paths of a JSON column. Both are unreachable through a listing of the root's subcolumns.
+    auto dynamic = extractor.extractColumn("j.b");
+    ASSERT_TRUE(dynamic.has_value());
+    ASSERT_EQ(dynamic->name, "j.b");
+    ASSERT_EQ(applyVisitor(FieldVisitorToString(), (*dynamic->column)[0]), "2");
+
+    auto absent = extractor.extractColumn("j.c");
+    ASSERT_TRUE(absent.has_value());
+    ASSERT_EQ(absent->name, "j.c");
+    ASSERT_EQ(absent->column->size(), 1u);
+    ASSERT_TRUE(absent->column->isNullAt(0));
+
+    /// The readers lowercase the requested spelling, and such a path has no declared spelling to
+    /// map it onto, so case-insensitive matching must reach it as it came.
+    NestedColumnExtractHelper case_insensitive_extractor(block, /*case_insentive_=*/true);
+    auto folded = case_insensitive_extractor.extractColumn("j.b");
+    ASSERT_TRUE(folded.has_value());
+    ASSERT_EQ(folded->name, "j.b");
+    ASSERT_EQ(applyVisitor(FieldVisitorToString(), (*folded->column)[0]), "2");
 }

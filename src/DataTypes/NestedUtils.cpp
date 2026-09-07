@@ -662,6 +662,77 @@ NestedColumnExtractHelper::NestedColumnExtractHelper(const Block & block_, bool 
     , case_insentive(case_insentive_)
 {}
 
+const NestedColumnExtractHelper::Subcolumns & NestedColumnExtractHelper::subcolumnsOf(const ColumnWithTypeAndName & root)
+{
+    auto [it, inserted] = subcolumns_by_root.try_emplace(root.name);
+    auto & subcolumns = it->second;
+    if (!inserted)
+        return subcolumns;
+
+    /// A dynamic subcolumn (a JSON path, a Dynamic variant) is materialized from the requested name,
+    /// and a constant column is resolved through the column it wraps, so neither set can be listed here.
+    if (root.type->hasDynamicSubcolumns() || isColumnConst(*root.column))
+        return subcolumns;
+
+    const auto root_data = ISerialization::SubstreamData(root.type->getSerialization(*root.type->getSerializationInfo(*root.column)))
+                               .withType(root.type)
+                               .withColumn(root.column);
+
+    /// Same walk `IDataType::getSubcolumnData` makes for one name, stopping at each subcolumn's path.
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.position_independent_encoding = false;
+    settings.enumerate_dynamic_streams = false;
+    settings.enumerate_virtual_streams = true;
+    root_data.serialization->enumerateStreams(
+        settings,
+        [&](const auto & substream_path)
+        {
+            for (size_t i = 0; i < substream_path.size(); ++i)
+            {
+                const size_t prefix_len = i + 1;
+                if (!substream_path[i].visited && ISerialization::hasSubcolumnForPath(substream_path, prefix_len))
+                {
+                    auto name = ISerialization::getSubcolumnNameForStream(substream_path, prefix_len);
+                    auto path = substream_path;
+                    path.resize(prefix_len);
+                    /// The first spelling wins, as it does in `IDataType::getSubcolumnData`.
+                    subcolumns.path_by_name.try_emplace(
+                        case_insentive ? boost::to_lower_copy(name) : name, std::move(path));
+                }
+                substream_path[i].visited = true;
+            }
+        },
+        root_data);
+
+    subcolumns.complete = true;
+    return subcolumns;
+}
+
+std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::resolveSubcolumn(
+    const ColumnWithTypeAndName & root, const String & subcolumn_name, const String & result_name) const
+{
+    String declared_name = subcolumn_name;
+    if (case_insentive)
+    {
+        /// The root is `Block::findByName`'s first case-insensitive match, so map the requested
+        /// spelling to a declared one in that same first-match order. An addressable path that no
+        /// listing can name, such as a JSON path, has no declared spelling and is requested as it came.
+        const auto declared_names = root.type->getSubcolumnNames();
+        const auto declared_it = std::find_if(
+            declared_names.begin(),
+            declared_names.end(),
+            [&](const auto & candidate) { return boost::iequals(candidate, subcolumn_name); });
+        if (declared_it != declared_names.end())
+            declared_name = *declared_it;
+    }
+
+    const auto subcolumn_type = root.type->tryGetSubcolumnType(declared_name);
+    if (!subcolumn_type)
+        return {};
+
+    return ColumnWithTypeAndName{root.type->getSubcolumn(declared_name, root.column), subcolumn_type, result_name};
+}
+
 std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(const String & column_name)
 {
     if (block.has(column_name, case_insentive))
@@ -672,27 +743,17 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
     if (!root)
         return {};
 
-    String subcolumn_name = nested_names.second;
-    if (case_insentive)
-    {
-        /// The root is `Block::findByName`'s first case-insensitive match, so map the requested
-        /// spelling to a declared one in that same first-match order.
-        const auto declared_names = root->type->getSubcolumnNames();
-        const auto declared_it = std::find_if(
-            declared_names.begin(),
-            declared_names.end(),
-            [&](const auto & declared_name) { return boost::iequals(declared_name, subcolumn_name); });
-        if (declared_it == declared_names.end())
-            return {};
-        subcolumn_name = *declared_it;
-    }
+    const auto & subcolumns = subcolumnsOf(*root);
+    if (!subcolumns.complete)
+        return resolveSubcolumn(*root, nested_names.second, column_name);
 
-    const auto subcolumn_type = root->type->tryGetSubcolumnType(subcolumn_name);
-    if (!subcolumn_type)
+    const auto it
+        = subcolumns.path_by_name.find(case_insentive ? boost::to_lower_copy(nested_names.second) : nested_names.second);
+    if (it == subcolumns.path_by_name.end())
         return {};
 
-    return ColumnWithTypeAndName{
-        root->type->getSubcolumn(subcolumn_name, root->column), subcolumn_type, column_name};
+    const auto subcolumn_data = ISerialization::createFromPath(it->second, it->second.size());
+    return ColumnWithTypeAndName{subcolumn_data.column, subcolumn_data.type, column_name};
 }
 
 DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)

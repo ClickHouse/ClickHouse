@@ -4,8 +4,10 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <map>
+#include <unordered_map>
 #include <utility>
 
 
@@ -124,8 +126,24 @@ public:
     explicit NestedColumnExtractHelper(const Block & block_, bool case_insentive_);
     std::optional<ColumnWithTypeAndName> extractColumn(const String & column_name);
 private:
+    /// The subcolumns of one block column, listed on that column's first request. Paths rather than
+    /// columns: a subcolumn whose column is derived from its parent (`String.size`) is built by
+    /// `createFromPath`, so listing must not reach that far or every name would be materialized.
+    struct Subcolumns
+    {
+        /// Keyed the way this helper matches names: lower-cased when matching is case-insensitive.
+        std::unordered_map<String, ISerialization::SubstreamPath> path_by_name;
+        /// When false the set could not be listed up front and `path_by_name` says nothing about a miss.
+        bool complete = false;
+    };
+
+    const Subcolumns & subcolumnsOf(const ColumnWithTypeAndName & root);
+    std::optional<ColumnWithTypeAndName>
+    resolveSubcolumn(const ColumnWithTypeAndName & root, const String & subcolumn_name, const String & result_name) const;
+
     const Block & block;
     bool case_insentive;
+    std::unordered_map<String, Subcolumns> subcolumns_by_root;
 };
 
 /// Returns type of scalars of Array of arbitrary dimensions and takes into account Tuples of Nested.
