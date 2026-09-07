@@ -453,6 +453,14 @@ void VortexBlockInputFormat::prepareReader()
         column_name_pointers.push_back(name.c_str());
 
     FFI_VortexScanOptions options{};
+
+    if (plan.rows_to_read) {
+        options.row_selection_begin = plan.rows_to_read->begin();
+        options.row_selection_len = plan.rows_to_read->size();
+    }
+    options.row_range_begin = 0;
+    options.row_range_end = 0;
+
     options.columns = column_name_pointers.data();
     options.num_columns = column_name_pointers.size();
     options.filter = plan.filter.get();

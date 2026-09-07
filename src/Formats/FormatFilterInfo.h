@@ -114,7 +114,7 @@ struct FormatFilterInfo
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
     /// else. Sorted, unique, absolute (pre-filtering) row indexes within the file. The format must
     /// return exactly these rows; with `FormatSettings::parquet::preserve_order` they are returned
-    /// in this exact order. Only supported by the Parquet format.
+    /// in this exact order. Supported by Parquet and Vortex.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
 private:
     /// For lazily initializing the fields above.

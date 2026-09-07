@@ -36,7 +36,7 @@ use futures::{FutureExt, StreamExt};
 use vortex::array::buffer::BufferHandle;
 use vortex::array::VortexSessionExecute;
 use vortex::arrow::ArrowSessionExt;
-use vortex::buffer::{Alignment, ByteBufferMut};
+use vortex::buffer::{Alignment, Buffer, ByteBufferMut};
 use vortex::dtype::{FieldName, Nullability};
 use vortex::error::{vortex_err, VortexResult};
 use vortex::expr::{get_item, is_null, lit, not, root, select, Expression};
@@ -49,6 +49,8 @@ use vortex::scalar::Scalar;
 use vortex::scalar_fn::fns::binary::Binary;
 use vortex::scalar_fn::fns::operators::Operator;
 use vortex::scalar_fn::ScalarFnVTableExt;
+use vortex::scan::selection::Selection;
+use vortex::scan::strict_sorted_buffer::StrictSortedBuffer;
 use vortex::session::VortexSession;
 use vortex::VortexSessionDefault;
 
@@ -638,6 +640,11 @@ pub struct FFI_VortexScanOptions {
     /// The row range `[row_range_begin, row_range_end)`. Both zero means the whole file.
     pub row_range_begin: u64,
     pub row_range_end: u64,
+
+    pub row_selection_begin: *const u64,
+    // 0 means the whole file
+    pub row_selection_len: u64,
+
     /// The number of splits that may be in flight at once: being read, being decoded, or already
     /// handed over and not yet released. 0 selects the default. This is what keeps the scan from
     /// running ahead of the caller; the reads underneath are bounded separately by
@@ -850,6 +857,17 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                     }
                     builder =
                         builder.with_row_range(options.row_range_begin..options.row_range_end);
+                }
+
+                if options.row_selection_len != 0 {
+                    let slice = std::slice::from_raw_parts(
+                        options.row_selection_begin,
+                        options.row_selection_len as usize,
+                    );
+                    let buffer = Buffer::copy_from(slice);
+                    let buffer = StrictSortedBuffer::new_unchecked(buffer);
+                    let selection = Selection::IncludeByIndex(buffer);
+                    builder = builder.with_selection(selection);
                 }
 
                 if options.max_splits_in_flight != 0 {
@@ -1474,6 +1492,7 @@ mod tests {
     use arrow_array::ffi::to_ffi;
     use arrow_array::{Int64Array, StringArray};
     use arrow_schema::{DataType, Field};
+    use std::ptr;
     use std::sync::atomic::AtomicBool;
     use std::sync::Condvar;
 
@@ -1839,6 +1858,8 @@ mod tests {
             filter: std::ptr::null(),
             row_range_begin: 0,
             row_range_end: 0,
+            row_selection_begin: ptr::null(),
+            row_selection_len: 0,
             max_splits_in_flight: 0,
         }
     }

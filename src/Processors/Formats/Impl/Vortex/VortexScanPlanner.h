@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/PODArray.h>
 #include "config.h"
 
 #if USE_VORTEX
@@ -42,6 +43,9 @@ struct VortexScanPlan
     /// and skips the statistics zones it excludes; ClickHouse reapplies the full condition to the
     /// result, so this may keep more rows than the condition - never fewer.
     VortexExpressionPtr filter;
+
+    // Row selection to read. If present, set to FilterInfo's rows_to_read.
+    const PaddedPODArray<UInt64, 4096>* rows_to_read = nullptr;
 
     /// How much of the WHERE condition the filter carries, for logs and `ProfileEvents`.
     size_t filter_conjuncts_total = 0;
