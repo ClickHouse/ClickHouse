@@ -105,7 +105,11 @@ namespace
     {
         /// Inner tables are never named by the BACKUP query: they are backed up through their outer table
         /// (a materialized view, a TimeSeries table), which is also where the exclusion has to be written.
-        if (BackupUtils::isInnerTableForBackup(database_name, table_name))
+        ///
+        /// Only the reserved `.inner*` families are rejected here, from the name alone. An inner table whose
+        /// name is not reserved - a `MaterializedPostgreSQL` nested table - cannot be recognised before the
+        /// database has been enumerated, so `findTablesInDatabase` rejects those against that enumeration.
+        if (BackupUtils::isInnerTable(database_name, table_name))
         {
             throw Exception(
                 ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
@@ -671,7 +675,11 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     auto filter_by_table_name = [&](const String & table_name)
     {
-        if (BackupUtils::isInnerTableForBackup(database_name, table_name))
+        /// Only the reserved `.inner*` families can be told from the name. This filter is all a database
+        /// engine gets, and it is called with a name and nothing else - for a `Replicated` database while
+        /// walking the Keeper metadata listing, before any table definition has been read - so the inner
+        /// tables which take a definition to recognise are dropped from the result below instead.
+        if (BackupUtils::isInnerTable(database_name, table_name))
             return false;
 
         return database_info.isTableSelectedByAnyElement(table_name);
@@ -689,6 +697,42 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     {
         e.addMessage("While collecting tables for backup in database {}", backQuoteIfNeed(database_name));
         throw;
+    }
+
+    /// Drop the tables which this enumeration itself shows to be inner tables of other tables in it: they
+    /// are backed up through their outer table, never as tables of their own. Deciding it here, against the
+    /// enumeration, is what keeps the answer consistent with the tables actually being backed up. Asking the
+    /// live `DatabaseCatalog` instead would make it depend on how far this replica has caught up, and on a
+    /// `Replicated` replica which has not created the outer table yet a hidden table would be backed up as a
+    /// table of its own.
+    auto inner_table_names = BackupUtils::findInnerTables(db_tables);
+
+    for (const auto & inner_table_name : inner_table_names)
+    {
+        /// An inner table cannot be named by EXCEPT DATA FROM TABLE/TABLES either - its data is excluded
+        /// through the outer table, which is also where the clause has to be written. The reserved `.inner*`
+        /// families are already rejected by name in `checkTableCanHaveDataExcluded`; the ones recognised only
+        /// here have to be rejected here, so that both answers come from the same enumeration.
+        if (!database_info.isTableNamedByExceptDataClause(inner_table_name))
+            continue;
+
+        throw Exception(
+            ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
+            "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
+            "Table: {}.{}. Use the outer table name instead.",
+            backQuoteIfNeed(database_name),
+            backQuoteIfNeed(inner_table_name));
+    }
+
+    if (!inner_table_names.empty())
+    {
+        std::erase_if(
+            db_tables,
+            [&](const std::pair<ASTPtr, StoragePtr> & db_table)
+            {
+                const auto * create = db_table.first->as<ASTCreateQuery>();
+                return create && inner_table_names.contains(create->getTable());
+            });
     }
 
     std::unordered_set<String> found_table_names;
@@ -1028,6 +1072,22 @@ bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const Str
     }
 
     return false;
+}
+
+bool BackupEntriesCollector::DatabaseInfo::isTableNamedByExceptDataClause(const String & table_name) const
+{
+    /// A single-table element which named this table and excluded its data.
+    auto it = tables.find(table_name);
+    if (it != tables.end())
+    {
+        if (std::ranges::any_of(it->second.elements, [](const auto & element) { return element.except_data; }))
+            return true;
+    }
+
+    /// A DATABASE or ALL element which named this table in its own EXCEPT DATA FROM TABLE/TABLES clause.
+    return std::ranges::any_of(
+        all_tables_elements,
+        [&](const AllTablesElement & element) { return element.except_data_table_names.contains(table_name); });
 }
 
 bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & table_name) const

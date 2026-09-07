@@ -2,6 +2,10 @@
 
 #include <Parsers/ASTBackupQuery.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/IStorage_fwd.h>
+
+#include <unordered_set>
+#include <vector>
 
 
 namespace DB
@@ -30,11 +34,17 @@ bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, con
 bool isInnerTable(const QualifiedTableName & table_name);
 bool isInnerTable(const String & database_name, const String & table_name);
 
-/// Returns true if this table should be skipped while making a backup because it's an inner table
-/// backed up through its outer table. On top of `isInnerTable` this recognises inner tables whose
-/// names are not reserved and can only be identified by finding the live outer table owning them,
-/// so it is meaningful only while making a backup, with `DatabaseCatalog` still holding that table.
-bool isInnerTableForBackup(const String & database_name, const String & table_name);
+/// Returns the names in `db_tables` which are inner tables of another table in the same set and so
+/// must not be backed up in their own right. On top of `isInnerTable` this recognises inner tables
+/// whose names carry no reserved prefix and can only be identified through the outer table owning
+/// them.
+///
+/// The answer is derived from the create queries of `db_tables` alone, never from the live
+/// `DatabaseCatalog`. `db_tables` is one enumeration of one database - for a `Replicated` database a
+/// Keeper metadata snapshot, in which the outer table may not have been created on this replica yet
+/// - so asking the catalog instead would make the classification depend on how far this replica has
+/// caught up, and a lagging replica would back up a hidden table as a table of its own.
+std::unordered_set<String> findInnerTables(const std::vector<std::pair<ASTPtr, StoragePtr>> & db_tables);
 
 }
 

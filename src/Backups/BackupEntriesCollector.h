@@ -218,6 +218,11 @@ private:
         /// here is never enumerated, so no later decision about its data can bring it back.
         bool isTableSelectedByAnyElement(const String & table_name) const;
 
+        /// Whether any element of the query named this table in its own EXCEPT DATA FROM TABLE/TABLES clause,
+        /// as opposed to merely covering it. Asked about a table which turned out to be an inner table, to
+        /// reject a clause written on it instead of silently ignoring the clause.
+        bool isTableNamedByExceptDataClause(const String & table_name) const;
+
         /// The partitions of this table whose data reaches the backup, over *every* kind of element naming
         /// it - the single-table elements in `tables` and the wide elements in `all_tables_elements` alike.
         ///
