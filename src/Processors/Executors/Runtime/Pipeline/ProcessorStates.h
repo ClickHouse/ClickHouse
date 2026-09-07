@@ -11,18 +11,17 @@
 namespace DB
 {
 
-class ExecutionGraph
+class ProcessorStates
 {
 public:
-    explicit ExecutionGraph(std::shared_ptr<Processors> processors_);
+    explicit ProcessorStates(std::shared_ptr<Processors> processors_);
 
-    void add(ProcessorState & requester, const Processors & added);
-    void remove(const ProcessorPtr & processor);
-    ProcessorState & getState(const IProcessor & processor);
+    ProcessorState & get(const IProcessor & processor);
+    void forEachProcessor(const std::function<void(IProcessor &, ProcessorState &)> & f);
 
-    void forEachProcessor(const std::function<void(IProcessor &)> & f);
+    void add(ProcessorState & requester, const Processors & to_add);
+    void remove(const Processors & to_remove);
 
-    bool allFinished() const;
     String dump() const;
 
 private:

@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Pipeline/ExecutionGraph.h>
+#include <Processors/Executors/Runtime/Pipeline/ProcessorStates.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Operators.h>
@@ -33,9 +33,9 @@ ProcessorState & addState(std::unordered_map<const IProcessor *, ProcessorState>
     return it->second;
 }
 
-void checkPeerIsKnown(const std::unordered_map<const IProcessor *, ProcessorState> & states, const ProcessorState & state, const Port & peer, const char * found_as)
+void checkNeighbourIsKnown(const std::unordered_map<const IProcessor *, ProcessorState> & states, const ProcessorState & state, const Port & connected_port, const char * found_as)
 {
-    const IProcessor * to = &peer.getProcessor();
+    const IProcessor * to = &connected_port.getProcessor();
     if (!states.contains(to))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -52,7 +52,7 @@ void connectPorts(const std::unordered_map<const IProcessor *, ProcessorState> &
         if (!input.isConnected() || input.getUpdateChannel().isConnected())
             continue;
 
-        checkPeerIsKnown(states, state, input.getOutputPort(), "input");
+        checkNeighbourIsKnown(states, state, input.getOutputPort(), "input");
         input.getUpdateChannel().connect(state, input);
         state.incoming_updates.push(input);
     }
@@ -62,7 +62,7 @@ void connectPorts(const std::unordered_map<const IProcessor *, ProcessorState> &
         if (!output.isConnected() || output.getUpdateChannel().isConnected())
             continue;
 
-        checkPeerIsKnown(states, state, output.getInputPort(), "output");
+        checkNeighbourIsKnown(states, state, output.getInputPort(), "output");
         output.getUpdateChannel().connect(state, output);
         state.incoming_updates.push(output);
     }
@@ -70,7 +70,7 @@ void connectPorts(const std::unordered_map<const IProcessor *, ProcessorState> &
 
 }
 
-ExecutionGraph::ExecutionGraph(std::shared_ptr<Processors> processors_)
+ProcessorStates::ProcessorStates(std::shared_ptr<Processors> processors_)
     : processors(std::move(processors_))
 {
     for (const auto & processor : *processors)
@@ -80,43 +80,7 @@ ExecutionGraph::ExecutionGraph(std::shared_ptr<Processors> processors_)
         connectPorts(states, states.at(processor.get()));
 }
 
-void ExecutionGraph::add(ProcessorState & requester, const Processors & added)
-{
-    std::lock_guard lock(mutex);
-
-    for (const auto & processor : added)
-    {
-        addState(states, processor.get());
-        processors->push_back(processor);
-    }
-
-    connectPorts(states, requester);
-    for (const auto & processor : added)
-        connectPorts(states, states.at(processor.get()));
-}
-
-void ExecutionGraph::remove(const ProcessorPtr & processor)
-{
-    std::lock_guard lock(mutex);
-
-    auto state_it = states.find(processor.get());
-    if (state_it == states.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} does not exist in pipeline", processor->getName());
-
-    if (state_it->second.last_status != IProcessor::Status::Finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
-
-    for (auto & input : processor->getInputs())
-        input.getUpdateChannel().disconnect();
-
-    for (auto & output : processor->getOutputs())
-        output.getUpdateChannel().disconnect();
-
-    states.erase(state_it);
-    processors->remove(processor);
-}
-
-ProcessorState & ExecutionGraph::getState(const IProcessor & processor)
+ProcessorState & ProcessorStates::get(const IProcessor & processor)
 {
     std::lock_guard lock(mutex);
 
@@ -127,20 +91,56 @@ ProcessorState & ExecutionGraph::getState(const IProcessor & processor)
     return it->second;
 }
 
-void ExecutionGraph::forEachProcessor(const std::function<void(IProcessor &)> & f)
+void ProcessorStates::forEachProcessor(const std::function<void(IProcessor &, ProcessorState &)> & f)
 {
     std::lock_guard lock(mutex);
     for (const auto & processor : *processors)
-        f(*processor);
+        f(*processor, states.at(processor.get()));
 }
 
-bool ExecutionGraph::allFinished() const
+void ProcessorStates::add(ProcessorState & requester, const Processors & to_add)
 {
     std::lock_guard lock(mutex);
-    return std::ranges::all_of(states, [](const auto & entry) { return entry.second.lock.isFinished(); });
+
+    for (const auto & processor : to_add)
+    {
+        addState(states, processor.get());
+        processors->push_back(processor);
+    }
+
+    connectPorts(states, requester);
+    for (const auto & processor : to_add)
+        connectPorts(states, states.at(processor.get()));
 }
 
-String ExecutionGraph::dump() const
+void ProcessorStates::remove(const Processors & to_remove)
+{
+    std::lock_guard lock(mutex);
+
+    for (const auto & processor : to_remove)
+    {
+        auto state_it = states.find(processor.get());
+        if (state_it == states.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} does not exist in pipeline", processor->getName());
+
+        if (state_it->second.last_status != IProcessor::Status::Finished)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
+    }
+
+    for (const auto & processor : to_remove)
+    {
+        for (auto & input : processor->getInputs())
+            input.getUpdateChannel().disconnect();
+
+        for (auto & output : processor->getOutputs())
+            output.getUpdateChannel().disconnect();
+
+        states.erase(processor.get());
+        processors->erase(std::find(processors->begin(), processors->end(), processor));
+    }
+}
+
+String ProcessorStates::dump() const
 {
     std::lock_guard lock(mutex);
 
