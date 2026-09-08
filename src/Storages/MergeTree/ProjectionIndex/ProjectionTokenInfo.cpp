@@ -173,8 +173,10 @@ bool ProjectionTokenInfo::hasDocInRange(
             /// decode at the wrong bytes, and the `lower_bound` below would then silently miss a
             /// real hit and prune a mark that does contain the token. Report `INCORRECT_DATA`
             /// rather than returning wrong query results. Mirrors the same check in
-            /// `ProjectionPostingListCursor::ensureBlockDecoded`.
-            if (count > 1)
+            /// `ProjectionPostingListCursor::ensureBlockDecoded`. The first/last bounds are
+            /// checked for every non-empty block, including a single-element tail block, where
+            /// the monotonicity loop is a no-op.
+            if (count > 0)
             {
                 bool monotonic = true;
                 for (UInt32 vi = 1; vi < count && monotonic; ++vi)

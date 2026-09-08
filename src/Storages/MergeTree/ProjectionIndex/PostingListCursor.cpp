@@ -374,7 +374,9 @@ bool ProjectionPostingListCursor::loadPackedBlock(size_t block_idx)
     /// `INCORRECT_DATA` instead of merely logging — the decoded `decode_buf` feeds the
     /// hot lookup path (and downstream `lower_bound` calls), so silently using bad data
     /// would produce wrong query results rather than a clear corrupted-part exception.
-    if (count > 1) [[likely]]
+    /// The first/last bounds must be checked for every non-empty block, including a
+    /// single-element tail block, where the monotonicity loop below is a no-op.
+    if (count > 0) [[likely]]
     {
         bool ok = true;
         for (UInt32 vi = 1; vi < count && ok; ++vi)

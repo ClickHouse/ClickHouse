@@ -214,7 +214,14 @@ void PositionCursor::ensurePosBlockDecoded(size_t lb_idx, UInt32 pos_block_idx)
             pos_block_idx, block_start_delta, total_pos_deltas);
     UInt32 count = static_cast<UInt32>(std::min(static_cast<UInt64>(ABPFOR_BLOCK_SIZE), total_pos_deltas - block_start_delta));
 
-    /// Seek to the right byte offset in .pos
+    /// Seek to the right byte offset in .pos. `pos_cum_bytes` holds one cumulative byte
+    /// count per position block, so a corrupted `.pidx` whose `pos_cum_deltas` implies more
+    /// position blocks than `pos_cum_bytes` actually contains must be rejected rather than
+    /// indexed out of bounds.
+    if (pos_block_idx > lb.pos_cum_bytes.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Corrupted projection text index: position block index {} exceeds the number of position blocks {}",
+            pos_block_idx, lb.pos_cum_bytes.size());
     UInt64 byte_offset = (pos_block_idx == 0) ? 0 : lb.pos_cum_bytes[pos_block_idx - 1];
     pos_stream->seek(lb.pos_start_offset + byte_offset);
     if (!pos_decode_buf)

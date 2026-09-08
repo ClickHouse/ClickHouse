@@ -1280,15 +1280,6 @@ void PostingListStream::read(
             "Corrupted projection text index: posting list with {} documents must have at least one large block",
             doc_count);
 
-    /// Cap num_large_blocks to prevent unbounded vector allocations below. A large block holds
-    /// `posting_list_block_size`-many docs; the count is bounded above by `doc_count` itself,
-    /// which is at most UInt32::max(). Use that as the hard upper limit.
-    if (num_large_blocks > doc_count) [[unlikely]]
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Corrupted projection text index: num_large_blocks {} exceeds doc_count {}",
-            num_large_blocks, doc_count);
-
     /// Skip the large_block_meta_bytes size prefix written by writeLargeBlockMeta.
     /// The payload follows immediately and is decoded from the same contiguous buffer.
     UInt64 large_block_meta_bytes = 0;
@@ -1298,6 +1289,26 @@ void PostingListStream::read(
     UInt32 remaining_docs = doc_count - 1;
     const UInt32 docs_per_large_block
         = (static_cast<UInt32>(index_params.posting_list_block_size) + ABPFOR_BLOCK_SIZE - 1) & ~(ABPFOR_BLOCK_SIZE - 1);
+
+    if (docs_per_large_block == 0) [[unlikely]]
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Corrupted projection text index: posting list block size {} yields no documents per large block",
+            index_params.posting_list_block_size);
+
+    /// `num_large_blocks` comes from untrusted on-disk data and drives every allocation and
+    /// decode loop bound below, so validate it against the value the writer must have produced:
+    /// all documents but the first are distributed over `docs_per_large_block`-sized blocks
+    /// (see `PostingListStream::write`). Without this, corrupted metadata could request huge
+    /// allocations, and `num_large_blocks * 2` could wrap before `lb_ranges` is allocated while
+    /// the decode loop still indexes the full count.
+    const UInt32 expected_num_large_blocks = (remaining_docs + docs_per_large_block - 1) / docs_per_large_block;
+    if (num_large_blocks != expected_num_large_blocks) [[unlikely]]
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Corrupted projection text index: num_large_blocks {} does not match the {} blocks "
+            "required for {} documents with {} documents per block",
+            num_large_blocks, expected_num_large_blocks, doc_count, docs_per_large_block);
 
     /// Decode columnar large block metadata from contiguous memory — no AbpforBlockDecodeBuffer needed.
     auto decode_delta1 = [](const uint8_t *& src, UInt32 count, UInt32 * out, uint32_t prev)
