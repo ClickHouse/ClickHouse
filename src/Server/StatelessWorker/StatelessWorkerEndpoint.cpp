@@ -219,11 +219,10 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         if (params.has("wait_for_ms"))
             wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
 
-        UInt64 task_status_version = DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
-
-        /// Client is asking to respond on task_status_version, but we can at best respond on DBMS_TCP_PROTOCOL_VERSION
+        std::optional<UInt64> requested_status_version;
         if (params.has("task_status_version"))
-            task_status_version = std::min<UInt64>(parse<UInt64>(params.get("task_status_version")), DBMS_TCP_PROTOCOL_VERSION);
+            requested_status_version = parse<UInt64>(params.get("task_status_version"));
+        const UInt64 task_status_version = negotiateTaskStatusVersion(requested_status_version);
 
         body->eof();
         body.reset();
