@@ -66,7 +66,6 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 namespace
@@ -128,9 +127,7 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 void ReadBufferFromS3::checkIfNotCancelled() const
 {
-    CurrentThread::checkIfNotCancelled();
-    if (read_settings.isReadCancelled())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "MergeTree read was cancelled by the client");
+    read_settings.read_cancellation.checkIfNotCancelled();
 }
 
 bool ReadBufferFromS3::nextImpl()

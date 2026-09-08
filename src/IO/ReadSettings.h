@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <base/unit.h>
@@ -10,6 +9,7 @@
 #include <IO/DistributedCacheSettings.h>
 #endif
 #include <IO/ReadMethod.h>
+#include <IO/ReadCancellationToken.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
@@ -142,12 +142,7 @@ struct ReadSettings
 
     /// Stops reads owned by one `MergeTree` read step without cancelling the whole query. This is used when
     /// the client requests a partial result and the processors already in flight must be drained.
-    std::shared_ptr<std::atomic_bool> read_cancelled;
-
-    bool isReadCancelled() const
-    {
-        return read_cancelled && read_cancelled->load(std::memory_order_relaxed);
-    }
+    ReadCancellationToken read_cancellation;
 
     bool enable_filesystem_read_prefetches_log = false;
 

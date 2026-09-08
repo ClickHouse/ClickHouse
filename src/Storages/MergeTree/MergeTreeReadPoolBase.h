@@ -82,7 +82,6 @@ protected:
     const FilterDAGInfoPtr row_level_filter;
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
-    const std::shared_ptr<std::atomic_bool> read_cancelled;
     const MergeTreeReaderSettings reader_settings;
     const Names column_names;
     const PoolSettings pool_settings;

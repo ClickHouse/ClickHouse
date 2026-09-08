@@ -530,7 +530,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , is_parallel_reading_from_replicas(enable_parallel_reading_)
     , number_of_current_replica(number_of_current_replica_)
 {
-    reader_settings.read_settings.read_cancelled = std::make_shared<std::atomic_bool>(false);
+    reader_settings.read_settings.read_cancellation = ReadCancellationToken::create();
 
     if (is_parallel_reading_from_replicas)
     {
