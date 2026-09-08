@@ -1372,7 +1372,21 @@ InputOrderInfoPtr buildInputOrderInfo(
                 /* apply_pk_selectivity_check */ true);
 
             if (!can_read)
+            {
+                /// The virtual row conversion installed above belongs to this in-order plan only.
+                /// The read step can still be switched to an in-order read afterwards, because
+                /// `optimizeDistinctInOrder` and `optimizeAggregationInOrder` do not apply the
+                /// PK-selectivity guard. It would then emit virtual rows while the sort above stays
+                /// a full sort, whose `MergingSortedTransform` is built without virtual row
+                /// conversions and so compares the raw primary-key names of the announced boundary
+                /// against the query's sort description. Drop the conversion instead.
+                if (uses_virtual_row)
+                {
+                    reading->resetVirtualRowConversions();
+                    virtual_row_reader = nullptr;
+                }
                 return nullptr;
+            }
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
