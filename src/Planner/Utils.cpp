@@ -22,11 +22,13 @@
 #include <Functions/indexHint.h>
 
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageAlias.h>
 
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <Access/EnabledRowPolicies.h>
 #include <Access/ContextAccess.h>
 #include <Storages/IStorage.h>
 
@@ -830,6 +832,15 @@ RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const
         return nullptr;
     auto row_policy_filter = query_context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (const auto * alias = storage->as<StorageAlias>())
+    {
+        const auto target_storage_id = alias->getTargetTable()->getStorageID();
+        auto target_row_policy_filter = query_context->getRowPolicyFilter(
+            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
+    }
+
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
     return row_policy_filter;
