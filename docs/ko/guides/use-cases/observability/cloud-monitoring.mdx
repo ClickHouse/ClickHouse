@@ -1,0 +1,93 @@
+---
+slug: /use-cases/observability/cloud-monitoring
+title: 'ClickHouse Cloud 모니터링'
+sidebarTitle: 'ClickHouse Cloud 모니터링'
+description: 'ClickHouse Cloud 모니터링 가이드'
+doc_type: 'guide'
+keywords: ['관측성', '모니터링', '클라우드', '메트릭', '시스템 상태']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import ObservabilityIntegrations from '/snippets/ko/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/ko/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/ko/_community_monitoring.mdx';
+
+이 가이드는 ClickHouse Cloud를 평가하는 엔터프라이즈 팀을 위해 프로덕션 배포 시 모니터링 및 관측성 기능에 관한 종합적인 정보를 제공합니다. 엔터프라이즈 고객은 기본 제공 모니터링 기능, Datadog 및 AWS CloudWatch 같은 도구를 포함한 기존 관측성 스택과의 통합, 그리고 자체 호스팅 배포와 비교했을 때 ClickHouse의 모니터링이 어떤지에 대해 자주 문의합니다.
+
+<div id="advanced-observability">
+  ## 고급 관측성 대시보드
+</div>
+
+ClickHouse Cloud는 모니터링 섹션에서 접근할 수 있는 내장 대시보드 인터페이스를 통해 포괄적인 모니터링을 제공합니다. 이러한 대시보드는 추가 설정 없이 시스템 및 성능 메트릭을 실시간으로 시각화하며, ClickHouse Cloud에서 실시간 프로덕션 모니터링을 위한 기본 도구 역할을 합니다.
+
+* **고급 대시보드**: 모니터링 → 고급 대시보드에서 접근할 수 있는 기본 대시보드 인터페이스로, 쿼리 비율, 리소스 사용량, 시스템 상태, 스토리지 성능을 실시간으로 확인할 수 있습니다. 이 대시보드는 별도의 인증이 필요 없고, 인스턴스의 유휴 상태 전환을 막지 않으며, 프로덕션 시스템에 쿼리 부하를 추가하지도 않습니다. 각 시각화는 사용자 지정 가능한 SQL 쿼리를 기반으로 하며, 기본 제공 chart는 ClickHouse 관련 메트릭, 시스템 상태 메트릭, Cloud 관련 메트릭으로 그룹화되어 있습니다. SQL 콘솔에서 직접 사용자 지정 쿼리를 만들어 모니터링을 확장할 수 있습니다.
+
+<Note>
+  이 메트릭에 접근해도 기본 서비스에 쿼리가 실행되지 않으며, 유휴 상태의 서비스를 깨우지 않습니다.
+</Note>
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+
+이러한 시각화를 확장하려는 사용자는 ClickHouse Cloud의 dashboards 기능을 사용해 시스템 테이블(system tables)을 직접 쿼리할 수 있습니다.
+
+* **네이티브 고급 대시보드**: 모니터링 섹션의 &quot;You can still access the native advanced dashboard&quot;를 통해 접근할 수 있는 대체 대시보드 인터페이스입니다. 별도의 탭에서 인증과 함께 열리며, 시스템 및 서비스 상태 모니터링을 위한 대체 UI를 제공합니다. 이 대시보드에서는 기본 SQL 쿼리를 수정할 수 있어 고급 분석을 수행할 수 있습니다.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+
+두 대시보드 모두 외부 종속성 없이 서비스 상태와 성능을 즉시 파악할 수 있으므로, ClickStack과 같은 외부 디버깅 중심 도구와 차별화됩니다.
+
+대시보드의 자세한 기능과 사용 가능한 메트릭은 [고급 대시보드 문서](/ko/products/cloud/features/monitoring/advanced-dashboard)를 참조하십시오.
+
+<div id="query-insights">
+  ## 쿼리 인사이트 및 리소스 모니터링
+</div>
+
+ClickHouse Cloud는 다음과 같은 추가 모니터링 기능을 제공합니다:
+
+* 쿼리 인사이트: 쿼리 성능 분석 및 문제 해결을 위한 기본 제공 인터페이스
+* 리소스 사용량 대시보드: 메모리, CPU 할당량, 데이터 전송 패턴을 추적합니다. CPU 사용량 및 메모리 사용량 그래프는 특정 시간 범위의 최대 사용률 메트릭을 표시합니다. CPU 사용량 그래프는 시스템 수준의 CPU 사용률 메트릭을 표시하며, ClickHouse CPU 사용률 메트릭은 아닙니다.
+
+자세한 기능은 [쿼리 인사이트](/ko/products/cloud/features/sql-console-features/query-insights) 및 [리소스 사용량](/ko/guides/oss/deployment-and-scaling/monitoring/monitoring#resource-utilization) 문서를 참조하십시오.
+
+<div id="prometheus">
+  ## Prometheus 호환 메트릭 엔드포인트
+</div>
+
+ClickHouse Cloud는 Prometheus 엔드포인트를 제공합니다. 이를 통해 현재 워크플로를 유지하고, 기존 팀의 전문 지식을 활용하며, ClickHouse 메트릭을 Grafana, Datadog 및 기타 Prometheus 호환 도구를 포함한 엔터프라이즈 모니터링 플랫폼에 통합할 수 있습니다.
+
+조직 수준 엔드포인트는 모든 서비스의 메트릭을 통합해 제공하며, 서비스별 엔드포인트는 보다 세밀한 모니터링을 지원합니다. 주요 기능은 다음과 같습니다.
+
+* 필터링된 메트릭 옵션: 선택적 `filtered_metrics=true` 매개변수를 사용하면 1000개 이상의 사용 가능한 메트릭이 125개의 &quot;핵심&quot; 메트릭으로 줄어들어 비용을 최적화하고 모니터링 대상을 더 쉽게 집중할 수 있습니다
+* 캐시된 메트릭 제공: 1분마다 갱신되는 구체화된 뷰(Materialized View)를 사용해 운영 시스템의 쿼리 부하를 최소화합니다
+
+<Note>
+  이 방식은 서비스의 유휴 상태 전환 동작을 고려하므로, 서비스가 쿼리를 적극적으로 처리하지 않을 때 비용을 최적화할 수 있습니다. 이 API 엔드포인트를 사용하려면 ClickHouse Cloud API 자격 증명이 필요합니다. 전체 엔드포인트 구성에 대한 자세한 내용은 cloud [Prometheus 문서](/ko/products/cloud/features/monitoring/prometheus)를 참조하십시오.
+</Note>
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### ClickStack 배포 옵션
+</div>
+
+* **ClickHouse Cloud의 HyperDX**  (비공개 프리뷰): 모든 ClickHouse Cloud 서비스에서 HyperDX를 실행할 수 있습니다.
+* [Helm](/ko/clickstack/deployment/helm): Kubernetes 기반 디버깅 환경에 권장됩니다. ClickHouse Cloud 통합을 지원하며, `values.yaml`을 통해 환경별 구성, 리소스 제한, 스케일링을 설정할 수 있습니다.
+* [Docker Compose](/ko/clickstack/deployment/docker-compose): 각 구성 요소(ClickHouse, HyperDX, OTel collector, MongoDB)를 개별적으로 배포합니다. ClickHouse Cloud와 통합하는 경우에는 compose 파일을 수정해 사용하지 않는 구성 요소, 특히 ClickHouse와 OpenTelemetry Collector를 제거할 수 있습니다.
+* [HyperDX Only](/ko/clickstack/deployment/hyperdx-only): 독립 실행형 HyperDX 컨테이너입니다.
+
+전체 배포 옵션과 아키텍처 세부 정보는 [ClickStack 문서](/ko/clickstack/overview)와 [데이터 수집 가이드](/ko/clickstack/ingesting-data/overview)를 참조하십시오.
+
+<Note>
+  OpenTelemetry Collector를 통해 ClickHouse Cloud Prometheus 엔드포인트에서 메트릭을 수집한 후, 시각화를 위해 별도의 ClickStack 배포로 전달할 수도 있습니다.
+</Note>
+
+<DirectIntegrations />
+
+<CommunityMonitoring />
+
+<div id="system-impact">
+  ## 시스템 영향 고려 사항
+</div>
+
+위의 모든 접근 방식은 Prometheus 엔드포인트를 활용하거나, ClickHouse Cloud에서 관리되거나, 시스템 테이블(system tables)을 직접 쿼리하는 방식을 조합해 사용합니다.
+이 중 마지막 옵션은 프로덕션 ClickHouse 서비스에 직접 쿼리하는 방식에 의존합니다. 이로 인해 관찰 대상 시스템에 쿼리 부하가 추가되고, ClickHouse Cloud 인스턴스가 유휴 상태로 전환되지 못해 비용 최적화에 영향을 줍니다. 또한 프로덕션 시스템에 장애가 발생하면 두 시스템이 결합되어 있으므로 모니터링도 영향을 받을 수 있습니다. 이 접근 방식은 심층적인 내부 검사와 디버깅에는 효과적이지만, 실시간 프로덕션 모니터링에는 상대적으로 덜 적합합니다. 다음 섹션에서 설명하는 외부 도구 통합 방식과 직접 Grafana 통합을 평가할 때는, 세부적인 시스템 분석 기능과 운영 오버헤드 사이의 이러한 절충점을 고려하십시오.

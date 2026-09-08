@@ -24,8 +24,6 @@
 namespace DB
 {
 
-using namespace Paimon;
-
 class PaimonMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
@@ -111,7 +109,7 @@ private:
     Strings collectDataFilesFromManifests(
         const std::vector<PaimonTableStatePtr> & snapshots,
         ManifestKind kind,
-        const std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<Paimon::PartitionPruner> & partition_pruner,
         bool deduplicate,
         bool track_deletes) const;
 
@@ -120,6 +118,9 @@ private:
 
     /// Load latest state from object storage (I/O outside of any lock)
     PaimonTableStatePtr loadLatestState() const;
+
+    /// Validate that the underlying Paimon table still has the same identity.
+    void validateTableIdentity() const;
 
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
@@ -142,10 +143,10 @@ private:
     static PaimonTableStatePtr extractTableState(StorageMetadataPtr storage_metadata);
 
     /// Get or load manifest file list (uses cache)
-    std::vector<PaimonManifestFileMeta> getManifestList(const String & manifest_list_path) const;
+    ManifestListConstPtr getManifestList(const String & manifest_list_path) const;
 
     /// Get or load manifest content (uses cache)
-    PaimonManifest getManifest(const String & manifest_path, Int64 schema_id) const;
+    ManifestConstPtr getManifest(const String & manifest_path, Int64 schema_id) const;
 
     /// Validate configuration
     void checkSupportedConfiguration() const;
@@ -153,19 +154,19 @@ private:
     /// Collect data files for incremental read (from committed snapshot to current)
     Strings collectIncrementalDataFiles(
         const PaimonTableStatePtr & state,
-        const std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<Paimon::PartitionPruner> & partition_pruner,
         UInt64 max_consume_snapshots,
         std::optional<Int64> & last_consumed_snapshot_id) const;
 
     /// Collect data files for a specific snapshot delta (session-level targeted read)
     Strings collectDeltaFilesForSnapshot(
         const PaimonTableStatePtr & state,
-        const std::optional<PartitionPruner> & partition_pruner) const;
+        const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Collect data files for full scan
     Strings collectFullScanDataFiles(
         const PaimonTableStatePtr & state,
-        const std::optional<PartitionPruner> & partition_pruner) const;
+        const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Background refresh task entry
     void scheduleBackgroundRefresh();

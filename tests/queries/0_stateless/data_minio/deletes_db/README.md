@@ -217,3 +217,71 @@ public class IcebergInsert {
 }
 
 ```
+
+## How is `eq_deletes_required_table` generated?
+
+The table has a `data STRING NOT NULL` column (required in the Iceberg schema) and an
+equality delete file in which the same column is optional, so the nullability of the
+column differs between the delete file and the table schema. The delete file removes
+`hello` and `foo`, leaving 2 of 4 rows.
+
+Generated with the Iceberg Java API through the PySpark JVM gateway (Spark SQL alone
+cannot write equality deletes), inside the `clickhouse/integration-tests-runner` image:
+
+``` python
+import pyspark
+
+spark = (
+    pyspark.sql.SparkSession.builder.appName("gen")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog")
+    .config("spark.sql.catalog.spark_catalog.type", "hadoop")
+    .config("spark.sql.catalog.spark_catalog.warehouse", "/out/warehouse")
+    .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+    .master("local")
+    .getOrCreate()
+)
+
+TABLE = "eq_deletes_required_table"
+spark.sql(
+    f"CREATE TABLE {TABLE} (id INT NOT NULL, data STRING NOT NULL) USING iceberg"
+    " TBLPROPERTIES ('format-version'='2')"
+)
+spark.sql(f"INSERT INTO {TABLE} VALUES (1, 'hello'), (2, 'world'), (3, 'foo'), (4, 'bar')")
+
+# Write an equality delete file whose `data` column is optional in the file schema,
+# although it is required in the table schema.
+jvm = spark.sparkContext._jvm
+gateway = spark.sparkContext._gateway
+hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+
+table = jvm.org.apache.iceberg.hadoop.HadoopTables(hadoop_conf).load(f"/out/warehouse/default/{TABLE}")
+schema = table.schema()
+field_id = schema.findField("data").fieldId()
+types = jvm.org.apache.iceberg.types.Types
+delete_field = types.NestedField.optional(field_id, "data", types.StringType.get())
+delete_schema = jvm.org.apache.iceberg.Schema([delete_field])
+
+equality_ids = gateway.new_array(jvm.int, 1)
+equality_ids[0] = field_id
+
+appender_factory = jvm.org.apache.iceberg.data.GenericAppenderFactory(
+    schema, table.spec(), equality_ids, delete_schema, None
+)
+out = table.io().newOutputFile(table.locationProvider().newDataLocation("eq-delete-required-optional.parquet"))
+writer = appender_factory.newEqDeleteWriter(
+    jvm.org.apache.iceberg.encryption.EncryptedFiles.plainAsEncryptedOutput(out),
+    jvm.org.apache.iceberg.FileFormat.PARQUET,
+    None,
+)
+for value in ["hello", "foo"]:
+    record = jvm.org.apache.iceberg.data.GenericRecord.create(delete_schema)
+    record.setField("data", value)
+    writer.write(record)
+writer.close()
+
+table.newRowDelta().addDeletes(writer.toDeleteFile()).commit()
+spark.stop()
+```
+
+The resulting `/out/warehouse/default/eq_deletes_required_table` directory is copied here
+as is, except for the `.*.crc` files.

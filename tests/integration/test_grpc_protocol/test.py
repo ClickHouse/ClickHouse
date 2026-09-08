@@ -3,12 +3,13 @@ import os
 import sys
 import time
 import uuid
-from threading import Thread
+from threading import Event, Thread
 
 import grpc
 import lz4.frame
 import pytest
 import pytz
+import snappy
 
 from helpers.cluster import ClickHouseCluster
 
@@ -66,6 +67,7 @@ def query_common(
     password="",
     query_id="123",
     session_id="",
+    database="",
     stream_output=False,
     channel=None,
 ):
@@ -93,6 +95,7 @@ def query_common(
             password=password,
             query_id=query_id,
             session_id=session_id,
+            database=database,
             next_query_info=bool(input_data),
         )
 
@@ -280,6 +283,112 @@ def test_output_format():
         query("SELECT a FROM t ORDER BY a", output_format="JSONEachRow")
         == '{"a":1}\n{"a":2}\n{"a":3}\n'
     )
+
+
+def test_format_settings():
+    # The `format` / `input_format` / `output_format` settings are global format overrides that must
+    # work on every protocol, including gRPC (the resolution mirrors the server query path).
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t VALUES (1),(2),(3)")
+    # `output_format` overrides the gRPC `output_format` field (TabSeparated) and the query FORMAT clause.
+    assert (
+        query("SELECT a FROM t ORDER BY a", settings={"output_format": "JSONEachRow"})
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    assert (
+        query(
+            "SELECT a FROM t ORDER BY a FORMAT TabSeparated",
+            settings={"output_format": "JSONEachRow"},
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    # The generic `format` setting applies to output too.
+    assert (
+        query("SELECT a FROM t ORDER BY a", settings={"format": "JSONEachRow"})
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    # `input_format` selects the INSERT input format, overriding the query FORMAT clause.
+    query("DROP TABLE IF EXISTS t_in")
+    query("CREATE TABLE t_in (a UInt8, b UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_in FORMAT TabSeparated",
+        input_data="1,2\n3,4\n",
+        settings={"input_format": "CSV"},
+    )
+    assert query("SELECT a, b FROM t_in ORDER BY a") == "1\t2\n3\t4\n"
+    query("DROP TABLE t_in")
+    # An in-query `SETTINGS` clause must take effect too: it is applied by `executeQuery` after the
+    # `QueryInfo.settings`, so the formats are re-resolved from the final settings (otherwise the
+    # pre-`SETTINGS` snapshot would win and the in-query setting would be ignored on gRPC).
+    assert (
+        query(
+            "SELECT a FROM t ORDER BY a SETTINGS output_format = 'JSONEachRow' FORMAT TabSeparated"
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    query("DROP TABLE IF EXISTS t_in2")
+    query("CREATE TABLE t_in2 (a UInt8, b UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_in2 SETTINGS input_format = 'CSV' FORMAT TabSeparated",
+        input_data="5,6\n7,8\n",
+    )
+    assert query("SELECT a, b FROM t_in2 ORDER BY a") == "5\t6\n7\t8\n"
+    query("DROP TABLE t_in2")
+    query("DROP TABLE t")
+
+
+def test_database_setting():
+    # An explicit `QueryInfo.database` must win over a `database` value arriving via `QueryInfo.settings`
+    # (or a user profile): gRPC mirrors it into the `database` setting so `executeQuery`'s
+    # post-`SETTINGS` re-application of `database` does not switch the query back to the inherited one.
+    query("DROP DATABASE IF EXISTS grpc_db1")
+    query("DROP DATABASE IF EXISTS grpc_db2")
+    query("CREATE DATABASE grpc_db1")
+    query("CREATE DATABASE grpc_db2")
+    query("CREATE TABLE grpc_db1.t (x String) ENGINE = Memory")
+    query("CREATE TABLE grpc_db2.t (x String) ENGINE = Memory")
+    query("INSERT INTO grpc_db1.t VALUES ('from_db1')")
+    query("INSERT INTO grpc_db2.t VALUES ('from_db2')")
+    # The explicit database field selects grpc_db2 even though the settings say grpc_db1.
+    assert (
+        query("SELECT x FROM t", database="grpc_db2", settings={"database": "grpc_db1"})
+        == "from_db2\n"
+    )
+    # And it works on its own.
+    assert query("SELECT x FROM t", database="grpc_db1") == "from_db1\n"
+    query("DROP DATABASE grpc_db1")
+    query("DROP DATABASE grpc_db2")
+
+
+def test_input_function_format_settings():
+    # The input() table function initializes its reader during planning (inside executeQuery), before any
+    # post-execution step, so an in-query SETTINGS input_format must be applied before executeQuery. Here
+    # the INSERT has no FORMAT clause (would default to Values), and input_format = 'CSV' must win.
+    query("DROP TABLE IF EXISTS t_inp")
+    query("CREATE TABLE t_inp (a UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_inp SELECT * FROM input('a UInt8') SETTINGS input_format = 'CSV'",
+        input_data="1\n2\n3\n",
+    )
+    assert query("SELECT a FROM t_inp ORDER BY a") == "1\n2\n3\n"
+    query("DROP TABLE t_inp")
+
+
+def test_default_format_setting():
+    # `default_format` is the output fallback when there is no output_format/format setting, no FORMAT
+    # clause and no gRPC output_format field. It must be re-resolved from the final settings, so pass an
+    # empty gRPC output_format here.
+    query("DROP TABLE IF EXISTS t_df")
+    query("CREATE TABLE t_df (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t_df VALUES (1),(2),(3)")
+    assert (
+        query(
+            "SELECT a FROM t_df ORDER BY a SETTINGS default_format = 'JSONEachRow'",
+            output_format="",
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    query("DROP TABLE t_df")
 
 
 def test_totals_and_extremes():
@@ -589,6 +698,188 @@ def test_cancel_while_processing_input():
     assert result.cancelled == True
 
 
+def test_stream_input_left_open_by_client():
+    # The client never half-closes the request stream, so the server still has a speculative read
+    # of the next `QueryInfo` in flight when it sends the final result and destroys the call.
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    keep_open = Event()
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="SELECT 1", output_format="TabSeparated"
+        )
+        # Block instead of returning: returning would send `WritesDone` and complete the
+        # server-side read.
+        keep_open.wait()
+
+    try:
+        # The result must arrive while the request stream is still open: `keep_open` is set only
+        # after this assertion, so if the server waited for the client to half-close, the future
+        # would time out instead.
+        result = stub.ExecuteQueryWithStreamInput.future(send_query_info()).result(
+            timeout=10
+        )
+        assert not result.HasField("exception")
+        assert result.output == b"1\n"
+    finally:
+        keep_open.set()
+
+    # The server must survive the call being destroyed with a read in flight.
+    assert query("SELECT 2") == "2\n"
+
+
+def test_stream_input_left_open_by_client_after_input_data():
+    # Same as above, but the query actually consumes the streamed input data first.
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    keep_open = Event()
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="INSERT INTO t FORMAT TabSeparated",
+            input_data=b"1\n2\n3\n",
+            next_query_info=True,
+        )
+        yield clickhouse_grpc_pb2.QueryInfo(input_data=b"4\n5\n6\n")
+        keep_open.wait()
+
+    try:
+        result = stub.ExecuteQueryWithStreamInput.future(send_query_info()).result(
+            timeout=10
+        )
+        assert not result.HasField("exception")
+    finally:
+        keep_open.set()
+
+    assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
+
+
+def test_stream_io_left_open_by_client():
+    # Same contract for `ExecuteQueryWithStreamIO`, which goes through a different responder
+    # (`ServerAsyncReaderWriter`): the server must finish the response stream while the client's
+    # request stream is still open.
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    keep_open = Event()
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="SELECT 1", output_format="TabSeparated"
+        )
+        keep_open.wait()
+
+    try:
+        # The deadline makes the completion ordering observable: if the server waited for the
+        # client to half-close, iterating the response stream would fail with DEADLINE_EXCEEDED.
+        results = list(stub.ExecuteQueryWithStreamIO(send_query_info(), timeout=10))
+        assert len(results) >= 1
+        assert not results[-1].HasField("exception")
+        assert b"".join(r.output for r in results) == b"1\n"
+    finally:
+        keep_open.set()
+
+    assert query("SELECT 2") == "2\n"
+
+
+def test_stream_input_left_open_by_many_concurrent_clients():
+    # Many calls finishing at the same time keep the single completion-queue thread busy with the
+    # other calls' events, so each call's thread destroys the call while the completion of its
+    # speculative read is still queued - the interleaving needed for the use-after-free to fire.
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+
+    def make_send_query_info(keep_open):
+        def send_query_info():
+            yield clickhouse_grpc_pb2.QueryInfo(
+                query="SELECT 1", output_format="TabSeparated"
+            )
+            keep_open.wait()
+
+        return send_query_info
+
+    for _ in range(10):
+        # A fresh event per batch, released at the end of the batch: otherwise the request
+        # generators of the earlier batches stay parked in `keep_open.wait()` while their calls are
+        # already finished on the server, so the later batches would only pile up blocked Python
+        # threads instead of keeping the server's completion queue busy with concurrent finishes.
+        keep_open = Event()
+        try:
+            futures = [
+                stub.ExecuteQueryWithStreamInput.future(
+                    make_send_query_info(keep_open)()
+                )
+                for _ in range(16)
+            ]
+            for future in futures:
+                result = future.result(timeout=30)
+                assert not result.HasField("exception")
+                assert result.output == b"1\n"
+        finally:
+            keep_open.set()
+
+    assert query("SELECT 3") == "3\n"
+
+
+def wait_for_no_grpc_call_threads(timeout=60):
+    # A `gRPCServerCall` thread exists only while a call is being handled: the global thread pool
+    # renames its worker back to the default as soon as the call's function returns. So a thread
+    # still carrying that name long after every call has been cancelled means the server hung in
+    # the teardown of a call.
+    deadline = time.time() + timeout
+    while True:
+        count = node.query(
+            "SELECT count() FROM system.stack_trace WHERE thread_name = 'gRPCServerCall'"
+        ).strip()
+        if count == "0":
+            return
+        if time.time() >= deadline:
+            traces = node.query(
+                "SELECT thread_id, arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') "
+                "FROM system.stack_trace WHERE thread_name = 'gRPCServerCall' "
+                "SETTINGS allow_introspection_functions = 1"
+            )
+            raise AssertionError(
+                f"{count} gRPC call thread(s) did not finish:\n{traces}"
+            )
+        time.sleep(0.5)
+
+
+def test_stream_io_client_cancelled_while_input_left_open():
+    # The teardown path the other tests do not reach: here the call is destroyed *before* the
+    # response stream has been finished, so `close()` runs with `responder_finished == false`.
+    # The client cancels while it still has the request stream open, so the server's write of the
+    # next output block fails, the query fails with `NETWORK_ERROR` and sending the exception
+    # fails too - and the speculative read of the next `QueryInfo` can still be armed at that
+    # moment. Nothing would ever complete that read on its own, so `close()` has to cancel the
+    # call first; otherwise it would wait for the read forever and leak the call thread.
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+
+    def make_send_query_info(keep_open):
+        def send_query_info():
+            yield clickhouse_grpc_pb2.QueryInfo(
+                query="SELECT number, sleep(0.2) FROM numbers(100) SETTINGS max_block_size = 1",
+                output_format="TabSeparated",
+            )
+            # Never return: returning would send `WritesDone` and complete the server-side read.
+            keep_open.wait()
+
+        return send_query_info
+
+    # Whether the read is still in flight when the call is torn down is a race, so repeat.
+    for _ in range(10):
+        keep_open = Event()
+        try:
+            call = stub.ExecuteQueryWithStreamIO(
+                make_send_query_info(keep_open)(), timeout=30
+            )
+            # Receive one intermediate result, then drop the call in the middle of the output.
+            next(call)
+            call.cancel()
+        finally:
+            keep_open.set()
+
+    wait_for_no_grpc_call_threads()
+    assert query("SELECT 4") == "4\n"
+
+
 def test_cancel_while_generating_output():
     def send_query_info():
         yield clickhouse_grpc_pb2.QueryInfo(
@@ -719,6 +1010,33 @@ def test_compressed_external_table():
         b"4\tDaniel\n"
         b"5\tEthan\n"
     )
+
+
+def test_compressed_external_table_snappy_framed():
+    # A per-table `snappy_mode = 'framed'` in `external_table.settings()` must be honored when
+    # decompressing the external table data. The server default is `basic` (Hadoop-block snappy),
+    # so the framing-format payload below only decodes if the per-table setting is applied before
+    # the decompression buffer is wrapped.
+    columns = [
+        clickhouse_grpc_pb2.NameAndType(name="UserID", type="UInt64"),
+        clickhouse_grpc_pb2.NameAndType(name="UserName", type="String"),
+    ]
+    data = snappy.StreamCompressor().add_chunk(b"1\tAlex\n2\tBen\n3\tCarl\n")
+    ext = clickhouse_grpc_pb2.ExternalTable(
+        name="ext_snappy",
+        columns=columns,
+        data=data,
+        format="TabSeparated",
+        compression_type="snappy",
+        settings={"snappy_mode": "framed"},
+    )
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    query_info = clickhouse_grpc_pb2.QueryInfo(
+        query="SELECT * FROM ext_snappy ORDER BY UserID",
+        external_tables=[ext],
+    )
+    result = stub.ExecuteQuery(query_info)
+    assert result.output == b"1\tAlex\n2\tBen\n3\tCarl\n"
 
 
 def test_transport_compression():

@@ -1,0 +1,23 @@
+---
+title: Éviter les mutations
+---
+
+Dans ClickHouse, les **mutations** désignent des opérations qui modifient ou suppriment des données existantes dans une table, généralement à l&#39;aide de `ALTER TABLE ... DELETE` ou `ALTER TABLE ... UPDATE`. Bien que ces instructions puissent sembler similaires à des opérations SQL standard, leur fonctionnement interne est fondamentalement différent.
+
+Au lieu de modifier les lignes sur place, les mutations dans ClickHouse sont des processus asynchrones en arrière-plan qui réécrivent entièrement les [parties de données](/fr/concepts/core-concepts/parts) concernées par la modification. Cette approche est nécessaire en raison du modèle de stockage immuable orienté colonnes de ClickHouse, et elle peut entraîner une forte consommation d&#39;E/S et de ressources.
+
+Lorsqu&#39;une mutation est lancée, ClickHouse programme la création de nouvelles **parties mutées**, tout en laissant les parties d&#39;origine intactes jusqu&#39;à ce que les nouvelles soient prêtes. Une fois prêtes, les parties mutées remplacent atomiquement les parties d&#39;origine. Cependant, comme l&#39;opération réécrit des parties entières, même une modification mineure (comme la mise à jour d&#39;une seule ligne) peut entraîner des réécritures à grande échelle et une amplification d&#39;écriture excessive.
+
+Sur de grands jeux de données, cela peut provoquer un pic important d&#39;E/S disque et dégrader les performances globales du cluster. Contrairement aux fusions, les mutations ne peuvent pas être annulées une fois soumises et continueront à s&#39;exécuter même après des redémarrages du serveur, sauf annulation explicite — voir [`KILL MUTATION`](/fr/reference/statements/kill#kill-mutation).
+
+<Tip>
+  **Surveiller le nombre de mutations actives ou en attente dans ClickHouse**
+
+  Pour savoir comment surveiller le nombre de mutations actives ou en attente, consultez l&#39;[article de la base de connaissances](/fr/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations) suivant.
+</Tip>
+
+Les mutations sont **totalement ordonnées** : elles s&#39;appliquent aux données insérées avant l&#39;émission de la mutation, tandis que les données plus récentes ne sont pas affectées. Elles ne bloquent pas les insertions, mais peuvent tout de même se chevaucher avec d&#39;autres requêtes en cours. Un SELECT exécuté pendant une mutation peut lire un mélange de parties mutées et non mutées, ce qui peut donner une vue incohérente des données pendant l&#39;exécution. ClickHouse exécute les mutations en parallèle pour chaque partie, ce qui peut encore accroître l&#39;utilisation de la mémoire et du CPU, en particulier lorsque des sous-requêtes complexes (comme x IN (SELECT ...)) sont impliquées.
+
+En règle générale, **évitez les mutations fréquentes ou à grande échelle**, en particulier sur les tables très volumineuses. Utilisez plutôt d&#39;autres moteurs de table tels que [ReplacingMergeTree](/fr/concepts/features/operations/update/replacing-merge-tree) ou [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree), qui sont conçus pour gérer plus efficacement les corrections de données au moment des requêtes ou lors des fusions. Si les mutations sont absolument nécessaires, surveillez-les attentivement à l&#39;aide de la table system.mutations et utilisez `KILL MUTATION` si un processus est bloqué ou se comporte de manière anormale. Une mauvaise utilisation des mutations peut entraîner une dégradation des performances, une sollicitation excessive du stockage et une instabilité potentielle du service ; appliquez-les donc avec prudence et parcimonie.
+
+Pour supprimer des données, vous pouvez également envisager les [lightweight deletes](/fr/concepts/features/operations/delete/lightweight-delete) ou la gestion des données via des [partitions](/fr/concepts/best-practices/partitioning-keys), qui permettent de [supprimer efficacement des parties entières](/fr/reference/statements/alter/partition#drop-partitionpart).

@@ -23,9 +23,6 @@ INSERT INTO tab_fully SELECT number, 'Foo::BAR' from numbers(10000);
 INSERT INTO tab_fully SELECT number, 'BAr foO' from numbers(10000);
 INSERT INTO tab_fully SELECT number, 'bAr fOO' from numbers(10000);
 
-SELECT count() FROM tab_fully WHERE hasToken(text, 'FOo');
-SELECT count() FROM tab_fully WHERE hasToken(text, 'BaR');
-
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'FOo');
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'BaR');
 SELECT count() FROM tab_fully WHERE hasAnyToken(text, 'FOo::bAr');

@@ -53,6 +53,10 @@ public:
 
     bool supportsRightBoundedReads() const override { return true; }
 
+    /// Report the capability from the same flag that drives the `nextImpl` external branch,
+    /// as `ReadBufferFromS3` does, so it can't diverge from the buffer's actual behaviour.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
+
     Map getResponseHeaders() const;
     std::optional<Field> getMetadata(const String & name) const override;
 

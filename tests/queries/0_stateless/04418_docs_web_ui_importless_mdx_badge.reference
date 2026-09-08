@@ -1,5 +1,4 @@
 ClickHouse <span class="accent">Reference</span>
-const MDX_COMPONENTS = [
-'ExperimentalBadge', 'BetaBadge', 'DeprecatedBadge',
-const components = new Set(MDX_COMPONENTS);
+function badgeLabel(name) {
+[A-Z][A-Za-z0-9]*Badge
 1

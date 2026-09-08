@@ -1,0 +1,21 @@
+<!-- Tests the fast paths in ReplaceStringImpl::vectorConstantConstant / vectorFixedConstantConstant (issue #106598):
+       1. one-byte needle + one-byte replacement in "replace all" mode: the string layout is unchanged, so the
+          column is copied once and matching bytes are flipped in place, skipping the Volnitsky search;
+       2. needle == replacement: a no-op for any needle length and both modes, so the column is copied verbatim. -->
+<!-- _materialize_ because the shortcuts only apply to non-const haystack + const needle + const replacement -->
+<test>
+    <!-- one-byte needle + one-byte replacement, replace all: byte-flip fast path -->
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceAll(materialize(s), ' ', '_') AS w FROM numbers_mt(5000000) FORMAT Null</query>
+
+    <!-- needle == replacement, one byte, replace all: verbatim-copy no-op -->
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceAll(materialize(s), ' ', ' ') AS w FROM numbers_mt(5000000) FORMAT Null</query>
+
+    <!-- needle == replacement, multi-byte, replace all: verbatim-copy no-op -->
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceAll(materialize(s), 'distant', 'distant') AS w FROM numbers_mt(5000000) FORMAT Null</query>
+
+    <!-- needle == replacement, multi-byte, replace one: verbatim-copy no-op -->
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceOne(materialize(s), 'distant', 'distant') AS w FROM numbers_mt(5000000) FORMAT Null</query>
+
+    <!-- needle == replacement, FixedString: vectorFixedConstantConstant verbatim-copy no-op -->
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceAll(materialize(toFixedString(s, 153)), 'distant', 'distant') AS w FROM numbers_mt(5000000) FORMAT Null</query>
+</test>

@@ -35,3 +35,6 @@ equality_ids:                [2]
 file_format:                 PARQUET
 file_path_ends_with_parquet: 1
 file_size_positive:          1
+--- equality deletes with mismatched nullability ---
+bar
+world

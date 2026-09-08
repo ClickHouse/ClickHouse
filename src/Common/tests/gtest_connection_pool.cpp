@@ -691,7 +691,7 @@ TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
     auto metrics = pool->getMetrics();
     auto resolver_metrics = DB::HostResolver::getMetrics();
 
-    UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load();
+    UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed];
 
     ASSERT_ANY_THROW({
         auto connection = pool->getConnection(timeouts, nullptr);
@@ -702,7 +702,7 @@ TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
     /// `setFail` was not called on any target address: the failure is on the proxy path,
     /// and pessimizing the target resolver would mis-attribute the failure (and trigger
     /// extra DNS refreshes for a host that was never actually contacted).
-    ASSERT_EQ(failed_before, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load());
+    ASSERT_EQ(failed_before, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed]);
 }
 
 TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
@@ -743,8 +743,8 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
         /// address, so the proxy address text is not a reliable marker - match on the error kind,
         /// and accept the address too for the synchronous-failure path.
         const std::string text = e.displayText();
-        reached_proxy_connect = text.find("Connection refused") != std::string::npos
-            || text.find("127.0.0.1:1") != std::string::npos;
+        reached_proxy_connect = text.contains("Connection refused")
+            || text.contains("127.0.0.1:1");
         ASSERT_EQ(std::string::npos, text.find("proxy-only-target.invalid"))
             << "Target host was resolved locally: " << text;
     }
@@ -817,9 +817,9 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     auto metrics = pool->getMetrics();
     auto resolver_metrics = DB::HostResolver::getMetrics();
 
-    UInt64 created_before = DB::CurrentThread::getProfileEvents()[metrics.created].load();
-    UInt64 errors_before = DB::CurrentThread::getProfileEvents()[metrics.errors].load();
-    UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load();
+    UInt64 created_before = DB::CurrentThread::getProfileEvents()[metrics.created];
+    UInt64 errors_before = DB::CurrentThread::getProfileEvents()[metrics.errors];
+    UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed];
 
     UInt64 connect_time = 0;
     auto connection = pool->getConnection(timeouts, &connect_time);
@@ -827,9 +827,9 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
 
     /// First attempt: connect to `bad_ip` → fails (counted in `errors` and resolver `failed`).
     /// Retry: connect to `good_ip` → succeeds (counted in `created`).
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created].load() - created_before);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors].load() - errors_before);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load() - failed_before);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created] - created_before);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors] - errors_before);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed] - failed_before);
 
     /// The retry path must still report the connection-establishment time to the caller: the
     /// connect duration is accumulated across the failed and the successful attempt and written

@@ -22,6 +22,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
@@ -48,6 +49,46 @@ static void removeFromOutput(ActionsDAG & dag, const std::string name)
             return;
         }
     }
+}
+
+static bool shouldSuppressPrewhereForVectorSearch(const ReadFromMergeTree & read_from_merge_tree_step, const Settings & settings)
+{
+    if (!read_from_merge_tree_step.getVectorSearchParameters().has_value())
+        return false;
+
+    if (read_from_merge_tree_step.isParallelReadingFromReplicas())
+        return false;
+
+    auto analyzed_result = read_from_merge_tree_step.getAnalyzedResult();
+    analyzed_result = analyzed_result ? analyzed_result : read_from_merge_tree_step.selectRangesToRead();
+    if (!analyzed_result)
+        return false;
+
+    if (settings[Setting::vector_search_with_rescoring])
+    {
+        if (read_from_merge_tree_step.isQueryWithFinal())
+            return false;
+
+        for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+        {
+            if (!part_with_ranges.ranges.empty() && !part_with_ranges.read_hints.vector_search_results.has_value())
+                return false;
+        }
+
+        return true;
+    }
+
+    for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+    {
+        if (!part_with_ranges.ranges.empty()
+            && (!part_with_ranges.read_hints.vector_search_results.has_value()
+                || !part_with_ranges.read_hints.vector_search_results->distances.has_value()))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 ActionsDAG splitAndFillPrewhereInfo(
@@ -134,7 +175,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     return std::move(split_result.second);
 }
 
-void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_columns)
+void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_columns, const bool suppress_for_vector_search)
 {
     /// Assume that there are at least 2 nodes:
     /// 1. FilterNode - parent_node
@@ -175,24 +216,32 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (!optimize)
         return;
 
-    auto column_sizes = storage.getColumnSizes();
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
+
+    /// If PREWHERE is deferred after FINAL, moving conditions cannot save any reads, and the moved conditions
+    /// would escape the already-made deferral decision and run before a deferred row policy
+    if (is_final && read_from_merge_tree_step && read_from_merge_tree_step->isPrewhereDeferredAfterFinal())
+        return;
+
+    const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
+
+    auto column_sizes = storage.getColumnSizes(
+        queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     if (column_sizes.empty())
         return;
 
     /// These two optimizations conflict:
-    /// - vector search lookups with disabled rescoring
+    /// - vector search lookups
     /// - PREWHERE
-    /// The former is more impactful, therefore disable PREWHERE if both may be used.
-    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
-    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
+    /// The former is more impactful, therefore disable PREWHERE if the vector
+    /// second pass can actually use the vector-search read hints.
+    if (suppress_for_vector_search && read_from_merge_tree_step && shouldSuppressPrewhereForVectorSearch(*read_from_merge_tree_step, settings))
         return;
 
     /// Extract column compressed sizes
     std::unordered_map<std::string, UInt64> column_compressed_sizes;
     for (const auto & [name, sizes] : column_sizes)
         column_compressed_sizes[name] = sizes.data_compressed;
-
-    const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
     /// Statistics are only used to reorder conditions, so skip if there is just one.
     const auto & filter_root_node = filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName());
@@ -205,6 +254,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
         queried_columns,
         storage.supportedPrewhereColumns(),
+        storage.supportedPrewhereColumnsIncludeSubcolumns(),
         getLogger("QueryPlanOptimizePrewhere")};
 
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),

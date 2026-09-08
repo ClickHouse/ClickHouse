@@ -2,6 +2,7 @@
 
 #include <string>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -24,8 +25,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
-#include <Processors/ISimpleTransform.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -64,6 +63,30 @@ private:
     std::chrono::system_clock::time_point expires_on;
 };
 
+/// A credential backed by an external token source (e.g. the OneLake catalog client, which
+/// renews access tokens with an Entra ID refresh token). The SDK invokes GetToken per request
+/// and caches the result until near ExpiresOn, so renewal is transparent to long reads.
+class TokenProviderCredential : public Azure::Core::Credentials::TokenCredential
+{
+public:
+    using TokenProvider = std::function<std::pair<std::string, std::chrono::system_clock::time_point>()>;
+
+    explicit TokenProviderCredential(TokenProvider provider_)
+        : provider(std::move(provider_))
+    {}
+
+    Azure::Core::Credentials::AccessToken GetToken(
+        Azure::Core::Credentials::TokenRequestContext const &,
+        Azure::Core::Context const &) const override
+    {
+        auto [token, expires_on] = provider();
+        return Azure::Core::Credentials::AccessToken { .Token = std::move(token), .ExpiresOn = expires_on };
+    }
+
+private:
+    TokenProvider provider;
+};
+
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
@@ -72,7 +95,8 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
-    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
+    std::shared_ptr<AzureBlobStorage::StaticCredential>,
+    std::shared_ptr<AzureBlobStorage::TokenProviderCredential>>;
 
 
 struct ConnectionParams;
@@ -106,6 +130,9 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     bool is_size_known = true;
+    /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
+    /// False only for the skip_object_metadata placeholder.
+    bool is_fetched = true;
     Poco::Timestamp last_modified;
     /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
     /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
@@ -113,8 +140,22 @@ struct ObjectMetadata
     /// silently reuse a stale value. Cache validators must skip the cache when this is `false`.
     bool is_last_modified_known = true;
     std::string etag;
+    /// Whether `etag` is a strong content/version identifier, i.e. different content is
+    /// guaranteed to produce a different `etag`. Real S3/Azure ETags and the sub-second
+    /// mtime token used for local files are strong. It is only safe to use `etag` as a
+    /// content-cache key (filesystem cache, page cache, Parquet metadata cache) when this
+    /// is true. HDFS can only derive a second-precision `(mtime, size)` token, which is
+    /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
+    /// same-size rewrite would collide and could serve stale cached data.
+    bool etag_is_strong = true;
     ObjectAttributes tags;
     ObjectAttributes attributes;
+
+    /// `etag` may be used as a content-cache key (filesystem cache, page cache, Parquet
+    /// metadata cache) only when it is present and a strong content identifier. A weak
+    /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
+    /// same-second, same-size rewrite could serve stale data.
+    bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
 };
 
 struct DataLakeObjectMetadata;
@@ -336,6 +377,11 @@ public:
     struct ApplyNewSettingsOptions
     {
         bool allow_client_change = true;
+
+        /// Force the client to be rebuilt even if the stored settings did not change. Used to re-resolve
+        /// credentials under a different accessing context (e.g. re-applying the server-credential opt-in to a
+        /// server-internal table whose client was built restricted at metadata load) without detaching the table.
+        bool force_client_rebuild = false;
     };
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration & /* config */,
@@ -359,8 +405,18 @@ public:
 
     virtual bool supportParallelWrite() const { return false; }
 
-    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+    /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
+    /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches
+    /// of the same path can prove the object was not overwritten in between. Web origins may
+    /// legitimately omit all of them (no `ETag`, no `Content-Length`, no `Last-Modified`), so callers
+    /// that must reread the same generation of an object (e.g. lazy materialization) have to skip
+    /// such storages instead of failing close at read time.
+    virtual bool supportsObjectGenerationComparison() const { return true; }
 
+    void setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_);
+    std::pair<String, String> getIOSchedulingResourceNames() const;
+
+    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
     virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
@@ -409,6 +465,11 @@ public:
     /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
+
+private:
+    mutable std::mutex io_scheduling_mutex;
+    String read_resource_name;
+    String write_resource_name;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

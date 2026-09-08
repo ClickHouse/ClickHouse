@@ -1,5 +1,9 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel
 -- Tag no-parallel: Messes with internal cache
+-- Tag long: does a ~100k-row insert and several full-part TopK scans; on the slower
+--   S3 + sanitizer configuration this is heavy enough that, run repeatedly by the
+--   flaky check, it can approach the "test runs too long" threshold. The tag exempts
+--   it, matching the sibling `04217_query_condition_cache_topk` family.
 --
 -- Correctness regression for the Query Condition Cache (QCC) on the
 -- `ORDER BY <column> LIMIT n` (TopK) plan. The companion test
@@ -22,9 +26,6 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 -- so the dynamic-filtering branch of `tryOptimizeTopK` applies and the WHERE
 -- condition is the one written into the query condition cache.
 SET optimize_move_to_prewhere = 0;
--- Parallel replicas split the plan into a different shape and do extra QCC lookups.
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 -- QCC population for the TopK plan is best-effort: a granule is recorded as
 -- skippable only when a chunk that physically covers it is reduced to zero rows
@@ -48,12 +49,14 @@ SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injectio
 
 DROP TABLE IF EXISTS tab;
 
--- `id` is random, so the sort column `k` is scattered across granules: the TopK
--- threshold can't drop whole granules via the minmax index, instead `__topKFilter`
--- drops individual rows (those with `k` beyond the running threshold) inside every
--- granule it reads. `w` matches every 1000th row, so most granules have no `w = 7`
--- row left after `__topKFilter`, and the `WHERE` filter records them as skippable
--- in the QCC. 1 million rows: the QCC doesn't cache anything for less data than that.
+-- `id` scatters the sort column `k` across granules (no correlation with the
+-- primary key), so the TopK threshold can't drop whole granules via an index:
+-- `__topKFilter` drops individual rows (those with `k` beyond the running
+-- threshold) inside every granule it reads. `w` matches every 1000th row, so once
+-- the threshold settles, a granule without a top-5 `w = 7` row loses all of its
+-- rows at the `WHERE` filter and is recorded as skippable in the QCC. 100k rows
+-- over 64-row granules (≈1.5k granules) is enough for the single-threaded read
+-- to record and reuse a meaningful set of skippable granules.
 CREATE TABLE tab (id UInt32, k UInt32, w UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 64,
          min_bytes_for_wide_part = 0,
@@ -65,9 +68,26 @@ SETTINGS index_granularity = 64,
 -- threshold it sees, so granule-skip decisions (and the QCC population) would not
 -- be deterministic. Pin a single writer and squash the whole input into one block
 -- so the insert produces exactly one part. This also avoids an `OPTIMIZE ... FINAL`
--- merge of a 1M-row part with `index_granularity = 64` (≈15k marks), which is the
--- expensive step that timed out under the debug/sanitizer flaky check.
-INSERT INTO tab SELECT rand(), number, number % 1000 FROM numbers(1_000_000)
+-- merge of the part, which is the expensive step that timed out under the
+-- debug/sanitizer flaky check.
+--
+-- The scatter itself must also be deterministic. With fully random placement
+-- (`rand()`), whether *any* chunk empties out at the `WHERE` filter — the event
+-- that writes a QCC entry, asserted by `count() > 0` below — depended on where
+-- the smallest `w = 7` rows happened to land, and roughly one run in a few
+-- hundred wrote no entry at all. Instead, place the five smallest `w = 7` rows
+-- (`k <= 4007`) at the very front of the part (`id = k < 8192`) and spread every
+-- other row with a deterministic hash above the first chunk (`id >= 8192`). The
+-- first 8192-row chunk then contains all five top rows, `PartialSortingTransform`
+-- arms the threshold tracker at its final value (`k = 4007`) right after that
+-- chunk, and every later chunk deterministically loses all of its rows at the
+-- `WHERE` filter (each of its `w = 7` rows has `k > 4007`) and is recorded as
+-- skippable. 4294959104 is `2^32 - 8192`, so the ids stay within UInt32.
+INSERT INTO tab SELECT
+    if(number % 1000 = 7 AND number <= 4007, number, 8192 + intHash32(number) % 4294959104),
+    number,
+    number % 1000
+FROM numbers(100_000)
 SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000;
 
 SYSTEM CLEAR QUERY CONDITION CACHE;

@@ -1,0 +1,30 @@
+nonstrided 3-arg, const ref (L2, cosine, dot)
+1	1	1
+nonstrided 3-arg, non-const ref (L2, cosine, dot)
+1	1	1
+strided 4-arg used_dims=8, const ref (L2, cosine, dot)
+1	1	1
+strided 4-arg used_dims=8, non-const ref (L2, cosine, dot)
+1	1	1
+strided 3-arg (all 16 dims), const ref (L2, cosine, dot)
+1	1	1
+strided 4-arg used_dims=8, optimization off (L2, cosine, dot)
+1	1	1
+strided Int8 4-arg used_dims=8, const ref (dot, L2, cosine)
+1	1	1
+concrete: strided (first 8 dims, ref truncated) dot product
+1	204
+2	408
+concrete: non-strided baseline over the same 8 dims
+1	204
+2	408
+quantized strided 4-arg used_dims=8, const Float32 ref (L2, cosine, dot)
+1	1	1
+quantized strided 4-arg used_dims=8, non-const Float32 ref (L2, cosine, dot)
+1	1	1
+quantized strided 4-arg used_dims=8, const Array(Int8) ref (L2, cosine, dot)
+1	1	1
+quantized strided 4-arg used_dims=8, optimization off (L2, cosine, dot)
+1	1	1
+quantized nonstrided 3-arg, const Float32 ref (L2, cosine, dot)
+1	1	1

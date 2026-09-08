@@ -6,16 +6,18 @@
 #include <Common/StringUtils.h>
 
 /** Methods for reading floating point numbers from text with decimal representation.
-  * There are "precise", "fast" and "simple" implementations.
+  * There are "precise", "imprecise" and "simple" implementations.
   *
   * Neither of methods support hexadecimal numbers (0xABC), binary exponent (1p100), leading plus sign.
   *
   * Precise method always returns a number that is the closest machine representable number to the input.
+  * It is what all callers should use (and is also the fastest); readText / tryReadText pick it for floats.
   *
-  * Fast method is faster (up to 3 times) and usually return the same value,
-  *  but in rare cases result may differ by lest significant bit (for Float32)
-  *  and by up to two least significant bits (for Float64) from precise method.
-  * Also fast method may parse some garbage as some other unspecified garbage.
+  * The imprecise method (readFloatImpreciseForCompatibility) usually returns the same value, but in rare
+  *  cases the result may differ by the least significant bit (for Float32) and by up to two least significant
+  *  bits (for Float64) from the precise method; it may also parse some garbage as some other unspecified garbage.
+  * It is neither faster nor more correct: it exists only so `precise_float_parsing = 0` (or an older
+  *  `compatibility` version) can reproduce the pre-26.7 parsing. New code must never use it.
   *
   * Simple method is little faster for cases of parsing short (few digit) integers, but less precise and slower in other cases.
   * It's not recommended to use simple method and it is left only for reference.
@@ -110,15 +112,11 @@ void assertNaN(ReadBuffer & buf);
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in);
 
-template <typename T> void readFloatTextFast(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
+template <typename T> void readFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
 
 template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in);
-
-/// Implementation that is selected as default.
-template <typename T> void readFloatText(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
 
 /// Don't read exponent part of the number.
 template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in);

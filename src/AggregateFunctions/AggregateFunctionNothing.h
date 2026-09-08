@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -54,6 +55,20 @@ public:
     }
 
     String getName() const override { return Name::name; }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        /// The state of this placeholder is empty and its serialization is a single zero byte,
+        /// independent of the parameters. The parameters are only inherited from the aggregate
+        /// function that collapsed to this placeholder over only-null argument types, where they
+        /// would have affected finalization only. Drop them from the normalized state type, so
+        /// that placeholder states produced with different parameters are interchangeable.
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & argument_type : this->argument_types)
+            normalized_argument_types.emplace_back(argument_type->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
