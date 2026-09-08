@@ -37,9 +37,9 @@ INSERT INTO mutation_matcher_clear (a) VALUES (2);
 
 SET asterisk_include_materialized_columns = 1;
 
--- The dependent MATERIALIZED column `m` is rebuilt from the physically cleared value of `a`
--- (zero), while `a` itself reads its DEFAULT; the point here is that the mutation succeeds
--- and its result does not depend on the session settings.
+-- The dependent MATERIALIZED column `m` is rebuilt from the value a read of the cleared column
+-- returns, which is its `DEFAULT`; the point here is that the mutation succeeds and its result
+-- does not depend on the session settings.
 ALTER TABLE mutation_matcher_clear CLEAR COLUMN a SETTINGS mutations_sync = 1;
 SELECT a, m FROM mutation_matcher_clear;
 
