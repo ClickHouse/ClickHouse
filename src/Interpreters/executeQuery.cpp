@@ -101,6 +101,7 @@
 #include <Common/Licensing/LicenseChecker.h>
 #endif
 #include <Core/BaseSettings.h>
+#include <Core/Joins.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
@@ -3063,6 +3064,24 @@ static BlockIO executeQueryImpl(
                     query_metadata_cache = std::make_shared<QueryMetadataCache>();
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
+
+                /// Has to happen before the interpreter exists. Every join reads the analyze mode
+                /// off the context while the planner builds it and bakes it into its TableJoin --
+                /// HashJoin only allocates the counters at all if the mode is on -- and the
+                /// interpreter plans on a copy of this context, so setting it afterwards reaches
+                /// nothing. Without this the plan stored for a query with a join carries its I/O
+                /// and timings but none of the join's own metrics, which is what EXPLAIN ANALYZE
+                /// shows by default.
+                ///
+                /// `Derived` rather than `Exact`: it is the mode EXPLAIN ANALYZE uses unless asked
+                /// for matched rows, and it counts per probed block instead of per row.
+                ///
+                /// The condition is the profiler's, minus the part that needs an interpreter, so a
+                /// query that turns out not to be profiled -- an INSERT SELECT, say -- may collect
+                /// join counters nobody reads. It only applies to queries that asked for plan
+                /// logging, and only to those with joins.
+                if (out_ast && QueryPlanProfiler::canEnableProfiler(context, internal))
+                    context->setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
