@@ -13,8 +13,7 @@ namespace DB
 /// `MergingSortedTransform` of a read-in-order query. Lane i connects input i to output i.
 ///
 /// Starts on demand, then reads ahead when a portion produces too few surviving rows.
-/// Active lanes buffer independently of speculation; a speculative lane buffers deeply
-/// only while it is next in key order, the rest hold one chunk. Announcements coalesce.
+/// Active lanes buffer independently of speculation; consecutive announcements coalesce.
 /// The merge still owns ordering and decides when to stop for `LIMIT`.
 class VirtualRowReadAheadTransform final : public IProcessor
 {
@@ -70,8 +69,6 @@ private:
     const size_t max_bytes_to_buffer;
     const size_t read_ahead_window;
     const size_t useful_rows_target;
-    /// Speculative lanes with data that may keep filling their buffers, earliest boundary first.
-    static constexpr size_t deep_speculative_lanes = 1;
     std::vector<size_t> sort_positions;
 
     std::vector<Lane> lanes;
