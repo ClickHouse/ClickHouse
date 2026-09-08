@@ -199,6 +199,11 @@ void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWit
     object_storage->listObjects(path, children, max_keys);
 }
 
+std::vector<std::string> CachedObjectStorage::listCommonPrefixes(const std::string & path_prefix, size_t max_keys) const
+{
+    return object_storage->listCommonPrefixes(path_prefix, max_keys);
+}
+
 ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
 {
     return object_storage->getObjectMetadata(path, with_tags);

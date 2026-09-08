@@ -8770,6 +8770,14 @@ Serialize String values during aggregation with zero byte at the end. Enable to 
 Maximum number of `_path` values that can be extracted from query filters to use for file iteration
 instead of glob listing. 0 means disabled.
 )", 0) \
+    DECLARE(Bool, use_hive_partition_pruning_during_listing, true, R"(
+Prune Hive-style partitioned directories (`/name=value/`) while listing a globbed path in object storage table engines and functions (`s3`, `azureBlobStorage` and their cluster variants), instead of listing every object under the common prefix and filtering the keys afterwards.
+
+The directory levels covered by the glob are enumerated one by one with the delimiter form of the listing API (`ListObjectsV2` with a delimiter for S3, `ListBlobsByHierarchy` for Azure Blob Storage). A `name=value` directory is skipped together with everything beneath it when the `WHERE` condition on the partition columns known at that level cannot be satisfied. Only applies when the condition restricts a partition column that appears in a directory-level glob segment and the storage supports delimiter listing, otherwise the common prefix is listed as before. See also `hive_partition_pruning_during_listing_max_prefixes`.
+)", 0) \
+    DECLARE(UInt64, hive_partition_pruning_during_listing_max_prefixes, 1000, R"(
+Maximum number of partition directories that may remain after pruning at any directory level when `use_hive_partition_pruning_during_listing` is enabled. When exceeded, ClickHouse gives up the level-by-level enumeration and lists the whole common prefix at once, so that the number of listing requests stays bounded for paths where the condition prunes little.
+)", 0) \
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \

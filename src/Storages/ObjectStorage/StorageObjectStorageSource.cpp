@@ -87,6 +87,8 @@ namespace ProfileEvents
     extern const Event ObjectStorageGlobFilteredObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
     extern const Event ObjectStorageReadObjects;
+    extern const Event ObjectStorageListedCommonPrefixes;
+    extern const Event ObjectStorageHivePartitionPrunedPrefixes;
 }
 
 namespace CurrentMetrics
@@ -208,6 +210,8 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_hive_partition_pruning_during_listing;
+    extern const SettingsUInt64 hive_partition_pruning_during_listing_max_prefixes;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -1945,9 +1949,9 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     const NamesAndTypesList & hive_columns_,
     ContextPtr context_,
     ObjectInfos * read_keys_,
-    size_t list_object_keys_size,
+    size_t list_object_keys_size_,
     bool throw_on_zero_files_match_,
-    bool with_tags,
+    bool with_tags_,
     std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
     , object_storage(object_storage_)
@@ -1955,6 +1959,8 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
+    , list_object_keys_size(list_object_keys_size_)
+    , with_tags(with_tags_)
     , log(getLogger("GlobIterator"))
     , read_keys(read_keys_)
     , local_context(context_)
@@ -1966,8 +1972,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         match_web_paths_only = configuration->getType() == ObjectStorageType::Web;
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
-
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())
@@ -1981,6 +1985,10 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
         }
+
+        prefixes_to_list = resolveListingPrefixes(predicate, key_prefix);
+        if (!startListingNextPrefix())
+            is_finished = true;
     }
     else
     {
@@ -1991,8 +1999,220 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     }
 }
 
+namespace
+{
+
+/// A directory level of a globbed path: one path segment that is followed by at least one more segment.
+struct HivePartitionListingLevel
+{
+    /// The literal start of the segment before its first glob character. It narrows the listing of the level.
+    String literal_prefix;
+    /// Matches the partial path up to and including this segment, with the trailing '/'.
+    std::unique_ptr<re2::RE2> matcher;
+    /// Hive partition columns whose values are known once the path is resolved up to this segment.
+    NamesAndTypesList known_hive_columns;
+    /// The part of the query condition that depends only on `known_hive_columns`, if there is any.
+    ExpressionActionsPtr filter;
+};
+
+std::vector<std::string_view> splitPathIntoSegments(const String & path)
+{
+    std::vector<std::string_view> segments;
+    size_t start = 0;
+    while (true)
+    {
+        const auto pos = path.find('/', start);
+        if (pos == String::npos)
+        {
+            segments.emplace_back(path.data() + start, path.size() - start);
+            return segments;
+        }
+        segments.emplace_back(path.data() + start, pos - start);
+        start = pos + 1;
+    }
+}
+
+bool hasGlobs(std::string_view segment)
+{
+    return segment.find_first_of("*?{") != std::string_view::npos;
+}
+
+String literalPrefixOfSegment(std::string_view segment)
+{
+    return String(segment.substr(0, segment.find_first_of("*?{")));
+}
+
+/// The partition key of a `key=value` segment when the key itself is literal, e.g. `year` for `year=*` or `year=2024`.
+std::optional<String> hivePartitionKeyOfSegment(std::string_view segment)
+{
+    const auto key_value_delimiter = segment.find('=');
+    if (key_value_delimiter == std::string_view::npos || key_value_delimiter == 0)
+        return std::nullopt;
+
+    const auto first_glob = segment.find_first_of("*?{");
+    if (first_glob != std::string_view::npos && first_glob < key_value_delimiter)
+        return std::nullopt;
+
+    return String(segment.substr(0, key_value_delimiter));
+}
+
+}
+
+std::vector<String> StorageObjectStorageSource::GlobIterator::resolveListingPrefixes(
+    const ActionsDAG::Node * predicate, const String & common_prefix)
+{
+    const auto & settings = getContext()->getSettingsRef();
+    if (!predicate || hive_columns.empty() || match_web_paths_only || configuration->isArchive()
+        || !settings[Setting::use_hive_partition_pruning_during_listing]
+        || !configuration->supportsPartialPathPrefix()
+        || !object_storage->supportsListingCommonPrefixes())
+        return {common_prefix};
+
+    const auto & path = configuration->getPathForRead().path;
+    const auto segments = splitPathIntoSegments(path);
+    const size_t file_name_segment = segments.size() - 1;
+
+    size_t first_glob_segment = 0;
+    while (first_glob_segment < segments.size() && !hasGlobs(segments[first_glob_segment]))
+        ++first_glob_segment;
+
+    /// The directory levels that can be enumerated one by one: from the first globbed segment up to (excluding)
+    /// the file name segment or a segment with `**`, which spans an arbitrary number of levels.
+    size_t walk_end = first_glob_segment;
+    while (walk_end < file_name_segment && segments[walk_end].find("**") == std::string_view::npos)
+        ++walk_end;
+
+    if (walk_end == first_glob_segment)
+        return {common_prefix};
+
+    std::vector<HivePartitionListingLevel> levels;
+    NamesAndTypesList known_hive_columns;
+    bool has_filter = false;
+    String partial_glob;
+    for (size_t i = 0; i < walk_end; ++i)
+    {
+        partial_glob += segments[i];
+        partial_glob += '/';
+
+        if (const auto key = hivePartitionKeyOfSegment(segments[i]))
+        {
+            if (const auto column = hive_columns.tryGetByName(*key))
+                known_hive_columns.push_back(*column);
+        }
+
+        if (i < first_glob_segment)
+            continue;
+
+        HivePartitionListingLevel level;
+        level.literal_prefix = literalPrefixOfSegment(segments[i]);
+        level.matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(partial_glob));
+        if (!level.matcher->ok())
+            throw Exception(
+                ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", partial_glob, level.matcher->error());
+        level.known_hive_columns = known_hive_columns;
+
+        if (!known_hive_columns.empty())
+        {
+            Block allowed_inputs;
+            for (const auto & column : known_hive_columns)
+                allowed_inputs.insert({column.type->createColumn(), column.type, column.name});
+            allowed_inputs.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+            /// Only the conjuncts of the condition that depend on the already known partition columns are kept,
+            /// so the filter is a necessary condition: a directory that fails it cannot contain matching objects.
+            if (auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &allowed_inputs, getContext()))
+            {
+                VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
+                level.filter = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                has_filter = true;
+            }
+        }
+
+        levels.push_back(std::move(level));
+    }
+
+    /// Without a condition on some directory level the enumeration would only cost extra requests.
+    if (!has_filter)
+        return {common_prefix};
+
+    const size_t max_prefixes = settings[Setting::hive_partition_pruning_during_listing_max_prefixes];
+
+    String root;
+    for (size_t i = 0; i < first_glob_segment; ++i)
+    {
+        root += segments[i];
+        root += '/';
+    }
+
+    std::vector<String> directories{root};
+    size_t listed_directories = 0;
+    size_t pruned_directories = 0;
+    for (const auto & level : levels)
+    {
+        std::vector<String> next_directories;
+        for (const auto & directory : directories)
+        {
+            auto children = object_storage->listCommonPrefixes(directory + level.literal_prefix, list_object_keys_size);
+            listed_directories += children.size();
+
+            std::erase_if(children, [&](const String & child) { return !re2::RE2::FullMatch(child, *level.matcher); });
+
+            if (level.filter)
+            {
+                const size_t before_filter = children.size();
+                const auto paths = children;
+                VirtualColumnUtils::filterByPathOrFile(
+                    children, paths, level.filter, /*virtual_columns=*/{}, level.known_hive_columns, getContext());
+                pruned_directories += before_filter - children.size();
+            }
+
+            next_directories.insert(next_directories.end(), children.begin(), children.end());
+            if (next_directories.size() > max_prefixes)
+            {
+                ProfileEvents::increment(ProfileEvents::ObjectStorageListedCommonPrefixes, listed_directories);
+                ProfileEvents::increment(ProfileEvents::ObjectStorageHivePartitionPrunedPrefixes, pruned_directories);
+                LOG_DEBUG(
+                    log,
+                    "More than {} partition directories remain after pruning for path {}, listing the common prefix {} instead",
+                    max_prefixes, path, common_prefix);
+                return {common_prefix};
+            }
+        }
+
+        directories = std::move(next_directories);
+        if (directories.empty())
+            break;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageListedCommonPrefixes, listed_directories);
+    ProfileEvents::increment(ProfileEvents::ObjectStorageHivePartitionPrunedPrefixes, pruned_directories);
+    LOG_DEBUG(
+        log,
+        "Resolved {} partition directories to list for path {}: listed {} directories, pruned {} by the query condition",
+        directories.size(), path, listed_directories, pruned_directories);
+
+    /// Objects are listed below each remaining directory starting from the literal part of the next segment.
+    const auto tail_literal_prefix = literalPrefixOfSegment(segments[walk_end]);
+    for (auto & directory : directories)
+        directory += tail_literal_prefix;
+    return directories;
+}
+
+bool StorageObjectStorageSource::GlobIterator::startListingNextPrefix()
+{
+    if (next_prefix_index >= prefixes_to_list.size())
+        return false;
+
+    object_storage_iterator = object_storage->iterate(prefixes_to_list[next_prefix_index], list_object_keys_size, with_tags, std::nullopt);
+    ++next_prefix_index;
+    return true;
+}
+
 size_t StorageObjectStorageSource::GlobIterator::estimatedKeysCount()
 {
+    if (object_infos.empty() && !is_finished && next_prefix_index < prefixes_to_list.size())
+        return std::numeric_limits<size_t>::max();
+
     if (object_infos.empty() && !is_finished && object_storage_iterator->isValid())
     {
         /// 1000 files were listed, and we cannot make any estimation of _how many more_ there are (because we list bucket lazily);
@@ -2034,6 +2254,9 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
             auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
             if (!result.has_value())
             {
+                if (startListingNextPrefix())
+                    continue;
+
                 is_finished = true;
                 LOG_DEBUG(log, "Listing finished: total_listed={}, glob_filtered={}, predicate_filtered={}",
                     total_listed, total_glob_filtered, total_predicate_filtered);

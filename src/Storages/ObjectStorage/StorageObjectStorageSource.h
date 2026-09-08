@@ -227,11 +227,21 @@ private:
     void createFilterAST(const String & any_key);
     void fillBufferForKey(const std::string & uri_key);
 
+    /// Resolves the key prefixes to list objects under. Normally it is just `common_prefix` (the path cut at the
+    /// first glob), but when the globbed path goes through Hive-style partitioned directories and the query
+    /// condition restricts the partition columns, the directory levels are enumerated with delimiter listing
+    /// and the directories that cannot satisfy the condition are pruned, see `use_hive_partition_pruning_during_listing`.
+    std::vector<String> resolveListingPrefixes(const ActionsDAG::Node * predicate, const String & common_prefix);
+    /// Starts listing the next prefix from `prefixes_to_list`. Returns false when there is nothing left to list.
+    bool startListingNextPrefix();
+
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_columns;
     const bool throw_on_zero_files_match;
+    const size_t list_object_keys_size;
+    const bool with_tags;
     const LoggerPtr log;
 
     size_t index = 0;
@@ -240,6 +250,8 @@ private:
     ObjectInfos * read_keys;
     ExpressionActionsPtr filter_expr;
     ObjectStorageIteratorPtr object_storage_iterator;
+    std::vector<String> prefixes_to_list;
+    size_t next_prefix_index = 0;
     bool recursive{false};
     bool match_web_paths_only{false};
     std::vector<String> expanded_keys;

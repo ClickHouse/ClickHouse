@@ -232,6 +232,41 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     }
 }
 
+std::vector<std::string> AzureObjectStorage::listCommonPrefixes(const std::string & path_prefix, size_t max_keys) const
+{
+    auto client_ptr = client.get();
+
+    Azure::Storage::Blobs::ListBlobsOptions options;
+    options.Prefix = path_prefix;
+    if (max_keys)
+        options.PageSizeHint = max_keys;
+    else
+        options.PageSizeHint = settings.get()->list_object_keys_size;
+
+    std::vector<std::string> common_prefixes;
+
+    /// Re-issue the request per page through the client wrapper for the same reason as in `listObjects`.
+    while (true)
+    {
+        auto response = client_ptr->ListBlobsByHierarchy("/", options);
+
+        ProfileEvents::increment(ProfileEvents::AzureListObjects);
+        if (client_ptr->IsClientForDisk())
+            ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
+
+        /// Blobs located directly under the prefix are intentionally ignored: the caller is interested
+        /// in the directory structure only, the blobs are listed separately once the directories are chosen.
+        common_prefixes.insert(common_prefixes.end(), response.BlobPrefixes.begin(), response.BlobPrefixes.end());
+
+        if (!response.NextPageToken.HasValue() || response.NextPageToken.Value().empty())
+            break;
+
+        options.ContinuationToken = response.NextPageToken;
+    }
+
+    return common_prefixes;
+}
+
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,

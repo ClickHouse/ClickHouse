@@ -273,6 +273,16 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const;
 
+    /// Whether `listCommonPrefixes` is supported by this storage.
+    virtual bool supportsListingCommonPrefixes() const { return false; }
+
+    /// List the "directories" directly under `path_prefix`: the distinct prefixes that extend `path_prefix`
+    /// up to and including the next '/', without listing the objects beneath them. This uses the delimiter
+    /// form of the listing API (S3 `ListObjectsV2` with `Delimiter`, Azure `ListBlobsByHierarchy`).
+    /// `path_prefix` may be a partial prefix, i.e. it does not have to end with '/'. Returned prefixes end with '/'.
+    /// `max_keys` is the page size of the underlying requests, 0 means the storage default.
+    virtual std::vector<std::string> listCommonPrefixes(const std::string & path_prefix, size_t max_keys) const;
+
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
     virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const

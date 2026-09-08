@@ -3792,3 +3792,116 @@ def test_row_policy_over_csv(started_cluster):
     finally:
         run_query(instance, "DROP ROW POLICY test_row_policy_csv_p ON test_row_policy_csv")
         run_query(instance, "DROP TABLE test_row_policy_csv")
+
+
+def get_listing_profile_events(instance, query_id):
+    instance.query("SYSTEM FLUSH LOGS")
+    result = instance.query(
+        f"""
+        SELECT
+            ProfileEvents['ObjectStorageListedObjects'],
+            ProfileEvents['ObjectStorageReadObjects'],
+            ProfileEvents['ObjectStorageListedCommonPrefixes'],
+            ProfileEvents['ObjectStorageHivePartitionPrunedPrefixes']
+        FROM system.query_log
+        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+        """
+    )
+    return [int(value) for value in result.strip().split("\t")]
+
+
+def test_hive_partition_pruning_during_listing(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    prefix = f"test_hive_partition_pruning_during_listing_{generate_random_string()}"
+    url_prefix = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}"
+    structure = "id UInt64, year UInt16, country String"
+
+    countries = ["DE", "FR", "US"]
+    for year in (2024, 2025, 2026):
+        for idx, country in enumerate(countries, start=1):
+            run_query(
+                instance,
+                f"INSERT INTO FUNCTION s3('{url_prefix}/year={year}/country={country}/data.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'id UInt64') "
+                f"SELECT toUInt64({year} * 10 + {idx}) SETTINGS s3_truncate_on_insert = 1",
+            )
+
+    globbed = f"s3('{url_prefix}/year=*/country=*/*.parquet', 'minio', '{minio_secret_key}', 'Parquet', '{structure}')"
+
+    def run(query, **settings):
+        query_id = f"hive_pruning_{uuid.uuid4()}"
+        result = run_query(
+            instance,
+            query,
+            query_id=query_id,
+            settings={"use_hive_partitioning": 1, "log_queries": 1, **settings},
+        )
+        return result, get_listing_profile_events(instance, query_id)
+
+    # Both partition levels are constrained: the year level lists 3 directories and keeps 1,
+    # the country level lists 3 directories below it and keeps 1, so a single object is listed.
+    result, (listed, read, directories, pruned) = run(
+        f"SELECT id FROM {globbed} WHERE year = 2025 AND country = 'FR'"
+    )
+    assert result == "20252\n"
+    assert (listed, read, directories, pruned) == (1, 1, 6, 4)
+
+    # Without the optimization every object under the common prefix is listed and filtered afterwards.
+    result, (listed, read, directories, pruned) = run(
+        f"SELECT id FROM {globbed} WHERE year = 2025 AND country = 'FR'",
+        use_hive_partition_pruning_during_listing=0,
+    )
+    assert result == "20252\n"
+    assert (listed, read, directories, pruned) == (9, 1, 0, 0)
+
+    # A range and an IN condition on different levels.
+    result, (listed, read, directories, pruned) = run(
+        f"SELECT id FROM {globbed} WHERE year >= 2025 AND country IN ('DE', 'US') ORDER BY id"
+    )
+    assert result == "20251\n20253\n20261\n20263\n"
+    assert (listed, read, directories, pruned) == (4, 4, 9, 3)
+
+    # Nothing matches: no object is listed at all.
+    result, (listed, read, directories, pruned) = run(
+        f"SELECT count() FROM {globbed} WHERE year = 1999"
+    )
+    assert result == "0\n"
+    assert (listed, read, directories, pruned) == (0, 0, 3, 3)
+
+    # The prefix limit bounds the enumeration: 3 year directories exceed the limit of 2,
+    # so the common prefix is listed as a whole and the result is still correct.
+    result, (listed, read, directories, pruned) = run(
+        f"SELECT id FROM {globbed} WHERE country = 'US' ORDER BY id",
+        hive_partition_pruning_during_listing_max_prefixes=2,
+    )
+    assert result == "20243\n20253\n20263\n"
+    assert (listed, read, directories, pruned) == (9, 3, 3, 0)
+
+    # `**` spans levels and stops the enumeration; the levels before it are still pruned.
+    result, (listed, read, directories, pruned) = run(
+        f"SELECT id FROM s3('{url_prefix}/year=*/**.parquet', 'minio', '{minio_secret_key}', 'Parquet', '{structure}') WHERE year = 2026 ORDER BY id"
+    )
+    assert result == "20261\n20262\n20263\n"
+    assert (listed, read, directories, pruned) == (3, 3, 3, 2)
+
+    # The table engine and the cluster function go through the same iterator.
+    table_name = f"{prefix}_table"
+    run_query(
+        instance,
+        f"CREATE TABLE {table_name} ({structure}) ENGINE = S3('{url_prefix}/year=*/country=*/*.parquet', 'minio', '{minio_secret_key}', 'Parquet')",
+    )
+    try:
+        result, (listed, read, directories, pruned) = run(
+            f"SELECT id FROM {table_name} WHERE year = 2024 AND country IN ('DE', 'FR') ORDER BY id"
+        )
+        assert result == "20241\n20242\n"
+        assert (listed, read, directories, pruned) == (2, 2, 6, 3)
+    finally:
+        run_query(instance, f"DROP TABLE {table_name}")
+
+    result, _ = run(
+        f"SELECT id FROM s3Cluster(cluster, '{url_prefix}/year=*/country=*/*.parquet', 'minio', '{minio_secret_key}', 'Parquet', '{structure}') WHERE year = 2025 AND country = 'FR' ORDER BY id"
+    )
+    assert result == "20252\n"

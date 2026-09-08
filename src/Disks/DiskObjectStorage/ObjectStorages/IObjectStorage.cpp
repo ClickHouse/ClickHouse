@@ -63,6 +63,11 @@ ObjectStorageIteratorPtr IObjectStorage::iterate(
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
 
+std::vector<std::string> IObjectStorage::listCommonPrefixes(const std::string &, size_t) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listCommonPrefixes() is not supported by {}", getName());
+}
+
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
     auto context = Context::getGlobalContextInstance();
