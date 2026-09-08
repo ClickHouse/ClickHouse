@@ -11,6 +11,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
@@ -197,14 +198,47 @@ bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
     return added;
 }
 
+/// Same as above, but for a filter DAG whose result column is erased by name after the DAG runs.
+/// A requested column that is already an output is still erased when it happens to BE that filter
+/// column (a bare `PREWHERE c`, or a row policy `USING b`), so there the remove-filter flag is
+/// cleared instead: after filtering the column keeps its original values for the surviving rows.
+/// Only the filter column itself is exempted, so a computed filter column keeps being removed.
+/// Same reasoning and shape as `reexpose_in_filter` in `addStartingPartOffsetAndPartOffset`.
+bool restoreFilterDAGInputs(ActionsDAG & dag, const String & filter_column_name, bool & remove_filter_column, const NameSet & inputs)
+{
+    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    bool added = false;
+    for (const auto * input : dag.getInputs())
+    {
+        if (!inputs.contains(input->result_name))
+            continue;
+
+        if (!outputs.contains(input))
+        {
+            dag.getOutputs().push_back(input);
+            added = true;
+        }
+        else if (remove_filter_column && input->result_name == filter_column_name)
+        {
+            remove_filter_column = false;
+            added = true;
+        }
+    }
+
+    return added;
+}
+
 bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info, const NameSet & inputs)
 {
     bool added = false;
+    /// Both DAGs must be visited: `||` would short-circuit and skip the prewhere restore.
     if (row_level_filter)
-        added = added || restoreDAGInputs(row_level_filter->actions, inputs);
+        added |= restoreFilterDAGInputs(
+            row_level_filter->actions, row_level_filter->column_name, row_level_filter->do_remove_column, inputs);
 
     if (info)
-        added = added || restoreDAGInputs(info->prewhere_actions, inputs);
+        added |= restoreFilterDAGInputs(
+            info->prewhere_actions, info->prewhere_column_name, info->remove_prewhere_column, inputs);
 
     return added;
 }
@@ -265,6 +299,7 @@ namespace Setting
     extern const SettingsFloat merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsBool optimize_read_in_reverse_order_final;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
@@ -497,15 +532,10 @@ ReadFromMergeTree::ReadFromMergeTree(
 {
     if (is_parallel_reading_from_replicas)
     {
-        if (all_ranges_callback_.has_value())
-            all_ranges_callback = all_ranges_callback_.value();
-        else
-            all_ranges_callback = context->getMergeTreeAllRangesCallback();
-
-        if (read_task_callback_.has_value())
-            read_task_callback = read_task_callback_.value();
-        else
-            read_task_callback = context->getMergeTreeReadTaskCallback();
+        /// Taken exactly as given: a read marked by `enableParallelReadingFromReplicasForSerialization`
+        /// is coordinated but carries no callbacks, because it is executed on the replicas, not here.
+        all_ranges_callback = std::move(all_ranges_callback_);
+        read_task_callback = std::move(read_task_callback_);
     }
 
     const auto & settings = context->getSettingsRef();
@@ -1169,6 +1199,19 @@ Pipe ReadFromMergeTree::readByLayers(
 
     if (reader_settings.read_in_order)
     {
+        /// `PREWHERE` runs before the sorting expression added below and may have removed an input
+        /// column that the sorting key needs. Prohibit removing those inputs; the sorting expression
+        /// keeps them, and they are dropped when the pipe header is converted to the step header.
+        /// Same reasoning as in `spreadMarkRangesAmongStreamsWithOrder`.
+        if (query_info.prewhere_info || query_info.row_level_filter)
+        {
+            NameSet sorting_key_columns;
+            for (const auto & column : storage_snapshot->metadata->getSortingKey().expression->getRequiredColumnsWithTypes())
+                sorting_key_columns.insert(column.name);
+
+            restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), sorting_key_columns);
+        }
+
         NameSet column_names_set(column_names.begin(), column_names.end());
         in_order_column_names_to_read = column_names;
 
@@ -1803,6 +1846,53 @@ static ActionsDAG createProjection(const Block & header)
     return ActionsDAG(header.getNamesAndTypesList());
 }
 
+/// Split ranges into smaller ones to avoid reading much data with the first blocks.
+/// In the direct reading order only the first few ranges are split (the reading may stop early because of LIMIT).
+/// In the reverse reading order all ranges are split, because a whole range has to be kept in memory to reverse it.
+static MarkRanges splitRangesToAvoidLargeReads(const MarkRanges & ranges, int direction, size_t rows_granularity, size_t max_block_size)
+{
+    MarkRanges new_ranges;
+    const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+    size_t marks_in_range = 1;
+
+    if (direction == 1)
+    {
+        /// Split first few ranges to avoid reading much data.
+        bool split = false;
+        for (auto range : ranges)
+        {
+            while (!split && range.begin + marks_in_range < range.end)
+            {
+                new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
+                range.begin += marks_in_range;
+                marks_in_range *= 2;
+
+                if (marks_in_range > max_marks_in_range)
+                    split = true;
+            }
+            new_ranges.emplace_back(range.begin, range.end);
+        }
+    }
+    else
+    {
+        /// Split all ranges to avoid reading much data, because we have to
+        ///  store whole range in memory to reverse it.
+        for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+        {
+            auto range = *it;
+            while (range.begin + marks_in_range < range.end)
+            {
+                new_ranges.emplace_front(range.end - marks_in_range, range.end);
+                range.end -= marks_in_range;
+                marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
+            }
+            new_ranges.emplace_front(range.begin, range.end);
+        }
+    }
+
+    return new_ranges;
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1835,53 +1925,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         have_input_columns_removed_after_prewhere = restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), sorting_columns);
     }
-
-    /// Let's split ranges to avoid reading much data.
-    auto split_ranges
-        = [rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity], my_max_block_size = block_size.max_block_size_rows]
-        (const auto & ranges, int direction)
-    {
-        MarkRanges new_ranges;
-        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
-        size_t marks_in_range = 1;
-
-        if (direction == 1)
-        {
-            /// Split first few ranges to avoid reading much data.
-            bool split = false;
-            for (auto range : ranges)
-            {
-                while (!split && range.begin + marks_in_range < range.end)
-                {
-                    new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
-                    range.begin += marks_in_range;
-                    marks_in_range *= 2;
-
-                    if (marks_in_range > max_marks_in_range)
-                        split = true;
-                }
-                new_ranges.emplace_back(range.begin, range.end);
-            }
-        }
-        else
-        {
-            /// Split all ranges to avoid reading much data, because we have to
-            ///  store whole range in memory to reverse it.
-            for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
-            {
-                auto range = *it;
-                while (range.begin + marks_in_range < range.end)
-                {
-                    new_ranges.emplace_front(range.end - marks_in_range, range.end);
-                    range.end -= marks_in_range;
-                    marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
-                }
-                new_ranges.emplace_front(range.begin, range.end);
-            }
-        }
-
-        return new_ranges;
-    };
 
     if (num_streams > 1)
     {
@@ -2014,7 +2057,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     parts_with_ranges.emplace_back(part);
                 }
 
-                ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
+                ranges_to_get_from_part = splitRangesToAvoidLargeReads(
+                    ranges_to_get_from_part,
+                    input_order_info->direction,
+                    (*data_settings)[MergeTreeSetting::index_granularity],
+                    block_size.max_block_size_rows);
                 new_parts.emplace_back(
                     part.data_part,
                     part.parent_part,
@@ -2287,6 +2334,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     chassert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
 
+    /// The read-in-order optimization may request reading in the reverse order (see `requestReadingInOrder`).
+    const bool read_in_reverse = reader_settings.read_in_order && query_info.input_order_info && query_info.input_order_info->direction < 0;
+    const auto read_type = read_in_reverse ? ReadType::InReverseOrder : ReadType::InOrder;
+
+    /// A whole range has to be kept in memory to read it in the reverse order, so split ranges into smaller ones.
+    auto split_ranges_for_reverse_read = [this](RangesInDataParts parts)
+    {
+        for (auto & part : parts)
+            part.ranges = splitRangesToAvoidLargeReads(
+                part.ranges, -1, (*data_settings)[MergeTreeSetting::index_granularity], block_size.max_block_size_rows);
+        return parts;
+    };
+
     /// If do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
     /// So we will store iterators pointed to the beginning of each partition range (and parts.end()),
@@ -2419,13 +2479,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (storage_snapshot->metadata->hasPrimaryKey())
             {
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
-                auto in_order_reading_step_getter = [this, &index_build_context, &column_names, &info](auto parts)
+                auto in_order_reading_step_getter
+                    = [this, &index_build_context, &column_names, &info, read_type, read_in_reverse, &split_ranges_for_reverse_read](auto parts)
                 {
+                    if (read_in_reverse)
+                        parts = split_ranges_for_reverse_read(std::move(parts));
+
                     return this->read(
                         std::move(parts),
                         index_build_context,
                         column_names,
-                        ReadType::InOrder,
+                        read_type,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
@@ -2514,11 +2578,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             }
             else
             {
+                if (read_in_reverse)
+                    new_parts = split_ranges_for_reverse_read(std::move(new_parts));
+
                 pipes.emplace_back(read(
                     std::move(new_parts),
                     index_build_context,
                     column_names,
-                    ReadType::InOrder,
+                    read_type,
                     max_layers,
                     0,
                     info.use_uncompressed_cache));
@@ -2544,12 +2611,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
+        /// When reading in the reverse order, the direction of each sorting key column is flipped.
+        const int direction_multiplier = read_in_reverse ? -1 : 1;
         for (size_t i = 0; i < sort_columns_size; ++i)
         {
             if (!reverse_flags.empty() && reverse_flags[i])
-                sort_description.emplace_back(sort_columns[i], -1);
+                sort_description.emplace_back(sort_columns[i], -1 * direction_multiplier);
             else
-                sort_description.emplace_back(sort_columns[i], 1);
+                sort_description.emplace_back(sort_columns[i], 1 * direction_multiplier);
         }
 
         for (auto & pipe : pipes)
@@ -2559,7 +2628,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 data.merging_params,
                 storage_snapshot->metadata,
                 block_size.max_block_size_rows,
-                enable_vertical_final);
+                enable_vertical_final,
+                read_in_reverse);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
@@ -3034,12 +3104,35 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
             partition_expr_names.begin(), partition_expr_names.end(),
             [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
 
-        auto partition_required_columns = partition_key.expression->getRequiredColumns();
+        const auto & partition_required_columns = partition_key.expression->getRequiredColumnsWithTypes();
         bool columns_match = std::all_of(
             partition_required_columns.begin(), partition_required_columns.end(),
-            [&](const auto & col) { return sorting_key_set.contains(col); });
+            [&](const auto & col) { return sorting_key_set.contains(col.name); });
 
-        skip_partition_pruning = !exprs_match && !columns_match;
+        /// "Determined by the sorting key" holds for value identity, not for comparator equality, and
+        /// the two differ for floating-point columns: `-0.0` compares equal to `0.0`, and every `NaN`
+        /// bit pattern compares equal to every other. A partition expression can tell exactly those
+        /// values apart - `toString(f)` maps `-0.0` and `0.0` to `'-0'` and `'0'`,
+        /// `reinterpretAsUInt64(f)` separates `NaN` payloads - so two rows of one deduplication group
+        /// can sit in different partitions. Pruning then drops the partition holding the group's
+        /// winner and the superseded row survives the FINAL merge.
+        bool reads_float_column = std::any_of(
+            partition_required_columns.begin(), partition_required_columns.end(),
+            [](const auto & col)
+            {
+                if (isFloat(removeLowCardinalityAndNullable(col.type)))
+                    return true;
+
+                bool has_float = false;
+                col.type->forEachChild([&](const IDataType & child)
+                {
+                    if (!has_float && WhichDataType(child).isFloat())
+                        has_float = true;
+                });
+                return has_float;
+            });
+
+        skip_partition_pruning = (!exprs_match && !columns_match) || reads_float_column;
     }
 }
 
@@ -3750,9 +3843,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (!direction)
         direction = getSortDirection();
 
-    /// Disable read-in-order optimization for reverse order with final.
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (direction != 1 && query_info.isFinal())
+    /// Reading in reverse order flips which row of a group with equal keys FINAL selects. Only the
+    /// Replacing algorithm compensates for that (see `ReplacingSortedAlgorithm`).
+    if (direction != 1 && query_info.isFinal()
+        && (data.merging_params.mode != MergeTreeData::MergingParams::Replacing
+            || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
@@ -6360,8 +6455,10 @@ bool ReadFromMergeTree::supportsBucketedRead() const
         && !context->getSettingsRef()[Setting::distributed_plan_prefer_replicas_over_workers])
         unsupported_deferred_filters = false;
 #endif
-    return !query_info.input_order_info
-        && !unsupported_deferred_filters
+    /// An order set before the plan was optimized (the old analyzer's executeOrderOptimized) is rejected in
+    /// checkDistributedReadSupported, so it cannot reach here. Do not gate on it: the worker path asks for
+    /// its order before consulting this, and refusing would route the read to a node with no catalog.
+    return !unsupported_deferred_filters
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         && index_read_tasks.empty();
 }
@@ -6369,17 +6466,15 @@ bool ReadFromMergeTree::supportsBucketedRead() const
 
 void ReadFromMergeTree::verifyBucketedReadSupported() const
 {
-    /// A bucketed read is pinned to the coordinator's part list and cannot re-derive read-in-order,
-    /// a projection, or text index tasks. A non-bucket read reaches a node that re-plans it locally
-    /// and re-derives them (a full replica; reads the stateless worker cannot reproduce are routed to
-    /// a replica too). Deferred FINAL filters are gated in supportsBucketedRead (bucketed only for the
-    /// worker path) and rejected in serialize.
+    /// A bucketed read is pinned to the coordinator's part list and cannot re-derive a projection or
+    /// text index tasks. A non-bucket read reaches a node that re-plans it locally and re-derives them
+    /// (a full replica; reads the stateless worker cannot reproduce are routed to a replica too).
+    /// ReadInOrder is now supported, it's info is serialized and sent to the replicas. Deferred
+    /// FINAL filters are gated in supportsBucketedRead (bucketed only for the worker path) and rejected
+    /// in serialize.
     if (distributed_read_bucket_count == 0)
         return;
 
-    if (query_info.input_order_info)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support a read-in-order distributed read");
     if (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read from a projection");
@@ -6467,6 +6562,24 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// Every distributed bucket's marks travel in its own per-read task parameter (set during fan-out),
     /// so the shared step carries only the bucket count and this read's parameter key.
     writeVarUInt(distributed_read_bucket_count, ctx.out);
+
+    const bool ship_input_order_info = query_info.input_order_info != nullptr && distributed_read_bucket_count > 0;
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
+    {
+        writeVarUInt(ship_input_order_info ? 1 : 0, ctx.out);
+        if (ship_input_order_info)
+        {
+            writeVarUInt(query_info.input_order_info->used_prefix_of_sorting_key_size, ctx.out);
+            writeIntBinary(static_cast<Int8>(query_info.input_order_info->direction), ctx.out);
+            writeVarUInt(query_info.input_order_info->limit, ctx.out);
+        }
+    }
+    else if (ship_input_order_info)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: a ReadInOrder distributed read requires query plan serialization "
+            "version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER);
     if (distributed_read_bucket_count > 0)
         writeStringBinary(distributed_read_param_name, ctx.out);
 }
@@ -6523,6 +6636,23 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     /// this read's parameter key.
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
+
+    size_t input_order_prefix_size = 0;
+    Int8 input_order_direction = 1;
+    UInt64 input_order_limit = 0;
+    bool has_input_order_info = false;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
+    {
+        UInt64 flag = 0;
+        readVarUInt(flag, ctx.in);
+        has_input_order_info = flag != 0;
+        if (has_input_order_info)
+        {
+            readVarUInt(input_order_prefix_size, ctx.in);
+            readIntBinary(input_order_direction, ctx.in);
+            readVarUInt(input_order_limit, ctx.in);
+        }
+    }
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
     /// closed at the version boundary instead of misparsing the rest of the plan.
     if (distributed_read_bucket_count > 0 && ctx.version < 2)
@@ -6568,11 +6698,10 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         num_streams,
         /*max_block_numbers_to_read*/ nullptr,
         /*merge_tree_select_result_ptr*/ nullptr,
-        /// On a replica this rebuilds the read in parallel-reading mode: the ReadFromMergeTree ctor
-        /// resolves the coordinator callbacks from ctx.context (set by TCPHandler) and the replica number
-        /// from client_info. Passing no extension keeps those resolved from the context. This path is
-        /// only reached for a plan that will actually be executed (see the ctx.skipping short-circuit
-        /// above), so the callbacks are always present.
+        /// On a replica this rebuilds the read in parallel-reading mode. Passing no extension makes
+        /// `readFromParts` take the coordinator callbacks from ctx.context (set by TCPHandler) and the
+        /// replica number from client_info. This path is only reached for a plan that will actually be
+        /// executed (see the ctx.skipping short-circuit above), so the callbacks are always present.
         enable_parallel_reading,
         /*extension*/ nullptr);
 
@@ -6582,6 +6711,16 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+
+        /// Inject the "read in order" the coordinator chose. This replica's ReadFromMergeTree step
+        /// drives the ordinary in-order path, including the per-layer merge and the reverse transform.
+        /// Only a bucketed read carries the contract: findReadingStep installs the order only when the
+        /// exchange pair collapses, which means the read was made distributed.
+        if (has_input_order_info
+            && !read_from_merge_tree_step->requestReadingInOrder(
+                input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Coordinator asked for a read-in-order distributed read that this node refused");
         read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
     }
 

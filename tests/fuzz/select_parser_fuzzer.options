@@ -1,6 +1,13 @@
 [libfuzzer]
 timeout = 60
 dict = all.dict
+# The seed corpus is generated from `tests/queries`, whose largest file is ~380 KB. Without an
+# explicit `max_len` libFuzzer sizes every input after that file, and parsing a query that long in
+# a sanitizer build exceeds the 60 second per-input timeout, so the target fails while it is still
+# replaying its own corpus. Mutating inputs that large also keeps the target at ~9 exec/s.
+# Same cap as `create_parser_fuzzer`.
+max_len = 65536
+rss_limit_mb = 8192
 
 [fuzzer_arguments]
 max_parser_backtracks = 10000
