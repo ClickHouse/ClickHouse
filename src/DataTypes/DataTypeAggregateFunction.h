@@ -65,7 +65,8 @@ public:
     /// True if `state_type_name` denotes a state with the same binary representation as (function, version).
     /// The names can differ: the aggregate function factory strips LowCardinality from the argument types,
     /// while the declared type keeps it, so `AggregateFunction(argMax, LowCardinality(String), DateTime)`
-    /// and `AggregateFunction(argMax, String, DateTime)` describe the very same state.
+    /// and `AggregateFunction(argMax, String, DateTime)` describe the very same state. A name that spells
+    /// parameters the function never reads describes it as well, and such a name can be unparseable.
     static bool nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version);
 
     /// Same as equals() but ignores the state variant (Aggregation vs Window).

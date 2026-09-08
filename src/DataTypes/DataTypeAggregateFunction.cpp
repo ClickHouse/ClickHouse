@@ -200,14 +200,18 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
 bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version)
 {
     auto state_type = DataTypeFactory::instance().tryGet(state_type_name);
-    const auto * aggregate_state_type = typeid_cast<const DataTypeAggregateFunction *>(state_type.get());
-    if (!aggregate_state_type)
-        return false;
+    if (const auto * aggregate_state_type = typeid_cast<const DataTypeAggregateFunction *>(state_type.get()))
+    {
+        if (aggregate_state_type->getVersion() == version
+            && strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType()))
+            return true;
+    }
 
-    if (aggregate_state_type->getVersion() != version)
-        return false;
-
-    return strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType());
+    /// A name that spells parameters this function never reads denotes the same state. Such a name can be
+    /// unparseable, which is what stops the comparison above, so that spelling is compared verbatim.
+    return !function->areParametersPartOfState()
+        && state_type_name
+            == DataTypeAggregateFunction(function, function->getArgumentTypes(), function->getParameters(), version).getName();
 }
 
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const

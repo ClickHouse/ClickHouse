@@ -42,8 +42,7 @@ namespace FailPoints
 }
 
 
-static String getTypeString(
-    const AggregateFunctionPtr & func, std::optional<size_t> version = std::nullopt, bool print_all_parameters = false)
+static String getTypeString(const AggregateFunctionPtr & func, std::optional<size_t> version = std::nullopt)
 {
     WriteBufferFromOwnString stream;
 
@@ -59,7 +58,7 @@ static String getTypeString(
     const auto & argument_types = func->getArgumentTypes();
     /// This name travels with every state serialized into a Field, so it must spell the state the same
     /// way its state type does, or such a Field no longer matches the type it came from.
-    if (!parameters.empty() && (print_all_parameters || func->areParametersPartOfState()))
+    if (!parameters.empty() && func->areParametersPartOfState())
     {
         stream << '(';
         for (size_t i = 0; i < parameters.size(); ++i)
@@ -645,15 +644,8 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 
 bool ColumnAggregateFunction::acceptsStateTypeName(const String & state_type_name) const
 {
-    if (type_string == state_type_name
-        || DataTypeAggregateFunction::nameMatchesState(state_type_name, func, version.value_or(func->getDefaultVersion())))
-        return true;
-
-    /// A name that still spells parameters this function never reads denotes the same state. Such a name
-    /// can be unparseable, which is what stops `nameMatchesState` from recognising it, so that spelling is
-    /// compared verbatim.
-    return !func->areParametersPartOfState()
-        && state_type_name == getTypeString(func, version, /*print_all_parameters=*/ true);
+    return type_string == state_type_name
+        || DataTypeAggregateFunction::nameMatchesState(state_type_name, func, version.value_or(func->getDefaultVersion()));
 }
 
 void ColumnAggregateFunction::insert(const Field & x)
