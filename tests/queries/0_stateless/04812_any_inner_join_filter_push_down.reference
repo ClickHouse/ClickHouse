@@ -17,14 +17,14 @@
 -- equi-key filter on the right column is still pushed to both sides
     Type: INNER
     Strictness: ANY
-        ReadType: Default
-          Prewhere filter column: equals(__table1.k, 1_UInt8) (removed)
-        ReadType: Default
-          Prewhere filter column: equals(__table2.k, 1_UInt8) (removed)
+          ReadType: Default
+            Prewhere filter column: equals(__table1.k, 1_UInt8) (removed)
+          ReadType: Default
+            Prewhere filter column: equals(__table2.k, 1_UInt8) (removed)
 -- equi-key filter on the left column is still pushed to both sides
     Type: INNER
     Strictness: ANY
-        ReadType: Default
-          Prewhere filter column: equals(__table1.k, 1_UInt8) (removed)
-        ReadType: Default
-          Prewhere filter column: equals(__table2.k, 1_UInt8) (removed)
+          ReadType: Default
+            Prewhere filter column: equals(__table1.k, 1_UInt8) (removed)
+          ReadType: Default
+            Prewhere filter column: equals(__table2.k, 1_UInt8) (removed)

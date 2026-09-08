@@ -41,7 +41,7 @@ check block number / offset mapping
 12	1	1
 
 index lookup
-Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
+Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (_commit_order)
     Indexes:

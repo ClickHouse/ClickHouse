@@ -25,8 +25,9 @@ Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
                   InputSelector
                     LazyFinalKeyAnalysis
                       CreatingSet
-                        Expression (( + ))
-                          ReadFromMergeTree (default.t_lazy_both)
+                        Expression
+                          Expression
+                            ReadFromMergeTree (default.t_lazy_both)
                     JoinLazyColumnsStep
                       LazyReadReplacingFinal
                         Expression

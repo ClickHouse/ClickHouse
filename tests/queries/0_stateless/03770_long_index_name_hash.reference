@@ -12,42 +12,45 @@ explicit_index_with_an_extremely_long_name_that_exceeds_the_maximum_file_name_le
 500	5000	700
 600	6000	800
 -- EXPLAIN for explicit index query:
-Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
-  ReadFromMergeTree (default.test_long_index_name)
-  Indexes:
-    Skip
-      Name: explicit_index_with_an_extremely_long_name_that_exceeds_the_maximum_file_name_length
-      Description: minmax GRANULARITY 1
-      Condition: (short_col in [100, 100])
-      Parts: 1/1
-      Granules: 1/4
-    Ranges: 1
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_long_index_name)
+    Indexes:
+      Skip
+        Name: explicit_index_with_an_extremely_long_name_that_exceeds_the_maximum_file_name_length
+        Description: minmax GRANULARITY 1
+        Condition: (short_col in [100, 100])
+        Parts: 1/1
+        Granules: 1/4
+      Ranges: 1
 -- Result of explicit index query:
 1	10	100
 -- EXPLAIN for implicit index on Chinese column:
-Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
-  ReadFromMergeTree (default.test_long_index_name)
-  Indexes:
-    Skip
-      Name: auto_minmax_index_一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串
-      Description: minmax GRANULARITY 1
-      Condition: (一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串 in [1, 1])
-      Parts: 1/1
-      Granules: 1/4
-    Ranges: 1
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_long_index_name)
+    Indexes:
+      Skip
+        Name: auto_minmax_index_一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串
+        Description: minmax GRANULARITY 1
+        Condition: (一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串 in [1, 1])
+        Parts: 1/1
+        Granules: 1/4
+      Ranges: 1
 -- Result of Chinese column query:
 1	10	100
 -- EXPLAIN for implicit index on long English column:
-Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
-  ReadFromMergeTree (default.test_long_index_name)
-  Indexes:
-    Skip
-      Name: auto_minmax_index_another_long_column_name_that_will_create_a_very_long_implicit_index_file_name
-      Description: minmax GRANULARITY 1
-      Condition: (another_long_column_name_that_will_create_a_very_long_implicit_index_file_name in [10, 10])
-      Parts: 1/1
-      Granules: 1/4
-    Ranges: 1
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_long_index_name)
+    Indexes:
+      Skip
+        Name: auto_minmax_index_another_long_column_name_that_will_create_a_very_long_implicit_index_file_name
+        Description: minmax GRANULARITY 1
+        Condition: (another_long_column_name_that_will_create_a_very_long_implicit_index_file_name in [10, 10])
+        Parts: 1/1
+        Granules: 1/4
+      Ranges: 1
 -- Result of English column query:
 1	10	100
 -- Verify column files are hashed (32 char SipHash128):
@@ -57,24 +60,26 @@ another_long_column_name_that_will_create_a_very_long_implicit_index_file_name	[
 -- Part properties with different settings:
 4	1
 -- EXPLAIN with explicit index (different settings):
-Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
-  ReadFromMergeTree (default.test_long_index_compact)
-  Indexes:
-    Skip
-      Name: explicit_index_with_an_extremely_long_name_that_exceeds_the_maximum_file_name_length
-      Description: minmax GRANULARITY 1
-      Condition: (short_col in [100, 100])
-      Parts: 1/1
-      Granules: 1/2
-    Ranges: 1
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_long_index_compact)
+    Indexes:
+      Skip
+        Name: explicit_index_with_an_extremely_long_name_that_exceeds_the_maximum_file_name_length
+        Description: minmax GRANULARITY 1
+        Condition: (short_col in [100, 100])
+        Parts: 1/1
+        Granules: 1/2
+      Ranges: 1
 -- EXPLAIN with implicit index (different settings):
-Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
-  ReadFromMergeTree (default.test_long_index_compact)
-  Indexes:
-    Skip
-      Name: auto_minmax_index_一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串
-      Description: minmax GRANULARITY 1
-      Condition: (一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串 in [1, 1])
-      Parts: 1/1
-      Granules: 1/2
-    Ranges: 1
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_long_index_compact)
+    Indexes:
+      Skip
+        Name: auto_minmax_index_一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串
+        Description: minmax GRANULARITY 1
+        Condition: (一个非常非常非常非常非常非常非常非常非常非常非常长的中文字符串 in [1, 1])
+        Parts: 1/1
+        Granules: 1/2
+      Ranges: 1

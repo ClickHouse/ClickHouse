@@ -13,8 +13,10 @@ ExpressionTransform × 8
           Copy 1 → 2
             (Expression)
             ExpressionTransform
-              (ReadFromMergeTree)
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+              (Expression)
+              ExpressionTransform
+                (ReadFromMergeTree)
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 
 ---Result---
 2023-01-05	all

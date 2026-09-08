@@ -258,34 +258,36 @@ EXPLAIN indexes = 1
 SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id;
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
-      ReadFromMergeTree (default.table_json)
-      Indexes:
-        PrimaryKey
-          Keys:
-            json.a
-            CAST(json.b, \'String\')
-          Condition: and((CAST(json.b, \'String\') in 2-element set), (json.a in [0, 0]))
-          Parts: 1/2
-          Granules: 1/8
-          Search Algorithm: generic exclusion search
-        Ranges: 1
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+              CAST(json.b, \'String\')
+            Condition: and((CAST(json.b, \'String\') in 2-element set), (json.a in [0, 0]))
+            Parts: 1/2
+            Granules: 1/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
 EXPLAIN indexes = 1
 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
-      ReadFromMergeTree (default.table_json)
-      Indexes:
-        PrimaryKey
-          Keys:
-            json.a
-            CAST(json.b, \'String\')
-          Condition: and((CAST(json.b, \'String\') notIn 2-element set), (json.a in [0, 0]))
-          Parts: 1/2
-          Granules: 2/8
-          Search Algorithm: generic exclusion search
-        Ranges: 1
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+              CAST(json.b, \'String\')
+            Condition: and((CAST(json.b, \'String\') notIn 2-element set), (json.a in [0, 0]))
+            Parts: 1/2
+            Granules: 2/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
 DROP TABLE IF EXISTS table_json_or_null;
 CREATE TABLE table_json_or_null (id UInt64, json JSON(a UInt32))
 ENGINE = MergeTree
@@ -301,18 +303,19 @@ WHERE json.a = 0 AND has(['0', '1'], json.b)
 ORDER BY id;
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
-      ReadFromMergeTree (default.table_json_or_null)
-      Indexes:
-        PrimaryKey
-          Keys:
-            json.a
-            CAST(json.b, \'UInt64\')
-          Condition: and((CAST(json.b, \'UInt64\') in 2-element set), (json.a in [0, 0]))
-          Parts: 1/1
-          Granules: 3/8
-          Search Algorithm: generic exclusion search
-        Ranges: 1
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json_or_null)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+              CAST(json.b, \'UInt64\')
+            Condition: and((CAST(json.b, \'UInt64\') in 2-element set), (json.a in [0, 0]))
+            Parts: 1/1
+            Granules: 3/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
 -- Not supported yet
 DROP TABLE IF EXISTS table_json_nested_cast;
 CREATE TABLE table_json_nested_cast (id UInt64, json JSON(a UInt32))
@@ -329,14 +332,15 @@ WHERE json.a = 0 AND has(['0', '1'], json.b)
 ORDER BY id;
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
-      ReadFromMergeTree (default.table_json_nested_cast)
-      Indexes:
-        PrimaryKey
-          Keys:
-            json.a
-          Condition: (json.a in [0, 0])
-          Parts: 1/1
-          Granules: 4/8
-          Search Algorithm: binary search
-        Ranges: 1
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json_nested_cast)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+            Condition: (json.a in [0, 0])
+            Parts: 1/1
+            Granules: 4/8
+            Search Algorithm: binary search
+          Ranges: 1

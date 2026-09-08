@@ -7,8 +7,9 @@ Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Union
       Sorting
-        Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
-          ReadFromMergeTree (default.mt)
+        Expression ((Before ORDER BY + Projection))
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.mt)
       Expression
         ReadFromMergeTree (proj)
 ---
@@ -16,8 +17,9 @@ Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Union
       Sorting
-        Expression (((Before ORDER BY + Projection) + (WHERE + Change column names to column identifiers)))
-          ReadFromMergeTree (default.mt)
+        Expression ((Before ORDER BY + Projection))
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.mt)
       Expression
         ReadFromMergeTree (proj)
 ---
