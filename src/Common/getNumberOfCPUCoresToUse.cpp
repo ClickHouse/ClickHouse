@@ -13,7 +13,38 @@
 #include <filesystem>
 #include <thread>
 #include <set>
+#include <charconv>
+#include <optional>
 #include <vector>
+
+#if defined(OS_LINUX)
+namespace
+{
+    std::optional<uint32_t> countCPUsInList(const std::string & cpu_list);
+}
+#endif
+
+unsigned getNumberOfLogicalCPUCores()
+{
+    static const unsigned cores = []
+    {
+#if defined(OS_LINUX)
+        /// Read the kernel's own list of online CPUs. This is what glibc's sysconf(_SC_NPROCESSORS_ONLN) does.
+        /// musl derives the same sysconf value from the calling thread's affinity mask instead, so a server started
+        /// under `taskset` would see a different core count depending on the libc it was linked against, and every
+        /// `auto` setting and thread pool sized from it would differ. Reading sysfs directly makes the result
+        /// libc-independent. Cgroup CPU limits are applied on top by getNumberOfCPUCoresToUse.
+        std::ifstream online("/sys/devices/system/cpu/online");
+        std::string line;
+        if (online.is_open() && std::getline(online, line))
+            if (auto count = countCPUsInList(line))
+                return *count;
+        /// /sys is not mounted (chroot) or has an unexpected format.
+#endif
+        return std::thread::hardware_concurrency();
+    }();
+    return cores;
+}
 
 namespace
 {
@@ -28,6 +59,38 @@ int32_t readFrom(const std::filesystem::path & filename, int default_value)
     if (infile >> idata)
         return idata;
     return default_value;
+}
+
+/// Parse a kernel cpu-list such as "0-15" or "0,2-4,7" (the format of /sys/devices/system/cpu/* and
+/// cgroup cpuset files) and return the number of CPUs in it, or nullopt if the text is not a cpu-list.
+std::optional<uint32_t> countCPUsInList(const std::string & cpu_list)
+{
+    if (cpu_list.empty())
+        return std::nullopt;
+
+    auto parse = [](const std::string & text, int & value)
+    {
+        return std::from_chars(text.data(), text.data() + text.size(), value).ec == std::errc{};
+    };
+
+    std::vector<std::string> cpu_ranges;
+    boost::split(cpu_ranges, cpu_list, boost::is_any_of(","));
+    uint32_t cpus_count = 0;
+    for (const std::string & cpu_number_or_range : cpu_ranges)
+    {
+        std::vector<std::string> cpu_range;
+        boost::split(cpu_range, cpu_number_or_range, boost::is_any_of("-"));
+
+        int start = 0;
+        int end = 0;
+        if (cpu_range.size() == 1 && parse(cpu_range[0], start))
+            end = start;
+        else if (cpu_range.size() != 2 || !parse(cpu_range[0], start) || !parse(cpu_range[1], end) || end < start)
+            return std::nullopt;
+
+        cpus_count += static_cast<uint32_t>(end - start) + 1;
+    }
+    return cpus_count;
 }
 
 /// Try to look at cgroups limit if it is available.
@@ -72,28 +135,12 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
             {
                 // The line in the file is "0,2-4,6,9-14" cpu numbers
                 // It's always grouped and ordered
-                std::vector<std::string> cpu_ranges;
                 std::string cpuset_line;
                 cpuset_cpus_file >> cpuset_line;
-                if (cpuset_line.empty())
+                auto cpus_count = countCPUsInList(cpuset_line);
+                if (!cpus_count)
                     continue;
-                boost::split(cpu_ranges, cpuset_line, boost::is_any_of(","));
-                uint32_t cpus_count = 0;
-                for (const std::string& cpu_number_or_range : cpu_ranges)
-                {
-                    std::vector<std::string> cpu_range;
-                    boost::split(cpu_range, cpu_number_or_range, boost::is_any_of("-"));
-
-                    if (cpu_range.size() == 2)
-                    {
-                        int start = std::stoi(cpu_range[0]);
-                        int end = std::stoi(cpu_range[1]);
-                        cpus_count += (end - start) + 1;
-                    }
-                    else
-                        cpus_count++;
-                }
-                quota_count = std::min(cpus_count, quota_count);
+                quota_count = std::min(*cpus_count, quota_count);
                 break;
             }
         }
@@ -111,8 +158,8 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 }
 #endif
 
-/// Returns number of physical cores, unlike std::thread::hardware_concurrency() which returns the logical core count. With 2-way SMT
-/// (HyperThreading) enabled, physical_concurrency() returns half of of std::thread::hardware_concurrency(), otherwise return the same.
+/// Returns number of physical cores, unlike getNumberOfLogicalCPUCores which returns the logical core count. With 2-way SMT
+/// (HyperThreading) enabled, physical_concurrency() returns half of getNumberOfLogicalCPUCores(), otherwise return the same.
 #if defined(__x86_64__) && defined(OS_LINUX)
 unsigned physical_concurrency()
 try
@@ -125,7 +172,7 @@ try
 
     if (!proc_cpuinfo.is_open())
         /// In obscure cases (chroot) /proc can be unmounted
-        return std::thread::hardware_concurrency();
+        return getNumberOfLogicalCPUCores();
 
     using CoreEntry = std::pair<size_t, size_t>; /// physical id, core id
     using CoreEntrySet = std::set<CoreEntry>;
@@ -157,17 +204,17 @@ try
             continue;
         }
     }
-    return core_entries.empty() ? /*unexpected format*/ std::thread::hardware_concurrency() : static_cast<unsigned>(core_entries.size());
+    return core_entries.empty() ? /*unexpected format*/ getNumberOfLogicalCPUCores() : static_cast<unsigned>(core_entries.size());
 }
 catch (const std::exception &)
 {
-    return std::thread::hardware_concurrency(); /// parsing error
+    return getNumberOfLogicalCPUCores(); /// parsing error
 }
 #endif
 
 unsigned getNumberOfCPUCoresToUseImpl()
 {
-    unsigned cores = std::thread::hardware_concurrency(); /// logical cores (with SMT/HyperThreading)
+    unsigned cores = getNumberOfLogicalCPUCores(); /// logical cores (with SMT/HyperThreading)
 
 #if defined(__x86_64__) && defined(OS_LINUX)
     /// Most x86_64 CPUs have 2-way SMT (Hyper-Threading).
