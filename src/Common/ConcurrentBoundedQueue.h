@@ -191,8 +191,6 @@ public:
         return swap_container;
     }
 
-
-
     /// Returns size of queue
     size_t size() const
     {
