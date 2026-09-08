@@ -2,19 +2,15 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
@@ -84,10 +80,10 @@ public:
     {
         size_t attributes_to_fetch_size = attributes_to_fetch_names.size();
 
-        chassert(attributes_to_fetch_size == attributes_to_fetch_types.size());
+        assert(attributes_to_fetch_size == attributes_to_fetch_types.size());
 
         bool has_default = attributes_to_fetch_default_values_columns;
-        chassert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
+        assert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
 
         for (size_t i = 0; i < attributes_to_fetch_size; ++i)
             attributes_to_fetch_name_to_index.emplace(attributes_to_fetch_names[i], i);
@@ -264,10 +260,8 @@ class DictionaryAttributeColumnProvider
 public:
     using ColumnType =
         std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
-            std::conditional_t<std::is_same_v<DictionaryAttributeType, Map>, ColumnMap,
-                std::conditional_t<std::is_same_v<DictionaryAttributeType, Object>, ColumnObject,
-                    std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-                        ColumnVectorOrDecimal<DictionaryAttributeType>>>>>;
+            std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
+                ColumnVectorOrDecimal<DictionaryAttributeType>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
@@ -282,28 +276,6 @@ public:
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
-        }
-        if constexpr (std::is_same_v<DictionaryAttributeType, Map>)
-        {
-            if (const auto * map_type = typeid_cast<const DataTypeMap *>(dictionary_attribute.type.get()))
-                return ColumnMap::create(map_type->getNestedType()->createColumn());
-
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Map attribute type.");
-        }
-        if constexpr (std::is_same_v<DictionaryAttributeType, Object>)
-        {
-            auto non_nullable_type = removeNullable(dictionary_attribute.type);
-            if (const auto * object_type = typeid_cast<const DataTypeObject *>(non_nullable_type.get()))
-            {
-                UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
-                typed_path_columns.reserve(object_type->getTypedPaths().size());
-                for (const auto & [path, type] : object_type->getTypedPaths())
-                    typed_path_columns[path] = type->createColumn();
-
-                return ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes());
-            }
-
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Object attribute type.");
         }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
@@ -398,22 +370,12 @@ public:
         if (use_attribute_default_value)
             return static_cast<DefaultValueType>(default_value);
 
-        chassert(default_values_column != nullptr);
+        assert(default_values_column != nullptr);
 
         if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
         {
             Field field = (*default_values_column)[row];
             return field.safeGet<Array>();
-        }
-        else if constexpr (std::is_same_v<DefaultColumnType, ColumnMap>)
-        {
-            Field field = (*default_values_column)[row];
-            return field.safeGet<Map>();
-        }
-        else if constexpr (std::is_same_v<DefaultColumnType, ColumnObject>)
-        {
-            Field field = (*default_values_column)[row];
-            return field.safeGet<Object>();
         }
         else if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
@@ -472,7 +434,7 @@ public:
         : key_columns(key_columns_)
         , complex_key_arena(complex_key_arena_)
     {
-        chassert(!key_columns.empty());
+        assert(!key_columns.empty());
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
@@ -498,7 +460,7 @@ public:
 
     KeyType extractCurrentKey()
     {
-        chassert(current_key_index < keys_size);
+        assert(current_key_index < keys_size);
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
@@ -696,7 +658,8 @@ Block mergeBlockWithPipe(
 /**
  * Returns ColumnVector data as PaddedPodArray.
 
- * If column is constant parameter backup_storage is used to store values.
+ * If the column has to be converted to a full one, parameter backup_storage is used to store values,
+ * because the converted column may not be owned by anything that outlives this call.
  */
 /// TODO: Remove
 template <typename T>
@@ -705,7 +668,6 @@ static const PaddedPODArray<T> & getColumnVectorData(
     const ColumnPtr column,
     PaddedPODArray<T> & backup_storage)
 {
-    bool is_const_column = isColumnConst(*column);
     auto full_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
@@ -717,12 +679,13 @@ static const PaddedPODArray<T> & getColumnVectorData(
             TypeName<T>);
     }
 
-    if (is_const_column)
+    /// A different pointer means a conversion happened (Const, Sparse or ColumnReplicated; a Tuple
+    /// never reaches here because the check above requires a ColumnVector), so the data may live
+    /// only in a column owned by `full_column` and die at return: copy it. An unconverted column is
+    /// kept alive by `column` itself.
+    if (full_column.get() != column.get())
     {
-        // With type conversion and const columns we need to use backup storage here
-        auto & data = vector_col->getData();
-        backup_storage.assign(data);
-
+        backup_storage.assign(vector_col->getData());
         return backup_storage;
     }
 

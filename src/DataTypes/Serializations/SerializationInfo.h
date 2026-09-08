@@ -40,15 +40,7 @@ public:
         size_t num_rows = 0;
         size_t num_defaults = 0;
 
-        /// True when `num_defaults` was counted exactly rather than sampled. Consumers
-        /// that would produce wrong results from a sampled estimate (trivial count
-        /// rewrite, sparsity pruning) must require this flag.
-        bool exact_num_defaults = false;
-
-        /// `exact` controls whether `num_defaults` is computed precisely (O(rows)
-        /// per column, sets `exact_num_defaults`) or sampled (cheap, leaves the flag
-        /// at its current value).
-        void add(const IColumn & column, bool exact);
+        void add(const IColumn & column);
         void add(const Data & other);
         void remove(const Data & other);
         void addDefaults(size_t length);
@@ -78,7 +70,6 @@ public:
     virtual void serialializeKindStackBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
-    virtual void writeJSON(WriteBuffer & out, const String * name) const;
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
@@ -91,8 +82,6 @@ public:
     static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 
 protected:
-    virtual void writeJSONFields(WriteBuffer & out, const String * name) const;
-
     const SerializationInfoSettings settings;
 
     ISerialization::KindStack kind_stack;

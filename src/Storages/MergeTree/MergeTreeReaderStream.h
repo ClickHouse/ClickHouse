@@ -35,11 +35,6 @@ public:
 
     virtual ~MergeTreeReaderStream();
 
-    /// Returns true if the mark file has at most `max_transitions` distinct
-    /// consecutive (offset_in_compressed_file, offset_in_decompressed_block)
-    /// positions. Loads marks from cache if available.
-    bool hasAtMostNDistinctMarks(size_t max_transitions) const;
-
     /// Seeks to start of @row_index mark. Column position is implementation defined.
     virtual void seekToMark(size_t row_index) = 0;
 

@@ -7,4 +7,6 @@ title: 'Expression'
 doc_type: 'reference'
 ---
 
+# Expression
+
 Expressions are used for representing lambdas in high-order functions.

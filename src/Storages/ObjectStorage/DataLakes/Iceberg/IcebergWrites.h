@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <unordered_set>
+#include <Columns/IColumn.h>
 #include <Core/Range.h>
 #include <Core/SortDescription.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -45,34 +45,12 @@ namespace DB
 
 String removeEscapedSlashes(const String & json_str);
 
-String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
-
-/// Per-file column statistics carried over verbatim from a source manifest entry during a manifest-only rewrite.
-struct DataFileColumnStatistics
-{
-    std::vector<std::pair<Int32, Int64>> column_sizes;
-    std::vector<std::pair<Int32, Int64>> value_counts;
-    std::vector<std::pair<Int32, Int64>> null_value_counts;
-    std::vector<std::pair<Int32, String>> lower_bounds;
-    std::vector<std::pair<Int32, String>> upper_bounds;
-};
-
-/// Per-file manifest-entry lineage (`added_snapshot_id`, data `sequence_number` and `file_sequence_number`) carried over for a manifest-only rewrite.
-struct DataFileEntryLineage
-{
-    std::optional<Int64> added_snapshot_id;
-    std::optional<Int64> sequence_number;
-    std::optional<Int64> file_sequence_number;
-};
-
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const DataTypes & partition_types,
-    const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
-    const std::vector<UInt64> & data_file_row_counts,
-    const std::vector<UInt64> & data_file_byte_counts,
+    const std::vector<DataTypePtr> & partition_types,
+    const std::vector<String> & data_file_names,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -118,13 +96,13 @@ struct ManifestListEntryCounts
 };
 
 void generateManifestList(
-    const Iceberg::IcebergPathResolver & path_resolver,
+    const FileNamesGenerator & filename_generator,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
-    const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
+    const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
-    const std::vector<Int64> & manifest_entry_sizes,
+    Int64 manifest_length,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true,
@@ -189,6 +167,8 @@ private:
     Iceberg::PersistentTableComponents persistent_table_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
+    const String blob_storage_type_name;
+    const String blob_storage_namespace_name;
 
 };
 

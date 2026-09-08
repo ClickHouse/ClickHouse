@@ -398,8 +398,6 @@ namespace
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
-        query.access_rights_elements.throwIfFilterIsNotCompilable();
-
         AccessRightsElements elements_to_grant;
         AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
@@ -441,11 +439,6 @@ BlockIO InterpreterGrantQuery::execute()
         }
     }
 
-    /// The parser does not compile the pattern of `GRANT READ ON S3('s3://foo/.*')` - that would
-    /// put a regex engine in it - so it is validated here, and on every other path that turns an
-    /// `ASTGrantQuery` into access rights.
-    query.access_rights_elements.throwIfFilterIsNotCompilable();
-
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
     /// Collect access rights and roles we're going to grant or revoke.
@@ -456,19 +449,6 @@ BlockIO InterpreterGrantQuery::execute()
     std::vector<UUID> roles_to_grant;
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
-
-    /// A role cannot be granted to itself.
-    for (const auto & grantee_id : grantees)
-    {
-        if (std::find(roles_to_grant.begin(), roles_to_grant.end(), grantee_id) != roles_to_grant.end())
-        {
-            auto entity = access_control.tryRead(grantee_id);
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot grant role '{}' to itself",
-                entity ? entity->getName() : String{});
-        }
-    }
 
     /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
     String current_database = getContext()->getCurrentDatabase();
@@ -532,7 +512,6 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     updateFromQuery(role, query);
 }
 
-void registerInterpreterGrantQuery(InterpreterFactory & factory);
 void registerInterpreterGrantQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

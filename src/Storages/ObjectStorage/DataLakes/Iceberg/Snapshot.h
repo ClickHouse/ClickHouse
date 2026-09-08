@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 
 namespace DB::Iceberg
 {
@@ -33,15 +32,18 @@ struct IcebergDataSnapshot
 };
 
 using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
-
 struct IcebergHistoryRecord
 {
-    Int64 snapshot_id{};
-    DB::DateTime64 made_current_at{};
-    Int64 parent_id{};
-    bool is_current_ancestor{};
-    Iceberg::IcebergPathFromMetadata manifest_list_path;
-    std::optional<Iceberg::SnapshotSummary> snapshot_summary;
+    Int64 snapshot_id;
+    DB::DateTime64 made_current_at;
+    Int64 parent_id;
+    bool is_current_ancestor;
+    String manifest_list_path;
+
+    Int32 added_files = 0;
+    Int32 added_records = 0;
+    Int32 added_files_size;
+    Int32 num_partitions;
 };
 
 using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
