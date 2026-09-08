@@ -150,7 +150,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// A MATERIALIZED CTE is materialized once, so its body cannot be correlated.
+/// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
 /// Must run for every reference: clones of one body can resolve differently.
 void checkMaterializedCTESubqueryIsNotCorrelated(
     const QueryTreeNodePtr & subquery,
