@@ -156,7 +156,7 @@ CREATE TABLE tab_sel_ref (
 ENGINE = MergeTree
 ORDER BY id;
 
--- The posting list codec writes the per-segment block index the rank cursors seek in.
+-- The cursors need the block index, which only the posting list codec writes.
 CREATE TABLE tab_sel_idx (
     id UInt32,
     message String,
@@ -166,23 +166,31 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'bitpacking';
 
--- Rare tokens planted every 256th row: 32 occurrences stay above MAX_CARDINALITY_FOR_RAW_POSTINGS,
--- so their postings keep the block index, while staying rare enough to pick the cursors.
+-- The rare tokens spread over several blocks and two segments, and half of their rows have no
+-- 'clickhouse', so the cursors have to skip ahead. 'unicorn' is rare enough to be embedded.
 INSERT INTO tab_sel_ref
-SELECT number, concat('hello clickhouse world', if(number % 256 = 0, ' needle clickhouse rare', ''))
-FROM numbers(8192);
+SELECT number, concat(
+    if(number % 3 = 0, 'hello world', 'hello clickhouse world'),
+    multiIf(number % 1024 = 37, ' needle clickhouse rare', number % 1024 = 549, ' needle rare', ''),
+    if(number IN (1000, 2000, 3000), ' unicorn clickhouse', ''))
+FROM numbers(262144);
 
 INSERT INTO tab_sel_idx SELECT id, message FROM tab_sel_ref;
+OPTIMIZE TABLE tab_sel_idx FINAL;
 
 SELECT 'Candidates from cursors';
-SELECT arraySort(groupArray(id)) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse');
-SELECT arraySort(groupArray(id)) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse');
-SELECT arraySort(groupArray(id)) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse rare');
-SELECT arraySort(groupArray(id)) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse rare');
-SELECT arraySort(groupArray(id)) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse rare');
-SELECT arraySort(groupArray(id)) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse rare');
-SELECT arraySort(groupArray(id)) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse needle');
-SELECT arraySort(groupArray(id)) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse rare');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse rare');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'world needle');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'world needle');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse needle');
+SELECT count(), sum(id) FROM tab_sel_ref WHERE hasPhrase(message, 'unicorn clickhouse');
+SELECT count(), sum(id) FROM tab_sel_idx WHERE hasPhrase(message, 'unicorn clickhouse');
 
 SELECT 'Candidates from bitmaps';
 SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse');
