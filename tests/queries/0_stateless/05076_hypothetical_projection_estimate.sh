@@ -90,7 +90,7 @@ $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_real_c ADD PROJECTION p_c (SELECT id, b, v ORDER BY b);
     INSERT INTO t_est_c SELECT number, number % 1000, number, repeat('x', 4000) FROM numbers(50000);
     INSERT INTO t_real_c SELECT number, number % 1000, number, repeat('x', 4000) FROM numbers(50000);
-    SELECT 'real projection part marks:', marks FROM system.projection_parts WHERE table = 't_real_c' AND active;
+    SELECT 'real projection part marks:', marks FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_real_c' AND active;
 "
 compare p_c "(SELECT id, b, v ORDER BY b)" "SELECT sum(v) FROM TABLE WHERE b >= 0" t_est_c t_real_c
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;"
