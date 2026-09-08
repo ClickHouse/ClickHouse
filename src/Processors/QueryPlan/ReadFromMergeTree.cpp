@@ -11,6 +11,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
@@ -197,14 +198,47 @@ bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
     return added;
 }
 
+/// Same as above, but for a filter DAG whose result column is erased by name after the DAG runs.
+/// A requested column that is already an output is still erased when it happens to BE that filter
+/// column (a bare `PREWHERE c`, or a row policy `USING b`), so there the remove-filter flag is
+/// cleared instead: after filtering the column keeps its original values for the surviving rows.
+/// Only the filter column itself is exempted, so a computed filter column keeps being removed.
+/// Same reasoning and shape as `reexpose_in_filter` in `addStartingPartOffsetAndPartOffset`.
+bool restoreFilterDAGInputs(ActionsDAG & dag, const String & filter_column_name, bool & remove_filter_column, const NameSet & inputs)
+{
+    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    bool added = false;
+    for (const auto * input : dag.getInputs())
+    {
+        if (!inputs.contains(input->result_name))
+            continue;
+
+        if (!outputs.contains(input))
+        {
+            dag.getOutputs().push_back(input);
+            added = true;
+        }
+        else if (remove_filter_column && input->result_name == filter_column_name)
+        {
+            remove_filter_column = false;
+            added = true;
+        }
+    }
+
+    return added;
+}
+
 bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info, const NameSet & inputs)
 {
     bool added = false;
+    /// Both DAGs must be visited: `||` would short-circuit and skip the prewhere restore.
     if (row_level_filter)
-        added = added || restoreDAGInputs(row_level_filter->actions, inputs);
+        added |= restoreFilterDAGInputs(
+            row_level_filter->actions, row_level_filter->column_name, row_level_filter->do_remove_column, inputs);
 
     if (info)
-        added = added || restoreDAGInputs(info->prewhere_actions, inputs);
+        added |= restoreFilterDAGInputs(
+            info->prewhere_actions, info->prewhere_column_name, info->remove_prewhere_column, inputs);
 
     return added;
 }
@@ -498,15 +532,10 @@ ReadFromMergeTree::ReadFromMergeTree(
 {
     if (is_parallel_reading_from_replicas)
     {
-        if (all_ranges_callback_.has_value())
-            all_ranges_callback = all_ranges_callback_.value();
-        else
-            all_ranges_callback = context->getMergeTreeAllRangesCallback();
-
-        if (read_task_callback_.has_value())
-            read_task_callback = read_task_callback_.value();
-        else
-            read_task_callback = context->getMergeTreeReadTaskCallback();
+        /// Taken exactly as given: a read marked by `enableParallelReadingFromReplicasForSerialization`
+        /// is coordinated but carries no callbacks, because it is executed on the replicas, not here.
+        all_ranges_callback = std::move(all_ranges_callback_);
+        read_task_callback = std::move(read_task_callback_);
     }
 
     const auto & settings = context->getSettingsRef();
@@ -1170,6 +1199,19 @@ Pipe ReadFromMergeTree::readByLayers(
 
     if (reader_settings.read_in_order)
     {
+        /// `PREWHERE` runs before the sorting expression added below and may have removed an input
+        /// column that the sorting key needs. Prohibit removing those inputs; the sorting expression
+        /// keeps them, and they are dropped when the pipe header is converted to the step header.
+        /// Same reasoning as in `spreadMarkRangesAmongStreamsWithOrder`.
+        if (query_info.prewhere_info || query_info.row_level_filter)
+        {
+            NameSet sorting_key_columns;
+            for (const auto & column : storage_snapshot->metadata->getSortingKey().expression->getRequiredColumnsWithTypes())
+                sorting_key_columns.insert(column.name);
+
+            restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), sorting_key_columns);
+        }
+
         NameSet column_names_set(column_names.begin(), column_names.end());
         in_order_column_names_to_read = column_names;
 
@@ -3062,12 +3104,35 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
             partition_expr_names.begin(), partition_expr_names.end(),
             [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
 
-        auto partition_required_columns = partition_key.expression->getRequiredColumns();
+        const auto & partition_required_columns = partition_key.expression->getRequiredColumnsWithTypes();
         bool columns_match = std::all_of(
             partition_required_columns.begin(), partition_required_columns.end(),
-            [&](const auto & col) { return sorting_key_set.contains(col); });
+            [&](const auto & col) { return sorting_key_set.contains(col.name); });
 
-        skip_partition_pruning = !exprs_match && !columns_match;
+        /// "Determined by the sorting key" holds for value identity, not for comparator equality, and
+        /// the two differ for floating-point columns: `-0.0` compares equal to `0.0`, and every `NaN`
+        /// bit pattern compares equal to every other. A partition expression can tell exactly those
+        /// values apart - `toString(f)` maps `-0.0` and `0.0` to `'-0'` and `'0'`,
+        /// `reinterpretAsUInt64(f)` separates `NaN` payloads - so two rows of one deduplication group
+        /// can sit in different partitions. Pruning then drops the partition holding the group's
+        /// winner and the superseded row survives the FINAL merge.
+        bool reads_float_column = std::any_of(
+            partition_required_columns.begin(), partition_required_columns.end(),
+            [](const auto & col)
+            {
+                if (isFloat(removeLowCardinalityAndNullable(col.type)))
+                    return true;
+
+                bool has_float = false;
+                col.type->forEachChild([&](const IDataType & child)
+                {
+                    if (!has_float && WhichDataType(child).isFloat())
+                        has_float = true;
+                });
+                return has_float;
+            });
+
+        skip_partition_pruning = (!exprs_match && !columns_match) || reads_float_column;
     }
 }
 
@@ -6633,11 +6698,10 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         num_streams,
         /*max_block_numbers_to_read*/ nullptr,
         /*merge_tree_select_result_ptr*/ nullptr,
-        /// On a replica this rebuilds the read in parallel-reading mode: the ReadFromMergeTree ctor
-        /// resolves the coordinator callbacks from ctx.context (set by TCPHandler) and the replica number
-        /// from client_info. Passing no extension keeps those resolved from the context. This path is
-        /// only reached for a plan that will actually be executed (see the ctx.skipping short-circuit
-        /// above), so the callbacks are always present.
+        /// On a replica this rebuilds the read in parallel-reading mode. Passing no extension makes
+        /// `readFromParts` take the coordinator callbacks from ctx.context (set by TCPHandler) and the
+        /// replica number from client_info. This path is only reached for a plan that will actually be
+        /// executed (see the ctx.skipping short-circuit above), so the callbacks are always present.
         enable_parallel_reading,
         /*extension*/ nullptr);
 
