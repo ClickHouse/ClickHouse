@@ -17,6 +17,8 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
+`CREATE ROLE` requires the [CREATE ROLE](/reference/statements/grant#access-management) privilege. `OR REPLACE` throws away an existing role of the same name, along with the privileges granted to it, so it additionally requires the [DROP ROLE](/reference/statements/grant#access-management) privilege. The `DROP ROLE` privilege is required on every name listed in the statement whether or not that role already exists, so the statement cannot be used to find out which roles exist.
+
 ## Managing Roles {#managing-roles}
 
 A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](/reference/statements/set-role) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it's user account, they are also combined with the privileges granted by roles.
