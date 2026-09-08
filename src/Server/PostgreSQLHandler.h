@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
+#include "config.h"
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Server/IServer.h>
-
-#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -40,8 +38,7 @@ public:
         bool ssl_enabled_,
         bool secure_required_,
         Int32 connection_id_,
-        std::optional<String> default_session_user_,
-        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -75,16 +72,8 @@ private:
     /// Emit one `ReadyForQuery` at the next protocol boundary.
     bool need_ready_for_query = false;
 
-    /// If set, overrides the `default_session_user` server setting for this listener.
-    std::optional<String> default_session_user;
-
     /// Discard extended-query messages through the next `Sync`.
     bool ignore_until_sync = false;
-
-    /// True between the first Parse/Bind/Describe/Execute/Close of an extended-query
-    /// cycle and the `Sync`, or the simple `Query`, that ends it. Outside such a cycle
-    /// no `Sync` is coming.
-    bool in_extended_query_cycle = false;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
@@ -133,8 +122,6 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
-    void recoverFromRejectedMessage();
-
     std::function<void(const Progress&)> createProgressCallback(
         ContextMutablePtr query_context,
         std::atomic<UInt64>& result_rows,
@@ -147,9 +134,6 @@ private:
 
     static bool isEmptyQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
-
-    void initializeSystemTables(ContextMutablePtr query_context);
-    bool should_init_system_tables = true;
 };
 
 }

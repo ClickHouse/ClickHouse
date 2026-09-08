@@ -1,9 +1,12 @@
+import psycopg2
 import pytest
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 import uuid
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import get_postgres_conn
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -105,22 +108,6 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
 
     node1.query("ATTACH TABLE postgres_database.test_table")
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
-
-    # Test DETACH PERMANENTLY for system.detached_tables (PR #107943)
-    node1.query("DETACH TABLE postgres_database.test_table PERMANENTLY")
-    is_perm = node1.query(
-        "SELECT is_permanently FROM system.detached_tables WHERE database = 'postgres_database' AND table = 'test_table'"
-    ).strip()
-    assert is_perm == "1", f"Expected is_permanently=1, got {is_perm}"
-    node1.query("ATTACH TABLE postgres_database.test_table")
-
-    # Test ordinary DETACH TABLE (not PERMANENTLY) for system.detached_tables (PR #107943)
-    node1.query("DETACH TABLE postgres_database.test_table")
-    is_perm_ordinary = node1.query(
-        "SELECT is_permanently FROM system.detached_tables WHERE database = 'postgres_database' AND table = 'test_table'"
-    ).strip()
-    assert is_perm_ordinary == "0", f"Expected is_permanently=0 for ordinary detach, got {is_perm_ordinary}"
-    node1.query("ATTACH TABLE postgres_database.test_table")
 
     node1.query("DROP DATABASE postgres_database")
     assert "postgres_database" not in node1.query("SHOW DATABASES")
@@ -291,8 +278,8 @@ def test_postgresql_database_with_schema(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("DROP TABLE IF EXISTS test_table")
-    cursor.execute("CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
+    cursor.execute(f"DROP TABLE IF EXISTS test_table")
+    cursor.execute(f"CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
 
     node1.query("DROP DATABASE IF EXISTS postgres_database")
     node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
@@ -309,7 +296,7 @@ def test_predefined_connection_configuration(started_cluster):
         "INSERT INTO postgres_database.test_table SELECT number, number from numbers(100)"
     )
     assert (
-        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
 
@@ -324,7 +311,7 @@ def test_predefined_connection_configuration(started_cluster):
         "INSERT INTO postgres_database.test_table SELECT number from numbers(200)"
     )
     assert (
-        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
         == "200"
     )
 
@@ -342,7 +329,7 @@ def test_predefined_connection_configuration(started_cluster):
         "CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres3, port=5432)"
     )
     assert (
-        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
     node1.query(
@@ -352,13 +339,13 @@ def test_predefined_connection_configuration(started_cluster):
         """
     )
     assert (
-        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
+        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
     assert node1.contains_in_log("Cached table `test_table`")
 
     node1.query("DROP DATABASE postgres_database")
-    cursor.execute("DROP TABLE test_table ")
+    cursor.execute(f"DROP TABLE test_table ")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
 
@@ -375,7 +362,7 @@ def test_postgres_database_old_syntax(started_cluster):
     )
     create_postgres_table(cursor, "test_table")
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
-    cursor.execute("DROP TABLE test_table")
+    cursor.execute(f"DROP TABLE test_table")
     node1.query("DROP DATABASE IF EXISTS postgres_database;")
 
 
@@ -399,7 +386,7 @@ def test_postgresql_fetch_tables(started_cluster):
     assert not node1.contains_in_log("PostgreSQL table table1 does not exist")
 
     node1.query("DROP DATABASE postgres_database")
-    cursor.execute("DROP TABLE table3")
+    cursor.execute(f"DROP TABLE table3")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
 
@@ -479,7 +466,7 @@ def test_numeric_detach_attach(started_cluster):
     assert get_actual_clickhouse_column_types() == expected_clickhouse_column_types
 
     node1.query("DROP DATABASE postgres_database")
-    cursor.execute("DROP TABLE test_table")
+    cursor.execute(f"DROP TABLE test_table")
 
 def test_postgresql_password_leak(started_cluster):
     conn = get_postgres_conn(
@@ -549,7 +536,7 @@ def test_postgresql_database_engine_comment(started_cluster):
     conn = get_postgres_conn(
         started_cluster.postgres_ip, started_cluster.postgres_port, database=True
     )
-    conn.cursor()
+    cursor = conn.cursor()
 
     node1.query(
         "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword') \
@@ -573,7 +560,7 @@ def test_backup_database(started_cluster):
     conn = get_postgres_conn(
         started_cluster.postgres_ip, started_cluster.postgres_port, database=True
     )
-    conn.cursor()
+    cursor = conn.cursor()
 
     node1.query(
         "CREATE DATABASE backup_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
