@@ -25,6 +25,10 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUS
 # With `persistent = 0` the `Set` and `Join` engines keep their data only in memory, like `Memory`, so they are allowed.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_set_in_memory (x UInt32) engine = Set SETTINGS persistent = 0;"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_join_in_memory (x UInt32, y UInt32) engine = Join(ANY, LEFT, x) SETTINGS persistent = 0;"
+# `File` over an archive is read-only unconditionally - writing to archives is never supported - so such a
+# table owns no data of its own and is allowed. Whether the path denotes an archive follows from the path
+# syntax alone, so the answer is the same on every replica.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_file_in_archive (x UInt32) engine = File(CSV, '${CLICKHOUSE_DATABASE}/tab_archive.zip :: tab_file.csv');"
 # `Distributed`, `Remote`, and `RemoteSecure` keep table data remotely. Their local background `INSERT`
 # queue is a transient send buffer, not data of the table itself, so these engines are allowed.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_dist (x UInt32) engine = Distributed(test_shard_localhost, '${CLICKHOUSE_DATABASE}_db', tab_rmt, x);"
