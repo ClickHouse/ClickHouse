@@ -281,7 +281,13 @@ public:
     /// rest as enumerated. Enough for an engine whose settings can only come from its defaults or
     /// its definition; an engine with a further source - a config section, a named collection,
     /// replicated metadata - attributes that itself before or after calling this.
-    TableSettings attributeSettingsStatedInDefinition(TableSettings settings, ContextPtr context) const;
+    /// Maps a name as the definition spells it to the name the settings struct uses, or nullopt when
+    /// the two are the same. For an engine that accepts legacy spellings its loader rewrites -
+    /// `ObjectStorageQueue` takes `s3queue_processing_threads_num` for `processing_threads_num` -
+    /// without declaring them as aliases, so nothing else can know they refer to the same setting.
+    using SettingNameNormalizer = std::function<std::optional<std::string_view>(std::string_view)>;
+    TableSettings attributeSettingsStatedInDefinition(
+        TableSettings settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

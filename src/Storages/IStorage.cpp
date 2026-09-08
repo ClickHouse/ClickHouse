@@ -296,9 +296,22 @@ NameSet IStorage::getSettingNamesStatedInDefinition(ContextPtr context) const
     return names;
 }
 
-TableSettings IStorage::attributeSettingsStatedInDefinition(TableSettings settings, ContextPtr context) const
+TableSettings IStorage::attributeSettingsStatedInDefinition(
+    TableSettings settings, ContextPtr context, const SettingNameNormalizer & normalize) const
 {
-    const auto stated_in_definition = getSettingNamesStatedInDefinition(context);
+    auto stated_in_definition = getSettingNamesStatedInDefinition(context);
+    if (normalize)
+    {
+        NameSet normalized;
+        for (const auto & stated : stated_in_definition)
+        {
+            if (auto canonical = normalize(stated))
+                normalized.emplace(*canonical);
+            else
+                normalized.insert(stated);
+        }
+        stated_in_definition = std::move(normalized);
+    }
     for (auto & setting : settings)
     {
         /// A definition may name a setting by any of its aliases - `monitor_batch_inserts` for
