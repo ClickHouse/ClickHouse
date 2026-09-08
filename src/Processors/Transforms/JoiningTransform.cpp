@@ -75,8 +75,10 @@ IProcessor::Status JoiningTransform::prepare()
     if (inputs.size() > 1)
     {
         auto & last_in = inputs.back();
-        /// A live result may hold `JoinSwitcher`'s exclusive probe lock.
-        if (last_in.isFinished() && !join_result && join->alwaysReturnsEmptySet() && !on_totals)
+        /// Two separate ways this can hold `JoinSwitcher`'s exclusive probe lock: our own live
+        /// result, and a sibling transform's. `prepare` must not block on either, so skip the
+        /// short-circuit whenever the answer is not free.
+        if (last_in.isFinished() && !join_result && !on_totals && join->tryAlwaysReturnsEmptySet().value_or(false))
             stop_reading = true;
     }
 

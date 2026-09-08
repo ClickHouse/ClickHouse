@@ -92,6 +92,17 @@ public:
         return IJoin::getTotals().empty() && join->alwaysReturnsEmptySet();
     }
 
+    /// After a drain, a live `ExclusiveJoinResult` holds `switch_mutex` for as long as the pipeline
+    /// takes to consume it, which spans scheduling points. Waiting for it from `prepare` hangs the
+    /// executor, so report "cannot say" instead.
+    std::optional<bool> tryAlwaysReturnsEmptySet() const override
+    {
+        std::shared_lock lock(switch_mutex, std::try_to_lock);
+        if (!lock.owns_lock())
+            return {};
+        return IJoin::getTotals().empty() && join->alwaysReturnsEmptySet();
+    }
+
     StepAnalysisReport getAnalysisReport() const override
     {
         std::shared_lock lock(switch_mutex);
