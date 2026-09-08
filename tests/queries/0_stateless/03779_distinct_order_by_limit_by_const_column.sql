@@ -53,3 +53,21 @@ SELECT DISTINCT 'new' AS my_field FROM (SELECT 'old' AS my_field, number FROM nu
 -- the redefined type.
 SELECT toUInt16(1) AS x, number FROM (SELECT toUInt8(1) AS x, number FROM numbers(3)) ORDER BY number LIMIT 1 BY x SETTINGS enable_analyzer=1;
 SELECT toTypeName(x) FROM (SELECT toUInt16(1) AS x FROM (SELECT toUInt8(1) AS x, number FROM numbers(3)) ORDER BY number LIMIT 1 BY x) SETTINGS enable_analyzer=1;
+
+SELECT number, 'grp' AS grp
+FROM numbers(5)
+LIMIT 2 BY grp;
+
+SELECT number, 'grp' AS grp
+FROM numbers(100000)
+LIMIT 2 BY grp
+FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 10, log_comment = '03779_limit_by_const_early_stop';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT if(count() > 0 AND max(read_rows) < 1000, 'OK', 'FAIL')
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND log_comment = '03779_limit_by_const_early_stop'
+  AND type = 'QueryFinish';

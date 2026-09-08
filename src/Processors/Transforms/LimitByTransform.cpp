@@ -232,6 +232,8 @@ void LimitByTransform::transform(Chunk & chunk)
         if (group_counts.empty())
             group_counts.push_back(0);
         processRun(0, row_count, 0);
+        if (group_counts[0] >= group_limit_end)
+            stopReading();
     }
     else
     {
