@@ -225,22 +225,27 @@ RETURNS return_type
 
 ## NULL handling {#null-handling}
 
-Whether a WASM UDF sees `NULL` values at all is decided by the return type declared in `RETURNS`.
+A WASM UDF is never handed a nullable argument column. `NULL` arguments are propagated by
+ClickHouse around the call, exactly as they are for built-in functions: the `Nullable` wrappers
+are stripped before the module runs, the module sees only the nested values, and the null maps of
+all arguments are combined onto the result afterwards. A row whose argument is `NULL` therefore
+yields `NULL` without the module deciding anything about it.
 
-- If the declared return type is **not** `Nullable`, ClickHouse applies its ordinary null propagation:
-  `NULL` arguments are stripped before the call, the module is never handed a nullable column, and any
-  row where an argument is `NULL` yields `NULL` in the result without the module being consulted for it.
-  This is the same behaviour as built-in functions. The one exception is a return type that cannot be
-  placed inside `Nullable` at all, such as `Array(...)`: there the result stays non-nullable and rows with
-  a `NULL` argument are evaluated over the argument's default value instead.
-- If the declared return type **is** `Nullable`, the module owns null propagation. ClickHouse passes the
-  nullable argument columns through unchanged, and the module decides, per row, which results are `NULL`.
-  With `ABI BUFFERED_V1`, nullability is visible through the chosen `serialization_format` — for example
-  the `COL_IS_NULLABLE` flag and null map of [`ColumnBinary`](/reference/formats/ColumnBinary), or a JSON
-  `null` with `JSONEachRow`.
+One consequence is that the declared return type is not the type of the expression. Calling a
+function declared `RETURNS UInt64` with a `Nullable(String)` argument produces `Nullable(UInt64)`,
+because the wrapper is reapplied on the way out.
 
-So a module that needs to distinguish "the argument was `NULL`" from "the argument was the default value"
-must declare a `Nullable` return type, even if it never actually returns `NULL`.
+The module cannot distinguish "the argument was `NULL`" from "the argument was the default
+value", because it is never shown the difference. A function that needs that distinction has to
+take it as a separate argument - for example an explicit `isNull(x)` flag alongside
+`ifNull(x, ...)`.
+
+Declaring `RETURNS Nullable(...)` does not change any of this. It only tells ClickHouse to expect
+a nullable result column back from the module, which the module must then actually produce: with
+`ABI BUFFERED_V1` the returned block has to carry the nullability the chosen
+`serialization_format` encodes, such as the `COL_IS_NULLABLE` flag and null map of
+[`ColumnBinary`](/reference/formats/ColumnBinary). A module that returns a plain non-nullable
+column against a declared `Nullable` return type is rejected.
 
 ## ABIs Versions
 
