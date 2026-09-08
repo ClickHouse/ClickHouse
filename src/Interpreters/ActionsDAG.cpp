@@ -3553,7 +3553,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const Block & right_stream_header,
     const Names & equivalent_columns_to_push_down,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
+    const NameSet & cross_type_equivalent_columns)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3596,72 +3597,83 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
 
-    /// A both-streams conjunct has its equivalent inputs replaced by the opposite side's column below, so it
-    /// must read no more than that column's value: a replacement can be constant where the input is not.
-    /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
-    static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
-    auto call_reads_representation = [](const Node * node)
+    /// A cross-type equivalent input is replaced below by a cast of the opposite side's key rather than
+    /// renamed to an equal-typed column, so it can be constant where the input is not and is computed a
+    /// second time: a conjunct reading one must read only its value, the same way in both evaluations.
+    std::unordered_set<const Node *> cross_type_allowed_nodes;
+    for (const auto * node : both_streams_allowed_nodes)
+        if (cross_type_equivalent_columns.contains(node->result_name))
+            cross_type_allowed_nodes.insert(node);
+
+    if (!cross_type_allowed_nodes.empty())
     {
-        if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
-            return true;
-        for (const auto * argument : node->children)
-            if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
-                return true;
-        return false;
-    };
-    auto reads_replaced_input_representation = [&](const Node * conjunct)
-    {
-        std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
-        std::unordered_set<const Node *> visited_reading_value;
-        std::unordered_set<const Node *> visited_reading_representation;
-        while (!to_visit.empty())
+        /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
+        static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
+        auto call_reads_representation = [](const Node * node)
         {
-            auto [node, reads_representation] = to_visit.back();
-            to_visit.pop_back();
-
-            reads_representation |= !node->isDeterministic() || call_reads_representation(node);
-            auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
-            if (!visited.insert(node).second)
-                continue;
-
-            if (reads_representation && node->type == ActionType::INPUT && both_streams_allowed_nodes.contains(node))
+            if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
                 return true;
-
-            for (const auto * child : node->children)
-                to_visit.emplace_back(child, reads_representation);
-        }
-        return false;
-    };
-
-    /// `getConjunctionNodes` asserts stability within the query over the visible functions only.
-    static constexpr auto is_unstable_within_query = [](const IFunctionBase & function)
-    { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
-    auto hides_unstable_lambda_body = [](const Node * conjunct)
-    {
-        std::vector<const Node *> to_visit{conjunct};
-        std::unordered_set<const Node *> visited;
-        while (!to_visit.empty())
+            for (const auto * argument : node->children)
+                if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
+                    return true;
+            return false;
+        };
+        auto reads_replaced_input_representation = [&](const Node * conjunct)
         {
-            const auto * node = to_visit.back();
-            to_visit.pop_back();
-            if (!visited.insert(node).second)
-                continue;
-            if (hasUnsafeHiddenLambdaBody(*node, is_unstable_within_query))
-                return true;
-            to_visit.insert(to_visit.end(), node->children.begin(), node->children.end());
-        }
-        return false;
-    };
+            std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
+            std::unordered_set<const Node *> visited_reading_value;
+            std::unordered_set<const Node *> visited_reading_representation;
+            while (!to_visit.empty())
+            {
+                auto [node, reads_representation] = to_visit.back();
+                to_visit.pop_back();
 
-    NodeRawConstPtrs both_streams_value_only_conjunctions;
-    for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
-    {
-        if (reads_replaced_input_representation(conjunct) || hides_unstable_lambda_body(conjunct))
-            both_streams_push_down_conjunctions.rejected.push_back(conjunct);
-        else
-            both_streams_value_only_conjunctions.push_back(conjunct);
+                reads_representation |= !node->isDeterministic() || call_reads_representation(node);
+                auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
+                if (!visited.insert(node).second)
+                    continue;
+
+                if (reads_representation && node->type == ActionType::INPUT && cross_type_allowed_nodes.contains(node))
+                    return true;
+
+                for (const auto * child : node->children)
+                    to_visit.emplace_back(child, reads_representation);
+            }
+            return false;
+        };
+
+        /// `getConjunctionNodes` asserts stability within the query over the visible functions only.
+        static constexpr auto is_unstable_within_query = [](const IFunctionBase & function)
+        { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
+        auto hides_unstable_lambda_body_over_replaced_input = [&](const Node * conjunct)
+        {
+            bool hides_unstable_body = false;
+            bool reads_replaced_input = false;
+            std::vector<const Node *> to_visit{conjunct};
+            std::unordered_set<const Node *> visited;
+            while (!to_visit.empty())
+            {
+                const auto * node = to_visit.back();
+                to_visit.pop_back();
+                if (!visited.insert(node).second)
+                    continue;
+                hides_unstable_body |= hasUnsafeHiddenLambdaBody(*node, is_unstable_within_query);
+                reads_replaced_input |= cross_type_allowed_nodes.contains(node);
+                to_visit.insert(to_visit.end(), node->children.begin(), node->children.end());
+            }
+            return hides_unstable_body && reads_replaced_input;
+        };
+
+        NodeRawConstPtrs both_streams_value_only_conjunctions;
+        for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
+        {
+            if (reads_replaced_input_representation(conjunct) || hides_unstable_lambda_body_over_replaced_input(conjunct))
+                both_streams_push_down_conjunctions.rejected.push_back(conjunct);
+            else
+                both_streams_value_only_conjunctions.push_back(conjunct);
+        }
+        both_streams_push_down_conjunctions.allowed = std::move(both_streams_value_only_conjunctions);
     }
-    both_streams_push_down_conjunctions.allowed = std::move(both_streams_value_only_conjunctions);
 
     /// getConjunctionNodes() classifies a conjunct as pushable to a side when all of its inputs are
     /// allowed inputs of that side. A conjunct with no inputs (a pure constant such as a literal `1`

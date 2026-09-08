@@ -737,6 +737,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     };
     std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
     std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
+    /// Names substituted by a cast of the opposite side's key, as opposed to the equal-typed renames above.
+    NameSet cross_type_equivalent_columns;
 
     /// The map keyed by a name of one side is applied to the filter pushed to the other side, while the
     /// flag admitting its keys is the one of that name's own side, so a pair it rejects stays inert below.
@@ -801,6 +803,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_between_evaluations))
                     return;
             }
+
+            cross_type_equivalent_columns.insert(replaced_name);
 
             /// The side that already has the supertype is not cast by the JOIN either.
             if (source.getType()->equals(*supertype))
@@ -894,7 +898,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         *right_stream_input_header,
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
-        equivalent_right_stream_column_to_left_stream_column);
+        equivalent_right_stream_column_to_left_stream_column,
+        cross_type_equivalent_columns);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
     {
