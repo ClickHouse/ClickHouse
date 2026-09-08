@@ -37,3 +37,5 @@ LIMIT 1 BY l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (ol
 1
 DISTINCT r.k over LEFT JOIN (foreign column name), optimize=1 equals optimize=0 (analyzer)
 1
+INNER JOIN GROUP BY r.k, join condition unrelated to the sharding key, optimize=1 equals optimize=0
+1

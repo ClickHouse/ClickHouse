@@ -221,6 +221,18 @@ FROM (
     ORDER BY r.k SETTINGS optimize_distributed_group_by_sharding_key = 1)
 SETTINGS allow_experimental_analyzer = 1;
 
+-- Outer-join padding is not what makes the shortcut unsound: a foreign grouping column breaks it under
+-- an INNER JOIN too. The join condition `l.g = r.k % 3` is not an equality on the sharding key, so each
+-- r.k matches left rows whose k (the sharding key) lies on both shards, and that r.k group spans shards.
+SELECT 'INNER JOIN GROUP BY r.k, join condition unrelated to the sharding key, optimize=1 equals optimize=0';
+SELECT groupArray((k, c)) = (
+        SELECT groupArray((k, c)) FROM (
+            SELECT r.k AS k, count() AS c FROM bug_dl AS l INNER JOIN bug_dr AS r ON l.g = r.k % 3
+            GROUP BY r.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0))
+FROM (
+    SELECT r.k AS k, count() AS c FROM bug_dl AS l INNER JOIN bug_dr AS r ON l.g = r.k % 3
+    GROUP BY r.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1);
+
 DROP TABLE bug_dl;
 DROP TABLE bug_dr;
 DROP TABLE bug_l;
