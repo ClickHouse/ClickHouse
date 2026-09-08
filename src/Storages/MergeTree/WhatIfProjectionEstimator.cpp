@@ -361,9 +361,11 @@ bool tryEstimateProjection(
     /// the constant model can miss the adaptive layout by a granule per part, so a decision that
     /// close to the base read is not one the optimizer would necessarily reach
     const UInt64 margin = adaptive_parts;
-    const UInt64 difference
-        = projection_marks > baseline_marks ? projection_marks - baseline_marks : baseline_marks - projection_marks;
-    if (margin > 0 && difference <= margin && !sort_order_helps)
+    /// fewer marks never loses, so the estimate decides only when both ends of its interval agree
+    auto would_win = [&](UInt64 marks)
+    { return marks < baseline_marks || (marks == baseline_marks && sort_order_helps); };
+    const UInt64 fewest = projection_marks > margin ? projection_marks - margin : 0;
+    if (would_win(fewest) != would_win(projection_marks + margin))
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
