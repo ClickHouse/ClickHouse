@@ -33,12 +33,12 @@ def started_cluster():
         cluster.shutdown()
 
 
-def database_sql(name, database, endpoint, host="postgres1", port=5432, password=READER_PASSWORD):
+def database_sql(name, database, endpoint, host="postgres1", port=5432, password=READER_PASSWORD, user="jdbc_reader"):
     return f"""
         CREATE DATABASE {name} ENGINE = DataLakeCatalog
         SETTINGS catalog_type='jdbc', warehouse='jdbc_test',
             jdbc_host='{host}', jdbc_port={port}, jdbc_database='{database}',
-            jdbc_user='jdbc_reader', jdbc_password='{password}',
+            jdbc_user='{user}', jdbc_password='{password}',
             vended_credentials=0, storage_endpoint='{endpoint}',
             aws_access_key_id='{minio_access_key}', aws_secret_access_key='{minio_secret_key}'
     """
@@ -209,11 +209,13 @@ def test_missing_namespace_properties_table(started_cluster):
 
 
 def test_invalid_credentials(started_cluster):
+    # The harness Postgres trusts all local connections, so a wrong password
+    # still connects; a nonexistent role is the closest negative case.
     error = node.query_and_get_error(
-        database_sql("jdbc_bad_credentials", "postgres", "http://minio1:9001", password="wrong-password"),
+        database_sql("jdbc_bad_credentials", "postgres", "http://minio1:9001", user="nosuchuser"),
         settings={"allow_database_iceberg": 1},
     )
-    assert "password authentication failed" in error
+    assert "nosuchuser" in error and "does not exist" in error
 
 
 def test_outbound_host_policy(started_cluster):

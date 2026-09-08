@@ -388,7 +388,12 @@ IcebergJdbcCatalog::createObjectStorageForMetadataAccess(const String & metadata
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
     DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
 
-    return {configuration->createObjectStorage(getContext(), true, {}), configuration->getPathForRead().path};
+    /// `getPathForRead()` carries directory semantics (trailing slash);
+    /// here the path is a file, so strip it before the S3 GET.
+    String metadata_path = configuration->getPathForRead().path;
+    while (metadata_path.ends_with('/') && metadata_path.size() > 1)
+        metadata_path.pop_back();
+    return {configuration->createObjectStorage(getContext(), true, {}), metadata_path};
 }
 
 }
