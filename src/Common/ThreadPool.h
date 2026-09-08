@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <thread>
 #include <mutex>
@@ -159,6 +160,15 @@ public:
     /// and the exception will be cleared.
     void wait();
 
+    /// Same as 'wait', but gives up and returns false when the deadline is reached.
+    /// Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
+    [[nodiscard]] bool waitUntil(std::chrono::steady_clock::time_point deadline);
+
+    /// Stop accepting new jobs: further scheduling produces CANNOT_SCHEDULE_TASK, and the jobs that are
+    /// already queued but have not started yet are discarded instead of being run.
+    /// Jobs that are already running are neither interrupted nor waited for, call 'wait' to join them.
+    void finish();
+
     /// Waits for all threads. Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
     /// You should not destroy the object while calling schedule or wait methods from other threads.
     ~ThreadPoolImpl();
@@ -168,7 +178,7 @@ public:
 
     /// Returns true if the pool already terminated
     /// (and any further scheduling will produce CANNOT_SCHEDULE_TASK exception)
-    [[nodiscard]] bool finished() const;
+    [[nodiscard]] bool isFinished() const;
 
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
@@ -217,7 +227,7 @@ private:
     // If negative, it means that we have more jobs than threads.
     std::atomic<int64_t> available_threads;
 
-    bool shutdown = false;
+    bool finished = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
@@ -259,6 +269,7 @@ private:
     /// recently-active workers stay in the LIFO position they earned.
     void wakeUpExcessIdleThreadsNoLock();
 
+    void finishNoLock(const std::lock_guard<std::mutex> & lock);
     void finalize();
     void onDestroy();
 };

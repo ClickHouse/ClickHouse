@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/quickstart
 sidebarTitle: '快速入门'
-title: 'Managed Postgres 快速入门'
+title: 'ClickHouse Managed Postgres 快速入门'
 description: '体验 NVMe 加持的 Postgres 性能，并通过原生 ClickHouse 集成实现实时分析'
 keywords: ['Managed Postgres', '快速入门', '开始使用', '创建数据库', 'NVMe', '性能', 'clickhousectl', '命令行客户端', '自动化', 'AI 智能体']
 doc_type: 'guide'
@@ -16,14 +16,6 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 </Visibility>
 
 <Visibility for="humans">
-  <View title="命令行客户端">
-    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
-
-    你可以按这条路径自行操作，把它写成脚本，或交给 AI 智能体处理。如需查看控制台版本，请切换到 **Cloud UI** 视图。
-
-    <QuickstartCLI />
-  </View>
-
   <View title="Cloud UI">
     <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
@@ -32,11 +24,11 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
     * **第 1 部分：** 上手 NVMe Postgres，体验其性能
     * **第 2 部分：** 通过与 ClickHouse 集成，实现实时分析
 
-    Managed Postgres 目前已在 AWS 的多个区域上线，当前处于 Public Beta 阶段。
+    ClickHouse Managed Postgres 目前已在 AWS 的多个区域上线，当前处于 Public Beta 阶段。
 
     **在本快速入门中，您将：**
 
-    * 创建一个具备 NVMe 加速性能的 Managed Postgres 实例
+    * 创建一个具备 NVMe 加速性能的 ClickHouse Managed Postgres 实例
     * 加载 100 万条样本事件，直观感受 NVMe 速度
     * 运行查询，体验低延迟性能
     * 将数据复制到 ClickHouse 进行实时分析
@@ -46,21 +38,21 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     ### 创建数据库
 
-    要创建新的 Managed Postgres service，请在 Cloud Console 的服务列表中点击 **New service** 按钮，然后即可选择 Postgres 作为数据库类型。
+    要创建新的 ClickHouse Managed Postgres service，请在 Cloud Console 的服务列表中点击 **New service** 按钮，然后即可选择 Postgres 作为数据库类型。
 
-    <Image img="/images/managed-postgres/create-service.webp" alt="创建 Managed Postgres 服务" size="md" border />
+    <Image img="/images/managed-postgres/create-service.webp" alt="创建 ClickHouse Managed Postgres 服务" size="md" border />
 
     为您的数据库实例输入名称，然后点击 **Create service**。您将跳转至概览页面。
 
-    <Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres 概览" size="md" border />
+    <Image img="/images/managed-postgres/overview.webp" alt="ClickHouse Managed Postgres 概览" size="md" border />
 
-    您的 Managed Postgres 实例将在 3 至 5 分钟内完成配置并可投入使用。
+    您的 ClickHouse Managed Postgres 实例将在 3 至 5 分钟内完成配置并可投入使用。
 
     ### 连接到您的数据库
 
     在左侧边栏中，您将看到一个 [**Connect** 按钮](/zh/products/managed-postgres/connection)。点击该按钮，即可查看您的连接详情以及多种格式的连接字符串。
 
-    <Image img="/images/managed-postgres/connect-modal.webp" alt="Managed Postgres 连接弹窗" size="md" border />
+    <Image img="/images/managed-postgres/connect-modal.webp" alt="ClickHouse Managed Postgres 连接弹窗" size="md" border />
 
     复制 `psql` 连接字符串并连接到您的数据库。您也可以使用任何兼容 Postgres 的客户端 (如 DBeaver) 或任何应用程序库。
 
@@ -164,7 +156,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     ### 运行数据查询
 
-    现在我们来运行一些查询，看看配备 NVMe 存储的 Postgres 响应有多快。
+    现在我们来运行一些查询，看看采用 NVMe 存储的 Postgres 响应有多快。
 
     **按类型聚合 100 万条事件：**
 
@@ -250,9 +242,9 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     ### 设置 ClickHouse 集成
 
-    现在 Postgres 中已有表和数据，接下来将这些表复制到 ClickHouse 以进行分析。首先点击侧边栏中的 **ClickHouse integration**，然后点击 **Replicate data in ClickHouse**。
+    现在 Postgres 中已有表和数据，接下来将这些表复制到 ClickHouse 以进行分析。首先点击侧边栏中的 **Sync to ClickHouse**，然后点击 **Replicate data in ClickHouse**。
 
-    <Image img="/images/managed-postgres/integration-landing.webp" alt="Managed Postgres 集成为空" size="md" border />
+    <Image img="/images/managed-postgres/integration-landing.webp" alt="ClickHouse Managed Postgres 集成为空" size="md" border />
 
     在接下来的表单中，您可以为集成输入名称，并选择一个现有的 ClickHouse 实例作为复制目标。如果您尚未拥有 ClickHouse 实例，可以直接在此表单中创建一个。
 
@@ -262,7 +254,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
       请先确保您选择的 ClickHouse 服务处于 Running 状态，然后再继续。
     </Info>
 
-    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Managed Postgres 集成表单" size="md" border />
+    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="ClickHouse Managed Postgres 集成表单" size="md" border />
 
     点击 **Next**，进入表选择器。在此，您只需：
 
@@ -270,7 +262,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
     * 展开 **public** schema，并选择我们之前创建的 users 和 events 表。
     * 点击 **将数据复制到 ClickHouse**。
 
-    <Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres 表选择器" size="md" border />
+    <Image img="/images/managed-postgres/table-picker.webp" alt="ClickHouse Managed Postgres 表选择器" size="md" border />
 
     复制过程将随即启动，您将被跳转至集成概览页面。由于这是首次集成，初始基础设施的配置可能需要 2 到 3 分钟。在此期间，我们来了解一下新的 **pg&#95;clickhouse** 扩展。
 
@@ -291,9 +283,17 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
            OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
     ```
 
-    将 `<clickhouse_cloud_host>` 替换为您的 ClickHouse hostname，将 `<database_name>` 替换为您在复制设置过程中选择的数据库。您可以在 ClickHouse 服务中点击侧边栏中的 **Connect** 来找到 hostname。
+    将 `<clickhouse_cloud_host>` 替换为您的 ClickHouse 主机名，将 `<database_name>` 替换为您在复制设置过程中选择的数据库。您可以在 ClickHouse 服务中点击侧边栏中的 **Connect** 来找到主机名。
 
     <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="获取 ClickHouse 主机地址" size="md" border />
+
+    <Note>
+      如果您使用 ClickHouse Cloud 控制台运行 SQL，请授予控制台管理员用户对外部服务器的访问权限：
+
+      ```sql
+      GRANT USAGE ON FOREIGN SERVER ch TO chpg_console_admin;
+      ```
+    </Note>
 
     现在，将 Postgres 用户映射到 ClickHouse 服务的凭据：
 
@@ -302,7 +302,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
     OPTIONS (user 'default', password '<clickhouse_password>');
     ```
 
-    现在将 ClickHouse 表导入到 Postgres 模式中：
+    现在将 ClickHouse 表导入到 Postgres schema 中：
 
     ```sql
     CREATE SCHEMA organization;
@@ -321,11 +321,11 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     返回集成页面查看状态。此时初始复制应已完成。点击集成名称可查看详细信息。
 
-    <Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres 分析列表" size="md" border />
+    <Image img="/images/managed-postgres/analytics-list.webp" alt="ClickHouse Managed Postgres 分析列表" size="md" border />
 
     点击服务名称，打开 ClickHouse 控制台，查看您的复制表。
 
-    <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse 中的 Managed Postgres 复制表" size="md" border />
+    <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse 中的 ClickHouse Managed Postgres 复制表" size="md" border />
 
     ### 比较 Postgres 与 ClickHouse 的性能
 
@@ -401,7 +401,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     | 查询                | Postgres (NVMe) | ClickHouse (通过 pg&#95;clickhouse) | 加速比  |
     | ----------------- | --------------- | --------------------------------- | ---- |
-    | 热门用户 (5 个聚合)      | 555 毫秒          | 164 ms                            | 3.4x |
+    | 热门用户 (5 个聚合)      | 555 ms          | 164 ms                            | 3.4x |
     | 用户参与度 (JOIN + 聚合) | 1,246 ms        | 170 ms                            | 7.3x |
 
     <Tip>
@@ -417,6 +417,14 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
     要删除本快速入门中创建的资源：
 
     1. 首先，从 ClickHouse 服务中删除 ClickPipe 集成
-    2. 然后，在 Cloud Console 中删除 Managed Postgres 实例
+    2. 然后，在 Cloud Console 中删除 ClickHouse Managed Postgres 实例
+  </View>
+
+  <View title="命令行客户端">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
+
+    你可以按这条路径自行操作，把它写成脚本，或交给 AI 智能体处理。如需查看控制台版本，请切换到 **Cloud UI** 视图。
+
+    <QuickstartCLI />
   </View>
 </Visibility>

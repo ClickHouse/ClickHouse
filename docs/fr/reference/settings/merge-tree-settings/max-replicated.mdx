@@ -21,7 +21,7 @@ Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/r
 Limite le débit maximal des échanges de données sur le réseau, en octets par
 seconde, pour les fetches [répliqués](/fr/reference/engines/table-engines/mergetree-family/replication).
 Ce paramètre s’applique à une table particulière, contrairement au paramètre
-[`max_replicated_fetches_network_bandwidth_for_server`](/fr/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth),
+[`max_replicated_fetches_network_bandwidth_for_server`](/fr/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server),
 qui s’applique au serveur.
 
 Vous pouvez limiter à la fois le débit réseau du serveur et celui d’une table
@@ -89,10 +89,10 @@ file d’attente de ReplicatedMergeTree.
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-Limite la vitesse maximale de transfert de données sur le réseau, en octets par
+Limite le débit maximal des échanges de données sur le réseau, en octets par
 seconde, pour les envois [répliqués](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree).
 Ce paramètre s&#39;applique à une table particulière, contrairement au
-paramètre [`max_replicated_sends_network_bandwidth_for_server`](/fr/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth),
+paramètre [`max_replicated_sends_network_bandwidth_for_server`](/fr/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server),
 qui s&#39;applique au serveur.
 
 Vous pouvez limiter à la fois le débit réseau du serveur et celui d&#39;une table

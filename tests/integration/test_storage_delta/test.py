@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import string
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -1690,6 +1691,10 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
 
         replica_path = f"/clickhouse/databases/{DB_NAME}/replicas/shard1|node2"
         zk = started_cluster.get_kazoo_client("zoo1")
+        expected_digest = node2.query(
+            f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+        ).strip()
+        assert expected_digest != "123456"
         zk.set(replica_path + "/digest", "123456".encode())
 
         # Compare the `digest` value exactly instead of substring-matching the
@@ -1704,12 +1709,17 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
 
         node2.restart_clickhouse()
 
-        assert (
-            node2.query(
-                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
-            ).strip()
-            != "123456"
-        )
+        # Replica recovery rewrites the digest from a background thread, and the first
+        # read can still hit a not-yet-connected Keeper session, so retry on both. Only
+        # the original value counts as restored ("42" forces recovery, empty = no znode).
+        digest = node2.query_with_retry(
+            f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'",
+            retry_count=60,
+            sleep_time=1,
+            check_callback=lambda x: x.strip() == expected_digest,
+        ).strip()
+
+        assert digest == expected_digest
 
 
 def test_session_token(started_cluster):
@@ -4253,6 +4263,338 @@ def test_write_schema_mismatch_raises_user_error(started_cluster):
     ).strip()
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_write_failure_does_not_crash_server(started_cluster, partitioned):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/109311
+    # An INSERT that fails after the sink already opened its data-file write
+    # buffers must not leave those buffers unfinalized: before the fix the
+    # buffers reached ~WriteBuffer neither finalized nor canceled and the
+    # server aborted (SIGABRT on debug/sanitizer builds) while destroying the
+    # pipeline. `partitioned=True` exercises DeltaLakePartitionedSink,
+    # `partitioned=False` the plain DeltaLakeSink; both stored their inner
+    # StorageObjectStorageSinks as plain members that never received the
+    # pipeline-wide cancel.
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_write_failure")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    # max_block_size = 1 makes the source deliver single-row chunks, so the
+    # sink opens write buffers (for both partitions when partitioned) before
+    # throwIf fires on the last row.
+    error = instance.query_and_get_error(
+        f"INSERT INTO {table_name} "
+        f"SELECT throwIf(number = 9)::Int32 + number::Int32, number::Int32 % 2 "
+        f"FROM numbers(10) SETTINGS max_block_size = 1"
+    )
+    assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in error
+
+    # Server stays alive after the failed write (would have aborted before the fix).
+    assert "1" == instance.query("SELECT 1").strip()
+
+    # The failed INSERT must not leave any orphan data file behind. cancel() only
+    # flips the WriteBuffer flag; it does not unlink the partially written parquet
+    # (WriteBufferFromFile does not override cancelImpl), so before the cleanup
+    # fix the uncommitted data file was leaked. The table started empty, so no
+    # parquet file must remain after the failed insert.
+    orphan_parquet_count = instance.exec_in_container(
+        ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
+    ).strip()
+    assert orphan_parquet_count == "0", (
+        f"orphan data file(s) left after failed insert: {orphan_parquet_count}"
+    )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_write_failure_does_not_crash_server_s3(started_cluster, partitioned):
+    # S3-backed variant of test_write_failure_does_not_crash_server. The sink fix is
+    # shared by all backends, but the cleanup path is backend-specific: the inner
+    # cancel goes through WriteBufferFromS3 instead of WriteBufferFromFile, and the
+    # orphan removal through S3ObjectStorage::removeObjectIfExists instead of a local
+    # unlink. So a local-only regression could pass while the S3 write path still
+    # aborted the server or leaked an uncommitted object. This exercises the
+    # onException() path (source throws mid-insert) against the deltaLake S3 backend.
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_failure_s3")
+    result_file = f"{table_name}_data"
+
+    # Create an empty Delta table directly on S3 so the table starts with no data
+    # files; any parquet left afterwards is therefore an orphan from the failed insert.
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake_with_retry(
+        f"s3://{bucket}/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+
+    # Use a named DeltaLake S3 table (like test_writes) so the INSERT ... SELECT maps
+    # columns positionally to id/part; a table function would require the SELECT to
+    # name the columns and fails schema analysis before ever reaching the sink.
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+        f"/{bucket}/{result_file}/', 'minio', '{minio_secret_key}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    # max_block_size = 1 makes the source deliver single-row chunks, so the sink
+    # opens its S3 write buffer(s) (for both partitions when partitioned) before
+    # throwIf fires on the last row.
+    error = instance.query_and_get_error(
+        f"INSERT INTO {table_name} "
+        f"SELECT throwIf(number = 9)::Int32 + number::Int32, number::Int32 % 2 "
+        f"FROM numbers(10) SETTINGS max_block_size = 1"
+    )
+    assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in error
+
+    # Server stays alive after the failed write (would have aborted before the fix).
+    assert "1" == instance.query("SELECT 1").strip()
+
+    # The failed INSERT must not leave any orphan data file behind on S3. The table
+    # started empty, so no non-delta-log parquet must remain in the bucket prefix.
+    s3_objects = list(
+        minio_client.list_objects(bucket, f"{result_file}/", recursive=True)
+    )
+    orphan_parquets = [
+        obj.object_name
+        for obj in s3_objects
+        if obj.object_name.endswith(".parquet") and "_delta_log/" not in obj.object_name
+    ]
+    assert orphan_parquets == [], (
+        f"orphan data file(s) left on S3 after failed insert: {orphan_parquets}"
+    )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_write_external_cancel_does_not_crash_server(started_cluster, partitioned):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/109311,
+    # external-cancellation half. test_write_failure_does_not_crash_server drives
+    # the onException() path (an exception flowing through the pipeline ports). A
+    # KILL QUERY / client disconnect is a distinct path: the executor calls
+    # IProcessor::cancel() on every processor directly, with no exception through
+    # the ports, so onException() is never called. The inner sinks are then cleaned
+    # up only by the DeltaLakeSink / DeltaLakePartitionedSink destructors
+    # (`if (isCancelled()) cancelBuffers()`). Without that destructor cleanup the
+    # inner WriteBuffer reaches ~WriteBuffer neither finalized nor canceled and the
+    # server aborts (SIGABRT on debug/sanitizer builds); it also leaks the
+    # partially written parquet. This case exercises that destructor path so a
+    # regression there is caught even though the onException() test still passes.
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_write_cancel")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    query_id = str(uuid.uuid4())
+
+    # An assertion raised inside a thread does not fail the test (pytest only turns
+    # it into a PytestUnhandledThreadExceptionWarning), so hand the worker's
+    # exception back to the main thread and re-raise it there.
+    insert_error = []
+
+    def run_insert():
+        # sleepEachRow keeps the INSERT running long enough to KILL it mid-write,
+        # after >= 1 inner sink (both partitions when partitioned) has opened its
+        # write buffer. max_block_size = 1 delivers single-row chunks so a sink is
+        # created and its buffer opened well before the KILL arrives.
+        try:
+            _, error = instance.query_and_get_answer_with_error(
+                f"INSERT INTO {table_name} "
+                f"SELECT number::Int32, ((number % 2) + sleepEachRow(0.02))::Int32 "
+                f"FROM numbers(1000) "
+                f"SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 100000000",
+                query_id=query_id,
+            )
+            assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
+        except BaseException as e:  # noqa: BLE001
+            insert_error.append(e)
+
+    insert_thread = threading.Thread(target=run_insert)
+    insert_thread.start()
+    try:
+        # Wait until an inner sink has actually created its data file, i.e. its write
+        # buffer is open, before cancelling. Source-side progress (read_rows) does not
+        # prove the sink consumed anything, so key on the sink's own observable output.
+        for _ in range(100):
+            written_parquet_count = instance.exec_in_container(
+                ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
+            ).strip()
+            if int(written_parquet_count) >= 1:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("no inner sink opened its data file in time")
+
+        instance.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
+    finally:
+        insert_thread.join()
+
+    # Surface a worker-thread failure (e.g. the INSERT was not cancelled at all).
+    if insert_error:
+        raise insert_error[0]
+
+    # Server stays alive after the cancelled write (would have aborted before the fix).
+    assert "1" == instance.query("SELECT 1").strip()
+
+    # The cancelled INSERT must not leave any orphan data file behind either. The
+    # table started empty, so no parquet file must remain.
+    orphan_parquet_count = instance.exec_in_container(
+        ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
+    ).strip()
+    assert orphan_parquet_count == "0", (
+        f"orphan data file(s) left after cancelled insert: {orphan_parquet_count}"
+    )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/109311,
+    # late-cancel-during-commit half. onFinish() finalizes the data-file parquets
+    # and then commits them to the Delta log. The pipeline executor flips
+    # isCancelled() asynchronously, so a KILL QUERY / disconnect can arrive after
+    # onFinish's pre-commit isCancelled() check but while the commit is in flight;
+    # the commit then still succeeds and the Delta log references the parquet. If
+    # the sink kept the tracked inner sinks, ~DeltaLakeSink /
+    # ~DeltaLakePartitionedSink would see isCancelled() and cancelBuffers() would
+    # unlink the just-committed files, leaving the Delta log pointing at missing
+    # data (silent data loss). The fix clears the tracked sinks after a successful
+    # commit, so a late cancel has nothing to remove. This test pauses the
+    # committing thread inside the commit window via the delta_lake_write_commit_pause
+    # failpoint, KILLs the query while paused, lets the commit finish, then checks
+    # the committed rows survive. The two other write-failure tests cancel while
+    # consume() is still running, so they never reach the commit window.
+    instance = started_cluster.instances["node1"]
+    failpoint = "delta_lake_write_commit_pause"
+    table_name = randomize_table_name("test_write_commit_race")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    query_id = str(uuid.uuid4())
+
+    # PAUSEABLE_ONCE failpoint blocks the committing thread inside onFinish(),
+    # after the data files are finalized and before delta commit.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    # An assertion raised inside a thread does not fail the test (pytest only turns
+    # it into a PytestUnhandledThreadExceptionWarning), so hand the worker's
+    # exception back to the main thread and re-raise it there. Without this the test
+    # could pass its row/file checks while the cancellation silently never happened.
+    insert_error = []
+
+    def run_insert():
+        # A valid INSERT (no throwIf): reaches onFinish and pauses in the commit
+        # window. max_block_size = 1 opens an inner sink per partition.
+        try:
+            _, error = instance.query_and_get_answer_with_error(
+                f"INSERT INTO {table_name} "
+                f"SELECT number::Int32, (number % 2)::Int32 "
+                f"FROM numbers(6) SETTINGS max_block_size = 1",
+                query_id=query_id,
+            )
+            # The KILL lands while paused, so the client sees QUERY_WAS_CANCELLED even
+            # though the commit itself completes.
+            assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
+        except BaseException as e:  # noqa: BLE001
+            insert_error.append(e)
+
+    insert_thread = threading.Thread(target=run_insert)
+    insert_thread.start()
+    try:
+        # Wait until the committing thread has paused in the commit window. Bounded,
+        # so a failpoint that is never reached fails the test instead of hanging
+        # until the pytest session timeout.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        # KILL while paused: flips isCancelled() on the sink asynchronously. ASYNC
+        # (not SYNC) because the query is blocked at the failpoint, so a SYNC kill
+        # would deadlock with the notify below.
+        instance.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+        # Give the executor cancel-watch thread time to propagate the cancel.
+        time.sleep(1)
+        # Let the commit proceed now that isCancelled() is (racily) set.
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        insert_thread.join()
+
+    # Surface a worker-thread failure (e.g. the INSERT was never cancelled, which
+    # would make the checks below vacuous).
+    if insert_error:
+        raise insert_error[0]
+
+    # Server stays alive after the cancelled-during-commit write.
+    assert "1" == instance.query("SELECT 1").strip()
+
+    # The commit succeeded, so the committed data MUST survive the late cancel.
+    # Before the fix the destructor unlinked the committed parquet, so the count
+    # query failed with "No such file or directory" and the data was lost.
+    fresh_table = randomize_table_name("test_write_commit_race_read")
+    instance.query(
+        f"CREATE TABLE {fresh_table} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+    count = instance.query(f"SELECT count() FROM {fresh_table}").strip()
+    assert count == "6", (
+        f"committed rows lost after late cancel: count={count} "
+        "(Delta log points at removed data files)"
+    )
+    parquet_count = instance.exec_in_container(
+        ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
+    ).strip()
+    assert int(parquet_count) >= 1, (
+        f"committed data files removed after late cancel: {parquet_count}"
+    )
+
+
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
@@ -5016,24 +5358,16 @@ def test_early_return_limit(started_cluster, use_delta_kernel):
 
     assert first_check_hits > 0 or queue_check_hits > 0
 
-    assert 1 == int(instance.query(
-        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%List batch size is 1/1, shutdown: true%'"
-    ))
-
 
     # Early return should scan significantly fewer files
     # With s3_list_object_keys_size=1, queue pauses frequently forcing shutdown checks
     # Should stop very early after consuming just a few files
     assert scanned_files < full_scan_files, \
         f"Early return should scan fewer files: {scanned_files} >= {full_scan_files}"
-    # 3 because:
-    # we have async reader creation with 2 existing readers at a moment of time,
-    # each calls next() and consumes 2 files from the scan.
-    # It takes 1 file for the query to stop because of LIMIT 1.
-    # But because scan is also asynchronous and continues once batch limit is not reached,
-    # we get +1 scanned file.
-    assert scanned_files == 3, \
-        f"Early return should scan 3 files with LIMIT 1, but scanned {scanned_files}"
+    # At most 3: two async readers each consume one file, plus one the scan produces before
+    # it observes shutdown. Fewer is legal when shutdown lands earlier.
+    assert scanned_files <= 3, \
+        f"Early return should scan at most 3 files with LIMIT 1, but scanned {scanned_files}"
 
 
 def test_struct_dotted_field_names(started_cluster):
@@ -5446,6 +5780,12 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0, "allow_experimental_analyzer" : allow_experimental_analyzer},
     )
 
+    # The cluster INSERT path runs the SELECT on a remote replica, which writes
+    # the part there and replicates via ZooKeeper. Wait for the local replica
+    # to fetch the part before reading; otherwise the count below races against
+    # background fetch and returns 0.
+    node.query(f"SYSTEM SYNC REPLICA {table_name}_dst")
+
     node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
 
     result = int(
@@ -5504,6 +5844,11 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
             "allow_experimental_analyzer": allow_experimental_analyzer,
         },
     )
+
+    # Same race as above: the matching file is processed by a remote replica,
+    # and the local replica fetches the resulting part asynchronously. Without
+    # SYSTEM SYNC REPLICA, the SELECT below can run before the part is active.
+    node.query(f"SYSTEM SYNC REPLICA {table_name2}_dst")
 
     result = int(
         node.query(

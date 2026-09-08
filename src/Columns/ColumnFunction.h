@@ -29,7 +29,8 @@ private:
         const ColumnsWithTypeAndName & columns_to_capture,
         bool is_short_circuit_argument_ = false,
         bool is_function_compiled_ = false,
-        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false);
+        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
+        bool allow_lazy_replicated_captures_ = false);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -75,6 +76,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
     }
 
+    bool hasOnlyTypeDefaults() const override { return false; }
+
     void insert(const Field &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
@@ -114,11 +117,6 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
-    }
-
-    void skipSerializedInArena(ReadBuffer &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -216,6 +214,10 @@ private:
 
     /// Determine if passed function is compiled. Used for profiling.
     bool is_function_compiled;
+
+    /// If true, replicate function wraps captured columns into ColumnReplicated instead of physically copying them.
+    /// Controlled by the setting enable_lazy_columns_replication.
+    bool allow_lazy_replicated_captures = false;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };

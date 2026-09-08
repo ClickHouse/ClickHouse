@@ -159,13 +159,13 @@ SYSTEM SYNC REPLICA [db.]table_name;
 <Info>
   **Cómo funciona**
 
-  `SYSTEM RESTORE REPLICA` desadjunta todas las partes existentes, recrea los metadatos en Keeper (como si fuera una tabla nueva vacía) y luego vuelve a adjuntar todas las partes. Esto evita tener que volver a descargar los datos por la red.
+  `SYSTEM RESTORE REPLICA` desvincula todas las partes existentes, recrea los metadatos en Keeper (como si fuera una tabla nueva vacía) y luego vuelve a adjuntar todas las partes. Esto evita tener que volver a descargar los datos por la red.
 </Info>
 
 <Warning>
   **Requisitos previos**
 
-  Esto solo funciona si las partes de datos locales están intactas. Si los datos también están corruptos, usa en su lugar la estrategia n.º 5 (reconstruir el cluster).
+  Esto solo funciona si las partes de datos locales están intactas. Si los datos también están corruptos, usa en su lugar la estrategia n.º 5 (reconstruir el clúster).
 </Warning>
 
 ***
