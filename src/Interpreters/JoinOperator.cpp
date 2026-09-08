@@ -142,9 +142,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
 }
 
-JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_, bool temporary_storage_available_)
-    : temporary_storage_available(temporary_storage_available_)
-    , join_analyze_mode(join_analyze_mode_)
+JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
+    : join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
 
@@ -400,7 +399,6 @@ bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) 
         /// The raw settings are tested rather than the effective threshold so the answer does not depend on
         /// the local memory limits of whoever asks.
         if (external_join_threshold_is_set
-            && temporary_storage_available
             && spilling_hash_join_is_possible
             && (algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE || !merge_join_is_possible)
             && joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
@@ -495,6 +493,14 @@ static bool hasCrossSideEquality(const std::vector<JoinActionRef> & conditions)
 
 bool JoinOperator::canBecomeConstantJoin() const
 {
+    /// Both routes to `ConstantJoin` are closed for an `ASOF` join in `JoinStepLogical.cpp`: the
+    /// conversion of a constant predicate (`table_join->setJoinExpressionValue`) and the no-keys
+    /// conversion to CROSS are guarded on the strictness, because a constant expression cannot carry
+    /// the inequality an ASOF join requires - such a join is rejected with
+    /// `INVALID_JOIN_ON_EXPRESSION` instead.
+    if (strictness == JoinStrictness::Asof)
+        return false;
+
     if (isCrossOrComma(kind))
         return true;
 

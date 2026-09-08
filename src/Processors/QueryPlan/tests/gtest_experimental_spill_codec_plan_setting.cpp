@@ -173,16 +173,6 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     EXPECT_TRUE(spilling_hash.canSpillToTemporaryFiles(keyed_inner.join_operator));
     EXPECT_TRUE(joinCarriesSetting(spilling_hash, keyed_inner.join_operator));
 
-    /// A worker without temporary storage stays in memory, so it must not receive an opt-in for a
-    /// temporary-file codec that it will never resolve.
-    auto spilling_hash_without_temporary_storage = spilling_hash;
-    spilling_hash_without_temporary_storage.temporary_storage_available = false;
-    EXPECT_FALSE(spilling_hash_without_temporary_storage.canSpillToTemporaryFiles(keyed_inner.join_operator));
-    EXPECT_FALSE(joinCarriesSetting(spilling_hash_without_temporary_storage, keyed_inner.join_operator));
-    EXPECT_FALSE(joinCarriesSetting(
-        spilling_hash_without_temporary_storage, keyed_inner.join_operator,
-        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
-
     auto ratio_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
     ratio_hash.max_bytes_ratio_before_external_join = 0.5;
     EXPECT_TRUE(joinCarriesSetting(ratio_hash, keyed_inner.join_operator));
@@ -313,6 +303,13 @@ TEST(ExperimentalSpillCodecPlanSetting, ConstantJoinIsRuledOutByACrossSideEquali
     JoinOperator same_side_join(JoinKind::Inner);
     same_side_join.expression.push_back(make_equality("l.k", "l.v"));
     EXPECT_TRUE(same_side_join.canBecomeConstantJoin());
+
+    /// An `ASOF` join is excluded from both conversions in `JoinStepLogical.cpp`, so it never becomes a
+    /// `ConstantJoin` - not even with the keyless expression that would convert any other join to CROSS.
+    JoinOperator asof_join(JoinKind::Left, JoinStrictness::Asof);
+    asof_join.expression.push_back(make_equality("l.k", "l.v"));
+    EXPECT_FALSE(asof_join.canBecomeConstantJoin());
+    EXPECT_FALSE(JoinOperator(JoinKind::Left, JoinStrictness::Asof).canBecomeConstantJoin());
 }
 
 TEST(ExperimentalSpillCodecPlanSetting, ExternalAggregationNeedsATwoLevelConvertibleMethod)
