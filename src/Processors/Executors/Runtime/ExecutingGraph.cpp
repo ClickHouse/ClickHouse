@@ -178,6 +178,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
                 new_proc->inheritQueryPlanStepFromParent(parent, parent.getQueryPlanStepGroup());
 
             addNode(new_proc);
+
+            /// Runtime additions participate in the same spill controller as the initial pipeline.
+            if (auto group = CurrentThread::getGroup())
+                group->memory_spill_scheduler->registerProcessor(new_proc.get());
         }
 
         /// Record removed processors in pending removal queue
