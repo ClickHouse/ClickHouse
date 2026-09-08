@@ -621,6 +621,14 @@ namespace
             return ParserKeyword{Keyword::RESET_AUTHENTICATION_METHODS_TO_NEW}.ignore(pos, expected);
         });
     }
+
+    bool parseRemoveExpiredAuthenticationMethods(IParserBase::Pos & pos, Expected & expected)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{Keyword::REMOVE_EXPIRED_AUTHENTICATION_METHODS}.ignore(pos, expected);
+        });
+    }
 }
 
 
@@ -679,6 +687,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
+    bool remove_expired_authentication_methods = false;
 
     bool parsed_identified_with = false;
     bool parsed_add_identified_with = false;
@@ -687,13 +696,19 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         if (auth_data.empty() && !reset_authentication_methods_to_new)
         {
-            parsed_identified_with = parseIdentifiedOrNotIdentified(pos, expected, auth_data);
-
-            if (parsed_identified_with)
+            /// A leading `IDENTIFIED` (and `NOT IDENTIFIED`) replaces every authentication method, which
+            /// makes removing only the expired ones pointless, so the two clauses are mutually exclusive.
+            /// `ADD IDENTIFIED` keeps the existing methods and does combine with the removal.
+            if (!remove_expired_authentication_methods)
             {
-                continue;
+                parsed_identified_with = parseIdentifiedOrNotIdentified(pos, expected, auth_data);
+                if (parsed_identified_with)
+                {
+                    continue;
+                }
             }
-            else if (alter)
+
+            if (alter)
             {
                 parsed_add_identified_with = parseAddIdentifiedWith(pos, expected, auth_data);
                 if (parsed_add_identified_with)
@@ -703,10 +718,19 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
         }
 
-        if (!reset_authentication_methods_to_new && alter && auth_data.empty())
+        if (!reset_authentication_methods_to_new && !remove_expired_authentication_methods && alter && auth_data.empty())
         {
             reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
             if (reset_authentication_methods_to_new)
+            {
+                continue;
+            }
+        }
+
+        if (!remove_expired_authentication_methods && !reset_authentication_methods_to_new && !parsed_identified_with && alter)
+        {
+            remove_expired_authentication_methods = parseRemoveExpiredAuthenticationMethods(pos, expected);
+            if (remove_expired_authentication_methods)
             {
                 continue;
             }
@@ -850,6 +874,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->global_valid_until_is_interval = global_valid_until_is_interval;
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
+    query->remove_expired_authentication_methods = remove_expired_authentication_methods;
     query->add_identified_with = parsed_add_identified_with;
     query->replace_authentication_methods = parsed_identified_with;
 
@@ -1199,7 +1224,7 @@ Syntax:
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | REMOVE EXPIRED AUTHENTICATION METHODS | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
@@ -1287,6 +1312,24 @@ Reset authentication methods and keep the most recent added one:
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
+## REMOVE EXPIRED AUTHENTICATION METHODS Clause {#remove-expired-authentication-methods-clause}
+
+Drops every authentication method whose [`VALID UNTIL`](#valid-until-clause) deadline has already passed and keeps all the others, including the ones that never expire. This is meant for users that hold several short-lived credentials at once (see the [`GRANTS` clause](#grants-clause)): the expired ones can be cleaned up at any time, without arranging a window in which at most one credential is still valid so that `RESET AUTHENTICATION METHODS TO NEW` or `IDENTIFIED WITH` would not drop a credential that is still in use.
+
+```sql
+ALTER USER user1 REMOVE EXPIRED AUTHENTICATION METHODS
+```
+
+The clause combines with `ADD IDENTIFIED`, which makes it possible to issue a new credential and purge the dead ones in a single statement, even when the user has already reached the `max_authentication_methods_per_user` limit — the removal is applied before the limit is checked:
+
+```sql
+ALTER USER user1 REMOVE EXPIRED AUTHENTICATION METHODS ADD IDENTIFIED WITH plaintext_password BY 'new_token' VALID FOR INTERVAL 1 DAY
+```
+
+It cannot be combined with `RESET AUTHENTICATION METHODS TO NEW`, `IDENTIFIED` or `NOT IDENTIFIED`, because those replace all the authentication methods anyway. It is also not available in `CREATE USER`, which has no pre-existing methods to remove.
+
+If every authentication method of the user is expired, the statement is rejected instead of leaving the user with no way to authenticate at all. Add a replacement in the same statement (`ADD IDENTIFIED WITH ...`) or replace the methods with `IDENTIFIED WITH ...`.
+
 ## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`. The accepted deadline range is `1900-01-01 00:00:00 UTC` through `9999-12-31 09:59:59 UTC` — the latest instant that stays within year 9999 in every time zone, so the stored instant is never clamped when it is rendered. A deadline in the past means the credentials are already expired. Deadlines before `1970-01-01 00:00:01 UTC` are accepted only as an "already expired" marker: they are canonicalized to the smallest expired instant, one second after the Unix epoch (`1970-01-01 00:00:01 UTC`), so `SHOW CREATE USER` reports that instant instead of the deadline you wrote. Deadlines from that instant onward are stored exactly.
@@ -1331,7 +1374,7 @@ Example:
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [{VALID UNTIL datetime | VALID FOR interval}]
-    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | REMOVE EXPIRED AUTHENTICATION METHODS | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]

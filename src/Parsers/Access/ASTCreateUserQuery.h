@@ -48,6 +48,9 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
     bool reset_authentication_methods_to_new = false;
+    /// `ALTER USER ... REMOVE EXPIRED AUTHENTICATION METHODS`: drop every authentication method whose
+    /// `VALID UNTIL` deadline has already passed, keeping the rest.
+    bool remove_expired_authentication_methods = false;
     bool add_identified_with = false;
     bool replace_authentication_methods = false;
 
