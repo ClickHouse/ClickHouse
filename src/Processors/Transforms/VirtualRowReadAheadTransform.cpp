@@ -189,23 +189,28 @@ IProcessor::Status VirtualRowReadAheadTransform::prepare()
     /// Account for completed reads before granting more speculative work.
     if (ready_lanes.empty() && read_ahead_window && read_ahead_started)
     {
-        /// Lanes already holding a slot may keep filling their buffers. Only the free
-        /// slots go to lanes that have not read anything yet, earliest boundary first.
+        auto earliest_first = [this](size_t lhs, size_t rhs)
+        {
+            return earlier(lhs, rhs);
+        };
+
+        /// Lanes already holding a slot split into two tiers. Deep buffering pays off only
+        /// for the lane the merge reaches next: through a selective filter it costs the
+        /// whole source. The other lanes park on their first chunk until demanded.
         auto fresh = std::partition(candidates.begin(), candidates.end(),
             [this](size_t lane_num)
             {
                 return lanes[lane_num].buffered_rows > 0;
             });
-        for (auto it = candidates.begin(); it != fresh; ++it)
+        size_t deep = std::min<size_t>(deep_speculative_lanes, fresh - candidates.begin());
+        std::partial_sort(candidates.begin(), candidates.begin() + deep, fresh, earliest_first);
+        for (auto it = candidates.begin(); it != candidates.begin() + deep; ++it)
             lanes[*it].read_requested = true;
 
+        /// Only the free slots go to lanes that have not read anything yet, earliest boundary first.
         size_t free_slots = read_ahead_window > occupied_slots ? read_ahead_window - occupied_slots : 0;
         size_t count = std::min<size_t>(free_slots, candidates.end() - fresh);
-        std::partial_sort(fresh, fresh + count, candidates.end(),
-            [this](size_t lhs, size_t rhs)
-            {
-                return earlier(lhs, rhs);
-            });
+        std::partial_sort(fresh, fresh + count, candidates.end(), earliest_first);
         for (auto it = fresh; it != fresh + count; ++it)
             lanes[*it].read_requested = true;
     }
