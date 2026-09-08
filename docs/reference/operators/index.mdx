@@ -122,7 +122,7 @@ SELECT 'a%b' SIMILAR TO 'a#%b' ESCAPE '#';  -- 1: `#%` is a literal `%`
 SELECT 'axb' SIMILAR TO 'a#%b' ESCAPE '#';  -- 0
 ```
 
-The escape character must be followed by a special character of the predicate or by itself; anything else is an error, because an escape before an ordinary character has no effect. Inside a bracket expression such as `[...]` the escape character is not special and denotes itself, following the POSIX and PostgreSQL behavior.
+A *custom* escape character must be followed by a special character of the predicate or by itself; anything else is an error, because an escape before an ordinary character has no effect. This strictness applies only to a custom escape character: the *default* backslash keeps the legacy `LIKE` behaviour and denotes a literal backslash when it precedes an ordinary character, so `'\\mabc' SIMILAR TO '%\\mabc%'` returns `1` while `'mabc' SIMILAR TO '%#mabc%' ESCAPE '#'` is rejected. Inside a bracket expression such as `[...]` the escape character is not special and denotes itself, following the POSIX and PostgreSQL behavior.
 
 The `ESCAPE` clause can also be combined with the `SOME` / `ALL` array quantifier described [below](#some-all-on-arrays), for example `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`.
 
