@@ -7,7 +7,7 @@ doc_type: 'guide'
 ---
 
 :::note
-The query plan cache is experimental. To use it, set `enable_query_plan_cache` to `1`. Only queries that also run with [enable_analyzer](/operations/settings/settings#enable_analyzer) (default) are eligible.
+The query plan cache is experimental. To use it, set `enable_query_plan_cache` to `1`. Only queries that also run with [`enable_analyzer`](/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer) (default) are eligible.
 :::
 
 ## Background and motivation {#background-and-motivation}
@@ -39,7 +39,7 @@ The key does not contain a user identity or table UUID, so compatible plans can 
 
 ## Configuration settings and usage {#configuration-settings-and-usage}
 
-The experimental session setting [`enable_query_plan_cache`](/operations/settings/settings#enable_query_plan_cache) controls the feature and defaults to `0`.
+The experimental session setting `enable_query_plan_cache` controls the feature and defaults to `0`.
 
 The maximum total cache size and entry count are controlled by the server-level settings `query_plan_cache.max_size_in_bytes` and `query_plan_cache.max_entries`. The default maximum size is `100 MiB`. Both settings can be reloaded at runtime via `SYSTEM RELOAD CONFIG`.
 
@@ -58,7 +58,7 @@ A query is admitted to the cache only if **all** of the following hold:
 
 - The statement is a single `SELECT` against exactly one table (no `JOIN`, no `UNION` of multiple subqueries, no scalar/`IN`-subquery references to other tables).
 - The table is a direct local, non-system, non-view `MergeTree`-family storage. Distributed tables, table functions, dictionaries, views, materialized views, and wrapper engines such as `Buffer` or `Merge` are excluded.
-- [`enable_analyzer`](/operations/settings/settings#enable_analyzer) is `1` (the default).
+- [`enable_analyzer`](/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer) is `1` (the default).
 - The query does not run with parallel replicas (`enable_parallel_replicas = 0`).
 - The query does not contain non-deterministic functions (`now`, `rand`, etc.) or subqueries.
 - No row policy applies to the current user for the table. Queries with any applicable row policy, including an always-true policy, bypass the plan cache.

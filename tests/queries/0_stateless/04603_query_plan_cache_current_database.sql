@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- no-parallel: 清空实例级查询计划缓存，避免干扰并发缓存测试。
+
 -- Setting-driven filters (`additional_table_filters`, `additional_result_filter`) are attached by
 -- the planner and are invisible to the pre-analysis cache key. They can also inject set subplans
 -- reading tables outside the single-table dependency fingerprint of a cache entry, whose schema and
