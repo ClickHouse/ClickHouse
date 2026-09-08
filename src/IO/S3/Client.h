@@ -213,6 +213,16 @@ public:
     Model::AbortMultipartUploadOutcome AbortMultipartUpload(AbortMultipartUploadRequest & request) const;
     Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
     Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const;
+
+    /// Call once a multipart upload of `key` is known to be complete. On GCS with
+    /// `gcs_issue_compose_request` it composes the object, without which the object cannot be copied
+    /// natively; a no-op everywhere else, and a failure only costs copy performance.
+    ///
+    /// `CompleteMultipartUpload` calls it for a completion that reported success. A caller that
+    /// concludes the upload completed despite an error -- an earlier attempt whose response was lost,
+    /// recognised by its write token -- must call it itself, because no outcome here says so.
+    void composeObjectAfterMultipartUpload(const String & bucket, const String & key) const;
+
     Model::UploadPartOutcome UploadPart(UploadPartRequest & request) const;
     Model::UploadPartCopyOutcome UploadPartCopy(UploadPartCopyRequest & request) const;
 

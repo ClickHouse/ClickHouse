@@ -4,6 +4,7 @@
 #include <IO/S3/Client.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Core/Field.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -31,9 +32,22 @@ struct Settings;
 /// eventual-consistency quirks of the same class and are safe to retry (callers list parts in
 /// ascending order, so a genuine InvalidPartOrder cannot originate here). InvalidPart /
 /// InvalidPartOrder are not in the typed S3Errors enum, so the SDK leaves GetErrorType() == UNKNOWN
-/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD is a genuine
-/// error handled by DB::S3::Client, not retried here.
+/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD means the
+/// upload id is gone and retrying cannot bring it back, so it is not retried here; the writer
+/// resolves it with `isObjectWrittenWithToken`.
 bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error);
+
+/// Custom object metadata key carrying the writer's token, see `isObjectWrittenWithToken`.
+static constexpr auto WRITE_TOKEN_METADATA_KEY = "clickhouse-write-token";
+
+/// True only if the object at `key` carries `write_token`, i.e. the caller is the one who wrote it.
+///
+/// A writer stamps a unique token on the object it creates, so a request it has to send again can
+/// tell its own result apart from an object that was already at the key. An absent object, an absent
+/// or foreign token, and a failed HEAD all give false: the caller then reports its original error
+/// rather than acknowledging a write it cannot prove.
+bool isObjectWrittenWithToken(
+    const S3::Client & client, const String & bucket, const String & key, const String & write_token, LoggerPtr log);
 
 class S3Exception : public Exception
 {

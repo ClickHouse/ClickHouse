@@ -67,9 +67,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Custom object metadata key carrying the write token, see WriteBufferFromS3::write_token.
-static constexpr auto WRITE_TOKEN_METADATA_KEY = "clickhouse-write-token";
-
 struct WriteBufferFromS3::PartData
 {
     Memory<> memory;
@@ -119,7 +116,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , write_token(write_settings.object_storage_write_if_none_match.empty() ? "" : getRandomASCIIString(32))
+    , write_token(getRandomASCIIString(32))
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -421,8 +418,7 @@ void WriteBufferFromS3::createMultipartUpload()
     req.SetContentType("binary/octet-stream");
 
     /// Metadata set here lands on the completed object, so a HEAD after completion sees the token.
-    if (auto metadata = metadataWithWriteToken())
-        req.SetMetadata(*metadata);
+    req.SetMetadata(metadataWithWriteToken());
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
@@ -703,6 +699,9 @@ bool WriteBufferFromS3::completeMultipartUpload()
         {
             LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write ({}). {}, Parts: {}",
                      error.GetExceptionName(), getShortLogDetails(), multipart_tags.size());
+            /// The attempt that completed the upload reported an error, so nothing has composed the
+            /// object yet.
+            client_ptr->composeObjectAfterMultipartUpload(bucket, key);
             return true;
         }
 
@@ -738,8 +737,12 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    if (auto metadata = metadataWithWriteToken())
-        req.SetMetadata(*metadata);
+    /// Only a conditional PUT can come back as 412 and have to recognise its own object. An ordinary
+    /// PUT would carry the token for nothing, on every object ClickHouse writes.
+    if (isConditionalWrite())
+        req.SetMetadata(metadataWithWriteToken());
+    else if (object_metadata.has_value())
+        req.SetMetadata(*object_metadata);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
@@ -757,11 +760,14 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     return req;
 }
 
-std::optional<ObjectAttributes> WriteBufferFromS3::metadataWithWriteToken() const
+bool WriteBufferFromS3::isConditionalWrite() const
 {
-    if (write_token.empty())
-        return object_metadata;
+    return !write_settings.object_storage_write_if_none_match.empty()
+        || !write_settings.object_storage_write_if_match.empty();
+}
 
+ObjectAttributes WriteBufferFromS3::metadataWithWriteToken() const
+{
     auto metadata = object_metadata.value_or(ObjectAttributes{});
     metadata[WRITE_TOKEN_METADATA_KEY] = write_token;
     return metadata;
@@ -769,21 +775,7 @@ std::optional<ObjectAttributes> WriteBufferFromS3::metadataWithWriteToken() cons
 
 bool WriteBufferFromS3::isObjectWrittenByThisBuffer() const
 {
-    if (write_token.empty())
-        return false;
-
-    try
-    {
-        auto info = S3::getObjectInfoIfExists(*client_ptr, bucket, key, /* version_id = */ {}, /* with_metadata = */ true);
-        auto it = info.metadata.find(WRITE_TOKEN_METADATA_KEY);
-        return it != info.metadata.end() && it->second == write_token;
-    }
-    catch (...)
-    {
-        /// Report the original write error rather than a confusing read error.
-        tryLogCurrentException(log, "Failed to verify the write token of " + key);
-        return false;
-    }
+    return isObjectWrittenWithToken(*client_ptr, bucket, key, write_token, log);
 }
 
 void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data)

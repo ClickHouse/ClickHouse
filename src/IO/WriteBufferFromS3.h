@@ -79,8 +79,11 @@ private:
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
-    /// `object_metadata` with `write_token` merged in when the write is conditional.
-    std::optional<ObjectAttributes> metadataWithWriteToken() const;
+    bool isConditionalWrite() const;
+
+    /// `object_metadata` with `write_token` merged in. Sent by the writes that may later have to
+    /// recognise their own object: every multipart create, and a conditional single-part PUT.
+    ObjectAttributes metadataWithWriteToken() const;
 
     /// True only if the object stored under `key` carries this buffer's `write_token`, i.e. this
     /// buffer wrote it. Absent object, absent or foreign token, or a failed HEAD all give false.
@@ -95,8 +98,9 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
-    /// Identifies this buffer's conditional create-if-absent write; empty when the write is not
-    /// conditional. Sent as custom object metadata so a replayed PUT can recognise its own object.
+    /// Identifies this buffer among all writers to `key`. Sent as custom object metadata by the
+    /// writes listed on `metadataWithWriteToken`, so a request this buffer has to send again can
+    /// recognise the object its earlier attempt wrote and tell it apart from one already there.
     const String write_token;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);

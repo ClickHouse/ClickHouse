@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
 #include <Common/BlobStorageLogWriter.h>
@@ -112,6 +113,10 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
+        /// Identifies this upload among all writers to `dest_key`. Sent as custom object metadata, so
+        /// a completion this helper has to send again can recognise the object its earlier attempt
+        /// wrote and tell it apart from an object that was already there.
+        const String write_token = getRandomASCIIString(32);
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -139,8 +144,10 @@ namespace
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
 
-            if (object_metadata.has_value())
-                request.SetMetadata(object_metadata.value());
+            /// Metadata set here lands on the completed object, so a HEAD after completion sees the token.
+            auto metadata = object_metadata.value_or(ObjectAttributes{});
+            metadata[WRITE_TOKEN_METADATA_KEY] = write_token;
+            request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
@@ -226,9 +233,23 @@ namespace
                     break;
                 }
 
-                if (isTransientCompleteMultipartUploadError(outcome.GetError()) && (retries < max_retries))
+                const auto & error = outcome.GetError();
+
+                /// A NO_SUCH_UPLOAD reporting an upload id the server already consumed, on our own
+                /// object, means this completion was sent again after it had succeeded. Anything we
+                /// cannot prove we wrote is a pre-existing object and must still throw.
+                if (error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
+                    && isObjectWrittenWithToken(*client_ptr, dest_bucket, dest_key, write_token, log))
                 {
-                    const auto & error = outcome.GetError();
+                    LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
+                    /// The attempt that completed the upload reported an error, so nothing has
+                    /// composed the object yet.
+                    client_ptr->composeObjectAfterMultipartUpload(dest_bucket, dest_key);
+                    break;
+                }
+
+                if (isTransientCompleteMultipartUploadError(error) && (retries < max_retries))
+                {
                     const String details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
                     LOG_INFO(log, "Multipart upload failed with a transient error ({}) for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", details, dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     continue; /// will retry

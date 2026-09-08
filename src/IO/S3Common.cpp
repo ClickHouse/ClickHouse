@@ -18,6 +18,7 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3/getObjectInfo.h>
 
 
 namespace DB
@@ -48,6 +49,26 @@ bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
     return error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY
         || error.GetExceptionName() == "InvalidPart"
         || error.GetExceptionName() == "InvalidPartOrder";
+}
+
+bool isObjectWrittenWithToken(
+    const S3::Client & client, const String & bucket, const String & key, const String & write_token, LoggerPtr log)
+{
+    if (write_token.empty())
+        return false;
+
+    try
+    {
+        auto info = S3::getObjectInfoIfExists(client, bucket, key, /* version_id = */ {}, /* with_metadata = */ true);
+        auto it = info.metadata.find(WRITE_TOKEN_METADATA_KEY);
+        return it != info.metadata.end() && it->second == write_token;
+    }
+    catch (...)
+    {
+        /// Report the original write error rather than a confusing read error.
+        tryLogCurrentException(log, "Failed to verify the write token of " + key);
+        return false;
+    }
 }
 
 }
