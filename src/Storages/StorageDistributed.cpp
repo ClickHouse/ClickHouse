@@ -71,6 +71,7 @@
 
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -1525,10 +1526,16 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
-            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
+            /// Same as in `InterpreterInsertQuery`: the source SELECT's own SETTINGS are applied by its
+            /// interpreter later, and the parser's push-down onto the INSERT keeps only `changes`.
+            auto select_context = Context::createCopy(local_context);
+            if (select_query->settings())
+                InterpreterSetQuery(select_query->settings(), select_context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+            const auto & select_settings = select_context->getSettingsRef();
+            if (select_settings[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(
                     select.list_of_selects->children.at(0),
-                    local_context->getSettingsRef()[Setting::max_expanded_ast_elements]);
+                    select_settings[Setting::max_expanded_ast_elements]);
             ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);

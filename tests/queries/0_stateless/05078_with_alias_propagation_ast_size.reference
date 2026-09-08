@@ -4,5 +4,7 @@ two aliases still work
 1	1
 plain aliases unaffected
 10	10	10
+source SETTINGS win on the insert fast path
+insert accepted
 analyzer unaffected
 1	1	1

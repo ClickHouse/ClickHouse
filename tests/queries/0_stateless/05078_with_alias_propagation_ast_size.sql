@@ -40,6 +40,31 @@ WITH (SELECT count() FROM numbers(10)) AS e1,
      (SELECT count() FROM numbers(10)) AS e3
 SELECT e1, e2, e3;
 
+-- The parallel distributed INSERT ... SELECT fast path applies the bound before the source SELECT's
+-- own SETTINGS have been applied, and the parser's push-down onto the INSERT does not overwrite a
+-- setting the INSERT already carries. The source SELECT's value must still win, as it does on the
+-- ordinary path.
+DROP TABLE IF EXISTS t_with_alias_repl;
+DROP TABLE IF EXISTS t_with_alias_dist;
+
+CREATE TABLE t_with_alias_repl (a UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_with_alias', '1') ORDER BY a;
+CREATE TABLE t_with_alias_dist AS t_with_alias_repl ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_with_alias_repl);
+
+SELECT 'source SETTINGS win on the insert fast path';
+INSERT INTO t_with_alias_dist SETTINGS parallel_distributed_insert_select = 2, max_expanded_ast_elements = 200
+WITH (SELECT count() FROM (SELECT 1)) AS e1,
+     (SELECT count() FROM (SELECT 1)) AS e2,
+     (SELECT count() FROM (SELECT 1)) AS e3
+SELECT e1 + e2 + e3
+SETTINGS max_expanded_ast_elements = 100000000000;
+
+-- Only that the INSERT was accepted matters; counting the rows back would race with the distributed
+-- insert becoming visible.
+SELECT 'insert accepted';
+
+DROP TABLE t_with_alias_dist;
+DROP TABLE t_with_alias_repl;
+
 -- The analyzer does not clone aliases per subquery and handles all of it.
 SELECT 'analyzer unaffected';
 WITH (SELECT count() FROM (EXPLAIN PLAN SELECT 1)) AS e1,

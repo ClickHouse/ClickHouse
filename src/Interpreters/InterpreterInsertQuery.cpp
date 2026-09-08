@@ -12,6 +12,7 @@
 #include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -1077,10 +1078,18 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         if (auto * sq = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
             select_query = sq;
-            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
+            /// The source SELECT's own SETTINGS are applied by its interpreter later, and the parser's
+            /// push-down onto the INSERT keeps only `changes` - it drops `DEFAULT` resets and never
+            /// overrides a setting the INSERT specified. Resolve what this path depends on the same way
+            /// the ordinary interpreter does, so it does not decide on a stale outer value.
+            auto select_context = Context::createCopy(local_context);
+            if (sq->settings())
+                InterpreterSetQuery(sq->settings(), select_context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+            const auto & select_settings = select_context->getSettingsRef();
+            if (select_settings[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(
                     select.list_of_selects->children.at(0),
-                    local_context->getSettingsRef()[Setting::max_expanded_ast_elements]);
+                    select_settings[Setting::max_expanded_ast_elements]);
             ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *sq);
