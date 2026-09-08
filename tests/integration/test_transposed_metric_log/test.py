@@ -101,6 +101,7 @@ def test_table_rotation(start_cluster):
 
     node1.replace_in_config(LOG_PATH, ">transposed<", ">wide<")
     node1.restart_clickhouse()
+    node1.query("SYSTEM FLUSH LOGS metric_log")
 
     assert node1.query(
         "SELECT name, source FROM system.documentation"
