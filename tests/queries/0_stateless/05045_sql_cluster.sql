@@ -101,7 +101,6 @@ CREATE CLUSTER test_sql_cluster_05045 (
     )
 ); -- { serverError BAD_ARGUMENTS }
 
--- `default` is removed in tests/config/config.d/clusters.xml; use a config-defined cluster.
 CREATE CLUSTER test_shard_localhost (
     user = 'default',
     SHARD (
