@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/StorageSnapshot.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -211,13 +210,12 @@ void populatePartAggregationCache(
             /// let later queries reuse a wrong, partial aggregate. Detect cancellation after the loop
             /// and fail closed: stop populating and do not cache this part. The main pipeline reads any
             /// uncached part normally, or surfaces its own cancellation.
-            const auto execution_status = executor.getExecutionStatus();
-            if (execution_status == PipelineExecutor::ExecutionStatus::CancelledByUser
-                || execution_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
+            /// `QueryStatus::checkTimeLimitSoft` reports both a `KILL QUERY` and an exhausted
+            /// `max_execution_time`, which is how `StorageMemory` detects the same situation while
+            /// mutating a `Memory` table.
+            if (process_list_element && !process_list_element->checkTimeLimitSoft())
             {
-                LOG_DEBUG(log, "Cache population for part {} was cancelled ({}); not caching it",
-                    part.data_part->name,
-                    execution_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout ? "timeout" : "killed");
+                LOG_DEBUG(log, "Cache population for part {} was cancelled; not caching it", part.data_part->name);
                 break;
             }
 
