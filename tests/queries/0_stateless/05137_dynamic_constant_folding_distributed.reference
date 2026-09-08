@@ -3,4 +3,6 @@ Enum8(\'7\' = 3)
 Enum8(\'7\' = 3)
 ['UInt8','UInt8']
 ['UInt8','UInt8']	['UInt8','UInt8']
+Int64	UInt64
+['UInt8','UInt8']
 String	2023-10-29 02:30:00

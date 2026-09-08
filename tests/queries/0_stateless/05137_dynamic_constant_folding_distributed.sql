@@ -45,6 +45,23 @@ FROM (
     FROM remote('127.0.0.1', system.one))
 SETTINGS use_variant_as_common_type = 0;
 
+-- `tuple` reconciles nothing between its arguments, it keeps each one's type, so a `Dynamic` inside
+-- a `tuple` IS named: under the very setting that makes the two cells above give up, an `Int64` and
+-- a `UInt64` member coexist. An `IN` list is serialized as a `tuple`, so this is the shape a
+-- `Dynamic` constant in a list travels in.
+SELECT DISTINCT dynamicType(tupleElement(t, 1)), dynamicType(tupleElement(t, 2))
+FROM (
+    SELECT materialize(tuple(1::Int64::Dynamic, 2::UInt64::Dynamic)) AS t
+    FROM remote('127.0.0.1', system.one))
+SETTINGS use_variant_as_common_type = 0;
+
+-- The shared binary variant is a second value exit and it forwards the same restriction: a
+-- `Dynamic(max_types = 0)` inside an `array` must stay unnamed too, or its two elements arrive named
+-- as `Int64` and `UInt64` and `array` has no common type for them.
+SELECT DISTINCT arrayMap(x -> dynamicType(x), materialize(
+    [1::Int64::Dynamic(max_types = 0), 2::UInt64::Dynamic(max_types = 0)]))
+FROM remote('127.0.0.1', system.one) SETTINGS use_variant_as_common_type = 0;
+
 -- A DateTime is written as local text, and both instants of a DST overlap share that text, so
 -- naming its member type would turn a visible type mismatch into a silently different instant.
 -- 1698543000 is the later of the two occurrences; its own text re-parses to the earlier one.
