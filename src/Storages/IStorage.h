@@ -286,6 +286,14 @@ public:
     /// `ObjectStorageQueue` takes `s3queue_processing_threads_num` for `processing_threads_num` -
     /// without declaring them as aliases, so nothing else can know they refer to the same setting.
     using SettingNameNormalizer = std::function<std::optional<std::string_view>(std::string_view)>;
+    /// For an engine that consumes its settings at construction and keeps nothing. It cannot say
+    /// what its settings are, and the base implementation would report only what the definition
+    /// states - which looks like a complete answer and is not, since the effective values can come
+    /// from the query context, a named collection or a connection pool default. An engine that is
+    /// advertised by `system.engine_settings` and cannot answer for a table reports nothing here
+    /// rather than a partial truth. Reporting them properly is its own piece of work.
+    static TableSettings settingsNotRetainedByEngine() { return {}; }
+
     TableSettings attributeSettingsStatedInDefinition(
         TableSettings settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
 
