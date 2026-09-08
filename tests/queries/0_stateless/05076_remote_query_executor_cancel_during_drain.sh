@@ -72,6 +72,9 @@ $CLICKHOUSE_CLIENT --query "
 failed=0
 sync_ok=0
 err="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.err"
+# The background query clients get their own stderr path: they run concurrently with the foreground
+# helpers below, and both truncate on open, so sharing one file loses whichever diagnostic came first.
+err_bg="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.bg.err"
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_drain_hold"
 
 # Fail loudly if a failpoint is not available: a run that proceeds un-armed proves nothing.
@@ -110,14 +113,14 @@ function wait_pause()
 # `enable_parallel_replicas=0` keeps `drain_was_skipped` false, which is what leads into the drain.
 # `--max_threads` is pinned: the interleaving needs both shards' readers runnable at once, so do not
 # let a randomized thread count decide whether the fixture is reachable.
-# Bounded so the bare `wait`s below cannot outlive the runner: 120 s is ~8x the whole test.
+# Bounded so the bare `wait`s below cannot outlive the runner: 120 s is ~10x the whole test.
 function start_query()
 {
     timeout 120 $CLICKHOUSE_CLIENT \
         --query_id "$1" \
         --enable_parallel_replicas=0 --async_socket_for_remote=0 \
         --max_block_size=1 --prefer_localhost_replica=0 --max_threads=2 \
-        --query "SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1 FORMAT Null" 2>"$err" &
+        --query "SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1 FORMAT Null" 2>"$err_bg" &
 }
 
 # The killed query must actually be gone once the parks are released.
@@ -294,7 +297,7 @@ $CLICKHOUSE_CLIENT --enable_parallel_replicas=0 --async_socket_for_remote=0 \
     --max_block_size=1 --prefer_localhost_replica=0 --max_threads=2 \
     --query "SELECT count() FROM (SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1)"
 
-rm -f "$err" "$kill_done" "$kill_done.part"
+rm -f "$err" "$err_bg" "$kill_done" "$kill_done.part"
 
 # Separate liveness check: the server survived.
 $CLICKHOUSE_CLIENT --query "SELECT 'ok'"
