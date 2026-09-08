@@ -28,6 +28,12 @@ SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_rand FINAL
 
 SELECT countIf(data = 'old') FROM t_prewhere_final_rand FINAL WHERE arrayExists(x -> (x + rand()) % 2 = 0, [k]);
 
+-- a lambda whose captures are all constants folds into a constant ColumnFunction, its body must still be seen
+SELECT '= non-deterministic folded lambda is not moved =';
+SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_rand FINAL WHERE arrayExists(x -> rand(x) % 2 = 0, [k])) WHERE explain LIKE '%Prewhere filter%';
+
+SELECT countIf(data = 'old') FROM t_prewhere_final_rand FINAL WHERE arrayExists(x -> rand(x) % 2 = 0, [k]);
+
 DROP TABLE t_prewhere_final_rand;
 
 -- query-scoped constants like now are folded before the optimizer runs, so such filters keep moving

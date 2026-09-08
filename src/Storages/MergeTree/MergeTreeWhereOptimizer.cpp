@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -788,6 +789,23 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     return true;
 }
 
+/// Constant folding turns a lambda whose captured columns are all constants into a constant
+/// ColumnFunction: a function object, not a value, so its body still has to be checked
+static bool isConstantDeterministicInScopeOfQuery(const RPNBuilderTreeNode & node)
+{
+    const auto * dag_node = node.getDAGNode();
+    if (!dag_node)
+        return true; /// AST constants are scalar literals, lambdas are not folded into them
+
+    while (dag_node->type == ActionsDAG::ActionType::ALIAS)
+        dag_node = dag_node->children.front();
+
+    if (!dag_node->column)
+        return true;
+
+    return allColumnFunctions(*dag_node->column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+}
+
 static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
 {
     if (auto function_base = function_node.getFunctionBase())
@@ -829,7 +847,15 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
             auto argument = function_node.getArgumentAt(i);
             auto argument_column_name = argument.getColumnName();
 
-            if (argument.isConstant() || sorting_key_names.contains(argument_column_name))
+            if (argument.isConstant())
+            {
+                /// a folded lambda hides its body behind a constant
+                if (!isConstantDeterministicInScopeOfQuery(argument))
+                    return false;
+                continue;
+            }
+
+            if (sorting_key_names.contains(argument_column_name))
                 continue;
 
             if (!isDeterministicExpressionOverSortingKey(argument, context))
