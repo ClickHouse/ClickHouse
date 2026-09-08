@@ -277,9 +277,8 @@ SQLQueryPiece applyLimitAggregationOperator(
             make_intrusive<ASTIdentifier>(ColumnNames::StepsMask)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
-        /// If the grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
-        /// here a second time, which is still correct because group ids are the same within one query,
-        /// and so are the sampling keys used by `limitk`.
+        /// Correctness does not depend on the grid being materialized: evaluating it a second time
+        /// gives the same group ids within one query, and the same sampling keys for `limitk`.
         builder.from_table = vector_grid;
 
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step2_query), SQLSubqueryType::TABLE});
