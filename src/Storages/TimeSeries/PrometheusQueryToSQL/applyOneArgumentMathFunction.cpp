@@ -114,7 +114,7 @@ SQLQueryPiece applyOneArgumentMathFunction(
                 "multiIf",
                 makeASTFunction("less", x->clone(), zero->clone()),
                 timeSeriesScalarToAST(-1, context.scalar_data_type),
-                makeASTFunction("greater", x->clone(), std::move(zero)),
+                makeASTFunction("greater", x->clone(), zero->clone()),
                 timeSeriesScalarToAST(1, context.scalar_data_type),
                 std::move(x));
         }
