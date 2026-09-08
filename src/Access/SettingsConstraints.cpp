@@ -307,14 +307,22 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
     checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source);
 }
 
+void SettingsConstraints::clampRejectingInvalidChanges(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
+{
+    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION_THROW_ON_INVALID, source);
+}
+
 void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
 {
     /// If we filter out settings that match the current default here, `compatibility` will silently override them.
     /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
     bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
+    /// With `CLAMP_ON_VIOLATION_THROW_ON_INVALID` the surviving list is stored on the query node as the settings
+    /// set explicitly on that node, so a change equal to the current value must stay in the list.
+    bool ignore_unchanged_settings = has_compatibility_setting || reaction == CLAMP_ON_VIOLATION_THROW_ON_INVALID;
     std::erase_if(changes, [&](SettingChange & change)
     {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
+        return !checkImpl(current_settings, change, reaction, source, ignore_unchanged_settings);
     });
 }
 
@@ -411,7 +419,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     if (setting_name == "profile")
         return true;
 
-    if (reaction == THROW_ON_VIOLATION)
+    if (reaction != CLAMP_ON_VIOLATION)
     {
         try
         {
@@ -432,7 +440,8 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION);
+    Field new_value = getNewValueToCheck(
+        current_settings, change, ignore_unchanged_settings, /*throw_on_failure=*/ reaction != CLAMP_ON_VIOLATION);
     if (new_value.isNull())
         return false;
 
@@ -447,7 +456,9 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
             return true;
     }
 
-    return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
+    /// `Checker::check` only distinguishes throwing from clamping.
+    return getChecker(current_settings, setting_name)
+        .check(change, new_value, reaction == THROW_ON_VIOLATION ? THROW_ON_VIOLATION : CLAMP_ON_VIOLATION, source);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
