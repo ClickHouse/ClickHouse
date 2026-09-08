@@ -19,6 +19,21 @@ SELECT 'count, trivial count enabled', count() FROM mc_merge SETTINGS optimize_t
 SELECT 'count, sparsity filter enabled', count() FROM mc_merge WHERE id != 0
     SETTINGS optimize_trivial_count_query = 1, optimize_trivial_count_with_sparsity_filter = 1;
 
+-- The old analyzer serves this count from a different path (`InterpreterSelectQuery::getTrivialCount`).
+SELECT 'count, old analyzer, trivial count disabled', count() FROM mc_merge
+    SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 0;
+SELECT 'count, old analyzer, trivial count enabled', count() FROM mc_merge
+    SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+
+-- A Merge over a single child reaches a different processing stage than one over several.
+DROP TABLE IF EXISTS mc_merge_one;
+CREATE TABLE mc_merge_one (id UInt32) ENGINE = Merge(currentDatabase(), '^mc_child1$');
+SELECT 'single-child Merge, analyzer', count() FROM mc_merge_one
+    SETTINGS enable_analyzer = 1, optimize_trivial_count_query = 1;
+SELECT 'single-child Merge, old analyzer', count() FROM mc_merge_one
+    SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+DROP TABLE mc_merge_one;
+
 DROP ROW POLICY mcp ON mc_child1;
 DROP TABLE mc_merge;
 DROP TABLE mc_child1;
