@@ -414,21 +414,39 @@ echo "(console shows one progress line per ~5 min; full output goes to sqlancer.
 # failures to fill a triage session; everything found so far is kept and
 # reported.
 MAX_DISTINCT_FAILURES="${SQLANCER_MAX_DISTINCT_FAILURES:-50}"
+# The distinct cap alone does not bound the run. A broken interaction between
+# the fuzzer and the server - e.g. a client that cannot decode the responses,
+# so every statement fails and every expected-error allowlist stops matching -
+# turns almost every generated statement into a finding while producing only a
+# handful of families. The 2026-09-07 run reported 193,987 findings in 25
+# families, never reached the 50-family cap, and spent the full 5h budget on a
+# single setup error. Bound the raw finding count too: a night that has already
+# produced this many reproducers has nothing left to learn, and stopping keeps
+# the reporting cheap enough to survive (see `prepare_attachment`).
+MAX_TOTAL_FINDINGS="${SQLANCER_MAX_TOTAL_FINDINGS:-2000}"
 ABORT_FLAG="$OUTPUT_PATH/aborted-on-finding-flood"
 watch_finding_flood() {
-    local counts distinct
+    local counts total distinct
     while sleep 60; do
         pgrep -f 'target/sqlancer-.*\.jar' > /dev/null || return 0
         counts="$(python3 "$REPO_DIR/ci/jobs/scripts/sqlancer_failures.py" \
             --logs-dir "$SQLANCER_DIR/logs/clickhouse" --out-dir "$FAILURES_PATH" --dry-run 2>/dev/null || true)"
+        total="$(printf '%s' "$counts" | cut -f1)"
         distinct="$(printf '%s' "$counts" | cut -f2)"
         case "$distinct" in ''|*[!0-9]*) continue ;; esac
+        case "$total" in ''|*[!0-9]*) total=0 ;; esac
+        # `$ABORT_FLAG` holds the reason as a phrase, ready to be quoted in the
+        # report row further down.
         if [ "$distinct" -ge "$MAX_DISTINCT_FAILURES" ]; then
-            echo "$distinct" > "$ABORT_FLAG"
-            echo "=== Stopping SQLancer: $distinct distinct failures reached (cap $MAX_DISTINCT_FAILURES) ==="
-            pkill -f 'target/sqlancer-.*\.jar' || true
-            return 0
+            echo "$distinct distinct failures (cap $MAX_DISTINCT_FAILURES)" > "$ABORT_FLAG"
+        elif [ "$total" -ge "$MAX_TOTAL_FINDINGS" ]; then
+            echo "$total findings in $distinct distinct failure(s) (cap $MAX_TOTAL_FINDINGS findings)" > "$ABORT_FLAG"
+        else
+            continue
         fi
+        echo "=== Stopping SQLancer: $(cat "$ABORT_FLAG") ==="
+        pkill -f 'target/sqlancer-.*\.jar' || true
+        return 0
     done
 }
 watch_finding_flood &
@@ -498,12 +516,34 @@ fi
 echo "$FAILURE_SUMMARY"
 if [ -f "$ABORT_FLAG" ]; then
     add_test_result "SQLancer stopped early" FAIL \
-        "stopped after $(cat "$ABORT_FLAG") distinct failures (cap $MAX_DISTINCT_FAILURES) - the remaining budget would only have re-found them"
-    FAILURE_SUMMARY="$FAILURE_SUMMARY; stopped early at the distinct-failure cap"
+        "stopped after $(cat "$ABORT_FLAG") - the remaining budget would only have re-found them"
+    FAILURE_SUMMARY="$FAILURE_SUMMARY; stopped early: $(cat "$ABORT_FLAG")"
 fi
 if [ "$FAILURE_COUNT" -gt 0 ] && [ -f "$FAILURES_PATH/analysis.txt" ]; then
     ATTACHED_FILES_ARRAY+=("$FAILURES_PATH/analysis.txt" "$FAILURES_PATH/findings.json")
-    sed -n '/^x[0-9]/,/^Per-finding index/{/^Per-finding index/!p}' "$FAILURES_PATH/analysis.txt" | head -n 60
+    # Print the family section of the analysis, bounded to 60 lines. Deliberately
+    # one `awk` and no pipe: `... | head -n 60` kills the producer with SIGPIPE as
+    # soon as `head` has its 60 lines, and under `set -o pipefail` that made the
+    # whole job exit 141 right here whenever the summary was big enough to fill
+    # the pipe buffer, skipping the sanitizer scan, the run summary, the Slack
+    # notification and the clean shutdown (2026-09-07).
+    awk '/^Per-finding index/ { exit } /^x[0-9]/ { inside = 1 } inside && shown < 60 { print; shown++ }' \
+        "$FAILURES_PATH/analysis.txt"
+    # `prepare_attachment` compresses in place once a file passes its size
+    # threshold, but `subresults.json` was written before that and references the
+    # uncompressed path, so the `Failure analysis` row would link a file that no
+    # longer exists and praktika would leave the runner-local path in the report.
+    # Resolve the attachment now and point the fragment at the surviving path.
+    ANALYSIS_ATTACHMENT="$(prepare_attachment "$FAILURES_PATH/analysis.txt" || true)"
+    if [ -n "$ANALYSIS_ATTACHMENT" ] \
+        && [ "$ANALYSIS_ATTACHMENT" != "$FAILURES_PATH/analysis.txt" ] \
+        && [ -s "${SUBRESULTS_FRAGMENT:-}" ]; then
+        python3 -c 'import json,sys
+path, old, new = sys.argv[1:4]
+text = open(path, encoding="utf-8").read()
+open(path, "w", encoding="utf-8").write(text.replace(json.dumps(old)[1:-1], json.dumps(new)[1:-1]))' \
+            "$SUBRESULTS_FRAGMENT" "$FAILURES_PATH/analysis.txt" "$ANALYSIS_ATTACHMENT"
+    fi
 fi
 
 # Sanitizer reports and `<Fatal>` messages are a finding on their own, even when
