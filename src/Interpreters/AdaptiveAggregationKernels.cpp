@@ -1946,7 +1946,7 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
     check_nothing_left();
 }
 
-void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const
+size_t Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const
 {
     PaddedPODArray<AggregateDataPtr> places_scratch;
 
@@ -1955,14 +1955,23 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
     /// block, a block can publish more than a part of chunks (a wide block is cut into pieces of
     /// half a part each, see `splitStagedChunkAtPartBound`), and the difference would stay in the
     /// backlog and grow with every block.
-    while (drainStagedChunksBatchUnderMemoryPressure(shared, places_scratch))
+    size_t drained_records = 0;
+    while (true)
     {
+        /// The claim that ends the sweep drains the tail, so its records count too.
+        size_t batch_records = 0;
+        const bool claim_again = drainStagedChunksBatchUnderMemoryPressure(shared, places_scratch, batch_records);
+        drained_records += batch_records;
+        if (!claim_again)
+            break;
     }
+    return drained_records;
 }
 
 bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
-    AdaptiveAggregationSession & shared, PaddedPODArray<AggregateDataPtr> & places_scratch) const
+    AdaptiveAggregationSession & shared, PaddedPODArray<AggregateDataPtr> & places_scratch, size_t & drained_records_out) const
 {
+    drained_records_out = 0;
     const size_t part_bytes = adaptivePressurePartBytes();
 
     /// The coordinator lock is held only to claim work: a batch of chunks carrying about one
@@ -2023,6 +2032,7 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
 
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
             shared.backlog.recordDrained(drained_records);
+            drained_records_out = drained_records;
             LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records early", drained_records);
 
             /// Tail drains can push the shared residue past the floor over time; detach it
@@ -2081,6 +2091,7 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
     shared.backlog.recordDrained(drained_records);
+    drained_records_out = drained_records;
     LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records into a producer-local table", drained_records);
 
     /// Correct the estimate upward to the built table's real footprint - the larger of what the
