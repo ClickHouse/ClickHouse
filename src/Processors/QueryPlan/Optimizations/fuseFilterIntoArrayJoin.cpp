@@ -36,8 +36,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     const auto & joined_columns = array_join->getColumns();
     NameSet joined_set(joined_columns.begin(), joined_columns.end());
 
-    /// The step evaluates the filter over the elements: the joined columns plus the other columns the filter
-    /// reads, which are broadcast to each row's elements. A filter that reads no element stays where it is.
+    /// The filter may read row columns too (the step broadcasts them), but it must read at least one element.
     const auto required
         = ActionsDAG::cloneSubDAG({&expression.findInOutputs(filter->getFilterColumnName())}, false).getRequiredColumnsNames();
     if (std::ranges::none_of(required, [&](const auto & name) { return joined_set.contains(name); }))

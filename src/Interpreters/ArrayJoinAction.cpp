@@ -380,7 +380,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             element_block.insert({array.getDataPtr(), nested_type->getNestedType(), name});
         }
 
-        /// The other columns the filter reads are constant within a row: broadcast them to the row's elements.
+        /// Row columns the filter reads are broadcast to the row's elements.
         for (const auto & required : array_join->element_filter->getRequiredColumnsWithTypes())
         {
             if (columns.contains(required.name))
