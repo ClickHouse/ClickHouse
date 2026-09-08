@@ -71,48 +71,57 @@ bool aggregateFunctionPreservesNullPayload(const AggregateFunctionPtr & function
 /// A branch of `if` runs only on the rows its condition selects when lazy execution picks it up.
 /// A nested short-circuit mask is not assumed to protect the rows the outer condition excluded, so
 /// the walk continues through it.
-bool branchCanBeSkippedByShortCircuit(const QueryTreeNodePtr & node, bool every_function_is_lazy)
+bool branchCanBeSkippedByShortCircuit(const QueryTreeNodePtr & branch, bool every_function_is_lazy)
 {
-    /// A constant is already evaluated when the query tree is built, so it cannot throw per row.
-    if (node->as<ConstantNode>())
-        return false;
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(branch.get());
 
-    /// A table expression or a subquery in an argument slot is evaluated in its own scope, as a set
-    /// or a scalar, so lazy execution of this expression never reaches inside it.
-    switch (node->getNodeType())
+    while (!nodes_to_process.empty())
     {
-        case QueryTreeNodeType::TABLE:
-        case QueryTreeNodeType::TABLE_FUNCTION:
-        case QueryTreeNodeType::QUERY:
-        case QueryTreeNodeType::UNION:
-            return false;
-        default:
-            break;
-    }
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
 
-    if (const auto * function_node = node->as<FunctionNode>())
-    {
-        if (auto function_base = function_node->getFunction())
+        /// A constant is already evaluated when the query tree is built, so it cannot throw per row.
+        if (node->as<ConstantNode>())
+            continue;
+
+        /// A table expression or a subquery in an argument slot is evaluated in its own scope, as a
+        /// set or a scalar, so lazy execution of this expression never reaches inside it.
+        switch (node->getNodeType())
         {
-            if (every_function_is_lazy)
-                return true;
-
-            /// getArgumentColumns describes each slot the way the resolver did, so the `in`
-            /// right-hand side is reported as a set instead of being asked for a result type.
-            const auto argument_columns = function_node->getArgumentColumns();
-            DataTypesWithConstInfo argument_types;
-            argument_types.reserve(argument_columns.size());
-            for (const auto & argument_column : argument_columns)
-                argument_types.push_back({argument_column.type, argument_column.column != nullptr});
-
-            if (function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
-                return true;
+            case QueryTreeNodeType::TABLE:
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            case QueryTreeNodeType::QUERY:
+            case QueryTreeNodeType::UNION:
+                continue;
+            default:
+                break;
         }
-    }
 
-    for (const auto & child : node->getChildren())
-        if (child && branchCanBeSkippedByShortCircuit(child, every_function_is_lazy))
-            return true;
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            if (auto function_base = function_node->getFunction())
+            {
+                if (every_function_is_lazy)
+                    return true;
+
+                /// getArgumentColumns describes each slot the way the resolver did, so the `in`
+                /// right-hand side is reported as a set instead of being asked for a result type.
+                const auto argument_columns = function_node->getArgumentColumns();
+                DataTypesWithConstInfo argument_types;
+                argument_types.reserve(argument_columns.size());
+                for (const auto & argument_column : argument_columns)
+                    argument_types.push_back({argument_column.type, argument_column.column != nullptr});
+
+                if (function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
+                    return true;
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
 
     return false;
 }
