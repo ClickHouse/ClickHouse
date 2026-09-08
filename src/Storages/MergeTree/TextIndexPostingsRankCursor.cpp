@@ -47,40 +47,8 @@ TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(MergeTreeReaderStream &
     }
 }
 
-UInt64 TextIndexPostingsRankCursor::readSegmentDocCount(size_t segment_idx)
+TextIndexPostingsRankCursor::SegmentHeader TextIndexPostingsRankCursor::readSegmentHeader(size_t segment_idx)
 {
-    stream->seekToMark({info->offsets[segment_idx], 0});
-    auto * data_buffer = stream->getDataBuffer();
-
-    UInt64 codec_type = 0;
-    UInt64 payload_bytes = 0;
-    UInt64 doc_count = 0;
-    readVarUInt(codec_type, *data_buffer);
-    readVarUInt(payload_bytes, *data_buffer);
-    readVarUInt(doc_count, *data_buffer);
-
-    if (doc_count == 0 || doc_count > info->cardinality)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index: posting segment {} holds {} of the token's {} documents",
-            segment_idx, doc_count, info->cardinality);
-
-    return doc_count;
-}
-
-void TextIndexPostingsRankCursor::ensureSegmentRank(size_t segment_idx)
-{
-    while (ranks_known <= segment_idx)
-    {
-        const size_t previous = ranks_known - 1;
-        segment_ranks[ranks_known] = segment_ranks[previous] + readSegmentDocCount(previous);
-        ++ranks_known;
-    }
-}
-
-void TextIndexPostingsRankCursor::loadSegment(size_t segment_idx)
-{
-    ensureSegmentRank(segment_idx);
-
     stream->seekToMark({info->offsets[segment_idx], 0});
     auto * data_buffer = stream->getDataBuffer();
 
@@ -96,9 +64,58 @@ void TextIndexPostingsRankCursor::loadSegment(size_t segment_idx)
     if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index: unexpected posting codec {}", codec_type);
 
-    segment.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
+    SegmentHeader header;
+    header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
+    header.payload_bytes = payload_bytes;
+    header.doc_count = requireUInt32(doc_count, "seg_cardinality");
+    header.first_row_id = requireUInt32(first_row_id, "first_row_id");
+
+    const auto & range = info->ranges[segment_idx];
+    if (range.begin > range.end)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index: posting segment {} has row range begin {} > end {}", segment_idx, range.begin, range.end);
+
+    const UInt64 range_span = static_cast<UInt64>(range.end) - range.begin + 1;
+    if (header.doc_count == 0 || header.doc_count > range_span)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index: posting segment {} holds {} documents in a row range of {}", segment_idx, header.doc_count, range_span);
+
+    if (header.first_row_id != range.begin)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index: posting segment {} starts at row {} but its range at {}", segment_idx, header.first_row_id, range.begin);
+
+    /// The segments partition the token's documents, so the ranks never pass the cardinality and the last segment ends on it.
+    const UInt64 rank_end = segment_ranks[segment_idx] + header.doc_count;
+    const bool is_last = segment_idx + 1 == total_segments;
+    if (rank_end > info->cardinality || (is_last && rank_end != info->cardinality))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index: posting segment {} ends at rank {} of the token's {} documents", segment_idx, rank_end, info->cardinality);
+
+    return header;
+}
+
+void TextIndexPostingsRankCursor::ensureSegmentRank(size_t segment_idx)
+{
+    while (ranks_known <= segment_idx)
+    {
+        const size_t previous = ranks_known - 1;
+        segment_ranks[ranks_known] = segment_ranks[previous] + readSegmentHeader(previous).doc_count;
+        ++ranks_known;
+    }
+}
+
+void TextIndexPostingsRankCursor::loadSegment(size_t segment_idx)
+{
+    ensureSegmentRank(segment_idx);
+
+    const SegmentHeader header = readSegmentHeader(segment_idx);
+    auto * data_buffer = stream->getDataBuffer();
+    const UInt64 payload_bytes = header.payload_bytes;
+    const UInt64 doc_count = header.doc_count;
+
+    segment.codec_type = header.codec_type;
     segment.doc_count = doc_count;
-    segment.first_row_id = requireUInt32(first_row_id, "first_row_id");
+    segment.first_row_id = header.first_row_id;
 
     if (!block_codec || block_codec->type() != segment.codec_type)
         block_codec = createPostingListBlockCodec(segment.codec_type);
@@ -128,6 +145,10 @@ void TextIndexPostingsRankCursor::loadSegment(size_t segment_idx)
         if (i > 0 && segment.block_last_row_ids[i] <= segment.block_last_row_ids[i - 1])
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index: block row ids do not increase at block {}", i);
     }
+    if (segment.block_last_row_ids.back() > info->ranges[segment_idx].end)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index: posting segment {} ends at row {} beyond its range end {}",
+            segment_idx, segment.block_last_row_ids.back(), info->ranges[segment_idx].end);
     for (size_t i = 0; i < num_blocks; ++i)
     {
         UInt64 v = 0;

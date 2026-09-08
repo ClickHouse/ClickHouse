@@ -1014,6 +1014,9 @@ private:
         for (size_t idx = 0; idx < ranks.size();)
         {
             const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+            if (block_idx >= dir.numBlocks())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: rank {} is outside the token's {} blocks", ranks[idx], dir.numBlocks());
             local_ranks.clear();
             do
             {

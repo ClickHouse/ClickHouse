@@ -37,7 +37,16 @@ private:
         size_t blockCount() const { return block_last_row_ids.size(); }
     };
 
-    UInt64 readSegmentDocCount(size_t segment_idx);
+    struct SegmentHeader
+    {
+        IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
+        UInt64 payload_bytes = 0;
+        UInt32 doc_count = 0;
+        UInt32 first_row_id = 0;
+    };
+
+    /// Leaves the stream at the payload. Needs the ranks of the preceding segments to check this one's.
+    SegmentHeader readSegmentHeader(size_t segment_idx);
     /// Sums the document counts each segment header already records, up to `segment_idx`.
     void ensureSegmentRank(size_t segment_idx);
     void loadSegment(size_t segment_idx);
