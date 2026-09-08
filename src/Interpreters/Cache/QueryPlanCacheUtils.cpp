@@ -58,10 +58,19 @@ public:
 
     static void visit(ASTPtr & ast, Data &)
     {
-        if (auto * set_clause = ast->as<ASTSetQuery>())
+        if (auto * select_clause = ast->as<ASTSelectQuery>())
         {
-            chassert(!set_clause->is_standalone);
-            std::erase_if(set_clause->changes, [](const auto & change) { return isSettingIgnoredInQueryPlanCache(change.name); });
+            if (auto select_settings = select_clause->settings())
+            {
+                auto * set_clause = select_settings->as<ASTSetQuery>();
+                chassert(!set_clause->is_standalone);
+                std::erase_if(set_clause->changes, [](const auto & change) { return isSettingIgnoredInQueryPlanCache(change.name); });
+
+                /// Drop the `SETTINGS` clause completely once every entry has been erased, so that
+                /// `SELECT 1 SETTINGS log_comment = 'x'` and a bare `SELECT 1` share a cache key.
+                if (set_clause->changes.empty())
+                    select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+            }
         }
         else
         {
