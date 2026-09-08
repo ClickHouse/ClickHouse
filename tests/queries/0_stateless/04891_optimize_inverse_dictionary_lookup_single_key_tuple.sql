@@ -470,7 +470,10 @@ ORDER BY k1;
 
 INSERT INTO data_mc VALUES
     ('11111111-1111-1111-1111-111111111111', 1, 1),
-    ('33333333-3333-3333-3333-333333333333', -1, 7);
+    ('33333333-3333-3333-3333-333333333333', -1, 7),
+    -- Shares `k1` with the matching dictionary key, so the rewritten conjunction cannot
+    -- short-circuit past the out-of-range `k2_i16` and the conversion is always evaluated.
+    ('11111111-1111-1111-1111-111111111111', -1, 9);
 
 -- A `String` expression for the `UUID` key column is a valid `dictGet` key, but the
 -- comparison has no common type for `String` and `UUID`. Only that element is cast;
@@ -484,8 +487,10 @@ SELECT 'two-column key, String for UUID column, opt off';
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
--- A lossy `Int16` expression over the `UInt16` key column: `dictGet` throws on the row
--- holding `-1`, and so must the rewrite instead of silently comparing in `Int32`.
+-- A lossy `Int16` expression over the `UInt16` key column: `dictGet` throws on the rows
+-- holding `-1`, and so must the rewrite instead of silently comparing in `Int32`. One of
+-- those rows carries the matching `k1`, so no evaluation order of the rewritten conjunction
+-- can skip the conversion.
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
