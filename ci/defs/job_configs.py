@@ -589,7 +589,13 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_FUZZERS,
             provides=[],
-            runs_on=RunnerLabels.AMD_LARGE,
+            # The target arch comes from the toolchain file, not from the host, so this
+            # cross-compiles on arm like every other Linux `amd_*` build. It has to: the
+            # ~18 fuzzers each statically link the whole of ClickHouse with its own copy
+            # of the ASan+debug DWARF, ~94 GiB of build output, which does not fit in the
+            # ~135 GiB free on `amd-large` (`m7i.8xlarge`) and dies linking one of the
+            # last targets. Only the job that *runs* the binaries needs an amd64 host.
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
