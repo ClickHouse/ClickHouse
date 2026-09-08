@@ -156,8 +156,8 @@ SELECT id, tupleElement(materialize(n), 'a'), tupleElement(materialize(n), 'arr'
 
 -- Case-insensitive column matching folds a struct's field names, so a struct holding two fields
 -- whose names differ only by case has two candidates for one request. The field spelled exactly like
--- the request wins, for the flattened read, for its sibling and for the whole column alike, in every
--- reader that resolves a name against a struct.
+-- the request wins, for the flattened read and for its sibling, and for the whole column in the ORC
+-- reader, which resolves each requested name against the file's struct itself.
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_cicase.orc', 'ORC')
 SELECT id, c0 FROM values('id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))', (1, tuple(tuple(11), tuple(21))), (2, tuple(NULL, tuple(22))), (3, tuple(tuple(13), tuple(23))));
 SELECT id, `c0.a` FROM file(currentDatabase() || '_04401_cicase.orc', 'ORC', 'id UInt32, `c0.a` Tuple(b UInt32)') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
