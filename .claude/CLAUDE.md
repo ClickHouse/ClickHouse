@@ -76,7 +76,7 @@ python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickH
 python3 .claude/tools/fetch_perf_report.py "https://github.com/ClickHouse/ClickHouse/pull/12345" --tsv
 
 # Also accepts CI HTML URLs
-python3 .claude/tools/fetch_perf_report.py "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=12345&sha=abc123"
+python3 .claude/tools/fetch_perf_report.py "https://s3.amazonaws.com/clickhouse-test-reports/praktika.html?PR=12345&sha=abc123"
 ```
 
 Key options: `--arch <amd|arm|all>` to filter architecture, `--metric <name>` to change metric (default `client_time`), `--shard <n>` for a specific shard, `--test <name>` / `--query <text>` for substring filtering, `--sort <diff|times|threshold|test>` for ordering, `--summary` for shard-level overview only, `--json` / `--tsv` for machine-readable output.
@@ -152,6 +152,16 @@ When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
+Run the style check locally before you push, and never hand over a change that you have not style-checked. It is the cheapest CI job to reproduce and by far the most common reason an otherwise finished pull request comes back red, which costs a full CI round-trip to learn something a local command answers in a second.
+
+```bash
+pip install -r ci/docker/style-test/requirements.txt
+sudo apt-get install libxml2-utils ripgrep
+
+mkdir -p ci/tmp  # praktika keeps its local state here, the job fails without it
+PYTHONPATH=./ci:. python3 ci/jobs/check_style.py
+```
+
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
 Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
@@ -182,3 +192,9 @@ ARM machines in CI are not slow. They are similar to x86 in performance.
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
 
 Always use YYYY-MM-DD (ISO) date format. Never write in the American date style. Never omit the year in dates. Never use the relative time (like xxx days ago).
+
+Do not try/catch exceptions to fall back to a less-optimized case. Let the exceptions propagate.
+
+Prefer functional (.sql/.sh) tests over unit (gtest) tests whenever possible. Unit tests are larger, too specific, and they are difficult to maintain.
+
+When you want to test changes in the CI scripts, you can write and run a throwaway test, but you don't need to commit it to the repository, because we don't have automated CI tests.

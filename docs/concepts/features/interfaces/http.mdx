@@ -190,7 +190,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-You can use the `default_format` URL parameter or the `X-ClickHouse-Format` header to specify a default format other than `TabSeparated`.
+You can use the `default_format` URL parameter to specify a default format other than `TabSeparated`. The `X-ClickHouse-Format` header selects the format of the response explicitly: it is an alias for the `output_format` setting, so it also overrides a `FORMAT` clause in the query. It never changes how the request body of an `INSERT` is parsed — use `input_format` or `format` for that.
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -208,6 +208,136 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 
 7
 ```
+
+## Access tables through URL paths and construct queries {#tables-as-files}
+
+Available in ClickHouse 26.8 and later.
+
+The HTTP interface can interpret a URL path as a database, table, output format, and compression method. URL parameters can then shape the result, so simple read requests do not require SQL. These features are disabled by default and must be enabled explicitly.
+
+### Enable path routing {#enabling-path-routing}
+
+Path interpretation is gated at two levels:
+
+1. Enable the server-level `http_allow_path_requests` configuration setting, which allows the HTTP interface to route path-style requests to the query handler:
+
+```xml
+<clickhouse>
+    <http_allow_path_requests>1</http_allow_path_requests>
+</clickhouse>
+```
+
+2. Enable the required per-user settings:
+
+| Setting | Effect |
+|---------|--------|
+| `http_allow_table_as_file` | Interprets the last path component as `table`, `table.format`, or `table.format.compression`. |
+| `http_allow_database_as_path` | Interprets a leading `/database/` path component as the current database. |
+| `http_allow_filters_as_path` | Interprets Hive-style `/name=value/` path components as `WHERE` filters. |
+| `http_allow_filters_as_unrecognized_url_parameters` | Interprets unrecognized URL parameters as `WHERE` filters. |
+
+<Note>
+Routing occurs before authentication, so it cannot depend on a per-user setting. When `http_allow_path_requests` is disabled, an unknown path returns a pre-authentication `404`. After routing and authentication, the per-user settings determine how the path is interpreted, allowing you to enable the feature selectively for a user, role, or profile.
+</Note>
+
+### Access tables as files {#table-as-file-examples}
+
+With `http_allow_table_as_file` enabled, a request to `/table.format.compression` is processed as `SELECT * FROM table`. Enable `http_allow_database_as_path` to use `/database/table.format.compression`.
+
+```bash
+# SELECT * FROM my_db.hits, formatted as CSV
+curl 'http://localhost:8123/my_db/hits.csv'
+
+# The same result, compressed with gzip
+curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
+```
+
+Format and compression extensions are recognized case-insensitively, so `hits.csv` and `hits.CSV` are equivalent.
+
+An explicit `format` or `output_format` URL parameter overrides the format in the path. `default_format` does not: it only provides the format to use when nothing else selects one, and the path extension is more specific. An explicit `compression` parameter must match the compression in the path; conflicting values result in an exception.
+
+### Construct a query {#query-construction}
+
+The following settings wrap the base query as a derived table. They compose with one another and with an existing query. You can supply them as HTTP URL parameters, in an in-query `SETTINGS` clause, or through a user profile.
+
+| Setting | Effect |
+|---------|--------|
+| `select` | `SELECT <expression_list> FROM (…)` |
+| `filter` | Adds `WHERE <expression>`. Multiple `filter` URL parameters are combined with `AND`. |
+| `order` | Adds `ORDER BY <expression_list>`. |
+| `sort` | Adds `ORDER BY` from a comma-separated list of identifiers or column positions, each with an optional `+` (ascending) or `-` (descending) prefix, such as `sort=a,-b`. It cannot be combined with `order`. |
+| [`limit`](/reference/settings/session-settings/other#limit) and [`offset`](/reference/settings/session-settings/other#offset) | Add `LIMIT <n> OFFSET <m>`. Both accept negative values for tail selection and fractional values representing a share of the rows. |
+| `page` | Sets `offset = limit * (page - 1)`. It requires `limit` and cannot be combined with `offset`. |
+
+```bash
+# Filter my_db.hits, sort by a descending, and return the first 10 rows
+curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
+
+# Return the second page of 100 rows
+curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
+```
+
+#### Modify an existing query {#modify-an-existing-query}
+
+The construction settings are not limited to path requests: they also shape a query you write yourself. The query becomes the derived table, so the settings apply to its result rather than being merged into it. For example, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` is executed as:
+
+```sql
+SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
+```
+
+This is useful for paging through, sorting, or narrowing the result of a query that is fixed elsewhere — in a saved dashboard query, a `predefined_query_handler`, or a client that only lets you append URL parameters:
+
+```bash
+# Page through the result of an arbitrary query without editing the query text
+curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
+
+# Keep only some of the resulting columns and rows
+curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
+
+# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
+curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
+```
+
+Because the settings wrap the query instead of rewriting it, they compose with a `FORMAT` clause and with an `ORDER BY` inside the query, and they never change which rows an `INSERT` writes: a construction setting placed on an `INSERT ... SELECT` statement shapes the statement's own (empty) result, not its source `SELECT`. To shape the source, put the setting in the `SELECT`'s own `SETTINGS` clause:
+
+```sql
+-- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
+INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
+
+-- Inserts 2 rows: `limit` applies to the SELECT itself
+INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
+```
+
+<Warning>
+`filter` is not an access-control mechanism. It adds a `WHERE` clause over a wrapping subquery, so the underlying data can be read and processed before the filter is applied. To restrict which rows a user can access, use [row policies](/concepts/features/security/access-rights#row-policy-management) or [`additional_table_filters`](/reference/settings/session-settings/additional#additional_table_filters).
+</Warning>
+
+### Override formats and compression {#format-and-compression-overrides}
+
+| Setting | Effect |
+|---------|--------|
+| `output_format` | Overrides the output format. It takes precedence over the query's `FORMAT` clause, the path extension, `format`, and `default_format`. It can also be set using the `X-ClickHouse-Format` header. |
+| `input_format` | Overrides the input format for `INSERT`. It takes precedence over the query's `FORMAT` clause and `format`. |
+| `format` | Overrides the format in both directions unless a direction-specific setting is provided. |
+| `default_format` | Sets the output format when the query has no `FORMAT` clause, no path extension, and no other format override. |
+| `compression` | Compresses the response body, for example with `compression=gz`. This is independent of HTTP `Content-Encoding` and the ClickHouse-native `compress` parameter. |
+
+The format settings also work with other protocols, including the native client and `clickhouse-local`. `input_format` and `output_format` correspond to the `--input-format` and `--output-format` options. The `--format` option maps to the bidirectional `format` setting in `clickhouse-local`, while in `clickhouse-client` it keeps its historical output-only meaning and maps to `output_format`.
+
+`compression` is specific to HTTP response shaping and is consumed before query execution. Supply it through an HTTP URL parameter, a path extension, or a user profile. It is rejected in an in-query `SETTINGS` clause.
+
+Binary and compressed HTTP responses include a `Content-Disposition: attachment; filename=…` header. The filename is derived from the URL path, or uses `result.<format>.<compression>` when the path does not provide one.
+
+### Use a path table with a query {#implicit-table}
+
+When the path identifies a table and you also provide a `query` parameter, the path table is exposed through [`implicit_table_at_top_level`](/reference/settings/session-settings/implicit#implicit_table_at_top_level). A `SELECT` without a `FROM` clause reads from the path table:
+
+```bash
+# Read columns a and b from my_db.hits without a FROM clause
+curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
+```
+
+If the query already contains a `FROM` clause, the path component only supplies the download filename.
 
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 

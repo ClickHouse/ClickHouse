@@ -21,9 +21,9 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 | `ON CLUSTER cluster` | Выполняет команду на всём указанном кластере.                                                                                                                            |
 | `SYNC`               | Делает операцию усечения синхронной на всех репликах при использовании реплицируемых таблиц. Если этот параметр не указан, по умолчанию усечение выполняется асинхронно. |
 
-Вы можете использовать настройку [alter&#95;sync](/ru/reference/settings/session-settings#alter_sync), чтобы настроить ожидание выполнения действий на репликах.
+Вы можете использовать настройку [alter&#95;sync](/ru/reference/settings/session-settings/alter#alter_sync), чтобы настроить ожидание выполнения действий на репликах.
 
-С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать, пока неактивные реплики выполнят запросы `TRUNCATE`.
+С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать, пока неактивные реплики выполнят запросы `TRUNCATE`.
 
 <Info>
   Если для `alter_sync` установлено значение `2` и некоторые реплики остаются неактивными дольше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, будет сгенерировано исключение `UNFINISHED`.
