@@ -309,6 +309,27 @@ SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
       AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 );
 
+-- A body reads the arguments the call does not capture as well, since those arrive as its formal
+-- parameters, and the key then sits beside the lambda rather than inside it. What the body does with a
+-- formal is what decides: reading its value leaves the conjunct pushable, reading its representation does
+-- not, and both spellings render alike, so only the pushed filter separates them.
+
+SELECT 'INNER JOIN ON, conjunct whose lambda body reads the value of a formal bound to the equi-key: the conjunct is pushed';
+SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 1 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE arrayExists(y -> y > toDate32('1900-01-01'), [l.a]) = (l.a > toDate32('1900-01-01'))
+      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
+SELECT 'INNER JOIN ON, conjunct whose lambda body reads the representation of a formal bound to the equi-key: it is not';
+SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE arrayExists(y -> isConstant(y) = 0, [l.a]) = (l.a > toDate32('1900-01-01'))
+      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
 SELECT 'INNER JOIN ON, cross-type equi-key: result';
 SELECT r.b FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
 WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03') ORDER BY 1;

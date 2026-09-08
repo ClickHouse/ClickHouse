@@ -70,6 +70,10 @@ INNER JOIN ON, cross-type equi-key whose lambda body holds per-query state: the 
 1
 INNER JOIN ON, conjunct whose lambda body holds per-query state beside the equi-key: the conjunct is not pushed
 1
+INNER JOIN ON, conjunct whose lambda body reads the value of a formal bound to the equi-key: the conjunct is pushed
+1
+INNER JOIN ON, conjunct whose lambda body reads the representation of a formal bound to the equi-key: it is not
+1
 INNER JOIN ON, cross-type equi-key: result
 2020-06-01
 2020-06-02
