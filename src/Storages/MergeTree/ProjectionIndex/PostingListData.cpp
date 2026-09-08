@@ -935,8 +935,11 @@ struct ReaderStreamCursor
         chassert(stream);
         chassert(doc_buffer);
 
-        if (!do_seek && remaining_count > 0)
-            chassert(static_cast<UInt64>(stream->getPosition()) == offset);
+        /// `offset` is consumed only by the deferred seek in `loadNextBlock`. With `do_seek` unset
+        /// the caller has already positioned the stream, and that position must not be re-derived
+        /// from `getPosition`: for an mmapped file (`min_bytes_to_use_mmap_io`) the underlying
+        /// buffer reports `count`, the number of bytes consumed so far, which a `seek` does not
+        /// reset, so it exceeds the requested offset once anything has been read.
 
         if (include_first_doc)
         {
@@ -1811,7 +1814,7 @@ void PostingListStream::write(
             lazy_stream.stream.get(),
             lazy_stream.first_doc_id,
             lazy_stream.doc_count - 1,
-            static_cast<UInt64>(lazy_stream.stream->getPosition()),
+            blocks.front().offset,
             false,
             true,
             pos_writer != nullptr);
@@ -2036,7 +2039,7 @@ void PostingListStream::collect(UInt32 * buf) const
             lazy_stream.stream.get(),
             lazy_stream.first_doc_id,
             lazy_stream.doc_count - 1,
-            static_cast<UInt64>(lazy_stream.stream->getPosition()),
+            blocks.front().offset,
             false,
             true,
             phrase_mode);

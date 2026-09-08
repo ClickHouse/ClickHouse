@@ -2879,6 +2879,15 @@ void ReadFromMergeTree::buildIndexes(
         return;
 
     const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
+    const auto & all_projections = metadata_snapshot->getProjections();
+
+    const bool has_projection_index
+        = std::any_of(all_projections.begin(), all_projections.end(), [](const auto & projection) { return projection.index != nullptr; });
+
+    /// Nothing below can find a usable index, and `ignore_data_skipping_indices` must not even be
+    /// parsed when there is no index to ignore — an empty value is a no-op, not a parse error.
+    if (all_indexes.empty() && !has_projection_index)
+        return;
 
     std::unordered_set<std::string> ignored_index_names;
 
@@ -2967,7 +2976,6 @@ void ReadFromMergeTree::buildIndexes(
 
     if (filter_dag.predicate)
     {
-        const auto & all_projections = metadata_snapshot->getProjections();
         for (const auto & projection : all_projections)
         {
             if (projection.index)

@@ -297,6 +297,12 @@ const IDataPartStorage & getStorage(const IMergeTreeDataPartInfoForReader & part
 template <typename Part>
 bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & part)
 {
+    /// A projection index has no storage metadata snapshot: its granules live in its own
+    /// projection part, and ALTER of a column a projection reads is rejected outright, so the
+    /// types the index was built with cannot drift away from the ones declared now.
+    if (skip_index.isProjectionIndex())
+        return true;
+
     const auto & metadata_columns = skip_index.metadata_snapshot->getColumns();
     /// The part's OWN list, for the same reason tryGetPartOwnType uses it rather than the cache.
     const auto & part_columns = part.getColumns();
