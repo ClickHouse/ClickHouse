@@ -20,9 +20,9 @@ public:
         /// 0 means the step is as old as plan serialization itself.
         UInt64 introduced_in_plan_version = 0;
 
-        /// The newest payload format this server writes and knows in full. Formats run 1, 2, ...
-        /// and every format appends fields to the one before, so a reader that knows fewer formats
-        /// reads the front of a newer payload and the frame skips the rest.
+        /// The payload format of this step name. Each name owns exactly one immutable layout, so this
+        /// is always 1; a step that changes its wire content takes a new name instead of a higher
+        /// number here. Kept as a reserved field.
         UInt64 max_format_version = 1;
 
         /// Set when a manifest declares the payload and the framework writes it: the step's content

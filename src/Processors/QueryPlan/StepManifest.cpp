@@ -7,7 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PARSE_QUERY_PLAN;
+    extern const int INCORRECT_DATA;
 }
 
 namespace WireDetail
@@ -15,7 +15,7 @@ namespace WireDetail
 
 void throwCannotParse(const char * what)
 {
-    throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan step payload is malformed: {}", what);
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Query plan step payload is malformed: {}", what);
 }
 
 }

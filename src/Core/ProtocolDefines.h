@@ -100,15 +100,15 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
 /// Version 11 adds the ReadInOrder info in the reading step in the plan.
-/// Version 12 is the framed format. The head is `[version][format_kind][body_size][min_reader_version]`
-/// and does not change again: every later body layout keeps those four fields, so a reader that does not
-/// know the layout still finds the end of the body, skips it, and rejects the plan without losing the
-/// connection. The body starts with an outline: the plan-level fields, then for each step its name,
-/// payload format version, header, changed settings and payload size. A reader can check the whole plan
-/// or print its shape from the outline alone, and a step can add fields to its payload without a version
-/// bump because older readers skip what they do not know. `min_reader_version` is the oldest version
-/// that can read this plan, computed by the writer from what the plan carries; a reader accepts any
-/// stream whose `min_reader_version` it meets, also from a newer writer.
+/// Version 12 is the framed format. The head is two fixed fields, `[version][format_kind]`, and does
+/// not change again: every later body layout keeps those two fields, so a reader that does not know
+/// the layout can still reject the plan on the kind. The version is a coarse gate - a reader refuses a
+/// version above the one it supports - but the deciding checks are the step names, settings and set
+/// kinds, which fail closed on anything the reader does not know. The body starts with an outline: the
+/// plan-level fields, the node and set counts, then for each step its name, header and changed
+/// settings. Each step payload and each set follows the outline as its own sized frame - a size then
+/// that many bytes - so a reader walks the plan one payload at a time and to its exact end with no
+/// total length. A reader can check the whole plan or print its shape from the outline alone.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 12;
 /// The version writers use unless a query asks for another one. It can stay below
 /// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` for a release after a new version lands: the fleet then

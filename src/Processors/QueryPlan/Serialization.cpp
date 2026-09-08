@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/QueryPlanEnvelope.h>
+#include <Processors/QueryPlan/QueryPlanOutline.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -18,6 +18,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 
+#include <base/scope_guard.h>
+
 #include <stack>
 
 namespace DB
@@ -32,10 +34,8 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_QUERY_PLAN;
 }
 
 void serializeQueryPlanHeader(const Block & header, WriteBuffer & out)
@@ -127,17 +127,13 @@ static UInt64 writerSerializationVersion(UInt64 requested_version)
     return writer_version;
 }
 
-/// The version a plan is written with for a peer that supports up to `max_supported_version`.
-/// Peers on the framed format accept streams by the content's needed-to-read version, so they all get the writer's
-/// own version (one byte string serves every peer on the framed format); only pre-outline peers need the
-/// stream clamped down to what they can parse.
+/// The version a plan is written with for a peer that supports up to `max_supported_version`: the
+/// version the query or server chose, clamped to what the peer can read. A peer refuses a version
+/// above the one it supports, so the writer never emits one above the peer's maximum, whether the
+/// peer is on the framed format or the older one.
 static UInt64 effectiveSerializationVersion(size_t max_supported_version, UInt64 requested_version)
 {
-    const UInt64 writer_version = writerSerializationVersion(requested_version);
-
-    if (max_supported_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
-        return writer_version;
-    return std::min<UInt64>(max_supported_version, writer_version);
+    return std::min<UInt64>(max_supported_version, writerSerializationVersion(requested_version));
 }
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version) const
@@ -161,7 +157,7 @@ void QueryPlan::serializeWithFlags(WriteBuffer & out, const SerializationFlags &
 {
     if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
     {
-        auto chunks = serializeEnvelopeToChunks(flags);
+        auto chunks = serializeFramedToChunks(flags);
         /// Each chunk is released once it has been written, so the plan is not held twice.
         for (auto & chunk : chunks)
         {
@@ -251,19 +247,17 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
     serializeSets(registry, out, flags);
 }
 
-QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const SerializationFlags & flags) const
+QueryPlan::SerializedChunks QueryPlan::serializeFramedToChunks(const SerializationFlags & flags) const
 {
     checkInitialized();
 
     SerializedSetsRegistry registry;
-    const auto & step_registry = QueryPlanStepRegistry::instance();
 
     PlanOutline outline;
     outline.max_threads = max_threads;
     outline.concurrency_control = concurrency_control;
     outline.include_step_descriptions = flags.with_step_descriptions;
     std::vector<String> payloads;
-    UInt64 min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 
     /// Children are written before their parent, siblings left to right, so a reader builds each
     /// step as its payload arrives instead of holding the whole plan. `Delayed*` steps are skipped
@@ -305,7 +299,6 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         if (flags.with_step_descriptions)
             outline_node.step_description = node->step->getStepDescription();
 
-        const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
         if (node->step->hasOutputHeader())
             outline_node.header = node->step->getOutputHeader();
 
@@ -316,37 +309,18 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         WriteBufferFromOwnString payload;
         IQueryPlanStep::Serialization ctx{payload, registry};
         ctx.version = flags.version;
-        ctx.step_format_version = info ? info->max_format_version : 1;
         node->step->serialize(ctx);
         payload.finalize();
 
-        /// The step may have written an older form of its payload and lowered the value; the
-        /// outline has to name the format the bytes are really in. Lowering is the only move that
-        /// makes sense: a format above the newest registered one was never described, so nothing
-        /// would tell older readers what they may do with it.
-        const UInt64 registered_max = info ? info->max_format_version : 1;
-        if (ctx.step_format_version == 0 || ctx.step_format_version > registered_max)
+        /// Each step name owns one payload layout, so the outline always names format 1; the reader
+        /// refuses any other value. A step that changed its wire content would take a new name, not a
+        /// higher number here.
+        if (ctx.step_format_version != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Step {} wrote payload format {} but is registered up to {}",
-                outline_node.step_name, ctx.step_format_version, registered_max);
+                "Step {} wrote payload format {} but only format 1 is defined",
+                outline_node.step_name, ctx.step_format_version);
 
         outline_node.step_format_version = ctx.step_format_version;
-        outline_node.payload_size = payload.str().size();
-
-        /// "Needed to read" for this node: the version that introduced the step's name, what the
-        /// step asked for while writing, the header's type encodings and the settings.
-        UInt64 node_min_reader = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
-        if (info)
-            node_min_reader = std::max(node_min_reader, info->introduced_in_plan_version);
-        node_min_reader = std::max(node_min_reader, ctx.min_reader_version);
-        if (outline_node.header)
-            for (const auto & column : *outline_node.header)
-                node_min_reader = std::max(node_min_reader, minReaderVersionForType(*column.type));
-        for (const auto & entry : outline_node.settings)
-            node_min_reader = std::max(node_min_reader, QueryPlanSerializationSettings::minReaderVersionForEntry(entry));
-
-        outline_node.min_reader_plan_version = node_min_reader;
-        min_reader_plan_version = std::max(min_reader_plan_version, node_min_reader);
 
         const UInt64 node_index = outline.nodes.size();
         outline.nodes.push_back(std::move(outline_node));
@@ -357,207 +331,209 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     }
 
     std::vector<String> set_payloads;
-    serializeEnvelopeSets(registry, flags, outline, set_payloads, min_reader_plan_version);
+    serializeFramedSets(registry, flags, outline, set_payloads);
 
-    /// A writer held below the version a value needs, by the peer, by a query setting or by the
-    /// server ceiling, refuses the plan here, before any byte reaches the stream: a step declared
-    /// that an older reader would run the plan wrongly without that value, and the stream is
-    /// written for exactly such a reader.
-    if (min_reader_plan_version > flags.version)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "The query plan carries a value that needs serialization version {}, but it is written for version {}; "
-            "all nodes must run a version that reads {}",
-            min_reader_plan_version, flags.version, min_reader_plan_version);
-
-    /// The payload sizes are known, so the body size the reader needs up front can be summed
-    /// without joining the payloads together.
     WriteBufferFromOwnString outline_bytes;
     writeQueryPlanOutline(outline, outline_bytes);
     outline_bytes.finalize();
 
-    size_t body_size = outline_bytes.str().size();
-    for (const auto & payload : payloads)
-        body_size += payload.size();
-    for (const auto & payload : set_payloads)
-        body_size += payload.size();
-
-    /// The head carries the stream version, the body layout, the body size and the "needed to
-    /// read" version, and is followed by the outline; every payload then stays the chunk it was
-    /// serialized into.
+    /// The head carries the stream version and the body layout, and is followed by the outline. Each
+    /// payload then keeps the chunk it was serialized into, with its size written just before it so
+    /// the reader can walk the payloads one at a time.
     SerializedChunks chunks;
-    chunks.reserve(1 + payloads.size() + set_payloads.size());
+    chunks.reserve(1 + 2 * (payloads.size() + set_payloads.size()));
 
     WriteBufferFromOwnString head;
     writeVarUInt(flags.version, head);
     writeVarUInt(UInt64(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE), head);
-    writeVarUInt(body_size, head);
-    writeVarUInt(min_reader_plan_version, head);
     head.write(outline_bytes.str().data(), outline_bytes.str().size());
     head.finalize();
     chunks.push_back(std::move(head.str()));
 
+    auto push_sized = [&chunks](String & payload)
+    {
+        WriteBufferFromOwnString size_bytes;
+        writeVarUInt(payload.size(), size_bytes);
+        size_bytes.finalize();
+        chunks.push_back(std::move(size_bytes.str()));
+        chunks.push_back(std::move(payload));
+    };
+
     for (auto & payload : payloads)
-        chunks.push_back(std::move(payload));
+        push_sized(payload);
     for (auto & payload : set_payloads)
-        chunks.push_back(std::move(payload));
+        push_sized(payload);
 
     return chunks;
 }
 
-/// Bounds the memory one plan can take before anything is buffered. A server setting, not a query
-/// one: a query setting arrives from the sender, who could then pick its own limit.
-static UInt64 readBodySize(ReadBuffer & in)
+/// Skips `frame_count` sized payload frames on `in`: each is a varint size then that many bytes.
+/// Reads and discards, allocating nothing for the sizes the frames declare, so it reads only what
+/// is on the wire. Called only at a frame boundary, so it stays aligned frame to frame.
+static void skipSizedFrames(ReadBuffer & in, UInt64 frame_count)
 {
-    UInt64 body_size = 0;
-    readVarUInt(body_size, in);
-    return body_size;
+    for (UInt64 i = 0; i < frame_count; ++i)
+    {
+        UInt64 size = 0;
+        readVarUInt(size, in);
+        in.ignore(size);
+    }
 }
 
-QueryPlanAndSets QueryPlan::deserializeEnvelope(
+/// Takes an outline-format body off the stream without building anything: reads the outline for its
+/// node and set counts, then skips that many sized payload frames. Leaves the stream at whatever
+/// follows the plan, so a refused plan costs the query and not the connection. It reads only what is
+/// on the wire; a stream that ends mid-plan makes the read throw.
+static void drainOutlineBody(ReadBuffer & in, UInt64 max_plan_bytes)
+{
+    auto counts = readOutlineFrameCounts(in, max_plan_bytes);
+    skipSizedFrames(in, counts.node_count + counts.set_count);
+}
+
+QueryPlanAndSets QueryPlan::deserializeFramedBody(
     ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags,
-    size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 body_size)
+    size_t max_type_complexity, UInt64 max_plan_bytes)
 {
     const size_t body_start = in.count();
+    auto budget_left = [&]() -> UInt64
+    {
+        const size_t used = in.count() - body_start;
+        return used >= max_plan_bytes ? 0 : max_plan_bytes - used;
+    };
 
-    auto outline = readQueryPlanOutline(in, max_type_complexity, body_size);
+    /// The whole plan body must fit the plan-size limit, and the outline is bounded to it as well.
+    auto outline = readQueryPlanOutline(in, max_type_complexity, budget_left());
 
-    size_t consumed = in.count() - body_start;
-    if (consumed > body_size)
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan outline of {} bytes does not fit the body of {}", consumed, body_size);
-
-    /// One pass over the outline reports every problem at once (unknown steps, unsupported step
-    /// versions, unknown settings) instead of failing on the first byte deep inside a payload.
-    auto validation = validateQueryPlanOutline(outline, min_reader_plan_version);
-    if (!validation.ok())
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan cannot be deserialized: {}", validation.describe());
+    /// One pass over the outline reports every problem at once (unknown steps, unknown settings,
+    /// unknown set kinds) instead of failing on the first byte deep inside a payload.
+    auto validation = validateQueryPlanOutline(outline);
 
     const size_t node_count = outline.nodes.size();
-    const auto & children_indices = validation.shape.children;
+    const UInt64 frames_total = node_count + outline.sets.size();
+    UInt64 frames_consumed = 0;
 
-    /// Every size the outline declares is checked against the body before a single step is built,
-    /// so a plan whose sizes do not add up is rejected without constructing anything. Counting down
-    /// from what is left keeps a huge size from overflowing.
+    /// Any failure below leaves the frames it did not reach on the stream. They are skipped here so
+    /// the connection is left at the next packet, then the original error is re-thrown.
+    try
     {
-        UInt64 budget = body_size - consumed;
-        for (const auto & outline_node : outline.nodes)
-        {
-            if (outline_node.payload_size > budget)
-                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                    "Query plan payload of step '{}' extends past the plan body", outline_node.step_name);
-            budget -= outline_node.payload_size;
-        }
-        for (const auto & set : outline.sets)
-        {
-            if (set.payload_size > budget)
-                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                    "Serialized set {}_{} extends past the plan body", set.hash.low64, set.hash.high64);
-            budget -= set.payload_size;
-        }
-        if (budget != 0)
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                "Query plan body has {} bytes that nothing in it accounts for", budget);
-    }
-
-    QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
-    DeserializedSetsRegistry sets_registry;
-
-    QueryPlan plan;
-    plan.max_threads = outline.max_threads;
-    plan.concurrency_control = outline.concurrency_control;
-    std::vector<Node *> nodes_by_index(node_count);
-
-    /// Children arrive before their parent, so a forward walk always has the children of the node
-    /// it is building. A parent gets the output headers of the children as they were built, which
-    /// is what the older stream did too: headers on the wire drop constants, steps refill them, and
-    /// `UnionStep` for one looks at whether a child's header columns are constant.
-    for (size_t idx = 0; idx < node_count; ++idx)
-    {
-        const auto & outline_node = outline.nodes[idx];
-
-        std::vector<Node *> children;
-        SharedHeaders input_headers;
-        children.reserve(children_indices[idx].size());
-        input_headers.reserve(children_indices[idx].size());
-        for (size_t child_index : children_indices[idx])
-        {
-            children.push_back(nodes_by_index[child_index]);
-            input_headers.push_back(nodes_by_index[child_index]->step->getOutputHeader());
-        }
-
-        SharedHeader output_header = outline_node.header
-            ? outline_node.header
-            : std::make_shared<const Block>();
-
-        QueryPlanSerializationSettings settings;
-        settings.applyEntries(outline_node.settings);
-
-        /// The payload is read straight from the body, bounded to its own frame: the step cannot read
-        /// past it, and a codec sizes its allocations by the bytes the frame still holds rather than by
-        /// a count it has not yet reached. Nothing is copied.
-        LimitReadBuffer payload(in, {.read_no_more = outline_node.payload_size});
-        IQueryPlanStep::Deserialization ctx{
-            payload, sets_registry, {}, context, input_headers, output_header, settings,
-            max_type_complexity, flags.version, flags.skip_data, outline_node.step_format_version};
-        auto step = step_registry.createStep(outline_node.step_name, ctx);
-
-        if (step->hasOutputHeader())
-        {
-            /// Headers that encode to the same bytes cannot differ in anything that came off the
-            /// wire; the encoding leaves out the aggregate state variant.
-            if (!isCompatibleHeader(*step->getOutputHeader(), *output_header)
-                && !haveSameSerializedHeader(*step->getOutputHeader(), *output_header))
-                assertCompatibleHeader(
-                    *step->getOutputHeader(), *output_header,
-                    fmt::format("deserialization of query plan {} step", outline_node.step_name));
-        }
-        else if (output_header->columns())
+        if (!validation.ok())
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
-                outline_node.step_name, output_header->dumpStructure());
+                "Query plan cannot be deserialized: {}", validation.describe());
 
-        /// The step must consume its whole frame. Bytes it left are only legitimate when the writer
-        /// used a payload format this binary does not know -- an ignorable append -- and then they are
-        /// skipped so the body stays aligned for the next node. At a known format, leftover bytes mean
-        /// a corrupt stream or a writer bug, and accepting them would let a malformed plan run.
-        const size_t leftover = payload.bytesUntilLimit();
-        if (leftover != 0)
+        const auto & children_indices = validation.shape.children;
+
+        QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
+        DeserializedSetsRegistry sets_registry;
+
+        QueryPlan plan;
+        plan.max_threads = outline.max_threads;
+        plan.concurrency_control = outline.concurrency_control;
+        std::vector<Node *> nodes_by_index(node_count);
+
+        /// Children arrive before their parent, so a forward walk always has the children of the node
+        /// it is building. A parent gets the output headers of the children as they were built, which
+        /// is what the older stream did too: headers on the wire drop constants, steps refill them, and
+        /// `UnionStep` for one looks at whether a child's header columns are constant.
+        for (size_t idx = 0; idx < node_count; ++idx)
         {
-            const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
-            UInt64 known_format_version = info ? info->max_format_version : 1;
-            if (outline_node.step_format_version <= known_format_version)
-                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                    "Step {} left {} of its {} payload bytes unread at step format version {}, "
-                    "which this server knows in full",
-                    outline_node.step_name, leftover, outline_node.payload_size,
-                    outline_node.step_format_version);
+            const auto & outline_node = outline.nodes[idx];
 
-            /// A newer format: skip its trailing bytes so the body is positioned at the next node.
-            payload.ignore(leftover);
+            std::vector<Node *> children;
+            SharedHeaders input_headers;
+            children.reserve(children_indices[idx].size());
+            input_headers.reserve(children_indices[idx].size());
+            for (size_t child_index : children_indices[idx])
+            {
+                children.push_back(nodes_by_index[child_index]);
+                input_headers.push_back(nodes_by_index[child_index]->step->getOutputHeader());
+            }
+
+            SharedHeader output_header = outline_node.header
+                ? outline_node.header
+                : std::make_shared<const Block>();
+
+            QueryPlanSerializationSettings settings;
+            settings.applyEntries(outline_node.settings);
+
+            /// The payload size is read inline, right before the payload. Reading it at a frame
+            /// boundary keeps the stream aligned for the drain if a later step fails.
+            UInt64 payload_size = 0;
+            readVarUInt(payload_size, in);
+
+            /// The payload is read straight from the stream, bounded to its own frame: the step
+            /// cannot read past it, and a codec sizes its allocations by the bytes the frame still
+            /// holds. Whatever happens, the scope guard steps over the frame and counts it, so a
+            /// failure still leaves the stream at a frame boundary for the drain above.
+            {
+                LimitReadBuffer payload(in, {.read_no_more = payload_size});
+                SCOPE_EXIT({
+                    try { payload.ignoreAll(); } catch (...) {} // NOLINT(bugprone-empty-catch)
+                    ++frames_consumed;
+                });
+
+                /// The plan as a whole must fit the size limit. A payload that pushes it past the
+                /// limit is not built; the guard takes it off the stream and the drain takes the
+                /// rest, so an over-limit plan is refused without losing the connection.
+                if (payload_size > budget_left())
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Query plan payload of step '{}' pushes the plan past `max_serialized_query_plan_size`",
+                        outline_node.step_name);
+
+                IQueryPlanStep::Deserialization ctx{
+                    payload, sets_registry, {}, context, input_headers, output_header, settings,
+                    max_type_complexity, flags.version, flags.skip_data, outline_node.step_format_version};
+                auto step = step_registry.createStep(outline_node.step_name, ctx);
+
+                if (step->hasOutputHeader())
+                {
+                    /// Headers that encode to the same bytes cannot differ in anything that came off
+                    /// the wire; the encoding leaves out the aggregate state variant.
+                    if (!isCompatibleHeader(*step->getOutputHeader(), *output_header)
+                        && !haveSameSerializedHeader(*step->getOutputHeader(), *output_header))
+                        assertCompatibleHeader(
+                            *step->getOutputHeader(), *output_header,
+                            fmt::format("deserialization of query plan {} step", outline_node.step_name));
+                }
+                else if (output_header->columns())
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
+                        outline_node.step_name, output_header->dumpStructure());
+
+                /// The step must consume its whole frame. Each step name owns one payload layout, so
+                /// leftover bytes mean a corrupt stream or a writer bug; accepting them would let a
+                /// malformed plan run.
+                const size_t leftover = payload.bytesUntilLimit();
+                if (leftover != 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Step {} left {} of its {} payload bytes unread",
+                        outline_node.step_name, leftover, payload_size);
+
+                auto & node = plan.nodes.emplace_back(std::move(step), std::move(children));
+                nodes_by_index[idx] = &node;
+
+                for (const auto & storage : ctx.storage_holders)
+                    plan.addStorageHolder(storage);
+            }
         }
 
-        auto & node = plan.nodes.emplace_back(std::move(step), std::move(children));
-        nodes_by_index[idx] = &node;
+        /// Children-first order puts the root last.
+        plan.root = nodes_by_index[node_count - 1];
 
-        for (const auto & storage : ctx.storage_holders)
-            plan.addStorageHolder(storage);
+        return deserializeFramedSets(
+            std::move(plan), sets_registry, outline, in, flags, context, max_type_complexity,
+            max_plan_bytes, body_start, frames_consumed);
     }
-
-    /// Children-first order puts the root last.
-    plan.root = nodes_by_index[node_count - 1];
-
-    auto res = deserializeEnvelopeSets(
-        std::move(plan), sets_registry, outline, in, flags, context, max_type_complexity);
-
-    /// The budget above proved the declared frames fill the body exactly; this proves the
-    /// reader consumed exactly those frames and nothing else.
-    const size_t total_consumed = in.count() - body_start;
-    if (total_consumed != body_size)
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan body declared {} bytes but {} were read", body_size, total_consumed);
-
-    return res;
+    catch (...)
+    {
+        try
+        {
+            skipSizedFrames(in, frames_total - frames_consumed);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
+        throw;
+    }
 }
 
 void QueryPlan::ensureSerialized(size_t max_supported_version, UInt64 requested_version) const
@@ -565,29 +541,42 @@ void QueryPlan::ensureSerialized(size_t max_supported_version, UInt64 requested_
     UInt64 version = effectiveSerializationVersion(max_supported_version, requested_version);
 
     std::lock_guard lock(serialized_plans.mutex);
-    if (serialized_plans.plans.contains(version))
-        return;  // Already serialized for this version
+    if (serialized_plans.chunks)
+    {
+        if (serialized_plans.version == version)
+            return;  // Already serialized at this version
 
-    /// The entry is published only once it is complete, so a concurrent sender either does not
-    /// see it and waits here, or gets the whole plan. Nothing is cached if serializing throws.
+        /// The plan is kept at one version and every peer is sent those bytes. A peer that needs a
+        /// different version is refused rather than served a second serialization. The writer
+        /// pre-serializes at its own version first, so the kept version is the writer's and only a
+        /// peer too old for the framed format lands here.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "The query plan is serialized at version {} and cannot also be written at version {}; "
+            "a peer that cannot read the version this server writes is refused",
+            serialized_plans.version, version);
+    }
+
+    /// The bytes are published only once complete, so a concurrent sender either does not see them
+    /// and waits here, or gets the whole plan. Nothing is kept if serializing throws.
     SerializationFlags flags;
     flags.version = version;
 
     SerializedChunks chunks;
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
     {
-        chunks = serializeEnvelopeToChunks(flags);
+        chunks = serializeFramedToChunks(flags);
     }
     else
     {
-        /// The older layout is written in one pass, so it is cached as a single chunk.
+        /// The older layout is written in one pass, so it is kept as a single chunk.
         WriteBufferFromOwnString buffer;
         serializeWithFlags(buffer, flags);
         buffer.finalize();
         chunks.push_back(std::move(buffer.str()));
     }
 
-    serialized_plans.plans.emplace(version, std::make_shared<const SerializedChunks>(std::move(chunks)));
+    serialized_plans.version = version;
+    serialized_plans.chunks = std::make_shared<const SerializedChunks>(std::move(chunks));
 }
 
 void QueryPlan::writeSerializedTo(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version) const
@@ -597,11 +586,15 @@ void QueryPlan::writeSerializedTo(WriteBuffer & out, size_t max_supported_versio
     std::shared_ptr<const SerializedChunks> chunks;
     {
         std::lock_guard lock(serialized_plans.mutex);
-        auto it = serialized_plans.plans.find(version);
-        if (it == serialized_plans.plans.end())
+        if (!serialized_plans.chunks)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Query plan is not serialized for version {}. Call ensureSerialized() first.", version);
-        chunks = it->second;
+                "Query plan is not serialized. Call ensureSerialized() first.");
+        if (serialized_plans.version != version)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The query plan is serialized at version {} but this peer needs version {}; "
+                "a peer that cannot read the version this server writes is refused",
+                serialized_plans.version, version);
+        chunks = serialized_plans.chunks;
     }
 
     /// Written outside the lock: the entry is immutable once published, and a slow peer must not
@@ -619,99 +612,48 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
     {
-        /// The head is the same four fields in every format kind, so the body can always be found
-        /// and skipped even when the rest of the stream means nothing to this server.
+        /// The head is the same two fields in every body layout, so a reader always finds the body
+        /// even when the rest of the stream means nothing to it.
         UInt64 format_kind = 0;
         readVarUInt(format_kind, in);
 
-        const UInt64 body_size = readBodySize(in);
+        const UInt64 max_plan_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
 
-        /// Acceptance is decided by the content's "needed to read" version, not by the writer's
-        /// version: a newer writer's plan is readable as long as everything above this reader's
-        /// knowledge is ignorable, which the writer's fold guarantees for min_reader <= supported.
-        UInt64 min_reader_plan_version = 0;
-        readVarUInt(min_reader_plan_version, in);
-
-        /// The body is exactly `body_size` bytes and every read of it goes through this buffer, so
-        /// nothing inside the plan can read into the bytes that follow it on the connection, whatever
-        /// a size or a count in the body claims. Draining it to the end leaves the connection
-        /// positioned at whatever comes next, so a plan this server refuses costs the query and not
-        /// the connection.
-        LimitReadBuffer body(in, {.read_no_more = body_size});
+        /// An unknown body layout cannot be walked, so its extent is unknown and it cannot be taken
+        /// off the stream: the connection has to close.
+        if (format_kind != DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The query plan uses body format {} which this server does not know", format_kind);
 
         /// The plan is only being drained off the connection: no steps are built and no set data
-        /// is decoded.
+        /// is decoded, so a plan this server could never build is still taken off the stream.
         if (flags.skip_data)
         {
-            body.ignoreAll();
+            drainOutlineBody(in, max_plan_bytes);
             return {};
         }
 
-        /// Every rejection below drains the body first. A drain that fails means the stream ended
-        /// mid-body, and the error saying why the plan was refused is the useful one to report.
-        auto drain_body = [&]
+        /// The version is a coarse gate: a version above the one this server supports is refused. The
+        /// body of a known kind is still walkable, so it is drained first and the connection is kept;
+        /// a drain that throws means the stream ended mid-plan, and the refusal is the error to report.
+        const UInt64 supported_version = QueryPlanStepRegistry::instance().supportedVersion();
+        if (version > supported_version)
         {
             try
             {
-                body.ignoreAll();
+                drainOutlineBody(in, max_plan_bytes);
             }
             catch (...) // NOLINT(bugprone-empty-catch)
             {
             }
-        };
-
-        /// A body larger than the server accepts is refused, but only after the declared bytes are
-        /// drained: throwing here without draining would leave the body on the connection and parse the
-        /// next packet from the middle of it.
-        const UInt64 max_body_size = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
-        if (body_size > max_body_size)
-        {
-            drain_body();
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                "Query plan body declares {} bytes which exceeds `max_serialized_query_plan_size` = {}",
-                body_size, max_body_size);
-        }
-
-        /// An unknown body layout is refused on the kind alone. Trusting `min_reader` here would put
-        /// the whole grammar at the mercy of a future writer computing it correctly.
-        if (format_kind != DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE)
-        {
-            drain_body();
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "The query plan uses body format {} which this server does not know", format_kind);
+                "Query plan serialization version {} is not supported. The last supported version is {}",
+                version, supported_version);
         }
 
-        const UInt64 supported_version = QueryPlanStepRegistry::instance().supportedVersion();
-        if (min_reader_plan_version > supported_version)
-        {
-            drain_body();
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "The query plan requires serialization version {} while this server supports up to {}",
-                min_reader_plan_version, supported_version);
-        }
-
-        /// A writer cannot need a reader newer than itself: everything it wrote, it wrote at its own
-        /// version. A stream saying otherwise is malformed, whatever the two numbers are.
-        if (min_reader_plan_version > version)
-        {
-            drain_body();
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                "The query plan was written at version {} but says it needs a reader of version {}",
-                version, min_reader_plan_version);
-        }
-
-        /// Anything the body reader throws leaves its remaining frames on the buffer, so they are
-        /// taken off here. Covers every reason at once -- a refused outline, a step that would not
-        /// read its payload, a set that failed to decode -- rather than the ones a check remembered to.
-        try
-        {
-            return deserializeEnvelope(body, context, flags, max_type_complexity, min_reader_plan_version, body_size);
-        }
-        catch (...)
-        {
-            drain_body();
-            throw;
-        }
+        /// `deserializeFramedBody` takes its own unread frames off the stream before it throws, so
+        /// whatever it turns the plan down for, the connection is left at the next packet.
+        return deserializeFramedBody(in, context, flags, max_type_complexity, max_plan_bytes);
     }
 
     if (version > QueryPlanStepRegistry::instance().supportedVersion())

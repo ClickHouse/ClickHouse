@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -146,8 +147,10 @@ TEST(QueryPlanCodecAllocation, ACountAbeyondTheFrameIsRefusedNotAllocated)
         writeVarUInt(absurd_count, out);
         out.finalize();
         ReadBufferFromString in(out.str());
+        /// The codec reads inside a frame, exactly as the framed plan reader wraps each payload.
+        LimitReadBuffer frame(in, {.read_no_more = out.str().size()});
         SortDescription sort_description;
-        EXPECT_THROW(deserializeSortDescription(sort_description, in), Exception);
+        EXPECT_THROW(deserializeSortDescription(sort_description, frame), Exception);
     }
 
     {
@@ -155,8 +158,9 @@ TEST(QueryPlanCodecAllocation, ACountAbeyondTheFrameIsRefusedNotAllocated)
         writeVarUInt(absurd_count, out);
         out.finalize();
         ReadBufferFromString in(out.str());
+        LimitReadBuffer frame(in, {.read_no_more = out.str().size()});
         AggregateDescriptions aggregates;
-        EXPECT_THROW(deserializeAggregateDescriptions(aggregates, in, /*max_type_complexity=*/0), Exception);
+        EXPECT_THROW(deserializeAggregateDescriptions(aggregates, frame, /*max_type_complexity=*/0), Exception);
     }
 
     {

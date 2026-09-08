@@ -3,6 +3,7 @@
 #include <Common/SipHash.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/SetSerialization.h>
@@ -26,68 +27,44 @@ namespace DB::QueryPlanSerializationSetting
 
 namespace DB::ErrorCodes
 {
-    extern const int CANNOT_PARSE_QUERY_PLAN;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
 {
 
-/// The wire struct of a step that exists only here: two base fields and an appended format.
+/// The wire struct of a step that exists only here, to exercise the framework without a real step.
 struct TestWire
 {
     UInt64 count = 0;
     bool flag = false;
     String tail = "";
     std::optional<UInt64> maybe;
-
-    bool operator==(const TestWire &) const = default;
 };
 
 /// A tag type: the framework tests exercise a manifest without ever building the step.
 struct TestStep {};
 
 constexpr UInt64 base_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
-constexpr UInt64 append_version = base_version + 1;
 
-/// The manifest of a binary that knows both formats.
-constexpr auto TWO_FORMATS = StepManifest<TestStep, TestWire>("TestManifest")
+/// A manifest that binds every member of its wire struct, with both digest classes.
+constexpr auto ONE_FORMAT = StepManifest<TestStep, TestWire>("TestManifest")
     .nameIntroducedIn(base_version)
     .baseFormat(
         field("count", WireFieldClass::Logical, &TestWire::count),
-        field("flag", WireFieldClass::Physical, &TestWire::flag))
-    .appendFormat(IntroducedIn{append_version},
-        field("tail", WireFieldClass::Logical, &TestWire::tail),
-        field("maybe", WireFieldClass::Logical, &TestWire::maybe));
+        field("flag", WireFieldClass::Physical, &TestWire::flag),
+        field("tail", WireFieldClass::Physical, &TestWire::tail),
+        field("maybe", WireFieldClass::Physical, &TestWire::maybe));
 
-/// The manifest of an older binary that knows the base format only. It reads what the two-format
-/// writer wrote and leaves the tail to the frame.
-constexpr auto BASE_ONLY = StepManifest<TestStep, TestWire>("TestManifest")
+/// A manifest that leaves two members unbound, so it fails the coverage rule.
+constexpr auto INCOMPLETE = StepManifest<TestStep, TestWire>("TestManifest")
     .nameIntroducedIn(base_version)
     .baseFormat(
         field("count", WireFieldClass::Logical, &TestWire::count),
         field("flag", WireFieldClass::Physical, &TestWire::flag));
 
-static_assert(manifestCoversWire(TWO_FORMATS));
-static_assert(!manifestCoversWire(BASE_ONLY), "a manifest that leaves members unbound is incomplete");
-
-struct Written
-{
-    String bytes;
-    UInt64 step_format_version = 0;
-    UInt64 min_reader_version = 0;
-};
-
-template <typename Manifest>
-Written write(const Manifest & manifest, const typename Manifest::Wire & wire, UInt64 stream_version)
-{
-    WriteBufferFromOwnString out;
-    SerializedSetsRegistry registry;
-    IQueryPlanStep::Serialization ctx{out, registry};
-    ctx.version = stream_version;
-    writeManifestPayload(manifest, wire, ctx);
-    out.finalize();
-    return {out.str(), ctx.step_format_version, ctx.min_reader_version};
-}
+static_assert(manifestCoversWire(ONE_FORMAT));
+static_assert(!manifestCoversWire(INCOMPLETE), "a manifest that leaves members unbound is incomplete");
 
 SortDescription sortByX()
 {
@@ -107,6 +84,8 @@ SharedHeader makeHeader()
 struct Reader
 {
     ReadBufferFromString in;
+    /// The payload is read inside a frame, exactly as the framed plan reader wraps each step payload.
+    LimitReadBuffer frame;
     DeserializedSetsRegistry registry;
     ContextPtr context = getContext().context;
     SharedHeaders input_headers{makeHeader()};
@@ -116,7 +95,8 @@ struct Reader
 
     Reader(const String & bytes, UInt64 stream_version, UInt64 step_format_version)
         : in(bytes)
-        , ctx{in, registry, {}, context, input_headers, output_header, settings, 0, stream_version, false, step_format_version}
+        , frame(in, {.read_no_more = bytes.size()})
+        , ctx{frame, registry, {}, context, input_headers, output_header, settings, 0, stream_version, false, step_format_version}
     {
     }
 };
@@ -139,82 +119,36 @@ void registerStepsOnce()
 
 }
 
-TEST(StepManifest, RoundTripAtTheNewestFormat)
-{
-    TestWire wire{.count = 7, .flag = true, .tail = "abc", .maybe = 42};
-    auto written = write(TWO_FORMATS, wire, append_version);
-    EXPECT_EQ(written.step_format_version, 2u);
-    EXPECT_EQ(written.min_reader_version, append_version);
-
-    Reader reader(written.bytes, append_version, written.step_format_version);
-    EXPECT_EQ(read(TWO_FORMATS, reader), wire);
-    EXPECT_TRUE(reader.in.eof());
-}
-
-TEST(StepManifest, AnAppendAtItsInitializersNeedsNoReaderVersion)
-{
-    TestWire wire{.count = 7, .flag = true, .tail = "", .maybe = std::nullopt};
-    auto written = write(TWO_FORMATS, wire, append_version);
-    EXPECT_EQ(written.step_format_version, 2u);
-    EXPECT_EQ(written.min_reader_version, 0u);
-
-    /// An older reader reads the base format and leaves the tail to the frame.
-    Reader reader(written.bytes, append_version, written.step_format_version);
-    auto old_view = read(BASE_ONLY, reader);
-    EXPECT_EQ(old_view.count, 7u);
-    EXPECT_TRUE(old_view.flag);
-    EXPECT_FALSE(reader.in.eof()) << "the appended format is the tail the frame skips";
-}
-
-TEST(StepManifest, AWriterBelowTheAppendLowersTheFormat)
-{
-    TestWire at_initializers{.count = 7, .flag = false, .tail = "", .maybe = std::nullopt};
-    auto written = write(TWO_FORMATS, at_initializers, base_version);
-    EXPECT_EQ(written.step_format_version, 1u);
-    EXPECT_EQ(written.min_reader_version, 0u);
-    EXPECT_EQ(written.bytes, write(BASE_ONLY, at_initializers, base_version).bytes);
-
-    /// A value an old reader would reconstruct wrongly raises the requirement above the stream
-    /// version, which is what makes the frame refuse the plan.
-    TestWire with_tail{.count = 7, .flag = false, .tail = "x", .maybe = std::nullopt};
-    auto refused = write(TWO_FORMATS, with_tail, base_version);
-    EXPECT_EQ(refused.step_format_version, 1u);
-    EXPECT_EQ(refused.min_reader_version, append_version);
-}
-
 TEST(StepManifest, MalformedBytesAreRefused)
 {
     {
         /// count = 1, then a bool byte of 2.
         String bytes = "\x01\x02";
         Reader reader(bytes, base_version, 1);
-        EXPECT_THROW(read(BASE_ONLY, reader), Exception);
+        EXPECT_THROW(read(ONE_FORMAT, reader), Exception);
     }
     {
         /// count = 1, flag = 0, then a string whose length runs past the payload.
         String bytes("\x01\x00\x7f", 3);
-        Reader reader(bytes, append_version, 2);
+        Reader reader(bytes, base_version, 1);
         try
         {
-            read(TWO_FORMATS, reader);
+            read(ONE_FORMAT, reader);
             FAIL() << "a string longer than the payload must be refused before allocation";
         }
         catch (const Exception & e)
         {
-            EXPECT_EQ(e.code(), ErrorCodes::CANNOT_PARSE_QUERY_PLAN);
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
         }
     }
 }
 
 TEST(StepManifest, RegistryEntryIsDerived)
 {
-    auto info = manifestRegistryInfo(TWO_FORMATS);
+    auto info = manifestRegistryInfo(ONE_FORMAT);
     EXPECT_EQ(info.introduced_in_plan_version, base_version);
-    EXPECT_EQ(info.max_format_version, 2u);
+    EXPECT_EQ(info.max_format_version, 1u);
     EXPECT_TRUE(info.has_wire_struct);
-
-    auto base_only = manifestRegistryInfo(BASE_ONLY);
-    EXPECT_EQ(base_only.max_format_version, 1u);
 }
 
 TEST(StepManifest, LogicalProjectionIgnoresPhysicalEntries)
@@ -222,7 +156,7 @@ TEST(StepManifest, LogicalProjectionIgnoresPhysicalEntries)
     auto project = [](const TestWire & wire, bool logical_only)
     {
         SipHash hash;
-        forEachWireEntry(TWO_FORMATS, wire, [&](const String & name, WireFieldClass field_class, const auto & value)
+        forEachWireEntry(ONE_FORMAT, wire, [&](const String & name, WireFieldClass field_class, const auto & value)
         {
             if (logical_only && field_class != WireFieldClass::Logical)
                 return;
@@ -247,14 +181,13 @@ TEST(StepManifest, LogicalProjectionIgnoresPhysicalEntries)
 
 TEST(StepManifest, DescriptionNamesEveryNode)
 {
-    String description = describeManifest(TWO_FORMATS);
+    String description = describeManifest(ONE_FORMAT);
     EXPECT_NE(description.find("name TestManifest introduced_in " + std::to_string(base_version)), String::npos);
     EXPECT_NE(description.find("format 1 introduced_in " + std::to_string(base_version)), String::npos);
-    EXPECT_NE(description.find("format 2 introduced_in " + std::to_string(append_version)), String::npos);
     EXPECT_NE(description.find("  field count Logical UInt64\n"), String::npos);
     EXPECT_NE(description.find("  field flag Physical bool\n"), String::npos);
-    EXPECT_NE(description.find("  field tail Logical String\n"), String::npos);
-    EXPECT_NE(description.find("  field maybe Logical optional<UInt64>\n"), String::npos);
+    EXPECT_NE(description.find("  field tail Physical String\n"), String::npos);
+    EXPECT_NE(description.find("  field maybe Physical optional<UInt64>\n"), String::npos);
     /// count 0, flag 0, empty tail, absent maybe.
     EXPECT_NE(description.find("  initializers 00000000\n"), String::npos);
 }
@@ -309,7 +242,7 @@ TEST(StepManifest, WireStructsSurviveTheFramedRoundTrip)
 
         Reader reader(out.str(), DBMS_QUERY_PLAN_SERIALIZATION_VERSION, ctx.step_format_version);
         auto restored = LimitStep::deserialize(reader.ctx);
-        EXPECT_TRUE(reader.in.eof());
+        EXPECT_TRUE(reader.frame.eof());
         EXPECT_EQ(dynamic_cast<LimitStep &>(*restored).toWire(), original.toWire());
         EXPECT_TRUE(original.toWire().is_shard_limit);
     }
@@ -324,7 +257,7 @@ TEST(StepManifest, WireStructsSurviveTheFramedRoundTrip)
 
         Reader reader(out.str(), DBMS_QUERY_PLAN_SERIALIZATION_VERSION, ctx.step_format_version);
         auto restored = OffsetStep::deserialize(reader.ctx);
-        EXPECT_TRUE(reader.in.eof());
+        EXPECT_TRUE(reader.frame.eof());
         EXPECT_EQ(dynamic_cast<OffsetStep &>(*restored).toWire(), original.toWire());
     }
     for (bool pre_distinct : {false, true})
@@ -346,7 +279,7 @@ TEST(StepManifest, WireStructsSurviveTheFramedRoundTrip)
         Reader reader(out.str(), DBMS_QUERY_PLAN_SERIALIZATION_VERSION, ctx.step_format_version);
         reader.settings.applyEntries(settings.getChangedEntries());
         auto restored = pre_distinct ? DistinctStep::deserializePre(reader.ctx) : DistinctStep::deserializeNormal(reader.ctx);
-        EXPECT_TRUE(reader.in.eof());
+        EXPECT_TRUE(reader.frame.eof());
         auto & restored_distinct = dynamic_cast<DistinctStep &>(*restored);
         EXPECT_EQ(restored_distinct.toWire(), original.toWire());
         EXPECT_EQ(restored_distinct.isPreliminary(), pre_distinct);

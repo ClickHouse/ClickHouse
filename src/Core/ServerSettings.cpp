@@ -1480,10 +1480,11 @@ in tests.
     DECLARE(UInt64, max_serialized_query_plan_size, 2_GiB, R"(
 The maximum size in bytes of a serialized query plan this server accepts in a QueryPlan packet.
 
-Applies to plans in the framed format (serialization version 12 and above), which declare their size
-up front: a plan above this limit is rejected with `CANNOT_PARSE_QUERY_PLAN` before any of it is
-buffered, so the sender cannot make this server allocate an arbitrary amount of memory for one plan.
-A plan from a peer below version 12 declares no size and is read field by field as it arrives, so its total
+Applies to plans in the framed format (serialization version 12 and above). The reader walks the plan
+one frame at a time and rejects it with `INCORRECT_DATA` as soon as the running total would pass this
+limit, before allocating for the frame that would cross it, so the sender cannot make this server
+allocate an arbitrary amount of memory for one plan.
+A plan from a peer below version 12 is read field by field as it arrives, so its total
 is not checked against this limit. It still bounds the parts of such a plan that are sized from the
 stream: a set may not claim more rows than a plan of this size could hold, since a row costs at
 least a byte.

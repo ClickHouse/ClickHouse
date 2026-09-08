@@ -17,13 +17,14 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_DATA;
 }
 
 /// Two builds of the server exchange plans in one process. The older build speaks the current plan
-/// version and knows the base format of the step `Versioned`. The newer build speaks the next plan
-/// version, appended a second format to `Versioned` at that version, and has a step the older build
-/// has never heard of. Each build is a registry; a scope makes it the current one for a thread.
+/// version and knows the step `Versioned`. The newer build speaks the next plan version, ships a
+/// result-changing fix to `Versioned` under the new name `VersionedFixed`, and has a whole step
+/// `Future` the older build has never heard of. Each build is a registry; a scope makes it the
+/// current one for a thread.
 namespace
 {
 
@@ -32,53 +33,45 @@ constexpr UInt64 new_build_version = old_build_version + 1;
 
 constexpr auto L = WireFieldClass::Logical;
 
-/// The step as the older build knows it.
-struct OldVersionedWire
+struct VersionedWire
 {
     UInt64 value = 0;
 
-    bool operator==(const OldVersionedWire &) const = default;
-};
-
-/// The step as the newer build knows it: the same base, then an appended format.
-struct NewVersionedWire
-{
-    UInt64 value = 0;
-    String note;
-    std::optional<UInt64> extra;
-
-    bool operator==(const NewVersionedWire &) const = default;
+    bool operator==(const VersionedWire &) const = default;
 };
 
 struct FutureWire
 {
 };
 
-template <typename Wire>
 class VersionedStepBase : public ISourceStep
 {
 public:
-    VersionedStepBase(SharedHeader header_, Wire wire_) : ISourceStep(std::move(header_)), wire(std::move(wire_)) { }
+    VersionedStepBase(SharedHeader header_, VersionedWire wire_) : ISourceStep(std::move(header_)), wire(std::move(wire_)) { }
 
-    String getName() const override { return "Versioned"; }
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override { }
     bool isSerializable() const override { return true; }
 
-    Wire wire;
+    VersionedWire wire;
 };
 
-class OldVersionedStep : public VersionedStepBase<OldVersionedWire>
+class VersionedStep : public VersionedStepBase
 {
 public:
     using VersionedStepBase::VersionedStepBase;
+    String getName() const override { return "Versioned"; }
     void serialize(Serialization & ctx) const override;
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 };
 
-class NewVersionedStep : public VersionedStepBase<NewVersionedWire>
+/// The result-changing fix to `Versioned`, carried by a new name. It is available from the framed
+/// baseline, so it does not move the plan version: an older build passes the version check but does
+/// not have the name, so it refuses by the name rather than running the wrong step.
+class FixedVersionedStep : public VersionedStepBase
 {
 public:
     using VersionedStepBase::VersionedStepBase;
+    String getName() const override { return "VersionedFixed"; }
     void serialize(Serialization & ctx) const override;
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 };
@@ -96,39 +89,36 @@ public:
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 };
 
-constexpr auto OLD_VERSIONED_MANIFEST = StepManifest<OldVersionedStep, OldVersionedWire>("Versioned")
+constexpr auto VERSIONED_MANIFEST = StepManifest<VersionedStep, VersionedWire>("Versioned")
     .nameIntroducedIn(1)
-    .baseFormat(field("value", L, &OldVersionedWire::value));
+    .baseFormat(field("value", L, &VersionedWire::value));
 
-constexpr auto NEW_VERSIONED_MANIFEST = StepManifest<NewVersionedStep, NewVersionedWire>("Versioned")
+constexpr auto FIXED_VERSIONED_MANIFEST = StepManifest<FixedVersionedStep, VersionedWire>("VersionedFixed")
     .nameIntroducedIn(1)
-    .baseFormat(field("value", L, &NewVersionedWire::value))
-    .appendFormat(IntroducedIn{new_build_version},
-        field("note", L, &NewVersionedWire::note),
-        field("extra", L, &NewVersionedWire::extra));
+    .baseFormat(field("value", L, &VersionedWire::value));
 
 constexpr auto FUTURE_MANIFEST = StepManifest<FutureStep, FutureWire>("Future")
     .nameIntroducedIn(new_build_version)
     .baseFormat();
 
-void OldVersionedStep::serialize(Serialization & ctx) const
+void VersionedStep::serialize(Serialization & ctx) const
 {
-    writeManifestPayload(OLD_VERSIONED_MANIFEST, wire, ctx);
+    writeManifestPayload(VERSIONED_MANIFEST, wire, ctx);
 }
 
-QueryPlanStepPtr OldVersionedStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr VersionedStep::deserialize(Deserialization & ctx)
 {
-    return std::make_unique<OldVersionedStep>(ctx.output_header, readManifestPayload(OLD_VERSIONED_MANIFEST, ctx));
+    return std::make_unique<VersionedStep>(ctx.output_header, readManifestPayload(VERSIONED_MANIFEST, ctx));
 }
 
-void NewVersionedStep::serialize(Serialization & ctx) const
+void FixedVersionedStep::serialize(Serialization & ctx) const
 {
-    writeManifestPayload(NEW_VERSIONED_MANIFEST, wire, ctx);
+    writeManifestPayload(FIXED_VERSIONED_MANIFEST, wire, ctx);
 }
 
-QueryPlanStepPtr NewVersionedStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FixedVersionedStep::deserialize(Deserialization & ctx)
 {
-    return std::make_unique<NewVersionedStep>(ctx.output_header, readManifestPayload(NEW_VERSIONED_MANIFEST, ctx));
+    return std::make_unique<FixedVersionedStep>(ctx.output_header, readManifestPayload(FIXED_VERSIONED_MANIFEST, ctx));
 }
 
 void FutureStep::serialize(Serialization & ctx) const
@@ -158,7 +148,7 @@ Build & oldBuild()
 {
     static Build build(old_build_version, [](QueryPlanStepRegistry & registry)
     {
-        registerManifest<OLD_VERSIONED_MANIFEST>(registry, OldVersionedStep::deserialize);
+        registerManifest<VERSIONED_MANIFEST>(registry, VersionedStep::deserialize);
     });
     return build;
 }
@@ -167,7 +157,8 @@ Build & newBuild()
 {
     static Build build(new_build_version, [](QueryPlanStepRegistry & registry)
     {
-        registerManifest<NEW_VERSIONED_MANIFEST>(registry, NewVersionedStep::deserialize);
+        registerManifest<VERSIONED_MANIFEST>(registry, VersionedStep::deserialize);
+        registerManifest<FIXED_VERSIONED_MANIFEST>(registry, FixedVersionedStep::deserialize);
         registerManifest<FUTURE_MANIFEST>(registry, FutureStep::deserialize);
     });
     return build;
@@ -238,97 +229,30 @@ const Step & rootAs(const QueryPlan & plan)
 
 TEST(StepManifestCompatibility, TheOldBuildRoundTrips)
 {
-    auto bytes = serializeWith(oldBuild(), planOf(std::make_unique<OldVersionedStep>(makeHeader(), OldVersionedWire{7})), old_build_version, old_build_version);
+    auto bytes = serializeWith(oldBuild(), planOf(std::make_unique<VersionedStep>(makeHeader(), VersionedWire{7})), old_build_version, old_build_version);
     auto plan = deserializeWith(oldBuild(), bytes);
-    EXPECT_EQ(rootAs<OldVersionedStep>(plan).wire, (OldVersionedWire{7}));
+    EXPECT_EQ(rootAs<VersionedStep>(plan).wire, (VersionedWire{7}));
 }
 
 TEST(StepManifestCompatibility, TheNewBuildReadsAnOldStream)
 {
-    /// An older writer knows nothing about the appended format; the newer reader reconstructs its
-    /// initializers.
-    auto bytes = serializeWith(oldBuild(), planOf(std::make_unique<OldVersionedStep>(makeHeader(), OldVersionedWire{7})), old_build_version, old_build_version);
+    /// The newer build speaks a higher plan version but reads a stream the older build wrote.
+    auto bytes = serializeWith(oldBuild(), planOf(std::make_unique<VersionedStep>(makeHeader(), VersionedWire{7})), old_build_version, old_build_version);
     auto plan = deserializeWith(newBuild(), bytes);
-    EXPECT_EQ(rootAs<NewVersionedStep>(plan).wire, (NewVersionedWire{.value = 7, .note = "", .extra = std::nullopt}));
-}
-
-TEST(StepManifestCompatibility, TheNewBuildRoundTripsAtItsOwnVersion)
-{
-    NewVersionedWire wire{.value = 7, .note = "hello", .extra = 42};
-    auto bytes = serializeWith(newBuild(), planOf(std::make_unique<NewVersionedStep>(makeHeader(), wire)), new_build_version, new_build_version);
-    auto plan = deserializeWith(newBuild(), bytes);
-    EXPECT_EQ(rootAs<NewVersionedStep>(plan).wire, wire);
-}
-
-TEST(StepManifestCompatibility, TheOldBuildReadsANewStreamWhenTheAppendIsAtItsInitializers)
-{
-    /// The newer writer writes both formats at its own version. The older reader knows the base
-    /// format only, so the frame skips the appended one by the payload size, and nothing the older
-    /// reader needed was in it.
-    NewVersionedWire wire{.value = 7, .note = "", .extra = std::nullopt};
-    auto bytes = serializeWith(newBuild(), planOf(std::make_unique<NewVersionedStep>(makeHeader(), wire)), new_build_version, new_build_version);
-    auto plan = deserializeWith(oldBuild(), bytes);
-    EXPECT_EQ(rootAs<OldVersionedStep>(plan).wire, (OldVersionedWire{7}));
-}
-
-TEST(StepManifestCompatibility, TheOldBuildRefusesANewStreamWithAValueItWouldLose)
-{
-    /// A value that differs from its initializer raises the plan's requirement to the appended
-    /// format's version. The older reader refuses at the head, before it builds anything, and
-    /// leaves the stream clean.
-    NewVersionedWire wire{.value = 7, .note = "hello", .extra = std::nullopt};
-    auto bytes = serializeWith(newBuild(), planOf(std::make_unique<NewVersionedStep>(makeHeader(), wire)), new_build_version, new_build_version);
-    EXPECT_EQ(refusalOf(oldBuild(), bytes), ErrorCodes::NOT_IMPLEMENTED);
-
-    NewVersionedWire only_extra{.value = 7, .note = "", .extra = 1};
-    bytes = serializeWith(newBuild(), planOf(std::make_unique<NewVersionedStep>(makeHeader(), only_extra)), new_build_version, new_build_version);
-    EXPECT_EQ(refusalOf(oldBuild(), bytes), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-TEST(StepManifestCompatibility, ANewWriterHeldAtTheOldVersionWritesTheOldLayout)
-{
-    /// Held at the older version, by a query setting or by the server ceiling, the newer writer
-    /// lowers the format and produces the bytes the older build would have produced itself.
-    auto from_new = serializeWith(newBuild(), planOf(std::make_unique<NewVersionedStep>(makeHeader(), NewVersionedWire{.value = 7, .note = "", .extra = std::nullopt})), old_build_version, old_build_version);
-    auto from_old = serializeWith(oldBuild(), planOf(std::make_unique<OldVersionedStep>(makeHeader(), OldVersionedWire{7})), old_build_version, old_build_version);
-    EXPECT_EQ(from_new, from_old);
-
-    auto plan = deserializeWith(oldBuild(), from_new);
-    EXPECT_EQ(rootAs<OldVersionedStep>(plan).wire, (OldVersionedWire{7}));
-}
-
-TEST(StepManifestCompatibility, ANewWriterHeldAtTheOldVersionRefusesAValueTheOldLayoutCannotCarry)
-{
-    /// The same writer, held at the older version, with a value only the appended format can carry:
-    /// it refuses before the first byte, because the stream is written for a reader that would run
-    /// the plan without the value.
-    QueryPlanStepRegistry::ScopedInstance scope(newBuild().registry);
-    auto plan = planOf(std::make_unique<NewVersionedStep>(makeHeader(), NewVersionedWire{.value = 7, .note = "hello", .extra = std::nullopt}));
-    WriteBufferFromOwnString out;
-    try
-    {
-        plan.serialize(out, old_build_version, old_build_version);
-        FAIL() << "the writer must refuse";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::SUPPORT_IS_DISABLED);
-    }
-    out.finalize();
-    EXPECT_TRUE(out.str().empty()) << "nothing may reach the stream before the refusal";
+    EXPECT_EQ(rootAs<VersionedStep>(plan).wire, (VersionedWire{7}));
 }
 
 TEST(StepManifestCompatibility, AStepTheOldBuildDoesNotKnowIsRefusedBeforeItIsBuilt)
 {
-    /// The name's own version is a requirement. Sent at the newer version, the older reader refuses
-    /// at the head; held at the older version, the writer refuses before the first byte.
-    auto bytes = serializeWith(newBuild(), planOf(std::make_unique<FutureStep>(makeHeader())), new_build_version, new_build_version);
-    EXPECT_EQ(refusalOf(oldBuild(), bytes), ErrorCodes::NOT_IMPLEMENTED);
-    EXPECT_NO_THROW(deserializeWith(newBuild(), bytes));
+    /// The name is what decides. Sent at the newer version, the older reader refuses on the version
+    /// at the head; sent at the older version, it passes the version check but does not have the name,
+    /// so it refuses on the unknown step from the outline, before the step is built.
+    auto new_version_bytes = serializeWith(newBuild(), planOf(std::make_unique<FutureStep>(makeHeader())), new_build_version, new_build_version);
+    EXPECT_EQ(refusalOf(oldBuild(), new_version_bytes), ErrorCodes::NOT_IMPLEMENTED);
+    EXPECT_NO_THROW(deserializeWith(newBuild(), new_version_bytes));
 
-    QueryPlanStepRegistry::ScopedInstance scope(newBuild().registry);
-    WriteBufferFromOwnString out;
-    EXPECT_THROW(planOf(std::make_unique<FutureStep>(makeHeader())).serialize(out, old_build_version, old_build_version), Exception);
+    auto old_version_bytes = serializeWith(newBuild(), planOf(std::make_unique<FutureStep>(makeHeader())), old_build_version, old_build_version);
+    EXPECT_EQ(refusalOf(oldBuild(), old_version_bytes), ErrorCodes::INCORRECT_DATA);
 }
 
 TEST(StepManifestCompatibility, TheRegistriesDescribeWhatEachBuildKnows)
@@ -336,15 +260,15 @@ TEST(StepManifestCompatibility, TheRegistriesDescribeWhatEachBuildKnows)
     const auto * old_info = oldBuild().registry.getStepSerializationInfo("Versioned");
     const auto * new_info = newBuild().registry.getStepSerializationInfo("Versioned");
     ASSERT_TRUE(old_info && new_info);
-
-    EXPECT_EQ(old_info->max_format_version, 1u);
-    EXPECT_EQ(new_info->max_format_version, 2u);
     EXPECT_TRUE(new_info->has_wire_struct);
 
+    /// The newer build knows names the older one does not.
     EXPECT_EQ(newBuild().registry.getStepSerializationInfo("Future")->introduced_in_plan_version, new_build_version);
     EXPECT_EQ(oldBuild().registry.getStepSerializationInfo("Future"), nullptr);
+    EXPECT_NE(newBuild().registry.getStepSerializationInfo("VersionedFixed"), nullptr);
+    EXPECT_EQ(oldBuild().registry.getStepSerializationInfo("VersionedFixed"), nullptr);
 
-    /// Append-only: every line the older build declares is in the newer build's declaration too.
+    /// Both builds declare `Versioned` the same way.
     String old_dump = oldBuild().registry.dumpManifests();
     String new_dump = newBuild().registry.dumpManifests();
     for (const auto & line : {"format 1 introduced_in " + std::to_string(old_build_version) + "\n", String("  field value Logical UInt64\n")})
@@ -352,5 +276,18 @@ TEST(StepManifestCompatibility, TheRegistriesDescribeWhatEachBuildKnows)
         EXPECT_NE(old_dump.find(line), String::npos) << line;
         EXPECT_NE(new_dump.find(line), String::npos) << line;
     }
-    EXPECT_NE(new_dump.find("format 2 introduced_in " + std::to_string(new_build_version) + "\n"), String::npos);
+}
+
+TEST(StepManifestCompatibility, AResultChangingFixCarriedByANewNameIsRefusedByTheName)
+{
+    /// The fix ships under the new name `VersionedFixed`, available from the framed baseline, so the
+    /// plan's reader requirement stays at the older build's version. The older build passes the
+    /// version check but does not have the name, so it refuses by the name and leaves the stream
+    /// clean. A plan that keeps the plain `Versioned` name still flows to it, as the tests above show.
+    auto bytes = serializeWith(newBuild(), planOf(std::make_unique<FixedVersionedStep>(makeHeader(), VersionedWire{7})), old_build_version, old_build_version);
+    EXPECT_EQ(refusalOf(oldBuild(), bytes), ErrorCodes::INCORRECT_DATA);
+
+    /// The newer build has the name and runs it.
+    auto plan = deserializeWith(newBuild(), bytes);
+    EXPECT_EQ(rootAs<FixedVersionedStep>(plan).wire, (VersionedWire{7}));
 }

@@ -12,7 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
-    extern const int CANNOT_PARSE_QUERY_PLAN;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 }
@@ -163,14 +163,6 @@ void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
     impl->readBinary(in);
 }
 
-UInt64 QueryPlanSerializationSettings::minReaderVersionForEntry(const SerializedEntry &)
-{
-    /// All current settings and value encodings predate the outline format. A non-ignorable
-    /// setting introduced later must return its introduced-at version here (an ignorable one
-    /// never raises the floor: readers skip it by the wire flag).
-    return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
-}
-
 String QueryPlanSerializationSettings::settingNameAtOffset(size_t offset)
 {
     const auto & accessor = QueryPlanSerializationSettingsTraits::Accessor::instance();
@@ -230,7 +222,7 @@ void QueryPlanSerializationSettings::applyEntries(const std::vector<SerializedEn
         ReadBufferFromMemory value(entry.value.data(), entry.value.size());
         accessor.readBinary(*impl, index, value);
         if (!value.eof())
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+            throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Query plan setting '{}' did not consume its value frame ({} bytes left)",
                 entry.name, value.available());
     }

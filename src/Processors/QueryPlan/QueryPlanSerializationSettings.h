@@ -80,11 +80,6 @@ struct QueryPlanSerializationSettings
     /// Changed settings as outline entries.
     std::vector<SerializedEntry> getChangedEntries() const;
 
-    /// The oldest plan version that can read this entry. Every setting and value written today is
-    /// older than the outline, so this returns the base version. A setting or a new value of one
-    /// added later has to raise it here, so plans carrying it are only sent to readers new enough,
-    /// unless the entry is marked ignorable.
-    static UInt64 minReaderVersionForEntry(const SerializedEntry & entry);
     /// Applies the entries. An unknown one is skipped if it is marked ignorable and refused if it
     /// is not, and a value that does not use up exactly its own bytes is refused.
     void applyEntries(const std::vector<SerializedEntry> & entries);

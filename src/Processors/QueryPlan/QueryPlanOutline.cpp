@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/QueryPlanEnvelope.h>
+#include <Processors/QueryPlan/QueryPlanOutline.h>
 #include <limits>
 
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -25,7 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_PARSE_QUERY_PLAN;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -44,43 +44,52 @@ void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
     writeBinary(outline.concurrency_control, out);
     writeBinary(outline.include_step_descriptions, out);
 
+    /// Both counts sit in the front header, so a receiver that only wants to skip the plan off the
+    /// stream reads them here and then jumps the node records by their lengths and the payloads by
+    /// their inline sizes, without walking any node record. Payload sizes are not in the outline;
+    /// each payload carries its own size inline (see `serializeFramedToChunks`).
     writeVarUInt(outline.nodes.size(), out);
+    writeVarUInt(outline.sets.size(), out);
+
     for (const auto & node : outline.nodes)
     {
-        writeVarUInt(node.children.size(), out);
+        /// Each node record is length-prefixed. A reader that knows fewer fields reads the ones it
+        /// knows and skips the rest of the record by this length; a result-changing addition takes a
+        /// new step name, so the trailing bytes are always safe to skip.
+        WriteBufferFromOwnString record;
+        writeVarUInt(node.children.size(), record);
         for (UInt64 child : node.children)
-            writeVarUInt(child, out);
-        writeStringBinary(node.step_name, out);
-        writeVarUInt(node.step_format_version, out);
-        writeVarUInt(node.min_reader_plan_version, out);
+            writeVarUInt(child, record);
+        writeStringBinary(node.step_name, record);
+        writeVarUInt(node.step_format_version, record);
 
         UInt8 node_flags = node.header ? 1 : 0;
-        writeIntBinary(node_flags, out);
+        writeIntBinary(node_flags, record);
 
         if (outline.include_step_descriptions)
-            writeStringBinary(node.step_description, out);
+            writeStringBinary(node.step_description, record);
 
         if (node.header)
-            serializeQueryPlanHeader(*node.header, out);
+            serializeQueryPlanHeader(*node.header, record);
 
-        writeVarUInt(node.settings.size(), out);
+        writeVarUInt(node.settings.size(), record);
         for (const auto & setting : node.settings)
         {
-            writeStringBinary(setting.name, out);
-            writeIntBinary(setting.flags, out);
-            writeVarUInt(setting.value.size(), out);
-            out.write(setting.value.data(), setting.value.size());
+            writeStringBinary(setting.name, record);
+            writeIntBinary(setting.flags, record);
+            writeVarUInt(setting.value.size(), record);
+            record.write(setting.value.data(), setting.value.size());
         }
+        record.finalize();
 
-        writeVarUInt(node.payload_size, out);
+        writeVarUInt(record.str().size(), out);
+        out.write(record.str().data(), record.str().size());
     }
 
-    writeVarUInt(outline.sets.size(), out);
     for (const auto & set : outline.sets)
     {
         writeBinary(set.hash, out);
         writeIntBinary(set.kind, out);
-        writeVarUInt(set.payload_size, out);
     }
 }
 
@@ -89,7 +98,7 @@ UInt64 readCappedVarUInt(ReadBuffer & in, UInt64 cap, const char * what)
     UInt64 value = 0;
     readVarUInt(value, in);
     if (value > cap)
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+        throw Exception(ErrorCodes::INCORRECT_DATA,
             "Query plan outline declares {} {} which exceeds the limit of {}", value, what, cap);
     return value;
 }
@@ -103,68 +112,83 @@ String readCappedSizedBytes(ReadBuffer & in, UInt64 cap, const char * what)
     return bytes;
 }
 
-PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 max_frame_bytes)
+/// Reads the front header - the plan-level fields and the node and set counts - into `outline`.
+/// This is all a reader needs to know how many payload frames follow, without touching a step,
+/// header or setting.
+OutlineFrameCounts readOutlineFrontHeader(ReadBuffer & in, PlanOutline & outline)
 {
-    PlanOutline outline;
-
     readVarUInt(outline.max_threads, in);
     readBinary(outline.concurrency_control, in);
     readBinary(outline.include_step_descriptions, in);
 
-    /// Counts come from the peer: the vectors grow as elements are read, so a frame that ends
+    OutlineFrameCounts counts;
+    counts.node_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "plan nodes");
+    counts.set_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "sets");
+    return counts;
+}
+
+PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 max_frame_bytes)
+{
+    PlanOutline outline;
+
+    /// The counts come from the peer, so the vectors grow as elements are read: a frame that ends
     /// early only pays for what it delivered.
-    UInt64 node_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "plan nodes");
+    const auto [node_count, set_count] = readOutlineFrontHeader(in, outline);
 
     for (UInt64 i = 0; i < node_count; ++i)
     {
         PlanOutline::Node node;
 
+        /// The record is length-prefixed and read through a bounded buffer: the reader takes the
+        /// fields it knows and skips any trailing bytes of a record a newer writer grew.
+        UInt64 record_size = readCappedVarUInt(in, max_frame_bytes, "node record bytes");
+        LimitReadBuffer record(in, {.read_no_more = record_size});
+
         /// A node cannot have more children than there are nodes, and each index is one of them.
-        UInt64 child_count = readCappedVarUInt(in, node_count, "node children");
+        UInt64 child_count = readCappedVarUInt(record, node_count, "node children");
         for (UInt64 c = 0; c < child_count; ++c)
-            node.children.push_back(readCappedVarUInt(in, node_count, "child index"));
-        readStringBinary(node.step_name, in, MAX_OUTLINE_FIELD_BYTES);
-        readVarUInt(node.step_format_version, in);
-        readVarUInt(node.min_reader_plan_version, in);
+            node.children.push_back(readCappedVarUInt(record, node_count, "child index"));
+        readStringBinary(node.step_name, record, MAX_OUTLINE_FIELD_BYTES);
+        readVarUInt(node.step_format_version, record);
 
         UInt8 node_flags = 0;
-        readIntBinary(node_flags, in);
+        readIntBinary(node_flags, record);
         /// Only bit 0 is assigned; a spare bit set here means something this reader would have to
         /// act on and cannot.
         if (node_flags & ~UInt8(1))
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+            throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Query plan node carries unknown flags {:#x}", UInt32(node_flags));
         if (outline.include_step_descriptions)
-            readStringBinary(node.step_description, in, MAX_OUTLINE_FIELD_BYTES);
+            readStringBinary(node.step_description, record, MAX_OUTLINE_FIELD_BYTES);
 
         if (node_flags & 1)
-            node.header = std::make_shared<const Block>(deserializeQueryPlanHeader(in, max_type_complexity));
+            node.header = std::make_shared<const Block>(deserializeQueryPlanHeader(record, max_type_complexity));
 
-        UInt64 settings_count = readCappedVarUInt(in, MAX_OUTLINE_SETTINGS_PER_NODE, "settings");
+        UInt64 settings_count = readCappedVarUInt(record, MAX_OUTLINE_SETTINGS_PER_NODE, "settings");
         for (UInt64 s = 0; s < settings_count; ++s)
         {
             PlanOutline::SettingEntry entry;
-            readStringBinary(entry.name, in, MAX_OUTLINE_FIELD_BYTES);
-            readIntBinary(entry.flags, in);
+            readStringBinary(entry.name, record, MAX_OUTLINE_FIELD_BYTES);
+            readIntBinary(entry.flags, record);
             if (entry.flags & ~PlanOutline::SettingEntry::FLAG_IGNORABLE)
-                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Query plan setting '{}' carries unknown flags {:#x}", entry.name, UInt32(entry.flags));
-            entry.value = readCappedSizedBytes(in, MAX_OUTLINE_FIELD_BYTES, "setting value bytes");
+            entry.value = readCappedSizedBytes(record, MAX_OUTLINE_FIELD_BYTES, "setting value bytes");
             node.settings.push_back(std::move(entry));
         }
 
-        node.payload_size = readCappedVarUInt(in, max_frame_bytes, "step payload bytes");
+        /// Trailing bytes of a record grown by a newer writer are ignorable and skipped; a
+        /// result-changing change would arrive under a new step name, not as record bytes.
+        record.ignoreAll();
 
         outline.nodes.push_back(std::move(node));
     }
 
-    UInt64 set_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "sets");
     for (UInt64 i = 0; i < set_count; ++i)
     {
         PlanOutline::SetEntry entry;
         readBinary(entry.hash, in);
         readIntBinary(entry.kind, in);
-        entry.payload_size = readCappedVarUInt(in, max_frame_bytes, "set payload bytes");
         outline.sets.push_back(entry);
     }
 
@@ -199,7 +223,7 @@ PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UI
         auto outline = readOutlineBody(body, max_type_complexity, max_frame_bytes);
 
         if (body.bytesUntilLimit() != 0)
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+            throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Query plan outline has {} trailing bytes inside its frame", body.bytesUntilLimit());
 
         return outline;
@@ -209,10 +233,23 @@ PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UI
         /// A frame that ends mid-field is a malformed frame, not an I/O condition of the outer
         /// stream. Nested codec errors (e.g. type decoding) keep their own codes.
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+            throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Query plan outline is truncated: {}", e.message());
         throw;
     }
+}
+
+OutlineFrameCounts readOutlineFrameCounts(ReadBuffer & in, UInt64 max_frame_bytes)
+{
+    UInt64 outline_size = readCappedVarUInt(in, std::min(MAX_OUTLINE_BYTES, max_frame_bytes), "outline bytes");
+
+    LimitReadBuffer body(in, {.read_no_more = outline_size});
+    PlanOutline scratch;
+    auto counts = readOutlineFrontHeader(body, scratch);
+    /// The counts are at the very front of the outline; the rest of the frame is skipped whole,
+    /// so a plan this server cannot decode is still measured for the drain.
+    body.ignoreAll();
+    return counts;
 }
 
 String QueryPlanOutlineValidationResult::describe() const
@@ -262,8 +299,7 @@ PlanOutlineShape reconstructOutlineShape(const PlanOutline & outline)
     return shape;
 }
 
-QueryPlanOutlineValidationResult validateQueryPlanOutline(
-    const PlanOutline & outline, UInt64 head_min_reader_plan_version)
+QueryPlanOutlineValidationResult validateQueryPlanOutline(const PlanOutline & outline)
 {
     QueryPlanOutlineValidationResult result;
     const auto & registry = QueryPlanStepRegistry::instance();
@@ -290,8 +326,12 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
         if (!info)
             result.issues.push_back(fmt::format("unknown step '{}'", node.step_name));
 
-        if (node.step_format_version == 0)
-            result.issues.push_back(fmt::format("step '{}' has format version 0", node.step_name));
+        /// Each step name owns exactly one payload layout, numbered 1; any other value is a payload
+        /// this server cannot read, so the plan is refused rather than misread.
+        if (node.step_format_version != 1)
+            result.issues.push_back(fmt::format(
+                "step '{}' (node #{}) has unknown payload format version {}",
+                node.step_name, i, node.step_format_version));
 
         if (info)
         {
@@ -302,23 +342,7 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
                 result.issues.push_back(fmt::format(
                     "step '{}' (node #{}) has {} inputs but reads {}",
                     node.step_name, i, node.children.size(), info->input_count));
-
-            /// The version a node claims to need must cover the version that introduced the step's
-            /// name. A writer that asked for too little would otherwise have old readers run the
-            /// plan wrongly without noticing.
-            const UInt64 static_requirement = info->introduced_in_plan_version;
-            if (static_requirement > node.min_reader_plan_version)
-                result.issues.push_back(fmt::format(
-                    "step '{}' (node #{}) declares reader version {} but its registry info requires {}",
-                    node.step_name, i, node.min_reader_plan_version, static_requirement));
         }
-
-        /// The head value must cover every node, or a reader would accept a plan on a promise the
-        /// nodes do not keep.
-        if (node.min_reader_plan_version > head_min_reader_plan_version)
-            result.issues.push_back(fmt::format(
-                "step '{}' (node #{}) requires reader version {} above the plan's declared {}",
-                node.step_name, i, node.min_reader_plan_version, head_min_reader_plan_version));
 
         /// Parents read their input headers from their children, so only the root may lack one.
         /// In post-order the root is the last node.
@@ -348,14 +372,6 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
     }
 
     return result;
-}
-
-UInt64 minReaderVersionForType(const IDataType &)
-{
-    /// Every type encoding that exists today is older than the outline. A new `BinaryTypeIndex`
-    /// entry has to return the version it was added in here, or old readers would fail part way
-    /// through a header or a set instead of turning the plan down up front.
-    return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 }
 
 String formatQueryPlanOutline(const PlanOutline & outline)
@@ -397,10 +413,8 @@ String formatQueryPlanOutline(const PlanOutline & outline)
             writeString("  ", out);
 
         writeString(node.step_name, out);
-        if (node.step_format_version != 1)
-            writeString(fmt::format(" (format v{})", node.step_format_version), out);
         if (!registry.hasStep(node.step_name))
-            writeString(fmt::format(" <unknown step, {} payload bytes>", node.payload_size), out);
+            writeString(" <unknown step>", out);
         if (!node.step_description.empty())
             writeString(fmt::format(" ({})", node.step_description), out);
 

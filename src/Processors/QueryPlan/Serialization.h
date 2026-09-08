@@ -28,19 +28,10 @@ struct IQueryPlanStep::Serialization
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
 
-    /// The payload format version this step is writing, in a framed stream. Preset to the newest
-    /// format the step registered; a step that writes an older form of its payload, for an older
-    /// stream version, must lower it. Otherwise the outline would name a format the bytes are not
-    /// in and newer readers would misread them.
+    /// The payload format the step is writing, in a framed stream. Each step name owns exactly one
+    /// payload layout, so this is always 1; a format change takes a new step name, not a higher
+    /// number here. Kept as a reserved field the reader checks.
     UInt64 step_format_version = 1;
-
-    /// The oldest plan version that can read what has been written so far. A step raises it on the
-    /// very line that writes something an old reader would have to act on to run the plan
-    /// correctly, a flag that changes results for example. Without that the old reader would skip
-    /// the bytes as something it may ignore and quietly return different results.
-    UInt64 min_reader_version = 0;
-
-    void requireReaderVersion(UInt64 version_) { min_reader_version = std::max(min_reader_version, version_); }
 };
 
 struct SerializedSetsRegistry;
@@ -70,9 +61,8 @@ struct IQueryPlanStep::Deserialization
     /// callbacks) may read their bytes but build a lightweight placeholder instead of a real step.
     bool skipping = false;
 
-    /// The payload format version this step was written with, in a framed stream, 1 otherwise.
-    /// This may be higher than any format the reader knows: the fields at the end are then ones it
-    /// may ignore, and the payload's own size tells it where they stop.
+    /// The payload format the step was written with. Each step name owns exactly one payload layout,
+    /// so this is always 1; the reader refuses any other value before building the step.
     UInt64 step_format_version = 1;
 };
 

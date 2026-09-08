@@ -35,8 +35,8 @@
 /// declares a plain aggregate, its wire struct, whose members are exactly the values that travel,
 /// and a `constexpr` manifest that names each member, gives it a digest class and places it in a
 /// payload format. The framework then writes and reads the payload, fills the settings channel,
-/// raises the reader requirement for appended values, derives the registry entry and describes the
-/// declaration for the baseline test. The step keeps two functions, `toWire` and `fromWire`.
+/// derives the registry entry and describes the declaration for the baseline test. The step keeps
+/// two functions, `toWire` and `fromWire`.
 ///
 ///     struct LimitWire
 ///     {
@@ -130,12 +130,6 @@ enum class WireFieldClass : UInt8
     Physical,
 };
 
-/// The plan version that added an appended payload format.
-struct IntroducedIn
-{
-    UInt64 version;
-};
-
 /// One payload member: its name, its digest class and the wire struct member it lives in.
 template <typename Wire_, typename T>
 struct WireField
@@ -176,20 +170,6 @@ constexpr WireSetting<Wire, T, SettingField> setting(
     return {&index, field_class, member};
 }
 
-/// The fields of one payload format. `introduced_in` is 0 for the base format, whose plan version
-/// is derived from the framed base version and the name's version.
-template <typename... Fields>
-struct WireFormat
-{
-    UInt64 introduced_in;
-    std::tuple<Fields...> fields;
-};
-
-/// The wire struct of a step that keeps a hand-written serializer: nothing is declared.
-struct NoWire
-{
-};
-
 /// Digest eligibility predicates over the wire struct, the per-instance eligibility of PR 116196.
 struct Eligible
 {
@@ -200,7 +180,7 @@ struct Eligible
     static constexpr bool never(const Wire &) { return false; }
 };
 
-template <typename Step_, typename Wire_, typename Formats = std::tuple<>, typename Settings = std::tuple<>>
+template <typename Step_, typename Wire_, typename Fields = std::tuple<>, typename Settings = std::tuple<>>
 struct StepManifest
 {
     using Step = Step_;
@@ -209,11 +189,14 @@ struct StepManifest
 
     const char * name;
     UInt64 name_introduced_in = 0;
-    Formats formats{};
+    /// Whether a payload format was declared. A step that travels only through the settings channel
+    /// declares none, and then carries an empty payload.
+    bool has_base_format = false;
+    /// The payload members, in declaration order. Every one is always encoded.
+    Fields fields{};
     Settings setting_entries{};
     Eligibility full_digest_eligible = &Eligible::always<Wire>;
     Eligibility logical_digest_eligible = &Eligible::always<Wire>;
-    bool custom = false;
     /// The number of input streams the step reads: -1 derive from the step's base class (a source
     /// has none, a transforming step has one), -2 a variable number, or a fixed count.
     int input_arity = -1;
@@ -225,19 +208,19 @@ struct StepManifest
     constexpr StepManifest(
         const char * name_,
         UInt64 name_introduced_in_,
-        Formats formats_,
+        bool has_base_format_,
+        Fields fields_,
         Settings setting_entries_,
         Eligibility full_digest_eligible_,
         Eligibility logical_digest_eligible_,
-        bool custom_,
         int input_arity_)
         : name(name_)
         , name_introduced_in(name_introduced_in_)
-        , formats(formats_)
+        , has_base_format(has_base_format_)
+        , fields(fields_)
         , setting_entries(setting_entries_)
         , full_digest_eligible(full_digest_eligible_)
         , logical_digest_eligible(logical_digest_eligible_)
-        , custom(custom_)
         , input_arity(input_arity_)
     {
     }
@@ -250,30 +233,17 @@ struct StepManifest
         return copy;
     }
 
-    /// Payload format 1. Its plan version is the framed base version, or the name's version when
-    /// that is higher, so it is not declared.
+    /// The payload members. Its plan version is the framed base version, or the name's version when
+    /// that is higher.
     template <typename... F>
-    constexpr auto baseFormat(F... fields) const
+    constexpr auto baseFormat(F... fields_) const
     {
-        static_assert(std::tuple_size_v<Formats> == 0, "the base format is declared once, before any appended format");
+        static_assert(std::tuple_size_v<Fields> == 0, "the payload is declared once");
         static_assert((std::is_same_v<typename F::Wire, Wire> && ...), "every field must belong to the manifest's wire struct");
-        using NewFormats = std::tuple<WireFormat<F...>>;
-        return StepManifest<Step, Wire, NewFormats, Settings>(
-            name, name_introduced_in, NewFormats{WireFormat<F...>{0, std::tuple<F...>{fields...}}},
-            setting_entries, full_digest_eligible, logical_digest_eligible, custom, input_arity);
-    }
-
-    /// The next payload format, appended after the previous one. Older readers skip its bytes;
-    /// when any of its values differs from its initializer, the plan requires a reader at or above
-    /// `introduced`.
-    template <typename... F>
-    constexpr auto appendFormat(IntroducedIn introduced, F... fields) const
-    {
-        static_assert(std::tuple_size_v<Formats> >= 1, "declare the base format before an appended one");
-        static_assert((std::is_same_v<typename F::Wire, Wire> && ...), "every field must belong to the manifest's wire struct");
-        auto new_formats = std::tuple_cat(formats, std::tuple<WireFormat<F...>>{WireFormat<F...>{introduced.version, std::tuple<F...>{fields...}}});
-        return StepManifest<Step, Wire, decltype(new_formats), Settings>(
-            name, name_introduced_in, new_formats, setting_entries, full_digest_eligible, logical_digest_eligible, custom, input_arity);
+        using NewFields = std::tuple<F...>;
+        return StepManifest<Step, Wire, NewFields, Settings>(
+            name, name_introduced_in, true, NewFields{fields_...},
+            setting_entries, full_digest_eligible, logical_digest_eligible, input_arity);
     }
 
     /// The values the step sends through the settings channel.
@@ -283,8 +253,9 @@ struct StepManifest
         static_assert(std::tuple_size_v<Settings> == 0, "the settings are declared once");
         static_assert((std::is_same_v<typename S::Wire, Wire> && ...), "every setting must belong to the manifest's wire struct");
         using NewSettings = std::tuple<S...>;
-        return StepManifest<Step, Wire, Formats, NewSettings>(
-            name, name_introduced_in, formats, NewSettings{entries...}, full_digest_eligible, logical_digest_eligible, custom, input_arity);
+        return StepManifest<Step, Wire, Fields, NewSettings>(
+            name, name_introduced_in, has_base_format, fields, NewSettings{entries...},
+            full_digest_eligible, logical_digest_eligible, input_arity);
     }
 
     constexpr StepManifest fullDigest(Eligibility eligible) const
@@ -298,15 +269,6 @@ struct StepManifest
     {
         StepManifest copy = *this;
         copy.logical_digest_eligible = eligible;
-        return copy;
-    }
-
-    /// The step keeps its hand-written serializer, settings and requirements. The manifest then
-    /// declares the name, the appended formats with their plan versions and the eligibility only.
-    constexpr StepManifest customSerialization() const
-    {
-        StepManifest copy = *this;
-        copy.custom = true;
         return copy;
     }
 
@@ -349,16 +311,10 @@ struct StepManifest
         return input_arity != -1 || std::is_base_of_v<ISourceStep, Step> || std::is_base_of_v<ITransformingStep, Step>;
     }
 
-    static constexpr size_t formatCount() { return std::tuple_size_v<Formats>; }
-
-    /// The plan version of payload format `ordinal`, 1 being the base.
-    template <size_t Ordinal>
-    constexpr UInt64 formatIntroducedIn() const
+    /// The plan version of the payload: the framed base version, or the name's version when higher.
+    constexpr UInt64 formatVersion() const
     {
-        if constexpr (Ordinal == 1)
-            return std::max<UInt64>(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE, name_introduced_in);
-        else
-            return std::get<Ordinal - 1>(formats).introduced_in;
+        return std::max<UInt64>(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE, name_introduced_in);
     }
 };
 
@@ -427,12 +383,11 @@ constexpr void forEach(const Tuple & tuple, F && f)
     std::apply([&](const auto &... element) { (f(element), ...); }, tuple);
 }
 
-/// Every binding of a manifest, fields of all formats and then settings, as one tuple.
+/// Every binding of a manifest, the payload fields and then the settings, as one tuple.
 template <typename Manifest>
 constexpr auto allBindings(const Manifest & manifest)
 {
-    auto fields = std::apply([](const auto &... format) { return std::tuple_cat(format.fields...); }, manifest.formats);
-    return std::tuple_cat(fields, manifest.setting_entries);
+    return std::tuple_cat(manifest.fields, manifest.setting_entries);
 }
 
 template <typename T>
@@ -452,8 +407,8 @@ inline constexpr bool is_pair<std::pair<A, B>> = true;
 
 [[noreturn]] void throwCannotParse(const char * what);
 
-/// A length or count that is about to be allocated must fit into the bytes that remain. Framed
-/// payloads are read from memory, so what remains is exactly the payload's tail.
+/// A length or count that is about to be allocated must fit into the bytes that remain in the frame.
+/// A framed payload is read inside a `LimitReadBuffer`, so what remains is exactly the payload's tail.
 inline void checkFitsRemaining(UInt64 count, ReadBuffer & in, const char * what)
 {
     if (count > bytesRemainingInFrame(in))
@@ -508,7 +463,7 @@ void write(const T & value, IQueryPlanStep::Serialization & ctx)
             write(element, ctx);
     }
     else
-        static_assert(sizeof(T) == 0, "this type has no wire encoding; use a supported type, a codec type, or make the step custom");
+        static_assert(sizeof(T) == 0, "this type has no wire encoding; use a supported type or add a codec type");
 }
 
 template <typename T>
@@ -580,7 +535,7 @@ void read(T & value, IQueryPlanStep::Deserialization & ctx)
             read(element, ctx);
     }
     else
-        static_assert(sizeof(T) == 0, "this type has no wire encoding; use a supported type, a codec type, or make the step custom");
+        static_assert(sizeof(T) == 0, "this type has no wire encoding; use a supported type or add a codec type");
 }
 
 /// The canonical name of a member type, for the baseline.
@@ -611,69 +566,18 @@ String typeName()
         static_assert(sizeof(T) == 0, "this type has no wire encoding");
 }
 
-/// Whether a value is what a reader reconstructs when the value is not on the wire.
-template <typename T>
-bool atInitializer(const T & value, const T & initializer)
-{
-    if constexpr (WireDetail::is_optional<T>)
-    {
-        if (value.has_value() != initializer.has_value())
-            return false;
-        if (!value.has_value())
-            return true;
-        return atInitializer(*value, *initializer);
-    }
-    else
-    {
-        static_assert(requires { value == initializer; },
-            "a member of an appended format must be comparable, so the writer can tell a value an old reader needs");
-        return value == initializer;
-    }
-}
-
 }
 
 
 /// The generated operations over a manifest.
 
-/// Writes the payload: every format the target stream version knows, in order. Lowers
-/// `ctx.step_format_version` to the last format written, and raises the reader requirement to a
-/// format's plan version when one of its values differs from its initializer, because a reader that
-/// skips that format reconstructs the initializer.
+/// Writes the payload: every member, in declaration order. Each step name owns one payload layout, so
+/// the format version is always 1; a step that changes its wire content takes a new name instead.
 template <typename Manifest>
 void writeManifestPayload(const Manifest & manifest, const typename Manifest::Wire & wire, IQueryPlanStep::Serialization & ctx)
 {
-    using Wire = typename Manifest::Wire;
-    static const Wire initializers{};
-
-    UInt64 written = 0;
-    [&]<size_t... I>(std::index_sequence<I...>)
-    {
-        (
-            [&]
-            {
-                constexpr size_t ordinal = I + 1;
-                const auto & format = std::get<I>(manifest.formats);
-                const UInt64 introduced_in = manifest.template formatIntroducedIn<ordinal>();
-                if constexpr (ordinal > 1)
-                {
-                    bool at_initializers = true;
-                    WireDetail::forEach(format.fields, [&](const auto & field)
-                    {
-                        at_initializers = at_initializers && WireEncoding::atInitializer(wire.*field.member, initializers.*field.member);
-                    });
-                    if (!at_initializers)
-                        ctx.requireReaderVersion(introduced_in);
-                    if (introduced_in > ctx.version)
-                        return;
-                }
-                WireDetail::forEach(format.fields, [&](const auto & field) { WireEncoding::write(wire.*field.member, ctx); });
-                written = ordinal;
-            }(),
-            ...);
-    }(std::make_index_sequence<Manifest::formatCount()>{});
-
-    ctx.step_format_version = written;
+    WireDetail::forEach(manifest.fields, [&](const auto & field) { WireEncoding::write(wire.*field.member, ctx); });
+    ctx.step_format_version = 1;
 }
 
 /// Fills the setting members of the wire struct from a settings object.
@@ -688,28 +592,15 @@ void readManifestSettings(const Manifest & manifest, typename Manifest::Wire & w
 }
 
 /// Reads the payload into a default-constructed wire struct: the settings first, from the node's
-/// settings entries, then the formats up to the one the outline names. A format above the ones
-/// this binary knows is left to the frame, which skips it by the payload size.
+/// settings entries, then every payload member. Each step name owns one payload layout, so the reader
+/// consumes the whole frame; the framed reader refuses a payload that leaves bytes behind.
 template <typename Manifest>
 typename Manifest::Wire readManifestPayload(const Manifest & manifest, IQueryPlanStep::Deserialization & ctx)
 {
     using Wire = typename Manifest::Wire;
     Wire wire{};
     readManifestSettings(manifest, wire, ctx.settings);
-
-    [&]<size_t... I>(std::index_sequence<I...>)
-    {
-        (
-            [&]
-            {
-                constexpr size_t ordinal = I + 1;
-                if (ordinal > ctx.step_format_version)
-                    return;
-                WireDetail::forEach(std::get<I>(manifest.formats).fields, [&](const auto & field) { WireEncoding::read(wire.*field.member, ctx); });
-            }(),
-            ...);
-    }(std::make_index_sequence<Manifest::formatCount()>{});
-
+    WireDetail::forEach(manifest.fields, [&](const auto & field) { WireEncoding::read(wire.*field.member, ctx); });
     return wire;
 }
 
@@ -733,32 +624,28 @@ void writeManifestSettings(const Manifest & manifest, const typename Manifest::W
     });
 }
 
-/// Calls `visitor(name, field_class, value)` for every payload field of every format and every
-/// setting, in declaration order. This is the input of the digests: the full digest takes every
-/// entry, the logical digest the `Logical` ones.
+/// Calls `visitor(name, field_class, value)` for every payload field and every setting, in
+/// declaration order. This is the input of the digests: the full digest takes every entry, the
+/// logical digest the `Logical` ones.
 template <typename Manifest, typename Visitor>
 void forEachWireEntry(const Manifest & manifest, const typename Manifest::Wire & wire, Visitor && visitor)
 {
-    WireDetail::forEach(manifest.formats, [&](const auto & format)
-    {
-        WireDetail::forEach(format.fields, [&](const auto & field) { visitor(field.name, field.field_class, wire.*field.member); });
-    });
+    WireDetail::forEach(manifest.fields, [&](const auto & field) { visitor(field.name, field.field_class, wire.*field.member); });
     WireDetail::forEach(manifest.setting_entries, [&](const auto & entry)
     {
         visitor(QueryPlanSerializationSettings::settingName(*entry.setting), entry.field_class, wire.*entry.member);
     });
 }
 
-/// The registry entry a manifest describes: the name's plan version and one appended payload
-/// format per `appendFormat`. An appended format needs nothing from a reader that skips it, so its
-/// static requirement is none; the value-dependent one is raised while writing.
+/// The registry entry a manifest describes: the name's plan version and the input count. Every
+/// framed step is one payload format, so the maximum format version is 1.
 template <typename Manifest>
 QueryPlanStepRegistry::StepSerializationInfo manifestRegistryInfo(const Manifest & manifest)
 {
     QueryPlanStepRegistry::StepSerializationInfo info;
     info.introduced_in_plan_version = manifest.name_introduced_in;
-    info.has_wire_struct = !manifest.custom;
-    info.max_format_version = std::max<UInt64>(1, Manifest::formatCount());
+    info.has_wire_struct = true;
+    info.max_format_version = 1;
     info.input_count = manifest.inputCount();
     return info;
 }
@@ -770,27 +657,20 @@ String describeManifest(const Manifest & manifest)
     using Wire = typename Manifest::Wire;
     WriteBufferFromOwnString out;
     out << "name " << manifest.name << " introduced_in " << manifest.name_introduced_in
-        << (manifest.custom ? " custom" : "")
         << " full_digest " << (manifest.full_digest_eligible == &Eligible::always<Wire> ? "always" : manifest.full_digest_eligible == &Eligible::never<Wire> ? "never" : "predicate")
         << " logical_digest " << (manifest.logical_digest_eligible == &Eligible::always<Wire> ? "always" : manifest.logical_digest_eligible == &Eligible::never<Wire> ? "never" : "predicate")
         << "\n";
 
-    [&]<size_t... I>(std::index_sequence<I...>)
+    if (manifest.has_base_format)
     {
-        (
-            [&]
-            {
-                constexpr size_t ordinal = I + 1;
-                out << "format " << ordinal << " introduced_in " << manifest.template formatIntroducedIn<ordinal>() << "\n";
-                WireDetail::forEach(std::get<I>(manifest.formats).fields, [&](const auto & field)
-                {
-                    using Value = typename std::remove_cvref_t<decltype(field)>::Value;
-                    out << "  field " << field.name << " " << (field.field_class == WireFieldClass::Logical ? "Logical" : "Physical")
-                        << " " << WireEncoding::typeName<Value>() << "\n";
-                });
-            }(),
-            ...);
-    }(std::make_index_sequence<Manifest::formatCount()>{});
+        out << "format 1 introduced_in " << manifest.formatVersion() << "\n";
+        WireDetail::forEach(manifest.fields, [&](const auto & field)
+        {
+            using Value = typename std::remove_cvref_t<decltype(field)>::Value;
+            out << "  field " << field.name << " " << (field.field_class == WireFieldClass::Logical ? "Logical" : "Physical")
+                << " " << WireEncoding::typeName<Value>() << "\n";
+        });
+    }
 
     WireDetail::forEach(manifest.setting_entries, [&](const auto & entry)
     {
@@ -799,11 +679,10 @@ String describeManifest(const Manifest & manifest)
             << (entry.field_class == WireFieldClass::Logical ? "Logical" : "Physical") << " " << WireEncoding::typeName<Value>() << "\n";
     });
 
-    if constexpr (Manifest::formatCount() > 0)
+    if (manifest.has_base_format)
     {
         /// The initializers, as the payload of a default-constructed wire struct: what a reader
-        /// reconstructs for every value that is not on the wire. Every format is written, also one
-        /// above the version this binary speaks, so the initializers of every appended format are pinned.
+        /// reconstructs for every value that is not on the wire.
         WriteBufferFromOwnString payload;
         SerializedSetsRegistry registry;
         IQueryPlanStep::Serialization ctx{payload, registry};
@@ -818,30 +697,6 @@ String describeManifest(const Manifest & manifest)
 
     out.finalize();
     return out.str();
-}
-
-/// The plan versions of the payload formats must strictly increase: an older reader reads the
-/// formats up to the one it knows and skips the rest, which only works when a later format's version
-/// is above every earlier one. A base format (ordinal 1) has no predecessor to compare against.
-template <typename Manifest>
-constexpr bool formatVersionsStrictlyIncrease(const Manifest & manifest)
-{
-    bool ok = true;
-    UInt64 previous = 0;
-    [&]<size_t... I>(std::index_sequence<I...>)
-    {
-        (
-            [&]
-            {
-                constexpr size_t ordinal = I + 1;
-                const UInt64 version = manifest.template formatIntroducedIn<ordinal>();
-                if (ordinal > 1 && version <= previous)
-                    ok = false;
-                previous = version;
-            }(),
-            ...);
-    }(std::make_index_sequence<Manifest::formatCount()>{});
-    return ok;
 }
 
 /// The coverage rule: the manifest binds every member of the wire struct exactly once.
@@ -884,8 +739,6 @@ void registerManifest(QueryPlanStepRegistry & registry, QueryPlanStepRegistry::S
     static_assert(manifestCoversWire(manifest), "the manifest must bind every member of its wire struct exactly once");
     static_assert(manifest.arityIsResolved(),
         "declare the step's input count with .inputs(n) or .variableInputs(): it derives from neither a source nor a transforming step");
-    static_assert(formatVersionsStrictlyIncrease(manifest),
-        "each appended payload format must be introduced in a strictly higher plan version than the one before it");
     checkSettingInitializers(manifest);
     registry.registerStep(manifest.name, std::move(create), manifestRegistryInfo(manifest), describeManifest(manifest));
 }

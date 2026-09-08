@@ -140,13 +140,14 @@ public:
     /// to the wire one after another.
     using SerializedChunks = std::vector<String>;
 
-    /// Serializes the query plan and keeps the bytes, one entry per version written. A peer that
-    /// cannot read the newest version is served an older one, and different replicas of one query
-    /// may need different versions, so bytes written for one version must never go to a peer that
-    /// asked for another.
+    /// Serializes the query plan once, at the version this server writes, and keeps the bytes so
+    /// every peer of the query is sent the same serialization. A framed peer reads it whatever its
+    /// own version; a peer too old to read the framed format is refused rather than served a
+    /// second, older serialization.
     void ensureSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
 
-    /// Writes the bytes kept for the version this peer will be sent.
+    /// Writes the kept bytes to this peer, or refuses cleanly when the peer cannot read the version
+    /// they were written at.
     void writeSerializedTo(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
 
     void resolveStorages(const ContextPtr & context);
@@ -254,29 +255,31 @@ private:
     void serializeWithFlags(WriteBuffer & out, const SerializationFlags & flags) const;
     /// The older layout, without its leading version.
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
-    SerializedChunks serializeEnvelopeToChunks(const SerializationFlags & flags) const;
+    SerializedChunks serializeFramedToChunks(const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
-    static QueryPlanAndSets deserializeEnvelope(
+    static QueryPlanAndSets deserializeFramedBody(
         ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags,
-        size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 body_size);
+        size_t max_type_complexity, UInt64 max_plan_bytes);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
     static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
 
-    friend void serializeEnvelopeSets(
+    friend void serializeFramedSets(
         SerializedSetsRegistry & registry,
         const SerializationFlags & flags,
         PlanOutline & outline,
-        std::vector<String> & payloads,
-        UInt64 & min_reader_plan_version);
-    friend QueryPlanAndSets deserializeEnvelopeSets(
+        std::vector<String> & payloads);
+    friend QueryPlanAndSets deserializeFramedSets(
         QueryPlan plan,
         DeserializedSetsRegistry & registry,
         const PlanOutline & outline,
         ReadBuffer & in,
         const SerializationFlags & flags,
         const ContextPtr & context,
-        size_t max_type_complexity);
+        size_t max_type_complexity,
+        UInt64 max_plan_bytes,
+        size_t body_start,
+        UInt64 & frames_consumed);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;
@@ -289,28 +292,31 @@ private:
     size_t max_threads = 0;
     bool concurrency_control = false;
 
-    /// The serialized plan, one entry per version written. In practice one or two: the version
-    /// this server writes, and possibly an older one for a peer that cannot read it.
+    /// The serialized plan, kept once at the version this server writes, so every peer of a query
+    /// is sent the same bytes.
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     ///
     /// One plan is shared by all the replicas of a query, and each replica sends it from its own
-    /// thread, so the cache is guarded. Without the mutex a sender could pick up an entry another
+    /// thread, so the cache is guarded. Without the mutex a sender could pick up bytes another
     /// thread is still writing and put a truncated plan on the wire.
     struct SerializedPlanCache
     {
         std::mutex mutex;
-        /// Shared so a sender can take its entry under the lock and write it to the wire without
-        /// holding the lock across the network.
-        std::map<UInt64, std::shared_ptr<const SerializedChunks>> plans;
+        /// The version the kept bytes were written at; meaningful only when `chunks` is set.
+        UInt64 version = 0;
+        /// Shared so a sender can take the bytes under the lock and write them to the wire without
+        /// holding the lock across the network. Null until the plan has been serialized.
+        std::shared_ptr<const SerializedChunks> chunks;
 
         SerializedPlanCache() = default;
 
         /// A plan is moved while it is being built, never while it is being sent, so the cached
         /// bytes move without locking. The mutex itself is not movable and stays behind.
-        SerializedPlanCache(SerializedPlanCache && other) noexcept : plans(std::move(other.plans)) { }
+        SerializedPlanCache(SerializedPlanCache && other) noexcept : version(other.version), chunks(std::move(other.chunks)) { }
         SerializedPlanCache & operator=(SerializedPlanCache && other) noexcept
         {
-            plans = std::move(other.plans);
+            version = other.version;
+            chunks = std::move(other.chunks);
             return *this;
         }
     };

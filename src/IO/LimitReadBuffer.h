@@ -50,14 +50,17 @@ private:
     size_t getEffectiveBufferSize() const;
 };
 
-/// The largest number of bytes a reader can still take from the current frame: the bytes before a
-/// `LimitReadBuffer`'s limit, or the bytes already buffered otherwise. A count of fixed-size elements
-/// above this cannot be satisfied and must be refused before it drives an allocation.
+/// The bytes a reader can still take from the current frame, used to refuse a count of fixed-size
+/// elements before it drives an allocation. A frame is a `LimitReadBuffer`, and its remaining bytes
+/// are the bytes before its limit. The framed reader wraps every payload, outline and set in one, so
+/// the bound applies wherever the input is untrusted. Without such a frame the remaining length is
+/// unknown, so there is no bound to enforce here: `available` would be only the bytes buffered so far
+/// and would wrongly refuse a valid count that crosses a buffer boundary on a streamed read.
 inline size_t bytesRemainingInFrame(const ReadBuffer & in)
 {
     if (const auto * limited = dynamic_cast<const LimitReadBuffer *>(&in))
         return limited->bytesUntilLimit();
-    return in.available();
+    return std::numeric_limits<size_t>::max();
 }
 
 }

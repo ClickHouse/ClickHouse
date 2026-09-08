@@ -15,7 +15,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/QueryPlanEnvelope.h>
+#include <Processors/QueryPlan/QueryPlanOutline.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
@@ -70,7 +70,7 @@ public:
 };
 
 /// Writes payload bytes its own reader never consumes, so every stream carrying it has a step
-/// payload tail. The format version it declares decides whether that tail is legitimate.
+/// payload tail. Each step name owns one payload layout, so a tail is always a corrupt stream.
 class TestTailStep : public ISourceStep
 {
 public:
@@ -116,11 +116,6 @@ public:
     }
 };
 
-/// The version every outline stream needs, and one above it for the cases about a plan that needs
-/// a reader newer than this build.
-constexpr UInt64 outline_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
-constexpr UInt64 newer_than_outline_version = outline_version + 1;
-
 void registerStepsOnce()
 {
     static std::once_flag flag;
@@ -131,12 +126,8 @@ void registerStepsOnce()
             QueryPlanStepRegistry::registerPlanSteps();
         QueryPlanStepRegistry::instance().registerStep("TestSource", TestSourceStep::deserialize);
 
-        /// A step whose name only a server newer than the one that introduced the outline knows.
-        QueryPlanStepRegistry::StepSerializationInfo info;
-        info.introduced_in_plan_version = newer_than_outline_version;
-        QueryPlanStepRegistry::instance().registerStep("TestGatedStep", TestSourceStep::deserialize, std::move(info));
-
-        /// Known up to payload format 1, so a tail is only acceptable above that.
+        /// Writes a payload byte its own reader never consumes, so a stream carrying it has a step
+        /// payload tail the reader must reject.
         QueryPlanStepRegistry::instance().registerStep("TestTailStep", TestTailStep::deserialize);
 
         QueryPlanStepRegistry::instance().registerStep("TestUnreadableStep", TestUnreadableStep::deserialize);
@@ -282,31 +273,29 @@ TEST(QueryPlanSerialization, UnionRoundTrip)
     checkRoundTrip(std::move(plan));
 }
 
-TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
+TEST(QueryPlanSerialization, PlanIsSerializedOnceAndOffVersionPeersAreRefused)
 {
     registerStepsOnce();
     auto plan = makeSourcePlan();
 
-    ASSERT_GE(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, 2);
+    ASSERT_GE(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE);
     const size_t current = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
-    const size_t older = current - 1;
+    const size_t pre_framed = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE - 1;
 
+    /// The writer serializes once, at its own version. The stream starts with the version varint.
     plan.ensureSerialized(current);
-    plan.ensureSerialized(older);
-
     auto current_bytes = cachedPlanBytes(plan, current);
-    auto older_bytes = cachedPlanBytes(plan, older);
-
-    /// Bytes for one version must never be served for another: each advertised peer version gets
-    /// its own cache entry. The stream starts with the version varint, so the leading byte must differ.
     ASSERT_FALSE(current_bytes.empty());
-    ASSERT_FALSE(older_bytes.empty());
     EXPECT_EQ(static_cast<UInt8>(current_bytes[0]), current);
-    EXPECT_EQ(static_cast<UInt8>(older_bytes[0]), older);
 
-    /// Requests above the supported version clamp to the current one.
-    plan.ensureSerialized(current + 100);
+    /// A framed peer newer than the writer reads the very same bytes: one serialization serves every
+    /// framed peer, which accepts it by its own reader-version check.
     EXPECT_EQ(cachedPlanBytes(plan, current + 100), current_bytes);
+
+    /// A peer too old for the framed format cannot read those bytes, and the plan is not
+    /// re-serialized at an older version for it: it is refused cleanly.
+    EXPECT_ANY_THROW(plan.ensureSerialized(pre_framed));
+    EXPECT_ANY_THROW(cachedPlanBytes(plan, pre_framed));
 }
 
 TEST(QueryPlanSerialization, ChildOrderSurvivesTheRoundTrip)
@@ -357,7 +346,7 @@ TEST(QueryPlanSerialization, SkippingDrainsThePlanWithoutBuildingIt)
         EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
     }
 
-    /// Draining takes the envelope off the stream without constructing anything, and stops exactly
+    /// Draining takes the framed plan off the stream without constructing anything, and stops exactly
     /// at its end, so whatever the protocol put after it is still readable.
     ReadBufferFromString in(bytes);
     EXPECT_NO_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0, /*skip_data=*/true));
@@ -425,8 +414,8 @@ TEST(QueryPlanSerialization, WriterVersionCanBeHeldBack)
     EXPECT_EQ(static_cast<UInt8>(held[0]), 3);
     EXPECT_EQ(debugExplainPlan(deserializePlan(held)), debugExplainPlan(plan));
 
-    /// The cache is keyed by the version actually written, so a held-back sender does not serve
-    /// bytes cached before the clamp was applied.
+    /// The kept bytes are the version actually written: held at 3, `ensureSerialized` serializes
+    /// and serves version 3, not the current one.
     plan.ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     EXPECT_EQ(static_cast<UInt8>(cachedPlanBytes(plan, DBMS_QUERY_PLAN_SERIALIZATION_VERSION)[0]), 3);
 
@@ -435,7 +424,7 @@ TEST(QueryPlanSerialization, WriterVersionCanBeHeldBack)
     EXPECT_EQ(static_cast<UInt8>(current[0]), DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 }
 
-TEST(QueryPlanSerialization, EnvelopeSizeLimitComesFromTheServerSetting)
+TEST(QueryPlanSerialization, FramedPlanSizeLimitComesFromTheServerSetting)
 {
     registerStepsOnce();
     const std::string bytes = serializePlan(makeChainPlan(4));
@@ -450,7 +439,7 @@ TEST(QueryPlanSerialization, EnvelopeSizeLimitComesFromTheServerSetting)
     getContext().context->setServerSetting("max_serialized_query_plan_size", UInt64(8));
     SCOPE_EXIT({ getContext().context->setServerSetting("max_serialized_query_plan_size", old_limit); });
 
-    /// A limit below the plan size rejects it instead of buffering the envelope.
+    /// A limit below the plan size rejects it instead of buffering the plan.
     ReadBufferFromString limited_in(bytes);
     EXPECT_THROW(QueryPlan::deserialize(limited_in, getContext().context, /*max_type_complexity=*/0), Exception);
 }
@@ -524,16 +513,13 @@ PlanOutline makeTestOutline()
     PlanOutline::Node leaf;
     leaf.step_name = "TestSource";
     leaf.step_format_version = 1;
-    leaf.min_reader_plan_version = outline_version;
     leaf.header = makeTestHeader();
-    leaf.payload_size = 0;
     outline.nodes.push_back(std::move(leaf));
 
     PlanOutline::Node root;
     root.children = {0};
     root.step_name = "Expression";
     root.step_format_version = 1;
-    root.min_reader_plan_version = outline_version;
     root.header = makeTestHeader();
     outline.nodes.push_back(std::move(root));
 
@@ -549,79 +535,24 @@ std::string writeOutlineToString(const PlanOutline & outline)
 }
 
 /// A whole stream built by hand, for the streams a writer of this build cannot produce.
-std::string writeEnvelopeToString(const PlanOutline & outline, const std::vector<std::string> & payloads)
+std::string writeFramedPlanToString(const PlanOutline & outline, const std::vector<std::string> & payloads)
 {
     const std::string outline_bytes = writeOutlineToString(outline);
-
-    size_t body_size = outline_bytes.size();
-    for (const auto & payload : payloads)
-        body_size += payload.size();
-
-    UInt64 min_reader = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
-    for (const auto & node : outline.nodes)
-        min_reader = std::max(min_reader, node.min_reader_plan_version);
 
     WriteBufferFromOwnString out;
     writeVarUInt(UInt64(DBMS_QUERY_PLAN_SERIALIZATION_VERSION), out);
     writeVarUInt(UInt64(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE), out);
-    writeVarUInt(body_size, out);
-    writeVarUInt(min_reader, out);
     out.write(outline_bytes.data(), outline_bytes.size());
+    /// Each payload carries its size just before its bytes.
     for (const auto & payload : payloads)
+    {
+        writeVarUInt(payload.size(), out);
         out.write(payload.data(), payload.size());
+    }
     out.finalize();
     return out.str();
 }
 
-}
-
-TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
-{
-    registerStepsOnce();
-
-    /// A payload from a future writer: its format is above everything this build knows, and every
-    /// format appends to the one before, so the bytes the step's deserializer leaves behind are an
-    /// ignorable append. That is what keeps a rolling upgrade working. No writer of this build can
-    /// produce such a stream, hence the hand-built one.
-    WriteBufferFromOwnString payload;
-    writeVarUInt(UInt64(12345), payload);
-    payload.finalize();
-
-    PlanOutline outline;
-    PlanOutline::Node node;
-    node.step_name = "TestTailStep";
-    node.step_format_version = 5;
-    node.min_reader_plan_version = outline_version;
-    node.header = makeTestHeader();
-    node.payload_size = payload.str().size();
-    outline.nodes.push_back(std::move(node));
-
-    EXPECT_NO_THROW(deserializePlan(writeEnvelopeToString(outline, {payload.str()})));
-}
-
-TEST(QueryPlanOutline, BodyIsAHardReadBoundary)
-{
-    registerStepsOnce();
-
-    /// A head that declares a one-byte body, whose single byte says the outline is one byte long.
-    /// Reading that one outline byte would step past the body into what follows it on the
-    /// connection. The reader must stop at the body's end and leave the trailing bytes untouched.
-    WriteBufferFromOwnString buf;
-    writeVarUInt(UInt64(DBMS_QUERY_PLAN_SERIALIZATION_VERSION), buf);
-    writeVarUInt(UInt64(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE), buf);
-    writeVarUInt(UInt64(1), buf); /// body_size
-    writeVarUInt(UInt64(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE), buf); /// min_reader
-    writeVarUInt(UInt64(1), buf); /// outline_size, the one and only body byte
-    writeCString("SENTINEL", buf);
-    buf.finalize();
-
-    ReadBufferFromString in(buf.str());
-    EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
-
-    /// Nothing past the one-byte body was consumed.
-    String rest;
-    readStringUntilEOF(rest, in);
-    EXPECT_EQ(rest, "SENTINEL");
 }
 
 TEST(QueryPlanOutline, StepInputCountIsValidated)
@@ -634,7 +565,6 @@ TEST(QueryPlanOutline, StepInputCountIsValidated)
         outline_node.children = std::move(children);
         outline_node.step_name = name;
         outline_node.step_format_version = 1;
-        outline_node.min_reader_plan_version = outline_version;
         outline_node.header = makeTestHeader();
         return outline_node;
     };
@@ -644,7 +574,7 @@ TEST(QueryPlanOutline, StepInputCountIsValidated)
     {
         PlanOutline outline;
         outline.nodes.push_back(make_node("Expression", {}));
-        auto result = validateQueryPlanOutline(outline, outline_version);
+        auto result = validateQueryPlanOutline(outline);
         ASSERT_FALSE(result.ok());
         EXPECT_NE(result.describe().find("has 0 inputs but reads 1"), std::string::npos) << result.describe();
     }
@@ -654,7 +584,7 @@ TEST(QueryPlanOutline, StepInputCountIsValidated)
         PlanOutline outline;
         outline.nodes.push_back(make_node("TestSource", {}));
         outline.nodes.push_back(make_node("ReadNothing", {0}));
-        auto result = validateQueryPlanOutline(outline, outline_version);
+        auto result = validateQueryPlanOutline(outline);
         ASSERT_FALSE(result.ok());
         EXPECT_NE(result.describe().find("has 1 inputs but reads 0"), std::string::npos) << result.describe();
     }
@@ -664,7 +594,7 @@ TEST(QueryPlanOutline, StepInputCountIsValidated)
         PlanOutline outline;
         outline.nodes.push_back(make_node("TestSource", {}));
         outline.nodes.push_back(make_node("Expression", {0}));
-        EXPECT_TRUE(validateQueryPlanOutline(outline, outline_version).ok());
+        EXPECT_TRUE(validateQueryPlanOutline(outline).ok());
     }
 }
 
@@ -676,7 +606,6 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
     outline.include_step_descriptions = true;
     outline.nodes[1].step_description = "test description";
     outline.nodes[0].settings.push_back({.name = "max_block_size", .flags = 0, .value = "\x01"});
-    outline.nodes[0].payload_size = 42;
 
     auto bytes = writeOutlineToString(outline);
 
@@ -691,7 +620,6 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
     EXPECT_EQ(restored.nodes[1].step_description, "test description");
     ASSERT_TRUE(restored.nodes[1].header);
     EXPECT_EQ(restored.nodes[1].header->columns(), 2u);
-    EXPECT_EQ(restored.nodes[0].payload_size, 42u);
     ASSERT_EQ(restored.nodes[0].settings.size(), 1u);
     EXPECT_EQ(restored.nodes[0].settings[0].name, "max_block_size");
 
@@ -708,7 +636,7 @@ TEST(QueryPlanOutline, ValidationCollectsAllIssues)
     outline.nodes[0].header = nullptr;
     outline.nodes[1].settings.push_back({.name = "no_such_setting", .flags = 0, .value = ""});
 
-    auto result = validateQueryPlanOutline(outline, /*head_min_reader_plan_version=*/outline_version);
+    auto result = validateQueryPlanOutline(outline);
     ASSERT_FALSE(result.ok());
     /// All three problems reported at once, not just the first.
     EXPECT_EQ(result.issues.size(), 3u) << result.describe();
@@ -724,75 +652,41 @@ TEST(QueryPlanOutline, ValidationAcceptsIgnorableUnknownSetting)
     outline.nodes[0].settings.push_back(
         {.name = "future_setting", .flags = PlanOutline::SettingEntry::FLAG_IGNORABLE, .value = ""});
 
-    EXPECT_TRUE(validateQueryPlanOutline(outline, outline_version).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(outline).ok());
 }
 
-TEST(QueryPlanOutline, ValidationChecksStepVersionAgainstRegistryInfo)
+TEST(QueryPlanOutline, ValidationRejectsUnknownStepPayloadFormat)
 {
     registerStepsOnce();
 
-    /// The step's name was introduced after this build's base version, and the node says so.
+    /// Each step name owns one payload layout, numbered 1. Any other value is a payload this
+    /// server cannot read, so the plan is refused on the outline before a step is built.
     auto outline = makeTestOutline();
-    outline.nodes[1].step_name = "TestGatedStep";
-    outline.nodes[1].min_reader_plan_version = newer_than_outline_version;
-    EXPECT_TRUE(validateQueryPlanOutline(outline, newer_than_outline_version).ok());
-
-    /// A format above the newest one known is an addition this reader may ignore: it reads the
-    /// front of the payload, and nothing the registry says forbids it.
-    outline.nodes[1].step_format_version = 3;
-    EXPECT_TRUE(validateQueryPlanOutline(outline, newer_than_outline_version).ok());
+    outline.nodes[1].step_format_version = 2;
+    auto result = validateQueryPlanOutline(outline);
+    ASSERT_FALSE(result.ok());
+    EXPECT_NE(result.describe().find("unknown payload format version 2"), std::string::npos) << result.describe();
 }
 
-TEST(QueryPlanOutline, ValidationCrossChecksDeclaredReaderVersions)
-{
-    registerStepsOnce();
-
-    /// A writer that undercounted the "needed to read" version is reported: the gated step's
-    /// registry info requires the newer version while the node declares only the base one.
-    auto outline = makeTestOutline();
-    outline.nodes[1].step_name = "TestGatedStep";
-    auto result = validateQueryPlanOutline(outline, newer_than_outline_version);
-    ASSERT_FALSE(result.ok());
-    EXPECT_NE(result.describe().find(fmt::format("registry info requires {}", newer_than_outline_version)),
-        std::string::npos) << result.describe();
-
-    /// A node requiring more than the plan's declared head value is reported too.
-    outline = makeTestOutline();
-    outline.nodes[1].min_reader_plan_version = newer_than_outline_version;
-    result = validateQueryPlanOutline(outline, outline_version);
-    ASSERT_FALSE(result.ok());
-    EXPECT_NE(result.describe().find("above the plan's declared"), std::string::npos);
-}
-
-TEST(QueryPlanSerialization, NewerCompatibleStreamIsAccepted)
+TEST(QueryPlanSerialization, TooNewVersionAndUnknownKindAreRefused)
 {
     registerStepsOnce();
     auto plan = makeSourcePlan();
-    auto reference_explain = debugExplainPlan(plan);
 
     std::string bytes = serializePlan(plan);
-    /// Head layout: [plan_version][format_kind][body_size][min_reader_plan_version]... - all of
-    /// them are single-byte varints for a plan this small.
-    ASSERT_GE(bytes.size(), 4u);
+    /// Head layout: [plan_version][format_kind]... - both single-byte varints for a plan this small.
+    ASSERT_GE(bytes.size(), 2u);
     ASSERT_EQ(static_cast<UInt8>(bytes[0]), DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     ASSERT_EQ(static_cast<UInt8>(bytes[1]), DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE);
-    ASSERT_EQ(static_cast<UInt8>(bytes[3]), DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE);
 
-    /// A stream from a "newer" writer whose content requires nothing new must be accepted.
-    std::string from_the_future = bytes;
-    from_the_future[0] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
-    auto restored = deserializePlan(from_the_future);
-    EXPECT_EQ(debugExplainPlan(restored), reference_explain);
-
-    /// A stream whose content requires a newer reader is rejected at the head.
+    /// The version is a coarse gate: a version above the one this server supports is refused. The
+    /// body of a known kind is still walkable, so the connection would be kept (checked elsewhere).
     std::string too_new = bytes;
     too_new[0] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
-    too_new[3] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
     ReadBufferFromString in(too_new);
     EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, 0), Exception);
 
-    /// A body layout this server does not know is refused on the kind alone, even though the
-    /// content claims to need nothing newer.
+    /// A body layout this server does not know is refused on the kind alone.
     std::string unknown_kind = bytes;
     unknown_kind[1] = static_cast<char>(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE + 1);
     ReadBufferFromString unknown_in(unknown_kind);
@@ -805,7 +699,7 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     auto outline = makeTestOutline();
 
     outline.nodes[1].children = {0, 1};  /// A child index that is the root itself, so it does not precede it.
-    EXPECT_FALSE(validateQueryPlanOutline(outline, outline_version).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(outline).ok());
     outline.nodes[1].children = {0};
 
     PlanOutline::SetEntry set1;
@@ -818,7 +712,7 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     set2.kind = 200;  /// Unknown kind.
     outline.sets = {set1, set2};  /// Also not sorted by hash.
 
-    auto result = validateQueryPlanOutline(outline, outline_version);
+    auto result = validateQueryPlanOutline(outline);
     ASSERT_FALSE(result.ok());
     EXPECT_EQ(result.issues.size(), 2u) << result.describe();
 }
@@ -829,27 +723,16 @@ TEST(QueryPlanSerialization, RejectedPlansAreStillTakenOffTheStream)
     const std::string plan_bytes = serializePlan(makeSourcePlan());
 
     /// What follows the plan on a real connection is the next protocol packet. A plan this server
-    /// cannot read has to be consumed anyway, or that packet is read as plan bytes.
+    /// turns down still has to be walked to its end, or that packet is read as plan bytes. This holds
+    /// only for a body layout the reader can walk; an unknown layout has no known end and closes the
+    /// connection instead, which is checked elsewhere.
     const std::string sentinel = "the next protocol packet";
 
-    /// A body layout this server does not know.
-    {
-        std::string unknown_kind = plan_bytes;
-        unknown_kind[1] = static_cast<char>(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE + 1);
-        /// `ReadBufferFromString` does not own its bytes, so the stream has to outlive the reader.
-        const std::string stream = unknown_kind + sentinel;
-        ReadBufferFromString in(stream);
-        EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
-
-        String rest;
-        readStringUntilEOF(rest, in);
-        EXPECT_EQ(rest, sentinel) << "an unknown body layout left bytes on the stream";
-    }
-
-    /// Content that needs a newer reader than this one.
+    /// A version above the one this server supports, on a body layout it can still walk.
     {
         std::string too_new = plan_bytes;
-        too_new[3] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
+        too_new[0] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
+        /// `ReadBufferFromString` does not own its bytes, so the stream has to outlive the reader.
         const std::string stream = too_new + sentinel;
         ReadBufferFromString in(stream);
         EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
@@ -859,11 +742,13 @@ TEST(QueryPlanSerialization, RejectedPlansAreStillTakenOffTheStream)
         EXPECT_EQ(rest, sentinel) << "a too-new plan left bytes on the stream";
     }
 
-    /// A plan refused after its outline was read: the payloads behind it are still plan bytes.
+    /// A plan refused on its outline: the payload frames behind it are still plan bytes and must be
+    /// skipped. The two nodes need two payload frames; their contents do not matter, since the plan
+    /// is turned down before any step is built.
     {
         auto outline = makeTestOutline();
         outline.nodes[0].step_name = "NoSuchStep";
-        const std::string stream = writeEnvelopeToString(outline, {}) + sentinel;
+        const std::string stream = writeFramedPlanToString(outline, {"", ""}) + sentinel;
 
         ReadBufferFromString in(stream);
         EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
@@ -898,26 +783,28 @@ TEST(QueryPlanSerialization, AStepThatRefusesItsPayloadLeavesTheStreamAtTheNextP
     EXPECT_EQ(rest, sentinel) << "a step that threw left plan bytes on the stream";
 }
 
-TEST(QueryPlanSerialization, OutlineFrameCannotEscapeTheEnvelope)
+TEST(QueryPlanSerialization, OutlineFrameCannotEscapeThePlanSizeLimit)
 {
     registerStepsOnce();
 
-    /// A tiny declared envelope with a huge outline frame inside it. The frame must be rejected
-    /// on its declared size, before anything is allocated and before the reader can take bytes
-    /// that belong to whatever follows the plan on the connection.
+    /// A head followed by an outline frame that claims far more bytes than the plan-size limit
+    /// allows. The frame must be rejected on its declared size, before anything is allocated and
+    /// before the reader takes the bytes that belong to whatever follows the plan on the connection.
     WriteBufferFromOwnString head;
     writeVarUInt(UInt64(DBMS_QUERY_PLAN_SERIALIZATION_VERSION), head);
     writeVarUInt(UInt64(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE), head);
-    writeVarUInt(UInt64(4), head);                              /// body claims 4 bytes ...
-    writeVarUInt(UInt64(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE), head);
-    writeVarUInt(UInt64(32) << 20, head);                       /// ... the outline frame claims 32 MiB
+    writeVarUInt(UInt64(32) << 20, head);                       /// the outline frame claims 32 MiB
     head.finalize();
 
     const std::string bytes = head.str() + "bytes that belong to the protocol";
 
+    const UInt64 old_limit = getContext().context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
+    getContext().context->setServerSetting("max_serialized_query_plan_size", UInt64(8));
+    SCOPE_EXIT({ getContext().context->setServerSetting("max_serialized_query_plan_size", old_limit); });
+
     ReadBufferFromString in(bytes);
     EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
-    EXPECT_LE(in.count(), head.str().size()) << "the reader consumed past the declared envelope";
+    EXPECT_LE(in.count(), head.str().size()) << "the reader consumed past the head";
 }
 
 TEST(QueryPlanSerialization, SetRowCountCannotExceedItsFrame)
@@ -936,7 +823,6 @@ TEST(QueryPlanSerialization, SetRowCountCannotExceedItsFrame)
     entry.hash.low64 = 1;
     entry.hash.high64 = 0;
     entry.kind = UInt8(SetSerializationKind::TupleValues);
-    entry.payload_size = set_frame.str().size();
     outline.sets.push_back(entry);
 
     auto column_set = ColumnSet::create(1, nullptr);
@@ -946,11 +832,19 @@ TEST(QueryPlanSerialization, SetRowCountCannotExceedItsFrame)
     QueryPlan::SerializationFlags flags;
     flags.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 
-    ReadBufferFromString in(set_frame.str());
+    /// The set travels as its own sized frame: its size, then its bytes.
+    WriteBufferFromOwnString stream_buf;
+    writeVarUInt(set_frame.str().size(), stream_buf);
+    stream_buf.write(set_frame.str().data(), set_frame.str().size());
+    stream_buf.finalize();
+
+    ReadBufferFromString in(stream_buf.str());
+    UInt64 frames_consumed = 0;
     try
     {
-        deserializeEnvelopeSets(
-            QueryPlan{}, registry, outline, in, flags, getContext().context, /*max_type_complexity=*/0);
+        deserializeFramedSets(
+            QueryPlan{}, registry, outline, in, flags, getContext().context, /*max_type_complexity=*/0,
+            /*max_plan_bytes=*/UInt64(1) << 20, /*body_start=*/0, frames_consumed);
         FAIL() << "the row count should have been rejected";
     }
     catch (const Exception & e)
@@ -966,39 +860,19 @@ TEST(QueryPlanOutline, ValidationRejectsMalformedChildCounts)
     registerStepsOnce();
 
     /// Nothing to be the root.
-    EXPECT_FALSE(validateQueryPlanOutline(PlanOutline{}, outline_version).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(PlanOutline{}).ok());
 
     /// The first node cannot have children: nothing precedes it.
     auto under_run = makeTestOutline();
     under_run.nodes[0].children = {0};
-    EXPECT_FALSE(validateQueryPlanOutline(under_run, outline_version).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(under_run).ok());
 
     /// A leaf that no step takes as input leaves the plan without a single root.
     auto two_roots = makeTestOutline();
     two_roots.nodes[1].children = {};
-    auto result = validateQueryPlanOutline(two_roots, outline_version);
+    auto result = validateQueryPlanOutline(two_roots);
     EXPECT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("not an input of any step"), std::string::npos) << result.describe();
-}
-
-TEST(QueryPlanOutline, ShapeRestoresChildrenLeftToRight)
-{
-    registerStepsOnce();
-
-    /// Two leaves then their parent: the parent's children must come back in the order written.
-    PlanOutline outline;
-    outline.nodes.push_back(makeTestOutline().nodes[0]);
-    outline.nodes.push_back(makeTestOutline().nodes[0]);
-    outline.nodes.push_back(makeTestOutline().nodes[1]);
-    outline.nodes[2].children = {0, 1};
-
-    auto shape = reconstructOutlineShape(outline);
-    ASSERT_TRUE(shape.ok()) << (shape.issues.empty() ? String{} : shape.issues.front());
-    EXPECT_TRUE(shape.children[0].empty());
-    EXPECT_TRUE(shape.children[1].empty());
-    ASSERT_EQ(shape.children[2].size(), 2u);
-    EXPECT_EQ(shape.children[2][0], 0u);
-    EXPECT_EQ(shape.children[2][1], 1u);
 }
 
 TEST(QueryPlanOutline, ReservedFlagBitsAreRejected)
@@ -1010,11 +884,11 @@ TEST(QueryPlanOutline, ReservedFlagBitsAreRejected)
     {
         auto bytes = writeOutlineToString(makeTestOutline());
 
-        /// Everything before the first node's flag byte is one byte except the step name: frame
-        /// size, the two plan-level limits, the descriptions flag, node count, child count, name
-        /// length, name, format version and reader version.
+        /// Everything before the first node's flag byte is one byte except the step name: outline
+        /// size, the two plan-level limits, the descriptions flag, node count, set count, the node
+        /// record size, child count, name length, name and format version.
         const std::string first_step_name = "TestSource";
-        const size_t flags_at = 8 + first_step_name.size() + 1;
+        const size_t flags_at = 10 + first_step_name.size();
         ASSERT_EQ(bytes[flags_at], char(1)) << "the node flag byte is not where this test expects it";
         bytes[flags_at] = char(1 | 2);
 
@@ -1073,12 +947,11 @@ TEST(QueryPlanOutline, FormatShowsShapeWithUnknownSteps)
     registerStepsOnce();
     auto outline = makeTestOutline();
     outline.nodes[0].step_name = "StepFromTheFuture";
-    outline.nodes[0].payload_size = 128;
 
     auto text = formatQueryPlanOutline(outline);
     EXPECT_NE(text.find("Expression"), std::string::npos);
     EXPECT_NE(text.find("StepFromTheFuture"), std::string::npos);
-    EXPECT_NE(text.find("unknown step, 128 payload bytes"), std::string::npos);
+    EXPECT_NE(text.find("unknown step"), std::string::npos);
     /// The child is indented under the root.
     EXPECT_NE(text.find("\n  StepFromTheFuture"), std::string::npos);
 }

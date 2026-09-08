@@ -1,11 +1,13 @@
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/QueryPlanEnvelope.h>
+#include <Processors/QueryPlan/QueryPlanOutline.h>
 #include <Processors/QueryPlan/Serialization.h>
 
 #include <Core/ProtocolDefines.h>
-#include <IO/ReadBufferFromMemory.h>
+#include <IO/LimitReadBuffer.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/resolveStorages.h>
+
+#include <base/scope_guard.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -34,7 +36,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int CANNOT_PARSE_QUERY_PLAN;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -220,45 +221,11 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
     }
 }
 
-/// The oldest plan version whose readers know a body layout. Every new kind is added here with the
-/// plan version that introduced it.
-static UInt64 planVersionIntroducingFormatKind(UInt64 format_kind)
-{
-    if (format_kind == DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE)
-        return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested query plan has unknown body layout {}", format_kind);
-}
-
-/// The oldest reader version a whole nested plan needs. A framed body says so in its head; an
-/// older body can be read by exactly the readers of the version it starts with.
-static UInt64 nestedPlanBodyMinReader(const String & body)
-{
-    ReadBufferFromMemory in(body.data(), body.size());
-    UInt64 version = 0;
-    readVarUInt(version, in);
-    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
-        return version;
-
-    /// Head order: version, format kind, body size, then the value wanted here.
-    UInt64 format_kind = 0;
-    readVarUInt(format_kind, in);
-    UInt64 body_size = 0;
-    readVarUInt(body_size, in);
-
-    UInt64 min_reader = 0;
-    readVarUInt(min_reader, in);
-
-    /// A reader decides at the outer head, without looking inside the set payloads, so whatever
-    /// the nested body's layout needs has to be counted here.
-    return std::max(min_reader, planVersionIntroducingFormatKind(format_kind));
-}
-
-void serializeEnvelopeSets(
+void serializeFramedSets(
     SerializedSetsRegistry & registry,
     const QueryPlan::SerializationFlags & flags,
     PlanOutline & outline,
-    std::vector<String> & payloads,
-    UInt64 & min_reader_plan_version)
+    std::vector<String> & payloads)
 {
     auto ordered_sets = registry.entriesSortedByHash();
     outline.sets.reserve(ordered_sets.size());
@@ -283,8 +250,6 @@ void serializeEnvelopeSets(
         {
             entry.kind = UInt8(SetSerializationKind::TupleValues);
             auto types = from_tuple->getTypes();
-            for (const auto & type : types)
-                min_reader_plan_version = std::max(min_reader_plan_version, minReaderVersionForType(*type));
             writeSetValues(types, from_tuple->getKeyColumns(), body);
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
@@ -294,8 +259,6 @@ void serializeEnvelopeSets(
                 entry.kind = UInt8(SetSerializationKind::TupleValues);
                 DataTypes types;
                 auto columns = readySubquerySetValues(*from_subquery, flags.sets_transfer_limits, types);
-                for (const auto & type : types)
-                    min_reader_plan_version = std::max(min_reader_plan_version, minReaderVersionForType(*type));
                 writeSetValues(types, columns, body);
             }
             else
@@ -319,28 +282,33 @@ void serializeEnvelopeSets(
         }
 
         body.finalize();
-        if (entry.kind == UInt8(SetSerializationKind::SubqueryPlan))
-            min_reader_plan_version = std::max(min_reader_plan_version, nestedPlanBodyMinReader(body.str()));
-        entry.payload_size = body.str().size();
         outline.sets.push_back(entry);
         /// `body` is finalized and goes out of scope here, so a large set moves rather than copies.
         payloads.push_back(std::move(body.str()));
     }
 }
 
-QueryPlanAndSets deserializeEnvelopeSets(
+QueryPlanAndSets deserializeFramedSets(
     QueryPlan plan,
     DeserializedSetsRegistry & registry,
     const PlanOutline & outline,
     ReadBuffer & in,
     const QueryPlan::SerializationFlags & flags,
     const ContextPtr & context,
-    size_t max_type_complexity)
+    size_t max_type_complexity,
+    UInt64 max_plan_bytes,
+    size_t body_start,
+    UInt64 & frames_consumed)
 {
+    auto budget_left = [&]() -> UInt64
+    {
+        const size_t used = in.count() - body_start;
+        return used >= max_plan_bytes ? 0 : max_plan_bytes - used;
+    };
+
     QueryPlanAndSets res;
     res.plan = std::move(plan);
 
-    String frame_bytes;
     for (const auto & entry : outline.sets)
     {
         auto it = registry.sets.find(entry.hash);
@@ -351,23 +319,27 @@ QueryPlanAndSets deserializeEnvelopeSets(
         if (columns.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", entry.hash.low64, entry.hash.high64);
 
-        /// One set at a time, into a buffer that is reused, so only the largest set is ever held.
-        /// Reading through a buffer that stops at the set's own bytes keeps a nested plan from
-        /// running into the next set or into the protocol after the plan. The caller has already
-        /// checked every declared size against the body.
-        frame_bytes.resize(entry.payload_size);
-        try
-        {
-            in.readStrict(frame_bytes.data(), frame_bytes.size());
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format("while reading the payload of set {}_{} ({} bytes)",
-                entry.hash.low64, entry.hash.high64, entry.payload_size));
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan body is truncated: {}", e.message());
-        }
+        /// The set size is read inline, right before its bytes. Reading it at a frame boundary keeps
+        /// the stream aligned for the drain if this or a later set fails.
+        UInt64 payload_size = 0;
+        readVarUInt(payload_size, in);
 
-        ReadBufferFromMemory body(frame_bytes.data(), frame_bytes.size());
+        /// Reading through a buffer that stops at the set's own bytes keeps a nested plan from
+        /// running into the next set or into the protocol after the plan. The scope guard steps over
+        /// the frame and counts it whatever happens, so a failure here leaves the stream at a frame
+        /// boundary for the drain the caller runs.
+        LimitReadBuffer body(in, {.read_no_more = payload_size});
+        SCOPE_EXIT({
+            try { body.ignoreAll(); } catch (...) {} // NOLINT(bugprone-empty-catch)
+            ++frames_consumed;
+        });
+
+        /// The plan as a whole must fit the size limit; a set that pushes it past the limit is taken
+        /// off the stream by the guard and refused, without losing the connection.
+        if (payload_size > budget_left())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Serialized set {}_{} pushes the plan past `max_serialized_query_plan_size`",
+                entry.hash.low64, entry.hash.high64);
 
         if (entry.kind == UInt8(SetSerializationKind::StorageSet))
         {
@@ -385,10 +357,10 @@ QueryPlanAndSets deserializeEnvelopeSets(
 
             /// Without this a few bytes could ask for an arbitrary allocation: `NativeReader::readData`
             /// sizes the column from the row count before reading it, and a row costs at least a byte.
-            if (num_rows > body.available())
-                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+            if (num_rows > body.bytesUntilLimit())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Serialized set {}_{} declares {} rows but only {} bytes of its frame remain",
-                    entry.hash.low64, entry.hash.high64, num_rows, body.available());
+                    entry.hash.low64, entry.hash.high64, num_rows, body.bytesUntilLimit());
 
             ColumnsWithTypeAndName set_columns;
 
@@ -419,10 +391,10 @@ QueryPlanAndSets deserializeEnvelopeSets(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has unknown kind {}",
                 entry.hash.low64, entry.hash.high64, int(entry.kind));
 
-        if (!body.eof())
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+        if (body.bytesUntilLimit() != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Serialized set {}_{} did not consume its payload frame ({} bytes left)",
-                entry.hash.low64, entry.hash.high64, body.available());
+                entry.hash.low64, entry.hash.high64, body.bytesUntilLimit());
     }
 
     /// Every set a step referenced must have had its data in the outline. A binding left unfilled
@@ -483,7 +455,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             /// has no frame, so the bound is the accepted plan size: a row costs at least a byte.
             const UInt64 max_plan_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
             if (num_rows > max_plan_bytes)
-                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Serialized set {}_{} declares {} rows, more than the {} bytes a plan may have",
                     hash.low64, hash.high64, num_rows, max_plan_bytes);
 
