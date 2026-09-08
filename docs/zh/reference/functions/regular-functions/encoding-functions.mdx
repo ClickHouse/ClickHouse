@@ -47,21 +47,25 @@ bech32Decode(address[, 'raw'])
 **解码地址**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)
 ```
 
 ```response title=Response
-bc   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 **测试网地址**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)
 ```
 
 ```response title=Response
-tb   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 <div id="bech32Encode">
@@ -105,7 +109,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
+bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru
 ```
 
 **Bech32 算法**
@@ -116,7 +120,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
+bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
 ```
 
 **自定义 HRP**
@@ -128,7 +132,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 ```
 
 ```response title=Response
-abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
+abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px
 ```
 
 **Cosmos SDK 地址 (BIP173，不含见证版本)&#x20;**
@@ -140,7 +144,7 @@ SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'b
 ```
 
 ```response title=Response
-inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs
+inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq
 ```
 
 <div id="bin">
@@ -269,9 +273,9 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions
 ```
 
 ```response title=Response
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
 ```
 
 <div id="bitmaskToArray">
@@ -306,9 +310,9 @@ SELECT bitmaskToArray(50) AS powers_of_two
 ```
 
 ```response title=Response
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
 ```
 
 **单个 2 的幂值**
@@ -354,9 +358,9 @@ SELECT bitmaskToList(50) AS powers_list
 ```
 
 ```response title=Response
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
 ```
 
 <div id="char">
@@ -501,7 +505,7 @@ SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) AS uuid_hex
 
 引入版本：v24.6.0
 
-将 Hilbert 曲线索引解码回一个由无符号整数组成的元组，用于表示多维空间中的坐标。
+将 Hilbert 曲线索引解码回一个由无符号整数组成的 Tuple，用于表示多维空间中的坐标。
 
 与 `hilbertEncode` 函数一样，此函数有两种操作模式：
 
@@ -514,13 +518,13 @@ SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) AS uuid_hex
 
 **扩展模式**
 
-接受一个范围掩码 (元组) 作为第一个参数，以及最多 2 个无符号整数作为
+接受一个范围掩码 (Tuple) 作为第一个参数，以及最多 2 个无符号整数作为
 其他参数。掩码中的每个数都用于指定对应参数左移的位数，
 从而在其取值范围内对该参数进行缩放。
 
 当你希望取值范围 (或基数) 差异很大的
-参数具有相近的分布时，范围扩展会很有帮助。例如：&#39;IP 地址&#39; `(0...FFFFFFFF)`
-和 &#39;国家代码&#39; `(0...FF)`。与编码函数一样，这最多仅限于 8 个
+参数具有相近的分布时，范围扩展会很有帮助。例如：&#39;IP Address&#39; `(0...FFFFFFFF)`
+和 &#39;国家/地区代码&#39; `(0...FF)`。与编码函数一样，这最多仅限于 8 个
 数值。
 
 **语法**
@@ -536,7 +540,7 @@ hilbertDecode(tuple_size, code)
 
 **返回值**
 
-返回指定长度的元组。[`Tuple(UInt64)`](/zh/reference/data-types/tuple)
+返回指定长度的 Tuple。[`Tuple(UInt64)`](/zh/reference/data-types/tuple)
 
 **示例**
 
@@ -547,35 +551,35 @@ SELECT hilbertDecode(2, 31)
 ```
 
 ```response title=Response
-["3", "4"]
+(3,4)
 ```
 
 **单个参数**
 
 ```sql title=Query
--- 单个参数的 Hilbert 编码始终是该参数本身（作为 Tuple）。
+-- Hilbert code for one argument is always the argument itself (as a tuple).
 SELECT hilbertDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **扩展模式**
 
 ```sql title=Query
--- 单个参数配合指定位移量的 Tuple，将按相应位数进行右移。
+-- A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
 SELECT hilbertDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(8192)
 ```
 
 **列的用法**
 
 ```sql title=Query
--- 首先创建表并插入一些数据
+-- First create the table and insert some data
 CREATE TABLE hilbert_numbers(
     n1 UInt32,
     n2 UInt32
@@ -584,12 +588,12 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 
--- 使用列名而非常量作为函数参数
+-- Use column names instead of constants as function arguments
 SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
 ```
 
 ```response title=Response
-1    2
+1	2
 ```
 
 <div id="hilbertEncode">
@@ -733,17 +737,17 @@ SELECT hilbertEncode(n1, n2) FROM hilbert_numbers;
 * 最多收缩 8 倍。
 
 当你需要让取值范围 (或基数) 差异很大的参数获得相似的分布时，
-范围扩展会很有帮助。例如：&#39;IP 地址&#39; `(0...FFFFFFFF)`
-和 &#39;国家代码&#39; `(0...FF)`。与编码函数一样，这里最多也只支持
+范围扩展会很有帮助。例如：&#39;IP Address&#39; `(0...FFFFFFFF)`
+和 &#39;国家/地区代码&#39; `(0...FF)`。与编码函数一样，这里最多也只支持
 8 个数字。
 
 **语法**
 
 ```sql
--- 简单模式
+-- Simple mode
 mortonDecode(tuple_size, code)
 
--- 扩展模式
+-- Expanded mode
 mortonDecode(range_mask, code)
 ```
 
@@ -766,7 +770,7 @@ SELECT mortonDecode(3, 53)
 ```
 
 ```response title=Response
-["1", "2", "3"]
+(1,2,3)
 ```
 
 **单个参数**
@@ -776,7 +780,7 @@ SELECT mortonDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **扩展模式：缩小一个参数**
@@ -786,13 +790,13 @@ SELECT mortonDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(128)
 ```
 
 **列用法**
 
 ```sql title=Query
--- 首先创建表并插入一些数据
+-- First create the table and insert some data
 CREATE TABLE morton_numbers(
     n1 UInt32,
     n2 UInt32,
@@ -807,12 +811,12 @@ ENGINE=MergeTree()
 ORDER BY n1;
 INSERT INTO morton_numbers (*) values(1, 2, 3, 4, 5, 6, 7, 8);
 
--- 使用列名而非常量作为函数参数
+-- Use column names instead of constants as function arguments
 SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FROM morton_numbers;
 ```
 
 ```response title=Response
-1 2 3 4 5 6 7 8
+1	2	3	4	5	6	7	8
 ```
 
 <div id="mortonEncode">
@@ -967,9 +971,9 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ```
 
 ```response title=Response
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```
 
 <div id="sqidEncode">
@@ -1050,7 +1054,7 @@ SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000
 ```
 
 ```response title=Response
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
+┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
@@ -1111,7 +1115,7 @@ SELECT unhex('303132'), UNHEX('4D7953514C')
 ```
 
 ```response title=Response
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
 ```
