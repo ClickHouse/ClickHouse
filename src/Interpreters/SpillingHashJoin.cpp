@@ -166,11 +166,12 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 
 void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
 {
-    const auto print_threshold_reached_log = [this](const JoinPtr & join, std::string_view join_name)
+    const auto log_switch = [this, spill_immediately](const JoinPtr & join, std::string_view join_name)
     {
         LOG_DEBUG(
             log,
-            "Memory spill threshold reached with {} ({} bytes, {} rows), switching to GraceHashJoin",
+            "{}, switching to GraceHashJoin: {} holds {} bytes in {} rows",
+            spill_immediately ? "Spill requested under memory pressure" : "Memory spill threshold reached",
             join_name,
             join->getTotalByteCount(),
             join->getTotalRowCount());
@@ -188,7 +189,7 @@ void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
 
             ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
 
-            print_threshold_reached_log(concurrent_join, "ConcurrentHashJoin");
+            log_switch(concurrent_join, "ConcurrentHashJoin");
 
             /// Create GraceHashJoin.
             grace_join = std::make_shared<GraceHashJoin>(
@@ -222,7 +223,7 @@ void SpillingHashJoin::switchToGraceHashJoin(bool spill_immediately)
     if (state.load(std::memory_order_relaxed) != State::COLLECTING)
         return;
 
-    print_threshold_reached_log(hash_join, "HashJoin");
+    log_switch(hash_join, "HashJoin");
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
