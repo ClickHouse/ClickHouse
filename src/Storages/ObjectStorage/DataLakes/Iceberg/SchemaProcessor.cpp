@@ -238,6 +238,8 @@ String canonicalizeTypeSpacing(const String & s)
 bool typesAreStructurallyIdentical(
     const Poco::Dynamic::Var & first_in, const Poco::Dynamic::Var & second_in, const std::unordered_map<String, String> & type_mapping)
 {
+    checkStackSize();
+
     Poco::Dynamic::Var first = first_in;
     Poco::Dynamic::Var second = second_in;
 
@@ -353,6 +355,8 @@ bool schemaFieldsAreStructurallyIdentical(const Poco::JSON::Object & first, cons
 
 bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
 {
+    checkStackSize();
+
     if (!first.isArray(f_fields) || !second.isArray(f_fields))
         return false;
     const auto first_fields = first.getArray(f_fields);
