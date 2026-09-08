@@ -971,10 +971,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// default profile — the same policy source `Context::chooseCompressionCodec` uses for the
         /// server-level `<compression>` config. `FORCE_RESTORE` is documented to skip all sanity checks
         /// and is left alone.
+        ///
+        /// The default profile is the durable codec-gate policy: it is what the check below and the
+        /// sanitization further down both compare a config-inherited codec against, and it survives a
+        /// restart, unlike the session settings. Fetched at most once, and only when a codec setting
+        /// actually needs it, because it copies the whole `Settings` object.
+        std::optional<Settings> default_profile_settings;
+        const auto get_default_profile_settings = [&]() -> const Settings &
+        {
+            if (!default_profile_settings)
+                default_profile_settings = context->getGlobalContext()->getDefaultProfileSettings();
+            return *default_profile_settings;
+        };
+
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE)
         {
-            std::optional<Settings> default_profile_settings;
-
             const auto is_stored_in_definition = [&](std::string_view name)
             {
                 if (!args.storage_def->settings)
@@ -1014,13 +1025,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
                     CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, name);
 
-                    if (!default_profile_settings)
-                        default_profile_settings = context->getGlobalContext()->getDefaultProfileSettings();
-
                     try
                     {
                         CompressionCodecFactory::instance().validateCodecString(
-                            codec, CodecValidationSettings(*default_profile_settings));
+                            codec, CodecValidationSettings(get_default_profile_settings()));
                     }
                     catch (Exception & e)
                     {
@@ -1050,9 +1058,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `SHOW CREATE` / backup metadata would keep advertising the codec, and a later `ALTER` that
         /// re-parses `settings_changes` (re-running `sanityCheck`) would reject it, making unrelated
         /// `ALTER`s impossible.
+        ///
+        /// The restored config default has to satisfy the codec gate of the default profile, because that
+        /// is what the check above applies to a config-inherited value on the next load: restoring a gated
+        /// config default here, after dropping the stored entry, would leave the table unloadable after a
+        /// restart. Such a baseline is declined and the declaration default is used instead.
         if (!is_fresh_definition)
         {
-            if (auto resets = storage_settings->sanitizeCompressionCodecSettings(initial_storage_settings); !resets.empty())
+            const auto baseline_codec_is_allowed = [&](const String & codec)
+            {
+                return CompressionCodecFactory::areCodecGatesSatisfied(codec, get_default_profile_settings());
+            };
+
+            if (auto resets = storage_settings->sanitizeCompressionCodecSettings(initial_storage_settings, baseline_codec_is_allowed);
+                !resets.empty())
             {
                 for (const auto & reset : resets)
                     LOG_WARNING(getLogger("registerStorageMergeTree"), "Table {}: {}", args.table_id.getNameForLogs(), reset.note);

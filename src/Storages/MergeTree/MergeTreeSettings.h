@@ -10,6 +10,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 
+#include <functional>
 #include <optional>
 
 namespace boost
@@ -115,15 +116,24 @@ struct MergeTreeSettings
     /// instead of failing later at the first write. The setting is restored from `base_settings` — the
     /// pre-override effective settings (e.g. the `<merge_tree>` config defaults), which is also what the
     /// setting resolves to on the next load once the caller drops it from the stored `settings_changes` —
-    /// and falls back to the declaration default only when the baseline value is itself unsafe. Returns,
+    /// and falls back to the declaration default only when the baseline value is itself unusable. Returns,
     /// per reset setting, its name (so the caller can also rewrite the stored `settings_changes` AST) and
     /// a human-readable note.
+    ///
+    /// `baseline_is_allowed`, when set, additionally decides whether a baseline value may be restored at
+    /// all. A baseline that comes from the `<merge_tree>` config defaults is not persisted into the table
+    /// metadata, so once the stored override is dropped the next load resolves the setting from the config
+    /// again and re-validates it; restoring a value that check would reject would leave the table
+    /// unloadable after a restart. The callers that inherit from the config pass the codec-gate policy of
+    /// the default profile here, the same policy that check uses.
     struct CompressionCodecSettingReset
     {
         String setting_name;
         String note;
     };
-    std::vector<CompressionCodecSettingReset> sanitizeCompressionCodecSettings(const MergeTreeSettings & base_settings);
+    using CodecPolicyCheck = std::function<bool(const String & codec_string)>;
+    std::vector<CompressionCodecSettingReset> sanitizeCompressionCodecSettings(
+        const MergeTreeSettings & base_settings, const CodecPolicyCheck & baseline_is_allowed = {});
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
