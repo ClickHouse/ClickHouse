@@ -1459,7 +1459,7 @@ public:
 
         for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
         {
-            if (std::isspace(query[i]))
+            if (std::isspace(static_cast<unsigned char>(query[i])))
             {
                 if (!prev_was_space)
                 {
@@ -1469,7 +1469,7 @@ public:
             }
             else
             {
-                prefix.push_back(static_cast<char>(std::toupper(query[i])));
+                prefix.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(query[i]))));
                 prev_was_space = false;
             }
         }
