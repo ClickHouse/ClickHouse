@@ -198,6 +198,10 @@ void StoragePrometheusQuery::readImpl(
     checkAccessToTimeSeriesTable(config.evaluation_settings.time_series_storage_id, context, AccessType::SELECT);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
+
+    /// The resolved storage names itself, and that is the table the rows below are read from.
+    checkAccessToTimeSeriesTable(time_series_storage->getStorageID(), context, AccessType::SELECT);
+
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
