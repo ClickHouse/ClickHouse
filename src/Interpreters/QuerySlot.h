@@ -7,6 +7,7 @@
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/CurrentMetrics.h>
 
+#include <chrono>
 #include <condition_variable>
 #include <exception>
 #include <mutex>
@@ -23,10 +24,12 @@ namespace DB
 class QuerySlot final: private ResourceRequest, public boost::noncopyable
 {
 public:
-    /// Blocks until a query slot is acquired
-    /// May throw if time limit exceeded
-    /// NOTE: mutex is shared with ProcessList to avoid blocking whole ProcessList while we wait for a slot
-    explicit QuerySlot(ResourceLink link_);
+    /// Blocks until a query slot is acquired or the request fails. When `admission_timeout_ms_ > 0` the
+    /// wait is bounded by `admission_deadline_` (an absolute steady_clock deadline, shared with the query's
+    /// memory reservation so the whole admission phase uses one budget); on expiry the still-enqueued
+    /// request is canceled and a `QUERY_SLOT_ACQUISITION_TIMEOUT` exception is thrown.
+    /// `admission_timeout_ms_ == 0` means no timeout; it is used only to build the timeout message.
+    QuerySlot(ResourceLink link_, UInt64 admission_timeout_ms_, std::chrono::steady_clock::time_point admission_deadline_);
     ~QuerySlot() override;
 
 private:

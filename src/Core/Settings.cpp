@@ -7574,6 +7574,24 @@ SETTINGS additional_result_filter = 'x != 2'
     DECLARE(String, workload, "default", R"(
 Name of workload to be used to access resources
 )", 0) \
+    DECLARE(Milliseconds, workload_admission_timeout_ms, 0, R"(
+The maximum time a query waits to be admitted by workload scheduling before it fails without starting.
+It bounds the combined wait for a query slot (from a `CREATE RESOURCE ... (QUERY)` resource, limited by
+the workload's `max_concurrent_queries`) and for a memory reservation (from a
+`CREATE RESOURCE ... (MEMORY RESERVATION)` resource together with the `reserve_memory` setting). Both are
+acquired before the query starts running, so this is the only way to bound that pre-execution wait:
+`max_execution_time` does not apply yet because the query has not started.
+
+When the timeout expires the query fails with one of two distinct errors, depending on which resource it
+was waiting for: `QUERY_SLOT_ACQUISITION_TIMEOUT` for a query slot, or
+`MEMORY_RESERVATION_ACQUISITION_TIMEOUT` for a memory reservation.
+
+Possible values:
+
+- Positive integer — timeout in milliseconds.
+- 0 — Infinite timeout: the query waits indefinitely for admission (default). It can still be rejected
+  immediately when the workload's `max_waiting_queries` limit is reached, and interrupted by `KILL QUERY`.
+)", 0) \
     DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
 )", 0) \

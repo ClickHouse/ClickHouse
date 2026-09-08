@@ -421,3 +421,56 @@ def test_cancel_query_with_memory_reservation():
 
     # If we got here without sanitizer alerts or crashes, the teardown order is correct.
 
+
+def test_admission_timeout_memory_reservation():
+    # 100Mi total. An 80Mi holder leaves too little for a second 80Mi reservation, but 80Mi <= max
+    # so the second query WAITS (it becomes admittable once the holder frees memory) rather than
+    # being rejected. With workload_admission_timeout_ms set it must fail after ~the timeout with the
+    # memory-reservation-specific error, instead of waiting indefinitely.
+    node.query(
+        """
+        create resource memory (memory reservation);
+        create workload all settings max_memory='100Mi';
+        create workload production in all;
+        """
+    )
+
+    def hold_the_memory():
+        try:
+            node.query(
+                "select sleepEachRow(1) from numbers(30) "
+                "settings max_block_size=1, workload='production', reserve_memory='80Mi'",
+                query_id="admission_mem_holder",
+            )
+        except QueryRuntimeException:
+            pass  # expected: killed at teardown
+
+    holder = threading.Thread(target=hold_the_memory)
+    holder.start()
+    try:
+        # Presence in system.processes implies the holder's reservation was admitted
+        # (ProcessList::insert constructs and admits MemoryReservation before publishing the query).
+        while (
+            node.query(
+                "select count() from system.processes where query_id = 'admission_mem_holder'"
+            ).strip()
+            == "0"
+        ):
+            time.sleep(0.1)
+
+        # The second reservation cannot be admitted yet and must time out with
+        # MEMORY_RESERVATION_ACQUISITION_TIMEOUT.
+        start = time.time()
+        error = node.query_and_get_error(
+            "select count(*) from numbers(100) "
+            "settings workload='production', reserve_memory='80Mi', workload_admission_timeout_ms=1000",
+            query_id="admission_mem_waiter",
+        )
+        elapsed = time.time() - start
+        assert "MEMORY_RESERVATION_ACQUISITION_TIMEOUT" in error, error
+        assert "workload_admission_timeout_ms" in error, error
+        assert elapsed < 20, f"admission timeout took too long: {elapsed}s"
+    finally:
+        node.query("kill query where query_id = 'admission_mem_holder' sync")
+        holder.join()
+

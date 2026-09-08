@@ -4,6 +4,7 @@
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/CurrentMetrics.h>
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 
@@ -48,8 +49,13 @@ namespace DB
 struct MemoryReservation : public ResourceAllocation
 {
 public:
-    // Blocks until reservation is admitted iff reserved_size > 0
-    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size);
+    // Blocks until the reservation is admitted iff reserved_size > 0. When `admission_timeout_ms_ > 0`
+    // the wait is bounded by `admission_deadline_` (an absolute steady_clock deadline, shared with the
+    // query slot so the whole admission phase uses one budget); on expiry the still-pending allocation
+    // is canceled and a `MEMORY_RESERVATION_ACQUISITION_TIMEOUT` exception is thrown.
+    // `admission_timeout_ms_ == 0` means no timeout; it is used only to build the timeout message.
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size,
+                      UInt64 admission_timeout_ms_, std::chrono::steady_clock::time_point admission_deadline_);
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.

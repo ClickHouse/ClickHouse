@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 reserve_memory;
+    extern const SettingsMilliseconds workload_admission_timeout_ms;
 }
 
 namespace ErrorCodes
@@ -142,13 +143,21 @@ ProcessList::EntryPtr ProcessList::insert(
     MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
+        // A single admission deadline shared by the query slot and the memory reservation, so the whole
+        // pre-execution admission wait is bounded by one `workload_admission_timeout_ms` budget (the two
+        // resources are acquired sequentially below). 0 means no timeout.
+        const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
+        const auto admission_deadline = admission_timeout_ms
+            ? std::chrono::steady_clock::now() + std::chrono::milliseconds(admission_timeout_ms)
+            : std::chrono::steady_clock::time_point{};
+
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
         String query_resource_name = workload_entity_storage->getQueryResourceName();
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link);
+                query_slot = std::make_unique<QuerySlot>(link, admission_timeout_ms, admission_deadline);
         }
         String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
         if (!memory_reservation_resource_name.empty())
@@ -160,7 +169,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
+                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_timeout_ms, admission_deadline);
             }
         }
     }
