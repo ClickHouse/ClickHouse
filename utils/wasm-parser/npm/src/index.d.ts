@@ -1,6 +1,8 @@
 export interface Highlight
 {
+    /** UTF-8 byte offset, not a JavaScript string index. */
     begin: number;
+    /** UTF-8 byte offset, exclusive, not a JavaScript string index. */
     end: number;
     type: string;
 }
@@ -8,7 +10,9 @@ export interface Highlight
 export interface ParseError
 {
     message: string;
+    /** UTF-8 byte offset, not a JavaScript string index. */
     begin?: number;
+    /** UTF-8 byte offset, exclusive, not a JavaScript string index. */
     end?: number;
     line?: number;
     column?: number;
@@ -39,6 +43,10 @@ export interface FormatOptions
 {
     oneLine?: boolean;
 }
+
+export const FEATURE_FORMAT = 1;
+export const FEATURE_DCL = 2;
+export const FEATURE_AST_JSON = 4;
 
 export const Parser: {
     init(options?: InitOptions): Promise<void>;

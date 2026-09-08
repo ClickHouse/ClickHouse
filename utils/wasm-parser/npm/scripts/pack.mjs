@@ -26,9 +26,13 @@ function optionalArg(name)
 
 function gitSha7()
 {
-    const git = spawnSync('git', ['-C', repoRoot, 'rev-parse', '--short=7', 'HEAD'], {
-        encoding: 'utf8',
-    });
+    // Same `-c safe.directory=*` as ci/jobs/build_wasm_parser.py: the wasm-builder
+    // image runs as root on a checkout owned by another user.
+    const git = spawnSync(
+        'git',
+        ['-c', 'safe.directory=*', '-C', repoRoot, 'rev-parse', '--short=7', 'HEAD'],
+        { encoding: 'utf8' },
+    );
     if (git.status !== 0)
         throw new Error(`git rev-parse failed: ${git.stderr}`);
     return git.stdout.trim();

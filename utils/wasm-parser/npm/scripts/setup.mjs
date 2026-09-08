@@ -1,31 +1,16 @@
 /// Download wasi-sdk 33 for this OS/arch into `<repo>/tmp/wasi-sdk`, and check host tools.
 /// Honors `WASI_SDK` when it already points at a usable prefix. Does not install cmake/ninja.
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { defaultSdk, repoRoot, sdkIsValid, toolchainFile } from './wasi-sdk.mjs';
 
 const WASI_SDK_VERSION = 33;
-
-const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, '../../../..');
-const defaultSdk = join(repoRoot, 'tmp', 'wasi-sdk');
 
 function fail(message)
 {
     process.stderr.write(message + '\n');
     process.exit(1);
-}
-
-function toolchainFile(prefix)
-{
-    return join(prefix, 'share', 'cmake', 'wasi-sdk-p1.cmake');
-}
-
-function sdkIsValid(prefix)
-{
-    return existsSync(toolchainFile(prefix));
 }
 
 function toolHint()

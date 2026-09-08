@@ -43,14 +43,20 @@ const { sql, error } = Parser.formatJson(ast, { oneLine: true })
 ```
 
 `parse` / `format` / `formatJson` are synchronous after `init`. Calling them
-before `await Parser.init()` throws. SQL failures never throw: they set
+before `await Parser.init` throws. SQL failures never throw: they set
 `error`.
+
+`highlights` and parse-error `begin` / `end` are UTF-8 byte offsets (end
+exclusive), not JavaScript string indices, so non-ASCII SQL will not line up
+with `String.prototype.slice`.
 
 The slim build is `@clickhouse/wasm-parser/slim`. `format` and `formatJson`
 return `{ error: { message: 'format is not in this build' } }`.
 
 `init` is idempotent. The default wasm URL is the file packed next to `src/`
 (`import.meta.url`). In a bundler or worker, pass `{ url }` or `{ bytes }`.
+Scheme-less paths such as `/assets/parser.wasm` are fetched; filesystem paths
+must be `file:` URLs.
 
 ## Build locally
 

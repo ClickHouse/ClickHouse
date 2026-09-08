@@ -125,17 +125,8 @@ export async function instantiate(bytes)
         sock_shutdown: () => ERRNO_NOSYS,
     };
 
-    const imports = new Proxy(preview1, {
-        get(target, name)
-        {
-            if (name in target)
-                return target[name];
-            return () => ERRNO_NOSYS;
-        },
-    });
-
     const { instance } = await WebAssembly.instantiate(bytes, {
-        wasi_snapshot_preview1: imports,
+        wasi_snapshot_preview1: preview1,
     });
     memoryRef.memory = instance.exports.memory;
     if (typeof instance.exports._initialize === 'function')

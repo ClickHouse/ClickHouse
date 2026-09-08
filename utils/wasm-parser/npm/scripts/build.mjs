@@ -4,14 +4,14 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { defaultSdk, repoRoot, sdkIsValid, toolchainFile } from './wasi-sdk.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const npmRoot = dirname(here);
 const cmakeSource = resolve(npmRoot, '..');
-const repoRoot = resolve(npmRoot, '../../..');
 const outDir = join(repoRoot, 'tmp', 'wasm-parser');
-const defaultSdk = join(repoRoot, 'tmp', 'wasi-sdk');
 
+// Keep in sync with SUBMODULES in ci/jobs/build_wasm_parser.py.
 const SUBMODULES = [
     'contrib/abseil-cpp',
     'contrib/boost',
@@ -43,16 +43,6 @@ function fail(message)
 {
     process.stderr.write(message + '\n');
     process.exit(1);
-}
-
-function toolchainFile(prefix)
-{
-    return join(prefix, 'share', 'cmake', 'wasi-sdk-p1.cmake');
-}
-
-function sdkIsValid(prefix)
-{
-    return existsSync(toolchainFile(prefix));
 }
 
 function resolveWasiSdk()

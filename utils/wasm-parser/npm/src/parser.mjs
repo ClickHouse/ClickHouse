@@ -2,6 +2,10 @@
 /// `instantiate` comes from `wasi-node.mjs` or `wasi-browser.mjs`. The `.wasm` is a sibling of
 /// `src/` at pack time (`parser.wasm` / `parser-no-formatting-no-dcl.wasm`).
 
+export const FEATURE_FORMAT = 1;
+export const FEATURE_DCL = 2;
+export const FEATURE_AST_JSON = 4;
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -22,20 +26,23 @@ export function createParser({ instantiate, wasmURL })
         return exports_;
     }
 
+    function isFileUrl(url)
+    {
+        if (url instanceof URL)
+            return url.protocol === 'file:';
+        return typeof url === 'string' && url.startsWith('file:');
+    }
+
     async function loadWasm(url)
     {
-        if (typeof url === 'string' && !/^[a-z]+:/i.test(url))
-        {
-            const { readFile } = await import('node:fs/promises');
-            return readFile(url);
-        }
-        const href = url instanceof URL ? url.href : url;
-        if (href.startsWith('file:'))
+        if (isFileUrl(url))
         {
             const { readFile } = await import('node:fs/promises');
             const { fileURLToPath } = await import('node:url');
+            const href = url instanceof URL ? url.href : url;
             return readFile(fileURLToPath(href));
         }
+        const href = url instanceof URL ? url.href : url;
         const response = await fetch(href);
         if (!response.ok)
             throw new Error(`failed to load wasm: ${response.status} ${href}`);
@@ -50,11 +57,17 @@ export function createParser({ instantiate, wasmURL })
         if (!ptr)
             throw new Error('ch_alloc returned null');
         new Uint8Array(memory.buffer, ptr, bytes.length).set(bytes);
-        const ok = entry(ptr, bytes.length);
-        const out = decoder.decode(
-            new Uint8Array(memory.buffer, ch_result_data(), ch_result_size()).slice());
-        ch_free(ptr);
-        return { ok: !!ok, out };
+        try
+        {
+            const ok = entry(ptr, bytes.length);
+            const out = decoder.decode(
+                new Uint8Array(memory.buffer, ch_result_data(), ch_result_size()).slice());
+            return { ok: !!ok, out };
+        }
+        finally
+        {
+            ch_free(ptr);
+        }
     }
 
     const Parser = {
