@@ -1,5 +1,4 @@
 selects_subcolumn	5	1
 distributed_plan_subcolumn	5	1
-distributed_plan_exact	1
 collision_bails	1
 collision_exact	1

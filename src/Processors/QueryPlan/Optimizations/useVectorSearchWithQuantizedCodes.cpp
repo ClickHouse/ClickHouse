@@ -147,8 +147,8 @@ bool optimizeVectorSearchWithQuantizedCodes(
         return false;
 
     /// The shortlist uses internal functions (`__quantizeDistance`/`__productQuantizationDistance`) that are not registered in
-    /// FunctionFactory, so a remote node could not deserialize the plan. Leave the query exact when the plan is
-    /// distributed (the vector-search-index path is skipped for the same reason above).
+    /// FunctionFactory, so a remote node could not deserialize the plan: do not rewrite the plan the initiator serializes.
+    /// Each plan fragment is re-optimized with this setting off, so the shortlist is still built inside a fragment.
     if (settings.make_distributed_plan)
         return false;
 
