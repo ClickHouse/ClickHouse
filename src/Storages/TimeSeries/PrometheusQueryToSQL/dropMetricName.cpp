@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 
@@ -105,6 +106,13 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
 
             query_piece.select_query = std::move(column_renaming_query);
             query_piece.metric_name_dropped = true;
+
+            /// The series ids changed, so an order fixed by an inner sort*() call must be re-keyed the same way.
+            rekeySortRankSubquery(
+                query_piece,
+                [](ASTPtr group)
+                { return makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(kMetricName)); },
+                context);
 
             return std::move(query_piece);
         }
