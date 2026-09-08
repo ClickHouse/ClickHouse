@@ -1,0 +1,83 @@
+--- the union the ClickHouse Arrow writer emits for Variant(IPv6, String) reads back as itself ---
+v	Variant(FixedString(16), String)					
+::1	Variant(IPv6, String)
+text	Variant(IPv6, String)
+--- union<bool, int8> as Variant(Bool, UInt8) ---
+true	Variant(Bool, UInt8)
+7	Variant(Bool, UInt8)
+false	Variant(Bool, UInt8)
+248	Variant(Bool, UInt8)
+--- union<bool, utf8> as Variant(UInt8, String): Bool and UInt8 differ only by name ---
+1	Variant(String, UInt8)
+x	Variant(String, UInt8)
+0	Variant(String, UInt8)
+y	Variant(String, UInt8)
+--- union<fixed_size_binary(16), utf8> as Variant(Int128, String) ---
+20011376718272490338853433276725592320	Variant(Int128, String)
+x	Variant(Int128, String)
+1329227995784915872903807060280344576	Variant(Int128, String)
+y	Variant(Int128, String)
+--- Arrow: union<dictionary<fixed_size_binary(16)>, utf8> as Variant(IPv6, String) ---
+1:203:405:607:809:a0b:c0d:e0f	Variant(IPv6, String)
+x	Variant(IPv6, String)
+::1	Variant(IPv6, String)
+y	Variant(IPv6, String)
+--- ArrowStream: union<dictionary<fixed_size_binary(16)>, utf8> as Variant(IPv6, String) ---
+1:203:405:607:809:a0b:c0d:e0f	Variant(IPv6, String)
+x	Variant(IPv6, String)
+::1	Variant(IPv6, String)
+y	Variant(IPv6, String)
+--- a binary branch holding text falls back to text parsing ---
+::1	Variant(IPv6, UInt32)
+7	Variant(IPv6, UInt32)
+::ffff:1.2.3.4	Variant(IPv6, UInt32)
+8	Variant(IPv6, UInt32)
+--- a retained slot no row selects must not reach the Enum8 repair ---
+a	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+\N	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+b	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+\N	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+--- the Arrow child order need not be the sorted Variant order ---
+x	Variant(String, UInt32)
+1	Variant(String, UInt32)
+y	Variant(String, UInt32)
+2	Variant(String, UInt32)
+--- a sparse union ---
+true	Variant(Bool, UInt8)
+7	Variant(Bool, UInt8)
+true	Variant(Bool, UInt8)
+248	Variant(Bool, UInt8)
+--- a union under a struct and under a list ---
+(true)	Tuple(\n    v Variant(Bool, UInt8))
+(7)	Tuple(\n    v Variant(Bool, UInt8))
+(false)	Tuple(\n    v Variant(Bool, UInt8))
+(248)	Tuple(\n    v Variant(Bool, UInt8))
+[true,7]	Array(Variant(Bool, UInt8))
+[false]	Array(Variant(Bool, UInt8))
+[248]	Array(Variant(Bool, UInt8))
+[]	Array(Variant(Bool, UInt8))
+--- a date32 branch is excluded by design, so this stays rejected ---
+Cannot convert type Variant(Date32, String) to Variant(Int32, String).
+--- two branches may never end up on one alternative ---
+Cannot convert type Variant(Bool, UInt8) to Variant(String, UInt8).
+--- an ambiguous branch gets no alternative, so this stays rejected ---
+Cannot convert type Variant(FixedString(16), String) to Variant(IPv6, Int128).
+--- schema inference has no requested type, so it is unaffected ---
+bool_int8	Variant(Bool, Int8)					
+bool_utf8	Variant(Bool, String)					
+fsb_utf8	Variant(FixedString(16), String)					
+dict_fsb_utf8	Variant(FixedString(16), String)					
+text_binary_int32	Variant(Int32, String)					
+date32_utf8	Variant(Date32, String)					
+bool_uint8	Variant(Bool, UInt8)					
+retained	Variant(Int8)					
+binary_fsb	Variant(FixedString(16), String)					
+utf8_int32	Variant(Int32, String)					
+sparse	Variant(Bool, Int8)					
+nested	Tuple(\n    v Variant(Bool, Int8))					
+listed	Array(Variant(Bool, Int8))					
+--- and a request that merely extends the decoded Variant leaves every branch as decoded ---
+true	Variant(Bool, Int8, String)
+7	Variant(Bool, Int8, String)
+false	Variant(Bool, Int8, String)
+-8	Variant(Bool, Int8, String)

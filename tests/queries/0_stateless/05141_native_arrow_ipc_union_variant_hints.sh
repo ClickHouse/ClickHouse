@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: needs the pyarrow Python module to build the Arrow IPC streams.
+#
+# The native Arrow IPC reader maps a union to a `Variant` built from the Arrow schema alone, and a
+# `Variant` -> `Variant` cast can only append alternatives, never substitute one, so an explicit structure
+# naming a different alternative for a branch was rejected on a readable file. That included what the
+# ClickHouse Arrow writer itself emits: it stores `IPv6` as `fixed_size_binary(16)`, so a file written from
+# `Variant(IPv6, String)` could not be read back with `Variant(IPv6, String)`. Each branch now takes the
+# alternative the request forces on it, resolved the way the native ORC reader resolves union branch hints;
+# a branch whose correspondence stays ambiguous keeps its decoded type, so no guess is ever made.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+set -e
+
+mkdir -p "${CLICKHOUSE_USER_FILES_UNIQUE}"
+trap 'rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"' EXIT
+DATA="${CLICKHOUSE_TEST_UNIQUE_NAME}"
+
+echo "--- the union the ClickHouse Arrow writer emits for Variant(IPv6, String) reads back as itself ---"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA}/rt.arrow', Arrow, 'v Variant(IPv6, String)')
+        SETTINGS engine_file_truncate_on_insert = 1
+        SELECT if(number = 0, CAST(toIPv6('::1'), 'Variant(IPv6, String)'), CAST('text', 'Variant(IPv6, String)'))
+        FROM numbers(2)"
+${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt.arrow', Arrow)"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT v, toTypeName(v) FROM file('${DATA}/rt.arrow', Arrow, 'v Variant(IPv6, String)') ORDER BY toString(v)"
+
+python3 - "${CLICKHOUSE_USER_FILES_UNIQUE}" <<'PY'
+import sys
+import pyarrow as pa
+import pyarrow.ipc as ipc
+
+out = sys.argv[1]
+tids = pa.array([0, 1, 0, 1], type=pa.int8())
+offs = pa.array([0, 0, 1, 1], type=pa.int32())
+fsb = pa.array([bytes(range(16)), b"\x00" * 15 + b"\x01"], type=pa.binary(16))
+
+
+def dense(children, names, offsets=offs):
+    return pa.UnionArray.from_dense(tids, offsets, children, names)
+
+
+def bool_int8():
+    return dense([pa.array([True, False]), pa.array([7, -8], type=pa.int8())], ["b", "i"])
+
+
+columns = {
+    # Substitution across signedness, plus the `Bool` / `UInt8` asymmetry: the `int8` branch is the only one
+    # that can take `UInt8`, which forces `Bool` onto the `bool` branch.
+    "bool_int8": bool_int8(),
+    # `Bool` is a custom-named `UInt8`, so the two compare equal and only their names tell them apart.
+    "bool_utf8": dense([pa.array([True, False]), pa.array(["x", "y"])], ["b", "s"]),
+    # A raw-byte branch: `fixed_size_binary(16)` reinterpreted as a big integer.
+    "fsb_utf8": dense([fsb, pa.array(["x", "y"])], ["f", "s"]),
+    # The same, dictionary-encoded, so the branch's values arrive from a DictionaryBatch.
+    "dict_fsb_utf8": dense(
+        [pa.DictionaryArray.from_arrays(pa.array([0, 1], type=pa.int32()), fsb), pa.array(["x", "y"])],
+        ["d", "s"]),
+    # A `binary` branch holding text: the raw-byte width sniff declines and the cast text-parses it.
+    "text_binary_int32": dense(
+        [pa.array([b"::1", b"1.2.3.4"], type=pa.binary()), pa.array([7, 8], type=pa.int32())], ["b", "i"]),
+    # A `date32` branch is excluded by design: whether a day number is range-checked, saturated or copied
+    # verbatim is decided inside the decoder, from a hint this post-decode repair cannot supply.
+    "date32_utf8": dense([pa.array([19000, 19001], type=pa.date32()), pa.array(["x", "y"])], ["d", "s"]),
+    # Both branches can only take `UInt8`, so any assignment would put two branches on one alternative.
+    "bool_uint8": dense([pa.array([True, False]), pa.array([7, 8], type=pa.uint8())], ["b", "i"]),
+    # A dense branch retaining a slot no row selects (the value 9, outside the requested `Enum8`). The
+    # trailing `null`-typed child keeps the total child row count at or below the union's, which is what
+    # makes the decoder keep the retained slot; a value-checking repair must not see it.
+    "retained": dense([pa.array([1, 9, 2], type=pa.int8()), pa.nulls(1)], ["i", "n"],
+                      offsets=pa.array([0, 0, 2, 0], type=pa.int32())),
+    # Neither branch prefers a requested alternative and both match both, so nothing is assigned.
+    "binary_fsb": dense([pa.array([b"aa", b"bb"], type=pa.binary()), fsb], ["b", "f"]),
+    # The Arrow child order differs from the sorted `Variant` order, so the repair must map local to global.
+    "utf8_int32": dense([pa.array(["x", "y"]), pa.array([1, 2], type=pa.int32())], ["s", "i"]),
+    "sparse": pa.UnionArray.from_sparse(
+        tids, [pa.array([True, False, True, False]), pa.array([1, 7, 3, -8], type=pa.int8())], ["b", "i"]),
+}
+columns["nested"] = pa.StructArray.from_arrays(
+    [bool_int8()], fields=[pa.field("v", bool_int8().type)])
+columns["listed"] = pa.ListArray.from_arrays(pa.array([0, 2, 3, 4, 4]), bool_int8())
+
+schema = pa.schema([pa.field(name, column.type) for name, column in columns.items()])
+batch = pa.record_batch(list(columns.values()), schema=schema)
+for fmt, factory in (("Arrow", ipc.new_file), ("ArrowStream", ipc.new_stream)):
+    with factory(f"{out}/unions.{fmt}", schema) as writer:
+        writer.write_batch(batch)
+PY
+
+# usage: read_column <column> <requested type> [format]
+read_column()
+{
+    ${CLICKHOUSE_CLIENT} --query \
+        "SELECT $1, toTypeName($1) FROM file('${DATA}/unions.${3:-Arrow}', '${3:-Arrow}', \$\$$1 $2\$\$)"
+}
+
+# usage: rejected <column> <requested type>; prints the reported conversion, not merely a failure
+rejected()
+{
+    ${CLICKHOUSE_CLIENT} --query \
+        "SELECT $1 FROM file('${DATA}/unions.Arrow', 'Arrow', \$\$$1 $2\$\$)" 2>&1 \
+        | grep -oE 'Cannot convert type [^.]+\.' | head -1
+}
+
+echo "--- union<bool, int8> as Variant(Bool, UInt8) ---"
+read_column bool_int8 'Variant(Bool, UInt8)'
+echo "--- union<bool, utf8> as Variant(UInt8, String): Bool and UInt8 differ only by name ---"
+read_column bool_utf8 'Variant(UInt8, String)'
+echo "--- union<fixed_size_binary(16), utf8> as Variant(Int128, String) ---"
+read_column fsb_utf8 'Variant(Int128, String)'
+for FORMAT in Arrow ArrowStream; do
+    echo "--- ${FORMAT}: union<dictionary<fixed_size_binary(16)>, utf8> as Variant(IPv6, String) ---"
+    read_column dict_fsb_utf8 'Variant(IPv6, String)' "$FORMAT"
+done
+echo "--- a binary branch holding text falls back to text parsing ---"
+read_column text_binary_int32 'Variant(IPv6, UInt32)'
+echo "--- a retained slot no row selects must not reach the Enum8 repair ---"
+read_column retained "Variant(Enum8('a' = 1, 'b' = 2))"
+echo "--- the Arrow child order need not be the sorted Variant order ---"
+read_column utf8_int32 'Variant(String, UInt32)'
+echo "--- a sparse union ---"
+read_column sparse 'Variant(Bool, UInt8)'
+echo "--- a union under a struct and under a list ---"
+read_column nested 'Tuple(v Variant(Bool, UInt8))'
+read_column listed 'Array(Variant(Bool, UInt8))'
+
+echo "--- a date32 branch is excluded by design, so this stays rejected ---"
+rejected date32_utf8 'Variant(Int32, String)'
+echo "--- two branches may never end up on one alternative ---"
+rejected bool_uint8 'Variant(UInt8, String)'
+echo "--- an ambiguous branch gets no alternative, so this stays rejected ---"
+rejected binary_fsb 'Variant(IPv6, Int128)'
+
+echo "--- schema inference has no requested type, so it is unaffected ---"
+${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/unions.Arrow', 'Arrow')"
+echo "--- and a request that merely extends the decoded Variant leaves every branch as decoded ---"
+read_column bool_int8 'Variant(Bool, Int8, String)'
