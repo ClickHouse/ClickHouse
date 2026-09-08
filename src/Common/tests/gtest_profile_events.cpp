@@ -131,7 +131,10 @@ TEST(ProfileEvents, EveryEventPropagatesWithoutAllocating)
 {
     struct PerCPUGuard
     {
-        ~PerCPUGuard() { ProfileEvents::setUserPerCPUEnabled(true); }
+        ~PerCPUGuard()
+        {
+            ProfileEvents::setUserPerCPUEnabled(true);
+        }
     } guard;
 
     for (bool per_cpu : {false, true})
