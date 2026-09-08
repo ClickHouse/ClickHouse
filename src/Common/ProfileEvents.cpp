@@ -365,6 +365,7 @@
     M(DuplicationDataHashComputations, "Number of column-wise data-hash computations performed while deduplicating INSERTed blocks to *MergeTree tables (cache misses in the unified deduplication hash).", ValueType::Number) \
     \
     M(ZooKeeperInit, "Number of times connection with ZooKeeper has been established.", ValueType::Number) \
+    M(ZooKeeperSessionEstablishAttempts, "Number of attempts to establish a ZooKeeper session on demand, successful or not, for the default and auxiliary keepers. Concurrent callers share one attempt, so this counts rounds rather than callers. Sessions created by a configuration reload are not counted here.", ValueType::Number) \
     M(ZooKeeperTransactions, "Number of ZooKeeper operations, which include both read and write operations as well as multi-transactions.", ValueType::Number) \
     M(ZooKeeperList, "Number of 'list' (getChildren) requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperListRecursive, "Number of 'listRecursive' requests to ZooKeeper.", ValueType::Number) \
