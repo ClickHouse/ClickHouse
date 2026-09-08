@@ -6,6 +6,20 @@ from helpers.database_disk import get_database_disk_name, replace_text_in_metada
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
+old_node = cluster.add_instance(
+    "old_node",
+    with_zookeeper=True,
+    image="clickhouse/clickhouse-server",
+    tag="26.8",
+    with_installed_binary=True,
+    macros={"replica": "old", "shard": "shard1"},
+)
+new_node = cluster.add_instance(
+    "new_node",
+    with_zookeeper=True,
+    stay_alive=True,
+    macros={"replica": "new", "shard": "shard1"},
+)
 
 
 @pytest.fixture(scope="module")
@@ -73,3 +87,44 @@ def test_legacy_nested_fixed_string_index_attaches(started_cluster):
         assert node.query(f"SELECT count() FROM {table}") == "2\n"
     finally:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_legacy_text_index_alter_replays_on_new_replica(started_cluster):
+    database = "legacy_text_index_alter_replay"
+    table = "t"
+    database_path = f"/clickhouse/databases/{database}"
+
+    for instance in (old_node, new_node):
+        instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+
+    try:
+        old_node.query(
+            f"CREATE DATABASE {database} ENGINE = Replicated('{database_path}', 'shard1', 'old')"
+        )
+        new_node.query(
+            f"CREATE DATABASE {database} ENGINE = Replicated('{database_path}', 'shard1', 'new')"
+        )
+        old_node.query(
+            f"CREATE TABLE {database}.{table} (t Array(Array(String))) "
+            "ENGINE = ReplicatedMergeTree ORDER BY tuple()"
+        )
+        new_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+        new_node.query(f"SYSTEM SYNC REPLICA {database}.{table}")
+
+        new_node.stop_clickhouse()
+        try:
+            old_node.query(
+                f"ALTER TABLE {database}.{table} "
+                "ADD INDEX idx t TYPE text(tokenizer = 'splitByNonAlpha')",
+                settings={"distributed_ddl_task_timeout": 0},
+            )
+        finally:
+            new_node.start_clickhouse()
+
+        new_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}", timeout=60)
+        assert "INDEX idx t TYPE text" in new_node.query(
+            f"SHOW CREATE TABLE {database}.{table}"
+        )
+    finally:
+        for instance in (old_node, new_node):
+            instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")

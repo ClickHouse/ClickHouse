@@ -1889,7 +1889,10 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+
+    /// This metadata comes from a committed ReplicatedMergeTree queue entry. The initiating replica
+    /// already validated it, so a newer follower must load it compatibly during a rolling upgrade.
+    setProperties(new_metadata, old_metadata, /*attach=*/true, local_context);
 
     try
     {

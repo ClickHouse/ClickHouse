@@ -6043,7 +6043,17 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
+    /// A follower replays metadata that the initiating replica already validated. Treat it like an
+    /// attach for compatibility checks so a newer replica can apply an ALTER committed by an older
+    /// version during a rolling upgrade.
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        /*attach=*/is_replay_on_another_replica,
+        /*allow_empty_sorting_key=*/false,
+        allow_nullable_key,
+        local_context,
+        alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
