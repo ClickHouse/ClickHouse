@@ -5,12 +5,22 @@ from ci.defs.defs import (
     BINARIES_WITH_LONG_RETENTION,
     DOCKERS,
     GH_AUTH_TRUSTED_LAMBDA_NAME,
+    LOOM_SECRETS,
     SECRETS,
     ArtifactConfigs,
 )
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.workflows.pull_request import REGULAR_BUILD_NAMES
+
+# On master the plain (non-sanitizer) stateless suite runs against the optimized
+# release binary instead of the plain `binary` build that PRs use. Drop the
+# `arm_binary` jobs from `functional_tests_jobs` and add the `arm_release` and
+# `amd_release` full-suite jobs. The `amd_release` full suite also supersedes the
+# `amd_binary` excluded-from-llvm job, which is therefore not run on master.
+MASTER_FUNCTIONAL_TESTS_JOBS = [
+    job for job in JobConfigs.functional_tests_jobs if "arm_binary" not in job.name
+] + JobConfigs.functional_tests_master_release_jobs
 
 # Add long retention tags to subset of artifacts
 clickhouse_binaries_with_tags = []
@@ -23,6 +33,7 @@ workflow = Workflow.Config(
     name="MasterCI",
     event=Workflow.Event.PUSH,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
@@ -35,15 +46,15 @@ workflow = Workflow.Config(
             )
             for job in JobConfigs.special_build_jobs
         ],
+        *JobConfigs.wasm_parser_build_jobs,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
         *JobConfigs.compatibility_test_jobs,
-        *JobConfigs.functional_tests_jobs,
+        *MASTER_FUNCTIONAL_TESTS_JOBS,
         *JobConfigs.functional_test_llvm_coverage_jobs,
-        *JobConfigs.functional_test_excluded_from_llvm_job,
         *JobConfigs.functional_tests_jobs_azure,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
@@ -59,15 +70,18 @@ workflow = Workflow.Config(
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
+        JobConfigs.docs_examples_job,
         JobConfigs.llvm_coverage_job,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *clickhouse_binaries_with_tags,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.clickhouse_wasm,
+        ArtifactConfigs.wasm_parser,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.clickhouse_examples,
@@ -77,7 +91,7 @@ workflow = Workflow.Config(
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
     set_latest_for_docker_merged_manifest=True,
-    secrets=SECRETS,
+    secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
@@ -88,6 +102,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/merge_sync_pr.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/loom_code_refresh.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

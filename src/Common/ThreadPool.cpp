@@ -680,6 +680,17 @@ void ThreadPoolImpl<Thread>::wait()
 }
 
 template <typename Thread>
+bool ThreadPoolImpl<Thread>::waitUntil(std::chrono::steady_clock::time_point deadline)
+{
+    Stopwatch watch;
+    std::unique_lock lock(mutex);
+    ProfileEvents::increment(
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+        watch.elapsedMicroseconds());
+    return job_finished.wait_until(lock, deadline, [this] { return scheduled_jobs == 0; });
+}
+
+template <typename Thread>
 ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
     /// Note: should not use logger from here,

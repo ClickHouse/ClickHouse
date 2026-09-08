@@ -66,7 +66,7 @@ TEST(CascadesPartialTopNCost, GatherPricedOnPhysicalRowsOfSelectedChild)
     auto leaf_group_id = memo.addGroup(leaf);
     auto leaf_group = memo.getGroup(leaf_group_id);
     leaf_group->statistics = makeStats(input_rows, bytes_per_row);
-    leaf_group->updateBestImplementation(leaf, memo.getEnvironment().cost_config);
+    leaf_group->updateBestImplementation(leaf, memo.getContext().cost_config);
 
     /// Partial top-N: bounded sort with limit L on each of the 4 nodes.
     auto partial_step = std::make_unique<SortingStep>(header, makeSortDescription(), limit, SortingStep::Settings(65000));
@@ -84,7 +84,7 @@ TEST(CascadesPartialTopNCost, GatherPricedOnPhysicalRowsOfSelectedChild)
     /// Costing the partial records its physical output: min(10000, 100 * 4) = 400.
     ASSERT_TRUE(partial->physical_output_rows.has_value());
     EXPECT_DOUBLE_EQ(*partial->physical_output_rows, limit * node_count);
-    partial_group->updateBestImplementation(partial, memo.getEnvironment().cost_config);
+    partial_group->updateBestImplementation(partial, memo.getContext().cost_config);
 
     /// Sorted gather over the partial: its group statistics also say L, but the transfer
     /// must be priced on the 400 physical rows of the selected child.
@@ -118,7 +118,7 @@ TEST(CascadesPartialTopNCost, PhysicalRowsClampedByInput)
     leaf->cost = ExpressionCost{};
     auto leaf_group_id = memo.addGroup(leaf);
     memo.getGroup(leaf_group_id)->statistics = makeStats(input_rows, 10);
-    memo.getGroup(leaf_group_id)->updateBestImplementation(leaf, memo.getEnvironment().cost_config);
+    memo.getGroup(leaf_group_id)->updateBestImplementation(leaf, memo.getContext().cost_config);
 
     auto partial_step = std::make_unique<SortingStep>(header, makeSortDescription(), limit, SortingStep::Settings(65000));
     partial_step->setPartialTopN();
@@ -148,7 +148,7 @@ TEST(CascadesUnbuildableExpression, UnsatisfiableInputMarksCostUnbuildable)
     auto leaf_group_id = memo.addGroup(leaf);
     auto leaf_group = memo.getGroup(leaf_group_id);
     leaf_group->statistics = makeStats(100, 10);
-    leaf_group->updateBestImplementation(leaf, memo.getEnvironment().cost_config);
+    leaf_group->updateBestImplementation(leaf, memo.getContext().cost_config);
 
     /// A gather whose input demands the leaf at 4 nodes: no such implementation exists.
     auto unbuildable = std::make_shared<GroupExpression>(

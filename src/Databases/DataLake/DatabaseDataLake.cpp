@@ -281,6 +281,22 @@ void DatabaseDataLake::initialize() const
                 Context::getGlobalContextInstance());
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+        {
+            /// Snowflake Horizon embeds Polaris and speaks Iceberg REST, but authenticates with
+            /// PAT/JWT as OAuth client_secret (optionally without client_id) and scope
+            /// `session:role:<ROLE>`. `HorizonCatalog` accepts bare secrets as credentials.
+            catalog_impl = std::make_shared<DataLake::HorizonCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::auth_scope].value,
+                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
+                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
             /// The default `auth_scope` value targets Iceberg REST catalogs; for OneLake the
@@ -509,6 +525,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
         case DatabaseDataLakeCatalogType::S3_TABLES:
         case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
+        case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
         {
             switch (type)
             {
@@ -1493,6 +1510,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
             case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
+            case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
@@ -1500,6 +1518,37 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
                                     "To allow its usage, enable setting allow_database_iceberg");
+                }
+
+                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)
+                {
+                    const bool has_credential = !database_settings[DatabaseDataLakeSetting::catalog_credential].value.empty();
+                    const bool has_auth_header = !database_settings[DatabaseDataLakeSetting::auth_header].value.empty();
+                    if (has_credential == has_auth_header)
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Horizon catalog requires exactly one authentication method: "
+                            "`catalog_credential` (PAT or key-pair JWT) "
+                            "or `auth_header` (Authorization: Bearer <token>)");
+                    }
+
+                    /// Horizon scopes are Snowflake session roles, not Polaris principal roles.
+                    const auto & scope = database_settings[DatabaseDataLakeSetting::auth_scope].value;
+                    if (!has_auth_header && !scope.starts_with("session:role:"))
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Horizon catalog with `catalog_credential` requires `auth_scope` in the form "
+                            "`session:role:<ROLE>` (got '{}'). When using a pre-exchanged bearer token via "
+                            "`auth_header`, scope is optional",
+                            scope);
+                    }
+
+                    if (database_settings[DatabaseDataLakeSetting::warehouse].value.empty())
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Horizon catalog requires `warehouse` set to the Snowflake database name "
+                            "(usually uppercase, e.g. ICEBERG_TEST_DB)");
+                    }
                 }
 
                 if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
@@ -1700,7 +1749,7 @@ The following settings are supported:
 
 | Setting                 | Description                                                                             |
 |-------------------------|-----------------------------------------------------------------------------------------|
-| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces) |
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |

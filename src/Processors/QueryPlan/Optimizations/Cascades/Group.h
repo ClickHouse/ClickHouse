@@ -37,8 +37,9 @@ public:
         : group_id(group_id_)
     {}
 
-    void addLogicalExpression(GroupExpressionPtr group_expression);
-    /// Returns true if the expression was inserted, false if an equal expression already exists.
+    /// Both return true if the expression was inserted, false if an equal expression already
+    /// exists in the group (the duplicate is dropped).
+    bool addLogicalExpression(GroupExpressionPtr group_expression);
     bool addPhysicalExpression(GroupExpressionPtr group_expression);
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
@@ -97,6 +98,7 @@ private:
     /// a hit is dropped only when an existing expression is structurally equal, so a genuine
     /// hash collision keeps both alternatives instead of silently discarding one.
     std::unordered_map<size_t, std::vector<GroupExpression *>> physical_expressions_by_fingerprint;
+    std::unordered_map<size_t, std::vector<GroupExpression *>> logical_expressions_by_fingerprint;
 
     /// Encode (node_count, is_replicated) into a single key for best_implementations lookup.
     static UInt64 distributionKey(const DistributionDescription & distribution)

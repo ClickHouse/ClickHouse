@@ -17,7 +17,7 @@ O servidor ClickHouse pode ser configurado com arquivos de configuração em sin
 Na maioria dos tipos de instalação, o servidor ClickHouse usa `/etc/clickhouse-server/config.xml` como arquivo de configuração padrão, mas também é possível especificar manualmente o local do arquivo de configuração na inicialização do servidor usando a opção de linha de comando `--config-file` ou `-C`.
 Arquivos de configuração adicionais podem ser colocados no diretório `config.d/`, relativo ao arquivo de configuração principal, por exemplo no diretório `/etc/clickhouse-server/config.d/`.
 Os arquivos desse diretório e a configuração principal são mesclados em uma etapa de pré-processamento antes de a configuração ser aplicada no servidor ClickHouse.
-Os arquivos de configuração são mesclados em ordem alfabética.
+Os fragmentos de configuração são mesclados em ordem lexicográfica por seus caminhos completos. Para arquivos no diretório padrão `config.d/`, isso equivale a ordená-los pelo nome do arquivo. O diretório legado `conf.d/` também é mesclado; como `conf.d` é ordenado antes de `config.d`, todos os seus fragmentos são processados primeiro quando ambos os diretórios existem.
 Para simplificar atualizações e melhorar a modularização, é uma prática recomendada manter o arquivo padrão `config.xml` sem alterações e colocar personalizações adicionais em `config.d/`.
 A configuração do ClickHouse Keeper fica em `/etc/clickhouse-keeper/keeper_config.xml`.
 Da mesma forma, arquivos de configuração adicionais do Keeper precisam ser colocados em `/etc/clickhouse-keeper/keeper_config.d/`.
@@ -330,6 +330,7 @@ O arquivo `config.xml` pode especificar uma configuração separada com configur
 A configuração de usuário pode ser dividida em arquivos separados, assim como em `config.xml` e `config.d/`.
 O nome do diretório é definido pela configuração `users_config`, sem o sufixo `.xml`, concatenado com `.d`.
 O diretório `users.d` é usado por padrão, já que `users_config` tem como padrão `users.xml`.
+Os fragmentos de configuração de usuário são mesclados em ordem lexicográfica por seus caminhos completos. Para arquivos no diretório padrão `users.d/`, isso equivale a ordená-los pelo nome do arquivo. O diretório legado `conf.d/` também é mesclado; como `conf.d` é ordenado antes de `users.d`, todos os seus fragmentos são processados primeiro quando ambos os diretórios existem.
 
 Observe que os arquivos de configuração primeiro são [mesclados](#merging), levando em conta as configurações, e as inclusões são processadas depois disso.
 
