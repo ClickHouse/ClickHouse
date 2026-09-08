@@ -28,7 +28,7 @@ SELECT sum(k) FROM
     UNION ALL
     SELECT k FROM t_qrc_union_isolation WHERE k IN (SELECT k FROM t_qrc_union_isolation WHERE k >= 8 SETTINGS use_query_cache = 1)
 )
-SETTINGS log_comment = '05060_union_branch_isolation';
+SETTINGS log_comment = '05141_union_branch_isolation';
 
 SYSTEM FLUSH LOGS query_log;
 -- The cacheable subquery of the second branch must probe the cache (a hit or a miss, depending on
@@ -38,7 +38,7 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND is_initial_query
-    AND log_comment = '05060_union_branch_isolation';
+    AND log_comment = '05141_union_branch_isolation';
 
 DROP TABLE t_qrc_union_isolation;
 SYSTEM DROP QUERY CACHE;
