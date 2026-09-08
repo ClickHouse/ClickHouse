@@ -1,4 +1,5 @@
 import glob
+import io
 import os
 import platform
 import shlex
@@ -13,10 +14,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import List
 
+from ci.jobs.scripts import log_export
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
-from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -25,20 +26,6 @@ repo_dir = Utils.cwd()
 temp_dir = f"{repo_dir}/ci/tmp"
 p_temp_dir = Path(temp_dir)
 
-LOG_EXPORT_CONFIG_TEMPLATE = """
-remote_servers:
-    {CLICKHOUSE_CI_LOGS_CLUSTER}:
-        shard:
-            replica:
-                secure: 1
-                user: '{CLICKHOUSE_CI_LOGS_USER}'
-                host: '{CLICKHOUSE_CI_LOGS_HOST}'
-                port: 9440
-                password: '{CLICKHOUSE_CI_LOGS_PASSWORD}'
-"""
-CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
-CLICKHOUSE_CI_LOGS_USER = "ci"
-
 
 class ClickHouseProc:
     SEAWEEDFS_LOG = f"{temp_dir}/seaweedfs.log"
@@ -46,6 +33,7 @@ class ClickHouseProc:
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
+    DMESG_AT_COLLECT_LOG = f"{temp_dir}/dmesg.at-collect.log"
     # TODO: run servers in  dedicated wds to keep trash localised
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
@@ -64,12 +52,14 @@ class ClickHouseProc:
         is_db_replicated=False,
         is_shared_catalog=False,
         is_per_test_coverage=False,
+        is_llvm_coverage=False,
         ch_config_dir="/etc/clickhouse-server",
         ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
         self.is_per_test_coverage = is_per_test_coverage
+        self.is_llvm_coverage = is_llvm_coverage
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
@@ -334,7 +324,6 @@ class ClickHouseProc:
             )
 
     def create_log_export_config(self, config_dir=None):
-        print("Create log export config")
         # Write into the config dir the server actually reads. Callers that run
         # the server from a non-default location (e.g. `ClickHouseService` under
         # `ci/tmp/etc/clickhouse-server`) must pass it explicitly, otherwise the
@@ -342,65 +331,21 @@ class ClickHouseProc:
         # the server starts without it, failing replication setup with `Code:
         # 701. Requested cluster 'system_logs_export' not found`.
         config_dir = config_dir or self.ch_config_dir
-        config_file = Path(config_dir) / "config.d" / "system_logs_export.yaml"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-
-        self.log_export_host, self.log_export_password = (
-            Secret.Config(
-                name="clickhouse_ci_logs_host",
-                type=Secret.Type.AWS_SSM_PARAMETER,
-                region="us-east-1",
-            )
-            .join_with(
-                Secret.Config(
-                    name="clickhouse_ci_logs_password",
-                    type=Secret.Type.AWS_SSM_PARAMETER,
-                    region="us-east-1",
-                )
-            )
-            .get_value()
+        self.log_export_host, self.log_export_password = log_export.get_credentials()
+        return log_export.create_config(
+            config_dir, self.log_export_host, self.log_export_password
         )
-
-        config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
-            CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
-            CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
-            CLICKHOUSE_CI_LOGS_USER=CLICKHOUSE_CI_LOGS_USER,
-            CLICKHOUSE_CI_LOGS_PASSWORD=self.log_export_password,
-        )
-
-        with open(config_file, "w") as f:
-            f.write(config_content)
-        return True
 
     def start_log_exports(self, check_start_time):
-        print("Start log export")
-        if self.log_export_host:
-            os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
-            os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
-            os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
-            os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
-        info = Info()
-        os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
-            f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
-        )
-
-        return Shell.check(
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
-            verbose=True,
+        return log_export.start(
+            check_start_time,
+            host=self.log_export_host,
+            password=self.log_export_password,
         )
 
     @staticmethod
     def stop_log_exports():
-        # Flush any buffered system-log records so the final queries are
-        # exported before the replication views are detached.
-        Shell.check(
-            'clickhouse-client --query "SYSTEM FLUSH LOGS"',
-            verbose=True,
-        )
-        return Shell.check(
-            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
-            verbose=True,
-        )
+        return log_export.stop()
 
     def start(self, replica_num=0):
         if replica_num == 0:
@@ -603,6 +548,30 @@ class ClickHouseProc:
     # Grace period between the TERM the bound sends and the KILL that follows,
     # so a client that ignores TERM is still bounded.
     PREP_STEP_KILL_AFTER_S = 60
+    # TERM deadline for one all-thread backtrace capture (seconds).
+    STACK_CAPTURE_TIMEOUT_S = 300
+
+    def _capture_server_stacks(self, tag):
+        """Write an all-thread backtrace of each running server into `log_dir`.
+
+        A wedged server cannot report its own threads: `system.stack_trace`
+        needs a responsive server and the fault handler needs the machinery the
+        wedge has already stopped. An external debugger needs neither.
+        """
+        for pid in (self.pid_0, self.pid_1, self.pid_2):
+            if not pid:
+                continue
+            # gdb exits 0 even when the attach is refused, so its stderr goes
+            # into the same file: the artifact explains its own emptiness.
+            out = f"{self.log_dir}/{tag}-stacks-{pid}.log"
+            Shell.check(
+                f"timeout --verbose --signal=TERM"
+                f" --kill-after={self.PREP_STEP_KILL_AFTER_S}"
+                f" {self.STACK_CAPTURE_TIMEOUT_S}"
+                f" gdb -batch -ex 'thread apply all backtrace' -p {pid}"
+                f" > {out} 2>&1",
+                verbose=True,
+            )
 
     @classmethod
     def prep_timeout_prefix(cls, step_timeout):
@@ -637,6 +606,10 @@ class ClickHouseProc:
         is_sanitizer = any(
             san in sanitizer_source for san in ("asan", "tsan", "msan", "ubsan")
         )
+        # Attaching a debugger to an ASan build disables LeakSanitizer, so the
+        # capture below is skipped there. Both in-tree ubsan build names contain
+        # "asan"; the alternative only covers names outside this repository's defs.
+        is_asan = any(san in sanitizer_source for san in ("asan", "ubsan"))
         max_insert_threads = 4 if is_sanitizer else 16
         command = """
 set -e
@@ -702,17 +675,25 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
         log_file = f"{temp_dir}/prepare_stateful_data.log"
         rc = Shell.run(command, log_file=log_file, verbose=True)
         if rc != 0:
-            tail = ""
+            log_text = ""
             try:
                 with open(log_file, errors="ignore") as f:
-                    tail = "".join(f.readlines()[-15:]).strip()
+                    log_text = f.read()
             except OSError:
                 pass
+            tail = "".join(io.StringIO(log_text).readlines()[-15:]).strip()
             self.stateful_setup_error = (
                 f"stateful data prep failed (exit {rc})"
                 + (f": {tail}" if tail else "")
             )
             print(f"ERROR: {self.stateful_setup_error}")
+            if self._timeout_wrapper_expired(rc, log_text):
+                if is_asan:
+                    print(
+                        "Cannot collect C stacktraces under ASan: debugger attach is disabled."
+                    )
+                else:
+                    self._capture_server_stacks("stateful-prep")
         return rc == 0
 
     def insert_system_zookeeper_config(self):
@@ -872,8 +853,20 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
                     res.append(self.KAFKA_LOG)
-                if Path(self.DMESG_LOG).exists():
-                    res.append(self.DMESG_LOG)
+                # `start` clears the ring buffer, so a dump after it holds only
+                # this server generation; before `start` it can hold earlier
+                # host lines. The OOM check grades the file it writes.
+                dmesg_target = (
+                    self.DMESG_AT_COLLECT_LOG
+                    if Path(self.DMESG_LOG).exists()
+                    else self.DMESG_LOG
+                )
+                if not Shell.check(f"dmesg > {dmesg_target}", verbose=True):
+                    print("WARNING: dmesg not enabled")
+                    Path(dmesg_target).unlink(missing_ok=True)
+                for dmesg_log in (self.DMESG_LOG, self.DMESG_AT_COLLECT_LOG):
+                    if Path(dmesg_log).exists():
+                        res.append(dmesg_log)
                 if Path(self.CH_LOCAL_ERR_LOG).exists():
                     res.append(self.CH_LOCAL_ERR_LOG)
                 if Path(self.CH_LOCAL_LOG).exists():
@@ -950,8 +943,7 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: Coordination logs not found")
             return []
 
-    @classmethod
-    def _get_jemalloc_profiles(cls):
+    def _get_jemalloc_profiles(self):
         profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
         if not profiles:
             return []
@@ -979,42 +971,57 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
-        # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
-        # addresses in the profile, and on a coverage build a single jeprof run has taken over an
-        # hour, timing the whole job out here, long after every test had finished (the sibling
-        # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
-        # artifact of the job, not its result, so give them up rather than the job.
-        deadline = time.time() + cls.JEMALLOC_SYMBOLIZATION_BUDGET
+        if self.is_llvm_coverage:
+            # Rendering is skipped, not the archiving below, so the raw .heap
+            # profiles still ship and can be rendered offline.
+            print(
+                f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s) on an LLVM-coverage build"
+            )
+        else:
+            # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
+            # addresses in the profile, and on a coverage build a single jeprof run has taken over an
+            # hour, timing the whole job out here, long after every test had finished (the sibling
+            # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
+            # artifact of the job, not its result, so give them up rather than the job.
+            deadline = time.time() + self.JEMALLOC_SYMBOLIZATION_BUDGET
 
-        chbinary = Shell.get_output("readlink -f $(which clickhouse)")
-        for pid, profile in latest_profiles.items():
-            budget = int(deadline - time.time())
-            if budget <= 0:
-                print(f"WARNING: Out of time to symbolize the profile of process {pid}")
-                continue
+            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+            for pid, profile in latest_profiles.items():
+                budget = int(deadline - time.time())
+                if budget <= 0:
+                    print(
+                        f"WARNING: Out of time to symbolize the profile of process {pid}"
+                    )
+                    continue
 
-            text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
-            if not Shell.check(
-                f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
-                verbose=True,
-            ):
-                print(f"WARNING: Failed to symbolize {profile}, dropping {text_report}")
-                Path(text_report).unlink(missing_ok=True)
+                text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
+                if not Shell.check(
+                    f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
+                    verbose=True,
+                ):
+                    print(
+                        f"WARNING: Failed to symbolize {profile}, dropping {text_report}"
+                    )
+                    Path(text_report).unlink(missing_ok=True)
 
-            budget = int(deadline - time.time())
-            if budget <= 0:
-                print(f"WARNING: Out of time to build the flamegraph of process {pid}")
-                continue
+                budget = int(deadline - time.time())
+                if budget <= 0:
+                    print(
+                        f"WARNING: Out of time to build the flamegraph of process {pid}"
+                    )
+                    continue
 
-            flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
-            # The whole pipeline is under the timeout: killing jeprof alone would leave
-            # flamegraph.pl to write a truncated graph out of what it had received.
-            if not Shell.check(
-                f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
-                verbose=True,
-            ):
-                print(f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}")
-                Path(flamegraph).unlink(missing_ok=True)
+                flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
+                # The whole pipeline is under the timeout: killing jeprof alone would leave
+                # flamegraph.pl to write a truncated graph out of what it had received.
+                if not Shell.check(
+                    f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
+                    verbose=True,
+                ):
+                    print(
+                        f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}"
+                    )
+                    Path(flamegraph).unlink(missing_ok=True)
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
@@ -1212,12 +1219,17 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
     # after --kill-after; it proves a 137 came from the wrapper itself rather
     # than from an external/OOM SIGKILL of `clickhouse local`.
     _TIMEOUT_KILL_DIAG = "sending signal KILL to command"
+    # The same, for the initial SIGTERM. 124 is also the ClickHouse error code
+    # `INCORRECT_ELEMENT_OF_SET`, so the code alone proves nothing. Quote-free
+    # on purpose: `timeout` quotes the command name locale-dependently.
+    _TIMEOUT_TERM_DIAG = "sending signal TERM to command"
 
     def _timeout_wrapper_expired(self, res, stderr):
-        # 124: the child died on timeout's initial SIGTERM - always an expiry.
-        # 137 (128+9): any SIGKILL death; trust it as an expiry only when
-        # timeout's own KILL diagnostic is present in stderr.
-        return res == 124 or (res == 137 and self._TIMEOUT_KILL_DIAG in stderr)
+        # Both codes are ambiguous on their own (137 is any SIGKILL death), so
+        # each is trusted only alongside timeout's own diagnostic.
+        return (res == 124 and self._TIMEOUT_TERM_DIAG in stderr) or (
+            res == 137 and self._TIMEOUT_KILL_DIAG in stderr
+        )
 
     def _annotate_timeout(self, res, stderr):
         # Prepend the "timed out" annotation only to proven wrapper expiries,
@@ -1492,6 +1504,12 @@ if __name__ == "__main__":
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                # This command runs in a process of its own, so it holds none of the
+                # credentials `logs_export_config` fetched, and `setup_log_cluster.sh`
+                # creates no `_sender` table without them.
+                ch.log_export_host, ch.log_export_password = (
+                    log_export.get_credentials()
+                )
                 res = ch.start_log_exports(check_start_time=Utils.timestamp())
             else:
                 res = True

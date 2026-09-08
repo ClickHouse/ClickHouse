@@ -1562,8 +1562,18 @@ static QueryPlanNode buildPhysicalJoinImpl(
             table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
         }
         if (found_asof_predicate_it == join_expression.end())
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
-                formatJoinCondition(join_expression));
+        {
+            /// The equality predicates have already been taken out of `join_expression` by the loop above,
+            /// so for the common mistake - `ASOF JOIN ... ON l.a = r.a`, with no inequality at all - what is
+            /// left to print is nothing, and the message used to end in ", in .".
+            const auto remaining_condition = formatJoinCondition(join_expression);
+            /// Equality predicates are optional for an ASOF join, so mention them only when there are some.
+            const bool has_equality_keys = table_join_clauses.front().keysCount() != 0;
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "ASOF join requires one inequality predicate (<, <=, > or >=) in the JOIN ON expression{}{}",
+                has_equality_keys ? ", in addition to the equality predicates" : "",
+                remaining_condition.empty() ? "" : fmt::format(", but only found: {}", remaining_condition));
+        }
 
         join_expression.erase(found_asof_predicate_it);
     }
@@ -1580,10 +1590,19 @@ static QueryPlanNode buildPhysicalJoinImpl(
             used_expressions.push_back(left_pre_filter_condition);
         }
 
-        if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
+        /// A `StorageJoin` right side is a prebuilt join read by stored column name rather than a
+        /// stream, so no query-specific filter can be evaluated over it. The other two terms negate
+        /// `build_mixed_join_expression` below, so such a condition becomes a post-join filter.
+        const bool right_condition_is_applied_after_join
+            = prepared_join_storage.storage_join && !is_disjunctive_condition && canPushDownFromOn(join_operator);
+
+        if (!right_condition_is_applied_after_join)
         {
-            table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-            used_expressions.push_back(right_pre_filter_condition);
+            if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
+            {
+                table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+                used_expressions.push_back(right_pre_filter_condition);
+            }
         }
     }
 

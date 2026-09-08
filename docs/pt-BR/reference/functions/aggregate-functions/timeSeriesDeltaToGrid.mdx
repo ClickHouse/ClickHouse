@@ -16,6 +16,8 @@ Introduzido em: v25.6.0
 Função de agregação que recebe dados de séries temporais na forma de pares de timestamps e valores e calcula o [delta no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) desses dados em uma grade de tempo regular definida pelo timestamp inicial, timestamp final e passo.
 Para cada ponto da grade, as amostras usadas para calcular `delta` são consideradas dentro da janela de tempo especificada.
 
+Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto, um valor NaN é usado somente se todas as amostras nesse timestamp forem NaN.
+
 <Warning>
   Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
@@ -69,7 +71,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,7 +92,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                   │
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                    │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
