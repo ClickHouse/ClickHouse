@@ -281,11 +281,8 @@ private:
     struct Data
     {
         detail::RuntimeFilterBuildState build_state;
-        const DataTypePtr filter_column_target_type;
         Filter filter;
         bool index_analysis_enabled = false;
-        bool range_supported = false;
-        bool range_positive = true;
         bool has_range = false;
         Field range_min{};
         Field range_max{};
@@ -297,9 +294,7 @@ private:
         using FilterType = std::decay_t<FilterImpl>;
         Data result{
             detail::RuntimeFilterBuildState(FilterType::is_prebuilt ? 0 : filters_to_merge, FilterType::is_prebuilt),
-            filter.getTargetType(),
             Filter(std::forward<FilterImpl>(filter))};
-        result.range_positive = !std::is_same_v<FilterType, ExactNotContains>;
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
             result.index_analysis_enabled = true;
@@ -345,13 +340,17 @@ public:
     void enableIndexAnalysis();
     ColumnPtr getRecordedKeyValues() const;
     std::optional<Range> getRecordedKeyRanges() const;
-    DataTypePtr getFilterColumnTargetType() const;
+    DataTypePtr getFilterColumnTargetType() const { return filter_column_target_type; }
 
     /// Usage statistics
     const RuntimeFilterStats & getStats() const { return evaluation_state.getStats(); }
     const RuntimeFilterConfig & getConfig() const { return evaluation_state.getConfig(); }
 
 private:
+    const DataTypePtr filter_column_target_type;
+    const bool range_supported;
+    const bool range_positive;
+
     RuntimeFilterEvaluationState evaluation_state;
     MutexProtected<Data> data;
 };

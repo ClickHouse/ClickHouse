@@ -649,13 +649,17 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & 
 }
 
 RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
-    : evaluation_state(std::move(config_))
+    : filter_column_target_type(std::visit([](const auto & filter) { return filter.getTargetType(); }, data_.filter))
+    , range_supported(typeSupportsMinMaxRange(filter_column_target_type))
+    , range_positive(!std::holds_alternative<ExactNotContains>(data_.filter))
+    , evaluation_state(std::move(config_))
     , data(std::move(data_))
 {
-    auto filter_data = data.getWriteEnabled();
-    filter_data->range_supported = typeSupportsMinMaxRange(filter_data->filter_column_target_type);
-    if (!filter_data->range_supported)
+    if (!range_supported)
+    {
+        auto filter_data = data.getWriteEnabled();
         filter_data->has_range = false;
+    }
 }
 
 void RuntimeFilter::insert(ColumnPtr values)
@@ -668,7 +672,7 @@ void RuntimeFilter::insert(ColumnPtr values)
             if constexpr (!FilterType::is_prebuilt)
             {
                 filter_data->build_state.assertCanInsert();
-                if (filter_data->index_analysis_enabled && filter_data->range_supported && filter_data->range_positive && !values->empty())
+                if (filter_data->index_analysis_enabled && range_supported && range_positive && !values->empty())
                 {
                     Field column_min;
                     Field column_max;
@@ -737,8 +741,7 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
                 if constexpr (!DestinationFilter::is_prebuilt)
                     destination_data->build_state.assertCanMerge();
                 destination_filter.mergeFrom(source_filter);
-                if (destination_data->index_analysis_enabled && destination_data->range_supported && destination_data->range_positive
-                    && source_data->has_range)
+                if (destination_data->index_analysis_enabled && range_supported && range_positive && source_data->has_range)
                     extendRange(
                         destination_data->has_range,
                         destination_data->range_min,
@@ -766,25 +769,24 @@ void RuntimeFilter::enableIndexAnalysis()
 
 ColumnPtr RuntimeFilter::getRecordedKeyValues() const
 {
+    if (!range_positive)
+        return nullptr;
+
     auto filter_data = data.getReadOnly();
-    if (!filter_data->index_analysis_enabled || !filter_data->range_positive || !filter_data->build_state.isFinished())
+    if (!filter_data->index_analysis_enabled || !filter_data->build_state.isFinished())
         return nullptr;
     return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, filter_data->filter);
 }
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
 {
+    if (!range_supported || !range_positive)
+        return {};
+
     auto filter_data = data.getReadOnly();
-    if (!filter_data->range_supported || !filter_data->range_positive || !filter_data->has_range || !filter_data->build_state.isFinished()
-        || filter_data->range_min.isNull() || filter_data->range_max.isNull())
+    if (!filter_data->has_range || !filter_data->build_state.isFinished() || filter_data->range_min.isNull() || filter_data->range_max.isNull())
         return {};
     return Range(filter_data->range_min, true, filter_data->range_max, true);
-}
-
-DataTypePtr RuntimeFilter::getFilterColumnTargetType() const
-{
-    auto filter_data = data.getReadOnly();
-    return filter_data->filter_column_target_type;
 }
 
 template class ExactSetRuntimeFilter<false>;
