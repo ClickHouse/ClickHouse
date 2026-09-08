@@ -669,7 +669,10 @@ def test_url_writes_to_archive_paths():
 
 
 def test_url_archive_path_braces_are_expanded_without_index_listing():
-    settings = {"allow_experimental_url_wildcard_from_index_pages": 0}
+    settings = {
+        "allow_experimental_url_wildcard_from_index_pages": 0,
+        "glob_expansion_max_elements": 2,
+    }
     source = "http://resolver:8087/data/archive_braces/{a,b}.zip :: value.tsv"
 
     assert node1.query(
@@ -688,6 +691,15 @@ def test_url_archive_path_braces_are_expanded_without_index_listing():
         settings=settings,
     )
     assert "No such file: data/archive_braces/missing.zip" in error
+
+    oversized_source = "http://resolver:8087/data/archive_braces/archive{000000..999999}.zip :: value.tsv"
+    queries = [
+        f"SELECT * FROM url('{oversized_source}', 'TSV', 'x UInt64')",
+        f"SELECT * FROM urlCluster('test_cluster_two_shards', '{oversized_source}', 'TSV', 'x UInt64')",
+    ]
+    for query in queries:
+        error = node1.query_and_get_error(query, settings=settings)
+        assert "first argument generates too many result addresses" in error
 
 
 def test_url_cluster_archive_processing_modes_do_not_duplicate_members():

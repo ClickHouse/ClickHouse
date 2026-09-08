@@ -58,6 +58,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
+#include <Common/parseRemoteDescription.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
@@ -465,7 +466,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     if (match_web_paths_only && reading_path.path.find_first_of("*?") == String::npos)
     {
         const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
-        const auto expanded_paths = reading_path.hasGlobs() ? expandSelectionGlob(reading_path.path) : Strings{reading_path.path};
+        const auto expanded_paths = reading_path.hasGlobs()
+            ? parseRemoteDescription(
+                reading_path.path,
+                0,
+                reading_path.path.size(),
+                ',',
+                query_settings.list_object_keys_size,
+                "url")
+            : Strings{reading_path.path};
 
         RelativePathsWithMetadata indexed_paths;
         indexed_paths.reserve(web_object_storage.getURLShards().size() * expanded_paths.size());
