@@ -33,7 +33,6 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
