@@ -1539,7 +1539,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         /// stream, so no query-specific filter can be evaluated over it. The other two terms negate
         /// `build_mixed_join_expression` below, so such a condition becomes a post-join filter.
         const bool right_condition_is_applied_after_join
-            = prepared_join_storage.storage_join && !is_disjunctive_condition && canPushDownFromOn(join_operator);
+            = prepared_join_storage.storage_join && !is_disjunctive_condition && join_operator.canPushDownFromOn();
 
         if (!right_condition_is_applied_after_join)
         {
