@@ -2591,10 +2591,14 @@ class TestCase:
     # failed together, fleet-wide, for three days.
     #
     # So disable what the test names, once it is over, whatever its outcome. `SYSTEM DISABLE
-    # FAILPOINT` is idempotent and accepts a name that is not armed - or that no build knows
-    # at all - so a name picked up from a comment or from an `EXPLAIN` is harmless. Only
-    # literal names are matched: a test that builds the name at runtime (`$FP`) still has to
-    # disable it itself, for which a `trap` is the usual way.
+    # FAILPOINT` is idempotent for a registered name, so disabling one that was never armed is
+    # a no-op. Only literal names are matched: a test that builds the name at runtime (`$FP`)
+    # still has to disable it itself, for which a `trap` is the usual way.
+    #
+    # This scrapes names out of the test file, so it also picks up a name that only occurs in
+    # prose or inside an `EXPLAIN`, which the server rejects as unregistered. That is expected
+    # here and stays quiet. Once `SYSTEM DISABLE ALL FAILPOINTS` (#118877) is in, this whole
+    # function becomes that one statement and the scraping goes away.
     FAILPOINT_ENABLE_RE = re.compile(
         r"SYSTEM\s+ENABLE\s+FAILPOINT\s+([A-Za-z_][A-Za-z_0-9]*)", re.IGNORECASE
     )
@@ -2629,6 +2633,10 @@ class TestCase:
                 # armed there to begin with.
                 if "compiled without FIU" in str(e):
                     return
+                # A name that is not a registered fail point came from prose or from an
+                # `EXPLAIN`, not from a statement that armed anything.
+                if "Cannot find fail point" in str(e):
+                    continue
                 # Otherwise best-effort: a server that stopped answering is reported by the
                 # test result and by the hung check, not from here.
                 print(
