@@ -44,6 +44,7 @@ namespace FailPoints
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
     extern const char plain_object_storage_pause_before_unlink_file_finalize[];
     extern const char plain_object_storage_pause_before_remove_recursive_finalize[];
+    extern const char plain_object_storage_pause_before_remove_recursive_metadata[];
 }
 
 MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
@@ -682,7 +683,14 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
 
     FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_finalize);
 
-    StoredObjects objects_to_remove;
+    /// The `prefix.path` object of a directory is the only thing that lets the next load find the objects of this
+    /// subtree, so it has to outlive them: the data objects are deleted first, and the `prefix.path` objects only
+    /// once all of them are gone. A single pass would not do, because the multi-object delete of S3 and Azure
+    /// gives no ordering guarantees within a request: a directory could lose its `prefix.path` while still having
+    /// data objects, and if the process died at that moment, they would become unreachable forever.
+    StoredObjects data_objects_to_remove;
+    StoredObjects metadata_objects_to_remove;
+
     for (const auto & [subdir, remote_info] : subtree_remote_info)
     {
         auto subdir_path = tmp_path / subdir;
@@ -696,7 +704,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
         LOG_TRACE(log, "Removing directory '{}'", subdir_path);
 
         auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info->remote_path);
-        objects_to_remove.emplace_back(metadata_object_key, path);
+        metadata_objects_to_remove.emplace_back(metadata_object_key, path);
 
         /// We also need to remove all files inside each of the subdirectories.
         for (const auto & [filename, file_info] : remote_info->files)
@@ -706,12 +714,18 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
             LOG_TRACE(log, "Removing file '{}'", file_path);
 
             auto file_object_key = layout->constructFileObjectKey(remote_info->remote_path, filename);
-            objects_to_remove.emplace_back(file_object_key, file_path);
+            data_objects_to_remove.emplace_back(file_object_key, file_path);
         }
     }
 
-    object_storage->removeObjectsIfExist(objects_to_remove);
-    removed_objects.append_range(objects_to_remove);
+    object_storage->removeObjectsIfExist(data_objects_to_remove);
+
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_metadata);
+
+    object_storage->removeObjectsIfExist(metadata_objects_to_remove);
+
+    removed_objects.append_range(data_objects_to_remove);
+    removed_objects.append_range(metadata_objects_to_remove);
 }
 
 }

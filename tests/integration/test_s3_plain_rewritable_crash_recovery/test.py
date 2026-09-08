@@ -69,6 +69,26 @@ def has_removed_file_backup(keys):
     return any(f"/__root/{REMOVED_NAME_PREFIX}" in key for key in keys)
 
 
+def has_removed_directory_without_data(keys):
+    """`finalize` deletes the data objects of the subtree first, and the `prefix.path` objects that make it
+    discoverable only once all of them are gone, so in between the subtree is still reclaimable.
+    """
+    removed_remote_names = {
+        key.split("/")[-2]
+        for key in keys
+        if key.endswith("/prefix.path")
+        and read_key(key).startswith(REMOVED_NAME_PREFIX)
+    }
+    if not removed_remote_names:
+        return False
+
+    return not any(
+        key.startswith(f"{KEY_PREFIX}{remote_name}/")
+        for remote_name in removed_remote_names
+        for key in keys
+    )
+
+
 def wait_failpoint_paused(failpoint, timeout=60):
     """`SYSTEM WAIT FAILPOINT ... PAUSE` blocks until some thread parks at the failpoint,
     so it runs on a worker thread that is abandoned if the failpoint is never reached.
@@ -101,6 +121,14 @@ def wait_for_empty_prefix(timeout=60):
             3,
             has_removed_directory,
             id="remove_recursive",
+        ),
+        # The same, but in between the two passes of `finalize`: the data objects of the subtree are already
+        # deleted, and the `prefix.path` objects that make it discoverable are about to be deleted.
+        pytest.param(
+            "plain_object_storage_pause_before_remove_recursive_metadata",
+            3,
+            has_removed_directory_without_data,
+            id="remove_recursive_metadata",
         ),
         # Removing `format_version.txt`: a backup copy is kept until the removal is finalized.
         pytest.param(
