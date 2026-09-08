@@ -250,26 +250,32 @@ printf "row1\n" > "$TEST_DIR_ABS/nestedalias/root/target/inner/f.txt"
 ln -s target "$TEST_DIR_ABS/nestedalias/root/aliasA"
 ln -s target "$TEST_DIR_ABS/nestedalias/root/aliasB"
 
+# Two sibling symlinks naming one directory, for the `_path` virtual column: the walk keeps
+# only the first lexical spelling that reaches `pathalias/root/target`, so `_path` reports that
+# one spelling and a `_path` predicate is answered against it. Which spelling that is must be a
+# property of the names rather than of the filesystem, which is what the sorted descent gives:
+# `aliasA` before `aliasB` before `target` everywhere.
+mkdir -p "$TEST_DIR_ABS/pathalias/root/target"
+printf "row1\n" > "$TEST_DIR_ABS/pathalias/root/target/f.txt"
+ln -s target "$TEST_DIR_ABS/pathalias/root/aliasA"
+ln -s target "$TEST_DIR_ABS/pathalias/root/aliasB"
+
 # A collision that happens BEFORE its claiming frame has found any match. One child of
 # `latematch/root` holds `back -> ..`, which loops the walk back into the root frame, and the
 # other holds the only matching file, so the collision happens while the root frame has matched
-# nothing yet. The file has two names under `root/**/*.txt` (`root/<match>/zzz.txt` and
-# `root/<loop>/back/<match>/zzz.txt`, which the finite spellings `root/*/*.txt` and
-# `root/*/*/*/*.txt` return one each), so the write must be refused.
+# nothing yet. The file has two names under `root/**/*.txt` (`root/mmm/zzz.txt` and
+# `root/aaa/back/mmm/zzz.txt`, which the finite spellings `root/*/*.txt` and `root/*/*/*/*.txt`
+# return one each), so the write must be refused.
 #
-# For the collision to precede the match, the walk has to enter the loop child first, and
-# `fs::directory_iterator` performs no sorting: the order is `readdir` order, a property of the
-# filesystem rather than of the names. Measured over identical name sets, ext4 and tmpfs return
-# a hash order while XFS returns creation order, so neither naming nor creation order fixes
-# which child comes first. So do not assume an order, read it: create both children, ask the
-# filesystem which one it enumerates first (`ls -U`, the same unsorted order the iterator
-# uses), and put the loop under that one. Adding entries inside the children does not reorder
-# the parent, so the order observed here is the order the walk takes.
+# For the collision to precede the match, the walk has to enter the loop child first. The walk
+# descends subdirectories in sorted order, so putting the loop under `aaa` and the file under
+# `mmm` fixes that on every filesystem. Before the descent was sorted this had to be probed with
+# `ls -U`, because `readdir` order is a property of the filesystem rather than of the names:
+# measured over identical name sets, ext4 and tmpfs return a hash order while XFS returns
+# creation order.
 mkdir -p "$TEST_DIR_ABS/latematch/root/aaa" "$TEST_DIR_ABS/latematch/root/mmm"
-LATEMATCH_LOOP=$(ls -U "$TEST_DIR_ABS/latematch/root" | head -1)
-LATEMATCH_MATCH=$(ls -U "$TEST_DIR_ABS/latematch/root" | tail -1)
-ln -s .. "$TEST_DIR_ABS/latematch/root/$LATEMATCH_LOOP/back"
-printf "row1\n" > "$TEST_DIR_ABS/latematch/root/$LATEMATCH_MATCH/zzz.txt"
+ln -s .. "$TEST_DIR_ABS/latematch/root/aaa/back"
+printf "row1\n" > "$TEST_DIR_ABS/latematch/root/mmm/zzz.txt"
 
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
@@ -398,6 +404,20 @@ $CLICKHOUSE_CLIENT --query "SELECT _file FROM file('$TEST_DIR_NAME/filelink/root
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/filelink/root', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/filelink/root/**/*.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT _file FROM file('$TEST_DIR_NAME/filelink/root/**/*.txt', 'TSV', 'val String') ORDER BY _file"
+
+# `_path` for an aliased directory under `**` must not depend on which alias the filesystem
+# enumerates first. The walk collapses the alias spellings of one directory to the first one it
+# reaches, and `_path` and Hive-path predicates are applied afterwards in
+# `StorageFileSource::FilesIterator`, so an unsorted descent would answer each of the three
+# predicates below with whatever `readdir` happened to return. The sorted descent makes the
+# surviving spelling `aliasA` on every filesystem: the row survives the `aliasA` predicate and
+# neither of the other two, and `_path` names `aliasA` however the directory is laid out.
+echo "aliased-dir-path-is-order-independent"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/pathalias/root/**/f.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/pathalias/root/**/f.txt', 'TSV', 'val String') WHERE _path LIKE '%/aliasA/%'"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/pathalias/root/**/f.txt', 'TSV', 'val String') WHERE _path LIKE '%/aliasB/%'"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/pathalias/root/**/f.txt', 'TSV', 'val String') WHERE _path LIKE '%/target/%'"
+$CLICKHOUSE_CLIENT --query "SELECT splitByChar('/', _path)[-2] FROM file('$TEST_DIR_NAME/pathalias/root/**/f.txt', 'TSV', 'val String')"
 
 # Writes through a glob stay refused even when deduplication leaves one path. The
 # pattern below matches one file under two names, so a read-only test based on the

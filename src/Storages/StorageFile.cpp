@@ -444,13 +444,45 @@ void listFilesWithRegexpMatchingImpl(
                                         total_bytes_to_read, result, matched_paths, false, depth + 1,
                                         pruning, deduplicate_by_canonical_path, collapsed_a_match);
 
+    /// One subdirectory to descend into: where to list, the pattern left to match there, and
+    /// whether that descent may recurse further.
+    struct Descent
+    {
+        std::string path_for_ls;
+        std::string pattern;
+        bool recursive = false;
+
+        bool operator<(const Descent & other) const { return path_for_ls < other.path_for_ls; }
+    };
+
+    /// Subdirectories to descend into, collected while listing below and walked in sorted order
+    /// afterwards instead of in the order `fs::directory_iterator` hands them over.
+    ///
+    /// `readdir` order is a property of the filesystem, not of the names: measured over identical
+    /// name sets, ext4 and tmpfs return a hash order while XFS returns creation order. The frame
+    /// pruning above keeps the FIRST lexical spelling that reaches a given canonical directory, so
+    /// with two sibling symlinks naming one directory (`root/aliasA` and `root/aliasB` both naming
+    /// `root/target`) an unsorted descent would let the filesystem pick which spelling survives,
+    /// and a `_path` predicate applied later in `StorageFileSource::FilesIterator` would then match
+    /// or not depending on that. Sorting fixes the representative to the lexicographically smallest
+    /// spelling on every filesystem, which is the property `_path` filtering needs.
+    ///
+    /// Only DIRECTORY entries are buffered, so this costs the number of subdirectories of one
+    /// level rather than its number of files: a directory holding many files still streams them.
+    /// File matches keep being emitted while listing, so they precede this level's descents in
+    /// `result`; that only orders rows, which no caller relies on.
+    std::vector<Descent> descents;
+
     const fs::directory_iterator end;
     std::error_code ec;
     for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
     {
         if (ec)
         {
-            return;
+            /// Stop listing, but still walk what was already listed: the entries before the error
+            /// were descended right away before the descents below were deferred to one sorted
+            /// pass, and dropping them now would lose their matches.
+            break;
         }
 
         const std::string full_path = it->path().string();
@@ -494,17 +526,19 @@ void listFilesWithRegexpMatchingImpl(
                 const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
                     ? suffix_with_globs
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
-                                                descent_pattern,
-                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1, pruning,
-                                                deduplicate_by_canonical_path, collapsed_a_match);
+                descents.push_back({(fs::path(full_path).append(it->path().string()) / "").string(), descent_pattern, recursive});
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
-                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, matched_paths, false, depth + 1, pruning,
-                                                deduplicate_by_canonical_path, collapsed_a_match);
+                descents.push_back({(fs::path(full_path) / "").string(), suffix_with_globs.substr(next_slash_after_glob_pos), false});
         }
     }
+
+    std::sort(descents.begin(), descents.end());
+
+    for (const auto & descent : descents)
+        listFilesWithRegexpMatchingImpl(descent.path_for_ls, descent.pattern,
+                                        total_bytes_to_read, result, matched_paths, descent.recursive, depth + 1,
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
 }
 
 std::vector<std::string> listFilesWithRegexpMatching(

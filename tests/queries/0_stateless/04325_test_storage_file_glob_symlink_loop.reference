@@ -40,6 +40,12 @@ real.txt
 2
 alias.txt
 real.txt
+aliased-dir-path-is-order-independent
+1
+1
+0
+0
+aliasA
 glob-insert-stays-readonly
 refused
 1
