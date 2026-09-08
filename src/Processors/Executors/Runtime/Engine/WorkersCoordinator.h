@@ -6,6 +6,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <vector>
 
 namespace DB
 {
@@ -18,7 +19,7 @@ class WorkersCoordinator
     void stopLocked();
 
 public:
-    WorkersCoordinator(TaskScheduler & scheduler_, Poller & poller_);
+    WorkersCoordinator(TaskScheduler & scheduler_, Poller & poller_, size_t max_workers);
 
     void enter(size_t worker_id);
     void leave(size_t worker_id);
@@ -37,9 +38,10 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable have_work;
-    size_t registered_workers = 0;
-    size_t sleeping_count = 0;
-    size_t polling_count = 0;
+    std::vector<bool> is_registered;
+    std::atomic<size_t> registered_workers = 0;
+    std::atomic<size_t> sleeping_count = 0;
+    std::atomic<size_t> polling_count = 0;
     std::atomic_bool is_stopped = false;
 };
 

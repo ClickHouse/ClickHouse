@@ -3,9 +3,10 @@
 namespace DB
 {
 
-WorkersCoordinator::WorkersCoordinator(TaskScheduler & scheduler_, Poller & poller_)
+WorkersCoordinator::WorkersCoordinator(TaskScheduler & scheduler_, Poller & poller_, size_t max_workers)
     : scheduler(scheduler_)
     , poller(poller_)
+    , is_registered(max_workers, false)
 {
 }
 
@@ -34,9 +35,14 @@ void WorkersCoordinator::stopLocked()
     poller.wakeup();
 }
 
-void WorkersCoordinator::enter(size_t)
+void WorkersCoordinator::enter(size_t worker_id)
 {
     std::lock_guard lock(mutex);
+
+    if (is_registered[worker_id])
+        return;
+
+    is_registered[worker_id] = true;
     ++registered_workers;
 }
 
@@ -44,6 +50,10 @@ void WorkersCoordinator::leave(size_t worker_id)
 {
     std::lock_guard lock(mutex);
 
+    if (!is_registered[worker_id])
+        return;
+
+    is_registered[worker_id] = false;
     --registered_workers;
     scheduler.drain(worker_id);
 
@@ -106,13 +116,11 @@ bool WorkersCoordinator::stopped() const
 
 size_t WorkersCoordinator::idle() const
 {
-    std::lock_guard lock(mutex);
-    return idleLocked();
+    return sleeping_count + polling_count;
 }
 
 size_t WorkersCoordinator::registered() const
 {
-    std::lock_guard lock(mutex);
     return registered_workers;
 }
 
