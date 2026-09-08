@@ -133,7 +133,7 @@ private:
 /// runtime key; a newly active query starts at the system virtual time so it is not penalised for
 /// idle periods (no starvation). A query's effective weight is lowered once it crosses an age or
 /// attained-service threshold (see the query settings), which biases the fair shares toward
-/// shorter/newer queries. Requests with no query context are scheduled anonymously at weight 1.
+/// shorter/newer queries.
 class FairAlgorithm final : public ISchedulingAlgorithm
 {
 public:
@@ -145,19 +145,13 @@ public:
 
     void push(ResourceRequest * request) override
     {
-        double vstart = system_vruntime;
-        if (auto * ctx = request->scheduling_context)
-        {
-            auto & state = ctx->getResourceState(leaf);
-            double effective_weight = updateEffectiveWeight(*ctx, state);
-            // Charge the declared cost corrected toward real consumption (see
-            // ResourceState::consumeCorrectedCost). Stored on the request so pop() advances
-            // attained_cost by the same corrected amount. It is never negative, so vruntime only
-            // ever moves forward — a refund is realized by a smaller charge on later requests.
-            request->scheduling_charge = state.consumeCorrectedCost(request->scheduling_cost);
-            vstart = std::max(system_vruntime, state.vruntime);
-            state.vruntime = vstart + static_cast<double>(request->scheduling_charge) / effective_weight;
-        }
+        auto & state = request->scheduling_context->getResourceState(leaf);
+        double effective_weight = updateEffectiveWeight(*request->scheduling_context, state);
+        // Corrected cost (see consumeCorrectedCost), stored on the request so pop() charges the same
+        // amount; never negative, so vruntime only moves forward.
+        request->scheduling_charge = state.consumeCorrectedCost(request->scheduling_cost);
+        double vstart = std::max(system_vruntime, state.vruntime);
+        state.vruntime = vstart + static_cast<double>(request->scheduling_charge) / effective_weight;
         request->scheduling_key = {vstart, next_seq++};
         requests.insert(*request);
     }
@@ -171,14 +165,10 @@ public:
         requests.erase(it);
         // System virtual time advances to the start tag of the served request (monotonic).
         system_vruntime = std::max(system_vruntime, request->scheduling_key.first);
-        if (auto * ctx = request->scheduling_context)
-        {
-            auto & state = ctx->getResourceState(leaf);
-            // Same corrected charge that advanced vruntime at push(), so the attained-service
-            // threshold (`weight_lowering_io_bytes`) also tracks real cost, not the estimate.
-            state.attained_cost += request->scheduling_charge;
-            state.last_activity_ns = clock_gettime_ns();
-        }
+        auto & state = request->scheduling_context->getResourceState(leaf);
+        // Same corrected charge that advanced vruntime at push(), so attained tracks real cost.
+        state.attained_cost += request->scheduling_charge;
+        state.last_activity_ns = clock_gettime_ns();
         return request;
     }
 
@@ -284,7 +274,7 @@ private:
 /// level each time its attained service doubles — bounding reordering churn. Lowest level served
 /// first, FIFO within a level. Pure: there is no starvation guard, so a long-running query can be
 /// starved by a continuous stream of short ones — use `fair` when a no-starvation guarantee is
-/// needed. Requests with no query context are treated as level 0 (least attained) and stay FIFO.
+/// needed.
 class LasAlgorithm final : public ISchedulingAlgorithm
 {
 public:
@@ -296,9 +286,7 @@ public:
 
     void push(ResourceRequest * request) override
     {
-        Int64 attained = 0;
-        if (auto * ctx = request->scheduling_context)
-            attained = ctx->getResourceState(leaf).attained_cost;
+        Int64 attained = request->scheduling_context->getResourceState(leaf).attained_cost;
         request->scheduling_key = {levelOf(attained), next_seq++};
         requests.insert(*request);
     }
@@ -314,31 +302,22 @@ public:
         {
             auto it = requests.begin();
             ResourceRequest * request = &*it;
-            auto * ctx = request->scheduling_context;
-            if (ctx)
+            auto & state = request->scheduling_context->getResourceState(leaf);
+            // Real service = attained_cost + pending correction (peeked, as `fair` does), so a badly
+            // under-estimated finished request doesn't key the query too low and jump a lighter one.
+            double real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
+            if (real_level > request->scheduling_key.first)
             {
-                // Real service = attained_cost + pending correction (peeked, as `fair` does), so a
-                // badly under-estimated finished request doesn't key the query too low and let it
-                // jump a genuinely lighter one.
-                auto & state = ctx->getResourceState(leaf);
-                double real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
-                if (real_level > request->scheduling_key.first)
-                {
-                    requests.erase(it);
-                    request->scheduling_key.first = real_level;
-                    requests.insert(*request);
-                    continue;
-                }
+                requests.erase(it);
+                request->scheduling_key.first = real_level;
+                requests.insert(*request);
+                continue;
             }
             requests.erase(it);
-            if (ctx)
-            {
-                auto & state = ctx->getResourceState(leaf);
-                // Charge the corrected cost (see consumeCorrectedCost) so attained (the level key)
-                // tracks real bytes/CPU; never negative, so the level never drops.
-                state.attained_cost += state.consumeCorrectedCost(request->scheduling_cost);
-                state.last_activity_ns = clock_gettime_ns();
-            }
+            // Charge the corrected cost (see consumeCorrectedCost) so attained (the level key) tracks
+            // real bytes/CPU; never negative, so the level never drops.
+            state.attained_cost += state.consumeCorrectedCost(request->scheduling_cost);
+            state.last_activity_ns = clock_gettime_ns();
             return request;
         }
         return nullptr;
@@ -412,7 +391,7 @@ private:
 
 /// `priority` — strict priority by the query's `priority` setting (the existing query setting,
 /// reused). Lower value = higher precedence, served first; `priority = 0` ("no priority", the
-/// default) and requests with no query context are treated as lowest precedence. Ties (equal
+/// default) is treated as lowest precedence. Ties (equal
 /// priority, incl. the all-zero default) fall back to FIFO by arrival. Like any strict-priority
 /// scheme it can starve low-priority queries — `fair` is the non-starving alternative.
 class PriorityAlgorithm final : public ISchedulingAlgorithm
@@ -679,18 +658,16 @@ public:
         // live swap does not drop it. A no-op for a request coming from a pop-charging algorithm,
         // where `reset()` keeps `scheduling_charge == scheduling_cost`.
         for (ResourceRequest * request : pending)
-            if (auto * ctx = request->scheduling_context)
-            {
-                auto & state = ctx->getResourceState(this);
-                state.cost_correction.fetch_add(
-                    static_cast<Int64>(request->scheduling_charge) - static_cast<Int64>(request->scheduling_cost),
-                    std::memory_order_relaxed);
-                request->scheduling_charge = request->scheduling_cost;
-            }
+        {
+            auto & state = request->scheduling_context->getResourceState(this);
+            state.cost_correction.fetch_add(
+                static_cast<Int64>(request->scheduling_charge) - static_cast<Int64>(request->scheduling_cost),
+                std::memory_order_relaxed);
+            request->scheduling_charge = request->scheduling_cost;
+        }
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest * request : pending)
-                if (auto * ctx = request->scheduling_context)
-                    ctx->getResourceState(this).vruntime = 0.0;
+                request->scheduling_context->getResourceState(this).vruntime = 0.0;
         for (ResourceRequest * request : pending)
             algo->push(request);
     }

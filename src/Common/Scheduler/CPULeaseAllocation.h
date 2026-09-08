@@ -316,7 +316,7 @@ private:
         // Configuration
         const ResourceLink master_link; /// Resource link to use for master thread resource requests
         const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
-        ResourceSchedulingContext * scheduling_context; /// Per-query scheduling context tagged on every request (null = anonymous)
+        ResourceSchedulingContext * scheduling_context; /// Per-query scheduling context tagged on every request
 
         // Current state
         using Requests = std::vector<Request>;

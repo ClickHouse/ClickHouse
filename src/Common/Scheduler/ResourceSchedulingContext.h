@@ -14,10 +14,10 @@ namespace DB
 
 /// Per-query scheduling context shared by all `ResourceRequest`s that one query emits.
 ///
-/// Created once per query (on its `ThreadGroup`, from the query settings), owned by a
-/// `shared_ptr` for the query lifetime; null for background thread groups (their requests are
-/// scheduled anonymously). Every request the query submits carries a non-owning raw pointer to
-/// it (`ResourceRequest::scheduling_context`).
+/// Created once per query or background activity (on its `ThreadGroup`, from the settings), owned
+/// by a `shared_ptr` for that lifetime. Every request carries a non-owning raw pointer to it
+/// (`ResourceRequest::scheduling_context`); requests issued outside any group share one static
+/// anonymous context, so the pointer is never null.
 ///
 /// It holds (1) immutable per-query configuration used by the `fair` scheduler to adjust the
 /// query's weight as it runs, and (2) mutable per-resource scheduling state (attained cost,

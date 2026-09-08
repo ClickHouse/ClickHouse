@@ -81,12 +81,11 @@ public:
 
     /// Non-owning link to the per-query scheduling context shared by all requests of one query.
     /// Used by the query-aware schedulers in `RequestQueue` (`fair`, `las`) to look up the query's
-    /// weight, age and per-resource attained cost / virtual runtime. `nullptr` means "no query
-    /// identity" (e.g. background operations); such requests are scheduled anonymously.
-    /// The owning `shared_ptr` lives in the query context (`ThreadGroup`) and outlives every request
-    /// the query enqueues (a request is enqueued only while the query runs), so this raw pointer
-    /// never dangles while the request is in the queue.
-    /// Must be set by the producer just before `enqueueRequest()` and is cleared by `reset()`.
+    /// weight, age and per-resource attained cost / virtual runtime. Set by the producer just before
+    /// `enqueueRequest()` and cleared by `reset()`; requests issued outside a query or background
+    /// group get one shared anonymous context, so it is never null while in the queue. The owner (the
+    /// query's `ThreadGroup`, or the static anonymous context) outlives the request, so this raw
+    /// pointer never dangles while the request is in the queue.
     ResourceSchedulingContext * scheduling_context = nullptr;
 
     /// Ordering key for the query-aware schedulers (`fair`, `las`) in `RequestQueue`. Computed at

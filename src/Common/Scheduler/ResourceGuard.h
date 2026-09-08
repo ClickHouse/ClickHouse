@@ -117,10 +117,9 @@ public:
             // consumer thread, hence atomic) and folded into the query's NEXT request charge at
             // push/pop — it never rewrites an already-assigned key. `link_.queue` is the same leaf
             // the algorithms key the per-query state by.
-            if (scheduling_context)
-                scheduling_context->getResourceState(link_.queue).cost_correction.fetch_add(
-                    static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling_cost),
-                    std::memory_order_relaxed);
+            scheduling_context->getResourceState(link_.queue).cost_correction.fetch_add(
+                static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling_cost),
+                std::memory_order_relaxed);
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);

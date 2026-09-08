@@ -41,11 +41,9 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 {
     using NodePtr = TimeSharedNodePtr;
 
-    // The `scheduler` setting reorders CPU/IO requests by per-query identity, which only exists for
-    // `IOByte` and `CPUNanosecond` leaves. Other time-shared leaves (e.g. `QuerySlot` admission,
-    // whose request is enqueued before the query's `ResourceSchedulingContext` is created) carry no
-    // per-query context, so they always run `fifo` regardless of the workload `scheduler` setting —
-    // matching the documented CPU/IO-only scope, instead of silently degrading to anonymous FIFO.
+    // The `scheduler` setting reorders requests by per-query identity, which is only meaningful for
+    // `IOByte` and `CPUNanosecond` leaves; other time-shared leaves (e.g. `QuerySlot` admission)
+    // always run `fifo` regardless of the workload `scheduler` setting.
     static SchedulerAlgorithm schedulerFor(const WorkloadSettings & settings_, CostUnit unit)
     {
         // Non-preemptive CPU slots (`cpu_slot_preemption = 0`) charge a fixed cost per acquired slot
