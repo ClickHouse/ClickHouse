@@ -31,3 +31,11 @@ DROP TABLE t_dt64_in_set;
 
 SELECT toTime64(-1, 0) IN (toUInt64(18446744073709551615));
 SELECT toTime64(-1, 0) IN (toInt64(-1));
+
+-- The same conversion materializes a value in `values`, where an unrepresentable constant is reported
+-- rather than stored as a wrapped tick count.
+
+SELECT x FROM values('x DateTime64(3, \'UTC\')', toUInt64(18446744073709551615)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT x FROM values('x DateTime64(3, \'UTC\')', toUInt64(9223372036854776)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT x FROM values('x DateTime64(3, \'UTC\')', toUInt64(1));
+SELECT x FROM values('x Time64(0)', toUInt64(18446744073709551615)); -- { serverError ARGUMENT_OUT_OF_BOUND }
