@@ -78,3 +78,8 @@ SELECT sumMapMerge(state) FROM (SELECT sumMapState(number, CAST(number % 3, 'Dec
 SELECT toTypeName(sumMapState(1, CAST(1.01, 'Decimal(10, 2)')));
 SELECT countMap(CAST(number % 3, 'Decimal256(2)')) FROM numbers(10);
 SELECT maxMap(number, toDateTime64(number % 3, 3, 'UTC')) FROM numbers(10);
+
+-- a `Map` can be a regular argument of the nested aggregate function when a key argument is given
+SELECT groupArrayMap(map('a', 1), number % 2) FROM numbers(3);
+SELECT anyMap(map('a', number), number % 2) FROM numbers(3);
+SELECT toTypeName(groupArrayMapState(map('a', 1), number % 2)) FROM numbers(1);
