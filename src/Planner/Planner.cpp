@@ -59,13 +59,13 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -169,7 +169,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
@@ -269,7 +268,12 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             return true;
         if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
             return true;
-        if (typeid_cast<const StorageObjectStorageCluster *>(raw))
+        /// Every cluster engine hands paths out to replicas through `getTaskIteratorExtension`, which
+        /// prunes them with this predicate. The initiator's plan for such a read stops at
+        /// `WithMergeableState` (`IStorageCluster::getQueryProcessingStage`), so there is no `Filter` step
+        /// above `ReadFromCluster` to collect the `WHERE` from - without this the predicate is null and
+        /// no `_path` / `_file` pruning happens at all.
+        if (dynamic_cast<const IStorageCluster *>(raw))
             return true;
         if (typeid_cast<const StorageView *>(raw))
             return true;
@@ -891,8 +895,7 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        force_aggregation_in_order,
-        settings[Setting::enable_sharding_aggregator]);
+        force_aggregation_in_order);
 
     if (!query_analysis_result.aggregate_final)
         applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);

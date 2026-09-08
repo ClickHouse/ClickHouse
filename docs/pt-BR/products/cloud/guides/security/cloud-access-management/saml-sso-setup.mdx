@@ -351,7 +351,13 @@ O restante deste guia aborda a configuração única.
   </Accordion>
 
   <Accordion title="Como usar SAML SSO com várias organizações?">
-    O ClickHouse Cloud oferece suporte a SSO com várias organizações, com uma conexão separada para cada organização. Use o link direto (`https://console.clickhouse.cloud/?connection={organizationid}`) para fazer login em cada uma delas e saia de uma organização antes de entrar em outra. Se você não quiser que os usuários do seu domínio sejam encaminhados automaticamente para uma organização ao informarem o e-mail em `https://console.clickhouse.cloud`, abra um ticket de suporte para desativar esse comportamento.
+    O ClickHouse Cloud oferece suporte a SSO com várias organizações, com uma conexão separada para cada organização.
+
+    Seu primeiro login em cada organização deve usar o link direto correspondente (`https://console.clickhouse.cloud/?connection={organizationId}`). Esse primeiro login provisiona sua conta nessa organização. Se sua organização tiver SCIM habilitado, você poderá pular esta etapa, pois sua conta já estará provisionada.
+
+    Nos logins subsequentes, faça login em qualquer uma das suas organizações SAML. Suas outras organizações SAML ficam disponíveis no seletor de organizações na barra lateral do console, e selecionar uma delas faz login nessa organização por meio do SSO dela.
+
+    Se você não quiser que os usuários do seu domínio sejam encaminhados automaticamente para uma organização ao informarem o e-mail em `https://console.clickhouse.cloud`, abra um ticket de suporte para desativar esse comportamento.
   </Accordion>
 
   <Accordion title="Por que vejo várias contas para o mesmo usuário?">

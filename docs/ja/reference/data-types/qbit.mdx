@@ -162,6 +162,24 @@ CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree
 
 reduced-dimension search を実行するには、転置された距離関数の第 4 引数として、読み取る次元数を渡します (下記参照) 。参照ベクトルには、少なくともその数の要素が含まれている必要があり (末尾に余分な要素があっても無視されます) 、この値は `stride` の倍数でなければなりません。
 
+<div id="qbit-element-access">
+  ## 要素へのアクセスとスライス
+</div>
+
+[`arrayElement`](/ja/reference/functions/regular-functions/array-functions#arrayElement) (および `vec[n]` 演算子) は、`n` 番目のベクトル要素を要素型の元の精度で再構築して返します。読み取られるのは、その要素を含む stride group の ビットプレーン のみです。[`arraySlice`](/ja/reference/functions/regular-functions/array-functions#arraySlice) は、選択した次元に対する `QBit` (次元の部分集合への射影) を返します。`QBit` の次元は型の一部であるため、offset と length は定数である必要があります。stride group の境界に整列したスライスでは stride が維持され、コピーを行わずに保存済みの bit-plane ストリーム が再利用されます。
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
+
 <div id="vector-search-functions">
   ## ベクトル検索関数
 </div>
