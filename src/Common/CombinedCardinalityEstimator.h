@@ -5,6 +5,10 @@
 #include <Common/HyperLogLogCounter.h>
 #include <Core/Defines.h>
 
+#if defined(__FILC__)
+#include <stdfil.h>
+#endif
+
 
 namespace DB
 {
@@ -264,7 +268,7 @@ private:
         for (const auto & x : small)
             tmp_medium->insert(x.getValue());
 
-        medium = tmp_medium.release();
+        setContainer(tmp_medium.release());
         setContainerType(details::ContainerType::MEDIUM);
     }
 
@@ -290,7 +294,7 @@ private:
             destroy();
         }
 
-        large = tmp_large.release();
+        setContainer(tmp_large.release());
         setContainerType(details::ContainerType::LARGE);
     }
 
@@ -302,51 +306,93 @@ private:
 
         if (container_type == details::ContainerType::MEDIUM)
         {
-            delete medium;
-            medium = nullptr;
+            delete containerPtr<Medium>();
+            setContainer<Medium>(nullptr);
         }
         else if (container_type == details::ContainerType::LARGE)
         {
-            delete large;
-            large = nullptr;
+            delete containerPtr<Large>();
+            setContainer<Large>(nullptr);
         }
+    }
+
+    /// The container pointer with the type tag stripped from its low bits.
+    template <typename T>
+    T * containerPtr() const
+    {
+#if defined(__FILC__)
+        return static_cast<T *>(zandptr(container, mask));
+#else
+        return reinterpret_cast<T *>(address & mask);
+#endif
     }
 
     template <typename T>
     T & getContainer()
     {
-        return *reinterpret_cast<T *>(address & mask);
+        return *containerPtr<T>();
     }
 
     template <typename T>
     const T & getContainer() const
     {
-        return *reinterpret_cast<T *>(address & mask);
+        return *containerPtr<T>();
+    }
+
+    /// Store an untagged container pointer. The type tag is (re)applied by `setContainerType`.
+    template <typename T>
+    void setContainer(T * ptr)
+    {
+#if defined(__FILC__)
+        container = ptr;
+#else
+        address = reinterpret_cast<UInt64>(ptr);
+#endif
     }
 
     void setContainerType(details::ContainerType t)
     {
+#if defined(__FILC__)
+        /// `zorptr`/`zandptr` change the address bits while preserving the allocation capability,
+        /// so the tagged pointer can still be dereferenced after the tag is stripped again.
+        container = zorptr(zandptr(container, mask), static_cast<UInt8>(t));
+#else
         address &= mask;
         address |= static_cast<UInt8>(t);
+#endif
     }
 
     details::ContainerType getContainerType() const
     {
+#if defined(__FILC__)
+        return static_cast<details::ContainerType>(reinterpret_cast<UInt64>(container) & ~mask);
+#else
         return static_cast<details::ContainerType>(address & ~mask);
+#endif
     }
 
     void clearContainerType()
     {
+#if defined(__FILC__)
+        container = zandptr(container, mask);
+#else
         address &= mask;
+#endif
     }
 
     Small small;
+#if defined(__FILC__)
+    /// Under FilC a pointer carries an allocation capability that an integer cannot hold, so the
+    /// tagged container pointer is kept as a real pointer instead of the integer-punning union.
+    void * container = nullptr;
+#else
     union
     {
         Medium * medium;
         Large * large;
         UInt64 address = 0;
     };
+#endif
     static const UInt64 mask = 0xFFFFFFFFFFFFFFFC;
     static const UInt32 medium_set_size_max = 1ULL << medium_set_power2_max;
 };
