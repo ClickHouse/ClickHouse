@@ -864,16 +864,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
         /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
         /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
-        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
-        /// A full-definition `ATTACH TABLE ... (...)` is user input and must receive strict text-index
-        /// validation. A replicated database validates its initial DDL as `CREATE`; followers replay
-        /// the committed definition as `SECONDARY_CREATE`, which may have been accepted by an older
-        /// server and must remain loadable during a rolling upgrade.
+        /// are marked with `attach_short_syntax` (see `createTableFromAST`). A `Replicated` database
+        /// follower replays committed metadata and can use either `SECONDARY_CREATE` or `ATTACH` for a
+        /// full-definition `ATTACH`; the Keeper transaction identifies that replay independently of the
+        /// loading strictness. These definitions may have been accepted by an older server and must
+        /// remain loadable during a rolling upgrade.
+        const auto metadata_transaction = args.getLocalContext()->getZooKeeperMetadataTransaction();
         const bool validate_text_indices_as_new = args.mode == LoadingStrictnessLevel::ATTACH
             && !args.query.attach_short_syntax
             && !args.is_restore_from_backup
-            && !args.getLocalContext()->isRecoveryFromStoredMetadata();
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata()
+            && (!metadata_transaction || metadata_transaction->isInitialQuery());
 
         /// Previously validated definitions must stay loadable even if the current strictness settings
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:

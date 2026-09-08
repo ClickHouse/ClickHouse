@@ -21,4 +21,19 @@ ENGINE = MergeTree ORDER BY tuple();
 -- Initial `ALTER` DDL also remains strict; a replica must not introduce invalid metadata.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab ADD INDEX idx t TYPE text(tokenizer = 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
 
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached
+(
+    t Array(Array(String))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+-- A full-definition `ATTACH` is fresh DDL on the initiating replica, even in a `Replicated` database.
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached FORMAT Null;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached
+(
+    t Array(Array(String)),
+    INDEX idx t TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} FORMAT Null;
