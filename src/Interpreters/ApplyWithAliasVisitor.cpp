@@ -8,6 +8,18 @@
 namespace DB
 {
 
+void ApplyWithAliasVisitor::visit(ASTPtr & ast, size_t max_expanded_ast_elements)
+{
+    visit(ast, Data{.exprs = {}, .max_expanded_ast_elements = max_expanded_ast_elements});
+
+    /// The per-select checks bound each subtree as it is expanded, but a select is checked before its own
+    /// descendants are expanded, so many small siblings can each stay under the limit while the tree they
+    /// belong to ends up over it. `max_expanded_ast_elements` is documented as a bound on the whole
+    /// expanded tree, so check the result once here as well.
+    if (max_expanded_ast_elements)
+        ast->checkSize(max_expanded_ast_elements);
+}
+
 void ApplyWithAliasVisitor::visit(ASTPtr & ast, const Data & data)
 {
     checkStackSize();

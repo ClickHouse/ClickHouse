@@ -23,10 +23,7 @@ public:
         size_t max_expanded_ast_elements = 0;
     };
 
-    static void visit(ASTPtr & ast, size_t max_expanded_ast_elements)
-    {
-        visit(ast, Data{.exprs = {}, .max_expanded_ast_elements = max_expanded_ast_elements});
-    }
+    static void visit(ASTPtr & ast, size_t max_expanded_ast_elements);
 
 private:
     static void visit(ASTPtr & ast, const Data & data);
