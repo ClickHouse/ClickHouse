@@ -565,8 +565,14 @@ SHOW [CHANGED] TABLE SETTINGS {FROM | IN} <table> [{[NOT] {LIKE | ILIKE} '<patte
 The database and table name can be specified in abbreviated form as `<db>.<table>`. If no database
 is specified, the table is looked up in the current database.
 
-The `CHANGED` keyword restricts the output to settings whose value differs from the default, which is
-usually what you want: an engine can accept several hundred settings, most of them left alone.
+The `CHANGED` keyword restricts the output to settings that something other than the default set -
+that is, to rows whose `source` is not `default`. That is usually what you want, since an engine can
+accept several hundred settings and most are left alone.
+
+Note that this is not the same as "the value differs from the default". A table whose definition
+states a setting is reported as changed even when it states the default value, and a value that
+arrives from a configuration section counts as changed even when it happens to equal the default.
+What `CHANGED` answers is whether anything acted on the setting, not whether the result differs.
 
 The `SHOW TABLE SETTINGS` statement produces a result table with the following structure:
 

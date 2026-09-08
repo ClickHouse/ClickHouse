@@ -7,6 +7,8 @@ min_rows_to_keep	0	0	default
 -- only what something other than the default set
 max_bytes_to_keep	8192	1	definition
 min_bytes_to_keep	4096	1	definition
+-- CHANGED is about who set it, not whether the value differs
+max_rows_to_keep	0	1	definition
 -- one setting, by name
 min_bytes_to_keep	4096	1	definition
 -- ILIKE is case-insensitive
