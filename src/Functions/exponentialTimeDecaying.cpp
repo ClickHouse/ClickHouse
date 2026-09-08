@@ -330,7 +330,8 @@ sensitive inputs when stronger numerical reproducibility is required.
             "Add values with the same decay length",
             "SELECT exponentialTimeDecayingAdd("
             "exponentialTimeDecayingFloat64(10)(2.718281828459045, toFloat64(0)), "
-            "exponentialTimeDecayingFloat64(10)(4, toFloat64(10)))",
+            "exponentialTimeDecayingFloat64(10)(4, toFloat64(10))) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
             "(1,26.094379124341003,10)"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
@@ -348,7 +349,8 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
         .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
         .examples = {{
             "Evaluate one decay length later",
-            "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingFloat64(10)(8, toFloat64(0)), toFloat64(10)), 6)",
+            "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingFloat64(10)(8, toFloat64(0)), toFloat64(10)), 6) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
             "2.943036"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
@@ -360,7 +362,8 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
         .returned_value = {"Returns the decay length.", {"Float64"}},
         .examples = {{
             "Read the decay length",
-            "SELECT exponentialTimeDecayingDecayLength(exponentialTimeDecayingFloat64(10)(1, toFloat64(0)))",
+            "SELECT exponentialTimeDecayingDecayLength(exponentialTimeDecayingFloat64(10)(1, toFloat64(0))) "
+            "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
             "10"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});

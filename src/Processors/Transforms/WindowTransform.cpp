@@ -4042,7 +4042,8 @@ It can be combined again by `exponentialTimeDecayedSum`, including as a
             .returned_value = {"Returns an `ExponentialTimeDecayingFloat64(decay_length)` value.", {}},
             .examples = {{
                 "Construct a decaying value",
-                "SELECT exponentialTimeDecayingFloat64(10)(8, toFloat64(0))",
+                "SELECT exponentialTimeDecayingFloat64(10)(8, toFloat64(0)) "
+                "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
                 "(1,20.79441541679836,10)"}},
             .introduced_in = {26, 8},
             .category = FunctionDocumentation::Category::AggregateFunction},
