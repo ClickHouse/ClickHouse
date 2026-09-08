@@ -46,8 +46,11 @@ SHOW TABLE SETTINGS FROM aliased LIKE 'allow_experimental_block_number_column';
 SHOW TABLE SETTINGS FROM aliased LIKE 'enable_block_number_column';
 SHOW TABLE SETTINGS FROM aliased ILIKE 'ALLOW_EXPERIMENTAL_BLOCK%';
 
-SELECT '-- and NOT drops it whichever of its names the pattern gives';
-SHOW CHANGED TABLE SETTINGS FROM aliased NOT LIKE 'allow_experimental_block_number_column';
+-- `NOT` drops the setting whichever of its names the pattern gives, which keeps the two forms
+-- symmetric. Not asserted here: the alias lives in `MergeTree`, an unfiltered listing of a
+-- `MergeTree` table's changed settings includes whatever a server's `<merge_tree>` section sets,
+-- and `NOT` cannot be narrowed by a second pattern the way the positive forms can. Asserting it
+-- would pin this test to one server's configuration, which is how it broke twice before.
 DROP TABLE aliased;
 
 SELECT '-- a database-qualified name parses and resolves';
