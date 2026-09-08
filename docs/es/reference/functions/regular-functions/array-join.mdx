@@ -20,6 +20,8 @@ Todos los valores de las columnas se copian sin más, excepto los de la columna 
   Para devolver una sola fila que contenga el valor predeterminado del tipo de array, puede envolverlo con [emptyArrayToSingle](/es/reference/functions/regular-functions/array-functions#emptyArrayToSingle), por ejemplo: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (desde la versión 26.5) es un alias de `arrayJoin` que no distingue entre mayúsculas y minúsculas y se usa como llamada a función (`SELECT unnest(arr)`). La sintaxis de PostgreSQL como fuente de tabla no es compatible (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` y `LATERAL`). Use la cláusula [`ARRAY JOIN`](/es/reference/statements/select/array-join) para esas consultas.
+
 Por ejemplo:
 
 ```sql title="Query"
