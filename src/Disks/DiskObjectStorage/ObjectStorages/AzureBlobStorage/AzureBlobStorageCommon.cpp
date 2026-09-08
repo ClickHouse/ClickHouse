@@ -179,6 +179,33 @@ ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions 
     return response;
 }
 
+ListBlobsByHierarchyPagedResponse ContainerClientWrapper::ListBlobsByHierarchy(
+    const String & delimiter, const ListBlobsOptions & options) const
+{
+    auto new_options = options;
+    new_options.Prefix = blob_prefix + options.Prefix.ValueOr("");
+
+    auto response = client.ListBlobsByHierarchy(delimiter, new_options);
+
+    for (auto & blob : response.Blobs)
+    {
+        if (!blob.Name.starts_with(blob_prefix))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix, blob.Name);
+
+        blob.Name = blob.Name.substr(blob_prefix.size());
+    }
+
+    for (auto & blob_prefix_name : response.BlobPrefixes)
+    {
+        if (!blob_prefix_name.starts_with(blob_prefix))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob prefix '{}'", blob_prefix, blob_prefix_name);
+
+        blob_prefix_name = blob_prefix_name.substr(blob_prefix.size());
+    }
+
+    return response;
+}
+
 bool ContainerClientWrapper::IsClientForDisk() const
 {
     return client.GetClickhouseOptions().IsClientForDisk;

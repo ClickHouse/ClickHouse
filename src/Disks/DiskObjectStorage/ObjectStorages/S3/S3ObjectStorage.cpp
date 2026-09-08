@@ -428,6 +428,41 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     } while (outcome.GetResult().GetIsTruncated());
 }
 
+std::vector<std::string> S3ObjectStorage::listCommonPrefixes(const std::string & path_prefix, size_t max_keys) const
+{
+    auto settings_ptr = s3_settings.get();
+
+    S3::ListObjectsV2Request request;
+    request.SetBucket(uri.bucket);
+    request.SetPrefix(path_prefix);
+    request.SetDelimiter("/");
+    if (max_keys)
+        request.SetMaxKeys(static_cast<int>(max_keys));
+    else
+        request.SetMaxKeys(static_cast<int>(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]));
+
+    std::vector<std::string> common_prefixes;
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
+    do
+    {
+        ProfileEvents::increment(ProfileEvents::S3ListObjects);
+        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
+
+        outcome = client.get()->ListObjectsV2(request);
+        throwIfError(
+            outcome, "while listing common prefixes in bucket '{}' with prefix '{}' on disk '{}'", uri.bucket, path_prefix, disk_name);
+
+        /// Objects located directly under the prefix are intentionally ignored: the caller is interested
+        /// in the directory structure only, the objects are listed separately once the directories are chosen.
+        for (const auto & common_prefix : outcome.GetResult().GetCommonPrefixes())
+            common_prefixes.push_back(common_prefix.GetPrefix());
+
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+    } while (outcome.GetResult().GetIsTruncated());
+
+    return common_prefixes;
+}
+
 void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
