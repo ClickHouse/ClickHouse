@@ -56,6 +56,7 @@ namespace DistributedSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int INCOMPATIBLE_SCHEMA;
@@ -233,8 +234,8 @@ namespace
                     continue;
                 }
 
-                /// SHOW CREATE TABLE and DESC TABLE ask the replica for SHOW COLUMNS on that table alone, which any
-                /// grant on it implies: the probe asks for nothing the read and the write on that replica do not.
+                /// SHOW CREATE TABLE and DESC TABLE ask the replica for SHOW COLUMNS on that table alone, so the
+                /// probe reads no `system` table of its own; a replica that will not answer even that is skipped below.
                 String engine;
                 String ts_type;
                 String unavailable;
@@ -259,7 +260,11 @@ namespace
                 }
                 catch (const Exception & e)
                 {
-                    /// Anything the replica could not answer leaves its target unverified, as an unreachable one is.
+                    /// A column-level INSERT, all the write itself needs, does not carry the right to read metadata:
+                    /// a replica that may not answer here is left to the check its own insert makes on its target.
+                    if (e.code() == ErrorCodes::ACCESS_DENIED)
+                        continue;
+                    /// Anything else the replica could not answer leaves its target unverified, as an unreachable one is.
                     unavailable = e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE
                         ? fmt::format("no table {}", backQuoteIfNeed(remote_id.table_name))
                         : "unreachable";

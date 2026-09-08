@@ -59,6 +59,22 @@
                     <table>default.prom_restricted</table>
                 </handler>
             </restricted_write>
+            <!-- The same shard shape over a cluster entry whose user holds only a column-level INSERT. -->
+            <column_granted_write>
+                <url>/column_granted/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_column_granted</table>
+                </handler>
+            </column_granted_write>
+            <!-- The decoy over those same credentials, which only the shard's own insert can refuse. -->
+            <column_granted_bad_write>
+                <url>/column_granted_bad/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_column_granted_bad</table>
+                </handler>
+            </column_granted_bad_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>
