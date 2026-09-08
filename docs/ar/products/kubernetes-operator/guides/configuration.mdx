@@ -121,90 +121,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-يصل المُشغِّل إلى كل جراب عبر الخدمة عديمة الرأس بالصيغة التالية:
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. وينتقل هذا اللاحقة إلى
-جزأين من التهيئة المُولَّدة:
+بالنسبة إلى النسخ المتماثلة في ClickHouse، ينشئ المشغِّل خدمة عديمة الرأس حاكمة باسم `<cluster-name>-clickhouse-headless` لتخدم حركة مرور العملاء.
+كما ينشئ خدمات لكل نسخة متماثلة باسم `<cluster-name>-clickhouse-internal-<shard>-<index>` تنشر الكبسولات غير الجاهزة لحركة المرور الداخلية
+وطلبات الإدارة من المشغِّل. يمكن استخدامها لاستعادة النسخة المتماثلة إذا لم تتمكن من أن تصبح جاهزة بنفسها.
 
-* في `ClickHouseCluster`، تُستخدم قيمتها في أسماء مضيفات النسخ المتماثلة ضمن
-  `remote_servers` (للاستعلامات بين النسخ المتماثلة واستعلامات `Distributed`).
-* في `KeeperCluster`، تُستخدَم قيمتها لبناء أسماء مضيفات عقد Keeper التي
-  يستخدمها ClickHouse لأغراض التنسيق.
-
-<Note>
-  لا تُجرِ override لهذا إلا إذا كان `kubelet` في عنقودك يعمل باستخدام `--cluster-domain`
-  مختلف عن `cluster.local`. إذا لم تتطابق القيمة مع نطاق العنقود الفعلي،
-  فلن يتمكن ClickHouse من حل أسماء مضيفات Keeper والنسخ المتماثلة، مما يؤدي إلى فشل التنسيق
-  واستعلامات `Distributed` مع ظهور أخطاء في حل أسماء DNS. اضبط **القيمة نفسها** على
-  `ClickHouseCluster` و`KeeperCluster` الذي يشير إليه.
-</Note>
-
-<div id="multi-disk-jbod-storage">
-  ### تخزين متعدد الأقراص (JBOD)
-</div>
-
-يقوم `additionalVolumeClaimTemplates` بإرفاق أقراص إضافية بكل نسخة متماثلة في ClickHouse، بالإضافة إلى `dataVolumeClaimSpec` الأساسي المطلوب لاستخدامها.
-يمثل كل عنصر قالب PVC — أي `metadata.name` مع `spec` الخاص بـ PVC.
-تُعالَج الأقراص بالطريقة نفسها تمامًا مثل قرص البيانات الأساسي — على هيئة `volumeClaimTemplates` في StatefulSet — لذلك تنشئ وحدة تحكم StatefulSet ملف PVC واحدًا لكل نسخة متماثلة وتحتفظ به، بالاسم `<name>-<statefulset>-0`.
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-يربط المشغّل كل وحدة تخزين إضافية عند `/var/lib/clickhouse/disks/<name>` ويضيفها إلى إعداد تخزين يُنشئه ClickHouse.
-تتحول الشرطات في الاسم إلى شرطات سفلية في معرّف القرص في ClickHouse، بينما يحتفظ مسار الربط بالاسم الأصلي.
-
-يوضع قرص البيانات الأساسي وكل قرص إضافي في وحدة تخزين واحدة ضمن سياسة التخزين `default`، بحيث يوزّع ClickHouse أجزاء البيانات الجديدة عليها جميعًا بالتناوب.
-وتكون السعة القابلة للاستخدام هي مجموع جميع الأقراص، كما أن كل جدول لا يعيّن `storage_policy` خاصًا به (بما في ذلك جداول `system.*`) يستخدم هذه المجموعة الموحّدة.
-
-<Note>
-  يجب أن تتطابق أسماء PVC مع `^[a-z]([-a-z0-9]*[a-z0-9])?$`، وألا تتعارض مع اسم وحدة تخزين البيانات الأساسية.
-  وكما هو الحال مع قرص البيانات الأساسي، فإن مجموعة الأقراص الإضافية تكون ثابتة عند الإنشاء: تُرفَض إضافة إدخالات أو إزالتها أو إعادة تسميتها بعد الإنشاء.
-  يتم الاحتفاظ بـ PVCs الإضافية عند حذف العنقود، تمامًا مثل قرص البيانات الأساسي.
-  يمكن توسيع حجم التخزين في إدخال موجود إذا كانت StorageClass تدعم التوسعة.
-</Note>
-
-<div id="cluster-domain">
-  ## نطاق العنقود
-</div>
-
-يحدِّد `spec.clusterDomain` لاحقة DNS في Kubernetes التي يستخدمها المشغِّل عند إنشاء
-أسماء المضيفين المؤهلة بالكامل للكبسولات التي يكتبها في
-إعدادات خادم ClickHouse. وتكون القيمة الافتراضية هي `cluster.local`، وهو موجود في كلٍّ من
-`ClickHouseCluster` و`KeeperCluster`.
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-يصل المُشغِّل إلى كل جراب عبر الخدمة عديمة الرأس بالصيغة التالية:
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. وينتقل هذا اللاحقة إلى
-جزأين من التهيئة المُولَّدة:
-
-* في `ClickHouseCluster`، تُستخدم قيمتها في أسماء مضيفات النسخ المتماثلة ضمن
-  `remote_servers` (للاستعلامات بين النسخ المتماثلة واستعلامات `Distributed`).
-* في `KeeperCluster`، تُستخدَم قيمتها لبناء أسماء مضيفات عقد Keeper التي
-  يستخدمها ClickHouse لأغراض التنسيق.
+تستخدم عقد Keeper أسماء الكبسولات عبر خدمتها عديمة الرأس: `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`.
 
 <Note>
   لا تُجرِ override لهذا إلا إذا كان `kubelet` في عنقودك يعمل باستخدام `--cluster-domain`
