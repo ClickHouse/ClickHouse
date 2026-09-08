@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -28,7 +28,7 @@ public:
     ASTExecute() = default;
 
     String function_name;
-    VectorWithMemoryTracking<String> arguments;
+    std::vector<String> arguments;
 
     String getID(char) const override { return "Execute"; }
 

@@ -1,16 +1,6 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 -- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
 
--- Primary key pruning on tables with reverse-sorted key columns must never drop granules that
--- contain matching rows. The shapes below are the tricky ones: a condition that bounds a DESC
--- column from below while another key column also participates, mark-range boundaries where an
--- earlier key column changes between marks, NULLs (stored physically first on a DESC column),
--- parts without a final mark (non-adaptive granularity), key columns not loaded in the in-memory
--- index, and key columns skipped by the sparse analysis. The core queries run through both index
--- analysis paths (use_lightweight_primary_key_index_analysis 1 and 0), and every query has an
--- EXPLAIN companion pinning the pruning decision (Parts/Granules), not only the result.
-
-SET explain_query_plan_default = 'legacy';
 
 -- { echo }
 
