@@ -14,13 +14,13 @@ DROP TABLE IF EXISTS t_transplant_right;
 -- The layout is pinned because the cost model that decides whether replicas pay off works off the
 -- estimated bytes to read, and leaving the granularity and part format to randomization makes that
 -- decision - and with it the whole point of the test - come and go.
-CREATE TABLE t_transplant_left  (key UInt64, v UInt64, pad String) ENGINE = MergeTree ORDER BY key
+CREATE TABLE t_transplant_left  (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
     SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
-CREATE TABLE t_transplant_right (key UInt64, v UInt64, pad String) ENGINE = MergeTree ORDER BY key
+CREATE TABLE t_transplant_right (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
     SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 
-INSERT INTO t_transplant_left  SELECT number, number, repeat('x', 60) FROM numbers(2000000);
-INSERT INTO t_transplant_right SELECT number, number, repeat('y', 60) FROM numbers(2000000);
+INSERT INTO t_transplant_left  SELECT number, number FROM numbers(300000);
+INSERT INTO t_transplant_right SELECT number, number FROM numbers(300000);
 
 -- One part per table, so that the plan the decision is matched against does not depend on how the
 -- insert happened to be split into parts.
@@ -44,7 +44,7 @@ SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 
 -- Baseline: the same query planned for a single node.
 SELECT sum(l.v), sum(r.v) FROM t_transplant_left AS l INNER JOIN t_transplant_right AS r ON l.key = r.key
-WHERE r.key < 100000
+WHERE r.key < 20000
 FORMAT Null SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
     log_comment = '05098_single_node';
 
@@ -58,15 +58,15 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 -- The decision needs dataflow statistics from an earlier execution, so the first run only collects
 -- them and the ones after it are what can act on them.
 SELECT sum(l.v), sum(r.v) FROM t_transplant_left AS l INNER JOIN t_transplant_right AS r ON l.key = r.key
-WHERE r.key < 100000
+WHERE r.key < 20000
 FORMAT Null SETTINGS log_comment = '05098_warmup';
 
 SELECT sum(l.v), sum(r.v) FROM t_transplant_left AS l INNER JOIN t_transplant_right AS r ON l.key = r.key
-WHERE r.key < 100000
+WHERE r.key < 20000
 FORMAT Null SETTINGS log_comment = '05098_with_replicas';
 
 SELECT sum(l.v), sum(r.v) FROM t_transplant_left AS l INNER JOIN t_transplant_right AS r ON l.key = r.key
-WHERE r.key < 100000
+WHERE r.key < 20000
 FORMAT Null SETTINGS log_comment = '05098_with_replicas';
 
 SET enable_parallel_replicas = 0;
