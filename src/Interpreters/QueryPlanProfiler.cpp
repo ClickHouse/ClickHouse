@@ -26,9 +26,6 @@ namespace
 
 String toJSONString(JSONBuilder::ItemPtr item)
 {
-    /// Deliberately the default format settings rather than the query's: what lands in the log must
-    /// not vary with how the user asked for their own results to be formatted. 64-bit integers are
-    /// written unquoted so that arithmetic over the stored statistics needs no cast.
     FormatSettings format_settings;
     format_settings.json.quote_64bit_integers = false;
 
@@ -100,18 +97,19 @@ void QueryPlanProfiler::render(const QueryPipeline * pipeline)
             stats.emplace(*pipeline, execution_time_ns);
         }
 
-        /// `actions` stays off. This always renders after the pipeline was built, and building it
-        /// moves every ExpressionStep's ActionsDAG into its ExpressionActions, leaving the step
-        /// holding an empty one. Describing actions then does not merely print nothing: FilterStep
-        /// looks its filter column up with ActionsDAG::findInOutputs, which throws
-        /// UNKNOWN_IDENTIFIER once the outputs are gone. That applies to the no-statistics render
-        /// too, which a query failing during execution reaches with the pipeline already built.
         ExplainPlanOptions explain_options
         {
+            .actions = true,
             .indexes = true,
+            .compact = true,
+            .pretty = true,
         };
 
-        plan_json = toJSONString(query_plan->explainPlan(explain_options, stats ? &*stats : nullptr));
+        plan_json = toJSONString(query_plan->explainPlan(
+            explain_options,
+            max_description_length,
+            stats ? &*stats : nullptr,
+            pretty_names ? &*pretty_names : nullptr));
     }
     catch (...)
     {

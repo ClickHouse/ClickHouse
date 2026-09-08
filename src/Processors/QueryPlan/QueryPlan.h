@@ -160,7 +160,12 @@ public:
         bool compact_repeated_processor_chains = false;
     };
 
-    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options, StepStatsStorage * steps_to_stats = nullptr) const;
+    JSONBuilder::ItemPtr explainPlan(
+        const ExplainPlanOptions & options,
+        size_t max_description_length = 0,
+        StepStatsStorage * steps_to_stats = nullptr,
+        const PrettyNamesPerPlan * precomputed_pretty_names = nullptr,
+        bool is_child_plan = false) const;
 
     void explainPlan(
         WriteBuffer & buffer,

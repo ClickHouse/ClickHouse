@@ -48,7 +48,9 @@ SELECT
     anyLast(JSONHas(toJSONString(query_plan), 'Plans')),
     anyLast(JSONHas(toJSONString(query_plan), 'Statistics')),
     anyLast(position(toJSONString(query_plan), 'ReadFromSystemNumbers')) > 0,
-    anyLast(position(toJSONString(query_plan), '"WallClockTimeNs"')) > 0
+    anyLast(position(toJSONString(query_plan), '"WallClockTimeNs"')) > 0,
+    anyLast(position(toJSONString(query_plan), 'Filter column: number MOD 7 = 0')) > 0,
+    anyLast(position(toJSONString(query_plan), 'Sort description: number DESC')) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
   AND position(query, '05045_finish') > 0;
