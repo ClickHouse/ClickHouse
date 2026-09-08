@@ -92,7 +92,7 @@ for transport in ("Native", "HTTP"):
                 if any(sample["symbols"]):
                     resolved_types.add(sample["trace_type"])
                 delivery = [symbol for symbol in sample["symbols"] if any(function in symbol for function in delivery_functions)]
-                assert not delivery, (transport, sample["trace_type"], delivery)
+                assert not delivery, (transport, sample)
         if resolved_types == {"CPU", "Real"}:
             break
     assert resolved_types == {"CPU", "Real"}, (transport, "missing query samples with resolved symbols", sorted(resolved_types))

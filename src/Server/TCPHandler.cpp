@@ -1177,7 +1177,11 @@ void TCPHandler::runImpl()
                 }
                 else
                 {
-                    sendProfileTraces(*query_state, true);
+                    if (query_state->profile_traces_queue)
+                    {
+                        ProfileTracesBlocker blocker;
+                        sendProfileTraces(*query_state, true);
+                    }
                     sendException(*exception, send_exception_with_stack_trace);
                 }
             }
@@ -1943,7 +1947,11 @@ void TCPHandler::sendProfileEvents(QueryState & state)
 
 void TCPHandler::sendSelectProfileEvents(QueryState & state)
 {
-    sendProfileTraces(state);
+    if (state.profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        sendProfileTraces(state);
+    }
 
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
@@ -1958,7 +1966,11 @@ void TCPHandler::sendInsertProfileEvents(QueryState & state)
     if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return;
 
-    sendProfileTraces(state);
+    if (state.profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        sendProfileTraces(state);
+    }
 
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
         return;
@@ -1985,6 +1997,9 @@ void TCPHandler::updateProfileTracesQueue(QueryState & state) const
 
 void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
 {
+    /// The caller's guard also suppresses samples from this function's entry and return paths.
+    chassert(ProfileTracesBlocker::isBlocked());
+
     if (!state.profile_traces_queue)
         return;
 
@@ -1997,9 +2012,6 @@ void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
     if (!finish && state.after_send_profile_traces.elapsedMicroseconds()
         < state.query_context->getSettingsRef()[Setting::interactive_delay])
         return;
-
-    /// Serializing samples must not generate new samples of the transport itself.
-    ProfileTracesBlocker blocker;
 
     if (finish)
         state.profile_traces_queue->finish();
@@ -3471,7 +3483,11 @@ void TCPHandler::trySendExceptionWithoutConnectionBuffers(const Exception & e)
 
 void TCPHandler::sendEndOfStream(QueryState & state)
 {
-    sendProfileTraces(state, true);
+    if (state.profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        sendProfileTraces(state, true);
+    }
 
     state.sent_all_data = true;
     state.io.setAllDataSent();
