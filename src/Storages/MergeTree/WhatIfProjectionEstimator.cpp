@@ -367,9 +367,10 @@ bool tryEstimateProjection(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, inside the granule the adaptive-granularity model can miss by",
+            "{} against {} from the base table, and the adaptive-granularity model can miss by up to {}",
             marks_text(projection_marks),
-            baseline_marks);
+            baseline_marks,
+            marks_text(margin));
     }
     else if (projection_marks != baseline_marks)
     {

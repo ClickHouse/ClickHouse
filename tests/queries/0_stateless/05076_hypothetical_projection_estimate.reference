@@ -155,7 +155,7 @@ marks: 3
 marks: 3
 read_ratio: 1.00x
 verdict: too close to call
-reason: 3 marks against 3 from the base table, inside the granule the adaptive-granularity model can miss by
+reason: 3 marks against 3 from the base table, and the adaptive-granularity model can miss by up to 1 mark
 --- not applicable cases ---
 With p_key (normal projection, hypothetical):
 reason: Projection sort key cannot filter this predicate (always unknown or true)
