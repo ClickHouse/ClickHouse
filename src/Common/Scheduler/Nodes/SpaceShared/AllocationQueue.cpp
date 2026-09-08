@@ -151,8 +151,8 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
         && allocation.canRecoverFromGrowthPressure())
     {
         /// The query setting decides whether entering the eviction queue starts a forced spill.
-        /// The suction ceiling may end that spill early after reconciliation, but it must not bypass
-        /// an explicitly forced spill before the query-side controller gets the request.
+        /// The suction ceiling may allow the final retry concurrently with spilling, but entry
+        /// into suction is not a pressure-resolution event.
         const auto pressure_action = allocation.onGrowthPressure();
         if (pressure_action == ResourceAllocation::GrowthPressureAction::Protect)
             allocation.memory_growth_recovery_pending = true;
@@ -161,7 +161,7 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
             /// The spill request remains controlled exclusively by the query setting. This
             /// independent allocation threshold only decides whether suction must wait for it.
             allocation.memory_growth_recovery_pending = true;
-            allocation.onGrowthPressureResolved();
+            allocation.onSuctionStarted();
         }
         allocation.memory_growth_eviction_order = ++last_eviction_order;
         if (!suspended_growth)
@@ -703,7 +703,7 @@ void AllocationQueue::processActivation()
                     && recovering.canStartSuctionBeforeSpillCompletes())
                 {
                     recovering.memory_growth_recovery_pending = true;
-                    recovering.onGrowthPressureResolved();
+                    recovering.onSuctionStarted();
                     memory_growth_suspension_changed = true;
                 }
             }

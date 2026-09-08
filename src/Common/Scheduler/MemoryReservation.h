@@ -84,6 +84,7 @@ private:
     void allocationFailed(const std::exception_ptr & reason) override;
     GrowthPressureAction onGrowthPressure() override;
     void onGrowthPressureResolved() override;
+    void onSuctionStarted() override {}
     bool isGrowthRecoveryActive() override;
     bool canRecoverFromGrowthPressure() const override
     {
@@ -134,4 +135,3 @@ private:
 using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
 
 }
-

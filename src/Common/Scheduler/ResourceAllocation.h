@@ -73,6 +73,8 @@ public:
     /// complete fitting-work search before consuming this decision.
     virtual GrowthPressureAction onGrowthPressure() { return GrowthPressureAction::Protect; }
     virtual void onGrowthPressureResolved() {}
+    /// Suction eligibility does not necessarily end an active spill pass.
+    virtual void onSuctionStarted() { onGrowthPressureResolved(); }
     virtual bool isGrowthRecoveryActive() { return false; }
 
     /// Recovery eligibility is independent of victim protection. A query may request a spill
