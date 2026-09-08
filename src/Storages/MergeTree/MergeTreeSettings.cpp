@@ -3070,8 +3070,8 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         const auto & setting_name = setting.getName();
         size_t col = 0;
         res_columns[col++]->insert(setting_name);
-        res_columns[col++]->insert(setting.getValueString());
-        res_columns[col++]->insert(setting.getDefaultValueString());
+        res_columns[col++]->insert(setting.getValueString(/* show_secrets */ true));
+        res_columns[col++]->insert(setting.getDefaultValueString(/* show_secrets */ true));
         res_columns[col++]->insert(setting.isValueChanged());
         res_columns[col++]->insert(setting.getDescription());
         Field min;
