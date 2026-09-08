@@ -82,6 +82,17 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
     return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, context);
 }
 
+static UInt64 extractResponseVersion(ReadWriteBufferFromHTTP * in)
+{
+    for (const auto & header : in->getResponseHeaders())
+    {
+        const auto & name_and_value = header.safeGet<Tuple>();
+        if (name_and_value.at(0).safeGet<String>() == "X-ClickHouse-Task-Status-Version")
+            return parse<UInt64>(name_and_value.at(1).safeGet<String>());
+    }
+    return DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
+}
+
 /// Get task status by its id.
 /// If wait_for_ms is set, the function will wait for the task to finish for the specified amount of time.
 DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context, bool for_cleanup)
@@ -130,14 +141,8 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
         .withDelayInit(false)
         .create(creds);
 
-    /// In case no version is sent back, the version protocl is  DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS
-    UInt64 response_version = DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
-    for (const auto & header : in->getResponseHeaders())
-    {
-        const auto & name_and_value = header.safeGet<Tuple>();
-        if (name_and_value.at(0).safeGet<String>() == "X-ClickHouse-Task-Status-Version")
-            response_version = parse<UInt64>(name_and_value.at(1).safeGet<String>());
-    }
+    /// In case no version is sent back, the version protocol is DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS
+    auto response_version = extractResponseVersion(in.get());
 
     DistributedQueryTaskStatus result;
     result.read(*in, response_version);

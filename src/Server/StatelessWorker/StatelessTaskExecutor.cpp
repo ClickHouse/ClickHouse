@@ -219,28 +219,19 @@ Block drainLogs(const InternalTextLogsQueuePtr & logs_queue)
     if (!logs_queue)
         return {};
 
-    MutableColumns logs_columns;
-    MutableColumns curr_logs_columns;
-    size_t chunks = 0;
-
-    for (; logs_queue->tryPop(curr_logs_columns); ++chunks)
+    const auto logs = logs_queue->drainAll();
+    MutableColumns columns = InternalTextLogsQueue::getSampleColumns();
+    for (const auto &log_line: logs)
     {
-        if (chunks == 0)
+        for (std::size_t col_id{0}; col_id < columns.size(); ++col_id)
         {
-            logs_columns = std::move(curr_logs_columns);
-        }
-        else
-        {
-            for (size_t j = 0; j < logs_columns.size(); ++j)
-                logs_columns[j]->insertRangeFrom(*curr_logs_columns[j], 0, curr_logs_columns[j]->size());
+            const auto &col = log_line[col_id];
+            columns[col_id]->insertRangeFrom(*col, 0, col->size());
         }
     }
 
-    if (chunks == 0)
-        return {};
-
     Block block = InternalTextLogsQueue::getSampleBlock();
-    block.setColumns(std::move(logs_columns));
+    block.setColumns(std::move(columns));
     return block;
 }
 
