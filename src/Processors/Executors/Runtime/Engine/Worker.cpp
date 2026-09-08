@@ -280,6 +280,7 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
 void Worker::runAsyncReady(ProcessorState & state)
 {
     state.processor->onAsyncJobReady();
+    scheduler.push(Task{.state = &state, .kind = Task::Kind::Work}, worker_id);
 }
 
 void Worker::runUpdatePipeline(ProcessorState & requester)

@@ -150,6 +150,7 @@ std::vector<ProcessorState *> Poller::poll(int timeout_ms)
 
     std::lock_guard lock(mutex);
 
+    bool timer_fired = false;
     for (size_t i = 0; i < num_events; ++i)
     {
         void * ptr = events[i].data.ptr;
@@ -163,7 +164,7 @@ std::vector<ProcessorState *> Poller::poll(int timeout_ms)
         if (ptr == &timer_signal)
         {
             timer_signal.drain();
-            collectExpired(fired);
+            timer_fired = true;
             continue;
         }
 
@@ -171,6 +172,9 @@ std::vector<ProcessorState *> Poller::poll(int timeout_ms)
         unregister(state);
         fired.push_back(state);
     }
+
+    if (timer_fired)
+        collectExpired(fired);
 
     return fired;
 }

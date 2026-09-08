@@ -129,10 +129,7 @@ size_t TaskScheduler::poll(size_t worker_id, int timeout_ms)
     for (auto * state : fired | std::views::reverse)
         local[worker_id].queue.pushFront(Task{.state = state, .kind = Task::Kind::AsyncReady});
 
-    for (auto * state : fired)
-        local[worker_id].queue.pushBack(Task{.state = state, .kind = Task::Kind::Work});
-
-    total += 2 * fired.size();
+    total += fired.size();
     return fired.size();
 }
 

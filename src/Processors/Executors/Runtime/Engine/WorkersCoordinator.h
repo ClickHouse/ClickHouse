@@ -13,8 +13,7 @@ namespace DB
 
 class WorkersCoordinator
 {
-    size_t idleLocked() const;
-    bool allIdle(size_t idle_workers) const;
+    bool allIdle(size_t sleeping_workers) const;
     void wakeOneLocked();
     void stopLocked();
 

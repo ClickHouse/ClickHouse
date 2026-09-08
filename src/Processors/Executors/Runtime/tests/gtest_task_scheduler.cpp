@@ -97,7 +97,7 @@ TEST(TaskScheduler, DrainHandsTheQueueToTheGlobalQueue)
 }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFrontAndWorkAtTheBack)
+TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFront)
 {
     Fixture f(1, 2);
 
@@ -113,7 +113,7 @@ TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFrontAndWorkAtTheBack)
     ASSERT_EQ(1, ::write(fds[1], &byte, 1));
     EXPECT_EQ(1u, f.scheduler.poll(0, 0));
     EXPECT_EQ(0u, f.poller.pending());
-    EXPECT_EQ(3u, f.scheduler.size());
+    EXPECT_EQ(2u, f.scheduler.size());
 
     auto first = f.scheduler.tryPop(0);
     ASSERT_TRUE(first);
@@ -121,11 +121,6 @@ TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFrontAndWorkAtTheBack)
     EXPECT_EQ(Task::Kind::AsyncReady, first->kind);
 
     EXPECT_EQ(1u, f.popIndex(0));
-
-    auto last = f.scheduler.tryPop(0);
-    ASSERT_TRUE(last);
-    EXPECT_EQ(f.states.data(), last->state);
-    EXPECT_EQ(Task::Kind::Work, last->kind);
     EXPECT_FALSE(f.scheduler.tryPop(0));
 
     ::close(fds[0]);
@@ -148,7 +143,7 @@ TEST(TaskScheduler, TryPopPollsWhenTheQueuesAreEmpty)
     auto popped = f.scheduler.tryPop(0);
     ASSERT_TRUE(popped);
     EXPECT_EQ(Task::Kind::AsyncReady, popped->kind);
-    EXPECT_EQ(1u, f.scheduler.size());
+    EXPECT_EQ(0u, f.scheduler.size());
     EXPECT_EQ(0u, f.poller.pending());
 
     ::close(fds[0]);
