@@ -49,7 +49,7 @@ marks: 1
 rows: 100
 read_ratio: 1.00x
 verdict: not chosen
-reason: the same 1 marks would be read, and the projection order does not serve the ORDER BY
+reason: the same 1 mark would be read, and the projection order does not serve the ORDER BY
 source: empirical
 real:
 ReadFromMergeTree (default.t_real)
@@ -128,6 +128,13 @@ source: empirical
 real:
 ReadFromMergeTree (p_c)
 Granules: 6
+--- a projection that reads more marks than the base table is not chosen ---
+marks: 1
+marks: 3
+read_ratio: 3.00x
+verdict: not chosen
+reason: 3 marks would be read instead of 1 from the base table
+real: read from the base table
 --- not applicable cases ---
 With p_key (normal projection, hypothetical):
 reason: Projection sort key cannot filter this predicate (always unknown or true)

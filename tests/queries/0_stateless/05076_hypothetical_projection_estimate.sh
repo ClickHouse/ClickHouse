@@ -95,6 +95,15 @@ $CLICKHOUSE_CLIENT -q "
 compare p_c "(SELECT id, b, v ORDER BY b)" "SELECT sum(v) FROM TABLE WHERE b >= 0" t_est_c t_real_c
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;"
 
+# the projection's own granularity makes it read more than a base read the primary key already pruned
+echo "--- a projection that reads more marks than the base table is not chosen ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_g ON t_est_g (SELECT a, b, v ORDER BY b) WITH SETTINGS (index_granularity = 50);
+    EXPLAIN WHATIF SELECT a, b, v FROM t_est_g WHERE a < 100 AND b = 42 SETTINGS ${PIN};
+" | grep -E '^\s+(marks|read_ratio|verdict|reason):' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT a, b, v FROM t_real_g WHERE a < 100 AND b = 42 SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_g'" \
+    | grep -oE 'ReadFromMergeTree \(p_g\)' || echo "real: read from the base table"
+
 echo "--- not applicable cases ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_key ON t_est (SELECT a, b, v ORDER BY b);

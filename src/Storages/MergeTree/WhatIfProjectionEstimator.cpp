@@ -346,18 +346,19 @@ bool tryEstimateProjection(
 
     result.estimated_marks = projection_marks;
     result.estimated_rows = projection_rows;
+    auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
     if (projection_marks != baseline_marks)
     {
         result.verdict = projection_marks < baseline_marks ? "chosen" : "not chosen";
-        result.verdict_reason = fmt::format(
-            "{} marks would be read instead of {} from the base table", projection_marks, baseline_marks);
+        result.verdict_reason
+            = fmt::format("{} would be read instead of {} from the base table", marks_text(projection_marks), baseline_marks);
     }
     else
     {
         result.verdict = sort_order_helps ? "chosen" : "not chosen";
         result.verdict_reason = fmt::format(
-            "the same {} marks would be read, and the projection order {} the ORDER BY",
-            projection_marks,
+            "the same {} would be read, and the projection order {} the ORDER BY",
+            marks_text(projection_marks),
             sort_order_helps ? "serves" : "does not serve");
     }
     result.estimate_source = WhatIfCandidateResult::Empirical;
