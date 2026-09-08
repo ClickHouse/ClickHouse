@@ -43,7 +43,32 @@ protected:
     Sources sources;
     std::vector<size_t> sources_origin_merge_tree_part_level;
 
-    SortingQueue<SortCursor> queue;
+    /// The batch queue identifies how many consecutive rows can be taken from the front
+    /// cursor in one go (see `SortingQueueImpl::updateBatchSize`), so consuming rows one by
+    /// one with `next(1)` restructures the queue once per batch instead of once per row.
+    SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> queue;
+
+    /// Set by a derived algorithm before `initialize` when it can skip runs of equal keys within
+    /// a batch (see `ReplacingSortedAlgorithm`). The batch detection is then enabled if some
+    /// source actually starts with enough such runs; otherwise (and for algorithms that consume
+    /// rows one by one) it is enabled only for expensive comparators, where the batches save
+    /// comparisons. For cheap comparators on keys interleaved between the sources without
+    /// runs (e.g. parts that each hold every key once) the detection is pure overhead.
+    bool uses_runs_of_equal_keys = false;
+
+    /// Whether some source (with a zero part level, read without a permutation) starts with
+    /// enough runs of equal sort keys for skipping them to be cheaper than merging them row by
+    /// row. A single duplicate is not enough: the probe for the end of a run runs on the rows
+    /// outside runs too.
+    bool sourcesHaveRunsWorthSkipping() const;
+
+    /// Whether the queue detects batches longer than one row (decided in `initialize`).
+    /// A batch of more than one row is not by itself evidence that the detection ran: with a
+    /// single cursor left in the queue there is nothing to compare against, so its whole
+    /// remainder is always reported as one batch. An algorithm that does extra work per batch
+    /// must therefore test this flag rather than the batch size, or it would pay for batches
+    /// exactly where the detection was disabled because they cannot pay off.
+    bool batch_detection_enabled = false;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution

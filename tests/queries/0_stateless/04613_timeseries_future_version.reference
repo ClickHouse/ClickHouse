@@ -1,0 +1,15 @@
+--- a table with a future version can be attached, even if its definition uses a setting unknown to this server ---
+TimeSeries	1
+--- every PromQL entry point rejects it ---
+INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
+--- reads, writes, alters and maintenance are rejected too ---
+INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
+--- the error is instructive ---
+newer than the latest version
