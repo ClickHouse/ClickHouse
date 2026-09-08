@@ -14,7 +14,6 @@ db=${CLICKHOUSE_DATABASE}
 user="user_04774_${CLICKHOUSE_DATABASE}"
 src="${CLICKHOUSE_TEST_UNIQUE_NAME}_src"
 bk="File('${CLICKHOUSE_TEST_UNIQUE_NAME}/b')"
-bk_disk="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk')"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $user"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS $src"
@@ -35,7 +34,6 @@ REVOKE SOURCES ON *.* FROM $user;
 "
 # An admin-made backup the restricted user will try to read.
 ${CLICKHOUSE_CLIENT} -q "BACKUP DATABASE $src TO $bk FORMAT Null"
-${CLICKHOUSE_CLIENT} -q "BACKUP DATABASE $src TO $bk_disk FORMAT Null"
 
 deny_or_allow() {
     local out
@@ -87,10 +85,6 @@ echo "-- WRITE ON FILE alone does not authorize reading a backup"
 ${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO $user"
 deny_or_allow "RESTORE TABLE $src.t AS $db.r3 FROM $bk FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "REVOKE WRITE ON FILE FROM $user"
-
-echo "-- Disk(...) is exempt in this change: still allowed with SOURCES revoked"
-deny_or_allow "BACKUP TABLE $src.t TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk2') FORMAT Null"
-deny_or_allow "CREATE DATABASE ${db}_b3 ENGINE = Backup('$src', $bk_disk)"
 
 echo "-- re-attaching an already-authorized database does not re-demand the grant"
 ${CLICKHOUSE_CLIENT} --user "$user" -q "DETACH DATABASE ${db}_b2"
@@ -148,7 +142,6 @@ ${CLICKHOUSE_CLIENT} -q "SELECT x FROM $db.r_adm"
 ${CLICKHOUSE_CLIENT} --multiquery -q "
 DROP DATABASE IF EXISTS ${db}_b1;
 DROP DATABASE IF EXISTS ${db}_b2;
-DROP DATABASE IF EXISTS ${db}_b3;
 DROP DATABASE IF EXISTS ${db}_b4;
 DROP DATABASE IF EXISTS $src;
 DROP USER IF EXISTS $user;

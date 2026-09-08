@@ -49,8 +49,7 @@ Activez la prise en charge de WebAssembly dans la configuration de ClickHouse :
 
 Implémentations du moteur disponibles :
 
-* `wasmtime` (par défaut, recommandé) — utilise [WasmTime](https://github.com/bytecodealliance/wasmtime)
-* `wasmedge` — utilise [WasmEdge](https://github.com/WasmEdge/WasmEdge)
+* `wasmtime` (par défaut et actuellement la seule) — utilise [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
 <div id="quick-start">
   ## Quick Start
@@ -241,7 +240,7 @@ RETURNS return_type
 * `SHA256_HASH` : Hash attendu du module pour vérification (rempli automatiquement s’il est omis) ; peut être utilisé pour garantir que le bon module WASM est chargé sur différentes répliques.
 * `SETTINGS` : Paramètres propres à la fonction
   * `serialization_format` String — Format utilisé pour sérialiser les blocs d’arguments transmis au module et analyser le résultat renvoyé. Utilisé uniquement par `ABI BUFFERED_V1`. Valeurs prises en charge : `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary` et `Buffers`. Valeur par défaut : `MsgPack`. Les formats par blocs tels que `Buffers` doivent renvoyer une seule colonne dont le type correspond à la signature de fonction déclarée.
-  * `webassembly_udf_enable_fuel` Bool — Active un budget de fuel limité pour la fonction. Valeur par défaut : `true`. Lorsque `false`, le paramètre de requête `webassembly_udf_max_fuel` est ignoré pour cette fonction. La désactivation des limites de fuel peut améliorer les performances lors de l’utilisation du moteur `wasmtime`. Cependant, pour du code invité non fiable ou bogué, cela peut augmenter le risque d’exécution incontrôlée.
+  * `webassembly_udf_enable_fuel` Bool — Active un budget de fuel limité pour la fonction. Valeur par défaut : `true`. Lorsque `false`, le paramètre de requête `webassembly_udf_max_fuel` est ignoré pour cette fonction. La désactivation des limites de fuel peut améliorer les performances. Cependant, pour du code invité non fiable ou bogué, cela peut augmenter le risque d’exécution incontrôlée.
 
 <div id="abis-versions">
   ## Versions d’ABI

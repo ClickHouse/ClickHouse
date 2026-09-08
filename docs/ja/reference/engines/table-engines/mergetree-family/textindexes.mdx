@@ -83,6 +83,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,6 +163,9 @@ ALTER TABLE table DROP INDEX text_idx;
   区切り文字は省略可能なパラメータで指定できます。たとえば、`tokenizer = splitByString([', ', '; ', '\n', '\\'])` のように指定します。
   各 String は複数文字で構成することもできます (例では `', '`) 。
   明示的に指定しない場合 (たとえば `tokenizer = splitByString`) 、デフォルトの区切り文字リストは単一の空白文字 `[' ']` です。
+* `splitByRegexp(re)` は、ユーザー定義の正規表現区切り文字 `re` で String を分割します (関数 [splitByRegexp](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) を参照) 。
+  `re` 引数は必須です。たとえば、`tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')` のように指定します。
+  固定の区切り String を使用する `splitByString` とは異なり、正規表現区切り文字では、他のトークナイザーでは分割される `C++` や `C#` などの特殊文字を含むトークンを保持できます。
 * `asciiCJK` は、Unicode の単語境界規則を使用して String をトークンに分割します ([Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/) に類似) 。
   ASCII の英数字とアンダースコアは、コネクタ (文字に対する ASCII `:`、同種の文字に対する `.` および `'`) を含むトークンを構成します。非 ASCII の Unicode 文字は、[CJK](https://en.wikipedia.org/wiki/CJK_characters) 文字を含め、1 文字のトークンになります。
 * `chinese[(granularity)]` は、Dictionary と隠れマルコフモデルを使用して中国語テキストを単語に分割します (アルゴリズムは [jieba](https://github.com/fxsjy/jieba) に従い、埋め込み Dictionary とモデルデータは [cppjieba](https://github.com/yanyiwu/cppjieba) に由来します) 。非 ASCII 文字をすべて 1 文字のトークンとして扱う `asciiCJK` とは異なり、`chinese` は連続する中国語文字を単語にまとめます (たとえば、`北京大学` は 4 つの 1 文字トークンではなく、1 つのトークン `北京大学` になります) 。これにより、中国語テキストに対してより意味のあるトークンが得られ、検索品質が向上します。一般的なテキストや混在テキストには `asciiCJK` を、中国語のみのテキストには `chinese` を使用してください。省略可能な `granularity` 引数には、`'coarse_grained'` (指定しない場合のデフォルト) または `'fine_grained'` を指定します。後者では、たとえば `北京邮电大学` に対して `北京`、`邮电`、`大学` も生成されるよう、重複するサブワードも列挙します。きめ細かいトークン化は、より大きな索引を必要とする代わりに再現率を向上させます。
@@ -177,7 +182,7 @@ ALTER TABLE table DROP INDEX text_idx;
   パラメータ `min_cutoff_length` を指定した場合、長さが `min_cutoff_length` 以上の n-gram のみが返されます。
   `ngrams(N)` と比べると、`sparseGrams` トークナイザーは可変長の N-gram を生成するため、元のテキストをより柔軟に表現できます。
   たとえば、`tokenizer = sparseGrams(3, 5, 4)` では、内部的には入力文字列から 3-gram、4-gram、5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
-* `array` はトークン化を行いません。つまり、各行の値がトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) を参照) 。
+* `array` はトークン化を行いません。つまり、各行の値がトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) を参照) 。他のシステムとの互換性のため、`keyword` は `array` のエイリアスとして使用できます。
 
 使用可能なすべてのトークナイザーは [system.tokenizers](/ja/reference/system-tables/tokenizers) に一覧表示されています。
 
@@ -411,7 +416,7 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 
 ポストプロセッサは、索引構築時に生成される各トークンに適用されます (`array` トークナイザーでは、各配列要素がトークンになります)。クエリ時の動作は関数によって異なります:
 
-* `hasToken`、`hasAllTokens`、`hasAnyTokens`、および `hasPhrase` (サポートされている任意のトークナイザーの場合): ポストプロセッサは検索対象のトークンと検索ニードルの両方に適用され、完全に正規化されたマッチング (たとえば、大文字小文字を区別しない検索) を可能にします。`hasPhrase` では、ポストプロセッサ処理後のトークンが密に配置されるため、ポストプロセッサが除外したトークンによって位置の空白は生じず、そのトークンをまたいでフレーズは引き続き一致します。たとえば、`the` を除外するストップワードポストプロセッサでは、`hasPhrase(col, 'see cat')` はドキュメント `see the cat` に一致します。
+* `hasToken`、`hasAllTokens`、`hasAnyTokens`、および `hasPhrase` (サポートされている任意のトークナイザーの場合): ポストプロセッサは検索対象のトークンと検索ニードルの両方に適用され、完全に正規化されたマッチング (たとえば、大文字小文字を区別しない検索) を可能にします。`hasPhrase` では、ポストプロセッサ処理後のトークンが密に配置されるため、ポストプロセッサが除外したトークンによって位置の空白は生じず、そのトークンをまたいでフレーズは引き続き一致します。たとえば、`the` を除外するストップワードポストプロセッサでは、`hasPhrase(col, 'see cat')` はドキュメント `see the cat` に一致します。唯一の例外は `splitByRegexp` 索引に対する `hasPhrase` で、ポストプロセッサをサポートしていません (この組み合わせは例外として拒否されます)。
 * その他すべての関数 (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): 索引ヒントのルックアップでは検索ニードルのみがポストプロセッサ処理されます。行レベルの述語では、引き続き元のカラム値と比較されます。
 
 例:
@@ -519,31 +524,31 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 テキスト索引を参照する述語では、索引構築時に格納されたものと同じトークンを索引のルックアップで使えるように、グラニュールレベルのチェックの前にプリプロセッサとポストプロセッサが検索値に適用されます。
 ほとんどの関数 (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`) では、テキスト索引は無関係なデータブロックをスキップするためにのみ使用されます。ClickHouse はその後も、元のカラムデータに対して元の述語で、残った各行を検証します。
 トークン検索関数 (`hasToken`, `hasAllTokens`, `hasAnyTokens`) では、テキスト索引が主な評価経路になります。ClickHouse は、索引構築時に適用されたものと同じプリプロセッサ、トークナイザー、ポストプロセッサを通して needle を正規化し、この正規化形を索引付き・索引なしの両方のテーブルパーツに対して使用します。ポストプロセッサがある場合は、haystack のトークンもクエリ時に正規化されるため (`array` に限らず、どのトークナイザーでも同様) 、比較の両側が一貫して変換され、結果は索引を直接読み取るかどうか (設定 `query_plan_direct_read_from_text_index`) 、または特定のパーツにマテリアライズされた索引があるかどうかに依存しません。たとえば、`lower` ポストプロセッサを使うと、`hasAllTokens(col, ['FOO'])` で大文字と小文字を区別しないマッチングを有効にできます。
-`support_phrase_search` がない場合、`hasPhrase` は索引をヒントとしてのみ使用し、残った各行を元の述語で検証します。さらに、ポストプロセッサはフレーズと haystack のトークンの両方を同じ方法で正規化するため、結果は読み取り経路に依存せず、ポストプロセッサが削除するトークンによってフレーズの隣接関係が崩れることもありません。`support_phrase_search = 1` の場合、`hasPhrase` は正確な direct read を使用します (存在する場合は、ポストプロセッサも引き続き適用されます) 。
+`support_phrase_search` がない場合、`hasPhrase` は索引をヒントとしてのみ使用し、残った各行を元の述語で検証します。さらに、ポストプロセッサはフレーズと haystack のトークンの両方を同じ方法で正規化するため、結果は読み取り経路に依存せず、ポストプロセッサが削除するトークンによってフレーズの隣接関係が崩れることもありません。`support_phrase_search = 1` の場合、`hasPhrase` は正確な direct read を使用します (存在する場合は、ポストプロセッサも引き続き適用されます) 。このポストプロセッサのサポートは `splitByRegexp` トークナイザーには適用されません。ポストプロセッサと組み合わせた `splitByRegexp` 索引に対する `hasPhrase` は拒否されます (以下の脚注 ³ を参照) 。
 ポストプロセッサによって空文字列にマップされる検索トークンは無視され、つまり検索フレーズに存在しないものとして扱われます。
 
-| 関数                                                                                                      | プリプロセッサ対応                   | 対応トークナイザー                                                       | ポストプロセッサ対応 |
-| ------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------- | ---------- |
-| `=`                                                                                                     | はい                          | すべて                                                             | はい         |
-| `IN`                                                                                                    | はい                          | すべて                                                             | はい         |
-| [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken)                     | はい                          | すべて (`splitByNonAlpha` 向けに設計)                                   | はい         |
-| [hasAnyTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | はい                          | すべて                                                             | はい         |
-| [hasAllTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | はい                          | すべて                                                             | はい         |
-| [hasAnyTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                             | はい         |
-| [hasAllTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                             | はい         |
-| [hasPhrase](/ja/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | はい                          | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | はい         |
-| [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith)                        | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | はい         |
-| [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith)                            | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | はい         |
-| [like](/ja/reference/functions/regular-functions/string-search-functions#like)                             | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | はい¹        |
-| [match](/ja/reference/functions/regular-functions/string-search-functions#match)                           | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | はい¹        |
-| [ilike](/ja/reference/functions/regular-functions/string-search-functions#like)                            | はい² (`lower`/`upper` のみ)    | `splitByNonAlpha`, `array`²                                     | いいえ²       |
-| [mapContainsKey](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | はい                          | すべて                                                             | はい         |
-| [mapContainsValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | はい                          | すべて                                                             | はい         |
-| [mapContainsKeyLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | はい         |
-| [mapContainsValueLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | はい         |
-| [has](/ja/reference/functions/regular-functions/array-functions#has)                                       | はい                          | `array`                                                         | はい         |
-| [hasAny](/ja/reference/functions/regular-functions/array-functions#hasAny)                                 | はい                          | `array`                                                         | はい         |
-| [hasAll](/ja/reference/functions/regular-functions/array-functions#hasAll)                                 | はい                          | `array`                                                         | はい         |
+| 関数                                                                                                      | プリプロセッサ対応                   | 対応トークナイザー                                                                         | ポストプロセッサ対応 |
+| ------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- | ---------- |
+| `=`                                                                                                     | はい                          | すべて                                                                               | はい         |
+| `IN`                                                                                                    | はい                          | すべて                                                                               | はい         |
+| [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken)                     | はい                          | すべて (`splitByNonAlpha` 向けに設計)                                                     | はい         |
+| [hasAnyTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | はい                          | すべて                                                                               | はい         |
+| [hasAllTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | はい                          | すべて                                                                               | はい         |
+| [hasAnyTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                                               | はい         |
+| [hasAllTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                                               | はい         |
+| [hasPhrase](/ja/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | はい                          | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | はい³        |
+| [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith)                        | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | はい         |
+| [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith)                            | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | はい         |
+| [like](/ja/reference/functions/regular-functions/string-search-functions#like)                             | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | はい¹        |
+| [match](/ja/reference/functions/regular-functions/string-search-functions#match)                           | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | はい¹        |
+| [ilike](/ja/reference/functions/regular-functions/string-search-functions#like)                            | はい² (`lower`/`upper` のみ)    | `splitByNonAlpha`, `array`²                                                       | いいえ²       |
+| [mapContainsKey](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | はい                          | すべて                                                                               | はい         |
+| [mapContainsValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | はい                          | すべて                                                                               | はい         |
+| [mapContainsKeyLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | はい         |
+| [mapContainsValueLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | はい         |
+| [has](/ja/reference/functions/regular-functions/array-functions#has)                                       | はい                          | `array`                                                                           | はい         |
+| [hasAny](/ja/reference/functions/regular-functions/array-functions#hasAny)                                 | はい                          | `array`                                                                           | はい         |
+| [hasAll](/ja/reference/functions/regular-functions/array-functions#hasAll)                                 | はい                          | `array`                                                                           | はい         |
 
 ¹ `LIKE` と `match` は、記載されたトークナイザーではヒントとして direct read を使用し、それ以外では 総当たりスキャン にフォールバックします。
 `LIKE` はさらに、プリプロセッサやポストプロセッサを使わない `splitByNonAlpha` および `array` トークナイザーに対して、*direct read (ヒントなし)&#x20;*&#x20;もサポートします (`use_text_index_like_evaluation_by_dictionary_scan` で有効化) 。
@@ -551,6 +556,8 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ² `ILIKE` は、direct read (ヒントなし) でのみサポートされます (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` または `array` トークナイザー) 。
 索引をヒントとして使うフォールバックはありません。設定が無効になっている場合、またはトークナイザーがサポート対象外の場合、`ILIKE` では索引は使用されません。
 プリプロセッサがある場合は `lower` または `upper` である必要があり、ポストプロセッサはサポートされません。
+
+³ `splitByRegexp` テキスト索引に対する `hasPhrase` は、ポストプロセッサをサポート**しません**。ポストプロセッサの行レベル Rewrite は、空白で分割する `splitByNonAlpha` 形式のトークンを前提としているため、この組み合わせは例外で拒否されます。ポストプロセッサなしの場合、`splitByRegexp` は `hasPhrase` で完全にサポートされます。
 
 **Experimental: フレーズ検索引数のサポート (任意)&#x20;**。
 
@@ -838,7 +845,7 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 すべてのトークンがどこかに含まれていればよい `hasAllTokens` とは異なり、`hasPhrase` ではそれらが連続した並びとして出現する必要があります。
 検索フレーズは、索引カラムに設定されているものと同じトークナイザーでトークン化されます。
 テキスト索引で ポストプロセッサ を使用している場合、検索フレーズも索引のルックアップ前に正規化されます。
-この関数を使用するには、`splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK`、`icu` のいずれかのトークナイザーが必要です。
+この関数を使用するには、`splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK`、`icu` のいずれかのトークナイザーが必要です。
 
 例:
 
@@ -1272,12 +1279,12 @@ WHERE hasPhrase(col, 'weather in Tokyo')
 
 `weather in Tokyo` というトークン列を含む任意の行 (たとえば `How is the weather in Tokyo?`) に一致しますか？
 
-テキスト索引は、フレーズ内のすべてのトークンの posting list の積集合を求めて候補となる グラニュール を特定することで、フレーズ検索を高速化します。
+テキスト索引は、フレーズ内のすべてのトークンの ポスティングリスト の積集合を求めて候補となる グラニュール を特定することで、フレーズ検索を高速化します。
 その後、ClickHouse はそれらの グラニュール 内で、トークンが正確に隣接していることを検証します。
 この処理は比較的コストが高く、通常のテキスト検索クエリより低速です。
 フレーズ検索クエリを高速化するには、テキスト索引で位置情報の保存を有効にしてください (上記の `Optional parameters` を参照) 。
 
-`hasPhrase` は、トークナイザー `splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK`、`icu` とあわせて使用できます。
+`hasPhrase` は、トークナイザー `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK`、`icu` とあわせて使用できます。
 指定したフレーズ文字列は、索引のトークナイザーを使ってトークン化されます。
 フレーズ内の区切り文字は無視されます。`splitByNonAlpha` をトークナイザーとして使用している場合、`hasPhrase(text, 'quick+brown')` は `hasPhrase(text, 'quick brown')` と同等です。
 
@@ -1558,6 +1565,14 @@ cache を設定するには、以下のサーバー設定を参照してくだ�
 * トークン数が非常に多いテキスト索引 (例: 100 億トークン) のマテリアライズでは、大量のメモリを消費する可能性があります。テキスト
   索引のマテリアライズは、直接 (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) 行われる場合と、パーツのマージで間接的に行われる場合があります。
 * 4,294,967,296 (= 2^32 = 約 42 億) 行を超えるパーツでは、テキスト索引をマテリアライズできません。テキスト索引がマテリアライズされていない場合、クエリはそのパーツ内での低速な総当たり検索にフォールバックします。最悪ケースの見積もりとして、パーツには String 型のカラムが 1 つだけ含まれ、MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (デフォルト: 150 GB) が変更されていないと仮定してください。この場合、そのカラムの 1 行あたりの平均文字数が 29.5 文字未満であれば、この状況が発生します。実際には、テーブルにはほかのカラムも含まれるため、しきい値はこれより何倍も小さくなります (ほかのカラムの数、型、サイズに依存します) 。
+
+<div id="upgrade-notes">
+  ## アップグレードに関する注意
+</div>
+
+テキスト索引のオンディスクフォーマットのバージョンは、テーブルレベルの設定 [`text_index_serialization_version`](/ja/reference/settings/merge-tree-settings/text-index) (デフォルト: `v2_with_positions`) で制御されます。
+この設定は厳密な制約ではなく優先指定です。設定されたバージョンで索引を表現できない場合は、表現可能なより新しいバージョンが自動的に選択されるため、この設定が原因でテキスト索引の書き込みに失敗することはありません。
+ローリングアップグレード中は、すでにアップグレード済みのサーバーで [`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 設定を使用してフォーマットを固定します。この設定を対応するフォーマットが導入されたバージョンより古いバージョンにすると、`text_index_serialization_version` は自動的に古い値に戻り、新しいサーバーでも古いサーバーが引き続き読み取れるフォーマットで書き込まれます。
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## テキスト索引とブルームフィルタベースの索引の違い
