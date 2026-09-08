@@ -66,6 +66,7 @@
           "group": "Use cases",
           "pages": [
             "ko/get-started/use-cases/overview",
+            "ko/get-started/use-cases/choosing-a-service",
             "ko/get-started/use-cases/real-time-analytics",
             "ko/get-started/use-cases/observability",
             "ko/get-started/use-cases/data-warehousing",

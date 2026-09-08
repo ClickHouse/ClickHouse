@@ -312,7 +312,7 @@ URL-адресов S3.
 ### Отладка {#debugging}
 
 При ошибке команда `COPY` из chdb&#95;hook добавляет в контекст ошибки
-[chDB]-запрос, который она пыталась выполнить:
+запрос chDB, который она пыталась выполнить:
 
 ```
 ERROR:  chdb: error executing chDB query
@@ -337,11 +337,12 @@ chdb&#95;hook использует плейсхолдеры вида `{name:Type
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> Не оставляйте [log&#95;min&#95;messages] на уровне отладки дольше, чем на один
-> сеанс отладки: это позволит избежать попадания в журнал конфиденциальных данных,
-> таких как credentials, к тому же PostgreSQL и сам пишет отладочную информацию
-> и может быстро заполнить журнал.
+<Warning>
+  Не оставляйте &#91;log&#95;min&#95;messages&#93; на уровне отладки дольше, чем на один
+  сеанс отладки: это позволит избежать попадания в журнал конфиденциальных данных,
+  таких как учётные данные, к тому же PostgreSQL и сам пишет отладочную информацию
+  и может быстро заполнить журнал.
+</Warning>
 
 ## Перегрузка CREATE TABLE {#create-table-overloading}
 
@@ -718,6 +719,8 @@ Copyright (c) 2026, ClickHouse
 [access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure: управление ключами доступа к учётной записи хранения"
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Документация Postgres: политики безопасности на уровне строк"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs: тип данных JSON"
 
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Документация Postgres: LOAD"
 

@@ -302,10 +302,11 @@ chdb&#95;hook 对查询参数使用 `{name:Type}` 形式的占位符，以防范
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> 请勿在单次调试会话之外持续将 [log&#95;min&#95;messages] 设为调试级别，
-> 以免记录 credentials 等敏感信息；此外，PostgreSQL 自身也会输出
-> 大量调试信息，很快就会把日志占满。
+<Warning>
+  请勿在单次调试会话之外持续将 &#91;log&#95;min&#95;messages&#93; 设为调试级别，
+  以免记录凭据等敏感信息；此外，PostgreSQL 自身也会输出
+  大量调试信息，很快就会把日志占满。
+</Warning>
 
 ## CREATE TABLE 重载 {#create-table-overloading}
 
@@ -637,13 +638,15 @@ Copyright (c) 2026, ClickHouse
 
 [formats]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "chDB 文档：完整格式名称表"
 
-[access key ID and access secret]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management：管理 IAM 用户的访问密钥"
+[访问密钥 ID 和访问密钥]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management：管理 IAM 用户的访问密钥"
 
-[HMAC key and secret]: https://docs.cloud.google.com/storage/docs/authentication/hmackeys "Google Cloud Storage：HMAC 密钥"
+[HMAC 密钥和密钥]: https://docs.cloud.google.com/storage/docs/authentication/hmackeys "Google Cloud Storage：HMAC 密钥"
 
-[access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure：管理存储账户访问密钥"
+[访问密钥]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure：管理存储账户访问密钥"
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Postgres 文档：行安全策略"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse 文档：JSON 数据类型"
 
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Postgres 文档：LOAD"
 
@@ -669,7 +672,7 @@ Copyright (c) 2026, ClickHouse
 
 [`gcs()`]: https://clickhouse.com/docs/sql-reference/table-functions/gcs "ClickHouse 文档：gcs 表函数"
 
-[Azure Blob Storage]: https://azure.microsoft.com/en-us/products/storage/blobs/
+[Azure Blob 存储]: https://azure.microsoft.com/en-us/products/storage/blobs/
 
 [Azure ABFS]: https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri "使用 Azure Data Lake Storage URI (ABFS) - Azure Storage"
 

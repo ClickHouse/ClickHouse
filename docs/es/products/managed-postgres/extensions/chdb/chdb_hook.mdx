@@ -326,13 +326,13 @@ CONTEXT:  query: SELECT * FROM file({path:String}, {format:String}, {structure:S
 STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-chdb&#95;hook utiliza placeholders con el estilo `{name:Type}` para los query parameters
+chdb&#95;hook utiliza placeholders con el estilo `{name:Type}` para los parámetros de consulta
 con el fin de protegerse frente a vulnerabilidades de injection de SQL y minimizar el riesgo de
-registrar datos sensibles como credentials.
+registrar datos sensibles como credenciales.
 
-No obstante, si necesitas ver el contenido de esos parameters para depurar
+No obstante, si necesitas ver el contenido de esos parámetros para depurar
 un issue, configura temporalmente el GUC [log&#95;min&#95;messages] de Postgres con el valor `DEBUG1` o
-superior para que chdb&#95;hook envíe la consulta y los parameters al log de Postgres
+superior para que chdb&#95;hook envíe la consulta y los parámetros al log de Postgres
 (nunca al client), donde aparecerán así:
 
 ```
@@ -342,11 +342,12 @@ superior para que chdb&#95;hook envíe la consulta y los parameters al log de Po
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> No mantenga [log&#95;min&#95;messages] en un nivel de depuración más allá de
-> una única sesión de depuración, tanto para evitar registrar información sensible como
-> las credenciales, como porque el propio PostgreSQL también registra información de depuración
-> y puede llenar el log con rapidez.
+<Warning>
+  No mantenga &#91;log&#95;min&#95;messages&#93; en un nivel de depuración más allá de
+  una única sesión de depuración, tanto para evitar registrar información sensible como
+  las credenciales, como porque el propio PostgreSQL también registra información de depuración
+  y puede llenar el log con rapidez.
+</Warning>
 
 ## Sobrecarga de CREATE TABLE {#create-table-overloading}
 
@@ -714,7 +715,7 @@ Copyright (c) 2026, ClickHouse
 
 [chDB]: https://clickhouse.com/chdb "chDB: base de datos in-process rápida, fiable y escalable"
 
-[Semantic Versioning]: https://semver.org/spec/v2.0.0.html "Semantic Versioning 2.0.0"
+[control de versiones semántico]: https://semver.org/spec/v2.0.0.html "control de versiones semántico 2.0.0"
 
 [COPY]: https://www.postgresql.org/docs/current/sql-copy.html "Documentación de Postgres: COPY"
 
@@ -731,6 +732,8 @@ Copyright (c) 2026, ClickHouse
 [access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure: administrar las claves de acceso de la cuenta de almacenamiento"
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Documentación de Postgres: políticas de seguridad a nivel de fila"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs: tipo de datos JSON"
 
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Documentación de Postgres: LOAD"
 

@@ -328,7 +328,7 @@ STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 
 O chdb&#95;hook usa placeholders no estilo `{name:Type}` para query parameters, a fim de
 proteger contra vulnerabilidades de injection de SQL e minimizar o risco de
-registrar dados sensíveis em log, como credentials.
+registrar dados sensíveis em log, como credenciais.
 
 Se, no entanto, você precisar ver o conteúdo desses parameters para depurar
 um issue, defina temporariamente o GUC [log&#95;min&#95;messages] do Postgres como `DEBUG1` ou
@@ -342,11 +342,12 @@ superior, para que o chdb&#95;hook envie a consulta e os parameters ao log do Po
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> Não mantenha [log&#95;min&#95;messages] em um nível de depuração por mais tempo do que
-> uma única sessão de depuração, para evitar o registro de informações sensíveis como
-> credenciais, e porque o próprio PostgreSQL também registra informações de depuração
-> e pode encher o log rapidamente.
+<Warning>
+  Não mantenha &#91;log&#95;min&#95;messages&#93; em um nível de depuração por mais tempo do que
+  uma única sessão de depuração, para evitar o registro de informações sensíveis como
+  credenciais, e porque o próprio PostgreSQL também registra informações de depuração
+  e pode encher o log rapidamente.
+</Warning>
 
 ## Sobrecarga de CREATE TABLE {#create-table-overloading}
 
@@ -732,6 +733,8 @@ Copyright (c) 2026, ClickHouse
 [access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure: gerenciar chaves de acesso de contas de armazenamento"
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Documentação do Postgres: políticas de segurança em nível de linha"
+
+[JSON type]: /reference/data-types/newjson "Documentação do ClickHouse: tipo de dado JSON"
 
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Documentação do Postgres: LOAD"
 

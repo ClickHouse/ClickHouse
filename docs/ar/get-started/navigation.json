@@ -66,6 +66,7 @@
           "group": "Use cases",
           "pages": [
             "ar/get-started/use-cases/overview",
+            "ar/get-started/use-cases/choosing-a-service",
             "ar/get-started/use-cases/real-time-analytics",
             "ar/get-started/use-cases/observability",
             "ar/get-started/use-cases/data-warehousing",

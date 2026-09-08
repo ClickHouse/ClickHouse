@@ -308,11 +308,12 @@ chdb&#95;hook は、SQL インジェクションの脆弱性を防ぎ、認証�
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> [log&#95;min&#95;messages] をデバッグレベルに設定したままにするのは、1回の
-> デバッグセッションの範囲にとどめてください。認証情報などの機密情報が
-> ログに記録されるのを防ぐためであり、また PostgreSQL 自体もデバッグ情報を
-> 出力するため、ログがすぐに肥大化してしまうからです。
+<Warning>
+  &#91;log&#95;min&#95;messages&#93; をデバッグレベルに設定したままにするのは、1回の
+  デバッグセッションの範囲にとどめてください。認証情報などの機密情報が
+  ログに記録されるのを防ぐためであり、また PostgreSQL 自体もデバッグ情報を
+  出力するため、ログがすぐに肥大化してしまうからです。
+</Warning>
 
 ## CREATE TABLE のオーバーロード {#create-table-overloading}
 
@@ -631,7 +632,7 @@ Copyright (c) 2026, ClickHouse
 
 [`DESCRIBE`]: https://clickhouse.com/docs/sql-reference/statements/describe-table "ClickHouse Docs: DESCRIBE TABLE"
 
-[formats]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "chDB Docs: Complete Format Names Table"
+[フォーマット]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "chDB Docs: Complete Format Names Table"
 
 [access key ID and access secret]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management: Manage access keys for IAM users"
 
@@ -640,6 +641,8 @@ Copyright (c) 2026, ClickHouse
 [access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure: Manage storage account access keys"
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Postgres Docs: Row Security Policies"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs: JSON Data Type"
 
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Postgres Docs: LOAD"
 

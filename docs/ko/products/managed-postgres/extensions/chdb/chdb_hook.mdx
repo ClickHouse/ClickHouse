@@ -312,10 +312,11 @@ chdb&#95;hook은 SQL injection 취약점을 방지하고 자격 증명과 같은
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> [log&#95;min&#95;messages]를 디버깅 수준으로 설정한 상태는 단일 디버깅 세션을 넘어
-> 유지하지 마십시오. 자격 증명과 같은 민감한 정보가 로그에 기록되는 것을 방지하기 위한 것이며,
-> PostgreSQL 자체도 디버깅 정보를 기록하므로 로그가 빠르게 가득 찰 수 있습니다.
+<Warning>
+  &#91;log&#95;min&#95;messages&#93;를 디버깅 수준으로 설정한 상태는 단일 디버깅 세션을 넘어
+  유지하지 마십시오. 자격 증명과 같은 민감한 정보가 로그에 기록되는 것을 방지하기 위한 것이며,
+  PostgreSQL 자체도 디버깅 정보를 기록하므로 로그가 빠르게 가득 찰 수 있습니다.
+</Warning>
 
 ## CREATE TABLE 오버로딩 {#create-table-overloading}
 
@@ -678,6 +679,8 @@ Copyright (c) 2026, ClickHouse
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Postgres Docs: Row Security Policies"
 
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs: JSON Data Type"
+
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Postgres Docs: LOAD"
 
 [session_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "Postgres Docs: `session_preload_libraries`"
@@ -712,7 +715,7 @@ Copyright (c) 2026, ClickHouse
 
 [`hdfs()`]: https://clickhouse.com/docs/sql-reference/table-functions/hdfs "ClickHouse Docs: hdfs Table Function"
 
-[ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: Data Types in ClickHouse"
+[ClickHouse 데이터 타입]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: Data Types in ClickHouse"
 
 [log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "PostgreSQL Docs: log_min_messages"
 

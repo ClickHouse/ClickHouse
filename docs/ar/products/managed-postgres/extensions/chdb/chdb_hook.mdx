@@ -329,10 +329,11 @@ STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> لا تترك [log&#95;min&#95;messages] مضبوطًا على مستوى تنقيح لمدة تتجاوز جلسة
-> تنقيح واحدة، تجنّبًا لتسجيل معلومات حسّاسة مثل بيانات الاعتماد، ولأنّ
-> PostgreSQL نفسه يسجّل كذلك معلومات التنقيح وقد يملأ السجل بسرعة.
+<Warning>
+  لا تترك &#91;log&#95;min&#95;messages&#93; مضبوطًا على مستوى تنقيح لمدة تتجاوز جلسة
+  تنقيح واحدة، تجنّبًا لتسجيل معلومات حسّاسة مثل بيانات الاعتماد، ولأنّ
+  PostgreSQL نفسه يسجّل كذلك معلومات التنقيح وقد يملأ السجل بسرعة.
+</Warning>
 
 ## التحميل الزائد لـ CREATE TABLE {#create-table-overloading}
 
@@ -714,6 +715,8 @@ Copyright (c) 2026, ClickHouse
 [access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure: إدارة مفاتيح الوصول لحساب التخزين"
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "وثائق Postgres: سياسات أمان الصفوف"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs: نوع البيانات JSON"
 
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "وثائق Postgres: LOAD"
 

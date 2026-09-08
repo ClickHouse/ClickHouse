@@ -338,11 +338,12 @@ Si vous avez toutefois besoin de consulter le contenu de ces parameters pour dé
 2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
 ```
 
-> [!WARNING]
-> Ne laissez pas [log&#95;min&#95;messages] réglé sur un niveau de débogage au-delà
-> d&#39;une seule session de débogage, afin d&#39;éviter de consigner des informations
-> sensibles telles que des credentials, et parce que PostgreSQL journalise
-> lui aussi des informations de débogage et peut rapidement saturer le log.
+<Warning>
+  Ne laissez pas &#91;log&#95;min&#95;messages&#93; réglé sur un niveau de débogage au-delà
+  d&#39;une seule session de débogage, afin d&#39;éviter de consigner des informations
+  sensibles telles que des credentials, et parce que PostgreSQL journalise lui
+  aussi des informations de débogage et peut rapidement saturer le log.
+</Warning>
 
 ## Surcharge de CREATE TABLE {#create-table-overloading}
 
@@ -723,6 +724,8 @@ Copyright (c) 2026, ClickHouse
 [access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure : gérer les clés d'accès d'un compte de stockage"
 
 [row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Documentation Postgres : politiques de sécurité au niveau des lignes"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs : type de données JSON"
 
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Documentation Postgres : LOAD"
 
