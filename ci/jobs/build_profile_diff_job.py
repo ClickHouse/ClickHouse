@@ -214,6 +214,20 @@ def _cluster_payload(response) -> Optional[dict]:
     return payload if isinstance(payload, dict) else None
 
 
+def _cluster_body_failed(response) -> bool:
+    """Whether a body the HTTP status calls successful reports a failure.
+
+    A query the server refuses is rejected before it writes anything, so it
+    comes back with an error status. What a successful status can still carry is
+    a failure raised after the result started streaming: a timeout, or the
+    memory pressure the retries exist for. Both are worth another attempt.
+    """
+    payload = _cluster_payload(response)
+    if payload is None:
+        return True
+    return bool(payload.get("exception")) or payload.get("data") is None
+
+
 class Db:
     def __init__(self):
         # CI_LOGS_USER only for local runs
@@ -244,7 +258,9 @@ class Db:
         not repeated: `select` prints it when the status reported the failure, and
         the traceback names the call site otherwise.
         """
-        response = self._cluster.select(query + " FORMAT JSON")
+        response = self._cluster.select(
+            query + " FORMAT JSON", body_failed=_cluster_body_failed
+        )
         if response is None:
             raise RuntimeError(
                 "CI logs cluster query failed: the read-only endpoint returned no response"
