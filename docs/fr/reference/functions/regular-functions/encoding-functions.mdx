@@ -47,21 +47,25 @@ Renvoie un tuple `(hrp, data)` ayant servi à encoder la chaîne. Les données s
 **Décoder l&#39;adresse**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)
 ```
 
 ```response title=Response
-bc   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 **Adresse du réseau de test**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)
 ```
 
 ```response title=Response
-tb   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 <div id="bech32Encode">
@@ -87,13 +91,13 @@ bech32Encode(hrp, data[, witver | 'bech32' | 'bech32m'])
 
 **Arguments**
 
-* `hrp` — Une chaîne de `1 - 83` caractères minuscules spécifiant la « partie lisible par l’humain » du code. Généralement `'bc'` ou `'tb'`. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
+* `hrp` — Une chaîne de `1 - 83` caractères minuscules spécifiant la &quot;partie lisible par l’humain&quot; du code. Généralement &#39;bc&#39; ou &#39;tb&#39;. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
 * `data` — Une chaîne de données binaires à encoder. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
 * `witver_or_variant` — Facultatif. Soit une version witness UInt* (par défaut = 1, `0` pour Bech32, `1`+ pour Bech32m), soit une variante d’encodage de type String : `'bech32'` (BIP173) ou `'bech32m'` (BIP350). Lorsqu’une variante de chaîne est utilisée, aucun octet de version witness n’est ajouté en préfixe — cela est nécessaire pour les adresses non-SegWit comme celles de Cosmos SDK. [`UInt*`](/fr/reference/data-types/int-uint) ou [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie une chaîne d’adresse Bech32, composée de la partie lisible par l’humain, d’un caractère séparateur qui est toujours `'1'`, et d’une partie de données. La longueur de la chaîne ne dépassera jamais 90 caractères. Si l’algorithme ne peut pas générer d’adresse valide à partir de l’entrée, il renvoie une chaîne vide. [`String`](/fr/reference/data-types/string)
+Renvoie une chaîne d’adresse Bech32, composée de la partie lisible par l’humain, d’un caractère séparateur qui est toujours &#39;1&#39;, et d’une partie de données. La longueur de la chaîne ne dépassera jamais 90 caractères. Si l’algorithme ne peut pas générer d’adresse valide à partir de l’entrée, il renvoie une chaîne vide. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -105,7 +109,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
+bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru
 ```
 
 **Algorithme Bech32**
@@ -116,7 +120,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
+bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
 ```
 
 **HRP personnalisé**
@@ -128,7 +132,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 ```
 
 ```response title=Response
-abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
+abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px
 ```
 
 **Adresse Cosmos SDK (BIP173, sans version de témoin)**
@@ -140,7 +144,7 @@ SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'b
 ```
 
 ```response title=Response
-inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs
+inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq
 ```
 
 <div id="bin">
@@ -270,9 +274,9 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions
 ```
 
 ```response title=Response
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
 ```
 
 <div id="bitmaskToArray">
@@ -307,9 +311,9 @@ SELECT bitmaskToArray(50) AS powers_of_two
 ```
 
 ```response title=Response
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
 ```
 
 **Une unique puissance de deux**
@@ -355,9 +359,9 @@ SELECT bitmaskToList(50) AS powers_list
 ```
 
 ```response title=Response
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
 ```
 
 <div id="char">
@@ -550,7 +554,7 @@ SELECT hilbertDecode(2, 31)
 ```
 
 ```response title=Response
-["3", "4"]
+(3,4)
 ```
 
 **Un seul argument**
@@ -561,7 +565,7 @@ SELECT hilbertDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **Mode étendu**
@@ -572,7 +576,7 @@ SELECT hilbertDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(8192)
 ```
 
 **Utilisation avec des colonnes**
@@ -592,7 +596,7 @@ SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
 ```
 
 ```response title=Response
-1    2
+1	2
 ```
 
 <div id="hilbertEncode">
@@ -729,7 +733,7 @@ Accepte comme premier argument la taille du tuple résultant, et comme second ar
 
 **Mode étendu**
 
-Accepte comme premier argument un masque de plages (tuple), et comme second argument le code.
+Accepte comme premier argument un masque de plage (tuple), et comme second argument le code.
 Chaque nombre du masque configure le facteur de réduction de plage :
 
 * `1` - aucune réduction
@@ -738,7 +742,7 @@ Chaque nombre du masque configure le facteur de réduction de plage :
   ⋮
 * Jusqu’à une réduction par 8.
 
-L’expansion de plage peut être utile lorsque vous avez besoin d’une distribution similaire pour
+L’extension de plage peut être utile lorsque vous avez besoin d’une distribution similaire pour
 des arguments dont les plages (ou la cardinalité) sont très différentes. Par exemple : « Adresse IP » `(0...FFFFFFFF)`
 et « Code pays » `(0...FF)`. Comme pour la fonction d’encodage, cette fonctionnalité est limitée à
 8 nombres au maximum.
@@ -772,7 +776,7 @@ SELECT mortonDecode(3, 53)
 ```
 
 ```response title=Response
-["1", "2", "3"]
+(1,2,3)
 ```
 
 **Un seul argument**
@@ -782,7 +786,7 @@ SELECT mortonDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **Mode étendu, avec réduction d’un argument**
@@ -792,7 +796,7 @@ SELECT mortonDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(128)
 ```
 
 **Utilisation sur des colonnes**
@@ -818,7 +822,7 @@ SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FR
 ```
 
 ```response title=Response
-1 2 3 4 5 6 7 8
+1	2	3	4	5	6	7	8
 ```
 
 <div id="mortonEncode">
@@ -974,9 +978,9 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ```
 
 ```response title=Response
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```
 
 <div id="sqidEncode">
@@ -1057,7 +1061,7 @@ SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000
 ```
 
 ```response title=Response
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
+┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
@@ -1119,7 +1123,7 @@ SELECT unhex('303132'), UNHEX('4D7953514C')
 ```
 
 ```response title=Response
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
 ```
