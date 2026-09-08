@@ -346,3 +346,62 @@ trap '' EXIT
 # `--help` (not an ambiguity with `http_*`).
 $CLICKHOUSE_BINARY server --v 2>&1 | grep -c 'server version'
 $CLICKHOUSE_BINARY server --h 2>&1 | grep -q -- '--max_thread_pool_size' && echo 1 || echo 0
+
+# Test 14: A server setting whose name is also the name of a user-level setting
+# (`query_cache_max_entries`, `query_cache_max_size_in_bytes`) works as a direct option: the flat name
+# lands at the top level of the layered config, where `Settings::checkNoSettingNamesAtTopLevel` must not
+# mistake it for a misplaced user-level setting and abort the startup.
+srv_dir14="${CLICKHOUSE_TMP}/srv14"
+mkdir -p "$srv_dir14"
+$CLICKHOUSE_BINARY server \
+    --query_cache_max_entries 10 \
+    --query_cache_max_size_in_bytes 2097152 \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir14/" > "${CLICKHOUSE_TMP}/server14.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server14.log"
+        exit 1
+    fi
+done
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT name, value FROM system.server_settings
+    WHERE name IN ('query_cache.max_entries', 'query_cache.max_size_in_bytes')
+    ORDER BY name"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT
+
+# Test 15: The same setting given after the `--` separator under its legacy nested spelling
+# (`query_cache.max_entries`) is normalized into the flat name as well, so it must not trip that check
+# either, and the flat spelling after the separator must keep overriding a direct option.
+srv_dir15="${CLICKHOUSE_TMP}/srv15"
+mkdir -p "$srv_dir15"
+$CLICKHOUSE_BINARY server \
+    --query_cache_max_entries 10 \
+    -- --query_cache.max_entries 11 --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir15/" > "${CLICKHOUSE_TMP}/server15.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server15.log"
+        exit 1
+    fi
+done
+
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'query_cache.max_entries'"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT

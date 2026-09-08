@@ -9482,7 +9482,10 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
-    static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
+    static void checkNoSettingNamesAtTopLevel(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_path,
+        const std::unordered_set<String> & exempt_names);
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
@@ -9643,7 +9646,8 @@ FlatStringMap SettingsImpl::changedToFlatMap() const
     return result;
 }
 
-void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
+void SettingsImpl::checkNoSettingNamesAtTopLevel(
+    const Poco::Util::AbstractConfiguration & config, const String & config_path, const std::unordered_set<String> & exempt_names)
 {
     if (config.getBool("skip_check_for_incorrect_settings", false))
         return;
@@ -9657,7 +9661,8 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
         /// (see `CompressionCodecSelector`).
         bool should_skip_check = name == "max_table_size_to_drop"
             || name == "max_partition_size_to_drop"
-            || name == "compression";
+            || name == "compression"
+            || exempt_names.contains(name);
         if (config.has(name) && (setting.getTier() != SettingsTierType::OBSOLETE) && !should_skip_check)
         {
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
@@ -10270,9 +10275,10 @@ std::string_view Settings::resolveName(std::string_view name)
     return SettingsImpl::Traits::resolveName(name);
 }
 
-void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
+void Settings::checkNoSettingNamesAtTopLevel(
+    const Poco::Util::AbstractConfiguration & config, const String & config_path, const std::unordered_set<String> & exempt_names)
 {
-    SettingsImpl::checkNoSettingNamesAtTopLevel(config, config_path);
+    SettingsImpl::checkNoSettingNamesAtTopLevel(config, config_path, exempt_names);
 }
 
 }

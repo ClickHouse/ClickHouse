@@ -1826,7 +1826,13 @@ try
         config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+    /// The server settings whose name is also the name of a user-level setting
+    /// (`query_cache_max_entries`, `query_cache_max_size_in_bytes`) legitimately appear as top-level
+    /// keys of the layered config: that is where a direct option (`--query_cache_max_entries 10`), the
+    /// `--` separator form and `ServerSettings::mirrorCommandLineToConfigPaths` store them, and where
+    /// `ServerSettings::loadSettingsFromConfig` reads them from. Exempt the server setting names, so
+    /// that the top-level spelling of a server setting is not rejected as a misplaced user setting.
+    Settings::checkNoSettingNamesAtTopLevel(config(), config_path, ServerSettings::allNames());
     /// Validate the loaded XML config directly (not the layered config) so that command-line
     /// options injected by `argsToConfig` (`--config-file`, `--daemon`, `-C`, ...) and Poco-internal
     /// layers (`system`, `application`) are not mistaken for unknown top-level config keys.
@@ -2528,7 +2534,7 @@ try
             const bool skip_check
                 = command_line_skip_check || loaded_config->getBool("skip_check_for_incorrect_settings", false);
             if (!skip_check)
-                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
+                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path, ServerSettings::allNames());
             /// Same as on initial load: validate the reloaded XML config rather than the layered
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
             ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);

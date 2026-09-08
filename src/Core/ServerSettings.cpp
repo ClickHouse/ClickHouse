@@ -2215,6 +2215,20 @@ void ServerSettings::mirrorCommandLineToConfigPaths(const std::vector<std::strin
     config.add(mirrored, Poco::Util::Application::PRIO_APPLICATION - 200);
 }
 
+const std::unordered_set<String> & ServerSettings::allNames()
+{
+    static const std::unordered_set<String> names = []
+    {
+        const auto & accessor = ServerSettingsTraits::Accessor::instance();
+        std::unordered_set<String> result;
+        result.reserve(accessor.size());
+        for (size_t i = 0; i < accessor.size(); ++i)
+            result.emplace(accessor.getName(i));
+        return result;
+    }();
+    return names;
+}
+
 void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool skip_check)
 {
     /// `skip_check` carries the escape hatch resolved from the layered config (so a command-line
