@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/StringUtils.h>
+#include <Common/formatIPv6.h>
 #include <Functions/URL/protocol.h>
 #include <base/find_symbols.h>
 
@@ -173,6 +174,9 @@ done:
         Pos after_bracket = pos + 1;
         if (after_bracket < end && *after_bracket != ':' && *after_bracket != '/'
             && *after_bracket != '?' && *after_bracket != '#')
+            return std::string_view{};
+        unsigned char ipv6_bytes[IPV6_BINARY_LENGTH];
+        if (!parseIPv6Whole(start_of_host, pos, ipv6_bytes))
             return std::string_view{};
         return std::string_view(start_of_host, pos - start_of_host);
     }
