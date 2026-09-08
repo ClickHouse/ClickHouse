@@ -3306,10 +3306,17 @@ const StorageDistributed * getDistributedStorageFromTableExpression(const QueryT
 void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPtr & context)
 {
     auto * join_node = query_node.getJoinTreeNode()->as<JoinNode>();
-    if (!join_node
-        || join_node->getKind() != JoinKind::Right
-        || join_node->getStrictness() != JoinStrictness::All
-        || !join_node->hasJoinExpression())
+    if (!join_node || join_node->getKind() != JoinKind::Right || !join_node->hasJoinExpression())
+        return;
+
+    /** These strictnesses mirror when both the table expressions and the kind are flipped.
+      * `Asof` does not: its last key is an inequality, and swapping the sides reverses its direction.
+      * `RightAny` does not either, because the strictness itself names the side to take a row from,
+      * and that name does not follow the tables across the swap.
+      */
+    const auto strictness = join_node->getStrictness();
+    if (strictness != JoinStrictness::All && strictness != JoinStrictness::Any
+        && strictness != JoinStrictness::Semi && strictness != JoinStrictness::Anti)
         return;
 
     const auto & settings = context->getSettingsRef();
@@ -3320,9 +3327,10 @@ void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPt
     if (!is_global)
         return;
 
+    /// Only the left table fans the query out across shards, so only its shard count decides whether
+    /// the rows of the preserved side get emitted more than once. What the right side is does not matter.
     const auto * left_storage = getDistributedStorageFromTableExpression(join_node->getLeftTableExpressionNode());
-    const auto * right_storage = getDistributedStorageFromTableExpression(join_node->getRightTableExpressionNode());
-    if (!left_storage || !right_storage || left_storage->getShardCount() < 2 || right_storage->getShardCount() < 2)
+    if (!left_storage || left_storage->getShardCount() < 2)
         return;
 
     /** A `JOIN USING` key records its sides positionally, the left one first. The join condition, the
@@ -3355,10 +3363,12 @@ void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPt
         }
     }
 
-    /** A `GLOBAL RIGHT JOIN` cannot run with the left table sharded and the right table broadcast.
-      * Every shard would independently emit unmatched rows from the complete right table.
-      * Swap the inputs before choosing the `Distributed` table that will execute the query, so the
-      * preserved side stays sharded and the original left table is broadcast instead.
+    /** A `GLOBAL RIGHT JOIN` cannot run with the left table sharded and the right side broadcast.
+      * Every shard would independently emit the rows of the complete right side that the kind preserves.
+      * Swap the inputs before choosing the table expression that will execute the query, so the preserved
+      * side moves out of the broadcast position. It then keeps running on the shards if it is a sharded
+      * `Distributed` table of its own, and falls back to the initiator otherwise, which is slower but is
+      * the only way to emit those rows once.
       * Projection nodes are already resolved and keep the user-visible column order unchanged.
       */
     std::swap(join_node->getLeftTableExpressionNode(), join_node->getRightTableExpressionNode());
