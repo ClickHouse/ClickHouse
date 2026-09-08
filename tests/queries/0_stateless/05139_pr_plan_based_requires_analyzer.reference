@@ -1,7 +1,10 @@
-analyzer, plan-based
+analyzer: plan-based reads from replicas
 ReadFromParallelReplicas
-no analyzer, falls back to query-based
+no analyzer: reads from replicas
+0
+no analyzer, query-based: reads from replicas
 ReadFromRemoteParallelReplicas
 results
+499500
 499500
 499500

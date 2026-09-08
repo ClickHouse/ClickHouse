@@ -389,6 +389,7 @@ namespace Setting
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
@@ -8876,6 +8877,14 @@ bool Context::canUseTaskBasedParallelReplicas() const
     const auto & settings_ref = getSettingsRef();
 
     if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
+        return false;
+
+    /// The plan-based implementation requires the analyzer: without it the planner never builds the
+    /// distributed plan the optimization works on. Refuse parallel replicas entirely so the query runs
+    /// locally, rather than letting it fall back to the query-based implementation that the plan-based
+    /// one is meant to replace. `buildInsertSelectPipelineParallelReplicas` gates on the analyzer the
+    /// same way, independently of `parallel_replicas_only_with_analyzer`.
+    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_plan_based])
         return false;
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
