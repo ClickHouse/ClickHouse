@@ -17,7 +17,13 @@ PartitionPruner::PartitionPruner(
           partition_key,
           true /* single_point */,
           skip_analysis)
-    , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
+    /// Strict pruning needs the condition to represent the predicate exactly, so a relaxed
+    /// condition makes the pruner useless. A predicate leaf that constrains several key columns
+    /// emits one atom per column: when an exact atom of such a group has relaxed siblings, they
+    /// only narrow the group further and the group as a whole is still exact, which is what
+    /// `exactnessCondition` accounts for. Consult it, so that the extra atoms - which exist only
+    /// for stronger pruning - do not disable strict pruning altogether.
+    , useless((strict && partition_condition.exactnessCondition().isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }
 
