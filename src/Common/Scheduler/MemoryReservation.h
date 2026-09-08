@@ -54,7 +54,7 @@ struct MemoryReservation : public ResourceAllocation
 {
 public:
     // Blocks until reservation is admitted iff reserved_size > 0
-    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size);
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size, ResourceCost min_bytes_to_spill_);
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
@@ -85,7 +85,8 @@ private:
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;
 
-    const ResourceCost reserved_size; // value of `reserve_memory` query setting
+    const ResourceCost reserved_size;
+    const ResourceCost min_bytes_to_spill;
 
     /// Protects all the fields in this allocation that may be accessed from the scheduler thread.
     /// Lock ordering: AllocationQueue::mutex -> MemoryReservation::mutex (scheduler thread acquires

@@ -45,9 +45,10 @@ namespace
     constexpr ResourceCost RECLAIMABLE_REPORT_RATIO = 8;
 }
 
-MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_)
+MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_, ResourceCost min_bytes_to_spill_)
     : ResourceAllocation(*link.allocation_queue, id_)
     , reserved_size(reserved_size_)
+    , min_bytes_to_spill(min_bytes_to_spill_)
     , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)
     , demand_increment(CurrentMetrics::MemoryReservationDemand, 0)
     , reclaimable_increment(CurrentMetrics::MemoryReservationReclaimable, 0)
@@ -201,6 +202,9 @@ ResourceCost MemoryReservation::getTotalReclaimable()
 
 void MemoryReservation::updateReclaimable(const ISpillable * spillable, ResourceCost bytes)
 {
+    if (bytes < min_bytes_to_spill)
+        bytes = 0;
+
     ResourceCost total = 0;
     {
         std::lock_guard lock(mutex);
@@ -248,6 +252,9 @@ void MemoryReservation::reportReclaimable(ResourceCost total)
 
 ResourceCost MemoryReservation::takeSpillRequest(const ISpillable * spillable, ResourceCost spillable_bytes)
 {
+    if (spillable_bytes < min_bytes_to_spill)
+        return 0;
+
     std::lock_guard lock(mutex);
     if (enqueued_spill <= 0)
         return 0;
