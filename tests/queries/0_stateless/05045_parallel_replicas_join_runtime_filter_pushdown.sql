@@ -28,18 +28,26 @@ SET query_plan_join_swap_table = false;
 -- optimizations that fold it in.
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
+-- Pinned for a stable plan shape: the plan-based path sends a plan fragment rather than a query, so
+-- the remote side reads as a single `ReadFromParallelReplicas` instead of `ReadFromRemoteParallelReplicas`.
+SET parallel_replicas_plan_based = 0;
 
-SELECT replaceAll(replaceRegexpOne(explain, '^[^A-Za-z]*', ''), currentDatabase(), 'default') AS step
+-- `description = 0` matters: with descriptions on, a plan-based parallel replicas read carries the
+-- whole remote fragment as a multi-line `QueryPlan:` description, whose own `Aggregating` and
+-- `ReadFromMergeTree` lines would satisfy the predicates below without saying anything about the local
+-- plan. The indentation is kept for the same reason - it is what pins the runtime filter to the local
+-- read rather than to some other step.
+SELECT replaceAll(explain, currentDatabase(), 'default') AS step
 FROM (
-    EXPLAIN actions = 1
+    EXPLAIN description = 0, actions = 1
     SELECT sum(agg.s)
     FROM (SELECT k, sum(v) AS s FROM pr_rf_probe GROUP BY k) AS agg
     JOIN pr_rf_build AS b ON agg.k = b.k
 )
 WHERE explain LIKE '%Aggregating%'
-   OR explain LIKE '%ReadFromMergeTree%'
-   OR explain LIKE '%Runtime filters:%'
-   OR explain LIKE '%Filter column:%';
+   OR explain LIKE '%ReadFrom%'
+   OR explain LIKE '%Filter%'
+   OR explain LIKE '%Runtime filters:%';
 
 SELECT sum(agg.s)
 FROM (SELECT k, sum(v) AS s FROM pr_rf_probe GROUP BY k) AS agg
