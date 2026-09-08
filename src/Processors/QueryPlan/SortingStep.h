@@ -55,13 +55,16 @@ public:
         size_t read_in_order_use_buffering = 0;
         bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
+        size_t max_streams_per_hierarchical_merge = 16;
+        size_t max_streams_per_hierarchical_merge_for_validation = 0;
         String temporary_files_codec = {};
 
         explicit Settings(const DB::Settings & settings);
         explicit Settings(size_t max_block_size_);
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
-        void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+        void checkMaxStreamsPerHierarchicalMerge() const;
+        void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
 
         bool operator==(const Settings & other) const = default;
     };
@@ -196,6 +199,14 @@ private:
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
+
+    static void addHierarchicalMergingSorted(
+        QueryPipelineBuilder & pipeline,
+        const SortDescription & sort_desc,
+        size_t max_streams_per_layer,
+        size_t max_block_size,
+        UInt64 limit,
+        bool always_read_till_end);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,

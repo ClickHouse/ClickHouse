@@ -72,6 +72,7 @@ struct Optimization
         bool is_explain{};
 
         size_t max_block_size{};
+        size_t max_streams_per_hierarchical_merge{};
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
