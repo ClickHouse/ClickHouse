@@ -29,6 +29,7 @@
 #include <Core/Defines.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -90,7 +91,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace FailPoints
@@ -177,6 +178,20 @@ std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_ke
         return std::nullopt;
 
     return std::string(expression);
+}
+
+std::string formatPrimaryKeyForMetadata(const ASTPtr & ast)
+{
+    const auto * expression_list = ast ? ast->as<ASTExpressionList>() : nullptr;
+    if (expression_list && expression_list->children.size() == 1)
+    {
+        auto primary_key = expression_list->children.front()->clone();
+        primary_key->setParenthesized(false);
+        return formattedAST(primary_key);
+    }
+
+    /// Preserve expression-list spelling until every supported reader canonicalizes each element.
+    return formattedAST(ast);
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -438,7 +453,7 @@ StorageKeeperMap::StorageKeeperMap(
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
         << "columns: " << metadata.columns.toString(true)
-        << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
+        << "primary key: " << formatPrimaryKeyForMetadata(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
     if (zk_root_path.empty())
@@ -1297,8 +1312,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         TemporaryDataOnDiskSettings tmp_data_settings;
-        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
 
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
