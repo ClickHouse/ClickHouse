@@ -1146,6 +1146,14 @@ def test_missing_collection_in_config_does_not_block_startup(cluster):
         "SELECT name FROM system.tables WHERE database = currentDatabase()"
     )
 
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = currentDatabase()"
+            " AND name = 't_startup_renamed'"
+        ).strip()
+        == "TableProxy"
+    )
+
     # Putting the collection back makes the table work again without another restart. The read
     # still fails, because the endpoint is unreachable, but no longer on the collection.
     with node.with_replace_config(
@@ -1156,5 +1164,14 @@ def test_missing_collection_in_config_does_not_block_startup(cluster):
     ):
         assert "NAMED_COLLECTION_DOESNT_EXIST" not in node.query_and_get_error(
             "SELECT * FROM t_startup_renamed"
+        )
+        # `getName` forwards to the storage once it is built, so the engine column reporting `URL`
+        # is what proves the stand-in materialized without a restart.
+        assert (
+            node.query(
+                "SELECT engine FROM system.tables WHERE database = currentDatabase()"
+                " AND name = 't_startup_renamed'"
+            ).strip()
+            == "URL"
         )
         node.query("DROP TABLE t_startup_renamed")
