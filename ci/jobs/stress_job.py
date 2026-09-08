@@ -1,16 +1,69 @@
 import csv
 import logging
 import os
+import re
+import shutil
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
-from ci.jobs.scripts.log_parser import FuzzerLogParser
+from ci.jobs.scripts.log_parser import SANITIZER_OOM_REPORT_PATTERN, FuzzerLogParser
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
+
+# Every log of the server family, the rotated ones included, and always scanned with `rg -z`
+# because the logger gzips on rotation. This has to be the same family the log parser below
+# is handed: a crash that rotated out of the current log still belongs to this run, and a
+# narrower trigger would skip the parser for exactly the runs where only a `.log.1.gz`
+# holds the evidence.
+SERVER_LOG_FAMILY_GLOB = "clickhouse-server*.log*"
+
+# Just the current logs, `clickhouse-server.log` and its `.err.` sibling, with nothing
+# rotated. For the question "how did the server this run ended with die": a `signal 9` in a
+# rotated log belongs to an incarnation that was already replaced and restarted, and the run
+# records its own verdict for that (`Possible deadlock on shutdown`), so reading it as an
+# OOM would excuse that very failure.
+CURRENT_SERVER_LOG_GLOB = "clickhouse-server*.log"
+
+# Failing rows an out-of-memory run cannot produce, matched case-insensitively against the
+# result name. A failed test case, a server that would not come back up and a non-zero script
+# exit are all ordinary collateral of a server killed mid-run, and the OOM downgrade exists
+# for them. These are findings in their own right - the writers are `stress.py` (hung check),
+# `tests/docker_scripts/stress_tests.lib` (the rest) and the log parser below - so the
+# downgrade must not bury them even though no crash was named.
+NON_OOM_FINDING_MARKERS = (
+    "hung check",
+    "possible deadlock",
+    "logical error",
+    "sanitizer",
+    "lost forever",
+    "no such key",
+)
+
+
+def _names_a_non_oom_finding(results: List[Result]) -> bool:
+    return any(
+        marker in (r.name or "").lower()
+        for r in results
+        for marker in NON_OOM_FINDING_MARKERS
+    )
+
+
+def _log_family(directory: Path, matches) -> List[Path]:
+    """Every file of one log family in `directory`, sorted, tolerating a missing directory."""
+    if not directory.exists():
+        return []
+    return sorted(p for p in directory.iterdir() if p.is_file() and matches(p.name))
+
+
+def _replica_logs(logs: List[Path], replica: str | None) -> List[Path]:
+    """The subset of `logs` belonging to a shared-catalog replica, or to the main one."""
+    if replica is None:
+        return [p for p in logs if "sc1" not in p.name and "sc2" not in p.name]
+    return [p for p in logs if replica in p.name]
 
 
 def sanitize_test_result_line(line: str) -> str:
@@ -263,13 +316,15 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     docker_image = DockerImage.get_docker_image("clickhouse/stress-test").pull_image()
 
     server_log_path = temp_path / "server_log"
-    server_log_path.mkdir(parents=True, exist_ok=True)
-
     result_path = temp_path / "result_path"
-    result_path.mkdir(parents=True, exist_ok=True)
-
     cores_path = temp_path / "cores"
-    cores_path.mkdir(parents=True, exist_ok=True)
+
+    # Wiped, not just created: the scans below take whole log families, so a rotated log a
+    # previous local run left here would be read as this run's evidence. Not `temp_path`
+    # itself - the packages to install live directly in it.
+    for path in (server_log_path, result_path, cores_path):
+        shutil.rmtree(path, ignore_errors=True)
+        path.mkdir(parents=True, exist_ok=True)
 
     additional_envs = get_additional_envs(info, check_name)
 
@@ -299,11 +354,13 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"{result_path}/dmesg.log"
         )
 
-    # Check for OOM (signal 9) in server logs
+    # Check for OOM (signal 9) in server logs. Current logs only: this sets `is_oom`, which
+    # rewrites the whole job to OK at the end, so it must not be tripped by a kill line that
+    # describes an already-restarted server rather than this run's outcome.
     if server_log_path.exists():
         server_log_oom = Shell.check(
             f"rg -Fqa ' <Fatal> Application: Child process was terminated by signal 9' "
-            f"{server_log_path}/clickhouse-server*.log"
+            f"{server_log_path}/{CURRENT_SERVER_LOG_GLOB}"
         )
         is_oom = is_oom or server_log_oom
 
@@ -312,7 +369,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     crash_evidence = False
     if server_log_path.exists():
         Shell.check(
-            f"rg --text '\\s<Fatal>\\s' {server_log_path}/clickhouse-server*.log > {fatal_log}"
+            f"rg -z --text '\\s<Fatal>\\s' {server_log_path}/{SERVER_LOG_FAMILY_GLOB}"
+            f" > {fatal_log}"
         )
         # rg also exits non-zero when it did match but could not read some file of
         # the glob, so key on the collected content rather than on its exit code.
@@ -321,6 +379,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     test_results, additional_logs = process_results(result_path, server_log_path)
 
     server_died = False
+    # Set once the log parser names a crash, so the OOM downgrade at the end cannot bury it.
+    crash_named = False
     failed_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
@@ -330,29 +390,30 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             failed_results.append(test_result)
 
     if server_died or crash_evidence:
-        # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
-        # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
-        # sc1/sc2: their dedicated server log + matching stderr log
-        replica_log_pairs = []
+        # Both whole log families per replica, rotated files included, each handed to a single
+        # parser call: the parser defers an expected kill line only across the logs it gets at
+        # once. The runner moves the current `stderr.log` to the result directory and leaves
+        # the rotated ones in the server log directory, so that family spans both.
+        replica_log_pairs: list[tuple[str, list[Path], list[Path]]] = []
+        # The full `clickhouse-server*.log*` family, not just `.err.`: `crash_evidence` above
+        # is already set from a fatal anywhere in that whole family, so a fatal that landed
+        # only in the plain (non-`.err.`) log must reach the parser too, or it is never seen.
+        server_logs_family = _log_family(
+            server_log_path, lambda n: n.startswith("clickhouse-server") and ".log" in n
+        )
+        stderr_logs = _log_family(
+            result_path, lambda n: n.startswith("stderr")
+        ) + _log_family(server_log_path, lambda n: n.startswith("stderr"))
 
-        main_stderr = result_path / "stderr.log"
-        if server_log_path.exists():
-            main_server_logs = sorted(
-                p
-                for p in server_log_path.iterdir()
-                if p.is_file()
-                and ".err." in p.name
-                and "sc1" not in p.name
-                and "sc2" not in p.name
-            )
-            for log_file in main_server_logs:
-                replica_log_pairs.append(("main", log_file, main_stderr))
-
-        for sc in ("sc1", "sc2"):
-            sc_server_log = server_log_path / f"clickhouse-server-{sc}.err.log"
-            sc_stderr = result_path / f"stderr-{sc}.log"
-            if sc_server_log.exists():
-                replica_log_pairs.append((sc, sc_server_log, sc_stderr))
+        for replica_name, replica in (("main", None), ("sc1", "sc1"), ("sc2", "sc2")):
+            replica_server_logs = _replica_logs(server_logs_family, replica)
+            replica_stderr_logs = _replica_logs(stderr_logs, replica)
+            # Either family on its own is enough to classify the replica: a crash can write a
+            # sanitizer report to stderr and never create an err log at all.
+            if replica_server_logs or replica_stderr_logs:
+                replica_log_pairs.append(
+                    (replica_name, replica_server_logs, replica_stderr_logs)
+                )
 
         if not replica_log_pairs:
             failed_results.append(
@@ -363,35 +424,121 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
+            # Only a named crash may end the scan early. The memory limit, an unnamed
+            # `<Fatal>` and the expected-only lines are each held in their own slot and
+            # ranked after the loop, so no replica's benign verdict can stop the search
+            # before another replica's crash has been looked for.
             definitive_result = None
+            memory_limit_result = None
+            fatal_result = None
             fallback_result = None
 
-            for replica_name, server_log_file, stderr_log in replica_log_pairs:
+            for replica_name, server_log_files, stderr_log_files in replica_log_pairs:
                 log_parser = FuzzerLogParser(
-                    server_log=server_log_file,
-                    stderr_log=str(stderr_log) if stderr_log.exists() else "",
-                    fuzzer_log="",
+                    server_logs=server_log_files or None,
+                    stderr_logs=stderr_log_files or None,
+                )
+                file_names = ", ".join(
+                    p.name for p in (*server_log_files, *stderr_log_files)
                 )
                 try:
+                    file_pair_info = f"Log files: {file_names}"
+                    # A real failure first, so that one replica's expected kill line never
+                    # ends the search before another replica's crash is seen. Reached only
+                    # under `server_died or crash_evidence`, so an expected-only line may
+                    # still name the run as it did before - but only as a fallback.
                     name, description, files = log_parser.parse_failure()
-                    file_pair_info = f"Log files: {server_log_file.name}"
-                    if stderr_log.exists():
-                        file_pair_info += f", {stderr_log.name}"
-                    description = f"{file_pair_info}\n{description}"
+                    if name == FuzzerLogParser.MEMORY_LIMIT_ERROR:
+                        # Named, but an out-of-memory run rather than a crash, so it must
+                        # not end the scan: another replica may still hold the crash this
+                        # run would otherwise be downgraded past.
+                        if memory_limit_result is None:
+                            memory_limit_result = (
+                                name,
+                                f"{file_pair_info}\n{description}",
+                                files,
+                            )
+                        continue
                     if name != FuzzerLogParser.UNKNOWN_ERROR:
-                        definitive_result = (name, description, files)
+                        definitive_result = (
+                            name,
+                            f"{file_pair_info}\n{description}",
+                            files,
+                        )
                         break
-                    if fallback_result is None:
-                        fallback_result = (name, description, files)
+                    # `UNKNOWN_ERROR` covers a `<Fatal>` the parser cannot classify, which is
+                    # crash evidence and has to outrank any replica's expected-only verdict.
+                    unnamed_fatals = log_parser.find_unnamed_fatals()
+                    if unnamed_fatals and fatal_result is None:
+                        fatal_result = (
+                            name,
+                            f"{file_pair_info}\n{description}"
+                            + "Unclassified fatal:\n"
+                            + "\n".join(unnamed_fatals)
+                            + "\n",
+                            files,
+                        )
+                    name, description, files = log_parser.parse_failure(
+                        allow_expected_only=True
+                    )
+                    # Keep the first fallback, but let a named expected-only verdict replace
+                    # an earlier replica's nameless one.
+                    if fallback_result is None or (
+                        fallback_result[0] == FuzzerLogParser.UNKNOWN_ERROR
+                        and name != FuzzerLogParser.UNKNOWN_ERROR
+                    ):
+                        fallback_result = (
+                            name,
+                            f"{file_pair_info}\n{description}",
+                            files,
+                        )
                 except Exception as e:
                     print(
                         f"ERROR: Failed to parse failure logs for {replica_name} "
-                        f"({server_log_file.name}): {e}\n"
+                        f"({file_names}): {e}\n"
                         f"Server logs should still be collected."
                     )
 
-            result = definitive_result or fallback_result
-            if result:
+            # Ranked only now that every replica has been scanned: a crash anywhere beats
+            # the memory limit, which beats the expected-only lines.
+            crash_result = definitive_result or fatal_result
+            result = crash_result or memory_limit_result or fallback_result
+            # A crash the parser recognised, or a `<Fatal>` it could not - either is a bug.
+            # The memory limit is not: it is what an out-of-memory run reports.
+            crash_named = crash_result is not None
+            # The expected-only verdicts explain the run only when nothing better was found
+            # on any replica, so they are read off the ranking above rather than off
+            # `definitive_result` alone.
+            using_fallback = fallback_result is not None and result is fallback_result
+            # An expected-only verdict names a run that something else already declared
+            # failed. When `crash_evidence` alone brought us here it declared nothing: with
+            # rotated logs in scope the `<Fatal>` it found can be the expected kill itself,
+            # and reporting that would fail a run for its own restart. A `<Fatal>` the
+            # parser cannot name is not expected-only, and reports as `fatal_result` above.
+            expected_only = (
+                using_fallback
+                and not server_died
+                and fallback_result[0] != FuzzerLogParser.UNKNOWN_ERROR
+            )
+            # OOM is allowed in stress tests outright - `is_oom` above already passes the
+            # run for a report in a current log or dmesg. One found only via
+            # `parse_failure(allow_expected_only=True)` can equally be a report that
+            # rotated out of the current log, which `is_oom`'s own scan does not cover.
+            # `server_died` says only that the process crashed, not why, so this is
+            # checked independently of the `not server_died` guard above.
+            expected_only_oom = (
+                using_fallback
+                and fallback_result[0] != FuzzerLogParser.UNKNOWN_ERROR
+                and re.search(SANITIZER_OOM_REPORT_PATTERN, fallback_result[1])
+            )
+            if expected_only_oom:
+                is_oom = True
+                print(f"Only a sanitizer OOM report in the server logs: {fallback_result[0]}")
+            elif expected_only:
+                print(
+                    f"Only expected messages in the server logs: {fallback_result[0]}"
+                )
+            elif result:
                 name, description, files = result
                 failed_results.append(
                     Result.create_from(
@@ -428,13 +575,23 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         )
 
+    oom_cannot_explain = _names_a_non_oom_finding(failed_results)
+    if oom_cannot_explain:
+        print("A failing result names a finding an OOM does not explain")
+
     all_results = failed_results + [r for r in test_results if r.is_ok()]
     r = Result.create_from(
         results=all_results,
         status=Result.Status.OK if not failed_results else "",
         stopwatch=stopwatch,
     )
-    if not r.is_ok() and is_oom:
+    # Running out of memory is allowed in stress tests, so it passes the run - but it does
+    # not explain a crash. A kernel OOM kill writes no `Logical error`, no assertion and no
+    # sanitizer report, so when the parser named one of those the run found a real bug and
+    # the downgrade must not bury it. Nor when a failing row names one itself: the parser only
+    # runs under `server_died or crash_evidence`, so a hung check or a lost-key error reported
+    # by the suite alone leaves `crash_named` False and would otherwise be rewritten to OK.
+    if not r.is_ok() and is_oom and not (crash_named or oom_cannot_explain):
         r.set_status(Result.Status.OK)
         r.set_info("OOM error (allowed in stress tests)")
 

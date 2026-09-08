@@ -365,6 +365,7 @@ public:
     bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
+    bool enable_failpoints = true;
     bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;

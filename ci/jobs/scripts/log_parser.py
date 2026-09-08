@@ -1,14 +1,36 @@
+import gzip
 import itertools
 import re
 import string
 import sys
 
+from pathlib import Path
+
 sys.path.append(".")
 from ci.praktika.utils import Shell
+
+# The SIGKILL that ends every run - Dolor's own teardown, a restart, or the OOM killer.
+# A healthy node logs it too, so it is an expected line rather than a failure of its own.
+EXPECTED_KILL_PATTERN = "Child process was terminated by signal 9"
+
+# A sanitizer report that is an out-of-memory rather than a bug. Defined here, not in the
+# job scripts, because the parser has to recognise one to keep it from masking a real
+# failure; `ast_fuzzer_job` re-exports it for the OOM classifier.
+SANITIZER_OOM_REPORT_PATTERN = (
+    "Sanitizer:? (out-of-memory|out of memory|failed to allocate)"
+)
+
+# The report plus the expected SIGKILL: every line here is benign on its own. Use this to
+# filter benign lines out of a failure scan, never to prove an OOM happened - the kill line
+# alone is a healthy teardown, and only exit code 137 distinguishes a kernel OOM from it.
+SANITIZER_OOM_PATTERN = f"{SANITIZER_OOM_REPORT_PATTERN}|{EXPECTED_KILL_PATTERN}"
 
 
 class FuzzerLogParser:
     UNKNOWN_ERROR = "Unknown error"
+    # The one verdict below that does not mean a bug: it is what a run that ran out of
+    # memory reports. Named so callers can tell it from the crash verdicts.
+    MEMORY_LIMIT_ERROR = "Server unresponsive: memory limit exceeded"
     # Exception messages carry the trailing ", Stack trace (when copying this message,
     # always include the lines below):" marker, but the frames it promises are on the
     # following log lines. The failure name is built from the first line only, so the
@@ -18,6 +40,13 @@ class FuzzerLogParser:
         ", Stack trace (when copying this message, always include the lines below):"
     )
     MAX_INLINE_REPRODUCE_COMMANDS = 20
+    # Lines of a matched failure reported as the error output.
+    MATCH_WINDOW_LINES = 10
+    # How many matching lines to consider when some of them are being skipped - as quoted
+    # query text or as an expected report. Counted in matches rather than output lines, so
+    # that any number of skipped lines cannot crowd a real failure out; the cap only bounds
+    # the memory used.
+    SCAN_MATCHES = 1000
     # A server log line quotes the query it is about after one of these markers, so a
     # failure pattern matching after such a marker matched the query text, not a
     # failure: a test comment or a fuzzed query may contain any text, e.g. the literal
@@ -25,9 +54,6 @@ class FuzzerLogParser:
     # checked, so a marker that follows the match (a real failure quoting a query)
     # keeps the match.
     QUERY_TEXT_MARKERS = ("(in query:", "(query:")
-    # How many matching lines to consider before giving up on finding a failure that
-    # is not a quoted query.
-    MAX_FAILURE_CANDIDATES = 50
     SANITIZER_ERROR_PATTERN = (
         r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
         r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
@@ -57,7 +83,12 @@ class FuzzerLogParser:
         (
             "Signal",
             "is_killed_by_signal",
-            r"Received signal.*|.*Child process was terminated by signal 9.*",
+            # Only the fatal handler prefixes the line with "(from thread N)" (the
+            # "(no query)"/"(query_id: ...)" segment may sit in between). A bare
+            # "Received signal 15" is a healthy node's routine SIGTERM during Dolor
+            # cleanup/restarts and must not win over another node's crash. The kill
+            # half is an expected line, deferred via `EXPECTED_PATTERNS` below.
+            r"\(from thread \d+\).*Received signal.*|.*Child process was terminated by signal 9.*",
         ),
         (
             "Memory limit exceeded",
@@ -65,6 +96,15 @@ class FuzzerLogParser:
             r".*\(total\) memory limit exceeded.*",
         ),
     ]
+    # Lines a healthy run produces too, keyed by their failure name in `ERROR_PATTERNS`.
+    # A match on one is deferred: `parse_failure` keeps looking and never reports it on its
+    # own, so a benign OOM report or the end-of-run SIGKILL on one node neither outranks
+    # another node's real crash nor becomes a failure by itself. Callers that already know
+    # the run failed can name it with `parse_failure(allow_expected_only=True)`.
+    EXPECTED_PATTERNS = {
+        "Sanitizer": SANITIZER_OOM_PATTERN,
+        "Signal": EXPECTED_KILL_PATTERN,
+    }
     SQL_COMMANDS = [
         "SELECT",
         "INSERT",
@@ -102,11 +142,65 @@ class FuzzerLogParser:
         "SET",
     ]
 
-    def __init__(self, server_log, fuzzer_log="", stderr_log="", stack_trace_str=None):
-        self.server_log = server_log
+    def __init__(
+        self,
+        server_logs: list[Path] | None = None,
+        fuzzer_log: Path | None = None,
+        stderr_logs: list[Path] | None = None,
+        stack_trace_str: str | None = None,
+    ):
+        self.server_logs = server_logs or []
         self.fuzzer_log = fuzzer_log
-        self.stderr_log = stderr_log
+        self.stderr_logs = stderr_logs or []
         self.stack_trace_str = stack_trace_str
+
+        # Set by parse_failure() to track which server log file matched
+        self._matched_server_log = self.server_logs[0] if self.server_logs else None
+        # Likewise for the log a sanitizer report matched in, so its stack trace is taken
+        # from the node that actually failed rather than whichever file comes first.
+        self._matched_sanitizer_log = None
+        # The matched report's own first line. One log can hold several reports and the match
+        # is not always the first (an OOM ahead of it is skipped), so the file alone does not
+        # say which one to extract - without this the trace and STID come from the wrong report.
+        self._matched_sanitizer_anchor = None
+
+    # ------------------------------------------------------------------
+    # Helpers to search across all log files
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _open_log(path, **kwargs):
+        """Open a log file for reading, transparently decompressing .gz files."""
+        if str(path).endswith(".gz"):
+            return gzip.open(path, "rt", errors="replace", **kwargs)
+        return open(path, "r", errors="replace", **kwargs)
+
+    def _rg_first_match(self, pattern, logs, exclude_pattern=None):
+        """
+        `find_failure` over each log file in *logs* (in order): the first genuine match
+        wins, as (output, matched_log_path, match_position, excluded_only). A log whose
+        matches are all excluded ones is remembered and returned - with `excluded_only`
+        True - only when no log holds a better one: a benign OOM report on one node must
+        not mask a real sanitizer failure on another, nor an earlier OOM mask a real
+        failure later in the same log.
+        """
+        fallback = None
+        for log in logs:
+            if not log:
+                continue
+            output, position, excluded_only = self.find_failure(
+                pattern, log, exclude_pattern
+            )
+            if not output:
+                continue
+            if excluded_only:
+                if fallback is None:
+                    fallback = (output, log, position)
+                continue
+            return output, log, position, False
+        if fallback is not None:
+            output, log, position = fallback
+            return output, log, position, True
+        return None, None, None, False
 
     @staticmethod
     def extract_format_string(line):
@@ -160,21 +254,25 @@ class FuzzerLogParser:
 
         if not matched_log_file:
             return None
-        match_line = Shell.get_output(f"sed -n '{match_position}p' {matched_log_file}")
-        thread = self.thread_id(match_line)
-        if thread:
-            next_fatal_line = Shell.get_output(
-                f"tail -n +{match_position + 1} {matched_log_file}"
-                f" | rg --text -m1 '\\[ {thread} \\] \\{{.*<Fatal>'"
-            )
-            return self.extract_format_string(next_fatal_line)
-        # The file has no thread ids either (e.g. stderr.log standing in for an
-        # absent server log), so bound the search by the failure block, same as for
-        # the string input above. Stream the lines instead of loading the file.
-        with open(matched_log_file, errors="replace") as f:
-            return self.format_string_within_failure_block(
-                itertools.islice(f, match_position, None)
-            )
+        # Stream the file once, through `_open_log` so a gzipped log is read the same way
+        # `rg -z` counted its lines (`sed`/`tail` cannot decompress on the fly).
+        with self._open_log(matched_log_file) as f:
+            rest = itertools.islice(f, match_position - 1, None)
+            thread = self.thread_id(next(rest, ""))
+            if thread:
+                next_fatal_line = next(
+                    (
+                        line
+                        for line in rest
+                        if f"[ {thread} ] {{" in line and "<Fatal>" in line
+                    ),
+                    "",
+                )
+                return self.extract_format_string(next_fatal_line)
+            # The file has no thread ids either (e.g. stderr.log standing in for an
+            # absent server log), so bound the search by the failure block, same as for
+            # the string input above.
+            return self.format_string_within_failure_block(rest)
 
     def format_string_within_failure_block(self, lines):
         # Find the `Format string:` line within the failure block that starts right
@@ -192,15 +290,40 @@ class FuzzerLogParser:
                 return ""
         return ""
 
+    def find_unnamed_fatals(self, limit=MATCH_WINDOW_LINES):
+        """`<Fatal>` lines that no `EXPECTED_PATTERNS` line explains.
+
+        `parse_failure` returns `UNKNOWN_ERROR` whenever no `ERROR_PATTERNS` entry got a
+        genuine match, which is not the same as there being nothing left to report: a fatal
+        the parser cannot classify produces the same verdict. Callers about to explain an
+        `UNKNOWN_ERROR` away must check here first, or that fatal is silently dropped.
+        `dolor.py` fails a run on the same evidence (any `<Fatal>` bar the expected kill),
+        so the two verdicts agree.
+        """
+        found = []
+        for log in self.server_logs:
+            if not log:
+                continue
+            output = Shell.get_output(
+                f"rg -z --text -o -m {self.SCAN_MATCHES} '.*<Fatal>.*' {log}",
+                strict=False,
+            )
+            for line in output.splitlines():
+                if line.strip() and not re.search(SANITIZER_OOM_PATTERN, line):
+                    found.append(line)
+                    if len(found) >= limit:
+                        return found
+        return found
+
     def failure_candidates(self, pattern, file):
-        # (1-based line number, line) of every line matching `pattern`, capped: a
-        # genuine failure is not preceded by hundreds of lines quoting its text.
+        # (1-based line number, line) of every line in `file` matching `pattern` - or in
+        # `stack_trace_str` without a file - capped: a genuine failure is not preceded by
+        # hundreds of lines quoting its text or of expected reports.
         if file:
             # Only the matching lines are read - the log itself can be gigabytes.
             output = Shell.get_output(
-                f"rg --text -n '{pattern}' {file}"
-                f" | head -n {self.MAX_FAILURE_CANDIDATES}",
-                strict=True,
+                f"rg -z --text -n -m {self.SCAN_MATCHES} '{pattern}' {file}",
+                strict=False,
             )
             for entry in output.splitlines():
                 number, _, line = entry.partition(":")
@@ -211,25 +334,34 @@ class FuzzerLogParser:
         for number, line in enumerate(self.stack_trace_str.splitlines(), start=1):
             if re.search(pattern, line):
                 matches += 1
-                if matches > self.MAX_FAILURE_CANDIDATES:
+                if matches > self.SCAN_MATCHES:
                     return
                 yield number, line
 
     def lines_after(self, position, file):
-        # The 9 lines following the line at `position` (1-based).
+        # The rest of the window following the line at `position` (1-based). Read through
+        # `_open_log` so a gzipped log is counted the same way `rg -z` counted it.
+        count = self.MATCH_WINDOW_LINES - 1
         if file:
-            return Shell.get_output(
-                f"sed -n '{position + 1},{position + 9}p' {file}"
-            ).splitlines()
-        return self.stack_trace_str.splitlines()[position : position + 9]
+            with self._open_log(file) as f:
+                return [
+                    line.rstrip("\n")
+                    for line in itertools.islice(f, position, position + count)
+                ]
+        return self.stack_trace_str.splitlines()[position : position + count]
 
-    def find_failure(self, pattern, file):
+    def find_failure(self, pattern, file, exclude_pattern=None):
         # Find the failure matching `pattern` and return its text - the match itself
-        # followed by the next 9 lines - together with the 1-based line number of the
-        # match, or ("", None) when the pattern does not match a failure.
+        # followed by the rest of the window - together with the 1-based line number of
+        # the match and whether only excluded matches were found; ("", None, False) when
+        # the pattern does not match a failure.
         # A match inside a query that the log line quotes is not a failure: the query
         # text is data, and both a test comment and a fuzzed query may contain any
         # text, so it is skipped and the search continues with the next match.
+        # A match on `exclude_pattern` is a line a healthy run produces too (see
+        # `EXPECTED_PATTERNS`), so it is held back while a later match is still possible:
+        # an OOM report must not hide the real failure behind it in the same log.
+        fallback = None
         for position, line in self.failure_candidates(pattern, file):
             match = re.search(pattern, line)
             if not match:
@@ -239,13 +371,21 @@ class FuzzerLogParser:
             ):
                 print(f"Skipping the match in the query text at line {position}")
                 continue
-            return (
-                "\n".join([match.group(0)] + self.lines_after(position, file)),
-                position,
-            )
-        return "", None
+            output = "\n".join([match.group(0)] + self.lines_after(position, file))
+            if exclude_pattern and re.search(exclude_pattern, line):
+                if fallback is None:
+                    fallback = (output, position)
+                continue
+            return output, position, False
+        if fallback is not None:
+            output, position = fallback
+            return output, position, True
+        return "", None, False
 
-    def parse_failure(self):
+    def parse_failure(self, allow_expected_only=False):
+        """`allow_expected_only` lets a caller that already knows the run failed name it
+        after an `EXPECTED_PATTERNS` line. Off by default so a detector cannot turn a line
+        a healthy run emits into a failure of its own."""
         files = []
         is_logical_error = False
         is_sanitizer_error = False
@@ -256,19 +396,61 @@ class FuzzerLogParser:
         error_output = None
         match_position = None
         matched_log_file = None
+        matched_sanitizer_log = None
+        # The first match that only ever hit an `EXPECTED_PATTERNS` line. Held aside rather
+        # than reported, so the patterns below still get their turn and a real crash on
+        # another node wins; used only when the caller opted into naming a failure after it.
+        expected_only_match = None
+        # Track which server log matched so downstream helpers search it first.
+        matched_server_log = self.server_logs[0] if self.server_logs else None
         for name, flag_name, pattern in self.ERROR_PATTERNS:
             file = None
-            if not self.stack_trace_str:
+            position = None
+            expected_pattern = self.EXPECTED_PATTERNS.get(name)
+            if self.stack_trace_str:
+                # A single string is the whole input: no other node's log can hold a
+                # better match, so an expected line is not held back here.
+                output, position, _ = self.find_failure(pattern, None)
+            else:
                 if flag_name == "is_sanitizer_error":
-                    if not self.stderr_log:
-                        # stderr.log may be absent when stress_runner.sh exits early (e.g. server failed to restart).
-                        # Skip sanitizer patterns and let the loop check the server log for other error types.
+                    # A report lands in stderr.log on the Dolor cluster and in server.log for
+                    # the AST/Buzz runner, and rotated stderr.log.N.gz files are passed in
+                    # `server_logs` - so both lists are searched, current stderr first.
+                    # Searching only `stderr_logs` loses a report that has already rotated
+                    # away, which `dolor.py` still fails the run for (it greps stderr.log*).
+                    sanitizer_logs = [*self.stderr_logs, *self.server_logs]
+                    if not sanitizer_logs:
+                        # Both may be absent when stress_runner.sh exits early (e.g. server
+                        # failed to restart); let the loop check other error types.
                         continue
-                    file = self.stderr_log
+                    # Prefer a real sanitizer failure over an OOM report: the OOM
+                    # classifier already refuses to pass the run when any node has a
+                    # genuine one, so reporting the OOM would bucket it under the
+                    # wrong issue and lose the real stack trace.
+                    output, file, position, expected_only = self._rg_first_match(
+                        pattern,
+                        sanitizer_logs,
+                        exclude_pattern=expected_pattern,
+                    )
+                    if expected_only:
+                        if expected_only_match is None:
+                            expected_only_match = (output, file, position, flag_name)
+                        continue
+                    matched_sanitizer_log = file
+                    if file is not None and file in self.server_logs:
+                        matched_server_log = file
                 else:
-                    assert self.server_log, "No server log provided"
-                    file = self.server_log
-            output, position = self.find_failure(pattern, file)
+                    if not self.server_logs:
+                        continue
+                    output, file, position, expected_only = self._rg_first_match(
+                        pattern, self.server_logs, exclude_pattern=expected_pattern
+                    )
+                    if expected_only:
+                        if expected_only_match is None:
+                            expected_only_match = (output, file, position, flag_name)
+                        continue
+                    if file:
+                        matched_server_log = file
 
             if output:
                 error_output = output
@@ -286,12 +468,32 @@ class FuzzerLogParser:
                     is_memory_limit_exceeded = True
                 break
 
+        if allow_expected_only and not error_output and expected_only_match is not None:
+            # Nothing else matched anywhere, so the expected line is the whole story.
+            error_output, matched_log_file, match_position, deferred_flag = (
+                expected_only_match
+            )
+            is_sanitizer_error = deferred_flag == "is_sanitizer_error"
+            is_killed_by_signal = deferred_flag == "is_killed_by_signal"
+            if is_sanitizer_error:
+                matched_sanitizer_log = matched_log_file
+            if matched_log_file in self.server_logs:
+                matched_server_log = matched_log_file
+
         if not error_output:
             return (
                 self.UNKNOWN_ERROR,
                 "Lost connection to server. See the logs.\n",
                 files,
             )
+
+        self._matched_server_log = matched_server_log
+        self._matched_sanitizer_log = matched_sanitizer_log
+        # The first output line is the matched text itself, so it locates the matched report
+        # inside its file. Taken before the window is trimmed below.
+        self._matched_sanitizer_anchor = (
+            error_output.splitlines()[0].strip() if matched_sanitizer_log else None
+        )
 
         error_lines = error_output.splitlines()
         result_name = error_lines[0].removesuffix(".")
@@ -367,7 +569,7 @@ class FuzzerLogParser:
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
         elif is_memory_limit_exceeded:
-            result_name = "Server unresponsive: memory limit exceeded"
+            result_name = self.MEMORY_LIMIT_ERROR
         elif is_sanitizer_error:
             stack_trace = self.get_sanitizer_stack_trace()
             if not stack_trace:
@@ -474,7 +676,11 @@ class FuzzerLogParser:
         # Extract the full sanitizer report: description, all stack traces,
         # origin chains (e.g. "Uninitialized value was created by..."),
         # and the SUMMARY line.
-        def _extract_sanitizer_trace(log_file):
+        def _extract_sanitizer_trace(log_file, anchor=None):
+            # *anchor* is the matched report's own text: extraction skips everything before it,
+            # so a report earlier in the same file (typically a skipped OOM) does not supply the
+            # trace for the one that was actually reported. Only the matched log gets one; the
+            # fallback logs below are scanned from the top as before.
             ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
             sanitizer_start = re.compile(
                 r"(==\d+==\s*)?(ERROR|WARNING): \w+Sanitizer:|"
@@ -486,7 +692,7 @@ class FuzzerLogParser:
                 r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\["
             )
 
-            with open(log_file, "r", errors="replace") as file:
+            with self._open_log(log_file) as file:
                 all_lines = file.readlines()
 
             result_lines = []
@@ -494,10 +700,19 @@ class FuzzerLogParser:
             is_runtime_error = False
             is_check_failed_report = False
             consecutive_blank = 0
+            # The anchor is compared after stripping ANSI codes, the same way the lines are.
+            reached_anchor = not anchor
+            clean_anchor = ansi_escape.sub("", anchor) if anchor else None
 
             for line in all_lines:
                 clean_line = ansi_escape.sub("", line)
                 stripped = clean_line.strip()
+
+                if not reached_anchor:
+                    # Fall through on the anchor line itself, so it can open the report.
+                    if clean_anchor not in clean_line:
+                        continue
+                    reached_anchor = True
 
                 if not in_report:
                     if sanitizer_start.search(clean_line):
@@ -537,16 +752,47 @@ class FuzzerLogParser:
 
             return result_lines
 
-        lines = []
+        # Prefer the log the sanitizer pattern actually matched in, so a benign report on
+        # one node does not supply the trace for another node's failure. Rotated stderr
+        # files arrive in `server_logs`, so they are searched too.
+        matched = self._matched_sanitizer_log
+        logs_to_search = [matched] if matched else []
+        for log in (*self.stderr_logs, *self.server_logs):
+            if log and log != matched:
+                logs_to_search.append(log)
 
-        if self.stderr_log:
-            lines = _extract_sanitizer_trace(self.stderr_log)
-        else:
-            assert False, "No stderr log provided"
+        for log in logs_to_search:
+            # Only the matched log knows which of its reports was reported.
+            anchor = self._matched_sanitizer_anchor if log == matched else None
+            lines = _extract_sanitizer_trace(log, anchor)
+            if lines:
+                return "\n".join(lines)
 
-        return "\n".join(lines) if lines else None
+        return None
 
     def get_stack_trace(self):
+        """
+        Search all server logs for the last Fatal stack trace.
+        Prefer the log that matched the error pattern (_matched_server_log),
+        then fall back to all server logs.
+        """
+        matched = self._matched_server_log
+        # Put the matched log first so it's preferred
+        logs_to_search = []
+        if matched:
+            logs_to_search.append(matched)
+        for log in self.server_logs:
+            if log and log != matched:
+                logs_to_search.append(log)
+
+        for log in logs_to_search:
+            trace = self._extract_stack_trace_from_log(log)
+            if trace:
+                return trace
+        return None
+
+    def _extract_stack_trace_from_log(self, log_path):
+        """Extract the last Fatal stack trace from a single log file."""
         lines = []
         # Variant 1: BaseDaemon format
         stack_trace_pattern_v1 = re.compile(r"<Fatal> BaseDaemon: \d+(?:\.\d+)*\.\s*")
@@ -556,8 +802,11 @@ class FuzzerLogParser:
         if self.stack_trace_str:
             all_lines = self.stack_trace_str.splitlines()
         else:
-            with open(self.server_log, "r", errors="replace") as file:
-                all_lines = file.readlines()
+            try:
+                with self._open_log(log_path) as file:
+                    all_lines = file.readlines()
+            except (FileNotFoundError, IOError):
+                return None
 
         # Check which variant is present
         has_variant1 = any(
@@ -690,26 +939,51 @@ class FuzzerLogParser:
         print(f"Stack trace functions: {functions}")
         return stack_trace_id
 
-    def get_failed_query(self, match_position, matched_log_file):
+    def get_failed_query(self, match_position=None, matched_log_file=None):
+        """
+        Search all server logs for the failed query, preferring the log
+        that matched the error pattern. `match_position` is the failure's line in
+        `matched_log_file`, so that log gives up the failure's own query id.
+        """
+        matched = self._matched_server_log
+        logs_to_search = []
+        if matched:
+            logs_to_search.append(matched)
+        for log in self.server_logs:
+            if log and log != matched:
+                logs_to_search.append(log)
+
+        for log in logs_to_search:
+            result = self._get_failed_query_from_log(
+                log, match_position if log == matched_log_file else None
+            )
+            if result:
+                return result
+        return None
+
+    def _get_failed_query_from_log(self, log_path, match_position=None):
+        """Extract the failed query from a single server log file."""
         # TODO: Fetch the failed query from fuzzer.log instead of server.log to ensure exact matching.
         # The server.log may normalize whitespace or format queries differently, making it difficult
         # to locate the corresponding query and its dependencies in fuzzer.log.
-        if not self.server_log:
+        if not log_path:
             # Without a file argument `rg` would search the working directory.
             return None
-        if match_position and matched_log_file == self.server_log:
-            # The query id of the failure itself, taken from the failure block, so
-            # that an unrelated line that merely quotes a failure message in a query
-            # cannot contribute its own query id.
-            failure_output = "\n".join(
-                [Shell.get_output(f"sed -n '{match_position}p' {self.server_log}")]
-                + self.lines_after(match_position, self.server_log)
-            )
+        if match_position:
+            # The query id of the failure itself, taken from its own block, so that an
+            # unrelated line that merely quotes a failure message in a query cannot
+            # contribute its own query id.
+            with self._open_log(log_path) as f:
+                failure_output = "".join(
+                    itertools.islice(
+                        f, match_position - 1, match_position - 1 + self.MATCH_WINDOW_LINES
+                    )
+                )
         else:
-            # The failure was matched in a stack trace string, which carries no line
-            # numbers of the server log - search the log for the failure block.
+            # No line number for this log: the failure was matched in a stack trace
+            # string, or in another node's log. Search it for the failure block.
             failure_output = Shell.get_output(
-                f"rg --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {self.server_log}",
+                f"rg -z --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {log_path}",
                 verbose=True,
             )
         if not failure_output:
@@ -723,7 +997,7 @@ class FuzzerLogParser:
                 print("ERROR: Expected query on second line but not found")
                 return None
 
-        assert failure_output, "No failure found in server log"
+        assert failure_output, f"No failure found in server log {log_path}"
         # Find the first line that has a proper log format with query ID.
         # rg may match continuation lines (e.g. SQL comments like "-- Logical error query")
         # that lack the "] {query_id}" prefix.
@@ -733,14 +1007,14 @@ class FuzzerLogParser:
                 query_id = line.split(" ] {")[1].split("}")[0]
                 break
         if not query_id:
-            print("ERROR: Query id not found")
+            print(f"ERROR: Query id not found in {log_path}")
             return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
-            f"grep -a '{query_id}.* executeQuery:' {self.server_log} | tail -n1"
+            f"rg -z --text '{query_id}' {log_path} | rg 'executeQuery:' | head -n1"
         )
         if not query_command:
-            print("Query not found in server log by query id")
+            print(f"Query not found in {log_path} by query id")
             return None
         query_command = query_command.split(" (stage:")[0]
 
@@ -862,10 +1136,9 @@ class FuzzerLogParser:
 
 if __name__ == "__main__":
     # Test:
-    fuzzer_log = "./fuzzer.log"
-    server_log = "./server.log"
-    FTG = FuzzerLogParser(server_log, fuzzer_log, "none")
-    # FTG2 = FuzzerLogParser("", "", stack_trace_str="...")
+    fuzzer_log = Path("./asan_err/fuzzer.log")
+    server_log = Path("./no_stid/server.log")
+    FTG = FuzzerLogParser([server_log], fuzzer_log)
     result_name, info, files = FTG.parse_failure()
     print("Result name:", result_name)
     print("Info:\n", info)
