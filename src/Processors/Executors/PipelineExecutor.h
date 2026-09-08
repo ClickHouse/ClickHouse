@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Executors/ExecutingGraph.h>
-#include <Processors/Executors/PipelineExecutionStatus.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
@@ -57,10 +56,20 @@ public:
 
     const Processors & getProcessors() const;
 
-    using ExecutionStatus = PipelineExecutionStatus;
+    enum class ExecutionStatus
+    {
+        NotStarted,
+        Executing,
+        Finished,
+        Exception,
+        CancelledByUser,
+        CancelledByTimeout,
+    };
 
     /// Cancel execution. May be called from another thread.
     void cancel() { cancel(ExecutionStatus::CancelledByUser); }
+
+    ExecutionStatus getExecutionStatus() const { return execution_status.load(); }
 
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();

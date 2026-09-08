@@ -1,0 +1,78 @@
+---
+noindex: true
+title: "Configure remote_servers for Distributed Queries"
+sidebarTitle: "Configure remote_servers"
+description: "Securely configure ClickHouse remote_servers to shard data across multiple ClickHouse Private clusters using Kubernetes Secrets and the @from_env directive."
+---
+
+Securely configure ClickHouse `remote_servers` to shard data across multiple ClickHouse Private clusters using Kubernetes Secrets and the `@from_env` directive.
+
+## When to Use remote_servers
+
+[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) defines a named cluster topology that ClickHouse uses when executing distributed queries via [Distributed tables](https://clickhouse.com/docs/engines/table-engines/special/distributed) or the [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) table function.
+
+Within a single ClickHouse Private cluster, replicas already coordinate through ClickHouse Keeper and [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) -- the same architecture used in ClickHouse Cloud -- so `remote_servers` is not needed for replication purposes. This setup covers the vast majority of use cases.
+
+Sharding data across multiple ClickHouse Private clusters adds significant operational complexity and should be treated as a last resort. If you believe your workload requires it, we strongly recommend discussing it with us first so we can assess whether it is truly the right approach.
+
+## Prerequisites
+
+- `onprem-clickhouse-cluster` Helm chart version **1.1.151 or later**
+- Two ClickHouse Private clusters deployed (this guide uses `default-xx-01` and `default-xx-02`)
+- Kubernetes [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) named `default-xx-01-password` and `default-xx-02-password` containing the cluster passwords
+
+## The Pattern
+
+1.  Kubernetes Secrets hold the sensitive values (cluster passwords).
+2.  `secretKeyRef` injects the values as environment variables in the ClickHouse container.
+3.  The ClickHouse configuration reads the values at runtime using the [`@from_env`](https://clickhouse.com/docs/operations/configuration-files#from_env_zk) directive.
+
+This keeps sensitive data out of rendered manifests.
+
+> If you integrate with external secret stores (e.g., HashiCorp Vault, AWS Secrets Manager), use the [Kubernetes Secrets Store CSI Driver](https://github.com/kubernetes-sigs/secrets-store-csi-driver) to mount secrets and [load them as environment variables](https://secrets-store-csi-driver.sigs.k8s.io/topics/set-as-env-var). The `@from_env` pattern works the same way regardless of how the environment variable is populated.
+
+## Helm Values Example
+
+Each shard is addressed via its cluster's `-any` service -- a Kubernetes service that routes to any available replica in that cluster. This is more robust than using individual pod DNS names, which might change over time.
+
+``` yaml
+server:
+  additionalEnvVars:
+    - name: DEFAULT_XX_01_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-01-password
+          key: password
+    - name: DEFAULT_XX_02_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-02-password
+          key: password
+  config:
+    remote_servers:
+      my-distributed-cluster:
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_01_PASSWORD
+              host: c-default-xx-01-any.ns-default-xx-01.svc.cluster.local
+              port: 9000
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_02_PASSWORD
+              host: c-default-xx-02-any.ns-default-xx-02.svc.cluster.local
+              port: 9000
+```
+
+## Service Hostname Format
+
+The `-any` service hostname follows the pattern:
+
+``` text
+c-<cluster-name>-any.<namespace>.svc.cluster.local
+```
+
+This pattern ensures sensitive data is not templated directly in manifests. The `additionalEnvVars` field sets environment variables from Kubernetes secrets using `secretKeyRef`, and the `@from_env` directive in the ClickHouse configuration loads those values at runtime.

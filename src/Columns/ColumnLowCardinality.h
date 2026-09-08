@@ -86,11 +86,6 @@ public:
 #else
     void doInsertFrom(const IColumn & src, size_t n) override;
 #endif
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#else
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -113,6 +108,8 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
@@ -268,11 +265,6 @@ public:
         return getIndexes().getNumberOfDefaultRows();
     }
 
-    bool hasOnlyTypeDefaults() const override
-    {
-        return getIndexes().hasOnlyTypeDefaults();
-    }
-
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
@@ -302,8 +294,6 @@ public:
     /// Promote a non-nullable dictionary to `Nullable(T)` in place, rebuilding it with a NULL placeholder
     /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
     void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
-
-    void compactDictionaryInplace() { compactInplace(); }
 
     ColumnPtr cloneWithDefaultOnNull() const;
 

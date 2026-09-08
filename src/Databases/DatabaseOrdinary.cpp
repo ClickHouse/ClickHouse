@@ -32,7 +32,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
-#include <Storages/TableZnodeInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
@@ -142,22 +141,6 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
         );
 }
 
-void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
-{
-    /// A conversion mints a path the table never had, so the substituted name is validated as strictly
-    /// as a CREATE validates it -- but one level below CREATE, because the requirement that a path start
-    /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
-    const auto & server_settings = local_context->getServerSettings();
-    TableZnodeInfo::resolve(
-        server_settings[ServerSetting::default_replica_path],
-        server_settings[ServerSetting::default_replica_name],
-        StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
-        create_query,
-        LoadingStrictnessLevel::SECONDARY_CREATE,
-        local_context,
-        /*validate_substitutions=*/true);
-}
-
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
 {
     auto * storage = create_query.storage;
@@ -202,14 +185,18 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
 {
-    return fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME;
-}
+    fs::path data_path;
+    if (!tableStarted)
+    {
+        auto create_query = tryGetCreateTableQuery(name, getContext());
+        data_path = getTableDataPath(create_query->as<ASTCreateQuery &>());
+    }
+    else
+        data_path = getTableDataPath(name);
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_name)
-{
-    return fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME;
+    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -232,7 +219,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
 
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -245,7 +232,6 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
-    checkReplicaPathIsSafe(create_query, getContext());
     checkReplicaPathExists(create_query, getContext());
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
@@ -440,7 +426,7 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
         return false;
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
-        || query.isParameterizedView())
+        || query.isParameterizedView() || query.is_window_view)
         return false;
 
     /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
@@ -534,7 +520,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
 
     auto storage_disks = table->getStoragePolicy()->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -717,7 +703,6 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
 
 VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
-    ensurePopulated();
     std::set<String> unique_names;
     {
         std::lock_guard lock(mutex);

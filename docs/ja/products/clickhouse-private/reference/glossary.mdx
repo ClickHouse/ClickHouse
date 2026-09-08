@@ -1,0 +1,78 @@
+---
+noindex: true
+title: "用語集"
+description: "ClickHouse Private のコンポーネント、概念、用語に関する定義。"
+---
+
+<div id="clickhouse-components">
+  ## ClickHouse コンポーネント
+</div>
+
+**ClickHouse Server**
+ClickHouse の主要なデータベースプロセスです。ClickHouse Private では、各サーバーレプリカはそれぞれ専用の StatefulSet によって管理されるポッドとして実行されます。[アップストリームのドキュメント](https://clickhouse.com/docs/operations/server-configuration-parameters/settings) を参照してください。
+
+**ClickHouse Keeper**
+レプリケーションメタデータのための分散協調サービスです。HA には最低 3 つのインスタンスが必要です。[アップストリームのドキュメント](https://clickhouse.com/docs/operations/clickhouse-keeper) を参照してください。
+
+**ClickHouse Operator**
+プロビジョニング、スケーリング、バックアップ、リコンサイル などを含め、ClickHouseCluster カスタムリソースのライフサイクルを管理する Kubernetes オペレーターです。
+
+**ClickHouseCluster (CR)**
+レプリカ、ストレージ、ネットワーク、構成など、ClickHouse クラスターの望ましい状態を定義する Kubernetes カスタムリソースです。`onprem-clickhouse-cluster` Helm チャートを使用して作成されます。
+
+**Airgap Management API**
+ClickHouse Private クラスターを管理するためのオプションの REST API コンポーネントです。バックアップ、垂直スケーリング、パスワードのリセット、ステータス監視用のエンドポイントを提供します。
+
+<div id="architecture-concepts">
+  ## アーキテクチャの概念
+</div>
+
+**MultiStatefulSet (MultiSTS)**
+各 ClickHouse server レプリカをそれぞれ専用の StatefulSet が管理する、オペレーター の StatefulSet モデルです (1 STS = 1 ポッド) 。これにより、より安全なローリングアップデートと、レプリカごとの独立した管理が可能になります。MultiSTS は、現在は非推奨となっている従来の SingleSTS モデルに代わるものです。
+
+**ReplicaStateMap**
+MultiSTS モードで各レプリカの状態を追跡する、ClickHouseCluster CR の status 内にある内部データ構造です。状態には **Pending**、**Ready**、**Stopped**、**廃棄対象**、**Dropped**、**VolumeRestoring**、**VolumeRestored** があります。これは オペレーター 内部でのみ使用されるものであり、外部システムから参照すべきではありません。
+
+**Condemned Replica**
+スケールイン操作中に削除対象としてマークされたレプリカです。オペレーター は ReplicaStateMap 内でその状態を **Ready** から **廃棄対象** に遷移させ、データを同期したうえで安全に削除します。
+
+**Hydra (Compute Separation)**
+単一の ClickHouse クラスター内で複数のコンピュートプロファイル (ノードグループ) を利用できるようにする機能です。各プロファイルは、1 つの Keeper インスタンスと S3 データを共有しながら、異なるリソース割り当てと個別のエンドポイントを持つことができます。子インスタンスは read-only または read-write にできます。
+
+**Backup Pod**
+MultiSTS モードでは、1 つのレプリカがバックアップポッドとして指定されます (ReplicaStateMap 内で `isBackupPod: true`) 。バックアップは常にこのポッドで実行され、スケールイン中に廃棄対象になることはありません。
+
+<div id="infrastructure-terms">
+  ## インフラストラクチャ関連用語
+</div>
+
+**IRSA (IAM Roles for Service Accounts)**
+Kubernetes のサービスアカウントが IAM ロールを引き受けられるようにする AWS の仕組みです。静的な認証情報を使わずに、ClickHouse ポッドに S3 へのアクセス権を付与するために使用されます。
+
+**Workload Identity**
+IRSA に相当する GCP の機能です。Kubernetes のサービスアカウントを GCP のサービスアカウントに関連付け、GCS やその他の GCP サービスにアクセスできるようにします。
+
+**FIPS 140-2**
+暗号モジュールに関する米国政府の標準です。ClickHouse Private は、特別にビルドされたサーバーイメージと、FIPS 検証済みの TLS 証明書生成を使用する FIPS 準拠のデプロイメントをサポートしています。
+
+**NVMe Cache**
+サーバーノードに接続されたローカル NVMe SSD ストレージで、S3/GCS に保存されたデータのディスクキャッシュとして使用されます。頻繁にアクセスされるデータをローカルにキャッシュすることで、クエリパフォーマンスを向上させます。Helm チャートの `bytesPerGiRAM` または `cacheDiskSize` で設定します。
+
+**S3 Key Prefix**
+S3 バケット内でクラスターのデータを区分するための一意の識別子 (通常は UUID) です。複数のクラスターで、異なるキープレフィックスを使用して 1 つのバケットを共有できます。
+
+<div id="operational-terms">
+  ## 運用用語
+</div>
+
+**リコンサイル**
+オペレーター が、望ましい状態 (CR スペック) と実際の状態 (稼働中のポッド、StatefulSets) を比較し、必要な修正を行うプロセスです。`last_cluster_reconcile` メトリクスで監視されます。
+
+**リコンサイルスキップのアノテーション**
+ClickHouseCluster CR に付与する `clickhouse.com/skip-reconcile` アノテーションです。これが存在する場合、オペレーター はそのクラスターをリコンサイルしません。レプリカの削除など、手動操作時に使用されます。
+
+**プレフライトチェック**
+ClickHouse のデプロイ前に、クラスターの前提条件を検証するための検証ツール (Troubleshoot.sh ベース) です。ノードラベル、ストレージクラス、CRD などを確認します。
+
+**PDB (PodDisruptionBudget)**
+同時に利用不可にできるポッド数を制限する Kubernetes リソースです。オペレーター は可用性を維持するため、ローリングアップデート中に PDB を遵守します.
