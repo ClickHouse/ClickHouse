@@ -7,6 +7,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
+#include <IO/Progress.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
@@ -222,6 +223,10 @@ public:
 
     void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
 
+    /// Opt in to network-error retries (`distributed_query_retries`). Default is off: only proven
+    /// read-only paths that can reacquire connections from `ConnectionPoolWithFailover` may enable this.
+    void enableQueryRetries() { allow_query_retry = true; }
+
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
@@ -354,6 +359,11 @@ private:
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
+    /// The failover pool the connections are taken from, if any. Used to penalize a replica
+    /// whose established connection failed with a network error, so that the retry of the
+    /// query prefers another replica even under deterministic `load_balancing` policies.
+    ConnectionPoolWithFailoverPtr failover_pool;
+
     LoggerPtr log = getLogger("RemoteQueryExecutor");
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;
@@ -389,6 +399,51 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+    ReadResult readImpl();
+    ReadResult readAsyncImpl();
+
+    /// Returns true if the query may be sent again after a network error
+    /// according to the `distributed_query_retries` setting.
+    bool canRetryAfterNetworkError(const Exception & e) const;
+
+    /// The state-based part of `canRetryAfterNetworkError`: whether a retry may still happen
+    /// if a network error occurs now (regardless of any particular exception).
+    bool mayRetryAfterNetworkError() const;
+
+    /// Drop the failed connections and reset the executor state so that the next read attempt
+    /// re-sends the query (possibly to another replica), then wait for the retry interval.
+    void prepareRetryAfterNetworkError(const Exception & e);
+
+    /// Report the progress accumulated in `deferred_progress` and reset it.
+    void flushDeferredProgress();
+
+    /// Report the progress accumulated in `deferred_progress` and reset it, and close the retry
+    /// window: the work reported by the remote server will not be replayed by a retry.
+    void finishRetryWindow();
+
+    /// How many retries after a network error were done so far, see `distributed_query_retries`.
+    size_t network_error_retries_count = 0;
+
+    bool allow_query_retry = false;
+
+    /** Whether a packet carrying the final statistics of the query (`Totals`, `Extremes` or
+      * `ProfileInfo`) was received. Such packets are sent by the remote server in the suffix of a
+      * successful query, even if it returned no rows, and they are forwarded to the initiator's
+      * pipeline right away. `ProfileInfo` in particular is accumulated by `RemoteSource`, so a
+      * retry after it has been forwarded would double-count `rows_before_limit` and
+      * `rows_before_aggregation`.
+      */
+    bool got_final_metadata_from_replica = false;
+
+    /** Progress received from the remote server while a retry after a network error is still
+      * possible. It is deferred until a retry becomes impossible (the first data block, an
+      * exception, the end of the stream, or `finish()`), and dropped only when a retry is
+      * committed by a successful re-send in `sendQueryUnlocked`. Dropping it earlier would lose
+      * real work if `finish()` then prevents the resend. Reporting a failed attempt that is later
+      * replayed would double-count rows and bytes in the read limits and quotas on the initiator.
+      */
+    Progress deferred_progress;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);
