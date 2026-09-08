@@ -7,12 +7,19 @@
 # reach the same unbuilt set at the same time: one builds it for the path/file filter, the other
 # for manifest pruning. The assertions below are deterministic; the concurrency oracle is CI's
 # sanitizer and stress arms, which have no other test reaching that pair.
+#
+# The two settings pinned in the final SELECT are the manifest-pruning builder's gates: with
+# use_iceberg_partition_pruning = 0 there is no manifest filter DAG, and with
+# use_index_for_in_with_subqueries = 0 the ordered build returns before its lock. Either way only
+# one builder reaches the set, and this test then exercises nothing while still printing its
+# expected output, so keep both pins.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 TABLE="t_ice_pathset_${CLICKHOUSE_DATABASE}"
+PATHS="paths_${CLICKHOUSE_DATABASE}"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 
 trap "rm -rf '${TABLE_PATH}'" EXIT
@@ -30,9 +37,10 @@ for p in 1 2 3 4 5 6; do
     "
 done
 
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE paths (p String) ENGINE = MergeTree ORDER BY p"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PATHS}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${PATHS} (p String) ENGINE = MergeTree ORDER BY p"
 ${CLICKHOUSE_CLIENT} --query "
-    INSERT INTO paths SELECT DISTINCT _path FROM ${TABLE} WHERE part IN (2, 3)
+    INSERT INTO ${PATHS} SELECT DISTINCT _path FROM ${TABLE} WHERE part IN (2, 3)
 "
 
 # The subquery is slow on purpose: whichever thread builds the set first holds the build long
@@ -40,8 +48,10 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
 SELECT count(), sum(v)
 FROM icebergLocalCluster('test_shard_localhost', '${TABLE_PATH}', 'Parquet')
-WHERE _path IN (SELECT p FROM ${CLICKHOUSE_DATABASE}.paths WHERE NOT ignore(sleepEachRow(0.4)))
-SETTINGS enable_analyzer = 1, iceberg_manifest_decode_concurrency = 4
+WHERE _path IN (SELECT p FROM ${CLICKHOUSE_DATABASE}.${PATHS} WHERE NOT ignore(sleepEachRow(0.4)))
+SETTINGS enable_analyzer = 1, iceberg_manifest_decode_concurrency = 4,
+    use_iceberg_partition_pruning = 1, use_index_for_in_with_subqueries = 1
 "
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PATHS}"
