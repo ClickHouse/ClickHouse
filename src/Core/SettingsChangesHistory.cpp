@@ -83,6 +83,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_statistics_for_min_max_aggregation", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."},
             {"parallel_replicas_allow_merge_tables", false, false, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
+            {"enable_reader_executor_log", false, false, "New experimental setting to write one row per `ReaderExecutor` at destruction into `system.reader_executor_log`."},
+            {"reader_executor_plan_look_ahead_max_window", 33554432, 33554432, "New experimental setting: plan look-ahead target for the `ReaderExecutor` (floored at `reader_executor_window_size`); the default keeps the plan wider than the fill-ahead lead."},
+            {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the `ReaderExecutor` read buffer - consumed bytes kept in memory for cheap backward seeks."},
+            {"reader_executor_use_fibers", false, false, "New experimental `ReaderExecutor` setting (off by default): run read-ahead fetch steps as Silk fibers instead of prefetch pool threads."},
+            {"reader_executor_max_tail_for_drain", 1048576, 524288, "Lowered the drain bound: draining more than 512 KiB to complete a dropped long connection costs more than a reopen."},
             {"statistics_max_set_size_for_exact_selectivity_estimation", 10000, 10000, "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."},
             {"type_json_skip_null_typed_paths", false, false, "New setting to treat NULL values in typed JSON paths as absent"},
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
@@ -1483,6 +1488,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
+            {"merge_reader_executor_window_size", 1048576, 1048576, "New setting. Read window size for merge/mutation reads through the experimental `ReaderExecutor`."},
+            {"merge_reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New setting. Plan window size for merge/mutation reads through the experimental `ReaderExecutor`."},
+            {"merge_reader_executor_fill_ahead_lead", 2097152, 2097152, "New setting. Fill-ahead lead for merge/mutation reads through the experimental `ReaderExecutor`."},
+            {"merge_reader_executor_hold_consumed", 0, 0, "New setting. Consumed-bytes retention for merge/mutation reads through the experimental `ReaderExecutor`."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",

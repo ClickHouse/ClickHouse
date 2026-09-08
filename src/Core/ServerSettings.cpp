@@ -8,11 +8,14 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <IO/MMappedFileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/LongConnectionLimit.h>
 #include <IO/S3Defines.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -553,6 +556,7 @@ A value of `0` means "never". The default value corresponds to 1 day.
     \
     \
     DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
+    DECLARE(Bool, disk_connections_use_silk, false, R"(Create all HTTP connections of the disk connection group (object storage disks) on Silk fiber sockets and start the Silk fiber scheduler at server startup. Affects every disk connection, not only the `reader_executor_use_fibers` fiber path. Requires a build with Silk (Linux, io_uring available at runtime). Takes effect only at server startup: changing it via a config reload has no effect on running connections or the scheduler.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_memory_pressure_elevated_level_pct, DEFAULT_MEMORY_PRESSURE_ELEVATED_PCT, R"(Memory-pressure threshold, as a percent of a memory tracker's hard limit, at which the experimental `ReaderExecutor` enters the `Elevated` memory-pressure level and starts shrinking its read window. The thresholds are applied to three scopes independently - the server total (`max_server_memory_usage`), the user (`max_memory_usage_for_user`) and the query (`max_memory_usage`) - and a reader takes the highest of the three, so one query near its own limit shrinks its window even while the server is idle. A scope with no hard limit contributes nothing. Must be in `[1, 100]` and satisfy `elevated <= high <= critical`; an out-of-range or out-of-order triple is rejected at startup and on `SYSTEM RELOAD CONFIG`. Zero is rejected because an `elevated` of 0 would put every scope at `Elevated`, including one with no hard limit.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_memory_pressure_high_level_pct, DEFAULT_MEMORY_PRESSURE_HIGH_PCT, R"(Memory-pressure threshold at which the experimental `ReaderExecutor` enters the `High` memory-pressure level. See `reader_executor_memory_pressure_elevated_level_pct` for the scopes, range and ordering rules.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_memory_pressure_critical_level_pct, DEFAULT_MEMORY_PRESSURE_CRITICAL_PCT, R"(Memory-pressure threshold at which the experimental `ReaderExecutor` enters the `Critical` memory-pressure level, its most aggressive read-window reduction. See `reader_executor_memory_pressure_elevated_level_pct` for the scopes, range and ordering rules.)", EXPERIMENTAL) \
@@ -1526,6 +1530,8 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
     DECLARE(UInt64, threadpool_local_fs_reader_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from local filesystem.)", 0) \
     DECLARE(NonZeroUInt64, threadpool_remote_fs_reader_pool_size, 250, R"(Number of threads in the Thread pool used for reading from remote filesystem when `remote_filesystem_read_method = 'threadpool'`.)", 0) \
     DECLARE(UInt64, threadpool_remote_fs_reader_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from remote filesystem.)", 0) \
+    DECLARE(NonZeroUInt64, reader_executor_prefetch_pool_size, 8, R"(Number of threads in the shared prefetch pool for `ReaderExecutor` (experimental `use_reader_executor` setting). Applied when the pool is first created at server start; changing it requires a restart (`SYSTEM RELOAD CONFIG` does not resize the live pool).)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_prefetch_queue_size, 80, R"(Maximum number of prefetch tasks (running + queued) for the shared `ReaderExecutor` prefetch pool. `submit` returns immediately (with nullptr handle) when this limit is reached; the executor falls back to a synchronous read. A value of `0` means "use the default of `reader_executor_prefetch_pool_size * 10`". Applied when the pool is first created at server start; changing it requires a restart (`SYSTEM RELOAD CONFIG` does not resize the live pool).)", EXPERIMENTAL) \
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
@@ -2238,6 +2244,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "error_log",
         "filesystem_cache_log",
         "filesystem_read_prefetches_log",
+        "reader_executor_log",
         "s3queue_log",
         "azure_queue_log",
         "asynchronous_metric_log",
@@ -3732,6 +3739,11 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
             {"http_connections_sndbuf",
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
+
+            /// `ReaderExecutor` settings applied live in `Server.cpp` reload
+            /// path — report the live values from their owning components.
+            {"max_remote_read_connections",
+             {std::to_string(context->getLongConnectionLimit()->getCapacity()), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())

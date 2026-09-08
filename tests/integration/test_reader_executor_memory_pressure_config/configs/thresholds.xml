@@ -1,0 +1,5 @@
+<clickhouse>
+    <reader_executor_memory_pressure_elevated_level_pct>40</reader_executor_memory_pressure_elevated_level_pct>
+    <reader_executor_memory_pressure_high_level_pct>50</reader_executor_memory_pressure_high_level_pct>
+    <reader_executor_memory_pressure_critical_level_pct>60</reader_executor_memory_pressure_critical_level_pct>
+</clickhouse>

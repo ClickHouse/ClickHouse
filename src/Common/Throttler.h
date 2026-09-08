@@ -71,6 +71,8 @@ public:
     void setMaxSpeed(size_t max_speed_);
 
 protected:
+    /// Blocks a plain thread; on a silk fiber suspends only the fiber, keeping
+    /// the carrier OS thread free for other fibers.
     void sleep(UInt64 nanoseconds);
 
 private:

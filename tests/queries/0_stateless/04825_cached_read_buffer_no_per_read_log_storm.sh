@@ -38,6 +38,11 @@ $CLICKHOUSE_CLIENT -q "
 #   enable_parallel_replicas=0                                  -- 1 sends the read to the replica
 #                                                                  cluster, so this server's cache
 #                                                                  buffer is not the one measured
+#   use_reader_executor=0                                       -- the suite forces the executor on
+#                                                                  (users.d/use_reader_executor.xml);
+#                                                                  1 routes the read through it, not
+#                                                                  the legacy CachedOnDiskReadBufferFromFile
+#                                                                  this test measures
 # The rest are not randomized, but their defaults would widen the read buffer and so reduce the
 # refill count the test depends on: max_read_buffer_size_local_fs,
 # filesystem_cache_prefer_bigger_buffer_size.
@@ -47,7 +52,7 @@ read_settings="enable_filesystem_cache = 1, max_read_buffer_size = 4096,
     min_bytes_to_use_direct_io = 0, min_bytes_to_use_mmap_io = 0,
     local_filesystem_read_method = 'pread', local_filesystem_read_prefetch = 0,
     filesystem_cache_prefer_bigger_buffer_size = 0, enable_parallel_replicas = 0,
-    filesystem_cache_segments_batch_size = 1, max_threads = 1"
+    filesystem_cache_segments_batch_size = 1, max_threads = 1, use_reader_executor = 0"
 
 # Warm the cache so the measured queries read from it (ReadType::CACHED) rather than downloading.
 $CLICKHOUSE_CLIENT -q "

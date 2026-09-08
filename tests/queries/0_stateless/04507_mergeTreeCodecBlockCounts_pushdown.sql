@@ -2,6 +2,13 @@
 -- no-random-merge-tree-settings: the output enumerates the physical representation, which many randomised settings change
 -- no-object-storage: the FileOpen profile event fires only for local-disk reads.
 
+-- The FileOpen comparison below requires every query to actually open the files
+-- it reads: the mmap read method reuses mappings via MMappedFileCache and the
+-- local page cache serves repeat reads without opening, collapsing all variants
+-- to equal counts under randomized settings.
+SET local_filesystem_read_method = 'pread';
+SET use_page_cache_for_local_disks = 0;
+
 DROP TABLE IF EXISTS t_pushdown;
 
 CREATE TABLE t_pushdown (a UInt64 CODEC(LZ4), b UInt64 CODEC(ZSTD))

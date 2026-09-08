@@ -901,6 +901,56 @@ TEST(ChainedBuffers, SliceTrimsConsumedBytesAcrossOverlap)
     EXPECT_EQ(out.size(), 25u);  /// [100, 125) served once despite overlapping nodes
 }
 
+TEST(ChainedBuffers, SliceDeliversOverlappingNodesExactlyOnce)
+{
+    /// Overlapping nodes with NO advance (the lane bank shape: a later fetch re-covers
+    /// already-banked bytes). `slice` must deliver each byte exactly once - a duplicated
+    /// node would shift everything after it for a consumer assembling by concatenation.
+    const auto fill = [](size_t start, size_t len)
+    {
+        auto buf = std::make_shared<OwnedChainedBuffer>(len);
+        for (size_t i = 0; i < len; ++i)
+            buf->data()[i] = static_cast<char>(start + i);
+        return buf;
+    };
+
+    ChainedBuffers chain;
+    chain.append(ChainedBufferNode{fill(25, 4), 0, 4, 25});   /// [25, 29) banked first
+    chain.append(ChainedBufferNode{fill(0, 29), 0, 29, 0});   /// [0, 29) re-fetched over it
+
+    ChainedBuffers s = chain.slice({0, 29});
+    EXPECT_EQ(s.totalBytes(), 29u);  /// node-size sum: no duplicated bytes
+    size_t pos = 0;
+    while (!s.atEnd())
+    {
+        auto sp = s.peek();
+        ASSERT_EQ(sp.logical_offset, pos);
+        for (size_t i = 0; i < sp.size; ++i)
+            EXPECT_EQ(static_cast<unsigned char>(sp.data[i]), pos + i);
+        pos += sp.size;
+        s.advance(sp.size);
+    }
+    EXPECT_EQ(pos, 29u);
+
+    /// Partial overlap: [10, 20) then [15, 35); each byte of the request served once.
+    ChainedBuffers partial;
+    partial.append(ChainedBufferNode{fill(10, 10), 0, 10, 10});
+    partial.append(ChainedBufferNode{fill(15, 20), 0, 20, 15});
+    ChainedBuffers p = partial.slice({10, 15});  /// [10, 25)
+    EXPECT_EQ(p.totalBytes(), 15u);
+    pos = 10;
+    while (!p.atEnd())
+    {
+        auto sp = p.peek();
+        ASSERT_EQ(sp.logical_offset, pos);
+        for (size_t i = 0; i < sp.size; ++i)
+            EXPECT_EQ(static_cast<unsigned char>(sp.data[i]), pos + i);
+        pos += sp.size;
+        p.advance(sp.size);
+    }
+    EXPECT_EQ(pos, 25u);
+}
+
 TEST(ChainedBuffers, AppendChainedBuffersToConsumedDestinationTrims)
 {
     /// append(ChainedBuffers&&) into a partly-consumed destination must trim moved nodes against the

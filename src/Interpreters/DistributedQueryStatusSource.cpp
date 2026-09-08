@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <base/sleep.h>
 #include <Databases/DatabaseReplicated.h>
 
 namespace DB

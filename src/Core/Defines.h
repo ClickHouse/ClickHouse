@@ -48,7 +48,7 @@ static constexpr auto DEFAULT_INSERT_BLOCK_SIZE
 static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 8 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_BLOCK_SIZE = 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
-static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
+static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 512_KiB;
 static constexpr size_t MIN_READER_EXECUTOR_SIZE = 128_KiB;
 
 /// The default memory-pressure thresholds, as a percent of a memory tracker's hard limit. Shared by the

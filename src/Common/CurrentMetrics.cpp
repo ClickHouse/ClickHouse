@@ -60,6 +60,7 @@
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(RemoteRead, "Number of read with remote reader in fly") \
     M(ReaderExecutorActive, "Number of live ReaderExecutor instances.") \
+    M(ReaderExecutorPrefetchInFlight, "Number of ReaderExecutor prefetch tasks currently queued or executing.") \
     M(ReaderExecutorChainedBufferBytes, "Bytes currently held in live ReaderExecutor chain buffers (OwnedChainedBuffer) -- live in-flight read memory, not a cumulative total.") \
     M(ReaderExecutorLongConnections, "Number of long source connections currently held open by ReaderExecutor for sequential read optimization.") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
