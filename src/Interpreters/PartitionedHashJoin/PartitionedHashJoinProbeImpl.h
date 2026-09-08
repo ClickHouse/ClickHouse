@@ -7,7 +7,6 @@
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/AmacRing.h>
-#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/RowRefs.h>
 #include <Interpreters/TableJoin.h>
@@ -33,9 +32,9 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 
 /// Mapped values the find pass can record by value. Both are 8-byte words - a `RowRef` encodes to
 /// its ref word, a `RowRefList` is one - that are never 0 for a built cell, since a `RowRef` always
-/// carries `INLINE_FLAG` in bit 63 and a `RowRefList` word is either an inline ref or a non-null
-/// node pointer, so 0 is free to encode a miss. Everything the second pass does with a match reads
-/// only the word, and the probe maps are immutable, so the copy is the cell.
+/// carries `INLINE_FLAG` in bit 63 and a `RowRefList` word is either an inline ref or a tagged non-null
+/// pointer, so 0 is free to encode a miss. Everything the second pass does with a match reads
+/// only the word, and the probe table is immutable, so the copy is the cell.
 template <typename Mapped>
 inline constexpr bool amac_mapped_fits_word = std::is_same_v<Mapped, RowRef> || std::is_same_v<Mapped, RowRefList>;
 
@@ -59,63 +58,48 @@ ALWAYS_INLINE Mapped mappedFromWord(UInt64 word)
         return RowRef::fromWord(word);
 }
 
-/// What the descriptor-based lookups below assume of a grower: the home cell is `hash & mask` and
-/// the chain steps by one, so a 16-byte {buffer, mask} descriptor is all a lookup needs. A grower
-/// without it must keep the map-resolved paths.
-template <typename Grower>
-concept LinearProbingGrower = Grower::performs_linear_probing_with_single_step;
-
 /** The find pass of the two-phase probe: out-of-order lookups that emit nothing and only fill the
-  * per-row result arrays - `found_word`, and for the flagged shapes the used-flags offset already
-  * shifted into the shared space. Recording the word in the same visit that reads the cell is what
-  * keeps the second pass from touching the cell again: by the time an in-order loop reaches that row,
-  * a block later, the line has usually left the cache, and re-reading it through a recorded pointer
-  * cost a second random miss per row. ASOF does not fit a word and keeps the pointer scheme.
+  * per-row result arrays - `found_word`, and for the flagged shapes the used-flags offset. Recording the
+  * word in the same visit that reads the cell is what keeps the second pass from touching the cell
+  * again: by the time an in-order loop reaches that row, a block later, the line has usually left the
+  * cache, and re-reading it through a recorded pointer cost a second random miss per row. ASOF does not
+  * fit a word and keeps the pointer scheme.
   *
-  * One ring serves as many maps as there are leaves. A row's leaf is resolved once at admit and the
-  * slot carries the resolved cell pointer, so a steady visit dereferences nothing but the cell and
-  * the key - the map headers, scattered across one heap object per partition, would otherwise add two
-  * or three dependent loads to every visit. The selector variant is a template parameter for the same
-  * reason: it used to be a per-visit branch.
+  * One table serves every row, so a slot carries only the resolved cell pointer and the key: a steady
+  * visit dereferences nothing but the cell and the key, and wraps with the one mask the policy holds in
+  * its frame. The selector variant is a template parameter because it used to be a per-visit branch.
   */
-template <typename KeyGetter, typename Map, bool need_flags, bool selector_is_range>
-struct RoutedAmacFindPolicy
+template <typename KeyGetter, typename Table, bool need_flags, bool selector_is_range>
+struct SharedAmacFindPolicy
 {
-    using MapNonConst = std::remove_const_t<Map>;
-    using Cell = MapNonConst::cell_type;
+    using TableNonConst = std::remove_const_t<Table>;
+    using Cell = typename TableNonConst::cell_type;
     static constexpr bool store_hash = cell_stores_hash<Cell>;
-    static constexpr bool may_grow = false;
     static constexpr bool copy_into_frame = true; /// results live in the arrays; no state survives the run
-    static constexpr bool mapped_by_value = amac_mapped_fits_word<typename MapNonConst::mapped_type>;
+    static constexpr bool mapped_by_value = amac_mapped_fits_word<typename TableNonConst::mapped_type>;
 
-    /// The walk below is `HashMapTable::find` only under `FlatLookupMap`'s contract: a linear
-    /// grower, and stateless cells whose zero-check and key-compare read nothing through the map.
-    /// Every map the AMAC gate admits satisfies it.
-    static_assert(LinearProbingGrower<typename MapNonConst::grower_type>);
-    static_assert(std::is_same_v<typename Cell::State, HashTableNoState>);
+    static_assert(is_shared_join_table<TableNonConst>);
     static constexpr HashTableNoState no_state{};
 
-    /// The key exactly as the map compares it: fixed keys by value, string keys as a view into the
+    /// The key exactly as the table compares it: fixed keys by value, string keys as a view into the
     /// probe column. Trivially copyable across the whole admitted getter set - the serialized getter
     /// is gated out, and the arena-backed string holder persists nothing on the find path.
     using KeyHolder = std::remove_reference_t<decltype(std::declval<KeyGetter &>().getKeyHolder(0uz, std::declval<Arena &>()))>;
     using StoredKey = std::decay_t<decltype(keyHolderGetKey(std::declval<KeyHolder &>()))>;
     static_assert(std::is_trivially_copyable_v<StoredKey>);
 
-    /** The find-ring state. The resolved cell pointer stands in for a {buffer, mask, position}
-      * triple, and `cell == nullptr` is the inactive sentinel - value-initialization means
-      * all-inactive - which frees `row` for the full 16-bit range of the driver's chunks. The leaf id
-      * stays because the record path needs the leaf's used-flags base, and the hit position is
-      * recovered as `cell - buf` once per matched row. The key is packed at admit and re-read per
-      * visit: re-fetching it through `getKeyHolder` re-packed the wide fixed keys from the column
-      * pointers on every visit, which measured as the dominant per-visit cost of the wide-key ring.
+    /** The find-ring state. The resolved cell pointer stands in for a position, and `cell == nullptr`
+      * is the inactive sentinel - value-initialization means all-inactive - which frees `row` for the
+      * full 16-bit range of the driver's chunks. The hit position is recovered as `cell - cells` once
+      * per matched row. The key is packed at admit and re-read per visit: re-fetching it through
+      * `getKeyHolder` re-packed the wide fixed keys from the column pointers on every visit, which
+      * measured as the dominant per-visit cost of the wide-key ring.
       */
     template <size_t ring_size>
     struct RingBase
     {
         std::array<const Cell *, ring_size> cell{}; /// the cell the next visit reads; nullptr == inactive
         std::array<UInt16, ring_size> row{}; /// chunk-local probe row
-        std::array<UInt16, ring_size> leaf{};
         alignas(64) std::array<StoredKey, ring_size> key{};
 
         bool isActive(size_t s) const { return cell[s] != nullptr; }
@@ -136,16 +120,12 @@ struct RoutedAmacFindPolicy
     /// By value where possible, so the key-column pointer is a field of the frame-local policy
     /// rather than two dependent loads behind a reference.
     std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter;
-    /// Reads nothing through the object - the hash functor is an empty base and the cells are
-    /// stateless - so any leaf serves as the provider.
-    const MapNonConst & map0;
-    const void * const * leaf_maps_data = nullptr; /// the zero-key sentinel path only
-    const LeafMapDesc * leaf_descs = nullptr;
-    const UInt16 * leaf_ids = nullptr; /// null at the single-leaf plan
+    const TableNonConst & table;
+    const Cell * cells = nullptr;
+    const Cell * cells_end = nullptr;
     size_t selector_base = 0; /// the first row of a continuous-range selector
     const UInt64 * selector_indexes = nullptr; /// the data of an explicit-indexes selector
     const UInt8 * skip_data = nullptr; /// null on the fast path
-    const UInt64 * flag_base_data = nullptr;
     Arena & pool;
     UInt64 * found_word = nullptr;
     UInt64 * found_offset = nullptr; /// null unless `need_flags`
@@ -158,11 +138,9 @@ struct RoutedAmacFindPolicy
             return selector_indexes[i];
     }
 
-    ALWAYS_INLINE const MapNonConst & mapAt(size_t leaf) const { return *static_cast<Map *>(leaf_maps_data[leaf]); }
-
-    /// `start`'s synchronous zero-key path: the cell came from the map object, so its used-flags
+    /// `start`'s synchronous zero-key path: the cell came from the table object, so its used-flags
     /// offset has to as well.
-    ALWAYS_INLINE void record(size_t row, size_t leaf [[maybe_unused]], const Cell * cell, const MapNonConst & map [[maybe_unused]])
+    ALWAYS_INLINE void record(size_t row, const Cell * cell)
     {
         if (!cell)
         {
@@ -174,23 +152,19 @@ struct RoutedAmacFindPolicy
         else
             found_word[row] = reinterpret_cast<UInt64>(&cell->getMapped());
         if constexpr (need_flags)
-            found_offset[row] = map.offsetInternal(cell) + flag_base_data[leaf];
+            found_offset[row] = table.offsetInternal(cell);
     }
 
     /// The cell is known non-zero, so its used-flags offset is its buffer position + 1 - what
-    /// `offsetInternal` would return, without touching the map. Recovering the position costs one
-    /// descriptor load, but only here, once per matched row, and only for the flagged shapes.
-    ALWAYS_INLINE void recordHit(size_t row, size_t leaf [[maybe_unused]], const Cell * cell)
+    /// `offsetInternal` would return, without touching the table.
+    ALWAYS_INLINE void recordHit(size_t row, const Cell * cell)
     {
         if constexpr (mapped_by_value)
             found_word[row] = mappedWordOf(cell->getMapped());
         else
             found_word[row] = reinterpret_cast<UInt64>(&cell->getMapped());
         if constexpr (need_flags)
-        {
-            const auto pos = static_cast<size_t>(cell - static_cast<const Cell *>(leaf_descs[leaf].buf));
-            found_offset[row] = pos + 1 + flag_base_data[leaf];
-        }
+            found_offset[row] = static_cast<size_t>(cell - cells) + 1;
     }
 
     template <typename RingT>
@@ -204,21 +178,17 @@ struct RoutedAmacFindPolicy
         }
         auto && key_holder = key_getter.getKeyHolder(ind, pool);
         const auto & key = keyHolderGetKey(key_holder);
-        const size_t leaf = leaf_ids ? leaf_ids[ind] : 0;
-        if (unlikely(map0.isZeroKey(key)))
+        if (unlikely(TableNonConst::isZeroKey(key)))
         {
             /// The zero-value cell has no walk to overlap.
-            const MapNonConst & map = mapAt(leaf);
-            record(i, leaf, map.find(key), map);
+            record(i, table.find(key));
             return false;
         }
-        const size_t hash = map0.hash(key);
+        const size_t hash = table.hash(key);
         ring.key[s] = key;
-        const LeafMapDesc & desc = leaf_descs[leaf];
-        const Cell * cell = static_cast<const Cell *>(desc.buf) + (hash & desc.mask);
+        const Cell * cell = cells + table.place(hash);
         ring.cell[s] = cell;
         ring.row[s] = static_cast<UInt16>(i);
-        ring.leaf[s] = static_cast<UInt16>(leaf);
         if constexpr (store_hash)
             ring.hash[s] = hash;
         prefetchCell(cell);
@@ -257,36 +227,20 @@ struct RoutedAmacFindPolicy
             hash = ring.hash[s];
         if (cell->keyEquals(key, hash, no_state))
         {
-            recordHit(ring.row[s], ring.leaf[s], cell);
+            recordHit(ring.row[s], cell);
             return AmacStepResult::Done;
         }
-        /// The descriptor is only read here, on a collision - at load factor 0.5 the vast majority
-        /// of lookups end at the home cell or an empty one and never touch it.
-        const LeafMapDesc & desc = leaf_descs[ring.leaf[s]];
-        const Cell * buf = static_cast<const Cell *>(desc.buf);
-        if (++cell == buf + desc.mask + 1) [[unlikely]]
-            cell = buf;
+        if (++cell == cells_end) [[unlikely]]
+            cell = cells;
         ring.cell[s] = cell;
         prefetchCell(cell);
         return AmacStepResult::Advance;
     }
 };
 
-/** A map whose find needs nothing from the map object: a linear grower, so the home cell and the
-  * walk are computable from the 16-byte leaf descriptor alone, and stateless cells, whose
-  * `isZero`/`keyEquals` read only the cell and the key. The fixed-size maps have no cursor API, and
-  * the string, `hashed` and LowCardinality getters are excluded by the caller's cheap-key gate.
-  */
-template <typename Map>
-concept FlatLookupMap = AmacResumableMap<Map> && requires {
-    requires LinearProbingGrower<typename Map::grower_type>;
-    requires std::is_same_v<typename Map::cell_type::State, HashTableNoState>;
-};
-
-/** The routed probe: the single-map `joinRightColumns` loop with one difference - a row's map is the
-  * leaf its recomputed route word points at. Probe blocks are never scattered, buffered or
-  * materialized, and everything around the lookup is the standard `HashJoin` machinery over the
-  * shared row store.
+/** The probe over the shared table: the single-map `joinRightColumns` loop with the table's own walk.
+  * Probe blocks are never scattered, buffered or materialized, and everything around the lookup is the
+  * standard `HashJoin` machinery over the shared row store.
   *
   * Above the engagement threshold the lookups run as two passes per block: a find ring completing
   * rows out of order into the reused scratch, then an in-order pass over its results. On the
@@ -294,12 +248,11 @@ concept FlatLookupMap = AmacResumableMap<Map> && requires {
   * sequential loop with the lookup replaced by the precomputed result. Either way the replication
   * offsets, used-flags semantics and per-kind logic are untouched.
   *
-  * `MapsShape` is the standard shape driving `JoinFeatures` and `processMatch`; `Map` is the
-  * partitioned leaf map holding identical cells. A found cell's offset is shifted by its leaf's
-  * `flag_base` before `processMatch` sees it, which is what keeps `JoinUsedFlags` single-map.
+  * `MapsShape` is the standard shape driving `JoinFeatures` and `processMatch`; `Map` is the shared
+  * table (or the fixed map) holding identical cells.
   */
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType>
-size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
+size_t PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
     /// The per-row-flags shapes take the delegated standard path instead.
@@ -312,15 +265,9 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
     const auto & selector = block.getSelector();
     const size_t rows = selector.size();
     JoinStuff::JoinUsedFlags & used_flags = *leaf_join->used_flags;
-    const UInt64 * flag_base_data [[maybe_unused]] = flag_base.data();
 
-    /// The entries were stored by the same `data->type` and maps-variant dispatch that selected this
-    /// template, so the cast is a round trip.
-    const void * const * leaf_maps_data = leaf_map_ptrs.data();
-    auto map_at = [&](size_t leaf) -> Map & { return *static_cast<Map *>(leaf_maps_data[leaf]); };
-
-    /// Acquired only where it is needed - routing above zero bits, the find pass's result arrays -
-    /// so a single-leaf plan pays nothing for it.
+    /// Acquired only where it is needed - the find pass's result arrays - so the plain loop pays
+    /// nothing for it.
     std::unique_ptr<ProbeScratch> scratch;
     SCOPE_EXIT({
         if (scratch)
@@ -332,18 +279,6 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
             scratch = acquireProbeScratch(lane);
         return *scratch;
     };
-
-    /// One per probe row of the whole source block, so continuation chunks share it.
-    const size_t source_rows = block.getSourceBlock().rows();
-    const UInt16 * leaf_ids = nullptr;
-    if (bits > 0 && source_rows > 0)
-    {
-        chassert(!join_features.is_asof_join);
-        auto & routing = ensure_scratch();
-        routing.leaf_ids.resize(source_rows);
-        computeJoinLeafIds(join_keys.key_columns, source_rows, bits, routing.leaf_ids.data());
-        leaf_ids = routing.leaf_ids.data();
-    }
 
     /// As in `createKeyGetter`: the ASOF getter excludes the inequality column.
     auto key_getter = [&]
@@ -383,32 +318,20 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
     }
 
     /// Above the threshold the ring is the only engaged probe path for every capable shape. On the
-    /// string-key maps it is also the only mechanism that overlaps the cell misses at all - the
+    /// string-key tables it is also the only mechanism that overlaps the cell misses at all - the
     /// look-ahead prefetcher cannot run there, `getKeyHolder` per look-ahead being too expensive for
-    /// its heuristic - and measured ~20% faster end-to-end than the plain loop. On the cheap-key
-    /// getters it beats the flat loop's adaptive look-ahead too, ~11% of probe thread time at 16
-    /// threads. The conditions mirror the software-prefetch heuristics: the user toggle, the
-    /// aggregate table size past L2, and a row floor below which prime and drain dominate.
+    /// its heuristic. The conditions mirror the software-prefetch heuristics: the user toggle, the
+    /// table size past L2, and a row floor below which prime and drain dominate.
     using MapNonConst = std::remove_const_t<Map>;
     constexpr bool amac_supported = amac_join_supported<KeyGetter, MapNonConst>;
     constexpr bool prefetch_supported = join_prefetch_supported<KeyGetter, Map>;
-    /// The cheap-key open-addressing shapes take the flat-descriptor loop rather than the plain one.
-    constexpr bool flat_lookup_supported = prefetch_supported && FlatLookupMap<MapNonConst>;
+    /// The cheap-key shared-table shapes take the flat loop rather than the getter's `findKey`.
+    constexpr bool flat_lookup_supported = prefetch_supported && is_shared_join_table<MapNonConst>;
     bool use_amac = false;
     if constexpr (amac_supported)
-    {
-        use_amac = amac_enabled && added_columns.enable_prefetch && ht_total_bytes > getMinBytesForPrefetchInJoin()
-            && rows >= amac_min_rows;
-        /// The wide fixed keys used to be excluded here unless the leaves were DRAM-deep, because
-        /// the ring re-packed the key per visit and its prefetch only staged the cell in L3, which
-        /// lost to the look-ahead-prefetched flat loop while the leaves stayed cache-resident. With
-        /// the key packed once at admit and `prefetchCell` staging every line into L1, the ring's
-        /// lookup measured 35% faster than the flat loop on the former worst shape, so the exclusion
-        /// is gone.
-    }
+        use_amac = amac_enabled && added_columns.enable_prefetch && ht_total_bytes > getMinBytesForPrefetchInJoin() && rows >= amac_min_rows;
 
-    /// Mutually exclusive with the find pass, on the same threshold: the leaf tables are cache-sized
-    /// by design, so both only fire once the aggregate size outgrows it.
+    /// Mutually exclusive with the find pass, on the same threshold.
     constexpr bool can_prefetch = prefetch_supported;
     bool use_prefetch = false;
     if constexpr (can_prefetch)
@@ -420,10 +343,7 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-            {
-                const size_t ind = selector[k];
-                map_at(leaf_ids ? leaf_ids[ind] : 0).prefetch(key_getter.getKeyHolder(ind, pool));
-            }
+                table.prefetch(key_getter.getKeyHolder(selector[k], pool));
         });
 
     /// Serves as both the in-order second pass and the plain loop. With `precomputed` the lookup is
@@ -437,7 +357,7 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
             added_columns.matched_rows.reserve(rows);
         }
 
-        /// Const-qualified: probe maps are immutable.
+        /// Const-qualified: the probe table is immutable.
         using Mapped = std::remove_reference_t<decltype(std::declval<typename KeyGetter::FindResult &>().getMapped())>;
 
         IColumn::Offset current_offset = 0;
@@ -459,10 +379,10 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
                     size_t offset = 0;
                     if constexpr (join_features.need_flags)
                         offset = results->found_offset[i];
-                    /// The find pass decided by-value recording from the map's mapped type and this
+                    /// The find pass decided by-value recording from the table's mapped type and this
                     /// side decides from the `FindResult`'s. If they ever differ, a word would be
                     /// reinterpreted as a pointer.
-                    static_assert(std::is_same_v<std::remove_const_t<Mapped>, typename std::remove_const_t<Map>::mapped_type>);
+                    static_assert(std::is_same_v<std::remove_const_t<Mapped>, typename MapNonConst::mapped_type>);
                     if constexpr (amac_mapped_fits_word<std::remove_const_t<Mapped>>)
                     {
                         /// Rebuilt on the stack from the recorded word; the cell is not touched.
@@ -488,17 +408,10 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
 
                 if (!skip_row)
                 {
-                    const size_t leaf = leaf_ids ? leaf_ids[ind] : 0;
-                    auto find_result = key_getter.findKey(map_at(leaf), ind, pool);
+                    auto find_result = key_getter.findKey(table, ind, pool);
                     if (find_result.isFound())
                     {
                         right_row_found = true;
-                        if constexpr (join_features.need_flags)
-                        {
-                            /// Into the shared flag space, before the standard machinery reads it.
-                            find_result = typename KeyGetter::FindResult(
-                                &find_result.getMapped(), true, find_result.getOffset() + flag_base_data[leaf]);
-                        }
                         processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsShape, Map, KeyGetter>(
                             find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
                     }
@@ -535,7 +448,7 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
     {
         if constexpr (degenerate_phase_b)
         {
-            using Mapped = MapNonConst::mapped_type;
+            using Mapped = typename MapNonConst::mapped_type;
 
             if constexpr (need_filter)
             {
@@ -631,26 +544,20 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
         }
     };
 
-    /// The flat loop for the cheap-key open-addressing maps, which is the hot shape. Two structural
-    /// differences from the plain loop, both from reading the probe's disassembly: a row's cell
-    /// address comes from the contiguous descriptor array in one L1 load, instead of
-    /// `leaf_map_ptrs[leaf]` and then the map header - three dependent loads on the
-    /// address-generation critical path; and every loop invariant is snapshotted into a local,
-    /// because the closure's fields sit behind a pointer the compiler must conservatively reload
-    /// after each opaque call, which showed up as roughly ten loads per row. The selector variant is
-    /// a template parameter for the same reason. The lookup itself is `HashMapTable::find` with
-    /// identical offset semantics, zero-sentinel keys going through the map object.
+    /// The flat loop for the cheap-key shared-table shapes, which is the hot shape: every loop invariant
+    /// is snapshotted into a local, because the closure's fields sit behind a pointer the compiler must
+    /// conservatively reload after each opaque call. The selector variant is a template parameter for
+    /// the same reason. The lookup itself is the table's `find` with identical offset semantics,
+    /// zero-sentinel keys going through the table object.
     auto flat_loop = [&]<bool need_filter, bool with_skip, bool selector_is_range>()
     {
         /// The call sites are gated on the same constant, but instantiating the enclosing function
         /// substitutes into this body whether the lambda is called or not, and the lookup below is
-        /// only well-formed for the gated map types.
+        /// only well-formed for the gated table types.
         if constexpr (flat_lookup_supported)
         {
             using Cell = typename MapNonConst::cell_type;
 
-            /// The snapshots below touch the leaf tables before the first row, and an empty probe
-            /// block may legally arrive with no leaf maps at all.
             if (rows == 0)
                 return;
 
@@ -674,14 +581,11 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
                     return static_cast<size_t>(selector_indexes[k]);
             };
 
-            const UInt16 * const leaf_ids_local = leaf_ids;
             [[maybe_unused]] const UInt8 * const skip_local = skip_data;
-            [[maybe_unused]] const UInt64 * const flag_base_local = flag_base_data;
-            const LeafMapDesc * const descs = leaf_map_descs.data();
-            /// The gate guarantees the zero-check and key-compare read no map state.
+            const Cell * const cells = table.cells();
+            const size_t mask = table.cellMask();
+            /// The gate guarantees the zero-check and key-compare read no table state.
             const HashTableNoState no_state{};
-            /// Reads nothing through the object; the hash functor is an empty base.
-            const MapNonConst & map0 = map_at(0);
             /// A private copy keeps the key getter's column pointer in a register.
             std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> keys = key_getter;
 
@@ -690,11 +594,8 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
                 rows,
                 [&](size_t k) __attribute__((always_inline))
                 {
-                    const size_t ind = index_at(k);
-                    const auto & desc = descs[leaf_ids_local ? leaf_ids_local[ind] : 0];
-                    auto && key_holder = keys.getKeyHolder(ind, pool);
-                    const size_t hash = map0.hash(keyHolderGetKey(key_holder));
-                    __builtin_prefetch(static_cast<const Cell *>(desc.buf) + (hash & desc.mask));
+                    auto && key_holder = keys.getKeyHolder(index_at(k), pool);
+                    __builtin_prefetch(cells + table.place(table.hash(keyHolderGetKey(key_holder))));
                 });
 
             IColumn::Offset current_offset = 0;
@@ -713,7 +614,6 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
 
                 if (!skip_row)
                 {
-                    const size_t leaf = leaf_ids_local ? leaf_ids_local[ind] : 0;
                     auto && key_holder = keys.getKeyHolder(ind, pool);
                     const auto & key = keyHolderGetKey(key_holder);
                     const Cell * cell = nullptr;
@@ -721,27 +621,23 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
                     if (unlikely(Cell::isZero(key, no_state)))
                     {
                         /// The zero-value cell's `offsetInternal` is 0.
-                        cell = map_at(leaf).find(key);
+                        cell = table.find(key);
                     }
                     else
                     {
-                        const auto & desc = descs[leaf];
-                        const size_t hash = map0.hash(key);
-                        const Cell * buf = static_cast<const Cell *>(desc.buf);
-                        size_t pos = hash & desc.mask;
-                        while (!buf[pos].isZero(no_state) && !buf[pos].keyEquals(key, hash, no_state))
-                            pos = (pos + 1) & desc.mask;
-                        if (!buf[pos].isZero(no_state))
+                        const size_t hash = table.hash(key);
+                        size_t pos = table.place(hash);
+                        while (!cells[pos].isZero(no_state) && !cells[pos].keyEquals(key, hash, no_state))
+                            pos = (pos + 1) & mask;
+                        if (!cells[pos].isZero(no_state))
                         {
-                            cell = buf + pos;
+                            cell = cells + pos;
                             offset = pos + 1;
                         }
                     }
                     if (cell)
                     {
                         right_row_found = true;
-                        if constexpr (join_features.need_flags)
-                            offset += flag_base_local[leaf];
                         typename KeyGetter::FindResult find_result(&cell->getMapped(), true, offset);
                         processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsShape, Map, KeyGetter>(
                             find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
@@ -782,7 +678,7 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
             /// selector's global row and need no re-basing. The default probe block is one chunk.
             auto amac_find = [&]<bool selector_is_range>()
             {
-                using Policy = RoutedAmacFindPolicy<KeyGetter, Map, join_features.need_flags, selector_is_range>;
+                using Policy = SharedAmacFindPolicy<KeyGetter, Map, join_features.need_flags, selector_is_range>;
                 size_t selector_base = 0;
                 const UInt64 * selector_indexes = nullptr;
                 if constexpr (selector_is_range)
@@ -794,14 +690,12 @@ size_t PartitionedHashJoin::routedJoinRightColumns(AddedColumnsType & added_colu
                     const size_t chunk_rows = std::min(Policy::chunk_rows_max, rows - chunk_begin);
                     Policy policy{
                         .key_getter = key_getter,
-                        .map0 = map_at(0),
-                        .leaf_maps_data = leaf_maps_data,
-                        .leaf_descs = leaf_map_descs.data(),
-                        .leaf_ids = leaf_ids,
+                        .table = table,
+                        .cells = table.cells(),
+                        .cells_end = table.cells() + table.cellCount(),
                         .selector_base = selector_base + chunk_begin,
                         .selector_indexes = selector_indexes ? selector_indexes + chunk_begin : nullptr,
                         .skip_data = skip_data,
-                        .flag_base_data = flag_base_data,
                         .pool = pool,
                         .found_word = results.found_word.data() + chunk_begin,
                         .found_offset = found_offset_data ? found_offset_data + chunk_begin : nullptr};
@@ -902,7 +796,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     join.materializeColumnsFromLeftBlock(block);
     ScatteredBlock scattered_block{std::move(block)};
 
-    if (leaf_maps.empty() && scattered_block.rows() > 0)
+    if (!shared_maps && scattered_block.rows() > 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: probe started before the build phase finished");
 
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
@@ -942,20 +836,21 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     else
         added_columns.reserve(join_features.need_replication);
 
-    using OurMaps = PartitionedMapsFor<MapsShape>::Type;
+    using OurMaps = typename SharedMapsFor<MapsShape>::Type;
 
+    if (scattered_block.rows() > 0)
     {
-        /// Routing, lookups and match bookkeeping only. No column value is gathered yet - that is
-        /// deferred to the lazy `HashJoinResult::next`, whose events are shared with the other
-        /// hash-join algorithms.
+        /// Lookups and match bookkeeping only. No column value is gathered yet - that is deferred to
+        /// the lazy `HashJoinResult::next`, whose events are shared with the other hash-join algorithms.
         ProfileEventTimeIncrement<Microseconds> lookup_watch(ProfileEvents::PartitionedHashJoinProbeLookupMicroseconds);
+        const auto & maps = std::get<OurMaps>(shared_maps->maps);
         switch (join.data->type)
         {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
-        using Map = const decltype(OurMaps::TYPE)::element_type; \
+        using Map = const typename decltype(OurMaps::TYPE)::element_type; \
         using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map>::Type; \
-        routedJoinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(added_columns, scattered_block, lane); \
+        sharedJoinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*maps.TYPE, added_columns, scattered_block, lane); \
         break; \
     }
             APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
@@ -964,6 +859,13 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", join.data->type);
         }
+    }
+    else
+    {
+        /// An empty probe block may legally arrive before any build data exists; nothing to look up.
+        if constexpr (join_features.need_replication)
+            added_columns.offsets_to_replicate = IColumn::Offsets(0);
+        added_columns.applyLazyDefaults();
     }
 
     added_columns.join_on_keys.clear();

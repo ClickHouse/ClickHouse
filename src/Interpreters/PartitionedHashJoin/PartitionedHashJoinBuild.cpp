@@ -29,8 +29,8 @@ extern const Event PartitionedHashJoinBuildScatterMicroseconds;
 extern const Event PartitionedHashJoinBuildLeafMicroseconds;
 extern const Event PartitionedHashJoinLeafRows;
 extern const Event PartitionedHashJoinHashTableBytes;
-extern const Event PartitionedHashJoinHashTableGrowths;
-extern const Event PartitionedHashJoinAmacRingGrowths;
+extern const Event PartitionedHashJoinOverflowRows;
+extern const Event PartitionedHashJoinDuplicateRunBytes;
 extern const Event PartitionedHashJoinScatterGroups;
 extern const Event PartitionedHashJoinTeardownMicroseconds;
 }
@@ -47,6 +47,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_JOIN_KEYS;
 }
@@ -56,56 +57,328 @@ namespace
 
 constexpr size_t locator_piece_rows = 32768; /// locator synthesis scratch stays L2-resident
 
-/// Shared by the sequential path and the fused AMAC step so the two cannot diverge: `RowRefList`
-/// keeps the first ref inline and appends duplicates to the arena list, `RowRef` keeps the first row
-/// per key, or the last under `any_take_last_row`.
+/** Per-worker scratch for the duplicate rows of the pass in progress. A key's first duplicate of the pass
+  * turns its cell word into a scratch marker naming a pass-local key id; every later row of the key appends
+  * (key id, ref) here. The pass's finish counting-sorts the refs by key id into `staged` and hands each
+  * key's run to the `DuplicateRunWriter`, which writes the final word back into the cell. No marker
+  * survives a finish, so nothing probes a marker.
+  */
+struct TailScratch
+{
+    /// The pass-local key ids and the offsets into `staged` are 32-bit, so one pass (one partition's rows
+    /// of one group, or the whole build on the single-partition plan, or all drained overflow rows) must
+    /// stay below 2^32 rows; `checkPassRowLimit` throws before such a pass writes anything.
+    static constexpr size_t MAX_PASS_ROWS = 1uz << 32;
+
+    PaddedPODArray<UInt32> tail_key; /// per duplicate row: its pass-local key id
+    PaddedPODArray<UInt64> tail_ref; /// per duplicate row: its ref word
+    PaddedPODArray<UInt32> tail_count; /// per key id: rows of this pass
+    PaddedPODArray<UInt64> tail_cell; /// per key id: the address of the cell's mapped value
+    PaddedPODArray<UInt64> tail_prev_word; /// per key id: the word the cell held before this pass
+    PaddedPODArray<UInt64> staged; /// the refs grouped by key id, in insertion order
+    PaddedPODArray<UInt32> starts; /// per key id: its first ref in `staged`
+
+    size_t keys() const { return tail_count.size(); }
+    size_t rows() const { return tail_ref.size(); }
+
+    void clear()
+    {
+        tail_key.clear();
+        tail_ref.clear();
+        tail_count.clear();
+        tail_cell.clear();
+        tail_prev_word.clear();
+    }
+};
+
+/** Rows an owner's walk reached its range end with: the key (persisted, so the chunk can be freed), its
+  * hash and its ref. One buffer per partition, written by the partition's owner, read by the serial
+  * drain after the barrier.
+  */
+struct OverflowBuffer
+{
+    PaddedPODArray<char> keys;
+    PaddedPODArray<UInt64> hashes;
+    PaddedPODArray<UInt64> refs;
+
+    size_t rows() const { return refs.size(); }
+
+    template <typename Key>
+    void push(const Key & key, UInt64 hash, UInt64 ref)
+    {
+        static_assert(std::is_trivially_copyable_v<Key>);
+        const size_t offset = keys.size();
+        keys.resize(offset + sizeof(Key));
+        memcpy(keys.data() + offset, &key, sizeof(Key));
+        hashes.push_back(hash);
+        refs.push_back(ref);
+    }
+
+    template <typename Key>
+    Key keyAt(size_t i) const
+    {
+        Key key;
+        memcpy(&key, keys.data() + i * sizeof(Key), sizeof(Key));
+        return key;
+    }
+
+    void clear()
+    {
+        keys.clear();
+        hashes.clear();
+        refs.clear();
+    }
+};
+
+/// The first row of a key: `RowRef` and `RowRefList` both start as the inline ref word.
 template <typename Mapped>
-ALWAYS_INLINE void
-applyBuildRowToMapped(Mapped & mapped, bool inserted, UInt64 ref, Arena & pool, bool any_take_last_row, bool & all_unique)
+ALWAYS_INLINE void initMapped(Mapped & mapped, UInt64 ref)
 {
     if constexpr (std::is_same_v<Mapped, RowRef>)
+        new (&mapped) RowRef(RowRef::fromWord(ref));
+    else
     {
-        if (inserted || any_take_last_row)
-            new (&mapped) RowRef(refWordBlockNo(ref), refWordRowNo(ref));
+        static_assert(std::is_same_v<Mapped, RowRefList>);
+        new (&mapped) RowRefList(RowRefList::fromWord(ref));
+    }
+}
+
+[[noreturn]] void throwPassRowLimit(size_t rows, const char * what)
+{
+    throw Exception(
+        ErrorCodes::LIMIT_EXCEEDED,
+        "PartitionedHashJoin: {} of {} rows exceeds the {} rows one build pass can hold",
+        what,
+        rows,
+        TailScratch::MAX_PASS_ROWS);
+}
+
+/// Once per pass, before any row of it is inserted.
+ALWAYS_INLINE void checkPassRowLimit(size_t rows, const char * what)
+{
+    if (unlikely(rows >= TailScratch::MAX_PASS_ROWS))
+        throwPassRowLimit(rows, what);
+}
+
+/// A later row of a key: `RowRef` keeps the first row, or the last under `any_take_last_row`;
+/// `RowRefList` defers to the pass's finish through the scratch.
+template <typename Mapped>
+ALWAYS_INLINE void appendRowToMapped(Mapped & mapped, UInt64 ref, TailScratch & scratch, bool any_take_last_row, bool & all_unique)
+{
+    all_unique = false;
+    if constexpr (std::is_same_v<Mapped, RowRef>)
+    {
+        if (any_take_last_row)
+            mapped = RowRef::fromWord(ref);
     }
     else
     {
         static_assert(std::is_same_v<Mapped, RowRefList>);
-        if (inserted)
+        UInt32 key_id;
+        if (mapped.isScratchMarker())
         {
-            new (&mapped) RowRefList(RowRefList::fromWord(ref));
+            key_id = static_cast<UInt32>(mapped.scratchKeyId());
+            ++scratch.tail_count[key_id];
         }
         else
         {
-            mapped.insert(ref, pool);
-            all_unique = false;
+            key_id = static_cast<UInt32>(scratch.tail_count.size());
+            scratch.tail_count.push_back(1);
+            scratch.tail_cell.push_back(reinterpret_cast<UInt64>(&mapped));
+            scratch.tail_prev_word.push_back(mapped.word);
+            mapped = RowRefList::makeScratchMarker(key_id);
         }
+        scratch.tail_key.push_back(key_id);
+        scratch.tail_ref.push_back(ref);
     }
 }
 
-/** The AMAC insert policy. `start` computes the map hash - whose latency overlaps the other slots'
-  * outstanding cell misses - and prefetches the home cell for writing. `step` is the one fused
-  * read-then-act the ring requires: claim an empty cell, append a duplicate, or advance and prefetch.
-  * A zero-sentinel key goes through the standard `emplace` synchronously; it has no walk to overlap.
-  */
-template <typename KeyGetter, typename Map, typename PosT = size_t>
-struct AmacBuildInsertPolicy
+/// The pass's finish: every key's refs of this pass become one contiguous run appended to the key's
+/// word (a pair, a run, or one more node of a list), and the scratch marker leaves the cell. Cells are
+/// prefetched in batches before the write-back, as the reference does.
+void finishTailScratch(TailScratch & scratch, DuplicateRunWriter & writer)
 {
-    using Cell = Map::cell_type;
-    using Mapped = Map::mapped_type;
+    const size_t keys = scratch.keys();
+    if (keys == 0)
+        return;
+    /// Guaranteed by `checkPassRowLimit` on every pass; the offsets below are 32-bit.
+    if (scratch.rows() >= TailScratch::MAX_PASS_ROWS)
+        throwPassRowLimit(scratch.rows(), "the duplicate rows of a build pass");
+
+    scratch.starts.resize(keys + 1);
+    UInt32 running = 0;
+    for (size_t key = 0; key < keys; ++key)
+    {
+        scratch.starts[key] = running;
+        running += scratch.tail_count[key];
+    }
+    scratch.starts[keys] = running;
+
+    /// `tail_count` doubles as the placement cursor, then holds the end offsets; `starts` keeps the
+    /// beginnings.
+    scratch.staged.resize(running);
+    for (size_t key = 0; key < keys; ++key)
+        scratch.tail_count[key] = scratch.starts[key];
+    const size_t rows = scratch.rows();
+    for (size_t row = 0; row < rows; ++row)
+        scratch.staged[scratch.tail_count[scratch.tail_key[row]]++] = scratch.tail_ref[row];
+
+    static constexpr size_t batch_size = 32;
+    for (size_t base = 0; base < keys; base += batch_size)
+    {
+        const size_t batch = std::min(batch_size, keys - base);
+        for (size_t index = 0; index < batch; ++index)
+            __builtin_prefetch(reinterpret_cast<const void *>(scratch.tail_cell[base + index]), 1, 3); /// NOLINT(performance-no-int-to-ptr)
+        for (size_t index = 0; index < batch; ++index)
+        {
+            const size_t key = base + index;
+            auto & mapped = *reinterpret_cast<RowRefList *>(scratch.tail_cell[key]); /// NOLINT(performance-no-int-to-ptr)
+            RowRefList word = RowRefList::fromWord(scratch.tail_prev_word[key]);
+            writer.append(word, scratch.staged.data() + scratch.starts[key], scratch.tail_count[key] - scratch.starts[key]);
+            mapped = word;
+        }
+    }
+    scratch.clear();
+}
+
+/// What one section insert into the shared table works with, shared by the sequential loop, the AMAC
+/// policy and the drain so the three cannot diverge on the state machine.
+template <typename Table>
+struct InsertTarget
+{
+    using Cell = typename Table::cell_type;
+    using Mapped = typename Table::mapped_type;
+    static constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
+
+    Table & table;
+    Cell * cells;
+    TailScratch & scratch;
+    OverflowBuffer & overflow;
+    /// The range this pass may write, and whether the walk wraps at the buffer end (single partition,
+    /// one writer) or hands rows at `range_end` to the overflow (parallel owners).
+    size_t range_begin;
+    size_t range_end;
+    bool wrap;
+    bool any_take_last_row;
+    /// ASOF: the inequality column of the stored block being inserted, and its number.
+    const IColumn * asof_column = nullptr;
+    UInt32 asof_block_no = 0;
+    const HashJoin * join = nullptr;
+
+    UInt64 claimed = 0;
+    bool all_unique = true;
+
+    ALWAYS_INLINE void claimed_one()
+    {
+        ++claimed;
+        /// Single-writer wrapping walks have no barrier before which the capacity guard could run, so they
+        /// check per claim: the table must keep an empty cell for every walk to terminate.
+        if (wrap && claimed > table.maxFill()) [[unlikely]]
+            throwCapacity();
+    }
+
+    [[noreturn]] void throwCapacity() const
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PartitionedHashJoin: the shared hash table of {} cells received more than {} distinct keys; the size estimate that "
+            "created it was too low",
+            table.cellCount(),
+            table.maxFill());
+    }
+
+    ALWAYS_INLINE void initFirst(Mapped & mapped, UInt64 ref, size_t row)
+    {
+        if constexpr (mapped_asof)
+        {
+            new (&mapped) AsofRowRefs(createAsofRowRef(*join->getAsofType(), join->getAsofInequality()));
+            mapped->insert(*asof_column, asof_block_no, row);
+        }
+        else
+            initMapped(mapped, ref);
+    }
+
+    ALWAYS_INLINE void appendLater(Mapped & mapped, UInt64 ref, size_t row)
+    {
+        if constexpr (mapped_asof)
+        {
+            all_unique = false;
+            mapped->insert(*asof_column, asof_block_no, row);
+        }
+        else
+            appendRowToMapped(mapped, ref, scratch, any_take_last_row, all_unique);
+    }
+
+    /// The zero key has one cell outside the buffer, and by construction only one partition's chunk
+    /// carries zero-key rows, so this needs no ownership check. The zero cell is not a claimed buffer
+    /// cell: the capacity guards and the published distinct count account for it through `hasZero`.
+    template <typename Key>
+    ALWAYS_INLINE void insertZero(const Key & key, UInt64 ref, size_t row)
+    {
+        const size_t hash = table.hash(key);
+        if (!table.hasZero())
+        {
+            Cell * cell = table.claimZero(hash);
+            initFirst(cell->getMapped(), ref, row);
+        }
+        else
+            appendLater(table.zeroValue()->getMapped(), ref, row);
+    }
+
+    /// The owner walk from the home cell. Returns false when the row reached the range end and was
+    /// handed to the overflow.
+    template <typename KeyHolder>
+    ALWAYS_INLINE bool insertFromHome(KeyHolder && key_holder, size_t hash, UInt64 ref, size_t row)
+    {
+        const auto & key = keyHolderGetKey(key_holder);
+        size_t pos = table.place(hash);
+        chassert(pos >= range_begin && pos < range_end);
+        while (true)
+        {
+            Cell * cell = cells + pos;
+            if (table.isEmptyCell(cell))
+            {
+                table.claim(pos, key_holder, hash);
+                initFirst(cell->getMapped(), ref, row);
+                claimed_one();
+                return true;
+            }
+            if (table.keyEquals(cell, key, hash))
+            {
+                appendLater(cell->getMapped(), ref, row);
+                return true;
+            }
+            if (wrap)
+                pos = table.next(pos);
+            else if (++pos == range_end)
+                break;
+        }
+        keyHolderPersistKey(key_holder);
+        overflow.push(keyHolderGetKey(key_holder), hash, ref);
+        return false;
+    }
+};
+
+/** The AMAC insert policy over one partition's range. `start` computes the map hash - whose latency
+  * overlaps the other slots' outstanding cell misses - and prefetches the home cell for writing. `step`
+  * is the one fused read-then-act the ring requires: claim an empty cell, append a duplicate, or advance
+  * and prefetch; a row whose next cell would be the range end goes to the overflow instead. Zero-sentinel
+  * keys and skipped rows never enter the ring.
+  */
+template <typename KeyGetter, typename Table>
+struct OwnerAmacInsertPolicy
+{
+    using Cell = typename Table::cell_type;
+    using Mapped = typename Table::mapped_type;
     static constexpr bool store_hash = cell_stores_hash<Cell>;
-    static constexpr bool may_grow = true;
     /// The frame copy needs a copyable key getter, and the `KeysFixed` one is not - it owns a
     /// prepared-keys buffer and shuffle masks - so it stays by reference.
     static constexpr bool copy_into_frame = std::is_copy_constructible_v<KeyGetter>;
-    /// The cursor position, the row, and the hash where the cell stores one. `PosT` is UInt32 when
-    /// the caller can prove the buffer index fits 32 bits for the whole run, growths included, which
-    /// halves the position array. The inactive sentinel lives in the row array here, so it has to be
-    /// filled at construction - the probe ring gets it from value-initialization instead.
+
     template <size_t ring_size>
     struct RingBase
     {
-        std::array<PosT, ring_size> pos{};
+        std::array<size_t, ring_size> pos{};
         std::array<UInt32, ring_size> row; /// `amac_inactive_row` == inactive
 
         RingBase() { row.fill(amac_inactive_row); }
@@ -121,22 +394,13 @@ struct AmacBuildInsertPolicy
     template <size_t ring_size>
     using Ring = std::conditional_t<store_hash, RingWithHash<ring_size>, RingBase<ring_size>>;
 
-    Map & map;
-    /// Cached so a visit's cell address is one add off a register rather than a load chain through
-    /// the map. `grow` refreshes it; the zero-sentinel `emplace` in `start` never resizes, so it
-    /// cannot invalidate it.
-    Cell * cells;
-    /// By value where the getter is a cheap pointer bundle, which keeps the key-column bases in
-    /// registers through the steady loop.
+    InsertTarget<Table> & target;
     std::conditional_t<copy_into_frame, KeyGetter, KeyGetter &> key_getter;
     const UInt64 * locators = nullptr;
     const UInt32 * narrow_locators = nullptr;
     const UInt8 * skip_bytes = nullptr;
     UInt32 block_no = 0;
-    bool any_take_last_row = false;
     Arena & pool;
-    bool all_unique = true;
-    UInt64 growths = 0;
 
     ALWAYS_INLINE UInt64 refWordAt(size_t row) const
     {
@@ -154,37 +418,19 @@ struct AmacBuildInsertPolicy
             return false;
         auto && key_holder = key_getter.getKeyHolder(row, pool);
         const auto & key = keyHolderGetKey(key_holder);
-        if (unlikely(map.isZeroKey(key)))
+        if (unlikely(Table::isZeroKey(key)))
         {
-            typename Map::LookupResult it;
-            bool inserted = false;
-            map.emplace(key_holder, it, inserted);
-            applyBuildRowToMapped(it->getMapped(), inserted, refWordAt(row), pool, any_take_last_row, all_unique);
+            target.insertZero(key, refWordAt(row), row);
             return false;
         }
-        const size_t hash = map.hash(key);
-        const size_t pos = map.cursorPlace(hash);
-        ring.pos[s] = static_cast<PosT>(pos);
+        const size_t hash = target.table.hash(key);
+        const size_t pos = target.table.place(hash);
+        ring.pos[s] = pos;
         ring.row[s] = static_cast<UInt32>(row);
         if constexpr (store_hash)
             ring.hash[s] = hash;
-        __builtin_prefetch(cells + pos, 1, 3);
+        __builtin_prefetch(target.cells + pos, 1, 3);
         return true;
-    }
-
-    /// Re-admit a row after a growth cancelled it. `start`'s synchronous cases - skipped rows and
-    /// the zero key - never entered the ring, so this cannot fail.
-    template <typename RingT>
-    ALWAYS_INLINE void reseed(RingT & ring, size_t s, size_t row)
-    {
-        auto && key_holder = key_getter.getKeyHolder(row, pool);
-        const size_t hash = map.hash(keyHolderGetKey(key_holder));
-        const size_t pos = map.cursorPlace(hash);
-        ring.pos[s] = static_cast<PosT>(pos);
-        ring.row[s] = static_cast<UInt32>(row);
-        if constexpr (store_hash)
-            ring.hash[s] = hash;
-        __builtin_prefetch(cells + pos, 1, 3);
     }
 
     template <typename RingT>
@@ -197,51 +443,50 @@ struct AmacBuildInsertPolicy
         if constexpr (store_hash)
             hash = ring.hash[s];
         else
-            hash = map.hash(key);
-        Cell * cell = cells + ring.pos[s];
-        if (map.cursorCellIsEmpty(cell))
+            hash = target.table.hash(key);
+        const size_t pos = ring.pos[s];
+        Cell * cell = target.cells + pos;
+        if (target.table.isEmptyCell(cell))
         {
             /// Claim and write in the same visit, so no other in-flight row can also see this cell
             /// empty.
-            const bool needs_grow = map.cursorClaim(cell, key_holder, hash);
-            applyBuildRowToMapped(cell->getMapped(), /*inserted=*/true, refWordAt(row), pool, any_take_last_row, all_unique);
-            return needs_grow ? AmacStepResult::DoneNeedsGrow : AmacStepResult::Done;
-        }
-        if (map.cursorKeyEquals(cell, key, hash))
-        {
-            applyBuildRowToMapped(cell->getMapped(), /*inserted=*/false, refWordAt(row), pool, any_take_last_row, all_unique);
+            target.table.claim(pos, key_holder, hash);
+            target.initFirst(cell->getMapped(), refWordAt(row), row);
+            target.claimed_one();
             return AmacStepResult::Done;
         }
-        const size_t next_pos = map.cursorNext(ring.pos[s]);
-        ring.pos[s] = static_cast<PosT>(next_pos);
-        __builtin_prefetch(cells + next_pos, 1, 3);
+        if (target.table.keyEquals(cell, key, hash))
+        {
+            target.appendLater(cell->getMapped(), refWordAt(row), row);
+            return AmacStepResult::Done;
+        }
+        size_t next_pos;
+        if (target.wrap)
+            next_pos = target.table.next(pos);
+        else
+        {
+            next_pos = pos + 1;
+            if (next_pos == target.range_end)
+            {
+                keyHolderPersistKey(key_holder);
+                target.overflow.push(keyHolderGetKey(key_holder), hash, refWordAt(row));
+                return AmacStepResult::Done;
+            }
+        }
+        ring.pos[s] = next_pos;
+        __builtin_prefetch(target.cells + next_pos, 1, 3);
         return AmacStepResult::Advance;
-    }
-
-    void grow()
-    {
-        ++growths;
-        map.cursorGrow();
-        cells = map.cursorCells();
-    }
-
-    /// The driver runs on a frame-local copy, and these are the only fields the caller reads back.
-    void writeBackTo(AmacBuildInsertPolicy & original) const
-    {
-        original.all_unique = all_unique;
-        original.growths = growths;
     }
 };
 
-/// Inserts one compact section with the semantics of `insertFromBlockImplTypeCase` and the
-/// `Inserter` family: one hash per build row inside `emplaceKey`, then the value shape's own append.
-/// The recorded ref comes from the scattered locator column - 8-byte encoded or 4-byte packed - or,
-/// on the single-leaf path, from `RowRef(block_no, i)` with `skip_bytes` excluding the rows that must
+/// Inserts one compact section into the shared table on behalf of the owner of `target.range_*`, with the
+/// semantics of `insertFromBlockImplTypeCase`: one hash per build row, then the value shape's own append.
+/// The recorded ref comes from the scattered locator column - 8-byte encoded or 4-byte packed - or, on
+/// the single-partition path, from `RowRef(block_no, i)` with `skip_bytes` excluding the rows that must
 /// not be inserted.
-template <typename KeyGetter, typename Map>
-void insertSectionImpl(
-    const HashJoin & join,
-    Map & map,
+template <typename KeyGetter, typename Table>
+void insertSectionShared(
+    InsertTarget<Table> & target,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     size_t rows,
@@ -250,22 +495,19 @@ void insertSectionImpl(
     UInt32 block_no,
     const UInt8 * skip_bytes,
     Arena & pool,
-    bool & all_values_unique,
     bool enable_prefetch,
-    bool use_amac,
-    UInt64 & amac_ring_growths)
+    bool use_amac)
 {
-    using Mapped = Map::mapped_type;
-    constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
+    constexpr bool mapped_asof = InsertTarget<Table>::mapped_asof;
 
     /// The ASOF value sits at the row's own index in the trailing key column, so this only works
-    /// where the compact index is the stored row - which is why ASOF plans stay single-leaf.
-    const IColumn * asof_column [[maybe_unused]] = nullptr;
+    /// where the compact index is the stored row - which is why ASOF plans stay single-partition.
     if constexpr (mapped_asof)
     {
-        if (locators || narrow_locators)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASOF leaf inserts require the single-leaf build plan");
-        asof_column = key_columns.back();
+        if (locators || narrow_locators || !target.wrap)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASOF inserts require the single-partition build plan");
+        target.asof_column = key_columns.back();
+        target.asof_block_no = block_no;
     }
 
     /// As in `createKeyGetter`: the ASOF getter excludes the inequality column.
@@ -283,46 +525,30 @@ void insertSectionImpl(
         }
     }();
 
-    const bool any_take_last_row = join.anyTakeLastRow();
-
     /// The ring replaces the sequential loop once the caller has decided the cell misses dominate
     /// and the section is long enough to amortize prime and drain. ASOF stays sequential: appending
     /// to a per-key sorted lookup is not a one-cell fused action.
-    if constexpr (!mapped_asof && amac_join_supported<KeyGetter, Map>)
+    if constexpr (!mapped_asof && amac_join_supported<KeyGetter, Table>)
     {
         if (use_amac && rows >= amac_min_rows && rows < amac_inactive_row)
         {
-            auto run_ring = [&]<typename PosT>()
-            {
-                AmacBuildInsertPolicy<KeyGetter, Map, PosT> policy{
-                    .map = map,
-                    .cells = map.cursorCells(),
-                    .key_getter = key_getter,
-                    .locators = locators,
-                    .narrow_locators = narrow_locators,
-                    .skip_bytes = skip_bytes,
-                    .block_no = block_no,
-                    .any_take_last_row = any_take_last_row,
-                    .pool = pool};
-                amacRun(policy, rows);
-                all_values_unique = all_values_unique && policy.all_unique;
-                amac_ring_growths += policy.growths;
-            };
-            /// The narrow slot needs the cell index to fit 32 bits for the whole run, growths
-            /// included: a growth fires above half fill and doubles past degree 23, so a buffer only
-            /// outgrows 2^32 cells past 2^31 keys.
-            if (map.getBufferSizeInCells() <= (1uz << 32) && map.size() + rows <= (1uz << 30))
-                run_ring.template operator()<UInt32>();
-            else
-                run_ring.template operator()<size_t>();
+            OwnerAmacInsertPolicy<KeyGetter, Table> policy{
+                .target = target,
+                .key_getter = key_getter,
+                .locators = locators,
+                .narrow_locators = narrow_locators,
+                .skip_bytes = skip_bytes,
+                .block_no = block_no,
+                .pool = pool};
+            amacRun(policy, rows);
             return;
         }
     }
 
-    constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
+    constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Table>;
     bool use_prefetch = false;
     if constexpr (can_prefetch)
-        use_prefetch = enable_prefetch && map.getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
+        use_prefetch = enable_prefetch && target.table.reservedBytes() > getMinBytesForPrefetchInJoin();
 
     auto prefetcher = makeJoinPrefetcher(
         use_prefetch,
@@ -330,10 +556,9 @@ void insertSectionImpl(
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                map.prefetch(key_getter.getKeyHolder(k, pool));
+                target.table.prefetch(key_getter.getKeyHolder(k, pool));
         });
 
-    bool all_unique = all_values_unique;
     for (size_t i = 0; i < rows; ++i)
     {
         if constexpr (can_prefetch)
@@ -342,14 +567,89 @@ void insertSectionImpl(
         if (skip_bytes && skip_bytes[i])
             continue;
 
-        auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        UInt64 ref = 0;
+        if (locators)
+            ref = locators[i];
+        else if (narrow_locators)
+            ref = RowRef(narrow_locators[i] >> 16, narrow_locators[i] & 0xFFFFu).encode();
+        else
+            ref = RowRef(block_no, i).encode();
 
+        auto && key_holder = key_getter.getKeyHolder(i, pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        if (unlikely(Table::isZeroKey(key)))
+        {
+            target.insertZero(key, ref, i);
+            continue;
+        }
+        target.insertFromHome(key_holder, target.table.hash(key), ref, i);
+    }
+}
+
+/// The direct-index maps (`key8`, `key16`) have no ranges and no collisions: the standard `emplace`
+/// applies, and only the duplicate layout is shared with the partitioned build. ASOF keys of these widths
+/// (`HashJoin` picks the map by the equi-key width, so `UInt16` keys of an ASOF join land here) append to
+/// the per-key sorted lookup exactly as on the shared path.
+template <typename KeyGetter, typename Table>
+void insertSectionFixed(
+    Table & table,
+    const HashJoin & join,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    size_t rows,
+    const UInt64 * locators,
+    const UInt32 * narrow_locators,
+    UInt32 block_no,
+    const UInt8 * skip_bytes,
+    Arena & pool,
+    TailScratch & scratch,
+    bool any_take_last_row,
+    UInt64 & claimed,
+    bool & all_unique)
+{
+    using Mapped = typename Table::mapped_type;
+    constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
+
+    /// The ASOF value is read at the row's own index in the trailing key column, so the stored row must be
+    /// the compact index (the single-partition plan), and the getter excludes the inequality column.
+    const IColumn * asof_column [[maybe_unused]] = nullptr;
+    if constexpr (mapped_asof)
+    {
+        if (locators || narrow_locators)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASOF inserts require the single-partition build plan");
+        asof_column = key_columns.back();
+    }
+    auto key_getter = [&]
+    {
         if constexpr (mapped_asof)
         {
-            Mapped * time_series_map = &emplace_result.getMapped();
+            ColumnRawPtrs equi_columns(key_columns.begin(), key_columns.end() - 1);
+            Sizes equi_sizes(key_sizes.begin(), key_sizes.end() - 1);
+            return KeyGetter(equi_columns, equi_sizes, nullptr);
+        }
+        else
+        {
+            return KeyGetter(key_columns, key_sizes, nullptr);
+        }
+    }();
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (skip_bytes && skip_bytes[i])
+            continue;
+
+        auto emplace_result = key_getter.emplaceKey(table, i, pool);
+        Mapped & mapped = emplace_result.getMapped();
+        if constexpr (mapped_asof)
+        {
             if (emplace_result.isInserted())
-                time_series_map = new (time_series_map) Mapped(createAsofRowRef(*join.getAsofType(), join.getAsofInequality()));
-            (*time_series_map)->insert(*asof_column, block_no, i);
+            {
+                new (&mapped) AsofRowRefs(createAsofRowRef(*join.getAsofType(), join.getAsofInequality()));
+                ++claimed;
+            }
+            else
+                all_unique = false;
+            mapped->insert(*asof_column, block_no, i);
         }
         else
         {
@@ -361,95 +661,55 @@ void insertSectionImpl(
             else
                 ref = RowRef(block_no, i).encode();
 
-            applyBuildRowToMapped(emplace_result.getMapped(), emplace_result.isInserted(), ref, pool, any_take_last_row, all_unique);
+            if (emplace_result.isInserted())
+            {
+                initMapped(mapped, ref);
+                ++claimed;
+            }
+            else
+                appendRowToMapped(mapped, ref, scratch, any_take_last_row, all_unique);
         }
     }
-    all_values_unique = all_unique;
 }
 
-}
-
-/// The stages communicate through exact per-bucket offsets: bucket `p` holds worker `w`'s stripe at
-/// `[starts[p * workers + w], + worker_hist[w][p])`, in worker order. The last bucket collects
-/// null-key rows; it is scattered like any other and dropped before the leaf builds, so a leaf only
-/// ever sees insertable rows.
-struct PartitionedHashJoin::PostBuildContext
+/// The serial drain of one partition's overflow: the walk from the home cell with the global mask. A row
+/// here has no cell of its key inside its owner's range (otherwise its owner would have appended to it),
+/// so it either claims the first empty cell beyond the range or appends to a cell an earlier group or an
+/// earlier drained row created.
+template <typename Table>
+void drainPartitionOverflow(InsertTarget<Table> & target, UInt64 & appended)
 {
-    size_t workers = 0;
-    size_t fanout = 0; /// pass-1 partitions + 1 (the null bucket); == partitions + 1 on single-pass plans
-    size_t num_key_columns = 0;
-    bool generic_mode = false;
-
-    /// The first pass also scatters the saved route words, so a refine pass can derive its
-    /// sub-bucket ids without touching the key columns. Once `refined`, every per-bucket container is
-    /// final-leaf-indexed and has no drop bucket.
-    size_t route_bits = 0; /// pass-1 bits (== total bits on single-pass plans)
-    bool multi_pass = false;
-    bool refined = false;
-    size_t current_buckets = 0; /// buckets refine passes operate on (drop bucket excluded)
-    std::vector<PaddedPODArray<UInt16>> routes;
-
-    /// Generic mode after a refine pass: one self-contained piece per (key column, leaf).
-    std::vector<MutableColumns> refined_pieces;
-
-    PaddedPODArray<UInt64> worker_hist; /// workers x fanout
-    std::vector<UInt64> bucket_rows; /// per bucket
-    PaddedPODArray<UInt64> starts; /// fanout x workers
-
-    /// Fixed mode: one exact uninitialized column per (key column, bucket), written by all workers.
-    std::vector<MutableColumns> fixed_out;
-    std::vector<std::vector<char *>> fixed_base;
-    std::vector<size_t> fixed_widths;
-
-    /// Generic mode: self-contained per-(key column, worker, bucket) pieces from `ColumnsScatter`.
-    std::vector<std::vector<MutableColumns>> pieces;
-
-    /// Always scattered cooperatively: 8-byte encoded `RowRef` words, or the packed 4-byte form.
-    std::vector<PaddedPODArray<UInt64>> locators;
-    std::vector<PaddedPODArray<UInt32>> locators32;
-
-    struct WorkerState
+    using Key = typename Table::key_type;
+    OverflowBuffer & overflow = target.overflow;
+    const size_t rows = overflow.rows();
+    for (size_t i = 0; i < rows; ++i)
     {
-        std::vector<ColumnsScatter::ScatterScratch> key_scratch;
-        ColumnsScatter::ScatterScratch locator_scratch;
-        ColumnsScatter::ScatterScratch route_scratch;
-        PaddedPODArray<UInt64> locator_piece;
-        PaddedPODArray<UInt32> locator_piece32;
-        bool all_values_unique = true;
-        bool predictions_exact = true;
-        UInt64 leaf_rows = 0;
-        UInt64 leaf_growths = 0;
-    };
-    std::deque<WorkerState> worker_state;
-
-    std::vector<UInt64> leaf_reserve;
-    std::vector<UInt64> leaf_bytes;
-    std::vector<UInt32> leaf_order; /// largest first
-    std::atomic<UInt32> leaf_claim{0};
-
-    /// Set for the range currently being scattered. `blockStripe` divides this span among workers.
-    size_t block_begin = 0;
-    size_t block_end = 0;
-
-    /// Empty clones of the prepared key columns, taken before any range is scattered. The chunk
-    /// allocation only needs each column's type and width, and a consumed range has already
-    /// dropped its own key columns.
-    Columns key_samples;
-
-    /// Created on the first range that claims the leaf, with the full-build reserve.
-    std::vector<UInt8> leaf_map_created;
-    std::vector<size_t> leaf_created_bytes;
-    std::vector<UInt8> leaf_growth_counted;
-
-    std::pair<size_t, size_t> blockStripe(size_t worker) const
-    {
-        const size_t n = block_end - block_begin;
-        return {block_begin + worker * n / workers, block_begin + (worker + 1) * n / workers};
+        const Key key = overflow.template keyAt<Key>(i);
+        const size_t hash = overflow.hashes[i];
+        const UInt64 ref = overflow.refs[i];
+        size_t pos = target.table.place(hash);
+        while (true)
+        {
+            auto * cell = target.cells + pos;
+            if (target.table.isEmptyCell(cell))
+            {
+                /// The key was persisted when it was handed off; a plain key needs no holder.
+                target.table.claim(pos, key, hash);
+                target.initFirst(cell->getMapped(), ref, 0);
+                target.claimed_one();
+                break;
+            }
+            if (target.table.keyEquals(cell, key, hash))
+            {
+                target.appendLater(cell->getMapped(), ref, 0);
+                ++appended;
+                break;
+            }
+            pos = target.table.next(pos);
+        }
     }
-};
-
-namespace
-{
+    overflow.clear();
+}
 
 /// From the saved routes, taking the MSB-first slice this pass owns. Skipped rows go to the drop
 /// bucket.
@@ -467,17 +727,6 @@ void deriveBucketIds(const PaddedPODArray<UInt16> & routes, const UInt8 * skip_b
         for (size_t i = 0; i < rows; ++i)
             bucket_ids[i] = static_cast<UInt16>(routes[i] >> shift);
     }
-}
-
-/// Matches `RowRefList::Batch`: unique keys stay inline in the cell word, 2..7 rows occupy
-/// one 64-byte node, and further rows chain overflow nodes of 6 slots.
-size_t arenaBytesPerKey(double m)
-{
-    if (m <= 1.0)
-        return 0;
-    if (m <= 7.0)
-        return 64;
-    return 64 * (1 + static_cast<size_t>(std::ceil((m - 6.0) / 6.0)));
 }
 
 template <typename Stage>
@@ -508,7 +757,7 @@ void emplaceSizedBuildArena(std::deque<Arena> & arenas, size_t predicted_bytes)
 {
     /// Below 1 MiB the default 4 KiB doubling is cheaper than a first chunk a small worker would
     /// not fill. Above that, the first allocation should cover the prediction so Arena does not
-    /// leave a last exponential chunk about as large as the list nodes themselves.
+    /// leave a last exponential chunk about as large as the runs themselves.
     constexpr size_t min_sized = 1uz << 20;
     if (predicted_bytes < min_sized)
     {
@@ -518,65 +767,131 @@ void emplaceSizedBuildArena(std::deque<Arena> & arenas, size_t predicted_bytes)
     arenas.emplace_back(predicted_bytes, /*growth_factor_=*/2, predicted_bytes);
 }
 
+void accumulate(DuplicateRunWriter::Stats & into, const DuplicateRunWriter::Stats & from)
+{
+    into.pairs += from.pairs;
+    into.runs += from.runs;
+    into.descriptors += from.descriptors;
+    into.appended_nodes += from.appended_nodes;
+    into.small_blocks += from.small_blocks;
+    into.in_place_fills += from.in_place_fills;
+    into.moved_refs += from.moved_refs;
+    into.arena_bytes += from.arena_bytes;
+    into.slack_slots += from.slack_slots;
 }
+
+}
+
+/// The stages communicate through exact per-bucket offsets: bucket `p` holds worker `w`'s stripe at
+/// `[starts[p * workers + w], + worker_hist[w][p])`, in worker order. The last bucket collects
+/// null-key rows; it is scattered like any other and dropped before the inserts, so a partition only
+/// ever sees insertable rows.
+struct PartitionedHashJoin::PostBuildContext
+{
+    size_t workers = 0;
+    size_t fanout = 0; /// pass-1 partitions + 1 (the null bucket); == partitions + 1 on single-pass plans
+    size_t num_key_columns = 0;
+    bool generic_mode = false;
+
+    /// The first pass also scatters the saved route words, so a refine pass can derive its
+    /// sub-bucket ids without touching the key columns. Once `refined`, every per-bucket container is
+    /// final-partition-indexed and has no drop bucket.
+    size_t route_bits = 0; /// pass-1 bits (== total bits on single-pass plans)
+    bool multi_pass = false;
+    bool refined = false;
+    size_t current_buckets = 0; /// buckets refine passes operate on (drop bucket excluded)
+    std::vector<PaddedPODArray<UInt16>> routes;
+
+    /// Generic mode after a refine pass: one self-contained piece per (key column, partition).
+    std::vector<MutableColumns> refined_pieces;
+
+    PaddedPODArray<UInt64> worker_hist; /// workers x fanout
+    std::vector<UInt64> bucket_rows; /// per bucket
+    PaddedPODArray<UInt64> starts; /// fanout x workers
+
+    /// Fixed mode: one exact uninitialized column per (key column, bucket), written by all workers.
+    std::vector<MutableColumns> fixed_out;
+    std::vector<std::vector<char *>> fixed_base;
+    std::vector<size_t> fixed_widths;
+
+    /// Generic mode: self-contained per-(key column, worker, bucket) pieces from `ColumnsScatter`.
+    std::vector<std::vector<MutableColumns>> pieces;
+
+    /// Always scattered cooperatively: 8-byte encoded `RowRef` words, or the packed 4-byte form.
+    std::vector<PaddedPODArray<UInt64>> locators;
+    std::vector<PaddedPODArray<UInt32>> locators32;
+
+    struct WorkerState
+    {
+        std::vector<ColumnsScatter::ScatterScratch> key_scratch;
+        ColumnsScatter::ScatterScratch locator_scratch;
+        ColumnsScatter::ScatterScratch route_scratch;
+        PaddedPODArray<UInt64> locator_piece;
+        PaddedPODArray<UInt32> locator_piece32;
+        /// The owner's duplicate writer over its own arena, and its pass scratch.
+        std::optional<DuplicateRunWriter> writer;
+        TailScratch tail_scratch;
+        bool all_values_unique = true;
+        UInt64 inserted_rows = 0;
+    };
+    std::deque<WorkerState> worker_state;
+
+    /// Per partition: the overflow of the current group's owner pass, the distinct keys claimed so far
+    /// (by owners and the drain), and whether the range has been committed.
+    std::vector<OverflowBuffer> overflow;
+    std::vector<UInt64> claimed_per_partition;
+    std::vector<UInt8> range_committed;
+    std::vector<UInt32> partition_order; /// largest first
+    std::atomic<UInt32> partition_claim{0};
+
+    /// The drain's writer (over the last arena), scratch and counters.
+    std::optional<DuplicateRunWriter> drain_writer;
+    TailScratch drain_scratch;
+    UInt64 drain_claimed = 0;
+    UInt64 drain_appended = 0;
+    bool drain_all_unique = true;
+
+    /// Set for the range currently being scattered. `blockStripe` divides this span among workers.
+    size_t block_begin = 0;
+    size_t block_end = 0;
+
+    /// Empty clones of the prepared key columns, taken before any range is scattered. The chunk
+    /// allocation only needs each column's type and width, and a consumed range has already
+    /// dropped its own key columns.
+    Columns key_samples;
+
+    std::pair<size_t, size_t> blockStripe(size_t worker) const
+    {
+        const size_t n = block_end - block_begin;
+        return {block_begin + worker * n / workers, block_begin + (worker + 1) * n / workers};
+    }
+};
 
 void PartitionedHashJoin::decideAmacEngagement()
 {
     /// The same heuristics that enable the standard loops' software prefetch: the user toggle plus
-    /// the aggregate table size past the L2 threshold, below which the cell reads hit anyway and
-    /// pipelining them costs more than it saves. Aggregate, not per-leaf, because the build streams
-    /// scattered chunks through the cache alongside its leaf and the probe misses across all leaves.
+    /// the table size past the L2 threshold, below which the cell reads hit anyway and pipelining them
+    /// costs more than it saves.
     amac_build_engaged = amac_enabled && leaf_join->enableSoftwarePrefetch() && ht_total_bytes > getMinBytesForPrefetchInJoin();
 }
 
-void PartitionedHashJoin::collectLeafMapPointers()
-{
-    leaf_map_ptrs.resize(leaf_maps.size());
-    leaf_map_descs.assign(leaf_maps.size(), LeafMapDesc{});
-    for (size_t leaf = 0; leaf < leaf_maps.size(); ++leaf)
-    {
-        std::visit(
-            [&](auto & shape_maps)
-            {
-                switch (leaf_join->data->type)
-                {
-#define M(TYPE) \
-    case HashJoin::Type::TYPE: { \
-        const auto & map = *shape_maps.TYPE; \
-        leaf_map_ptrs[leaf] = &map; \
-        if constexpr (AmacResumableMap<std::remove_cvref_t<decltype(map)>>) \
-        { \
-            leaf_map_descs[leaf] = LeafMapDesc{map.cursorCell(0), map.cursorMask()}; \
-        } \
-        break; \
-    }
-                    APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
-#undef M
-                    default:
-                        throw Exception(
-                            ErrorCodes::UNSUPPORTED_JOIN_KEYS,
-                            "Unsupported JOIN keys for the partitioned join (type: {})",
-                            leaf_join->data->type);
-                }
-            },
-            leaf_maps[leaf].maps);
-    }
-}
-
-void PartitionedHashJoin::insertLeafSection(
-    PartitionedJoinMaps & maps,
+void PartitionedHashJoin::insertPartitionSection(
+    PostBuildContext & ctx,
+    size_t worker,
+    size_t partition,
     const ColumnRawPtrs & key_columns,
     size_t rows,
     const UInt64 * locators,
     const UInt32 * narrow_locators_data,
     UInt32 block_no,
-    const UInt8 * skip_bytes,
-    Arena & pool,
-    bool & all_values_unique)
+    const UInt8 * skip_bytes)
 {
     const Sizes & key_sizes = leaf_join->key_sizes[0];
     const bool enable_prefetch = leaf_join->enableSoftwarePrefetch();
-    UInt64 ring_growths = 0;
+    auto & state = ctx.worker_state[worker];
+    Arena & arena = build_arenas[worker];
+    OverflowBuffer & overflow = ctx.overflow[partition == single_partition ? 0 : partition];
+    UInt64 & claimed = ctx.claimed_per_partition[partition == single_partition ? 0 : partition];
 
     std::visit(
         [&](auto & shape_maps)
@@ -585,23 +900,34 @@ void PartitionedHashJoin::insertLeafSection(
             {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
-        using Map = typename decltype(shape_maps.TYPE)::element_type; \
-        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map>::Type; \
-        insertSectionImpl<KeyGetter>( \
-            *leaf_join, \
-            *shape_maps.TYPE, \
-            key_columns, \
-            key_sizes, \
-            rows, \
-            locators, \
-            narrow_locators_data, \
-            block_no, \
-            skip_bytes, \
-            pool, \
-            all_values_unique, \
-            enable_prefetch, \
-            amac_build_engaged, \
-            ring_growths); \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table>::Type; \
+        Table & table = *shape_maps.TYPE; \
+        if constexpr (is_shared_join_table<Table>) \
+        { \
+            const bool wrap = partition == single_partition; \
+            InsertTarget<Table> target{ \
+                .table = table, \
+                .cells = table.cells(), \
+                .scratch = state.tail_scratch, \
+                .overflow = overflow, \
+                .range_begin = wrap ? 0 : table.rangeBegin(partition), \
+                .range_end = wrap ? table.cellCount() : table.rangeEnd(partition), \
+                .wrap = wrap, \
+                .any_take_last_row = any_take_last_row, \
+                .join = leaf_join.get()}; \
+            target.claimed = claimed; \
+            insertSectionShared<KeyGetter, Table>( \
+                target, key_columns, key_sizes, rows, locators, narrow_locators_data, block_no, skip_bytes, arena, enable_prefetch, amac_build_engaged); \
+            claimed = target.claimed; \
+            state.all_values_unique = state.all_values_unique && target.all_unique; \
+        } \
+        else \
+        { \
+            insertSectionFixed<KeyGetter, Table>( \
+                table, *leaf_join, key_columns, key_sizes, rows, locators, narrow_locators_data, block_no, skip_bytes, arena, \
+                state.tail_scratch, any_take_last_row, claimed, state.all_values_unique); \
+        } \
         break; \
     }
                 APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
@@ -613,10 +939,7 @@ void PartitionedHashJoin::insertLeafSection(
                         leaf_join->data->type);
             }
         },
-        maps.maps);
-
-    if (ring_growths)
-        amac_ring_growths.fetch_add(ring_growths, std::memory_order_relaxed);
+        shared_maps->maps);
 }
 
 void PartitionedHashJoin::runPostBuildPhase()
@@ -634,11 +957,11 @@ void PartitionedHashJoin::runPostBuildPhase()
     bool all_values_unique = true;
     if (bits == 0)
     {
-        /// Single-leaf has no histogram or scatter stage - every row is inserted straight from the
-        /// stored blocks - so all of it charges to the leaf-build sub-phase.
+        /// Single-partition has no histogram or scatter stage - every row is inserted straight from the
+        /// stored blocks - so all of it charges to the insert sub-phase.
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
         ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::PartitionedHashJoinBuildLeafMicroseconds);
-        all_values_unique = postBuildSingleLeaf();
+        all_values_unique = postBuildSinglePartition();
     }
     else
     {
@@ -657,26 +980,21 @@ void PartitionedHashJoin::runPostBuildPhase()
     accumulated_bytes.store(leaf_join->data->allocated_size, std::memory_order_relaxed);
 
     ProfileEvents::increment(ProfileEvents::PartitionedHashJoinHashTableBytes, ht_total_bytes);
-    if (stats.leaf_growths)
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinHashTableGrowths, stats.leaf_growths);
-    if (const UInt64 growths = amac_ring_growths.load(std::memory_order_relaxed))
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinAmacRingGrowths, growths);
+    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinOverflowRows, stats.overflow_rows);
+    ProfileEvents::increment(
+        ProfileEvents::PartitionedHashJoinDuplicateRunBytes, stats.owner_duplicates.arena_bytes + stats.drain_duplicates.arena_bytes);
 
-    /// For the next run of this query. A leaf map's size is the exact number of distinct keys it
-    /// holds - one per cell, duplicates chaining inside - so this is better than re-publishing an
-    /// estimate.
+    /// For the next run of this query and for the planner's consumers. Published, never consumed for
+    /// sizing: the table cannot grow, and a cached count would be data-independent.
     if (stats_collecting_params.isCollectionAndUseEnabled())
     {
-        const HashJoin::Type type = leaf_join->data->type;
         PartitionedHashJoinEntry entry;
         entry.bits = bits;
-        entry.per_partition.resize(leaf_maps.size());
-        for (size_t leaf = 0; leaf < leaf_maps.size(); ++leaf)
-        {
-            const size_t distinct = leaf_maps[leaf].getTotalRowCount(type);
-            entry.per_partition[leaf] = distinct;
-            entry.total_distinct += distinct;
-        }
+        entry.total_distinct = stats.distinct_keys;
+        if (post_build_ctx)
+            entry.per_partition.assign(post_build_ctx->claimed_per_partition.begin(), post_build_ctx->claimed_per_partition.end());
+        else
+            entry.per_partition.assign(1, stats.distinct_keys);
         getHashTablesStatistics<PartitionedHashJoinEntry>().update(entry, stats_collecting_params);
 
         /// Join reordering, `rhs_size_estimation` and the runtime-filter sizing all read
@@ -688,48 +1006,44 @@ void PartitionedHashJoin::runPostBuildPhase()
                 {.ht_size = entry.total_distinct, .source_rows = leaf_join->data->rows_to_join}, stats_collecting_params);
     }
 
+    post_build_ctx.reset();
+    post_build_pool.reset();
+
     finishBuildPhase(all_values_unique);
 
     LOG_TRACE(
         log,
-        "Built {} leaf hash tables: {} keys, {} of right-table data including the hash tables "
-        "({} predicted for the exact-reserved buffers, {} leaf growths, {} ring growths)",
+        "Built one shared hash table of {} cells in {} partitions: {} keys from {} rows, {} of right-table data including the table "
+        "({} committed, {} overflow rows drained, {} bytes of duplicate runs)",
+        stats.table_cells,
         partitions,
-        getTotalRowCount(),
+        stats.distinct_keys,
+        stats.inserted_rows,
         ReadableSize(getTotalByteCount()),
         ReadableSize(ht_total_bytes),
-        stats.leaf_growths,
-        amac_ring_growths.load(std::memory_order_relaxed));
+        stats.overflow_rows,
+        ReadableSize(stats.owner_duplicates.arena_bytes + stats.drain_duplicates.arena_bytes));
 }
 
 void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
 {
     /// The leaf join's own barrier: used-flags init over its empty map, the ALL -> RightAny promotion
     /// when every build key turned out unique - the probe dispatches on the promoted strictness - and
-    /// the non-joined status. The flags are resized to span every leaf afterwards, once the bucket
-    /// counts are final.
+    /// the non-joined status. The flags are then resized to span the whole table.
     leaf_join->all_values_unique = all_values_unique;
     leaf_join->onBuildPhaseFinish();
-    computeFlagBaseAndReinitUsedFlags();
-    collectLeafMapPointers();
+    reinitUsedFlags();
     leaf_join->data->keys_to_join = getTotalRowCount();
     build_phase_finished = true;
 }
 
-void PartitionedHashJoin::computeFlagBaseAndReinitUsedFlags()
+void PartitionedHashJoin::reinitUsedFlags()
 {
-    /// Leaf L's flags start at `flag_base[L]` and span its bucket count plus one, the extra slot
-    /// covering the map's zero-value cell as the standard `getBufferSizeInCells() + 1` does. The
-    /// probe shifts every `FindResult` offset by its leaf's base, which is what lets `JoinUsedFlags`
-    /// and the non-joined iteration keep their single-map semantics.
-    const HashJoin::Type type = leaf_join->data->type;
-    flag_base.assign(1, 0);
-    flag_base.reserve(leaf_maps.size() + 1);
-    for (const auto & maps : leaf_maps)
-        flag_base.push_back(flag_base.back() + maps.getBufferSizeInCells(type) + 1);
-
-    /// `reinit` only grows, and does nothing for shapes without right-side flags. It has to run
-    /// after the leaf join's barrier, which sized the flags to its own empty map.
+    /// One per-offset space of `cells + 1`, offset 0 being the zero-value cell, exactly the
+    /// `getBufferSizeInCells() + 1` the standard join sizes. `reinit` only grows, and does nothing for
+    /// shapes without right-side flags. It has to run after the leaf join's barrier, which sized the
+    /// flags to its own empty map.
+    const size_t flags = shared_maps->getBufferSizeInCells(leaf_join->data->type) + 1;
     joinDispatch(
         leaf_join->getKind(),
         leaf_join->getStrictness(),
@@ -737,51 +1051,97 @@ void PartitionedHashJoin::computeFlagBaseAndReinitUsedFlags()
         leaf_join->getMapsKind(),
         [&](auto kind_, auto strictness_, auto & map_)
         {
-            leaf_join->used_flags->reinit<kind_, strictness_, mapsKindOf<decltype(map_)>()>(flag_base.back());
+            leaf_join->used_flags->reinit<kind_, strictness_, mapsKindOf<decltype(map_)>()>(flags);
         });
-
-    /// Left empty for the shapes that never consult right-side flags, which the tests assert on.
-    if (!leaf_join->used_flags->need_flags)
-        flag_base.clear();
 }
 
-bool PartitionedHashJoin::postBuildSingleLeaf()
+void PartitionedHashJoin::createSharedTable()
+{
+    const HashJoin::Type type = leaf_join->data->type;
+    const size_t insertable_rows = accumulated_rows.load(std::memory_order_relaxed);
+    const size_t reserve = reserveFor(insertable_rows, hll_estimate);
+    ht_total_bytes = SharedJoinMaps::predictedBufferBytes(maps_variant_index, type, reserve);
+
+    shared_maps = std::make_unique<SharedJoinMaps>(maps_variant_index);
+    shared_maps->create(type, size_degree, bits);
+
+    stats.table_size_degree = size_degree;
+    stats.table_cells = shared_maps->getBufferSizeInCells(type);
+    stats.predictions_exact = shared_maps->getReservedBufferBytes(type) == ht_total_bytes;
+    decideAmacEngagement();
+}
+
+size_t PartitionedHashJoin::reserveFor(size_t rows, double distinct_estimate) const
+{
+    /// The safety factor covers the sketch's error; the row clamp says a table cannot hold more keys
+    /// than rows. Above 2^31 estimated words the 32-bit sketch is saturating, so the exact upper bound
+    /// takes over: at most a 2x over-reservation, only for builds already holding 64 GiB of cells.
+    const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * reserve_safety);
+    const size_t rows_bound = std::max<size_t>(rows, 1);
+    if (scaled >= 2147483648.0)
+        return rows_bound;
+    return std::clamp<size_t>(static_cast<size_t>(scaled), 1, rows_bound);
+}
+
+bool PartitionedHashJoin::postBuildSinglePartition()
 {
     const HashJoin::Type type = leaf_join->data->type;
 
-    /// One leaf over the whole build, exact-reserved from the sketch and with no scatter: rows go in
-    /// straight from the stored blocks with plain `RowRef(block_no, row)` refs.
-    const size_t insertable_rows = accumulated_rows.load(std::memory_order_relaxed);
-    const auto reserve
-        = std::clamp<size_t>(static_cast<size_t>(std::ceil(hll_estimate * reserve_safety)), 1, std::max<size_t>(insertable_rows, 1));
-    const size_t predicted_bytes = PartitionedJoinMaps::predictedBufferBytes(maps_variant_index, type, reserve);
+    /// One partition over the whole build, with no scatter: rows go in straight from the stored blocks
+    /// with plain `RowRef(block_no, row)` refs, the walk wraps at the buffer end, and nothing overflows.
+    chassert(bits == 0 && !post_build_ctx);
+    post_build_ctx.reset(new PostBuildContext);
+    auto & ctx = *post_build_ctx;
+    ctx.workers = 1;
+    ctx.worker_state.resize(1);
+    ctx.overflow.resize(1);
+    ctx.claimed_per_partition.assign(1, 0);
+    ctx.range_committed.assign(1, 0);
 
-    ht_total_bytes = predicted_bytes;
-    decideAmacEngagement();
-
-    leaf_maps.assign(1, PartitionedJoinMaps(maps_variant_index));
+    createSharedTable();
     measureGenericKeyBytes();
-    emplaceSizedBuildArena(build_arenas, predictedArenaBytes(insertable_rows));
+    const size_t insertable_rows = accumulated_rows.load(std::memory_order_relaxed);
+    chassert(build_arenas.empty());
+    emplaceSizedBuildArena(build_arenas, predictedArenaBytes(insertable_rows, post_build_plan == PostBuildPlan::Grouped));
+    emplaceSizedBuildArena(build_arenas, 0);
+    const bool grouped = false;
+    ctx.worker_state[0].writer.emplace(build_arenas[0], grouped);
+    ctx.drain_writer.emplace(build_arenas[1], grouped);
 
-    leaf_maps[0].create(type, reserve);
-    const size_t created_bytes = leaf_maps[0].getBufferSizeInBytes(type);
-    stats.predictions_exact = created_bytes == predicted_bytes;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        if constexpr (is_shared_join_table<typename decltype(shape_maps.TYPE)::element_type>) \
+            shape_maps.TYPE->commitAll(); \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default:
+                    break;
+            }
+        },
+        shared_maps->maps);
+    ctx.range_committed[0] = 1;
 
-    bool all_values_unique = true;
     for (auto & fill : build_blocks)
     {
-        insertLeafSection(
-            leaf_maps[0],
+        insertPartitionSection(
+            ctx,
+            /*worker=*/0,
+            single_partition,
             fill.key_columns,
             fill.rows,
             /*locators=*/nullptr,
             /*narrow_locators_data=*/nullptr,
             fill.block_no,
-            fill.skipData(),
-            build_arenas.front(),
-            all_values_unique);
+            fill.skipData());
         ProfileEvents::increment(ProfileEvents::PartitionedHashJoinLeafRows, fill.rows);
-        stats.leaf_rows += fill.rows;
+        ctx.worker_state[0].inserted_rows += fill.rows;
 
         /// Consumed - drop this block's prepared keys and routes.
         fill.keys_holder.clear();
@@ -792,62 +1152,143 @@ bool PartitionedHashJoin::postBuildSingleLeaf()
         fill.skip_bytes = {};
         fill.routes = {};
     }
-    if (leaf_maps[0].getBufferSizeInBytes(type) != created_bytes)
-        ++stats.leaf_growths;
-    return all_values_unique;
+    finishTailScratch(ctx.worker_state[0].tail_scratch, *ctx.worker_state[0].writer);
+    chassert(ctx.overflow[0].rows() == 0);
+
+    stats.inserted_rows = ctx.worker_state[0].inserted_rows;
+    stats.owner_duplicates = ctx.worker_state[0].writer->stats();
+    publishTableSize(ctx);
+    return ctx.worker_state[0].all_values_unique;
 }
 
-size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t distinct) const
+void PartitionedHashJoin::publishTableSize(const PostBuildContext & ctx)
+{
+    const HashJoin::Type type = leaf_join->data->type;
+    UInt64 distinct = 0;
+    for (UInt64 claimed : ctx.claimed_per_partition)
+        distinct += claimed;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        if constexpr (is_shared_join_table<Table>) \
+        { \
+            if (shape_maps.TYPE->hasZero()) \
+                ++distinct; \
+            shape_maps.TYPE->setSize(distinct); \
+            verifyPublishedTable(*shape_maps.TYPE); \
+        } \
+        else \
+            distinct = shape_maps.TYPE->size(); \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default:
+                    break;
+            }
+        },
+        shared_maps->maps);
+    stats.distinct_keys = distinct;
+}
+
+/// Debug and sanitizer builds only: the published table must carry no scratch marker (every pass finished
+/// its tail) and its duplicate layout must account for every inserted row. A leaked marker would otherwise
+/// read as an empty key in the release build - silent row loss.
+template <typename Table>
+void PartitionedHashJoin::verifyPublishedTable(const Table & table) const
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    using Mapped = typename Table::mapped_type;
+    if constexpr (std::is_same_v<Mapped, RowRefList>)
+    {
+        UInt64 rows = 0;
+        const auto visit_cell = [&](const auto * cell, size_t position)
+        {
+            const RowRefList & mapped = cell->getMapped();
+            if (mapped.isScratchMarker())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a scratch marker survived publication in cell {}", position);
+            rows += mapped.rows();
+        };
+        if (table.hasZero())
+            visit_cell(table.zeroValue(), 0);
+        for (size_t position = 0, cells = table.cellCount(); position < cells; ++position)
+        {
+            const auto * cell = table.cellAt(position);
+            if (!table.isEmptyCell(cell))
+                visit_cell(cell, position + 1);
+        }
+        if (rows != stats.inserted_rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "PartitionedHashJoin: the published table holds {} rows in its duplicate layout but {} rows were inserted",
+                rows,
+                stats.inserted_rows);
+    }
+#else
+    (void)table;
+#endif
+}
+
+size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped) const
 {
     const size_t distinct_keys = std::max(distinct, 1uz);
-    /// Same clamp the post-build single-leaf reserve uses: the sketch can exceed the row count, and
-    /// a table cannot hold more keys than rows. Evaluating the buffers as one table is the right
-    /// estimate for the total - splitting the same key count across leaves leaves the summed
-    /// power-of-two buffers essentially unchanged.
-    const auto reserve = std::clamp<size_t>(
-        static_cast<size_t>(std::ceil(static_cast<double>(distinct_keys) * reserve_safety)),
-        1,
-        std::max(rows, 1uz));
-    size_t bytes = PartitionedJoinMaps::predictedBufferBytes(maps_variant_index, leaf_join->data->type, reserve);
+    const size_t reserve = reserveFor(rows, static_cast<double>(distinct_keys));
+    size_t bytes = SharedJoinMaps::predictedBufferBytes(maps_variant_index, leaf_join->data->type, reserve);
 
     /// `maps_variant_index == 1` is `MapsAll` (`RowRefList`). Unique keys stay inline in the cell
-    /// word; only this shape keeps duplicate-list nodes in the arena. `preferUseMapsAll` is still
-    /// false at the gate - the ALL-to-RightAny promotion has not run - so the variant index is what
-    /// actually keeps the lists. LEFT/INNER Any/Semi/Anti use `MapsOne` and hold no list.
+    /// word; only this shape keeps duplicate runs in the arena, at 8 bytes per row of a duplicated
+    /// key. `preferUseMapsAll` is still false at the gate - the ALL-to-RightAny promotion has not run -
+    /// so the variant index is what actually keeps the runs. LEFT/INNER Any/Semi/Anti use `MapsOne`
+    /// and hold no run.
     ///
     /// Multiplicity inside `reserve_safety` is treated as unique for the arena term. A fill-phase
     /// distinct estimate that lags the row count by a sixteenth, or a HyperLogLog that undershoots
-    /// by a percent, would otherwise look like `m > 1` and charge a 64-byte node per key - several
-    /// GiB of list arena that do not exist, which is enough to spill a unique build that fits.
-    /// Real duplicate builds (m=5, m=8) sit far above the band. The factor already covers sketch
-    /// error for the table reserve; reusing it here keeps the unique/duplicate decision on the
-    /// same inputs.
+    /// by a percent, would otherwise look like `m > 1` and charge every row - enough to spill a unique
+    /// build that fits. Real duplicate builds (m=5, m=8) sit far above the band. The factor already
+    /// covers sketch error for the table reserve; reusing it here keeps the unique/duplicate decision on
+    /// the same inputs.
     if (maps_variant_index == 1)
     {
         const double multiplicity = static_cast<double>(rows) / static_cast<double>(distinct_keys);
         if (multiplicity > reserve_safety)
         {
-            bytes += static_cast<size_t>(
-                std::ceil(static_cast<double>(distinct_keys) * static_cast<double>(arenaBytesPerKey(multiplicity))));
+            bytes += sizeof(UInt64) * rows;
+            /// Grouped scatter appends each group's rows of a key as its own run, so a key whose rows arrive
+            /// in several groups costs more than its refs: up to 8 rows it holds them in one 64-byte block
+            /// (the unfilled slots are the cost; two rows are a pair, exact), beyond that it chains a
+            /// descriptor, a link word and one partially filled block (plan section 6, at most 88 bytes).
+            /// The number of duplicated keys bounds the keys that can span groups.
+            if (grouped)
+            {
+                const size_t duplicated_keys = std::min(distinct_keys, rows > distinct_keys ? rows - distinct_keys : 0);
+                size_t extra_per_key = 88;
+                if (multiplicity <= 2.0)
+                    extra_per_key = 0;
+                else if (multiplicity < 8.0)
+                    extra_per_key = 64 - 8 * static_cast<size_t>(multiplicity);
+                bytes += extra_per_key * duplicated_keys;
+            }
         }
     }
     return bytes;
 }
 
-size_t PartitionedHashJoin::predictedArenaBytes(size_t insertable_rows) const
+size_t PartitionedHashJoin::predictedArenaBytes(size_t insertable_rows, bool grouped) const
 {
-    /// List-arena bytes come from the shared helper so the fill-phase prediction and the gate cannot
-    /// drift. Variable-length keys are copied into the arena as `StringRef`s; that total is measured
-    /// once before the first range is scattered, because a consumed range has dropped its key columns.
+    /// Duplicate-run bytes come from the shared helper so the fill-phase prediction and the gate cannot
+    /// drift. Variable-length keys are copied into the arena; that total is measured once before the
+    /// first range is scattered, because a consumed range has dropped its key columns.
     const size_t distinct = std::max(static_cast<size_t>(std::llround(hll_estimate)), 1uz);
-    const size_t tables_and_list = predictedTableAndArenaBytes(insertable_rows, distinct);
-    const auto reserve = std::clamp<size_t>(
-        static_cast<size_t>(std::ceil(static_cast<double>(distinct) * reserve_safety)),
-        1,
-        std::max(insertable_rows, 1uz));
-    const size_t tables = PartitionedJoinMaps::predictedBufferBytes(maps_variant_index, leaf_join->data->type, reserve);
-    chassert(tables_and_list >= tables);
-    return tables_and_list - tables + generic_key_bytes;
+    const size_t tables_and_runs = predictedTableAndArenaBytes(insertable_rows, distinct, grouped);
+    const size_t tables = SharedJoinMaps::predictedBufferBytes(maps_variant_index, leaf_join->data->type, reserveFor(insertable_rows, static_cast<double>(distinct)));
+    chassert(tables_and_runs >= tables);
+    return tables_and_runs - tables + generic_key_bytes;
 }
 
 /// Total bytes of the prepared key columns across the whole build. Measured while every block still
@@ -873,9 +1314,11 @@ size_t PartitionedHashJoin::chunkBytesForBlockRange(size_t b0, size_t b1) const
     const auto & ctx = *post_build_ctx;
     const size_t locator_width = narrow_locators ? sizeof(UInt32) : sizeof(UInt64);
     size_t bytes = 0;
+    size_t rows_in_range = 0;
     for (size_t b = b0; b < b1; ++b)
     {
         const FillBlock & fill = build_blocks[b];
+        rows_in_range += fill.rows;
         if (ctx.generic_mode)
         {
             size_t key_bytes = 0;
@@ -892,6 +1335,15 @@ size_t PartitionedHashJoin::chunkBytesForBlockRange(size_t b0, size_t b1) const
         }
         if (pass_bits.size() > 1)
             bytes += fill.rows * sizeof(UInt16);
+    }
+
+    /// The pass scratch of the duplicate rows this range brings: `tail_key` and `tail_ref` per row plus
+    /// the per-key arrays, amortised to 16 bytes per duplicate row, estimated from the build's ratio.
+    const size_t total_rows = accumulated_rows.load(std::memory_order_relaxed);
+    if (total_rows > 0 && hll_estimate < static_cast<double>(total_rows))
+    {
+        const double duplicate_fraction = 1.0 - hll_estimate / static_cast<double>(total_rows);
+        bytes += static_cast<size_t>(16.0 * duplicate_fraction * static_cast<double>(rows_in_range));
     }
     return bytes;
 }
@@ -911,80 +1363,6 @@ void PartitionedHashJoin::resetWorkerHistogram(PostBuildContext & ctx)
     /// on top of the previous range's counts.
     ctx.worker_hist.clear();
     ctx.worker_hist.resize_fill(ctx.workers * ctx.fanout, 0);
-}
-
-void PartitionedHashJoin::sizeLeafHashTables()
-{
-    auto & ctx = *post_build_ctx;
-    stats.leaf_row_counts = total_bucket_rows;
-
-    const HashJoin::Type type = leaf_join->data->type;
-
-    /// A previous run's per-partition breakdown is folded or split to this build's partition count -
-    /// the two leaf ranges always nest, both being MSB-first partitions of the same route space, so a
-    /// coarser cache sums and a finer one splits uniformly. Without one, the single estimate is
-    /// rescaled uniformly. Either way the clamp just below bounds each leaf by its exact row count,
-    /// so a stale estimate can only mis-size a reserve.
-    std::vector<UInt64> per_leaf_distinct;
-    if (cached_stats && !cached_stats->per_partition.empty())
-    {
-        const size_t cached_bits = cached_stats->bits;
-        chassert(cached_stats->per_partition.size() == (1uz << cached_bits));
-        per_leaf_distinct.assign(partitions, 0);
-        if (cached_bits == bits)
-        {
-            for (size_t leaf = 0; leaf < partitions; ++leaf)
-                per_leaf_distinct[leaf] = cached_stats->per_partition[leaf];
-        }
-        else if (cached_bits > bits)
-        {
-            const size_t group = 1uz << (cached_bits - bits);
-            for (size_t i = 0; i < cached_stats->per_partition.size(); ++i)
-                per_leaf_distinct[i / group] += cached_stats->per_partition[i];
-        }
-        else
-        {
-            const size_t group = 1uz << (bits - cached_bits);
-            for (size_t j = 0; j < cached_stats->per_partition.size(); ++j)
-            {
-                const UInt64 split = cached_stats->per_partition[j] / group;
-                for (size_t k = 0; k < group; ++k)
-                    per_leaf_distinct[j * group + k] = split;
-            }
-        }
-    }
-
-    const auto per_leaf_estimate
-        = std::max<UInt64>(1, static_cast<UInt64>(std::ceil(hll_estimate * reserve_safety / static_cast<double>(partitions))));
-
-    ctx.leaf_reserve.resize(partitions);
-    ctx.leaf_bytes.resize(partitions);
-    UInt64 running = 0;
-    for (size_t leaf = 0; leaf < partitions; ++leaf)
-    {
-        const UInt64 leaf_hint = per_leaf_distinct.empty()
-            ? per_leaf_estimate
-            : std::max<UInt64>(1, static_cast<UInt64>(std::ceil(static_cast<double>(per_leaf_distinct[leaf]) * reserve_safety)));
-        /// An estimate may shrink a leaf below its row count but never inflate it past the exact
-        /// full-build histogram, not a per-range count.
-        ctx.leaf_reserve[leaf] = std::clamp<UInt64>(leaf_hint, 1, std::max<UInt64>(total_bucket_rows[leaf], 1));
-        ctx.leaf_bytes[leaf] = PartitionedJoinMaps::predictedBufferBytes(maps_variant_index, type, ctx.leaf_reserve[leaf]);
-        running += ctx.leaf_bytes[leaf];
-    }
-
-    /// Nothing is allocated here; the worker that claims a leaf allocates its buffer.
-    ht_total_bytes = running;
-    decideAmacEngagement();
-
-    leaf_maps.assign(partitions, PartitionedJoinMaps(maps_variant_index));
-    ctx.leaf_map_created.assign(partitions, 0);
-    ctx.leaf_created_bytes.assign(partitions, 0);
-    ctx.leaf_growth_counted.assign(partitions, 0);
-    ctx.leaf_order.resize(partitions);
-    for (size_t leaf = 0; leaf < partitions; ++leaf)
-        ctx.leaf_order[leaf] = static_cast<UInt32>(leaf);
-    std::sort(
-        ctx.leaf_order.begin(), ctx.leaf_order.end(), [&](UInt32 a, UInt32 b) { return total_bucket_rows[a] > total_bucket_rows[b]; });
 }
 
 void PartitionedHashJoin::preparePostBuildContext()
@@ -1038,6 +1416,9 @@ void PartitionedHashJoin::preparePostBuildContext()
         ctx.fixed_base.assign(ctx.num_key_columns, std::vector<char *>(ctx.fanout, nullptr));
     }
     ctx.worker_state.resize(ctx.workers);
+    ctx.overflow.resize(partitions);
+    ctx.claimed_per_partition.assign(partitions, 0);
+    ctx.range_committed.assign(partitions, 0);
 
     post_build_pool = std::make_unique<ThreadPool>(
         CurrentMetrics::PartitionedHashJoinPoolThreads,
@@ -1050,7 +1431,7 @@ void PartitionedHashJoin::preparePostBuildContext()
     std::atomic<UInt64> hist_thread_us{0};
     if (ctx.multi_pass)
     {
-        /// Exact per-leaf counts need the full `bits` width, which is not the pass-1 histogram the
+        /// Exact per-partition counts need the full `bits` width, which is not the pass-1 histogram the
         /// scatter uses.
         const size_t saved_route_bits = ctx.route_bits;
         const size_t saved_fanout = ctx.fanout;
@@ -1080,17 +1461,28 @@ void PartitionedHashJoin::preparePostBuildContext()
     }
     ProfileEvents::increment(ProfileEvents::PartitionedHashJoinBuildHistogramMicroseconds, hist_thread_us.load(std::memory_order_relaxed));
 
-    sizeLeafHashTables();
+    stats.partition_row_counts = total_bucket_rows;
+    ctx.partition_order.resize(partitions);
+    for (size_t partition = 0; partition < partitions; ++partition)
+        ctx.partition_order[partition] = static_cast<UInt32>(partition);
+    std::sort(
+        ctx.partition_order.begin(),
+        ctx.partition_order.end(),
+        [&](UInt32 a, UInt32 b) { return total_bucket_rows[a] > total_bucket_rows[b]; });
+
+    /// Nothing is committed here; the owner that claims a partition commits its range.
+    createSharedTable();
 
     measureGenericKeyBytes();
     UInt64 insertable = 0;
     for (UInt64 rows : total_bucket_rows)
         insertable += rows;
-    const size_t arena_pred = predictedArenaBytes(insertable);
+    const size_t arena_pred = predictedArenaBytes(insertable, post_build_plan == PostBuildPlan::Grouped);
     const size_t per_worker = arena_pred / std::max(ctx.workers, 1uz);
     chassert(build_arenas.empty());
     for (size_t w = 0; w < ctx.workers; ++w)
         emplaceSizedBuildArena(build_arenas, per_worker);
+    emplaceSizedBuildArena(build_arenas, 0); /// the drain's
 }
 
 PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
@@ -1111,11 +1503,11 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
     {
         const size_t insertable = accumulated_rows.load(std::memory_order_relaxed);
         const size_t distinct = std::max(static_cast<size_t>(std::llround(hll_estimate)), 1uz);
-        /// The single-leaf path inserts straight from the stored blocks, so there is no transient to
-        /// bound and grouping has nothing to do. Tables and the duplicate-list arena go through the
-        /// shared helper so this verdict cannot drift from the fill-phase prediction.
+        /// The single-partition path inserts straight from the stored blocks, so there is no transient
+        /// to bound and grouping has nothing to do. Table and duplicate runs go through the shared
+        /// helper so this verdict cannot drift from the fill-phase prediction.
         const size_t resident
-            = row_store + routes + predictedTableAndArenaBytes(insertable, distinct) + generic_key_bytes;
+            = row_store + routes + predictedTableAndArenaBytes(insertable, distinct, /*grouped=*/false) + generic_key_bytes;
         post_build_plan = resident <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
         return post_build_plan;
     }
@@ -1127,22 +1519,22 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
         insertable += rows;
 
     /// What must be resident whatever the scatter schedule is.
-    const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable);
+    const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/false);
+    const size_t floor_bytes_grouped = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/true);
     const size_t tables = ht_total_bytes;
     const size_t chunk_all = build_blocks.empty() ? 0 : chunkBytesForBlockRange(0, build_blocks.size());
 
-    /// The ungrouped scatter does not hold the whole chunk alongside the whole table space:
-    /// `leafBuildWorker` creates a leaf's buffer and frees that leaf's chunk in the same claim,
-    /// so the two trade off leaf by leaf and the peak sits at one end of the wave.
+    /// The ungrouped scatter does not hold the whole chunk alongside the whole table: the owner of a
+    /// partition commits its range and frees that partition's chunk in the same claim, so the two trade
+    /// off range by range and the peak sits at one end of the wave.
     const size_t leaves = std::max<size_t>(partitions, 1);
     const size_t peak_ungrouped = floor_bytes + std::max(chunk_all + tables / leaves, tables + chunk_all / leaves);
 
-    /// Grouping holds the full table space from the first range that touches a leaf - which every
-    /// leaf does, on any realistic build - and one range's chunk at a time. So it lowers the peak
-    /// only while the chunk dominates the tables; where the tables dominate, grouping would ADD
-    /// `chunk / g` on top of them and be strictly worse than the ungrouped scatter. The floor as the ranges
-    /// get finer is one block's chunk.
-    const size_t grouped_floor = floor_bytes + tables + (build_blocks.empty() ? 0 : chunkBytesForBlockRange(0, 1));
+    /// Grouping holds the full table from the first range that touches every partition - which every
+    /// realistic build does - and one range's chunk at a time. So it lowers the peak only while the chunk
+    /// dominates the table; where the table dominates, grouping would ADD `chunk / g` on top of it and be
+    /// strictly worse than the ungrouped scatter. The floor as the ranges get finer is one block's chunk.
+    const size_t grouped_floor = floor_bytes_grouped + tables + (build_blocks.empty() ? 0 : chunkBytesForBlockRange(0, 1));
 
     if (peak_ungrouped <= max_bytes_before_external_join)
         post_build_plan = PostBuildPlan::Fits;
@@ -1153,7 +1545,7 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
 
     LOG_TRACE(
         log,
-        "Post-build gate: budget {}, row store + routes + arena {}, leaf tables {}, full chunk {}; predicted peak without grouping "
+        "Post-build gate: budget {}, row store + routes + arena {}, table {}, full chunk {}; predicted peak without grouping "
         "{}, floor with grouping {} -> {}",
         ReadableSize(max_bytes_before_external_join),
         ReadableSize(floor_bytes),
@@ -1175,9 +1567,9 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
     ctx.refined = false;
     ctx.current_buckets = 0;
     ctx.refined_pieces.clear();
-    ctx.leaf_claim.store(0, std::memory_order_relaxed);
+    ctx.partition_claim.store(0, std::memory_order_relaxed);
 
-    /// A refine pass resizes the scatter containers to the final leaf count. The next range's
+    /// A refine pass resizes the scatter containers to the final partition count. The next range's
     /// histogram / allocate / scatter stages expect the pass-1 layout again (`fanout` buckets,
     /// including the drop bucket).
     if (narrow_locators)
@@ -1267,8 +1659,7 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
         /// Null-key rows are never inserted. A refined build has no drop bucket left - it was freed
-        /// before the refine passes. Reserves were sized once in `sizeLeafHashTables` from the
-        /// full-build histogram.
+        /// before the refine passes.
         if (!ctx.refined)
         {
             if (narrow_locators)
@@ -1282,15 +1673,25 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
     }
     const UInt64 plan_wall_us = stage_watch.elapsedMicroseconds();
 
+    /// The owner wave, then the barrier, the capacity guard and the serial drain. The drain must finish
+    /// before the next group's wave: it writes wherever a walk wraps to, which is any owner's range.
     stage_watch.restart();
-    runPostBuildWave(*post_build_pool, ctx.workers, [this, &ctx](size_t w) { leafBuildWorker(ctx, w); }, insert_thread_us);
+    runPostBuildWave(*post_build_pool, ctx.workers, [this, &ctx](size_t w) { ownerWaveWorker(ctx, w); }, insert_thread_us);
     const UInt64 insert_wall_us = stage_watch.elapsedMicroseconds();
+
+    stage_watch.restart();
+    UInt64 group_overflow = 0;
+    for (const auto & overflow : ctx.overflow)
+        group_overflow += overflow.rows();
+    drainOverflow(ctx, checkCapacityGuard(ctx));
+    const UInt64 drain_wall_us = stage_watch.elapsedMicroseconds();
 
     const auto to_ms = [](UInt64 us) { return static_cast<double>(us) / 1000.0; };
     LOG_TRACE(
         log,
         "Post-build stages for blocks [{}, {}), wall/thread ms: histogram {:.1f}/{:.1f}, chunk allocation {:.1f}/{:.1f}, scatter "
-        "{:.1f}/{:.1f}, refine passes {:.1f}/{:.1f}, hash-table plan {:.1f}, leaf inserts {:.1f}/{:.1f} (AMAC {})",
+        "{:.1f}/{:.1f}, refine passes {:.1f}/{:.1f}, plan {:.1f}, owner inserts {:.1f}/{:.1f} (AMAC {}), drain {:.1f} for {} "
+        "overflow rows",
         block_begin,
         block_end,
         to_ms(hist_wall_us),
@@ -1304,7 +1705,9 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
         to_ms(plan_wall_us),
         to_ms(insert_wall_us),
         to_ms(insert_thread_us.load(std::memory_order_relaxed)),
-        amac_build_engaged ? "engaged" : "off");
+        amac_build_engaged ? "engaged" : "off",
+        to_ms(drain_wall_us),
+        group_overflow);
 
     ProfileEvents::increment(
         ProfileEvents::PartitionedHashJoinBuildHistogramMicroseconds,
@@ -1313,7 +1716,8 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
         ProfileEvents::PartitionedHashJoinBuildScatterMicroseconds,
         scatter_thread_us.load(std::memory_order_relaxed) + refine_thread_us.load(std::memory_order_relaxed));
     ProfileEvents::increment(
-        ProfileEvents::PartitionedHashJoinBuildLeafMicroseconds, plan_wall_us + insert_thread_us.load(std::memory_order_relaxed));
+        ProfileEvents::PartitionedHashJoinBuildLeafMicroseconds,
+        plan_wall_us + insert_thread_us.load(std::memory_order_relaxed) + drain_wall_us);
 }
 
 bool PartitionedHashJoin::postBuildPartitioned()
@@ -1322,6 +1726,11 @@ bool PartitionedHashJoin::postBuildPartitioned()
         preparePostBuildContext();
 
     auto & ctx = *post_build_ctx;
+    const bool grouped = post_build_plan == PostBuildPlan::Grouped;
+    for (size_t w = 0; w < ctx.workers; ++w)
+        ctx.worker_state[w].writer.emplace(build_arenas[w], grouped);
+    ctx.drain_writer.emplace(build_arenas[ctx.workers], grouped);
+
     size_t groups = 0;
     size_t b = 0;
     while (b < build_blocks.size())
@@ -1333,21 +1742,21 @@ bool PartitionedHashJoin::postBuildPartitioned()
         }
         else
         {
-            /// `getTotalByteCount` is actuals (row store, remaining routes, created maps, arenas).
-            /// Uncreated leaf buffers and the still-unallocated duplicate-list arena are charged
-            /// from the gate's predictions so the first range is not sized as if those bytes were
-            /// free. They are allocated during the range, not before it.
+            /// `getTotalByteCount` is actuals (row store, remaining routes, committed table, arenas).
+            /// Uncommitted ranges and the still-unallocated duplicate runs are charged from the gate's
+            /// predictions so the first range is not sized as if those bytes were free. They are
+            /// allocated during the range, not before it.
             size_t used = getTotalByteCount();
-            for (size_t leaf = 0; leaf < partitions; ++leaf)
-                if (!ctx.leaf_map_created[leaf])
-                    used += ctx.leaf_bytes[leaf];
+            const size_t committed = shared_maps->getBufferSizeInBytes(leaf_join->data->type);
+            if (ht_total_bytes > committed)
+                used += ht_total_bytes - committed;
             size_t arena_actual = 0;
             for (const auto & arena : build_arenas)
                 arena_actual += arena.allocatedBytes();
             UInt64 insertable = 0;
             for (UInt64 rows : total_bucket_rows)
                 insertable += rows;
-            const size_t arena_pred = predictedArenaBytes(insertable);
+            const size_t arena_pred = predictedArenaBytes(insertable, post_build_plan == PostBuildPlan::Grouped);
             if (arena_pred > arena_actual)
                 used += arena_pred - arena_actual;
 
@@ -1372,33 +1781,154 @@ bool PartitionedHashJoin::postBuildPartitioned()
         ++groups;
     }
 
-    /// Leaves that no range touched still need a (tiny) map so the probe's per-leaf tables are
-    /// complete. Empty leaves were reserved from the full-build histogram.
-    const HashJoin::Type type = leaf_join->data->type;
-    for (size_t leaf = 0; leaf < partitions; ++leaf)
-    {
-        if (ctx.leaf_map_created[leaf])
-            continue;
-        leaf_maps[leaf].create(type, ctx.leaf_reserve[leaf]);
-        ctx.leaf_created_bytes[leaf] = leaf_maps[leaf].getBufferSizeInBytes(type);
-        ctx.leaf_map_created[leaf] = 1;
-        stats.predictions_exact = stats.predictions_exact && ctx.leaf_created_bytes[leaf] == ctx.leaf_bytes[leaf];
-    }
+    /// Ranges no group touched are committed now, so the whole table is accounted and the probe never
+    /// reads an uncommitted page.
+    for (size_t partition = 0; partition < partitions; ++partition)
+        if (!ctx.range_committed[partition])
+            commitRange(partition);
 
     stats.scatter_groups = std::max<size_t>(groups, 1);
     ProfileEvents::increment(ProfileEvents::PartitionedHashJoinScatterGroups, stats.scatter_groups);
 
     post_build_pool.reset();
 
-    bool all_values_unique = true;
+    bool all_values_unique = ctx.drain_all_unique;
     for (const auto & worker : ctx.worker_state)
     {
         all_values_unique &= worker.all_values_unique;
-        stats.predictions_exact = stats.predictions_exact && worker.predictions_exact;
-        stats.leaf_rows += worker.leaf_rows;
-        stats.leaf_growths += worker.leaf_growths;
+        stats.inserted_rows += worker.inserted_rows;
+        accumulate(stats.owner_duplicates, worker.writer->stats());
     }
+    stats.drain_duplicates = ctx.drain_writer->stats();
+    stats.drain_claimed_keys = ctx.drain_claimed;
+    stats.drain_appended_rows = ctx.drain_appended;
+    publishTableSize(ctx);
     return all_values_unique;
+}
+
+void PartitionedHashJoin::commitRange(size_t partition)
+{
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (leaf_join->data->type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        if constexpr (is_shared_join_table<typename decltype(shape_maps.TYPE)::element_type>) \
+            shape_maps.TYPE->commitRange(partition); \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default:
+                    break;
+            }
+        },
+        shared_maps->maps);
+    post_build_ctx->range_committed[partition] = 1;
+}
+
+UInt64 PartitionedHashJoin::checkCapacityGuard(const PostBuildContext & ctx) const
+{
+    /// The cells the owners claimed plus the zero cell are distinct keys, so they are bounded by the
+    /// sketch margin that sized the table (or by the exact row count above the saturation zone): a trip
+    /// here is a derivation bug and must surface as an exception rather than a spinning drain. The
+    /// overflow rows are NOT counted: a duplicated key whose walk reached its range end hands every one
+    /// of its rows to the overflow, so their number bounds nothing. The drain guards each cell it
+    /// claims instead (`InsertTarget::claimed_one` on a wrapping target), starting from this total.
+    UInt64 claimed = 0;
+    for (UInt64 c : ctx.claimed_per_partition)
+        claimed += c;
+    bool has_zero = false;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (leaf_join->data->type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        if constexpr (is_shared_join_table<Table>) \
+            has_zero = shape_maps.TYPE->hasZero(); \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default:
+                    break;
+            }
+        },
+        shared_maps->maps);
+    const UInt64 total = claimed + (has_zero ? 1 : 0);
+    const size_t max_fill = SharedJoinTable<UInt64, HashMapCell<UInt64, RowRef, HashCRC32<UInt64>>, HashCRC32<UInt64>, HashTableGrowerWithPrecalculation<>>::maxFillFor(size_degree);
+    if (total > max_fill)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PartitionedHashJoin: the shared hash table of {} cells received {} distinct keys, more than its max fill of {}; the "
+            "size estimate that created it was too low",
+            1uz << size_degree,
+            total,
+            max_fill);
+    return total;
+}
+
+void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx, UInt64 claimed_with_zero)
+{
+    const HashJoin::Type type = leaf_join->data->type;
+    UInt64 drained = 0;
+    size_t overflow_total = 0;
+    for (const auto & buffer : ctx.overflow)
+        overflow_total += buffer.rows();
+    checkPassRowLimit(overflow_total, "the overflow rows of a build group");
+    for (size_t partition = 0; partition < partitions; ++partition)
+    {
+        OverflowBuffer & overflow = ctx.overflow[partition];
+        if (overflow.rows() == 0)
+            continue;
+        drained += overflow.rows();
+        std::visit(
+            [&](auto & shape_maps)
+            {
+                switch (type)
+                {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        if constexpr (is_shared_join_table<Table>) \
+        { \
+            Table & table = *shape_maps.TYPE; \
+            InsertTarget<Table> target{ \
+                .table = table, \
+                .cells = table.cells(), \
+                .scratch = ctx.drain_scratch, \
+                .overflow = overflow, \
+                .range_begin = 0, \
+                .range_end = table.cellCount(), \
+                .wrap = true, \
+                .any_take_last_row = any_take_last_row, \
+                .join = leaf_join.get()}; \
+            /* The running distinct total, so `claimed_one` guards every drained claim against max fill. */ \
+            target.claimed = claimed_with_zero; \
+            drainPartitionOverflow(target, ctx.drain_appended); \
+            const UInt64 newly_claimed = target.claimed - claimed_with_zero; \
+            claimed_with_zero = target.claimed; \
+            ctx.claimed_per_partition[partition] += newly_claimed; \
+            ctx.drain_claimed += newly_claimed; \
+            ctx.drain_all_unique = ctx.drain_all_unique && target.all_unique; \
+        } \
+        break; \
+    }
+                    APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                    default:
+                        break;
+                }
+            },
+            shared_maps->maps);
+    }
+    finishTailScratch(ctx.drain_scratch, *ctx.drain_writer);
+    stats.overflow_rows += drained;
 }
 
 void PartitionedHashJoin::histogramWorker(PostBuildContext & ctx, size_t worker) const
@@ -1602,8 +2132,7 @@ void PartitionedHashJoin::scatterWorker(PostBuildContext & ctx, size_t worker)
     /// String, LowCardinality and exotic key columns: each worker scatters its stripe through
     /// `ColumnsScatter::scatter` into self-contained per-bucket pieces. Per-piece allocation is what
     /// satisfies the String kernel's overflow-15 contract, and worker-private pieces are what make
-    /// the parallelism safe. The leaf builds consume them in worker order, matching the locator
-    /// layout.
+    /// the parallelism safe. The owner inserts consume them in worker order, matching the locator layout.
     std::vector<PaddedPODArray<UInt16>> stripe_bucket_ids(end - begin);
     std::vector<std::span<const UInt16>> bucket_id_spans(end - begin);
     for (size_t i = begin; i < end; ++i)
@@ -1622,6 +2151,16 @@ void PartitionedHashJoin::scatterWorker(PostBuildContext & ctx, size_t worker)
     std::vector<const IColumn *> sources(end - begin);
     for (size_t c = 0; c < ctx.num_key_columns; ++c)
     {
+        if (begin == end)
+        {
+            /// A group with fewer blocks than workers leaves this worker nothing to scatter; the consumers
+            /// still index its pieces by bucket, so they get empty columns of the right type.
+            MutableColumns & pieces = ctx.pieces[c][worker];
+            pieces.resize(ctx.fanout);
+            for (size_t p = 0; p + 1 < ctx.fanout; ++p)
+                pieces[p] = ctx.key_samples[c]->cloneEmpty();
+            continue;
+        }
         for (size_t i = begin; i < end; ++i)
             sources[i - begin] = build_blocks[i].key_columns[c];
         ctx.pieces[c][worker] = ColumnsScatter::scatter(sources, bucket_id_spans, ctx.fanout);
@@ -1636,10 +2175,10 @@ void PartitionedHashJoin::refinePassWave(
     PostBuildContext & ctx, size_t refine_bits, size_t bits_done, std::atomic<UInt64> & stage_thread_us)
 {
     /// Splits every group into `2^refine_bits` sub-buckets by the next MSB-first slice of its
-    /// scattered route words, group-major, so after the last pass a row's leaf is `route >> (16 -
-    /// bits)` - the same leaf a single-pass plan would give it, and the one the probe derives. Groups
-    /// are claimed dynamically because their sizes can be skewed, and each group's inputs are freed
-    /// as they are consumed so the pass cycles memory rather than doubling the scattered side.
+    /// scattered route words, group-major, so after the last pass a row's partition is
+    /// `route >> (16 - bits)` - the same partition a single-pass plan would give it. Groups are claimed
+    /// dynamically because their sizes can be skewed, and each group's inputs are freed as they are
+    /// consumed so the pass cycles memory rather than doubling the scattered side.
     const size_t groups = ctx.current_buckets;
     const size_t sub_fanout = 1uz << refine_bits;
     const size_t new_buckets = groups * sub_fanout;
@@ -1834,147 +2373,121 @@ void PartitionedHashJoin::refinePassWave(
     ctx.refined = true;
 }
 
-void PartitionedHashJoin::leafBuildWorker(PostBuildContext & ctx, size_t worker)
+void PartitionedHashJoin::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
 {
-    const HashJoin::Type type = leaf_join->data->type;
     auto & state = ctx.worker_state[worker];
-    Arena & arena = build_arenas[worker];
 
     ColumnRawPtrs section_columns(ctx.num_key_columns);
 
     /// Largest first, and claimed dynamically, so skew cannot serialize the build behind a
-    /// worker-to-partition affinity.
+    /// worker-to-partition affinity. Whatever a partition's rows, its owner commits its range on the
+    /// first group that claims it, so the whole table is accounted by the time the build ends.
     while (true)
     {
-        const UInt32 claim = ctx.leaf_claim.fetch_add(1, std::memory_order_relaxed);
+        const UInt32 claim = ctx.partition_claim.fetch_add(1, std::memory_order_relaxed);
         if (claim >= partitions)
             break;
-        const UInt32 leaf = ctx.leaf_order[claim];
+        const UInt32 partition = ctx.partition_order[claim];
 
-        const UInt64 leaf_rows = ctx.bucket_rows[leaf];
+        if (!ctx.range_committed[partition])
+            commitRange(partition);
 
-        /// Allocates the leaf's buffer on the first range that has rows for it, with the full-build
-        /// reserve; later ranges insert into the live map. See `ZeroingHashTableAllocator` for why
-        /// the creating worker matters. Empty leaves are created after the range loop.
-        if (leaf_rows == 0)
+        const UInt64 partition_rows = ctx.bucket_rows[partition];
+        checkPassRowLimit(partition_rows, "a partition's rows in one build group");
+        auto release_chunk = [&]
         {
             if (narrow_locators)
-                ctx.locators32[leaf] = {};
+                ctx.locators32[partition] = {};
             else
-                ctx.locators[leaf] = {};
+                ctx.locators[partition] = {};
             if (!ctx.generic_mode)
             {
                 for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                    ctx.fixed_out[c][leaf].reset();
+                    ctx.fixed_out[c][partition].reset();
             }
             else if (ctx.refined)
             {
                 for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                    ctx.refined_pieces[c][leaf].reset();
+                    ctx.refined_pieces[c][partition].reset();
             }
             else
             {
                 for (size_t c = 0; c < ctx.num_key_columns; ++c)
                     for (size_t piece_worker = 0; piece_worker < ctx.workers; ++piece_worker)
-                        ctx.pieces[c][piece_worker][leaf].reset();
+                        ctx.pieces[c][piece_worker][partition].reset();
             }
+        };
+
+        if (partition_rows == 0)
+        {
+            release_chunk();
             continue;
         }
 
-        if (!ctx.leaf_map_created[leaf])
-        {
-            leaf_maps[leaf].create(type, ctx.leaf_reserve[leaf]);
-            ctx.leaf_created_bytes[leaf] = leaf_maps[leaf].getBufferSizeInBytes(type);
-            ctx.leaf_map_created[leaf] = 1;
-            state.predictions_exact = state.predictions_exact && ctx.leaf_created_bytes[leaf] == ctx.leaf_bytes[leaf];
-        }
-
         if (!ctx.generic_mode)
         {
             for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                section_columns[c] = ctx.fixed_out[c][leaf].get();
-            insertLeafSection(
-                leaf_maps[leaf],
+                section_columns[c] = ctx.fixed_out[c][partition].get();
+            insertPartitionSection(
+                ctx,
+                worker,
+                partition,
                 section_columns,
-                leaf_rows,
-                narrow_locators ? nullptr : ctx.locators[leaf].data(),
-                narrow_locators ? ctx.locators32[leaf].data() : nullptr,
+                partition_rows,
+                narrow_locators ? nullptr : ctx.locators[partition].data(),
+                narrow_locators ? ctx.locators32[partition].data() : nullptr,
                 /*block_no=*/0,
-                /*skip_bytes=*/nullptr,
-                arena,
-                state.all_values_unique);
+                /*skip_bytes=*/nullptr);
         }
         else if (ctx.refined)
         {
-            /// After the refine passes there is one piece per key column, aligned with the leaf's
-            /// whole locator array.
+            /// After the refine passes there is one piece per key column, aligned with the
+            /// partition's whole locator array.
             for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                section_columns[c] = ctx.refined_pieces[c][leaf].get();
-            insertLeafSection(
-                leaf_maps[leaf],
+                section_columns[c] = ctx.refined_pieces[c][partition].get();
+            insertPartitionSection(
+                ctx,
+                worker,
+                partition,
                 section_columns,
-                leaf_rows,
-                narrow_locators ? nullptr : ctx.locators[leaf].data(),
-                narrow_locators ? ctx.locators32[leaf].data() : nullptr,
+                partition_rows,
+                narrow_locators ? nullptr : ctx.locators[partition].data(),
+                narrow_locators ? ctx.locators32[partition].data() : nullptr,
                 /*block_no=*/0,
-                /*skip_bytes=*/nullptr,
-                arena,
-                state.all_values_unique);
+                /*skip_bytes=*/nullptr);
         }
         else
         {
-            /// A leaf's pieces in worker order are exactly its locator layout.
+            /// A partition's pieces in worker order are exactly its locator layout.
             for (size_t piece_worker = 0; piece_worker < ctx.workers; ++piece_worker)
             {
-                const size_t piece_rows = ctx.worker_hist[piece_worker * ctx.fanout + leaf];
+                const size_t piece_rows = ctx.worker_hist[piece_worker * ctx.fanout + partition];
                 if (piece_rows == 0)
                     continue;
                 for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                    section_columns[c] = ctx.pieces[c][piece_worker][leaf].get();
-                const UInt64 piece_start = ctx.starts[leaf * ctx.workers + piece_worker];
-                insertLeafSection(
-                    leaf_maps[leaf],
+                    section_columns[c] = ctx.pieces[c][piece_worker][partition].get();
+                const UInt64 piece_start = ctx.starts[partition * ctx.workers + piece_worker];
+                insertPartitionSection(
+                    ctx,
+                    worker,
+                    partition,
                     section_columns,
                     piece_rows,
-                    narrow_locators ? nullptr : ctx.locators[leaf].data() + piece_start,
-                    narrow_locators ? ctx.locators32[leaf].data() + piece_start : nullptr,
+                    narrow_locators ? nullptr : ctx.locators[partition].data() + piece_start,
+                    narrow_locators ? ctx.locators32[partition].data() + piece_start : nullptr,
                     /*block_no=*/0,
-                    /*skip_bytes=*/nullptr,
-                    arena,
-                    state.all_values_unique);
+                    /*skip_bytes=*/nullptr);
             }
         }
-        state.leaf_rows += leaf_rows;
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinLeafRows, leaf_rows);
 
-        if (!ctx.leaf_growth_counted[leaf] && leaf_maps[leaf].getBufferSizeInBytes(type) != ctx.leaf_created_bytes[leaf])
-        {
-            ++state.leaf_growths;
-            ctx.leaf_growth_counted[leaf] = 1;
-        }
+        /// The pass's duplicates become runs while the partition's cells are still warm.
+        finishTailScratch(state.tail_scratch, *state.writer);
+        state.inserted_rows += partition_rows;
+        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinLeafRows, partition_rows);
 
-        /// Released as soon as they are consumed, so the tables replace the chunks rather than
+        /// Released as soon as they are consumed, so the table replaces the chunks rather than
         /// coexisting with them.
-        if (narrow_locators)
-            ctx.locators32[leaf] = {};
-        else
-            ctx.locators[leaf] = {};
-        if (!ctx.generic_mode)
-        {
-            for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                ctx.fixed_out[c][leaf].reset();
-        }
-        else if (ctx.refined)
-        {
-            for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                ctx.refined_pieces[c][leaf].reset();
-        }
-        else
-        {
-            for (size_t c = 0; c < ctx.num_key_columns; ++c)
-                for (size_t piece_worker = 0; piece_worker < ctx.workers; ++piece_worker)
-                    ctx.pieces[c][piece_worker][leaf].reset();
-        }
+        release_chunk();
     }
 }
 
@@ -1988,50 +2501,12 @@ PartitionedHashJoin::~PartitionedHashJoin()
     /// Defined here because `post_build_ctx` holds a `PostBuildContext` that is complete only in
     /// this translation unit.
     /// Explicit, because members are otherwise destroyed after the body and outside the timer.
-    /// Order matters: leaf cells point into the arenas and the row store, so the maps go first.
+    /// Order matters: cells point into the arenas and the row store, so the table goes first.
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinTeardownMicroseconds);
 
     post_build_ctx.reset();
     post_build_pool.reset();
-
-    /// The leaf maps are the bulk of the teardown - one buffer each, and there can be tens of
-    /// thousands - so they are destroyed in parallel, for the same reason `ConcurrentHashJoin` does
-    /// it. `post_build_pool` is gone by now, torn down as soon as the post-build finished, hence a
-    /// fresh pool. A destructor must not throw, so a scheduling failure just leaves the rest to the
-    /// serial clear below.
-    if (!delegate_mode && leaf_maps.size() >= 64)
-    {
-        try
-        {
-            const size_t workers = std::min<size_t>(num_threads, leaf_maps.size());
-            ThreadPool teardown_pool(
-                CurrentMetrics::PartitionedHashJoinPoolThreads,
-                CurrentMetrics::PartitionedHashJoinPoolThreadsActive,
-                CurrentMetrics::PartitionedHashJoinPoolThreadsScheduled,
-                /*max_threads_*/ workers,
-                /*max_free_threads_*/ 0,
-                /*queue_size_*/ workers);
-            std::atomic<size_t> claim{0};
-            for (size_t w = 0; w < workers; ++w)
-                teardown_pool.scheduleOrThrow(
-                    [this, &claim, thread_group = CurrentThread::getGroup()]
-                    {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
-                        while (true)
-                        {
-                            const size_t leaf = claim.fetch_add(1, std::memory_order_relaxed);
-                            if (leaf >= leaf_maps.size())
-                                break;
-                            leaf_maps[leaf] = PartitionedJoinMaps(maps_variant_index);
-                        }
-                    });
-            teardown_pool.wait();
-        }
-        catch (...) /// NOLINT(bugprone-empty-catch): fall through to the serial teardown below
-        {
-        }
-    }
-    leaf_maps.clear();
+    shared_maps.reset();
     build_arenas.clear();
     leaf_join.reset();
     probe_scratch_pool.clear();

@@ -157,7 +157,7 @@ SELECT count(), sum(cityHash64(b.v, p.pv)) FROM t_probe_small AS p INNER JOIN t_
 SELECT count(), sum(cityHash64(b.v, p.pv)) FROM t_probe_small AS p INNER JOIN t_build_small AS b ON p.k16 = b.k16 SETTINGS join_algorithm = 'partitioned_hash', log_comment = 'p3single uint16 inner';
 
 -- Engagement and partitioning assertions: every `p3case` build must have chosen more than one
--- leaf, built the tables with a contiguous allocation and no heap fallbacks; the fixed-size map
+-- partition and built the shared table; the fixed-size map
 -- types (`p3single`) must degenerate to exactly one leaf.
 SYSTEM FLUSH LOGS query_log;
 SELECT 'partition plans';
@@ -165,8 +165,7 @@ SELECT
     log_comment,
     ProfileEvents['PartitionedHashJoinPartitions'] > 1,
     ProfileEvents['PartitionedHashJoinLeafRows'] > 0,
-    ProfileEvents['PartitionedHashJoinHashTableBytes'] > 0,
-    ProfileEvents['PartitionedHashJoinHashTableGrowths']
+    ProfileEvents['PartitionedHashJoinHashTableBytes'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'p3case %'
 ORDER BY log_comment;

@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/** Distinct-key estimate that sizes the leaf hash tables. One sketch per fill lane, fed the route
+/** Distinct-key estimate that sizes the one shared hash table. One sketch per fill lane, fed the route
   * word of every non-null build key and merged at the build barrier.
   *
   * Not `HyperLogLogCounter`: that one bit-packs its ranks into a `CompactArray` and keeps the
@@ -78,6 +78,18 @@ struct DenseHyperLogLog
         const double raw = alpha * m * m / inverse_sum;
         if (raw <= 2.5 * m && zeros > 0)
             return m * std::log(m / static_cast<double>(zeros));
+
+        /// Large-range correction. The sketch counts distinct 32-bit words, and every map hash the
+        /// join uses is 32 bits wide except `hashed`, so above a few percent of 2^32 the words undercount
+        /// the keys by the birthday collisions. Inverting `E = 2^32 * (1 - exp(-n / 2^32))` recovers `n`;
+        /// past 2^32 the sketch has saturated and the caller's row clamp takes over.
+        constexpr double two_32 = 4294967296.0;
+        if (raw > two_32 / 30.0)
+        {
+            if (raw >= two_32 * 0.999)
+                return two_32 * 8.0; /// saturated: any value the reserve clamp will override
+            return -two_32 * std::log(1.0 - raw / two_32);
+        }
         return raw;
     }
 };

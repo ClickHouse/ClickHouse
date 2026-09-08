@@ -131,15 +131,14 @@ SELECT count(), sum(cityHash64(b.v)) FROM (SELECT * FROM t_kp WHERE 0) AS p FULL
 SELECT count(), sum(cityHash64(b.v)) FROM (SELECT * FROM t_kp WHERE 0) AS p FULL JOIN t_kb AS b ON p.k64 = b.k64 SETTINGS join_algorithm = 'partitioned_hash', log_comment = 'p4kind empty probe full';
 
 -- Engagement assertions: the big builds must partition, and the leaf builds and probes must run
--- through the partitioned path (nonzero leaf rows, no heap fallbacks); the duplicate-heavy and
+-- through the partitioned path (nonzero inserted rows); the duplicate-heavy and
 -- small-key builds may degenerate to a single leaf but still engage the algorithm.
 SYSTEM FLUSH LOGS query_log;
 SELECT 'partition plans';
 SELECT
     log_comment,
     ProfileEvents['PartitionedHashJoinPartitions'] > 1,
-    ProfileEvents['PartitionedHashJoinLeafRows'] > 0,
-    ProfileEvents['PartitionedHashJoinHashTableGrowths']
+    ProfileEvents['PartitionedHashJoinLeafRows'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'p4kind %'
 ORDER BY log_comment;

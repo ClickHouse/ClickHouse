@@ -72,21 +72,21 @@ uint16 inner (single leaf)
 8192	3312406455061903235
 8192	3312406455061903235
 partition plans
-p3case fixedstring inner	1	1	1	0
-p3case hashed fixed inner	1	1	1	0
-p3case hashed generic inner	1	1	1	0
-p3case keys128 composite inner	1	1	1	0
-p3case keys128 composite left	1	1	1	0
-p3case keys256 composite inner	1	1	1	0
-p3case keys64 composite inner	1	1	1	0
-p3case lowcardinality inner	1	1	1	0
-p3case nullable inner	1	1	1	0
-p3case nullable left	1	1	1	0
-p3case string inner	1	1	1	0
-p3case string left	1	1	1	0
-p3case uint32 inner	1	1	1	0
-p3case uint64 inner	1	1	1	0
-p3case uint64 inner duplicates	1	1	1	0
-p3case uint64 left	1	1	1	0
+p3case fixedstring inner	1	1	1
+p3case hashed fixed inner	1	1	1
+p3case hashed generic inner	1	1	1
+p3case keys128 composite inner	1	1	1
+p3case keys128 composite left	1	1	1
+p3case keys256 composite inner	1	1	1
+p3case keys64 composite inner	1	1	1
+p3case lowcardinality inner	1	1	1
+p3case nullable inner	1	1	1
+p3case nullable left	1	1	1
+p3case string inner	1	1	1
+p3case string left	1	1	1
+p3case uint32 inner	1	1	1
+p3case uint64 inner	1	1	1
+p3case uint64 inner duplicates	1	1	1
+p3case uint64 left	1	1	1
 p3single uint16 inner	1	1
 p3single uint8 inner	1	1

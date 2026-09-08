@@ -139,7 +139,7 @@ public:
         const String & instance_id_ = "",
         bool is_concurrent_hash_join_ = false,
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
-        /// `PartitionedHashJoin` passes false: its leaf maps have no key-only counterpart.
+        /// `PartitionedHashJoin` passes false: its shared table has no key-only counterpart.
         bool allow_set_maps_ = true);
 
     ~HashJoin() override;

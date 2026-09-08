@@ -23,20 +23,21 @@ INNER JOIN (SELECT number % 300000 AS k, (number % 300000) + 1 AS k2 FROM number
     ON p.k = b.k AND p.k2 = b.k2
 SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0;
 
--- Three budgets in the 78-82 million byte band, so two million bytes of architecture
+-- Three budgets in the 82-86 million byte band (the predicted grouped floor of this build is about
+-- 81 million bytes, its ungrouped peak about 96 million), so two million bytes of architecture
 -- drift in the byte accounting cannot make the test miss it.
 SELECT count(), sum(p.v)
 FROM (SELECT number AS k, number + 1 AS k2, number AS v FROM numbers(300000)) AS p
 INNER JOIN (SELECT number % 300000 AS k, (number % 300000) + 1 AS k2 FROM numbers(1500000)) AS b
     ON p.k = b.k AND p.k2 = b.k2
-SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 78000000,
+SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 84000000,
          log_comment = '05044_phj_grouped';
 
 SELECT count(), sum(p.v)
 FROM (SELECT number AS k, number + 1 AS k2, number AS v FROM numbers(300000)) AS p
 INNER JOIN (SELECT number % 300000 AS k, (number % 300000) + 1 AS k2 FROM numbers(1500000)) AS b
     ON p.k = b.k AND p.k2 = b.k2
-SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 80000000,
+SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 86000000,
          log_comment = '05044_phj_grouped';
 
 SELECT count(), sum(p.v)

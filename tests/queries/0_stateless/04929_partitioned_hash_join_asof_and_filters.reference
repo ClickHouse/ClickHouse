@@ -47,7 +47,7 @@ p4asof left gt string	1	1
 p4or inner	1	1
 p4or left jun	1	1
 p4or right	1	1
-p4filter full both	1	1	0
-p4filter inner lhs	1	1	0
-p4filter left rhs	1	1	0
-p4filter right rhs	1	1	0
+p4filter full both	1	1
+p4filter inner lhs	1	1
+p4filter left rhs	1	1
+p4filter right rhs	1	1

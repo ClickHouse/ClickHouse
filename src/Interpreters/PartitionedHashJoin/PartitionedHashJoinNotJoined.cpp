@@ -16,12 +16,12 @@ extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
-/** The partitioned counterpart of `NotJoinedHash`'s per-offset regime, for RIGHT/FULL output. Leaf
-  * maps are iterated in leaf order - one filler walks only its own stride of them, so that parallel
-  * fillers emit disjoint rows - and a cell's used flag sits at its leaf's `flag_base` plus the
-  * map-internal offset, exactly where the probe marked it. Rows whose keys were never inserted come
-  * from the saved nullmap holders, as in the standard filler. Nothing here handles the per-row-flags
-  * regime, whose shapes take the delegated path and `NotJoinedHash` itself.
+/** The partitioned counterpart of `NotJoinedHash`'s per-offset regime, for RIGHT/FULL output. The one
+  * table is walked by cell position: stream `i` of `n` owns positions `[i * cells / n, (i + 1) * cells / n)`,
+  * so parallel fillers emit disjoint rows, and a cell's used flag is its position plus one - exactly where
+  * the probe marked it, offset 0 being the zero-value cell, which stream 0 emits along with the rows whose
+  * keys were never inserted (from the saved nullmap holders, as in the standard filler). Nothing here
+  * handles the per-row-flags regime, whose shapes take the delegated path and `NotJoinedHash` itself.
   */
 class NotJoinedPartitioned final : public NotJoinedBlocks::RightColumnsFiller
 {
@@ -29,9 +29,8 @@ public:
     NotJoinedPartitioned(const PartitionedHashJoin & parent_, UInt64 max_block_size_, size_t stream_idx_, size_t num_streams_)
         : parent(parent_)
         , max_block_size(max_block_size_)
+        , stream_idx(stream_idx_)
         , num_streams(num_streams_)
-        , current_leaf(stream_idx_)
-        , owns_nulls(stream_idx_ == 0)
     {
     }
 
@@ -42,14 +41,12 @@ public:
         const HashJoin::Type type = parent.storedData().type;
 
         size_t rows_added = std::visit(
-            [&](const auto & first_leaf_shape)
+            [&](const auto & shape)
             {
-                using Shape = std::decay_t<decltype(first_leaf_shape)>;
                 switch (type)
                 {
 #define M(TYPE) \
-    case HashJoin::Type::TYPE: \
-        return fillFromLeaves(columns_right, [this](size_t leaf) { return std::get<Shape>(parent.leaf_maps[leaf].maps).TYPE.get(); });
+    case HashJoin::Type::TYPE: return fillFromTable(columns_right, *shape.TYPE);
                     APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
                     default:
@@ -57,7 +54,7 @@ public:
                             ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", type);
                 }
             },
-            parent.leaf_maps.front().maps);
+            parent.shared_maps->maps);
 
         fillNullsFromBlocks(columns_right, rows_added);
         return rows_added;
@@ -66,12 +63,16 @@ public:
 private:
     const PartitionedHashJoin & parent;
     const UInt64 max_block_size;
+    const size_t stream_idx;
     const size_t num_streams;
 
-    size_t current_leaf;
-    /// Nullmap rows are not partitioned by leaf, so exactly one stream emits them.
-    const bool owns_nulls;
-    std::any position; /// iterator into the current leaf's map, resumable across calls
+    /// The shared-table cursor: the next cell position of this stream's stripe, and whether the zero cell
+    /// has been considered (stream 0 only).
+    size_t position = 0;
+    bool positioned = false;
+    bool zero_done = false;
+    /// The fixed-map cursor, resumable across calls.
+    std::any fixed_position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
 
     /// `columns_keys_and_right` is built from `getEmptyBlock`, so it is positional with the saved sample.
@@ -105,12 +106,9 @@ private:
         }
     }
 
-    template <typename LeafMapGetter>
-    size_t fillFromLeaves(MutableColumns & columns_keys_and_right, LeafMapGetter && leaf_map_of)
+    template <typename Table>
+    size_t fillFromTable(MutableColumns & columns_keys_and_right, const Table & table)
     {
-        using Map = std::remove_pointer_t<std::invoke_result_t<LeafMapGetter, size_t>>;
-        using Iterator = Map::const_iterator;
-
         ColumnsWithRowNumbers columns_with_row_numbers;
         auto & many_columns = columns_with_row_numbers.columns;
         auto & row_nums = columns_with_row_numbers.row_numbers;
@@ -118,30 +116,45 @@ private:
         row_nums.reserve(max_block_size);
 
         const StoredBlock * const * stored_columns = parent.storedData().stored_columns_index->blocksData();
-        const size_t num_leaves = parent.leaf_maps.size();
 
-        while (current_leaf < num_leaves && row_nums.size() < max_block_size)
+        if constexpr (is_shared_join_table<Table>)
         {
-            const Map & map = *leaf_map_of(current_leaf);
-            if (!position.has_value())
-                position = std::make_any<Iterator>(map.begin());
-
-            Iterator & it = std::any_cast<Iterator &>(position);
-            const auto end = map.end();
-            const UInt64 leaf_flag_base = parent.flag_base[current_leaf];
-
+            const size_t cells = table.cellCount();
+            const size_t end = (stream_idx + 1) * cells / num_streams;
+            if (!positioned)
+            {
+                position = stream_idx * cells / num_streams;
+                positioned = true;
+            }
+            if (stream_idx == 0 && !zero_done)
+            {
+                zero_done = true;
+                if (table.hasZero() && !parent.leaf_join->isUsed(0))
+                    collectMapped(table.zeroValue()->getMapped(), stored_columns, many_columns, row_nums);
+            }
+            for (; position < end && row_nums.size() < max_block_size; ++position)
+            {
+                const auto * cell = table.cellAt(position);
+                if (table.isEmptyCell(cell))
+                    continue;
+                if (parent.leaf_join->isUsed(position + 1))
+                    continue;
+                collectMapped(cell->getMapped(), stored_columns, many_columns, row_nums);
+            }
+        }
+        else if (stream_idx == 0)
+        {
+            /// The direct-index maps are at most 65536 cells; one stream walks them whole.
+            using Iterator = typename Table::const_iterator;
+            if (!fixed_position.has_value())
+                fixed_position = std::make_any<Iterator>(table.begin());
+            Iterator & it = std::any_cast<Iterator &>(fixed_position);
+            const auto end = table.end();
             for (; it != end && row_nums.size() < max_block_size; ++it)
             {
-                const size_t offset = leaf_flag_base + map.offsetInternal(it.getPtr());
-                if (parent.leaf_join->isUsed(offset))
+                if (parent.leaf_join->isUsed(table.offsetInternal(it.getPtr())))
                     continue;
                 collectMapped(it->getMapped(), stored_columns, many_columns, row_nums);
-            }
-
-            if (it == end)
-            {
-                current_leaf += num_streams;
-                position.reset();
             }
         }
 
@@ -151,11 +164,11 @@ private:
         return row_nums.size();
     }
 
-    /// The rows that never entered a map, from the nullmap holders saved at the build barrier; as
-    /// `NotJoinedHash::fillNullsFromBlocks` does.
+    /// The rows that never entered the table, from the nullmap holders saved at the build barrier; as
+    /// `NotJoinedHash::fillNullsFromBlocks` does. Not partitioned, so exactly one stream emits them.
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
-        if (!owns_nulls)
+        if (stream_idx != 0)
             return;
 
         const auto & nullmaps = parent.storedData().nullmaps;

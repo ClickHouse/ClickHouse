@@ -16,11 +16,16 @@
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
 #include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedJoinMaps.h>
+#include <Interpreters/PartitionedHashJoin/SharedJoinTable.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/assert_cast.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -28,8 +33,8 @@ namespace
 constexpr size_t block_rows = 65536;
 
 /// The multiset of these tuples over a whole drain is an exact identity, so a dropped, duplicated or
-/// cross-wired row changes it. A build row inserted into the wrong leaf can never be found by the
-/// value-routed probe either, so mis-routing shows up as missing tuples.
+/// cross-wired row changes it. A build row inserted outside its owner's range can never be found by the
+/// probe's global walk from the key's home cell either, so mis-routing shows up as missing tuples.
 using JoinedRow = std::tuple<UInt64, UInt64, UInt64, UInt64>;
 using JoinedRows = std::vector<JoinedRow>;
 
@@ -110,60 +115,74 @@ struct BuiltJoin
 {
     std::shared_ptr<TableJoin> table_join;
     std::shared_ptr<PartitionedHashJoin> join;
+    PartitionedHashJoin::PostBuildPlan post_build_plan = PartitionedHashJoin::PostBuildPlan::Fits;
 };
+
+struct BuildOptions
+{
+    size_t num_threads = 4;
+    double reserve_safety_for_tests = 0;
+    size_t build_block_rows = block_rows;
+    JoinKind kind = JoinKind::Inner;
+    bool disable_amac = false;
+    size_t max_fanout_per_pass_for_tests = 0;
+    std::optional<size_t> partition_bits_for_tests;
+    bool cap_partitions_by_l1_descriptors = true;
+    size_t l1_cache_bytes_for_tests = 0;
+    const StatsCollectingParams * stats_collecting_params = nullptr;
+    /// The post-build memory gate: zero disables grouping.
+    size_t max_bytes_before_external_join = 0;
+};
+
+UInt64 keyOf(size_t i)
+{
+    return i * 2654435761ULL + 1;
+}
 
 /// Feeds the build through the real `IJoin` interface - fill, barrier, post-build. Blocks above
 /// 65536 rows take the wide 8-byte locator encoding, smaller ones the packed 4-byte form.
-BuiltJoin buildJoin(
-    size_t distinct_keys,
-    size_t duplicates,
-    size_t num_threads,
-    double reserve_safety_for_tests = 0,
-    size_t build_block_rows = block_rows,
-    JoinKind kind = JoinKind::Inner,
-    bool disable_amac = false,
-    size_t max_fanout_per_pass_for_tests = 0,
-    const StatsCollectingParams & stats_collecting_params = {},
-    bool cap_partitions_by_l1_descriptors = true,
-    size_t l1_cache_bytes_for_tests = 0)
+BuiltJoin buildJoin(size_t distinct_keys, size_t duplicates, const BuildOptions & options)
 {
     const Block left_header = twoColumnBlock("k", "probe_id", {}, {});
     const Block right_header = twoColumnBlock("rk", "build_id", {}, {});
 
     BuiltJoin result;
-    result.table_join = makeTableJoin(left_header, right_header, kind);
+    result.table_join = makeTableJoin(left_header, right_header, options.kind);
     result.join = std::make_shared<PartitionedHashJoin>(
         result.table_join,
         std::make_shared<const Block>(right_header),
-        num_threads,
+        options.num_threads,
         /*any_take_last_row_=*/false,
-        stats_collecting_params);
-    if (reserve_safety_for_tests > 0)
-        result.join->setReserveSafetyFactorForTests(reserve_safety_for_tests);
+        options.stats_collecting_params ? *options.stats_collecting_params : StatsCollectingParams{},
+        options.max_bytes_before_external_join);
+    if (options.reserve_safety_for_tests > 0)
+        result.join->setReserveSafetyFactorForTests(options.reserve_safety_for_tests);
     /// These builds exceed the engagement threshold, so both AMAC paths run unless overridden.
-    if (disable_amac)
+    if (options.disable_amac)
         result.join->setAmacEnabledForTests(false);
     /// Forces a multi-pass scatter without a 500M-key build. Only the pass split changes; the
     /// partition count must not.
-    if (max_fanout_per_pass_for_tests > 0)
-        result.join->setMaxFanoutPerPassForTests(max_fanout_per_pass_for_tests);
-    if (!cap_partitions_by_l1_descriptors)
+    if (options.max_fanout_per_pass_for_tests > 0)
+        result.join->setMaxFanoutPerPassForTests(options.max_fanout_per_pass_for_tests);
+    if (options.partition_bits_for_tests)
+        result.join->setPartitionBitsForTests(*options.partition_bits_for_tests);
+    if (!options.cap_partitions_by_l1_descriptors)
         result.join->setCapPartitionsByL1DescriptorsForTests(false);
-    if (l1_cache_bytes_for_tests > 0)
-        result.join->setL1CacheSizeForTests(l1_cache_bytes_for_tests);
+    if (options.l1_cache_bytes_for_tests > 0)
+        result.join->setL1CacheSizeForTests(options.l1_cache_bytes_for_tests);
 
     std::vector<UInt64> keys;
     std::vector<UInt64> ids;
-    keys.reserve(build_block_rows);
-    ids.reserve(build_block_rows);
+    keys.reserve(options.build_block_rows);
+    ids.reserve(options.build_block_rows);
     UInt64 id = 0;
     for (size_t i = 0; i < distinct_keys; ++i)
     {
         for (size_t d = 0; d < duplicates; ++d)
         {
-            keys.push_back(i * 2654435761ULL + 1);
+            keys.push_back(keyOf(i));
             ids.push_back(id++);
-            if (keys.size() == build_block_rows)
+            if (keys.size() == options.build_block_rows)
             {
                 EXPECT_TRUE(result.join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
                 keys.clear();
@@ -175,8 +194,17 @@ BuiltJoin buildJoin(
         EXPECT_TRUE(result.join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
 
     result.join->onBuildPhaseFinish();
+    if (options.max_bytes_before_external_join)
+        result.post_build_plan = result.join->planPostBuild();
     result.join->runPostBuildPhase();
     return result;
+}
+
+BuiltJoin buildJoin(size_t distinct_keys, size_t duplicates, size_t num_threads)
+{
+    BuildOptions options;
+    options.num_threads = num_threads;
+    return buildJoin(distinct_keys, duplicates, options);
 }
 
 /// Probes every distinct key once, plus `misses` absent ones, and checks the exact joined multiset.
@@ -186,7 +214,7 @@ void probeAndCheck(BuiltJoin & built, size_t distinct_keys, size_t duplicates, s
     expected.reserve(distinct_keys * duplicates);
     for (size_t i = 0; i < distinct_keys; ++i)
     {
-        const UInt64 key = i * 2654435761ULL + 1;
+        const UInt64 key = keyOf(i);
         for (size_t d = 0; d < duplicates; ++d)
             expected.emplace_back(key, i, key, i * duplicates + d);
     }
@@ -201,7 +229,7 @@ void probeAndCheck(BuiltJoin & built, size_t distinct_keys, size_t duplicates, s
     {
         /// The +2 offset cannot collide with a built key: `i * K + 2 == j * K + 1` would need
         /// `i - j` to be the modular inverse of `-K`, far outside these ranges.
-        keys.push_back(i < distinct_keys ? i * 2654435761ULL + 1 : i * 2654435761ULL + 2);
+        keys.push_back(i < distinct_keys ? keyOf(i) : i * 2654435761ULL + 2);
         ids.push_back(i);
         if (keys.size() == block_rows || i + 1 == distinct_keys + misses)
         {
@@ -220,89 +248,19 @@ void probeAndCheck(BuiltJoin & built, size_t distinct_keys, size_t duplicates, s
     ASSERT_TRUE(actual == expected);
 }
 
+/// The invariants every build must publish: one table, its rows conserved, its distinct count exact.
+void expectTableInvariants(const PartitionedHashJoin::BuildStats & stats, size_t distinct_keys, size_t rows)
+{
+    EXPECT_GT(stats.table_cells, 0u);
+    EXPECT_EQ(stats.table_cells, 1uz << stats.table_size_degree);
+    EXPECT_GE(stats.table_cells, 2 * distinct_keys) << "the table must keep at most 50% fill";
+    EXPECT_EQ(stats.inserted_rows, rows);
+    EXPECT_EQ(stats.distinct_keys, distinct_keys);
+    EXPECT_TRUE(stats.predictions_exact) << "the created buffer must match the plan's prediction";
+    EXPECT_EQ(stats.partitions, 1uz << stats.bits);
+    EXPECT_LE(stats.bits, stats.table_size_degree);
 }
 
-TEST(PartitionedHashJoin, DistinctEstimateCacheWarmRun)
-{
-    /// Unique per invocation, so `--gtest_repeat` cannot leave the cold build a warm entry.
-    static std::atomic<UInt64> key_counter{0};
-    const UInt64 key = 0xC1D15117C4C4E000ULL + key_counter.fetch_add(1);
-    const StatsCollectingParams params(
-        key, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/1024, /*max_size_to_preallocate_=*/1ULL << 40);
-
-    constexpr size_t distinct_keys = 200000;
-    constexpr size_t duplicates = 2;
-
-    /// No cache entry: the sketch estimates and the post-build publishes exact counts.
-    auto cold = buildJoin(
-        distinct_keys, duplicates, /*num_threads=*/4, /*reserve_safety_for_tests=*/0, block_rows, JoinKind::Inner,
-        /*disable_amac=*/false, /*max_fanout_per_pass_for_tests=*/0, params);
-    const auto cold_stats = cold.join->getBuildStats();
-    EXPECT_FALSE(cold_stats.distinct_estimate_reused);
-    /// The sketch's standard error at precision 13 is around 1.15%.
-    EXPECT_NEAR(cold_stats.hll_estimate, static_cast<double>(distinct_keys), 0.05 * distinct_keys);
-    probeAndCheck(cold, distinct_keys, duplicates, /*misses=*/100);
-
-    /// Same key and same thread count, so the same plan bits as the cache: the exact total replaces
-    /// the estimate, `planHashTables` takes the cached counts unchanged, and the fill skips the
-    /// sketch feed.
-    auto warm = buildJoin(
-        distinct_keys, duplicates, /*num_threads=*/4, /*reserve_safety_for_tests=*/0, block_rows, JoinKind::Inner,
-        /*disable_amac=*/false, /*max_fanout_per_pass_for_tests=*/0, params);
-    const auto warm_stats = warm.join->getBuildStats();
-    EXPECT_TRUE(warm_stats.distinct_estimate_reused);
-    EXPECT_EQ(warm_stats.hll_estimate, static_cast<double>(distinct_keys));
-    EXPECT_EQ(warm_stats.bits, cold_stats.bits);
-    EXPECT_EQ(warm_stats.leaf_growths, 0u);
-    probeAndCheck(warm, distinct_keys, duplicates, /*misses=*/100);
-
-    /// With statistics off nothing is reused, so the sketch path runs as before.
-    auto disabled = buildJoin(distinct_keys, duplicates, /*num_threads=*/4);
-    EXPECT_FALSE(disabled.join->getBuildStats().distinct_estimate_reused);
-    probeAndCheck(disabled, distinct_keys, duplicates, /*misses=*/100);
-}
-
-TEST(PartitionedHashJoin, DistinctEstimateCachePerPartitionFoldAndSplit)
-{
-    /// Same query key but very different thread counts, so the parallelism floor moves the plan bits
-    /// independently of the shared estimate and the breakdown is published at one bit count and
-    /// consumed at another. That reaches the fold and split branches of `planHashTables`, which the
-    /// sibling test above cannot.
-    static std::atomic<UInt64> key_counter{0};
-    const UInt64 key = 0xF01D5111C4C4E000ULL + key_counter.fetch_add(1);
-    const StatsCollectingParams params(
-        key, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/1024, /*max_size_to_preallocate_=*/1ULL << 40);
-
-    constexpr size_t distinct_keys = 300000;
-    constexpr size_t duplicates = 1;
-
-    /// At 128 threads the parallelism floor is 7 bits, which very likely dominates the natural
-    /// L2-driven bits for this key count, so the breakdown is published finer than a low-thread run
-    /// would choose.
-    auto cold = buildJoin(distinct_keys, duplicates, /*num_threads=*/128, /*reserve_safety_for_tests=*/0, block_rows, JoinKind::Inner,
-        /*disable_amac=*/false, /*max_fanout_per_pass_for_tests=*/0, params);
-    const auto cold_stats = cold.join->getBuildStats();
-    EXPECT_FALSE(cold_stats.distinct_estimate_reused);
-    probeAndCheck(cold, distinct_keys, duplicates, /*misses=*/100);
-
-    /// Single-threaded, so no floor and the natural coarser bits: `planHashTables` has to fold
-    /// contiguous cached leaves together.
-    auto warm = buildJoin(distinct_keys, duplicates, /*num_threads=*/1, /*reserve_safety_for_tests=*/0, block_rows, JoinKind::Inner,
-        /*disable_amac=*/false, /*max_fanout_per_pass_for_tests=*/0, params);
-    const auto warm_stats = warm.join->getBuildStats();
-    EXPECT_TRUE(warm_stats.distinct_estimate_reused);
-    EXPECT_LT(warm_stats.bits, cold_stats.bits) << "test setup assumption: the thread-count-driven parallelism floor must actually "
-                                                    "differ between the two builds for this test to exercise the fold/split paths";
-    EXPECT_EQ(warm_stats.hll_estimate, static_cast<double>(distinct_keys));
-    probeAndCheck(warm, distinct_keys, duplicates, /*misses=*/100);
-
-    /// Re-consume at matching bits, then republish, then consume again single-threaded. The exact bit
-    /// count depends on the machine's L2 size, so this asserts the mechanism stays self-consistent
-    /// rather than pinning the numbers.
-    auto rewarm_wide = buildJoin(distinct_keys, duplicates, /*num_threads=*/128, /*reserve_safety_for_tests=*/0, block_rows,
-        JoinKind::Inner, /*disable_amac=*/false, /*max_fanout_per_pass_for_tests=*/0, params);
-    EXPECT_TRUE(rewarm_wide.join->getBuildStats().distinct_estimate_reused);
-    probeAndCheck(rewarm_wide, distinct_keys, duplicates, /*misses=*/100);
 }
 
 TEST(PartitionedHashJoin, LaneIdentityParity)
@@ -325,7 +283,7 @@ TEST(PartitionedHashJoin, LaneIdentityParity)
     {
         for (size_t d = 0; d < duplicates; ++d)
         {
-            keys.push_back(i * 2654435761ULL + 1);
+            keys.push_back(keyOf(i));
             ids.push_back(id++);
             if (keys.size() == block_rows)
             {
@@ -346,6 +304,7 @@ TEST(PartitionedHashJoin, LaneIdentityParity)
     built.join->onBuildPhaseFinish();
     built.join->runPostBuildPhase();
 
+    expectTableInvariants(built.join->getBuildStats(), distinct_keys, distinct_keys * duplicates);
     probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100, /*use_lanes=*/true);
 }
 
@@ -356,11 +315,10 @@ TEST(PartitionedHashJoin, PartitionedBuildExactReservesAndParity)
 
     const auto stats = built.join->getBuildStats();
     EXPECT_GT(stats.partitions, 1u) << "a 300K-key build must partition";
-    EXPECT_EQ(stats.leaf_growths, 0u) << "no leaf map may resize past its planned exact reserve";
-    EXPECT_TRUE(stats.predictions_exact) << "predicted bucket bytes must equal the actual map buffer bytes";
-    EXPECT_EQ(stats.leaf_rows, distinct_keys);
+    expectTableInvariants(stats, distinct_keys, distinct_keys);
     EXPECT_GT(stats.ht_total_bytes, 0u);
     EXPECT_NEAR(stats.hll_estimate, static_cast<double>(distinct_keys), 0.05 * distinct_keys) << "the distinct estimate must be within 5%";
+    EXPECT_EQ(stats.owner_duplicates.arena_bytes + stats.drain_duplicates.arena_bytes, 0u) << "unique keys never touch the arena";
 
     probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/10000);
 }
@@ -373,22 +331,27 @@ TEST(PartitionedHashJoin, PartitionedBuildWithDuplicates)
 
     const auto stats = built.join->getBuildStats();
     EXPECT_GT(stats.partitions, 1u);
-    EXPECT_EQ(stats.leaf_growths, 0u);
-    EXPECT_TRUE(stats.predictions_exact);
-    EXPECT_EQ(stats.leaf_rows, distinct_keys * duplicates);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+    /// Every key has four rows in one pass: one exact run of 32 bytes, nothing else.
+    const auto & dup = stats.owner_duplicates;
+    EXPECT_EQ(dup.runs + stats.drain_duplicates.runs, distinct_keys);
+    EXPECT_EQ(dup.descriptors + stats.drain_duplicates.descriptors, 0u);
+    EXPECT_EQ(dup.small_blocks + stats.drain_duplicates.small_blocks, 0u);
+    EXPECT_EQ(dup.arena_bytes + stats.drain_duplicates.arena_bytes, distinct_keys * duplicates * sizeof(UInt64));
 
     probeAndCheck(built, distinct_keys, duplicates, /*misses=*/1000);
 }
 
-TEST(PartitionedHashJoin, DegenerateSingleLeaf)
+TEST(PartitionedHashJoin, DegenerateSinglePartition)
 {
     constexpr size_t distinct_keys = 1000;
     auto built = buildJoin(distinct_keys, /*duplicates=*/2, /*num_threads=*/4);
 
     const auto stats = built.join->getBuildStats();
-    EXPECT_EQ(stats.partitions, 1u) << "a small build must degenerate to one leaf";
-    EXPECT_EQ(stats.leaf_growths, 0u);
-    EXPECT_TRUE(stats.predictions_exact);
+    EXPECT_EQ(stats.partitions, 1u) << "a small build must run as one partition";
+    expectTableInvariants(stats, distinct_keys, distinct_keys * 2);
+    EXPECT_EQ(stats.overflow_rows, 0u) << "the single-partition walk wraps instead of overflowing";
+    EXPECT_EQ(stats.owner_duplicates.pairs, distinct_keys);
 
     probeAndCheck(built, distinct_keys, /*duplicates=*/2, /*misses=*/100);
 }
@@ -397,55 +360,73 @@ TEST(PartitionedHashJoin, WideLocatorsForLargeBlocks)
 {
     /// Above 65536 rows the packed locator no longer fits, so this is the 8-byte path.
     constexpr size_t distinct_keys = 300000;
-    auto built = buildJoin(distinct_keys, /*duplicates=*/1, /*num_threads=*/4, /*reserve_safety_for_tests=*/0, /*build_block_rows=*/100000);
+    BuildOptions options;
+    options.build_block_rows = 100000;
+    auto built = buildJoin(distinct_keys, /*duplicates=*/1, options);
 
     const auto stats = built.join->getBuildStats();
     EXPECT_GT(stats.partitions, 1u);
-    EXPECT_EQ(stats.leaf_growths, 0u);
-    EXPECT_TRUE(stats.predictions_exact);
+    expectTableInvariants(stats, distinct_keys, distinct_keys);
 
     probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/1000);
 }
 
-TEST(PartitionedHashJoin, GrowthOnUnderestimate)
+TEST(PartitionedHashJoin, UndersizedTableGuardThrows)
 {
-    /// A crippled safety factor makes every leaf reserve underestimate, so the maps must resize past
-    /// their plan - correctly, and with the growths counted.
+    /// A crippled safety factor sizes the table far below the key count. The table never grows, so
+    /// the build must fail the capacity guard with an exception - and never hang in a walk that cannot
+    /// find an empty cell.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "the capacity guard raises LOGICAL_ERROR, which aborts instead of throwing in debug and sanitizer builds";
+#else
     constexpr size_t distinct_keys = 200000;
-    auto built = buildJoin(distinct_keys, /*duplicates=*/1, /*num_threads=*/4, /*reserve_safety_for_tests=*/0.001);
+    const auto expect_capacity_guard = [](auto && build)
+    {
+        try
+        {
+            build();
+            FAIL() << "the undersized table must trip the capacity guard";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_TRUE(e.message().contains("distinct keys")) << e.message();
+        }
+    };
+    BuildOptions options;
+    options.reserve_safety_for_tests = 0.001;
+    expect_capacity_guard([&] { buildJoin(distinct_keys, /*duplicates=*/1, options); });
 
-    const auto stats = built.join->getBuildStats();
-    EXPECT_GT(stats.leaf_growths, 0u) << "the crippled estimate must force leaf growths";
-
-    probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/1000);
+    /// The single-partition path guards per claim.
+    BuildOptions single;
+    single.reserve_safety_for_tests = 0.001;
+    single.partition_bits_for_tests = 0;
+    expect_capacity_guard([&] { buildJoin(distinct_keys, /*duplicates=*/1, single); });
+#endif
 }
 
-TEST(PartitionedHashJoin, RightJoinFlagBaseAndNonJoined)
+TEST(PartitionedHashJoin, RightJoinSharedFlagsAndNonJoined)
 {
-    /// RIGHT ALL exercises the per-leaf flag bases and the non-joined iteration: a wrong base marks
-    /// or reads the wrong cell, which shows up as missing or duplicated non-joined rows.
+    /// RIGHT ALL exercises the shared used-flag space and the non-joined iteration over cell
+    /// positions: a wrong offset marks or reads the wrong cell, which shows up as missing or duplicated
+    /// non-joined rows.
     constexpr size_t distinct_keys = 300000;
     constexpr size_t duplicates = 2;
     constexpr size_t probed_keys = distinct_keys / 2;
-    auto built = buildJoin(distinct_keys, duplicates, /*num_threads=*/4, /*reserve_safety_for_tests=*/0, block_rows, JoinKind::Right);
+    BuildOptions options;
+    options.kind = JoinKind::Right;
+    auto built = buildJoin(distinct_keys, duplicates, options);
 
     const auto stats = built.join->getBuildStats();
     EXPECT_GT(stats.partitions, 1u);
-    EXPECT_EQ(stats.leaf_rows, distinct_keys * duplicates);
-
-    /// Prefix sums with a nonempty span per leaf, covering a slot per build key plus the zero cells.
-    ASSERT_EQ(stats.flag_base.size(), stats.partitions + 1);
-    EXPECT_EQ(stats.flag_base.front(), 0u);
-    for (size_t leaf = 0; leaf < stats.partitions; ++leaf)
-        EXPECT_LT(stats.flag_base[leaf], stats.flag_base[leaf + 1]);
-    EXPECT_GE(stats.flag_base.back(), distinct_keys + stats.partitions);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
 
     /// RIGHT filters unmatched probe rows, so the output is exactly the probed keys' tuples.
     JoinedRows expected;
     expected.reserve(probed_keys * duplicates);
     for (size_t i = 0; i < probed_keys; ++i)
     {
-        const UInt64 key = i * 2654435761ULL + 1;
+        const UInt64 key = keyOf(i);
         for (size_t d = 0; d < duplicates; ++d)
             expected.emplace_back(key, i, key, i * duplicates + d);
     }
@@ -458,7 +439,7 @@ TEST(PartitionedHashJoin, RightJoinFlagBaseAndNonJoined)
         std::vector<UInt64> ids;
         for (size_t i = 0; i < probed_keys; ++i)
         {
-            keys.push_back(i * 2654435761ULL + 1);
+            keys.push_back(keyOf(i));
             ids.push_back(i);
             if (keys.size() == block_rows || i + 1 == probed_keys)
             {
@@ -473,7 +454,8 @@ TEST(PartitionedHashJoin, RightJoinFlagBaseAndNonJoined)
     ASSERT_EQ(actual.size(), expected.size());
     ASSERT_TRUE(actual == expected);
 
-    /// The non-joined stream must return exactly the build rows of the unprobed keys.
+    /// The non-joined streams must return exactly the build rows of the unprobed keys, once, across
+    /// several parallel streams.
     const Block left_header = twoColumnBlock("k", "probe_id", {}, {});
     Block result_sample = left_header.cloneEmpty();
     result_sample.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "build_id"});
@@ -483,53 +465,37 @@ TEST(PartitionedHashJoin, RightJoinFlagBaseAndNonJoined)
     expected_non_joined.reserve((distinct_keys - probed_keys) * duplicates);
     for (size_t i = probed_keys; i < distinct_keys; ++i)
         for (size_t d = 0; d < duplicates; ++d)
-            expected_non_joined.emplace_back(i * 2654435761ULL + 1, i * duplicates + d);
+            expected_non_joined.emplace_back(keyOf(i), i * duplicates + d);
     std::sort(expected_non_joined.begin(), expected_non_joined.end());
 
+    constexpr size_t num_streams = 3;
     std::vector<std::pair<UInt64, UInt64>> actual_non_joined;
     actual_non_joined.reserve(expected_non_joined.size());
-    auto non_joined = built.join->getNonJoinedBlocks(left_header, result_sample, /*max_block_size=*/65536);
-    ASSERT_NE(non_joined, nullptr);
-    while (true)
+    for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        Block block = non_joined->next();
-        if (block.empty())
-            break;
-        ColumnPtr rk_holder;
-        ColumnPtr build_holder;
-        const UInt64 * rk = columnData(block, "rk", rk_holder);
-        const UInt64 * build_id = columnData(block, "build_id", build_holder);
-        for (size_t i = 0; i < block.rows(); ++i)
-            actual_non_joined.emplace_back(rk[i], build_id[i]);
+        auto non_joined = built.join->getNonJoinedBlocks(left_header, result_sample, /*max_block_size=*/65536, stream, num_streams);
+        ASSERT_NE(non_joined, nullptr);
+        while (true)
+        {
+            Block block = non_joined->next();
+            if (block.empty())
+                break;
+            ColumnPtr rk_holder;
+            ColumnPtr build_holder;
+            const UInt64 * rk = columnData(block, "rk", rk_holder);
+            const UInt64 * build_id = columnData(block, "build_id", build_holder);
+            for (size_t i = 0; i < block.rows(); ++i)
+                actual_non_joined.emplace_back(rk[i], build_id[i]);
+        }
     }
     std::sort(actual_non_joined.begin(), actual_non_joined.end());
     ASSERT_EQ(actual_non_joined.size(), expected_non_joined.size());
     ASSERT_TRUE(actual_non_joined == expected_non_joined);
 }
 
-TEST(PartitionedHashJoin, AmacRingGrowthResume)
-{
-    /// The safety factor is crippled to about a third of the real distinct count while the aggregate
-    /// size stays well above the engagement threshold, so every leaf's ring hits the grower boundary
-    /// mid-flight, drains, resizes and re-seeds - twice per leaf or so. The multiset check is
-    /// count-exact, so a row lost to two in-flight rows claiming one cell, or duplicated by the
-    /// re-seed, cannot pass.
-    constexpr size_t distinct_keys = 3000000;
-    auto built = buildJoin(distinct_keys, /*duplicates=*/1, /*num_threads=*/4, /*reserve_safety_for_tests=*/0.35);
-
-    const auto stats = built.join->getBuildStats();
-    EXPECT_GT(stats.partitions, 1u);
-    EXPECT_TRUE(stats.amac_build_engaged) << "the tables must be far above the AMAC engagement threshold";
-    EXPECT_GT(stats.amac_ring_growths, 0u) << "the crippled reserve must force growth inside the insert rings";
-    EXPECT_GT(stats.leaf_growths, 0u) << "resizing past the planned reserves must be counted, never silent";
-    EXPECT_EQ(stats.leaf_rows, distinct_keys);
-
-    probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/10000);
-}
-
 TEST(PartitionedHashJoin, AmacDuplicateHeavyBuildParityVsSequential)
 {
-    /// 16 rows per key across several leaves, cross-checked against the same build and probe forced
+    /// 16 rows per key across several partitions, cross-checked against the same build and probe forced
     /// onto the sequential loops. Duplicates are adjacent in the scattered chunks, so same-key rows
     /// are permanently in flight together - which is exactly what the fused read-then-act step has to
     /// survive.
@@ -540,15 +506,14 @@ TEST(PartitionedHashJoin, AmacDuplicateHeavyBuildParityVsSequential)
     const auto amac_stats = amac_built.join->getBuildStats();
     EXPECT_GT(amac_stats.partitions, 1u);
     EXPECT_TRUE(amac_stats.amac_build_engaged);
-    EXPECT_EQ(amac_stats.leaf_growths, 0u);
-    EXPECT_EQ(amac_stats.amac_ring_growths, 0u);
-    EXPECT_EQ(amac_stats.leaf_rows, distinct_keys * duplicates);
+    expectTableInvariants(amac_stats, distinct_keys, distinct_keys * duplicates);
 
-    auto sequential_built = buildJoin(
-        distinct_keys, duplicates, /*num_threads=*/4, /*reserve_safety_for_tests=*/0, block_rows, JoinKind::Inner, /*disable_amac=*/true);
+    BuildOptions sequential;
+    sequential.disable_amac = true;
+    auto sequential_built = buildJoin(distinct_keys, duplicates, sequential);
     const auto sequential_stats = sequential_built.join->getBuildStats();
     EXPECT_FALSE(sequential_stats.amac_build_engaged);
-    EXPECT_EQ(sequential_stats.leaf_rows, distinct_keys * duplicates);
+    expectTableInvariants(sequential_stats, distinct_keys, distinct_keys * duplicates);
 
     /// Both must produce the expected multiset, and so each other's.
     probeAndCheck(amac_built, distinct_keys, duplicates, /*misses=*/1000);
@@ -558,8 +523,8 @@ TEST(PartitionedHashJoin, AmacDuplicateHeavyBuildParityVsSequential)
 TEST(PartitionedHashJoin, MultiPassForcedPlanLeafParity)
 {
     /// The same build planned single-pass and multi-pass. The partition count must be identical - the
-    /// ceiling splits the scatter, it must never cap the plan - and every leaf must receive the same
-    /// rows, which the per-leaf counts and then the multiset check pin.
+    /// ceiling splits the scatter, it must never cap the plan - and every partition must receive the
+    /// same rows, which the per-partition counts and then the multiset check pin.
     constexpr size_t distinct_keys = 300000;
 
     auto single = buildJoin(distinct_keys, /*duplicates=*/1, /*num_threads=*/4);
@@ -568,15 +533,9 @@ TEST(PartitionedHashJoin, MultiPassForcedPlanLeafParity)
     ASSERT_EQ(single_stats.pass_bits.size(), 1u) << "the default ceiling must plan a single pass here";
 
     /// A 2-bit ceiling against a plan of at least 2 bits forces two passes.
-    auto multi = buildJoin(
-        distinct_keys,
-        /*duplicates=*/1,
-        /*num_threads=*/4,
-        /*reserve_safety_for_tests=*/0,
-        block_rows,
-        JoinKind::Inner,
-        /*disable_amac=*/false,
-        /*max_fanout_per_pass_for_tests=*/4);
+    BuildOptions options;
+    options.max_fanout_per_pass_for_tests = 4;
+    auto multi = buildJoin(distinct_keys, /*duplicates=*/1, options);
     const auto multi_stats = multi.join->getBuildStats();
 
     EXPECT_EQ(multi_stats.partitions, single_stats.partitions) << "the ceiling must split passes, never cap the plan";
@@ -591,14 +550,10 @@ TEST(PartitionedHashJoin, MultiPassForcedPlanLeafParity)
     }
     EXPECT_EQ(total_bits, multi_stats.bits);
 
-    /// The refine passes must land rows in exactly the leaves a single-pass plan produces.
-    ASSERT_EQ(multi_stats.leaf_row_counts.size(), multi_stats.partitions);
-    EXPECT_TRUE(multi_stats.leaf_row_counts == single_stats.leaf_row_counts);
-
-    /// And must not disturb the exact-reserve behaviour.
-    EXPECT_EQ(multi_stats.leaf_growths, 0u);
-    EXPECT_TRUE(multi_stats.predictions_exact);
-    EXPECT_EQ(multi_stats.leaf_rows, distinct_keys);
+    /// The refine passes must land rows in exactly the partitions a single-pass plan produces.
+    ASSERT_EQ(multi_stats.partition_row_counts.size(), multi_stats.partitions);
+    EXPECT_TRUE(multi_stats.partition_row_counts == single_stats.partition_row_counts);
+    expectTableInvariants(multi_stats, distinct_keys, distinct_keys);
 
     probeAndCheck(multi, distinct_keys, /*duplicates=*/1, /*misses=*/10000);
 }
@@ -606,41 +561,23 @@ TEST(PartitionedHashJoin, MultiPassForcedPlanLeafParity)
 TEST(PartitionedHashJoin, DescriptorCapClampsPlan)
 {
     /// A 256-byte L1 holds four 16-byte descriptors in its quarter, so the cap clamps a 2M-key build
-    /// to four leaves; with the cap switched off the same L1 changes nothing. Results stay exact.
+    /// to four partitions; with the cap switched off the same L1 changes nothing. Results stay exact.
     constexpr size_t distinct_keys = 2000000;
     constexpr size_t l1_bytes = 256;
 
-    auto uncapped = buildJoin(
-        distinct_keys,
-        /*duplicates=*/1,
-        /*num_threads=*/4,
-        /*reserve_safety_for_tests=*/0,
-        block_rows,
-        JoinKind::Inner,
-        /*disable_amac=*/false,
-        /*max_fanout_per_pass_for_tests=*/0,
-        /*stats_collecting_params=*/{},
-        /*cap_partitions_by_l1_descriptors=*/false,
-        l1_bytes);
+    BuildOptions uncapped_options;
+    uncapped_options.cap_partitions_by_l1_descriptors = false;
+    uncapped_options.l1_cache_bytes_for_tests = l1_bytes;
+    auto uncapped = buildJoin(distinct_keys, /*duplicates=*/1, uncapped_options);
     ASSERT_GT(uncapped.join->getBuildStats().partitions, 4u) << "the cap must have a wider plan to clamp";
 
-    auto capped = buildJoin(
-        distinct_keys,
-        /*duplicates=*/1,
-        /*num_threads=*/4,
-        /*reserve_safety_for_tests=*/0,
-        block_rows,
-        JoinKind::Inner,
-        /*disable_amac=*/false,
-        /*max_fanout_per_pass_for_tests=*/0,
-        /*stats_collecting_params=*/{},
-        /*cap_partitions_by_l1_descriptors=*/true,
-        l1_bytes);
+    BuildOptions capped_options;
+    capped_options.l1_cache_bytes_for_tests = l1_bytes;
+    auto capped = buildJoin(distinct_keys, /*duplicates=*/1, capped_options);
     const auto stats = capped.join->getBuildStats();
 
     EXPECT_EQ(stats.partitions, 4u);
-    EXPECT_EQ(stats.leaf_rows, distinct_keys);
-    EXPECT_EQ(stats.leaf_growths, 0u);
+    EXPECT_EQ(stats.inserted_rows, distinct_keys);
 
     probeAndCheck(capped, distinct_keys, /*duplicates=*/1, /*misses=*/10000);
 }
@@ -649,51 +586,42 @@ TEST(PartitionedHashJoin, MultiPassWideLocatorsManyPassesWithDuplicates)
 {
     /// Three or more single-bit refine passes over the wide locator encoding with duplicate keys:
     /// every pass has to carry the locators and route words forward exactly, keeping a key's
-    /// duplicates adjacent within its leaf.
+    /// duplicates adjacent within its partition.
     constexpr size_t distinct_keys = 150000;
     constexpr size_t duplicates = 4;
 
-    auto single = buildJoin(distinct_keys, duplicates, /*num_threads=*/4, /*reserve_safety_for_tests=*/0, /*build_block_rows=*/100000);
+    BuildOptions single_options;
+    single_options.build_block_rows = 100000;
+    auto single = buildJoin(distinct_keys, duplicates, single_options);
     const auto single_stats = single.join->getBuildStats();
     ASSERT_GT(single_stats.partitions, 2u);
     ASSERT_EQ(single_stats.pass_bits.size(), 1u);
 
-    auto multi = buildJoin(
-        distinct_keys,
-        duplicates,
-        /*num_threads=*/4,
-        /*reserve_safety_for_tests=*/0,
-        /*build_block_rows=*/100000,
-        JoinKind::Inner,
-        /*disable_amac=*/false,
-        /*max_fanout_per_pass_for_tests=*/2);
+    BuildOptions multi_options;
+    multi_options.build_block_rows = 100000;
+    multi_options.max_fanout_per_pass_for_tests = 2;
+    auto multi = buildJoin(distinct_keys, duplicates, multi_options);
     const auto multi_stats = multi.join->getBuildStats();
 
     EXPECT_EQ(multi_stats.partitions, single_stats.partitions);
     ASSERT_GE(multi_stats.pass_bits.size(), 3u) << "a 1-bit ceiling must force one pass per plan bit";
-    EXPECT_TRUE(multi_stats.leaf_row_counts == single_stats.leaf_row_counts);
-    EXPECT_EQ(multi_stats.leaf_growths, 0u);
-    EXPECT_EQ(multi_stats.leaf_rows, distinct_keys * duplicates);
+    EXPECT_TRUE(multi_stats.partition_row_counts == single_stats.partition_row_counts);
+    expectTableInvariants(multi_stats, distinct_keys, distinct_keys * duplicates);
 
     probeAndCheck(multi, distinct_keys, duplicates, /*misses=*/1000);
 }
 
 TEST(PartitionedHashJoin, MultiPassRightJoinNonJoined)
 {
-    /// `RightJoinFlagBaseAndNonJoined`'s shape on a multi-pass plan: the flag bases and the
-    /// non-joined iteration must be as exact over refined leaves as over single-pass ones.
+    /// `RightJoinSharedFlagsAndNonJoined`'s shape on a multi-pass plan: the flags and the non-joined
+    /// iteration must be as exact over refined partitions as over single-pass ones.
     constexpr size_t distinct_keys = 300000;
     constexpr size_t probed_keys = distinct_keys / 2;
 
-    auto built = buildJoin(
-        distinct_keys,
-        /*duplicates=*/1,
-        /*num_threads=*/4,
-        /*reserve_safety_for_tests=*/0,
-        block_rows,
-        JoinKind::Right,
-        /*disable_amac=*/false,
-        /*max_fanout_per_pass_for_tests=*/4);
+    BuildOptions options;
+    options.kind = JoinKind::Right;
+    options.max_fanout_per_pass_for_tests = 4;
+    auto built = buildJoin(distinct_keys, /*duplicates=*/1, options);
     const auto stats = built.join->getBuildStats();
     ASSERT_GE(stats.pass_bits.size(), 2u);
 
@@ -701,7 +629,7 @@ TEST(PartitionedHashJoin, MultiPassRightJoinNonJoined)
     expected.reserve(probed_keys);
     for (size_t i = 0; i < probed_keys; ++i)
     {
-        const UInt64 key = i * 2654435761ULL + 1;
+        const UInt64 key = keyOf(i);
         expected.emplace_back(key, i, key, i);
     }
     std::sort(expected.begin(), expected.end());
@@ -713,7 +641,7 @@ TEST(PartitionedHashJoin, MultiPassRightJoinNonJoined)
         std::vector<UInt64> ids;
         for (size_t i = 0; i < probed_keys; ++i)
         {
-            keys.push_back(i * 2654435761ULL + 1);
+            keys.push_back(keyOf(i));
             ids.push_back(i);
             if (keys.size() == block_rows || i + 1 == probed_keys)
             {
@@ -736,7 +664,7 @@ TEST(PartitionedHashJoin, MultiPassRightJoinNonJoined)
     std::vector<std::pair<UInt64, UInt64>> expected_non_joined;
     expected_non_joined.reserve(distinct_keys - probed_keys);
     for (size_t i = probed_keys; i < distinct_keys; ++i)
-        expected_non_joined.emplace_back(i * 2654435761ULL + 1, i);
+        expected_non_joined.emplace_back(keyOf(i), i);
     std::sort(expected_non_joined.begin(), expected_non_joined.end());
 
     std::vector<std::pair<UInt64, UInt64>> actual_non_joined;
@@ -782,8 +710,9 @@ Block stringKeyBlock(const String & key_name, const String & id_name, const std:
 using StringJoinedRow = std::tuple<String, UInt64, String, UInt64>;
 
 /// String keys take the generic-mode scatter, so this covers its per-worker pieces and, on a
-/// multi-pass plan, their refinement into per-leaf columns.
-void buildAndCheckStringKeys(size_t distinct_keys, size_t max_fanout_per_pass_for_tests, std::vector<UInt64> & leaf_row_counts_out)
+/// multi-pass plan, their refinement into per-partition columns; the keys are persisted into the
+/// build arenas by the claims and by the overflow handoff.
+void buildAndCheckStringKeys(size_t distinct_keys, size_t max_fanout_per_pass_for_tests, std::vector<UInt64> & partition_row_counts_out)
 {
     const Block left_header = stringKeyBlock("k", "probe_id", {}, {});
     const Block right_header = stringKeyBlock("rk", "build_id", {}, {});
@@ -815,9 +744,8 @@ void buildAndCheckStringKeys(size_t distinct_keys, size_t max_fanout_per_pass_fo
         ASSERT_GE(stats.pass_bits.size(), 2u) << "the lowered ceiling must force a multi-pass plan";
     else
         ASSERT_EQ(stats.pass_bits.size(), 1u);
-    EXPECT_EQ(stats.leaf_growths, 0u);
-    EXPECT_EQ(stats.leaf_rows, distinct_keys);
-    leaf_row_counts_out = stats.leaf_row_counts;
+    expectTableInvariants(stats, distinct_keys, distinct_keys);
+    partition_row_counts_out = stats.partition_row_counts;
 
     std::vector<StringJoinedRow> expected;
     expected.reserve(distinct_keys);
@@ -874,7 +802,7 @@ void buildAndCheckStringKeys(size_t distinct_keys, size_t max_fanout_per_pass_fo
 
 TEST(PartitionedHashJoin, MultiPassGenericStringKeys)
 {
-    /// Leaf row counts must match the single-pass plan of the same data exactly.
+    /// Partition row counts must match the single-pass plan of the same data exactly.
     constexpr size_t distinct_keys = 200000;
 
     std::vector<UInt64> single_pass_counts;
@@ -883,115 +811,544 @@ TEST(PartitionedHashJoin, MultiPassGenericStringKeys)
     std::vector<UInt64> multi_pass_counts;
     buildAndCheckStringKeys(distinct_keys, /*max_fanout_per_pass_for_tests=*/4, multi_pass_counts);
 
-    EXPECT_TRUE(multi_pass_counts == single_pass_counts) << "refine passes must land every row in its single-pass leaf";
+    EXPECT_TRUE(multi_pass_counts == single_pass_counts) << "refine passes must land every row in its single-pass partition";
+}
+
+TEST(PartitionedHashJoin, RoutesMatchTablePlacement)
+{
+    /// Invariant I1/I2 of the design: the route the fill saves for a key names the partition whose cell
+    /// range contains the key's home cell, for every plan the 16-bit routes cover. Checked on the table
+    /// type the `UInt64` keys use and on the string type, with the same hashes the build and probe use.
+    constexpr size_t rows = 10007;
+    auto uint64_key = ColumnUInt64::create();
+    for (size_t i = 0; i < rows; ++i)
+        uint64_key->insertValue(keyOf(i));
+    uint64_key->insertValue(0); /// the zero key has a route too
+
+    {
+        using Table = typename decltype(SharedMapsAll::key64)::element_type;
+        const ColumnRawPtrs key_columns{uint64_key.get()};
+        const Sizes key_sizes{sizeof(UInt64)};
+        PaddedPODArray<UInt16> routes(uint64_key->size());
+        DenseHyperLogLog hll;
+        computeJoinRoutesForFill(HashJoin::Type::key64, key_columns, key_sizes, uint64_key->size(), nullptr, routes.data(), hll);
+        EXPECT_NEAR(hll.estimate(), static_cast<double>(uint64_key->size()), 0.05 * static_cast<double>(uint64_key->size()));
+
+        for (const size_t bits : {1uz, 9uz, 15uz})
+        {
+            const size_t size_degree = std::max<size_t>(bits, 16);
+            Table table(size_degree, bits);
+            const auto & data = uint64_key->getData();
+            for (size_t i = 0; i < data.size(); ++i)
+            {
+                const size_t hash = table.hash(data[i]);
+                const size_t partition = routes[i] >> (16 - bits);
+                ASSERT_EQ(table.partitionOf(hash), partition) << "bits " << bits << " row " << i;
+                const size_t home = table.place(hash);
+                ASSERT_GE(home, table.rangeBegin(partition));
+                ASSERT_LT(home, table.rangeEnd(partition));
+            }
+        }
+    }
+
+    {
+        auto string_key = ColumnString::create();
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const std::string value = i % 7 == 0 ? "" : fmt::format("key-{}-{}", i, std::string(i % 19, 'x'));
+            string_key->insertData(value.data(), value.size());
+        }
+        using Table = typename decltype(SharedMapsAll::key_string)::element_type;
+        const ColumnRawPtrs key_columns{string_key.get()};
+        const Sizes key_sizes{0};
+        PaddedPODArray<UInt16> routes(rows);
+        DenseHyperLogLog hll;
+        computeJoinRoutesForFill(HashJoin::Type::key_string, key_columns, key_sizes, rows, nullptr, routes.data(), hll);
+
+        constexpr size_t bits = 7;
+        Table table(/*size_degree_=*/16, bits);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const std::string_view value = string_key->getDataAt(i);
+            const size_t hash = table.hash(value);
+            ASSERT_EQ(table.partitionOf(hash), routes[i] >> (16 - bits)) << "row " << i;
+        }
+    }
+}
+
+TEST(PartitionedHashJoin, TwoThousandLeavesTwoPasses)
+{
+    /// 2048 partitions really executed: the plan is forced above the 1024-per-pass ceiling, so the
+    /// scatter runs two MSB-first passes (6 + 5 bits), and every one of the 2048 owner ranges is filled by
+    /// the wave. One table, exact row conservation, exact results.
+    constexpr size_t distinct_keys = 1000000;
+    BuildOptions options;
+    options.partition_bits_for_tests = 11;
+    auto built = buildJoin(distinct_keys, /*duplicates=*/1, options);
+
+    const auto stats = built.join->getBuildStats();
+    EXPECT_EQ(stats.bits, 11u);
+    EXPECT_EQ(stats.partitions, 2048u);
+    ASSERT_EQ(stats.pass_bits.size(), 2u) << "2048 partitions must take two scatter passes under the default ceiling";
+    EXPECT_EQ(stats.pass_bits[0] + stats.pass_bits[1], 11u);
+    ASSERT_EQ(stats.partition_row_counts.size(), 2048u);
+    UInt64 routed = 0;
+    for (UInt64 rows : stats.partition_row_counts)
+        routed += rows;
+    EXPECT_EQ(routed, distinct_keys);
+    expectTableInvariants(stats, distinct_keys, distinct_keys);
+    EXPECT_GE(stats.table_size_degree, 11u);
+
+    probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/10000);
+}
+
+TEST(PartitionedHashJoin, FourThousandLeavesThreePasses)
+{
+    /// 4096 partitions with a 16-way per-pass ceiling: three refine passes of 4 bits, duplicates kept
+    /// adjacent through all of them, then 4096 owner ranges and the drain.
+    constexpr size_t distinct_keys = 500000;
+    constexpr size_t duplicates = 2;
+    BuildOptions options;
+    options.partition_bits_for_tests = 12;
+    options.max_fanout_per_pass_for_tests = 16;
+    auto built = buildJoin(distinct_keys, duplicates, options);
+
+    const auto stats = built.join->getBuildStats();
+    EXPECT_EQ(stats.bits, 12u);
+    EXPECT_EQ(stats.partitions, 4096u);
+    ASSERT_EQ(stats.pass_bits.size(), 3u) << "4096 partitions under a 16-way ceiling must take three passes";
+    for (const size_t pass : stats.pass_bits)
+        EXPECT_LE(1uz << pass, 16u);
+    ASSERT_EQ(stats.partition_row_counts.size(), 4096u);
+    UInt64 routed = 0;
+    for (UInt64 rows : stats.partition_row_counts)
+        routed += rows;
+    EXPECT_EQ(routed, distinct_keys * duplicates);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+    EXPECT_EQ(stats.owner_duplicates.pairs + stats.drain_duplicates.pairs, distinct_keys) << "every key is a pair";
+
+    probeAndCheck(built, distinct_keys, duplicates, /*misses=*/10000);
 }
 
 namespace
 {
 
-/// The two-pass consumption the fused fill entry replaces: full words from `computeJoinRouteWords`,
-/// then the truncate and the skip-gated sketch feed. Comparing register arrays subsumes comparing
-/// estimates. `routes` is poisoned first, so a row the fused path leaves unwritten fails the memcmp -
-/// skipped rows' routes must be written too.
-void expectFusedRoutingMatchesTwoPass(const ColumnRawPtrs & key_columns, size_t rows, const UInt8 * skip)
+/// A build whose special keys all have their home cell in the last `window` cells of the LAST partition
+/// range: `fillers` unique keys arrive first and fill that window, then duplicate sets of 2, 3 and 9 rows
+/// of three more such keys arrive in later blocks. Their owner walks must reach the range end, hand the
+/// rows to the overflow, and the drain must place them past the buffer end - wrapping into partition 0 -
+/// and build their pair and runs there. The probe then has to wrap the same way to find them.
+struct CrossingBuild
 {
-    PaddedPODArray<UInt32> words(rows);
-    computeJoinRouteWords(key_columns, rows, words.data());
-    PaddedPODArray<UInt16> expected_routes(rows);
-    DenseHyperLogLog expected_hll;
-    for (size_t i = 0; i < rows; ++i)
-    {
-        expected_routes[i] = static_cast<UInt16>(words[i] >> 16);
-        if (!skip || !skip[i])
-            expected_hll.add(words[i]);
-    }
+    BuiltJoin built;
+    JoinedRows expected; /// every (key, probe_id, key, build_id) the probe of all keys must produce
+    std::vector<UInt64> probe_keys;
+    size_t special_rows = 0;
+    size_t fillers = 0;
+    size_t window = 0;
+};
 
-    PaddedPODArray<UInt16> routes;
-    routes.assign(rows, static_cast<UInt16>(0xDEAD));
-    DenseHyperLogLog hll;
-    computeJoinRoutesForFill(key_columns, rows, skip, routes.data(), hll);
-
-    ASSERT_EQ(0, memcmp(routes.data(), expected_routes.data(), rows * sizeof(UInt16)));
-    ASSERT_TRUE(hll.registers == expected_hll.registers);
-}
-
-}
-
-TEST(PartitionedHashJoin, FusedFillRoutingMatchesTwoPass)
+CrossingBuild buildCrossing(size_t num_threads, bool disable_amac, size_t bits)
 {
-    constexpr size_t rows = 10007;
+    using Table = typename decltype(SharedMapsAll::key64)::element_type;
+    constexpr size_t random_keys = 100000;
 
-    /// `FillBlock::skipData` hands the fill a null map under the same `const UInt8 *` contract, so
-    /// the mask runs cover that shape too.
-    std::vector<UInt8> skip_mask(rows);
-    for (size_t i = 0; i < rows; ++i)
-        skip_mask[i] = i % 3 == 0;
+    /// The geometry the real build will have: the same key count gives the same table degree (the
+    /// estimate would have to be off by more than 20% to move it), and the partition bits are forced.
+    BuildOptions pilot_options;
+    pilot_options.num_threads = num_threads;
+    pilot_options.partition_bits_for_tests = bits;
+    const auto pilot = buildJoin(random_keys, /*duplicates=*/1, pilot_options).join->getBuildStats();
+    const size_t size_degree = pilot.table_size_degree;
+    EXPECT_EQ(pilot.bits, bits) << "the forced partition bits must be accepted";
+    Table geometry(size_degree, bits);
+    const size_t last = geometry.partitions() - 1;
+    const size_t range_end = geometry.rangeEnd(last);
+    EXPECT_EQ(range_end, geometry.cellCount()) << "the crossing window must sit at the buffer end";
 
-    /// The `routeSingleNumericColumn` hot path.
-    auto uint64_key = ColumnUInt64::create();
-    for (size_t i = 0; i < rows; ++i)
-        uint64_key->insertValue(i * 2654435761ULL + 1);
+    CrossingBuild result;
+    result.window = 64;
+    result.fillers = result.window + 192;
+    const size_t window_begin = range_end - result.window;
 
-    /// A second key column forces the general accumulator path over two fixed folds.
-    auto uint16_key = ColumnUInt16::create();
-    for (size_t i = 0; i < rows; ++i)
-        uint16_key->insertValue(static_cast<UInt16>(i * 40503));
-
-    /// Empty and over-8-byte values, so the String fold's tail dispatch runs.
-    auto string_key = ColumnString::create();
-    for (size_t i = 0; i < rows; ++i)
+    /// Keys whose home cell lies inside the window, found by scanning candidates that cannot collide
+    /// with the random keys below (odd multiples of the random step are never `i * step + 2`).
+    std::vector<UInt64> window_keys;
+    for (UInt64 candidate = 2; window_keys.size() < result.fillers + 3; candidate += 2654435761ULL)
     {
-        const std::string value = i % 7 == 0 ? "" : fmt::format("key-{}-{}", i, std::string(i % 19, 'x'));
-        string_key->insertData(value.data(), value.size());
+        const size_t home = geometry.place(geometry.hash(candidate));
+        if (home >= window_begin && home < range_end)
+            window_keys.push_back(candidate);
     }
 
-    for (const UInt8 * skip : {static_cast<const UInt8 *>(nullptr), static_cast<const UInt8 *>(skip_mask.data())})
-    {
-        expectFusedRoutingMatchesTwoPass({uint64_key.get()}, rows, skip);
-        expectFusedRoutingMatchesTwoPass({uint64_key.get(), uint16_key.get()}, rows, skip);
-        expectFusedRoutingMatchesTwoPass({string_key.get()}, rows, skip);
-        /// ASOF routes by the equi-key prefix only, so the fused entry must see exactly the prefix
-        /// the caller sliced off.
-        const ColumnRawPtrs asof_key_columns{uint64_key.get(), uint16_key.get()};
-        expectFusedRoutingMatchesTwoPass(ColumnRawPtrs(asof_key_columns.begin(), asof_key_columns.end() - 1), rows, skip);
-    }
-}
+    const Block left_header = twoColumnBlock("k", "probe_id", {}, {});
+    const Block right_header = twoColumnBlock("rk", "build_id", {}, {});
+    result.built.table_join = makeTableJoin(left_header, right_header, JoinKind::Inner);
+    result.built.join = std::make_shared<PartitionedHashJoin>(result.built.table_join, std::make_shared<const Block>(right_header), num_threads);
+    result.built.join->setPartitionBitsForTests(bits);
+    if (disable_amac)
+        result.built.join->setAmacEnabledForTests(false);
 
-TEST(PartitionedHashJoin, FusedProbeLeafIdsMatchTwoPass)
-{
-    constexpr size_t rows = 10007;
-
-    auto uint64_key = ColumnUInt64::create();
-    for (size_t i = 0; i < rows; ++i)
-        uint64_key->insertValue(i * 2654435761ULL + 1);
-    auto uint16_key = ColumnUInt16::create();
-    for (size_t i = 0; i < rows; ++i)
-        uint16_key->insertValue(static_cast<UInt16>(i * 40503));
-    auto string_key = ColumnString::create();
-    for (size_t i = 0; i < rows; ++i)
+    UInt64 build_id = 0;
+    std::vector<std::pair<UInt64, UInt64>> build_rows; /// (key, build_id) in insertion order
+    auto add_block = [&](const std::vector<UInt64> & keys)
     {
-        const std::string value = i % 7 == 0 ? "" : fmt::format("key-{}-{}", i, std::string(i % 19, 'x'));
-        string_key->insertData(value.data(), value.size());
-    }
-
-    const std::vector<ColumnRawPtrs> key_sets
-        = {{uint64_key.get()}, {uint64_key.get(), uint16_key.get()}, {string_key.get()}};
-    /// Every plan the 16-bit stored routes cover, both edges included.
-    for (const size_t bits : {1uz, 9uz, 16uz})
-    {
-        const auto shift = static_cast<UInt32>(32 - bits);
-        for (const auto & key_columns : key_sets)
+        std::vector<UInt64> ids;
+        for (const UInt64 key : keys)
         {
-            PaddedPODArray<UInt32> words(rows);
-            computeJoinRouteWords(key_columns, rows, words.data());
-            PaddedPODArray<UInt16> expected(rows);
-            for (size_t i = 0; i < rows; ++i)
-                expected[i] = static_cast<UInt16>(words[i] >> shift);
+            ids.push_back(build_id);
+            build_rows.emplace_back(key, build_id);
+            ++build_id;
+        }
+        EXPECT_TRUE(result.built.join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
+    };
 
-            PaddedPODArray<UInt16> leaf_ids;
-            leaf_ids.assign(rows, static_cast<UInt16>(0xDEAD));
-            computeJoinLeafIds(key_columns, rows, bits, leaf_ids.data());
-            ASSERT_EQ(0, memcmp(leaf_ids.data(), expected.data(), rows * sizeof(UInt16)));
+    /// Block 0: the fillers, first in every worker's stripe order.
+    add_block(std::vector<UInt64>(window_keys.begin(), window_keys.begin() + result.fillers));
+    /// Then the random keys, in blocks of 65536 - the bulk of the build, spread over every partition.
+    std::vector<UInt64> keys;
+    for (size_t i = 0; i < random_keys; ++i)
+    {
+        keys.push_back(keyOf(i));
+        if (keys.size() == block_rows || i + 1 == random_keys)
+        {
+            add_block(keys);
+            keys.clear();
         }
     }
+    /// The last block: the duplicate sets of the three remaining window keys, interleaved so a key's
+    /// rows are not adjacent.
+    const UInt64 dup_a = window_keys[result.fillers];
+    const UInt64 dup_b = window_keys[result.fillers + 1];
+    const UInt64 dup_c = window_keys[result.fillers + 2];
+    std::vector<UInt64> dups;
+    for (size_t i = 0; i < 9; ++i)
+    {
+        dups.push_back(dup_c);
+        if (i < 3)
+            dups.push_back(dup_b);
+        if (i < 2)
+            dups.push_back(dup_a);
+    }
+    result.special_rows = dups.size();
+    add_block(dups);
+
+    result.built.join->onBuildPhaseFinish();
+    result.built.join->runPostBuildPhase();
+
+    /// Every distinct key probed once; the expected multiset has one tuple per build row.
+    std::vector<UInt64> distinct;
+    for (const auto & [key, id] : build_rows)
+        distinct.push_back(key);
+    std::sort(distinct.begin(), distinct.end());
+    distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
+    result.probe_keys = distinct;
+    for (size_t probe_id = 0; probe_id < distinct.size(); ++probe_id)
+        for (const auto & [key, id] : build_rows)
+            if (key == distinct[probe_id])
+                result.expected.emplace_back(key, probe_id, key, id);
+    std::sort(result.expected.begin(), result.expected.end());
+    return result;
+}
+
+void probeCrossing(CrossingBuild & crossing)
+{
+    JoinedRows actual;
+    std::vector<UInt64> keys;
+    std::vector<UInt64> ids;
+    for (size_t i = 0; i < crossing.probe_keys.size(); ++i)
+    {
+        keys.push_back(crossing.probe_keys[i]);
+        ids.push_back(i);
+        if (keys.size() == block_rows || i + 1 == crossing.probe_keys.size())
+        {
+            auto result = crossing.built.join->joinBlock(twoColumnBlock("k", "probe_id", keys, ids));
+            drainResult(*result, actual);
+            keys.clear();
+            ids.clear();
+        }
+    }
+    std::sort(actual.begin(), actual.end());
+    ASSERT_EQ(actual.size(), crossing.expected.size());
+    ASSERT_TRUE(actual == crossing.expected);
+}
+
+void expectCrossingStats(const CrossingBuild & crossing)
+{
+    const auto stats = crossing.built.join->getBuildStats();
+    /// The window holds `window` cells; every later window key - the extra fillers and all 14 duplicate
+    /// rows - reached the range end and went through the drain, which wrapped past the buffer end.
+    EXPECT_GE(stats.overflow_rows, crossing.fillers - crossing.window + crossing.special_rows);
+    EXPECT_GE(stats.drain_claimed_keys, crossing.fillers - crossing.window + 3);
+    /// Only the three duplicate keys had more than one row among the drained rows.
+    EXPECT_EQ(stats.drain_appended_rows, 1u + 2u + 8u);
+    EXPECT_EQ(stats.drain_duplicates.pairs, 1u);
+    EXPECT_EQ(stats.drain_duplicates.runs, 2u);
+    EXPECT_EQ(stats.drain_duplicates.descriptors, 0u);
+    EXPECT_EQ(stats.drain_duplicates.arena_bytes, 16u + 24u + 72u);
+    EXPECT_EQ(stats.owner_duplicates.arena_bytes, 0u) << "the owners saw only unique keys";
+    EXPECT_EQ(stats.distinct_keys, crossing.probe_keys.size());
+}
+
+}
+
+TEST(PartitionedHashJoin, RangeCrossingWraparoundDuplicates)
+{
+    /// One owner range and one worker per pass, AMAC on and off, so the ring's fused visit and the
+    /// sequential walk both hand the boundary rows off and the drain wraps them.
+    for (const bool disable_amac : {false, true})
+    {
+        auto crossing = buildCrossing(/*num_threads=*/1, disable_amac, /*bits=*/2);
+        expectCrossingStats(crossing);
+        probeCrossing(crossing);
+    }
+}
+
+TEST(PartitionedHashJoin, RangeCrossingWraparoundManyWorkers)
+{
+    /// Eight workers over sixteen partitions: the fillers and the duplicates still meet the last range's
+    /// end, the overflow of that range is drained after the barrier, and the other owners never touch it.
+    for (const bool disable_amac : {false, true})
+    {
+        auto crossing = buildCrossing(/*num_threads=*/8, disable_amac, /*bits=*/4);
+        expectCrossingStats(crossing);
+        probeCrossing(crossing);
+    }
+}
+
+TEST(PartitionedHashJoin, GroupedScatterRunLists)
+{
+    /// A memory budget between the grouped floor and the ungrouped peak makes the post-build scatter run in
+    /// several block ranges; a key's eight duplicates are spread one per block so they arrive in different
+    /// groups, and the later groups must append to the runs the earlier groups finished: in place while a
+    /// small block has room, as new nodes behind a descriptor afterwards.
+    constexpr size_t distinct_keys = 200000;
+    constexpr size_t duplicates = 8;
+
+    const Block left_header = twoColumnBlock("k", "probe_id", {}, {});
+    const Block right_header = twoColumnBlock("rk", "build_id", {}, {});
+    BuiltJoin built;
+    built.table_join = makeTableJoin(left_header, right_header, JoinKind::Inner);
+    constexpr size_t budget = 55u << 20;
+    built.join = std::make_shared<PartitionedHashJoin>(
+        built.table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4, /*any_take_last_row_=*/false, StatsCollectingParams{}, budget);
+
+    std::vector<UInt64> keys;
+    std::vector<UInt64> ids;
+    for (size_t d = 0; d < duplicates; ++d)
+    {
+        for (size_t i = 0; i < distinct_keys; ++i)
+        {
+            keys.push_back(keyOf(i));
+            ids.push_back(i * duplicates + d);
+            if (keys.size() == block_rows || i + 1 == distinct_keys)
+            {
+                EXPECT_TRUE(built.join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
+                keys.clear();
+                ids.clear();
+            }
+        }
+    }
+    built.join->onBuildPhaseFinish();
+    built.post_build_plan = built.join->planPostBuild();
+    ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped)
+        << "test setup assumption: the budget must fall between the grouped floor and the ungrouped peak";
+    built.join->runPostBuildPhase();
+
+    const auto stats = built.join->getBuildStats();
+    ASSERT_GT(stats.scatter_groups, 1u);
+    EXPECT_GT(stats.partitions, 1u);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+
+    const auto & dup = stats.owner_duplicates;
+    EXPECT_GT(dup.small_blocks, 0u) << "grouped contributions below 8 rows take 64-byte blocks";
+    EXPECT_GT(dup.in_place_fills, 0u) << "later groups fill the free slots of earlier blocks";
+    EXPECT_EQ(dup.moved_refs, 0u) << "no key needs more than one block: 8 rows fit the 8 slots";
+    EXPECT_EQ(dup.descriptors, 0u);
+    /// Every key ends in exactly one 64-byte block. A key whose first group brought two rows passed
+    /// through a pair first; that pair went back to the free list, but its 16 bytes stay counted in the
+    /// arena (the arena never shrinks), so the live bytes sit between one block per key and one block
+    /// plus one parked pair per key. Referenced pairs are summed over all writers (a writer may free a
+    /// pair another writer allocated, so its own count can be negative).
+    const Int64 arena = dup.arena_bytes + stats.drain_duplicates.arena_bytes;
+    const Int64 referenced_pairs = dup.pairs + stats.drain_duplicates.pairs;
+    const Int64 live = arena - 16 * referenced_pairs;
+    EXPECT_GE(live, static_cast<Int64>(64 * distinct_keys));
+    EXPECT_LE(live, static_cast<Int64>(80 * distinct_keys));
+
+    probeAndCheck(built, distinct_keys, duplicates, /*misses=*/1000);
+}
+
+TEST(PartitionedHashJoin, GroupedRunListsChainAcrossGroups)
+{
+    /// Keys with more rows than one 64-byte block holds, spread one row per block over the whole build, so
+    /// every scatter group boundary splits every key: the first group's contribution is an exact run, each
+    /// later group's contribution chains a node behind a descriptor, and the probe must walk the lists in
+    /// insertion order across the nodes.
+    constexpr size_t distinct_keys = 100000;
+    constexpr size_t duplicates = 24;
+
+    const Block left_header = twoColumnBlock("k", "probe_id", {}, {});
+    const Block right_header = twoColumnBlock("rk", "build_id", {}, {});
+    BuiltJoin built;
+    built.table_join = makeTableJoin(left_header, right_header, JoinKind::Inner);
+    constexpr size_t budget = 75u << 20;
+    built.join = std::make_shared<PartitionedHashJoin>(
+        built.table_join, std::make_shared<const Block>(right_header), /*num_threads_=*/4, /*any_take_last_row_=*/false, StatsCollectingParams{}, budget);
+
+    std::vector<UInt64> keys;
+    std::vector<UInt64> ids;
+    for (size_t d = 0; d < duplicates; ++d)
+    {
+        for (size_t i = 0; i < distinct_keys; ++i)
+        {
+            keys.push_back(keyOf(i));
+            ids.push_back(i * duplicates + d);
+            if (keys.size() == block_rows || i + 1 == distinct_keys)
+            {
+                EXPECT_TRUE(built.join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
+                keys.clear();
+                ids.clear();
+            }
+        }
+    }
+    built.join->onBuildPhaseFinish();
+    built.post_build_plan = built.join->planPostBuild();
+    ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped)
+        << "test setup assumption: the budget must fall between the grouped floor and the ungrouped peak";
+    built.join->runPostBuildPhase();
+
+    const auto stats = built.join->getBuildStats();
+    ASSERT_GE(stats.scatter_groups, 2u);
+    EXPECT_GT(stats.partitions, 1u);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+
+    /// A row per block per key and at least one group boundary: every key spans groups, so every key
+    /// ends as a run list with at least one appended node.
+    const Int64 descriptors = stats.owner_duplicates.descriptors + stats.drain_duplicates.descriptors;
+    const Int64 appended = stats.owner_duplicates.appended_nodes + stats.drain_duplicates.appended_nodes;
+    EXPECT_EQ(descriptors, static_cast<Int64>(distinct_keys)) << "every key chains exactly once";
+    EXPECT_GE(appended, descriptors) << "each descriptor has at least one appended node";
+
+    probeAndCheck(built, distinct_keys, duplicates, /*misses=*/1000);
+}
+
+TEST(PartitionedHashJoin, SaturatedRunCount)
+{
+    /// A key with more rows than the word's 15-bit count can hold: the run takes a descriptor from the
+    /// start and `rows` reads the exact total there. The boundary values are checked on both sides.
+    for (const size_t rows : {static_cast<size_t>(RowRefList::COUNT_SAT) - 1, static_cast<size_t>(RowRefList::COUNT_SAT), 40000uz})
+    {
+        auto built = buildJoin(/*distinct_keys=*/1, rows, /*num_threads=*/2);
+        const auto stats = built.join->getBuildStats();
+        expectTableInvariants(stats, 1, rows);
+        EXPECT_EQ(stats.owner_duplicates.runs, 1u);
+        EXPECT_EQ(stats.owner_duplicates.descriptors, rows >= RowRefList::COUNT_SAT ? 1u : 0u) << "rows " << rows;
+        EXPECT_EQ(stats.owner_duplicates.arena_bytes, 8u * rows + (rows >= RowRefList::COUNT_SAT ? 24u : 0u)) << "rows " << rows;
+        probeAndCheck(built, /*distinct_keys=*/1, rows, /*misses=*/10);
+    }
+}
+
+TEST(PartitionedHashJoin, ZeroKeyDuplicatesMultiPartition)
+{
+    /// The zero key lives in the zero-value cell outside every range. Its rows are all routed to one
+    /// partition, whose owner claims that cell once and appends the rest; the probe finds them through the
+    /// same cell, and the distinct count includes it.
+    constexpr size_t distinct_keys = 300000;
+    constexpr size_t zero_rows = 5;
+
+    const Block left_header = twoColumnBlock("k", "probe_id", {}, {});
+    const Block right_header = twoColumnBlock("rk", "build_id", {}, {});
+    BuiltJoin built;
+    built.table_join = makeTableJoin(left_header, right_header, JoinKind::Inner);
+    built.join = std::make_shared<PartitionedHashJoin>(built.table_join, std::make_shared<const Block>(right_header), 4);
+
+    JoinedRows expected;
+    std::vector<UInt64> keys;
+    std::vector<UInt64> ids;
+    UInt64 id = 0;
+    auto push = [&](UInt64 key)
+    {
+        keys.push_back(key);
+        ids.push_back(id++);
+        if (keys.size() == block_rows)
+        {
+            EXPECT_TRUE(built.join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
+            keys.clear();
+            ids.clear();
+        }
+    };
+    for (size_t i = 0; i < distinct_keys; ++i)
+    {
+        push(keyOf(i));
+        expected.emplace_back(keyOf(i), i, keyOf(i), id - 1);
+        /// Zero rows scattered through the build, not adjacent.
+        if (i % (distinct_keys / zero_rows) == 0)
+        {
+            push(0);
+            expected.emplace_back(0, distinct_keys, 0, id - 1);
+        }
+    }
+    if (!keys.empty())
+        EXPECT_TRUE(built.join->addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
+    built.join->onBuildPhaseFinish();
+    built.join->runPostBuildPhase();
+
+    const auto stats = built.join->getBuildStats();
+    EXPECT_GT(stats.partitions, 1u);
+    expectTableInvariants(stats, distinct_keys + 1, distinct_keys + zero_rows);
+    EXPECT_EQ(stats.owner_duplicates.runs + stats.drain_duplicates.runs, 1u) << "the zero key is the only duplicated one";
+
+    std::sort(expected.begin(), expected.end());
+    JoinedRows actual;
+    keys.clear();
+    ids.clear();
+    for (size_t i = 0; i <= distinct_keys; ++i)
+    {
+        keys.push_back(i < distinct_keys ? keyOf(i) : 0);
+        ids.push_back(i);
+        if (keys.size() == block_rows || i == distinct_keys)
+        {
+            auto result = built.join->joinBlock(twoColumnBlock("k", "probe_id", keys, ids));
+            drainResult(*result, actual);
+            keys.clear();
+            ids.clear();
+        }
+    }
+    std::sort(actual.begin(), actual.end());
+    ASSERT_EQ(actual.size(), expected.size());
+    ASSERT_TRUE(actual == expected);
+}
+
+TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
+{
+    /// The statistics cache receives the exact distinct count of every build, for the planner's other
+    /// consumers, but a later build under the same key never sizes from it: a five times larger build must
+    /// still estimate its own count from the sketch and size the table for it.
+    static std::atomic<UInt64> key_counter{0};
+    const UInt64 key = 0xC1D15117C4C4E000ULL + key_counter.fetch_add(1);
+    const StatsCollectingParams params(
+        key, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/1024, /*max_size_to_preallocate_=*/1ULL << 40);
+
+    constexpr size_t small_keys = 50000;
+    constexpr size_t large_keys = 250000;
+
+    BuildOptions options;
+    options.stats_collecting_params = &params;
+    auto small = buildJoin(small_keys, /*duplicates=*/1, options);
+    expectTableInvariants(small.join->getBuildStats(), small_keys, small_keys);
+    const auto published = getHashTablesStatistics<PartitionedHashJoinEntry>().getSizeHint(params);
+    ASSERT_TRUE(published.has_value());
+    EXPECT_EQ(published->total_distinct, small_keys);
+
+    auto large = buildJoin(large_keys, /*duplicates=*/1, options);
+    const auto large_stats = large.join->getBuildStats();
+    EXPECT_NEAR(large_stats.hll_estimate, static_cast<double>(large_keys), 0.05 * static_cast<double>(large_keys))
+        << "the sketch must have run; a cached count would read 50000";
+    expectTableInvariants(large_stats, large_keys, large_keys);
+    probeAndCheck(large, large_keys, /*duplicates=*/1, /*misses=*/1000);
+
+    const auto republished = getHashTablesStatistics<PartitionedHashJoinEntry>().getSizeHint(params);
+    ASSERT_TRUE(republished.has_value());
+    EXPECT_EQ(republished->total_distinct, large_keys);
 }

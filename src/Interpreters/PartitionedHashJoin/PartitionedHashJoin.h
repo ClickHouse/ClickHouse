@@ -7,7 +7,8 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedJoinMaps.h>
+#include <Interpreters/PartitionedHashJoin/DuplicateRuns.h>
+#include <Interpreters/PartitionedHashJoin/SharedJoinTable.h>
 #include <Common/Arena.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
@@ -27,43 +28,35 @@ namespace DB
 
 class TableJoin;
 
-/// A leaf map's cell buffer and grower mask, extracted once after the builds into one contiguous
-/// 16-bytes-per-leaf array. A row's cell address then costs one L1 load here instead of chasing
-/// `leaf_map_ptrs[leaf]` and the map header - three dependent loads. The fixed-size map types keep
-/// the zero entry; their probe never takes the descriptor path.
-struct LeafMapDesc
-{
-    const void * buf = nullptr;
-    size_t mask = 0;
-};
-
 /** Partitioned hash join (`join_algorithm = 'partitioned_hash'`).
   *
   * `parallel_hash` probes one shared map, so once the build side outgrows last-level cache every
-  * lookup is a cold miss. This partitions the build side into per-partition tables small enough to
-  * stay cache-resident, and leaves the probe side unpartitioned - a probe row is routed to one leaf
-  * and looked up there, with no probe-side shuffle and no probe buffering, so transient memory does
-  * not scale with probe cardinality and rows flow downstream immediately.
+  * lookup is a cold miss. This build keeps ONE hash table for the whole right side but partitions its
+  * construction: the cell buffer is split into `2^bits` contiguous ranges, a partition is the set of
+  * build rows whose home cell lies in its range, and each range is filled by one worker while it stays
+  * cache-resident. The probe side is never partitioned - a probe row hashes once and walks the one table
+  * - so transient memory does not scale with probe cardinality and rows flow downstream immediately.
   *
   * The phases:
   *
-  * - Fill accumulates right-side blocks per lane untouched. Per row it computes one 32-bit route
-  *   word, saves its top 16 bits, and feeds a per-lane sketch. Nothing is inserted yet.
-  * - The build barrier merges the sketches and picks the partition count: the smallest power of two
-  *   whose worst-case per-leaf bucket array fits private L2. Small builds and the fixed-size map
-  *   types degenerate to a single leaf through the same code path.
-  * - Post-build scatters only the key columns plus an 8-byte row locator into per-partition chunks
-  *   (payload stays in the shared row store), then workers claim leaves largest-first and insert
-  *   sequentially. Each leaf's map is created exact-reserved right before its inserts, so the
-  *   allocator can recycle the chunks of already-consumed leaves instead of holding every table and
-  *   every transient at once.
-  * - Probe recomputes each row's route word and looks the key up in that leaf. Above the engagement
-  *   threshold this runs as two passes per block - an AMAC find ring out of order, then an in-order
-  *   pass over its results - and below it as the plain routed loop. Either way the emit,
-  *   replication offsets, used flags and per-kind logic are the standard `HashJoin` machinery.
+  * - Fill accumulates right-side blocks per lane untouched. Per row it computes the map hash, saves the
+  *   top 16 bits of the mixed hash as the row's route, and feeds a per-lane sketch. Nothing is inserted.
+  * - The build barrier merges the sketches, sizes the table once (50% max fill, never grown) and picks
+  *   the partition count: the smallest power of two whose range fits private L2, at least one range per
+  *   worker. The route's top `bits` name a row's partition, and by construction its home cell lies in
+  *   that partition's range.
+  * - Post-build scatters only the key columns plus a row locator into per-partition chunks (payload
+  *   stays in the shared row store), then workers claim partitions largest-first and insert: a walk that
+  *   stops at the range end, a private overflow buffer for the rows that would cross it, and after the
+  *   barrier one thread drains the overflow with the global mask and wraparound. Duplicates of a key are
+  *   stored inline, as a pair, or as contiguous runs (`DuplicateRunWriter`).
+  * - Probe hashes each row once and walks the table from its home cell. Above the engagement threshold
+  *   this runs as two passes per block - an AMAC find ring out of order, then an in-order pass over its
+  *   results - and below it as the plain loop. Either way the emit, replication offsets, used flags and
+  *   per-kind logic are the standard `HashJoin` machinery.
   *
-  * Used flags span all leaves in one per-offset space, leaf L's offsets shifted by `flag_base[L]`,
-  * so `JoinUsedFlags` and the non-joined iteration keep their single-map semantics.
+  * Used flags are one per-offset space of `cells + 1` entries (offset 0 is the zero-value cell), exactly
+  * the single-map layout `JoinUsedFlags` and the non-joined iteration expect.
   *
   * Shapes whose flags must be keyed per right-table row rather than per cell - multiple disjuncts -
   * run the standard `HashJoin` whole behind this interface. That regime is partition-agnostic and
@@ -103,8 +96,8 @@ public:
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
 
-    /// The peak this build is heading for if every accumulated row ends up in leaf tables: the row
-    /// store and route words that are already allocated, plus the tables and arena that are not yet.
+    /// The peak this build is heading for if every accumulated row ends up in the table: the row
+    /// store and route words that are already allocated, plus the table and arena that are not yet.
     /// `SpillingHashJoin` compares this against the external-join threshold. Not `getTotalByteCount`,
     /// which is the currently allocated amount and feeds `max_bytes_in_join` and `EXPLAIN`.
     size_t predictedResidentBytes() const;
@@ -123,9 +116,9 @@ public:
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
-    /// Leaves are independent, so the non-joined scan strides over them: stream `i` visits the
-    /// leaves where `leaf % num_streams == i`. The delegated path stays single-stream, because
-    /// `HashJoin` does not advertise the parallel regime.
+    /// The table's cells are independent, so the non-joined scan splits them into `num_streams`
+    /// contiguous position ranges; stream 0 also emits the zero-value cell and the null-key rows. The
+    /// delegated path stays single-stream, because `HashJoin` does not advertise the parallel regime.
     bool supportParallelNonJoinedBlocksProcessing() const override;
 
     IBlocksStreamPtr getNonJoinedBlocks(
@@ -145,33 +138,36 @@ public:
 
     void setEnableLazyColumnsIndexing(bool value) override;
 
-    /// What the tests assert the build on: the buffer-size prediction, the sketch, and the
-    /// growth-past-reserve behaviour.
+    /// What the tests assert the build on: the plan, the table geometry, the sketch, the ownership
+    /// protocol's overflow and the duplicate layout.
     struct BuildStats
     {
         size_t bits = 0;
         size_t partitions = 0;
-        /// MSB-first radix bits per scatter pass; more than one when the L2 rule wants a fanout
-        /// above a single pass's ceiling.
+        /// MSB-first radix bits per scatter pass; more than one when the plan wants a fanout above a
+        /// single pass's ceiling.
         std::vector<size_t> pass_bits;
-        /// Final per-leaf insertable row counts, so tests can assert two pass plans agree.
-        std::vector<UInt64> leaf_row_counts;
+        /// Final per-partition insertable row counts, so tests can assert two pass plans agree.
+        std::vector<UInt64> partition_row_counts;
         double hll_estimate = 0;
-        /// Total predicted hash-table buffer bytes across all leaves.
+        /// The one table: its buffer degree, cells and bytes. `predictions_exact` says the created
+        /// buffer matched the plan's prediction.
+        size_t table_size_degree = 0;
+        size_t table_cells = 0;
         size_t ht_total_bytes = 0;
-        /// Leaves whose map outgrew its create-time buffer - a distinct-estimate shortfall.
-        /// Correct, but unplanned, so it is counted rather than passed over.
-        UInt64 leaf_growths = 0;
-        /// Growths that cancelled an insert ring mid-run.
-        UInt64 amac_ring_growths = 0;
-        bool amac_build_engaged = false;
-        UInt64 leaf_rows = 0;
         bool predictions_exact = true;
-        /// A warm run: the build took its distinct-key counts from the statistics cache and the
-        /// fill skipped the per-row sketch feed.
-        bool distinct_estimate_reused = false;
-        /// Empty when the join shape tracks no right-side used flags.
-        std::vector<UInt64> flag_base;
+        bool amac_build_engaged = false;
+        /// Rows fed to the inserts, distinct keys the table ended with, and rows the owner walks handed to
+        /// the serial drain because they reached their range end.
+        UInt64 inserted_rows = 0;
+        UInt64 distinct_keys = 0;
+        UInt64 overflow_rows = 0;
+        /// Distinct keys the drain claimed and rows it appended to keys the owners had already stored.
+        UInt64 drain_claimed_keys = 0;
+        UInt64 drain_appended_rows = 0;
+        /// Duplicate storage written by the owner waves and by the drain.
+        DuplicateRunWriter::Stats owner_duplicates;
+        DuplicateRunWriter::Stats drain_duplicates;
         /// Contiguous build-block ranges the post-build scatter was split into. 1 means the whole
         /// build was scattered at once.
         size_t scatter_groups = 1;
@@ -179,7 +175,8 @@ public:
 
     BuildStats getBuildStats() const;
 
-    /// Shrinks the reserve safety factor so the maps must grow, which SQL cannot force reliably.
+    /// Shrinks the reserve safety factor so the table is undersized, which SQL cannot force reliably.
+    /// The build must then fail the capacity guard with an exception rather than hang.
     void setReserveSafetyFactorForTests(double factor) { reserve_safety = factor; }
 
     /// Pins both phases onto the sequential loops, so tests can cross-check the ring against them.
@@ -193,6 +190,10 @@ public:
     /// A tiny L1 makes it bind on a small one; the cap itself can be switched off for the control.
     void setL1CacheSizeForTests(size_t bytes) { l1_cache_bytes_for_tests = bytes; }
     void setCapPartitionsByL1DescriptorsForTests(bool value) { cap_partitions_by_l1_descriptors = value; }
+
+    /// Forces the partition count (clamped to the table's degree), so plans of thousands of partitions
+    /// can be executed on a build that fits a test.
+    void setPartitionBitsForTests(size_t value) { forced_bits_for_tests = value; }
 
     /// The post-build memory verdict, taken once at the barrier from numbers that already exist.
     enum class PostBuildPlan
@@ -256,7 +257,7 @@ private:
         DenseHyperLogLog hll;
     };
 
-    /// Shared across the post-build stages: histogram, allocate, scatter, leaf builds.
+    /// Shared across the post-build stages: histogram, allocate, scatter, owner waves, drain.
     struct PostBuildContext;
     /// Out-of-line so `unique_ptr<PostBuildContext>` can be destroyed from TUs that only see the
     /// forward declaration (the constructor of this class lives in `PartitionedHashJoin.cpp`).
@@ -273,21 +274,24 @@ private:
 
     /// Both return whether every inserted key was unique, which drives the RightAny promotion.
     bool postBuildPartitioned();
-    bool postBuildSingleLeaf();
+    bool postBuildSinglePartition();
     void preparePostBuildContext();
     void runGroupStages(size_t block_begin, size_t block_end);
     size_t chunkBytesForBlockRange(size_t b0, size_t b1) const;
 
-    /// Bytes the leaf tables and the duplicate-list arena will need for `rows` build rows holding
-    /// `distinct` distinct keys. The post-build gate evaluates this with exact counts; the fill
-    /// evaluates it with the running sketch estimate.
-    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct) const;
-    size_t predictedArenaBytes(size_t insertable_rows) const;
+    /// Bytes the table and the duplicate storage will need for `rows` build rows holding `distinct`
+    /// distinct keys. The post-build gate evaluates this with exact counts; the fill evaluates it with
+    /// the running sketch estimate.
+    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped) const;
+    size_t predictedArenaBytes(size_t insertable_rows, bool grouped) const;
+    /// The table reserve the plan derives from a distinct estimate: safety factor, row clamp, and the
+    /// saturation clamp above `2^31` estimated words.
+    size_t reserveFor(size_t rows, double distinct_estimate) const;
 
     size_t liveDistinctEstimate() const;
 
     void measureGenericKeyBytes();
-    void sizeLeafHashTables();
+    void createSharedTable();
     void reduceWorkerHistogram();
     void resetWorkerHistogram(PostBuildContext & ctx);
     void histogramWorker(PostBuildContext & ctx, size_t worker) const;
@@ -295,56 +299,64 @@ private:
     void scatterWorker(PostBuildContext & ctx, size_t worker);
 
     /// Splits every current bucket into `2^refine_bits` sub-buckets by the next route-word slice
-    /// below the `bits_done` earlier passes consumed, group-major. After the last pass a row's leaf
-    /// is `route >> (16 - bits)` - the same leaf a single-pass plan would give it, and the one the
-    /// probe derives.
+    /// below the `bits_done` earlier passes consumed, group-major. After the last pass a row's
+    /// partition is `route >> (16 - bits)` - the same partition a single-pass plan would give it.
     void refinePassWave(PostBuildContext & ctx, size_t refine_bits, size_t bits_done, std::atomic<UInt64> & stage_thread_us);
-    void leafBuildWorker(PostBuildContext & ctx, size_t worker);
+
+    /// The owner wave: workers claim partitions largest-first and fill their ranges (section 4.3 of
+    /// the design); then the capacity guard and the serial drain of every partition's overflow.
+    void ownerWaveWorker(PostBuildContext & ctx, size_t worker);
+    /// Returns the distinct keys claimed so far (owner cells plus the zero cell), the drain's starting total.
+    UInt64 checkCapacityGuard(const PostBuildContext & ctx) const;
+    void drainOverflow(PostBuildContext & ctx, UInt64 claimed_with_zero);
+    template <typename Table>
+    void verifyPublishedTable(const Table & table) const;
+    /// Accounts and pre-faults one partition's cell range (see `RangeCommittedBuffer`).
+    void commitRange(size_t partition);
+    /// Sets the table's distinct-key count from the owners' and the drain's claims.
+    void publishTableSize(const PostBuildContext & ctx);
     void finishBuildPhase(bool all_values_unique);
 
-    /// Inserts one compact section into one leaf. Row i's stored ref is `locators[i]`, the decoded
-    /// `narrow_locators[i]`, or `RowRef(block_no, i)` when neither is set - the single-leaf path,
-    /// which is also the only one where `skip_bytes` applies.
-    void insertLeafSection(
-        PartitionedJoinMaps & maps,
+    /// Inserts one compact section of `rows` rows into partition `partition`'s range on behalf of
+    /// `worker`, or - when `partition` is `single_partition` - into the whole table from the stored
+    /// blocks, which is the only path where `skip_bytes` applies. Row i's stored ref is `locators[i]`,
+    /// the decoded `narrow_locators[i]`, or `RowRef(block_no, i)` when neither is set.
+    static constexpr size_t single_partition = std::numeric_limits<size_t>::max();
+    void insertPartitionSection(
+        PostBuildContext & ctx,
+        size_t worker,
+        size_t partition,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         const UInt64 * locators,
         const UInt32 * narrow_locators_data,
         UInt32 block_no,
-        const UInt8 * skip_bytes,
-        Arena & pool,
-        bool & all_values_unique);
+        const UInt8 * skip_bytes);
 
-    /// Derives the flag bases from the final bucket counts and reinitializes the whole flag space.
-    void computeFlagBaseAndReinitUsedFlags();
+    /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
+    void reinitUsedFlags();
 
-    /// Once after the builds, so the probe does not rebuild a pointer table per `joinBlock`.
-    void collectLeafMapPointers();
-
-    /// Decided once, after the tables are sized and before the inserts, on the same heuristics that
+    /// Decided once, after the table is sized and before the inserts, on the same heuristics that
     /// enable the software prefetch.
     void decideAmacEngagement();
 
-    /// `MapsShape` is the standard shape the (kind, strictness) pair dispatches to; the leaf maps
-    /// are its partitioned counterpart, holding identical cells.
+    /// `MapsShape` is the standard shape the (kind, strictness) pair dispatches to; the shared table is
+    /// its partitioned counterpart, holding identical cells.
     JoinResultPtr probeDispatch(Block block, size_t lane);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape>
     JoinResultPtr probeImpl(Block block, size_t lane);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType>
-    size_t routedJoinRightColumns(AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
+    size_t sharedJoinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 
-    /// Per-probe-stream scratch, pooled on the join and reused across blocks: the per-row leaf ids
-    /// and the find pass's results. `found_word` holds the matched cell's mapped value by value - a
-    /// `RowRef` or `RowRefList` is an 8-byte word that is never 0 for a match, so 0 encodes a miss -
-    /// which is what keeps the second pass from touching the cell again after it has left the cache.
-    /// ASOF does not fit a word and stores the mapped pointer's bits instead. `found_offset` is the
-    /// used-flags offset, already shifted into the shared space.
+    /// Per-probe-stream scratch, pooled on the join and reused across blocks: the find pass's results.
+    /// `found_word` holds the matched cell's mapped value by value - a `RowRef` or `RowRefList` is an
+    /// 8-byte word that is never 0 for a match, so 0 encodes a miss - which is what keeps the second pass
+    /// from touching the cell again after it has left the cache. ASOF does not fit a word and stores the
+    /// mapped pointer's bits instead. `found_offset` is the used-flags offset.
     struct ProbeScratch
     {
-        PaddedPODArray<UInt16> leaf_ids;
         PaddedPODArray<UInt64> found_word;
         PaddedPODArray<UInt64> found_offset;
     };
@@ -364,14 +376,14 @@ private:
     const size_t max_bytes_before_external_join;
 
     /// Owns everything the emit machinery needs: block preparation, the saved block sample, the
-    /// shared row store, the used flags, the output samples. Its own map stays empty and the leaf
-    /// maps replace it - except on the delegated path, where it runs the join whole.
+    /// shared row store, the used flags, the output samples. Its own map stays empty and the shared
+    /// table replaces it - except on the delegated path, where it runs the join whole.
     std::unique_ptr<HashJoin> leaf_join;
 
     /// Set for the shapes that need per-row used flags; see the class comment.
     const bool delegate_mode;
 
-    /// Which `HashJoin::MapsVariant` alternative is active; the leaf maps mirror it.
+    /// Which `HashJoin::MapsVariant` alternative is active; the shared table mirrors it.
     const size_t maps_variant_index;
 
     /// `IJoin::totals` is private, so the guarded overrides keep their own copy.
@@ -407,36 +419,28 @@ private:
     /// `partitioned_hash_join_cap_partitions_by_l1_descriptors`.
     bool cap_partitions_by_l1_descriptors;
     std::optional<size_t> l1_cache_bytes_for_tests;
+    std::optional<size_t> forced_bits_for_tests;
     double hll_estimate = 0;
-    double reserve_safety = 1.2; /// covers the sketch error (~1.15% at precision 13) and per-leaf spread
-    /// Cross-run distinct-key statistics, keyed as the other algorithms key theirs but in a
-    /// dedicated cache that keeps the per-partition breakdown rather than only a total. Given a
-    /// previous run's counts the fill skips the sketch feed entirely and the leaf sizing uses the
-    /// real per-partition counts instead of a uniform rescale, folded or split when this build's
-    /// plan bits differ from the cached ones.
+    double reserve_safety = 1.2; /// covers the sketch error (~1.15% at precision 13)
+    /// The table's buffer degree, fixed at the barrier: `2^size_degree` cells, `2^bits` ranges.
+    size_t size_degree = 0;
+    /// Cross-run distinct-key statistics are published for join reordering and the runtime filters,
+    /// never consumed for sizing: the table cannot grow, and a cached count is data-independent.
     StatsCollectingParams stats_collecting_params;
-    std::optional<PartitionedHashJoinEntry> cached_stats;
     std::vector<FillBlock> build_blocks; /// concatenated lanes, row-store block numbers assigned
     /// When every block and row number fits 16 bits the scattered locator column packs into
     /// `(block_no << 16) | row_no` and is decoded at insert, halving the largest scatter transient.
     bool narrow_locators = false;
 
-    /// Each leaf owns its exact-reserved buffer. `build_arenas` hold the string keys and
-    /// duplicate-list nodes the cells point at, so they must outlive the maps.
-    std::vector<PartitionedJoinMaps> leaf_maps;
-    /// Type-erased: the probe casts an entry back through the same `data->type` and maps-variant
-    /// pair that stored it.
-    std::vector<const void *> leaf_map_ptrs;
-    std::vector<LeafMapDesc> leaf_map_descs;
-    /// Leaf L's flags live at `[flag_base[L], flag_base[L + 1])` of the shared space, that span
-    /// being the leaf's bucket count plus one for the map's zero-value cell.
-    std::vector<UInt64> flag_base;
+    /// The one table. `build_arenas` hold the string keys and the duplicate runs the cells point at,
+    /// so they must outlive it: one arena per build worker plus one for the drain.
+    std::unique_ptr<SharedJoinMaps> shared_maps;
     std::deque<Arena> build_arenas;
-    size_t ht_total_bytes = 0; /// total predicted hash-table bytes (drives the prefetch heuristics)
+    size_t ht_total_bytes = 0; /// the table's buffer bytes (drives the prefetch heuristics)
 
     std::unique_ptr<ThreadPool> post_build_pool;
     std::unique_ptr<PostBuildContext, PostBuildContextDeleter> post_build_ctx;
-    /// Exact per-leaf insertable row counts from the full-build histogram, used to size reserves.
+    /// Exact per-partition insertable row counts from the full-build histogram.
     std::vector<UInt64> total_bucket_rows;
     /// Prepared key-column bytes across the whole build, measured once at the gate. Zero unless
     /// the keys are variable-length, which is when they are copied into the arena.
@@ -451,11 +455,9 @@ private:
 
     bool build_phase_finished = false;
 
-    /// The test override, the engagement decision taken before the leaf-build wave, and the
-    /// ring-growth counter.
+    /// The test override and the engagement decision taken before the owner wave.
     bool amac_enabled = true;
     bool amac_build_engaged = false;
-    std::atomic<UInt64> amac_ring_growths{0};
 
     std::mutex probe_scratch_mutex;
     std::vector<std::unique_ptr<ProbeScratch>> probe_scratch_pool;

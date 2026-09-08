@@ -3841,7 +3841,7 @@ Possible values:
 
 - partitioned_hash
 
- An experimental variation of `hash` join that partitions the right table by a separate routing hash and builds one hash table per partition, while the left part of `JOIN` is probed without partitioning.
+ An experimental variation of `hash` join that builds one shared hash table for the right table in cache-sized partitions: the table's cell buffer is split into owner ranges that parallel workers fill independently, while the left part of `JOIN` is probed without partitioning.
 
  Supports `INNER`/`LEFT`/`RIGHT`/`FULL` joins with `ALL`/`ANY`/`SEMI`/`ANTI` strictness, `ASOF` joins, and `ON` sections with single-side filter conditions or multiple `OR`-ed key sets. Unsupported shapes (e.g. mixed non-equality `ON` conditions, joins with special storages, spilling contexts) fall back to the other enabled algorithms (or to `hash`) at query planning time.
 

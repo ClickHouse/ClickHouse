@@ -103,8 +103,7 @@ ORDER BY log_comment;
 SELECT
     log_comment,
     ProfileEvents['PartitionedHashJoinPartitions'] > 1,
-    ProfileEvents['PartitionedHashJoinLeafRows'] > 0,
-    ProfileEvents['PartitionedHashJoinHashTableGrowths']
+    ProfileEvents['PartitionedHashJoinLeafRows'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'p4filter %'
 ORDER BY log_comment;

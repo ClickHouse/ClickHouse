@@ -79,20 +79,20 @@ empty probe side full
 300000	16839103047609687881
 300000	16839103047609687881
 partition plans
-p4kind anti left	1	1	0
-p4kind anti right	1	1	0
-p4kind any left	1	1	0
-p4kind any right	1	1	0
-p4kind empty probe full	1	1	0
-p4kind full all string jun	1	1	0
-p4kind full all uint64	1	1	0
-p4kind legacy rightany	1	1	0
-p4kind right all nullable	1	1	0
-p4kind right all string jun	1	1	0
-p4kind right all uint64	1	1	0
-p4kind right using	1	1	0
-p4kind semi left	1	1	0
-p4kind semi right	1	1	0
+p4kind anti left	1	1
+p4kind anti right	1	1
+p4kind any left	1	1
+p4kind any right	1	1
+p4kind empty probe full	1	1
+p4kind full all string jun	1	1
+p4kind full all uint64	1	1
+p4kind legacy rightany	1	1
+p4kind right all nullable	1	1
+p4kind right all string jun	1	1
+p4kind right all uint64	1	1
+p4kind right using	1	1
+p4kind semi left	1	1
+p4kind semi right	1	1
 p4dup any inner	1	1
 p4dup any left last row	1	1
 p4dup right all dup-heavy	1	1
