@@ -79,7 +79,8 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     if (!filter_actions_dag)
         return;
 
-    if (boost::iequals(configuration->format, "Parquet") || boost::iequals(configuration->format, "ORC"))
+    if (boost::iequals(configuration->format, "Parquet") || boost::iequals(configuration->format, "ORC")
+        || boost::iequals(configuration->format, "Vortex"))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -198,8 +199,8 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet reader supports both.
-    if (!boost::iequals(configuration->format, "Parquet"))
+    /// Only the Parquet and Vortex readers support both.
+    if (!boost::iequals(configuration->format, "Parquet") && !boost::iequals(configuration->format, "Vortex"))
         return false;
 
     /// Data lakes can have per-file formats, deletes, and schema evolution; the configuration

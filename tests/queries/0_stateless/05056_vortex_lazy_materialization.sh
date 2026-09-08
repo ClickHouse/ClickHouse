@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Tags: no-fasttest
 # - no-fasttest: reads Vortex files
 
@@ -10,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # sorting and filtering are read only for the `n` rows that survive the `LIMIT`.
 # The whole battery is run with the optimization enabled and disabled; the results must match.
 
-LOCAL_DIR=$(mktemp -d "${CLICKHOUSE_TMP}/04838_lazy_mat_file_XXXXXX")
+LOCAL_DIR=$(mktemp -d "${CLICKHOUSE_TMP}/05056_lazy_mat_file_XXXXXX")
 trap 'rm -rf "${LOCAL_DIR}"' EXIT
 
 LOCAL=(${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}")

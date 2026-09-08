@@ -451,13 +451,12 @@ void VortexBlockInputFormat::prepareReader()
 
     FFI_VortexScanOptions options{};
 
-    preserve_order |= format_settings.vortex.preserve_order;
+    preserve_order = format_settings.vortex.preserve_order || plan.rows_to_read;
 
     if (plan.rows_to_read)
     {
         options.row_selection_begin = plan.rows_to_read->begin();
         options.row_selection_len = plan.rows_to_read->size();
-        preserve_order = true;
     }
 
     options.columns = column_name_pointers.data();

@@ -121,9 +121,8 @@ VortexScanPlan planVortexScan(
         add_column_name(Nested::extractTableName(column.name));
     }
 
-    if (filter_info) {
+    if (filter_info)
         plan.rows_to_read = filter_info->rows_to_read.get();
-    }
 
     if (!plan.column_names.empty() && format_settings.vortex.filter_push_down && filter_info && filter_info->hasFilter())
     {

@@ -173,7 +173,7 @@ private:
     std::condition_variable delivery_cv;
     /// Finished chunks waiting for `read`, keyed by the position of their split in the file.
     std::map<UInt64, DeliveredChunk> delivered TSA_GUARDED_BY(delivery_mutex);
-    /// Which split `read` hands out next while `input_format_vortex_preserve_order` is on.
+    /// Which split `read` hands out next while "preserve_order" is true.
     UInt64 next_split_index TSA_GUARDED_BY(delivery_mutex) = 0;
     /// The scan reported that it reached the end. Stays false when it was cancelled instead.
     bool scan_finished TSA_GUARDED_BY(delivery_mutex) = false;

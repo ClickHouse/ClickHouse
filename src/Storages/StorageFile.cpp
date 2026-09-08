@@ -2238,7 +2238,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only Parquet and Vortex readers supports both.
+    /// Only the Parquet and Vortex readers support both.
     if (!boost::iequals(storage->format_name, "Parquet")
         && !boost::iequals(storage->format_name, "Vortex"))
         return false;
