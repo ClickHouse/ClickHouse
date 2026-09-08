@@ -702,6 +702,18 @@ def test_url_archive_path_braces_are_expanded_without_index_listing():
         assert "first argument generates too many result addresses" in error
 
 
+def test_url_cluster_rejects_bucket_granularity_for_archives():
+    error = node1.query_and_get_error(
+        "SELECT sum(x) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/simple_archive.zip :: eod.csv', "
+        "'CSV', 'x UInt64') "
+        "SETTINGS cluster_table_function_split_granularity='bucket'"
+    )
+    assert "is not supported for reading archives" in error
+    assert "cluster_table_function_split_granularity" in error
+
+
 def test_url_cluster_archive_processing_modes_do_not_duplicate_members():
     source = "http://resolver:8087/data/multi_member_archive.zip :: *.tsv"
     for process_on_multiple_nodes in (0, 1):

@@ -36,6 +36,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -305,6 +306,17 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     ClusterPtr cluster,
     StorageMetadataPtr storage_metadata_snapshot) const
 {
+    const auto split_granularity
+        = local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity];
+    /// `ObjectIteratorSplitByBuckets` rebuilds split tasks as plain `ObjectInfo` objects from
+    /// `relative_path_with_metadata`. For `ObjectInfoInArchive`, that base field identifies the
+    /// outer archive rather than the member, so bucket splitting would read container bytes and
+    /// discard the archive-member identity before the task reaches a worker.
+    if (configuration->isArchive() && split_granularity == ObjectStorageGranularityLevel::BUCKET)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `cluster_table_function_split_granularity = 'bucket'` is not supported for reading archives");
+
     const bool send_over_whole_archive
         = !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
 
@@ -324,7 +336,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /* ignore_archive_globs */ send_over_whole_archive,
         /* skip_object_metadata */ true);
 
-    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
+    if (split_granularity == ObjectStorageGranularityLevel::BUCKET)
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
