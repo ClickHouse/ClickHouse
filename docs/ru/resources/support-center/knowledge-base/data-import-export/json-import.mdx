@@ -20,7 +20,7 @@ ClickHouse поддерживает широкий спектр [формато�
 $ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
 ```
 
-С помощью [интерфейса CLI](/ru/concepts/features/interfaces/cli):
+С помощью [клиента ClickHouse](/ru/concepts/features/interfaces/client):
 
 ```bash
 $ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"

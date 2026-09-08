@@ -44,7 +44,8 @@ enum class VirtualsMaterializationPlace : UInt8
 {
     Reader = 1,
     Plan = 2,
-    All = Reader | Plan,
+    Streaming = 4,
+    All = Reader | Plan | Streaming,
 };
 
 struct GetColumnsOptions
@@ -150,6 +151,8 @@ public:
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
+    /// Adds a column at the end if a column with the same name doesn't exist.
+    void addIfNotExists(ColumnDescription column);
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 
@@ -244,6 +247,13 @@ public:
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
 
+    /// Does the column's compression codec pipeline contain a `Default` stage (`CODEC(Default)`,
+    /// `CODEC(Delta, Default)`, ...)? Such a column carries a codec descriptor (so
+    /// `hasCompressionCodec` is true), yet its generic-compression stage is the part's default
+    /// codec, so its `.bin` proves the default codec family - unlike a column with an explicit
+    /// non-default codec.
+    bool hasExplicitDefaultCompressionCodec(const String & column_name) const;
+
     String toString(bool include_comments) const;
     static ColumnsDescription parse(const String & str);
 
@@ -285,7 +295,7 @@ private:
     SubcolumnsContainter subcolumns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
-    void addSubcolumnsToList(NamesAndTypesList & source_list) const;
+    void addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const;
 
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
@@ -328,6 +338,9 @@ struct DefaultExpressionsInfo
     NameSet insert_time_default_columns;
 };
 
+/// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
+void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);
+
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 
 /// Validate default expressions and corresponding types compatibility, i.e.
@@ -338,5 +351,13 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 /// from the expression; their expressions must not reference virtual columns.
 void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
+
+/// Whether a PREWHERE contract (`IStorage::supportedPrewhereColumns`, a set of top-level names)
+/// admits `column_name`: directly, or - when `include_subcolumns` is set
+/// (`IStorage::supportedPrewhereColumnsIncludeSubcolumns`) - as a subcolumn riding its origin
+/// column: a read of `json.a` is delegated exactly like a read of `json`, and subcolumn sets
+/// (JSON paths) are open-ended, so the contract can only ever enumerate origins.
+bool prewhereSupportedColumnsContain(
+    const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name);
 
 }

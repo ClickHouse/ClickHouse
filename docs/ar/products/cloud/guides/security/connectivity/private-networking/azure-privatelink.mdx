@@ -35,7 +35,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 5. الوصول إلى خدمة ClickHouse Cloud الخاصة بك باستخدام Private Link
 
 <Note>
-  انتقلت ClickHouse Cloud Azure PrivateLink من استخدام عوامل تصفية resourceGUID إلى عوامل تصفية Resource ID. ولا يزال بإمكانك استخدام resourceGUID لأنه متوافق مع الإصدارات السابقة، لكننا نوصي بالانتقال إلى عوامل تصفية Resource ID. للترحيل، ما عليك سوى إنشاء endpoint جديد باستخدام Resource ID، وربطه بالخدمة، ثم إزالة endpoint القديم المستند إلى resourceGUID.
+  انتقلت ClickHouse Cloud Azure PrivateLink من استخدام عوامل تصفية resourceGUID إلى عوامل تصفية Resource ID. ولا يزال بإمكانك استخدام resourceGUID لأنه متوافق مع الإصدارات السابقة، لكننا نوصي بالانتقال إلى عوامل تصفية Resource ID. للترحيل، ما عليك سوى إنشاء نقطة نهاية جديدة باستخدام Resource ID، وربطها بالخدمة، ثم إزالة نقطة النهاية القديمة المستندة إلى resourceGUID.
 </Note>
 
 <div id="attention">
@@ -214,7 +214,7 @@ resource "azurerm_private_endpoint" "example_clickhouse_cloud" {
 
 <Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="عرض Private Endpoint" border />
 
-ضمن properties، ابحث عن الحقل `id` وانسخ هذه القيمة:
+انسخ الحقل `id` ذي المستوى الأعلى (Resource ID الخاص بـ private endpoint، بالتنسيق `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — لا تستخدم حقول `id` المتداخلة داخل الكائن `properties`:
 
 **الطريقة المفضلة: استخدام Resource ID**
 

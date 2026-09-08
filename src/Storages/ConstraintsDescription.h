@@ -58,6 +58,11 @@ public:
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
+    /// Rejects a `CHECK` constraint whose expression changes the number of rows. Only for fresh DDL:
+    /// rejecting while loading stored metadata would fail the whole load rather than the one table.
+    static void assertConstraintPreservesRowCount(const ASTPtr & constraint);
+    void assertPreserveRowCount() const;
+
     struct AtomId
     {
         size_t group_id;
@@ -86,7 +91,7 @@ public:
         friend ConstraintsDescription;
     };
 
-    QueryTreeData getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const;
+    QueryTreeData getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const;
 
 private:
     std::vector<std::vector<CNFQueryAtomicFormula>> buildConstraintData() const;

@@ -8,6 +8,7 @@
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/Stopwatch.h>
 #include <unordered_set>
 
 TEST_P(CoordinationTest, TestSystemNodeModify)
@@ -384,6 +385,29 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZBADARGUMENTS);
     }
+
+    {
+        SCOPED_TRACE("Recursive Remove Single Node Zero Limit");
+        create("/T10", zkutil::CreateMode::Persistent);
+
+        /// The node itself counts toward the limit, so a zero limit removes nothing.
+        auto responses = remove_recursive("/T10", 0);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/T10"));
+
+        responses = remove_recursive("/T10", 1);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_FALSE(exists("/T10"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Nonexistent Node Zero Limit");
+        auto responses = remove_recursive("/T11", 0);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    }
 }
 
 namespace
@@ -604,6 +628,227 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
     }
 
 }
+
+/// Preprocessing a RemoveRecursive request must not slow down when many unrelated uncommitted
+/// nodes are in flight. Without a per-parent index of uncommitted nodes the collector scans every
+/// uncommitted node once per request, so a backlog of 100K uncommitted creates makes a batch of
+/// small recursive removes take hundreds of milliseconds instead of well under one.
+TEST_P(CoordinationTest, TestRemoveRecursivePreprocessWithUncommittedBacklog)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const auto preprocess = [&](const ZooKeeperRequestPtr & request)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        return new_zxid;
+    };
+
+    const auto create_committed = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK) << "Failed to create " << path;
+    };
+
+    const auto exists = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Error::ZOK;
+    };
+
+    const auto is_multi_ok = [&](const ZooKeeperResponsePtr & response)
+    {
+        const auto & multi_response = dynamic_cast<const ZooKeeperMultiResponse &>(*response);
+        for (const auto & op_response : multi_response.responses)
+            if (op_response->error != Error::ZOK)
+                return false;
+        return true;
+    };
+
+    /// Two identical sets of small subtrees to remove: one is measured without a backlog, the other with.
+    constexpr size_t subtrees = 50;
+    for (const auto * root : {"/set_a", "/set_b"})
+    {
+        create_committed(root);
+        for (size_t i = 0; i < subtrees; ++i)
+        {
+            const auto node = fmt::format("{}/{}", root, i);
+            create_committed(node);
+            create_committed(node + "/lease");
+        }
+    }
+    create_committed("/backlog");
+
+    const auto make_remove_batch = [&](const String & root)
+    {
+        Requests ops;
+        for (size_t i = 0; i < subtrees; ++i)
+            ops.push_back(makeRemoveRecursiveRequest(fmt::format("{}/{}", root, i), 100));
+        return std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+    };
+
+    /// Baseline: no uncommitted backlog.
+    const auto batch_a = make_remove_batch("/set_a");
+    Stopwatch watch_a;
+    const auto zxid_a = preprocess(batch_a);
+    const UInt64 base_us = watch_a.elapsedMicroseconds();
+    auto responses = storage.processRequest(batch_a, 1, zxid_a);
+    ASSERT_EQ(responses.size(), 1);
+    ASSERT_TRUE(is_multi_ok(responses[0].response));
+
+    /// Backlog: many unrelated creates preprocessed but not yet committed.
+    constexpr size_t backlog = 100000;
+    std::vector<std::pair<ZooKeeperRequestPtr, int64_t>> pending;
+    pending.reserve(backlog);
+    for (size_t i = 0; i < backlog; ++i)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = fmt::format("/backlog/{}", i);
+        auto new_zxid = preprocess(request);
+        pending.emplace_back(std::move(request), new_zxid);
+    }
+
+    const auto batch_b = make_remove_batch("/set_b");
+    Stopwatch watch_b;
+    const auto zxid_b = preprocess(batch_b);
+    const UInt64 backlog_us = watch_b.elapsedMicroseconds();
+
+    std::cerr << fmt::format(
+        "RemoveRecursive batch of {} preprocessed in {} us without backlog and in {} us with {} uncommitted nodes\n",
+        subtrees, base_us, backlog_us, backlog);
+
+    /// Commit everything in order and check the outcome.
+    for (const auto & [request, request_zxid] : pending)
+    {
+        auto create_responses = storage.processRequest(request, 1, request_zxid);
+        ASSERT_EQ(create_responses.size(), 1);
+        ASSERT_EQ(create_responses[0].response->error, Error::ZOK);
+    }
+    responses = storage.processRequest(batch_b, 1, zxid_b);
+    ASSERT_EQ(responses.size(), 1);
+    ASSERT_TRUE(is_multi_ok(responses[0].response));
+    ASSERT_FALSE(exists("/set_b/0/lease"));
+    ASSERT_FALSE(exists(fmt::format("/set_b/{}", subtrees - 1)));
+    ASSERT_TRUE(exists("/set_b"));
+    ASSERT_TRUE(exists(fmt::format("/backlog/{}", backlog - 1)));
+
+    /// The cost of the batch must not scale with the number of unrelated uncommitted nodes.
+    /// Allow generous noise: ten times the baseline or 20 ms, whichever is larger.
+    EXPECT_LE(backlog_us, std::max<UInt64>(base_us * 10, 20000))
+        << "preprocessing slowed down from " << base_us << " us to " << backlog_us << " us with " << backlog << " uncommitted nodes";
+}
+
+/// Uncommitted children must be visible to RemoveRecursive, and must stop being visible once the
+/// request that created them is rolled back.
+TEST_P(CoordinationTest, TestRemoveRecursiveSeesUncommittedChildrenUntilRollback)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const auto preprocess = [&](const ZooKeeperRequestPtr & request)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        return new_zxid;
+    };
+
+    const auto make_create = [](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        return request;
+    };
+
+    const auto make_remove_recursive = [](const String & path, uint32_t limit)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
+        request->path = path;
+        request->remove_nodes_limit = limit;
+        return request;
+    };
+
+    const auto exists = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Error::ZOK;
+    };
+
+    for (const auto * path : {"/p", "/p/x"})
+    {
+        auto request = make_create(path);
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    }
+
+    {
+        SCOPED_TRACE("An uncommitted child counts toward the remove limit");
+        auto child = make_create("/p/x/c1");
+        auto child_zxid = preprocess(child);
+        auto remove = make_remove_recursive("/p/x", 1);
+        auto remove_zxid = preprocess(remove);
+
+        auto child_responses = storage.processRequest(child, 1, child_zxid);
+        ASSERT_EQ(child_responses.size(), 1);
+        ASSERT_EQ(child_responses[0].response->error, Error::ZOK);
+        auto remove_responses = storage.processRequest(remove, 1, remove_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/p/x/c1"));
+
+        /// With a limit that fits the committed child the same remove succeeds.
+        auto remove_fitting = make_remove_recursive("/p/x", 2);
+        auto remove_fitting_zxid = preprocess(remove_fitting);
+        remove_responses = storage.processRequest(remove_fitting, 1, remove_fitting_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+        ASSERT_FALSE(exists("/p/x"));
+    }
+
+    {
+        SCOPED_TRACE("A rolled back uncommitted child no longer counts");
+        auto parent = make_create("/p/y");
+        auto parent_zxid = preprocess(parent);
+        auto parent_responses = storage.processRequest(parent, 1, parent_zxid);
+        ASSERT_EQ(parent_responses[0].response->error, Error::ZOK);
+
+        auto child = make_create("/p/y/c2");
+        auto child_zxid = preprocess(child);
+        storage.rollbackRequest(child_zxid, /*allow_missing=*/false);
+        --zxid;
+
+        auto remove = make_remove_recursive("/p/y", 1);
+        auto remove_zxid = preprocess(remove);
+        auto remove_responses = storage.processRequest(remove, 1, remove_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+        ASSERT_FALSE(exists("/p/y"));
+        ASSERT_FALSE(exists("/p/y/c2"));
+    }
+}
+
 
 TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
 {
@@ -1874,6 +2119,78 @@ TEST_P(CoordinationTest, TestTTLNodeExpiry)
     EXPECT_TRUE(storage.collectExpiredTTLPaths(ttl_ms + 1, 1000000).empty());
 }
 
+/// Eligibility is asserted at exact instants because `collectExpiredTTLPaths` takes the clock as
+/// an argument, while the garbage collector reads it in the caller. An integration test cannot
+/// assert the same ordering without observing a transient window and racing the real collector.
+TEST_P(CoordinationTest, TestTTLSiblingExpiryOrdering)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+    const int64_t create_time = 1000;
+    const int64_t short_ttl_ms = 1000;
+    const int64_t long_ttl_ms = 3000;
+
+    auto create = [&](const std::string & path, bool with_ttl, int64_t ttl_ms)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->include_ttl = with_ttl;
+        request->ttl = ttl_ms;
+        storage.preprocessRequest(request, session_id, create_time, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        auto responses = storage.processRequest(request, session_id, zxid);
+        ASSERT_FALSE(responses.empty());
+        ASSERT_EQ(responses[0].response->error, Error::ZOK) << "Unexpected error creating " << path;
+    };
+
+    create("/root", /*with_ttl=*/false, 0);
+    create("/a", /*with_ttl=*/true, short_ttl_ms);
+    create("/b", /*with_ttl=*/true, long_ttl_ms);
+
+    const auto collected_paths = [&](int64_t now_ms)
+    {
+        std::vector<std::string> paths;
+        for (const auto & [path, _] : storage.collectExpiredTTLPaths(now_ms, 1000000))
+            paths.push_back(path);
+        std::sort(paths.begin(), paths.end());
+        return paths;
+    };
+
+    EXPECT_EQ(collected_paths(create_time + short_ttl_ms - 1), std::vector<std::string>{});
+    EXPECT_EQ(collected_paths(create_time + short_ttl_ms), std::vector<std::string>{"/a"});
+    EXPECT_EQ(collected_paths(create_time + long_ttl_ms - 1), std::vector<std::string>{"/a"});
+    EXPECT_EQ(collected_paths(create_time + long_ttl_ms), (std::vector<std::string>{"/a", "/b"}));
+
+    auto gc_remove = [&](const std::string & path, int64_t at_ms)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        request->path = path;
+        request->version = -1;
+        request->try_remove = true;
+        storage.preprocessRequest(
+            request, keeper_internal_ttl_garbage_collector_session_id, at_ms, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        return storage.processRequest(request, keeper_internal_ttl_garbage_collector_session_id, zxid);
+    };
+
+    auto remove_a_responses = gc_remove("/a", create_time + short_ttl_ms);
+    ASSERT_FALSE(remove_a_responses.empty());
+    ASSERT_EQ(remove_a_responses[0].response->error, Error::ZOK);
+
+    EXPECT_FALSE(storage.containsTTLPath("/a"));
+    EXPECT_TRUE(storage.containsTTLPath("/b"));
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/b", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/root", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+
+    /// A collection request for /b issued before its destroy_time is refused at commit time.
+    gc_remove("/b", create_time + short_ttl_ms);
+    EXPECT_TRUE(storage.containsTTLPath("/b"));
+    EXPECT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/b", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+}
+
 TEST_P(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
 {
     using namespace DB;
@@ -2303,6 +2620,35 @@ TEST_P(CoordinationTest, TestCreate2ResponseDataLength)
 
     const auto & create2_response = dynamic_cast<const ZooKeeperCreate2Response &>(*responses[0].response);
     EXPECT_EQ(create2_response.zstat.dataLength, static_cast<int32_t>(data.size()));
+}
+
+TEST_P(CoordinationTest, ReadViewStableCountAndRepeatedNext)
+{
+    /// The KeeperNodesReadView contract: getNodeCount must return the same value before and
+    /// after the iteration, and next must keep returning false after the view is exhausted
+    /// (`system.keeper_storage` calls next once per block, retrying after the last one).
+    this->keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+
+    addNode(storage, "/a", "data_a");
+    addNode(storage, "/b", "data_b");
+
+    auto view = storage.issueReadView();
+    const size_t count_before = view->getNodeCount();
+    EXPECT_GT(count_before, 0u);
+
+    size_t nodes_seen = 0;
+    std::string_view path;
+    std::string_view node_data;
+    DB::KeeperNodeStats stats;
+    while (view->next(path, node_data, stats))
+        ++nodes_seen;
+
+    EXPECT_EQ(nodes_seen, count_before);
+    EXPECT_EQ(view->getNodeCount(), count_before);
+    EXPECT_FALSE(view->next(path, node_data, stats));
+    EXPECT_FALSE(view->next(path, node_data, stats));
 }
 
 #endif

@@ -48,6 +48,7 @@ class SettingsChanges;
     M(CLASS_NAME, ParquetVersion) \
     M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SchemaInferenceMode) \
+    M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \

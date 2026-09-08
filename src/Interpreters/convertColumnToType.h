@@ -23,14 +23,20 @@ namespace DB
   * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
   * so more column-native fast paths can be added without changing results.
   *
-  * Scope of the equivalence: it holds for the value/numeric coercions this is used for today
-  * (all current callers convert to numeric types). It does NOT yet hold when the *source* type's
-  * `Field` tag is not recoverable from `IColumn::get` AND `to` depends on that tag: the notable case
-  * is `Bool`, whose column is a plain `ColumnUInt8`, so the delegation path reconstructs a `UInt64`
-  * `Field` and `Bool -> String` yields `'1'`/`'0'` instead of `convertFieldToType`'s `'true'`/`'false'`
-  * (same for nested `Array(Bool)` / `Tuple(Bool)`). Converting such sources to a numeric `to` is
-  * unaffected (value-preserving). This gap disappears as the `convertFieldToType` delegation is
-  * replaced by column-native paths; until then, do not rely on it for `Bool`-to-textual conversions.
+  * The equivalence holds for scalar `Bool` and for `Bool` nested under the structural carriers
+  * `Array`/`Tuple`/`Map` (and under `Nullable`/`LowCardinality`), including tag-sensitive conversions
+  * such as `Bool -> String`: `IColumn::get` does not round-trip the `Bool` `Field` tag (a `DataTypeBool`
+  * column is a plain `ColumnUInt8`, so `get` yields `UInt64`), so the delegation path re-tags `Bool`
+  * values before calling `convertFieldToType`. The differential test pins these cases.
+  *
+  * Known limitation: `Bool` nested under `Variant` (and therefore `Dynamic`/`JSON`) is NOT faithful.
+  * `ColumnVariant::get` erases the active alternative to the nested column's field (e.g. `UInt64` for a
+  * `Bool` alternative), and for an ambiguous variant such as `Variant(Bool, UInt8)` the reconstructed
+  * `Field` no longer records which alternative was active, so it cannot be recovered structurally the
+  * way the carriers above can. Making it faithful would require a `ColumnVariant`-aware path before the
+  * generic `get`. No current caller needs `Variant`-of-`Bool` textual conversion; note that the legacy
+  * `Field` path (`convertFieldToType` on `(*column)[0]`) has the exact same limitation, so migrating a
+  * caller from it to this helper does not change that behavior.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,

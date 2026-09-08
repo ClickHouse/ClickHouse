@@ -31,7 +31,7 @@ bool typeIsSigned(const IDataType & type)
 {
     WhichDataType data_type(type);
     return data_type.isInt() || data_type.isFloat() || data_type.isEnum() || data_type.isDate32() || data_type.isDecimal()
-        || data_type.isDateTime64();
+        || data_type.isDateTime64() || data_type.isTimeOrTime64();
 }
 
 llvm::Type * toNullableType(llvm::IRBuilderBase & builder, llvm::Type * type)

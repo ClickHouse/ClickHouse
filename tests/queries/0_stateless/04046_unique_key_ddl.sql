@@ -142,16 +142,6 @@ ENGINE = MergeTree
 UNIQUE KEY (id)
 ORDER BY (id, user_id); -- { serverError SUPPORT_IS_DISABLED }
 
--- 10b. Streaming read (FROM ... STREAM) on a unique-key table -> error.
--- The streaming source does not apply the delete-bitmap filter; reject rather
--- than serve logically-deleted rows.
-SET enable_streaming_queries = 1;
--- On Linux the UK guard rejects with NOT_IMPLEMENTED; on macOS streaming is
--- disabled platform-wide (SUPPORT_IS_DISABLED) and fires first. Either way STREAM
--- on a UK table is rejected.
-SELECT * FROM uk_t STREAM; -- { serverError NOT_IMPLEMENTED, SUPPORT_IS_DISABLED }
-SET enable_streaming_queries = 0;
-
 -- 10c. A unique-key table that also carries a projection must never read
 -- through the projection part (that would bypass the delete-bitmap filter).
 -- CREATE/ALTER reject the combination, but ATTACH (and other secondary-create

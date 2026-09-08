@@ -24,10 +24,11 @@ namespace Setting
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
@@ -116,11 +117,15 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_software_prefetch_in_aggregation],
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
-        static_cast<float>(settings[Setting::min_chunk_bytes_for_parallel_parsing]),
+        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         /*stats_collecting_params_=*/{},
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        /*enable_parallel_single_level_merge_=*/false);
+        /*enable_parallel_single_level_merge_=*/false,
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        /* enable_adaptive_aggregator */ false,
+        /* adaptive_aggregator_freeze_threshold */ 0,
+        /* adaptive_aggregator_freeze_threshold_bytes */ 0);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
@@ -153,6 +158,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
         auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        PaddedPODArray<Int64> timestamps;
+        extractTimestamps(ttl_column.get(), timestamps);
 
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
@@ -160,7 +167,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+            Int64 cur_ttl = timestamps[i];
             bool where_filter_passed = !where_column || where_column->getBool(i);
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
@@ -235,11 +242,13 @@ void TTLAggregationAlgorithm::execute(Block & block)
     {
         auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
         auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        PaddedPODArray<Int64> timestamps;
+        extractTimestamps(ttl_column_after_aggregation.get(), timestamps);
         for (size_t i = 0; i < block.rows(); ++i)
         {
             bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
             if (where_filter_passed)
-                new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
+                new_ttl_info.update(timestamps[i]);
         }
     }
 }
@@ -257,7 +266,8 @@ void TTLAggregationAlgorithm::calculateAggregates(const MutableColumns & aggrega
 
     aggregator->executeOnBlock(
         aggregate_chunk, /* row_begin= */ 0, length,
-        aggregation_result, key_columns, columns_for_aggregator, no_more_keys);
+        aggregation_result, key_columns, columns_for_aggregator, no_more_keys,
+        /* adaptive= */ nullptr);
 
 }
 

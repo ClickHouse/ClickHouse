@@ -65,6 +65,13 @@ Examples:
 ```
 </Tip>
 
+The data does not have to be local: a URL can be used in place of a file name, and the URL scheme picks the matching table engine (`http://` and `https://` are read like the [url](/reference/functions/table-functions/url) function, `s3://` like the [s3](/reference/functions/table-functions/s3) function, `file://` like the [file](/reference/functions/table-functions/file) function):
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
@@ -227,7 +234,7 @@ Arguments:
 - `--echo-query-id [ <bool> ]` — print the `query_id` before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
 - `--echo-query-separator <string>` — print this separator before the formatted echoed query (requires `--echo-formatted`), making it easier to tell the typed query apart from its reformatted echo. Empty by default (disabled).
 - `--highlight`, `--hilite` `<bool>` — toggle syntax highlighting of the command prompt and the echoed queries. Enabled by default. Highlighting is applied only when writing to a terminal.
-- `--hints <bool>` — show as-you-type autocompletion hints (inline "ghost" text) for the best matching suggestion when the cursor is at the end of the input. Navigate the hints with Up/Down (or Ctrl-Up/Ctrl-Down); accept the inline hint with Tab or Right; `Enter` accepts a hint only after one has been explicitly selected and otherwise runs the query; `Tab` also opens the classic completion list. Requires `--highlight` (hints need color) and the suggestion machinery (so `--disable_suggestion` also turns them off). Enabled by default.
+- `--hints <bool>` — show as-you-type autocompletion hints (inline "ghost" text) for the best matching suggestion when the cursor is at the end of the input. Navigate the hints with Up/Down (or Ctrl-Up/Ctrl-Down); accept the inline hint with Tab or Right; `Enter` accepts a hint only after one has been explicitly selected and otherwise runs the query; `Tab` also opens the classic completion list. Requires `--highlight` (hints need color). The suggestion hints also need the suggestion machinery, so `--disable_suggestion` turns those off; the [`/`-commands](/interfaces/client#slash-commands) of the client are a static list and stay hinted as long as `--hints` and `--highlight` are on. `Tab` completes the `/`-commands even when the hints are off. Enabled by default.
 - `--verbose` — more details on query execution.
 - `--logger.console` — Log to console.
 - `--logger.log` — Log file name.
@@ -239,6 +246,41 @@ Arguments:
 - `-V`, `--version` — print version information and exit.
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
+
+### Configuration files {#configuration-files}
+
+`clickhouse-local` does not use the configuration of a ClickHouse server installed on the same
+host - it looks for its own main configuration file and uses the first of these that exists:
+
+1. the path passed with `--config-file`;
+2. `./config.xml`;
+3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` or `./clickhouse-local.yml`;
+4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` or `~/.clickhouse-local/config.yml`;
+5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` or `/etc/clickhouse-local/config.yml`.
+
+Just like for `clickhouse-server`, the `.xml`, `.yaml`, `.yml` and `.conf` files from the merge
+directories next to the main configuration file are merged into it: `config.d` and `conf.d` for
+`config.xml`, `clickhouse-local.d` and `conf.d` for `clickhouse-local.yaml`, and so on.
+
+The merge directories of the current directory apply even when there is no main configuration file:
+`./config.d` and `./conf.d` are merged into a minimal configuration embedded in the binary. This
+makes a directory self-describing - for example, with
+
+```yaml title="config.d/datasets.yaml"
+storage_configuration:
+  disks:
+    datasets:
+      type: object_storage
+      object_storage_type: s3
+      metadata_type: plain_rewritable
+      endpoint: https://data.clickhouse.com/public-datasets/db/
+      no_sign_request: true
+      readonly: true
+      skip_access_check: true
+```
+
+every `clickhouse-local` started in that directory has the `datasets` disk, and no `config.xml`
+has to be created for it.
 
 ## Commands {#commands}
 
@@ -374,10 +416,14 @@ clickhouse-local \
 
 The `--listen_host`, `--tcp_port`, and `--http_port` options configure the bind address and ports. Default ports are `9000` for TCP and `8123` for HTTP.
 
+The HTTP listener answers CORS preflight requests with the same permissive headers as the default `clickhouse-server` configuration, so a web application can query it from the browser out of the box - including the web UI opened from a `file://` URL, whose origin is `null`. To restrict this, define your own `http_options_response` section in a configuration file passed with `--config-file`; it replaces the defaults entirely.
+
 <Warning>
 **Security**
 
 By default, `clickhouse-local` runs with the temporary users setup, so any listener it opens is unauthenticated. Bind to a loopback address (`127.0.0.1` or `::1`) unless you have explicitly configured users and access control by pointing the `users_config` setting at a custom `users.xml` (for example via `--config-file`). Listening on a non-loopback address without authentication exposes the data of the local instance to anyone who can reach the chosen port.
+
+Note that a loopback address is still reachable from the browser: while an HTTP listener is open, any web page you visit can query the local instance and, thanks to the default CORS headers, read the results.
 </Warning>
 
 ## Related Content {#related-content-1}

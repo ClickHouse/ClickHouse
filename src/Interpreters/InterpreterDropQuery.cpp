@@ -217,7 +217,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         /// table drops can break dependency invariants (e.g., a dependent table's drop is ignored
         /// while the table it depends on is dropped, since DROP DATABASE skips same-database
         /// dependency checks), leaving orphaned tables that prevent server restart.
-        if (!secondary_query && !is_refreshable_view && !is_drop_or_detach_database
+        if (!secondary_query && !internal && !is_refreshable_view && !is_drop_or_detach_database
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
@@ -265,12 +265,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else if (query.kind == ASTDropQuery::Kind::Drop)
                 context_->checkAccess(drop_storage, table_id);
 
-            ddl_guard->releaseTableLock();
+            if (ddl_guard)
+                ddl_guard->releaseTableLock();
             table.reset();
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, QueryFlags{ .internal = internal }, std::move(ddl_guard));
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -338,7 +339,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
-            context_->checkAccess(drop_storage, table_id);
+            if (!query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
 
             if (table->isDictionary())
             {
@@ -511,7 +513,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         /// If we have a TRUNCATE TABLES .. LIKE, we should not truncate all tables,
         /// the logic regarding finding suitable tables is a bit below
-        if (!truncate || !query.has_tables || query.like.empty())
+        if (!truncate || !query.has_tables || !query.has_like)
         {
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
             /// since in this case getTablesIterator() may do some additional work,
@@ -599,9 +601,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             prepare_tables(tables_to_prepare);
 
-            /// Sort tables in reverse loading dependency order (dependents first, then their dependencies).
+            /// Sort tables in reverse dependency order (dependents first, then their dependencies).
             /// This way, if the server crashes mid-drop, the remaining tables will still have their
             /// dependencies intact and can be loaded on restart.
+            /// Both loading and referential dependencies are taken into account, so a dependent
+            /// is always dropped before the tables it depends on.
             {
                 TablesDependencyGraph local_graph("drop_database");
                 std::unordered_set<String> table_names_in_drop;
@@ -610,7 +614,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
                 for (const auto & [id, _] : tables_to_drop)
                 {
+                    /// Loading dependencies are mostly a subset of referential dependencies,
+                    /// but that is not enforced anywhere, so we take the union of both.
+                    /// (`TablesDependencyGraph` stores dependencies as a set, so duplicates are fine.)
                     auto deps = DatabaseCatalog::instance().getLoadingDependencies(id);
+                    auto referential_deps = DatabaseCatalog::instance().getReferentialDependencies(id);
+                    deps.insert(deps.end(), referential_deps.begin(), referential_deps.end());
+
                     std::vector<StorageID> relevant_deps;
                     for (const auto & dep : deps)
                         if (table_names_in_drop.contains(dep.getFullTableName()))
@@ -620,7 +630,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
                 auto sorted = local_graph.getTablesSortedByDependency();
 
-                /// Build a position map: tables sorted by loading order (dependencies first).
+                /// Build a position map: tables sorted by dependency order (dependencies first).
                 /// For dropping, we reverse: higher position (more dependencies) should be dropped first.
                 std::unordered_map<String, size_t> position;
                 for (size_t i = 0; i < sorted.size(); ++i)
@@ -679,7 +689,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     }
 
     /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
-    if (truncate && query.has_tables && !query.like.empty())
+    if (truncate && query.has_tables && query.has_like)
     {
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
@@ -699,7 +709,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 
-            if (!query.like.empty())
+            if (query.has_like)
             {
                 bool match = matchesLikePattern(tname, query.like, query.case_insensitive_like);
                 if (query.not_like)
@@ -842,10 +852,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
-        else if (drop.kind == ASTDropQuery::Kind::Drop)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
+        /// `DROP`, `DETACH` and `TRUNCATE` of a database are all authorized by `DROP DATABASE`,
+        /// which is the single privilege `executeToDatabaseImpl` requires for each of them.
+        required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)
     {
@@ -869,7 +878,8 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 }
 
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
-                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard)
+                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard,
+                                            bool propagate_metadata_transaction)
 {
     auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name, nullptr) : nullptr);
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
@@ -881,6 +891,8 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         drop_query->kind = kind;
         drop_query->sync = sync;
         drop_query->if_exists = true;
+        /// The DDLGuard for this exact name is already held above, and it is not recursive.
+        drop_query->no_ddl_lock = need_ddl_guard;
         ASTPtr ast_drop_query = drop_query;
         /// FIXME We have to use global context to execute DROP query for inner table
         /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege
@@ -900,7 +912,8 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
             /// For Replicated database
             drop_context->setQueryKindReplicatedDatabaseInternal();
             drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
-            drop_context->initZooKeeperMetadataTransaction(txn, true);
+            if (propagate_metadata_transaction)
+                drop_context->initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();
