@@ -5442,7 +5442,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         Names left_cols;
         NameSet right_cols;
 
-        /// A join key must be readable, so EPHEMERAL columns are not `NATURAL JOIN` keys.
+        /// A join key must be readable, so `EPHEMERAL` columns are not `NATURAL JOIN` keys.
         if (!getOrderedColumnsFromTableExpression(
                 join_node_typed.getLeftTableExpressionNode(), left_cols, GetColumnsOptions::AllPhysicalAndAliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -5579,7 +5579,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 /// Added column should not conflict with existing column names
                 NameSet existing_columns;
-                /// Must cover every name that can be registered as a column identifier, EPHEMERAL included.
+                /// `initializeTableExpressionData` registers `EPHEMERAL` names as column
+                /// identifiers, so a synthesized name can collide with one.
                 if (!getColumnsFromTableExpression(left_table_expression, existing_columns, GetColumnsOptions::All))
                     return nullptr;
 
