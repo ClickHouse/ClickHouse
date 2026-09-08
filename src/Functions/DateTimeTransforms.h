@@ -2031,7 +2031,12 @@ struct ToDayOfWeekImpl
     }
 
     static constexpr bool hasMonotonicity() { return true; }
-    using FactorTransform = ToMondayImpl;
+
+    /// The day of the week is monotonic inside a single day for every `mode`, while a week-based factor
+    /// only holds for the Monday-first modes: modes 2 and 3 number Sunday lowest, so a range inside one
+    /// Monday-week is not monotonic there - and the mode, a constant argument, is not visible to
+    /// `getMonotonicityForRange`.
+    using FactorTransform = ToDateImpl<>;
 };
 
 struct ToDayOfYearImpl

@@ -25,3 +25,20 @@ SELECT countIf(toDayOfWeek(dt) = 7), count() FROM t_week_tz WHERE toDayOfWeek(dt
 SELECT countIf(toWeek(dt) = 32), count() FROM t_week_tz WHERE toWeek(dt) = 32;
 
 DROP TABLE t_week_tz;
+
+-- `toDayOfWeek` numbers Sunday lowest in the Sunday-first modes, so a range inside one Monday-week is
+-- not monotonic there and must not be used to discard the part that holds a matching row.
+
+DROP TABLE IF EXISTS t_day_of_week_mode;
+
+CREATE TABLE t_day_of_week_mode (d Date) ENGINE = MergeTree ORDER BY d
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO t_day_of_week_mode SELECT toDate('2026-08-03') + number FROM numbers(7);
+
+SELECT countIf(toDayOfWeek(d, 3) = 1), count() FROM t_day_of_week_mode WHERE toDayOfWeek(d, 3) = 1;
+SELECT countIf(toDayOfWeek(d, 2) = 0), count() FROM t_day_of_week_mode WHERE toDayOfWeek(d, 2) = 0;
+SELECT countIf(toDayOfWeek(d) = 7), count() FROM t_day_of_week_mode WHERE toDayOfWeek(d) = 7;
+SELECT countIf(toDayOfWeek(d, 1) = 0), count() FROM t_day_of_week_mode WHERE toDayOfWeek(d, 1) = 0;
+
+DROP TABLE t_day_of_week_mode;
