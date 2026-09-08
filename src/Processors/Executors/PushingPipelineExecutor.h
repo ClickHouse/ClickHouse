@@ -12,8 +12,8 @@ class Chunk;
 class QueryPipeline;
 class PushingSource;
 
-class PipelineExecutor;
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+class Executor;
+using ExecutorPtr = std::shared_ptr<Executor>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -51,7 +51,7 @@ private:
     std::atomic_bool input_wait_flag = false;
     std::shared_ptr<PushingSource> pushing_source;
 
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
     bool started = false;
     bool finished = false;
 };

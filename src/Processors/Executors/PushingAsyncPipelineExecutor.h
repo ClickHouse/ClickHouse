@@ -11,8 +11,8 @@ class Chunk;
 class QueryPipeline;
 class PushingAsyncSource;
 
-class PipelineExecutor;
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+class Executor;
+using ExecutorPtr = std::shared_ptr<Executor>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;

@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/Executor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -76,7 +76,7 @@ private:
 
 struct PushingAsyncPipelineExecutor::Data
 {
-    PipelineExecutorPtr executor;
+    std::shared_ptr<Executor> executor;
     std::exception_ptr exception;
     PushingAsyncSource * source = nullptr;
     std::atomic_bool is_finished = false;
@@ -158,7 +158,7 @@ void PushingAsyncPipelineExecutor::start()
     started = true;
 
     data = std::make_unique<Data>();
-    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+    data->executor = std::make_shared<Executor>(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     data->source = pushing_source.get();
 
@@ -217,7 +217,7 @@ void PushingAsyncPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (data && !data->is_finished && data->executor)
-        data->executor->cancel();
+        data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
 
     finish();
 }

@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/Executor.h>
 #include <Processors/ISink.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
@@ -78,7 +78,7 @@ TEST(ScatterRoundRobin, SpreadsChunksAndKeepsChunkInfo)
     }
 
     QueryStatusPtr status;
-    PipelineExecutor executor(processors, status);
+    Executor executor(processors, status);
     executor.execute(1, false);
 
     /// Chunk i (1-based rows count i) goes to bucket (start_bucket + i - 1) % bucket_count:

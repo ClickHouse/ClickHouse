@@ -12,7 +12,6 @@
 #include <Processors/IProcessor_fwd.h>
 #include <fmt/format.h>
 
-class EventCounter;
 
 namespace DB
 {
@@ -400,16 +399,7 @@ protected:
     bool spillable = false;
 
 private:
-    /// For:
-    /// - elapsed_ns
-    /// - num_executed_jobs
-    /// - query_plan_step_wall_clock_ptr
-    friend class ExecutionThreadContext;
-    /// For
-    /// - input_wait_elapsed_ns
-    /// - output_wait_elapsed_ns
-    friend class ExecutingGraph;
-    /// For all of the above
+    /// For the profiling fields: elapsed_ns, num_executed_jobs, query_plan_step_wall_clock_ptr, input_wait_elapsed_ns, output_wait_elapsed_ns
     friend class Worker;
 
     std::string processor_description;

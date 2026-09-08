@@ -286,6 +286,10 @@ void Worker::runUpdatePipeline(ProcessorState & requester)
 {
     IProcessor::PipelineUpdate update = requester.processor->updatePipeline();
 
+    for (const auto & processor : update.to_add)
+        if (!processor->getQueryPlanStep())
+            processor->inheritQueryPlanStepFromParent(*requester.processor, requester.processor->getQueryPlanStepGroup());
+
     auto added = pipeline.addProcessors(requester, update.to_add);
     if (!update.to_remove.empty())
         pipeline.submitForRemoval(std::move(update.to_remove));

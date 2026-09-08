@@ -29,9 +29,15 @@ Executor::Executor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem,
     , process_list_element(std::move(elem))
     , registry(registry_)
 {
+    if (process_list_element)
+        process_list_element->addExecutor(this);
 }
 
-Executor::~Executor() = default;
+Executor::~Executor()
+{
+    if (process_list_element)
+        process_list_element->removeExecutor(this);
+}
 
 void Executor::start(size_t num_threads, bool concurrency_control)
 {
