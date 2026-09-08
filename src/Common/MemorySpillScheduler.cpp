@@ -33,6 +33,8 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
                 return;
 
             state.claimed_forced_epoch = forced_epoch;
+            state.memory_before_spill = getCurrentQueryMemoryUsage();
+            state.spill_requested = false;
             should_spill = stats.spillable_memory_bytes > 0;
             if (!should_spill)
                 completeForcedSpillProcessor(forced_epoch, state);
@@ -41,10 +43,7 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
         if (!should_spill)
             return;
 
-        const Int64 memory_before = getCurrentQueryMemoryUsage();
         const bool spill_succeeded = processor->spillOnSize(stats.spillable_memory_bytes);
-        const Int64 memory_after = getCurrentQueryMemoryUsage();
-        const Int64 reclaimed_bytes = std::max<Int64>(memory_before - memory_after, 0);
 
         std::lock_guard lock(mutex);
         if (!forced_spill_active
@@ -55,12 +54,7 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
         if (state == processor_states.end())
             return;
 
-        if (spill_succeeded || reclaimed_bytes > 0)
-        {
-            forced_spill_outcome.store(ForcedSpillOutcome::Progress, std::memory_order_relaxed);
-            forced_spill_reclaimed_bytes.fetch_add(reclaimed_bytes, std::memory_order_relaxed);
-        }
-        completeForcedSpillProcessor(forced_epoch, state->second);
+        state->second.spill_requested = spill_succeeded;
         return;
     }
 
@@ -69,6 +63,32 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
 
     if (processor == selectSpilledProcessor(processor, stats, false))
         processor->spillOnSize(stats.spillable_memory_bytes);
+}
+
+void MemorySpillScheduler::finishSpill(IProcessor * processor)
+{
+    const UInt64 forced_epoch = forced_spill_request_epoch.load(std::memory_order_acquire);
+    if (forced_spill_completed_epoch.load(std::memory_order_acquire) >= forced_epoch)
+        return;
+
+    const Int64 memory_after = getCurrentQueryMemoryUsage();
+    std::lock_guard lock(mutex);
+    if (!forced_spill_active || forced_spill_request_epoch.load(std::memory_order_acquire) != forced_epoch)
+        return;
+
+    auto state = processor_states.find(processor);
+    if (state == processor_states.end()
+        || state->second.claimed_forced_epoch != forced_epoch
+        || state->second.completed_forced_epoch >= forced_epoch)
+        return;
+
+    const Int64 reclaimed_bytes = std::max<Int64>(state->second.memory_before_spill - memory_after, 0);
+    if (state->second.spill_requested || reclaimed_bytes > 0)
+    {
+        forced_spill_outcome.store(ForcedSpillOutcome::Progress, std::memory_order_relaxed);
+        forced_spill_reclaimed_bytes.fetch_add(reclaimed_bytes, std::memory_order_relaxed);
+    }
+    completeForcedSpillProcessor(forced_epoch, state->second);
 }
 
 void MemorySpillScheduler::registerProcessor(IProcessor * processor)
@@ -217,3 +237,4 @@ IProcessor * MemorySpillScheduler::selectSpilledProcessor(
     return top_processor;
 }
 }
+

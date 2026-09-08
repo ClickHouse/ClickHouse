@@ -52,10 +52,19 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
-        if (node->processor()->isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor());
+        MemorySpillSchedulerPtr spill_scheduler;
+        if (node->processor()->isSpillable())
+        {
+            if (auto group = CurrentThread::getGroup())
+                spill_scheduler = group->memory_spill_scheduler;
+        }
+        if (spill_scheduler)
+            spill_scheduler->checkAndSpill(node->processor());
 
         node->processor()->work();
+
+        if (spill_scheduler)
+            spill_scheduler->finishSpill(node->processor());
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
@@ -174,3 +183,4 @@ void ExecutionThreadContext::rethrowExceptionIfHas()
 }
 
 }
+

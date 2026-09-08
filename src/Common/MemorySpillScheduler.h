@@ -37,6 +37,9 @@ public:
     ~MemorySpillScheduler() = default;
 
     void checkAndSpill(IProcessor * processor);
+    /// Called by the same worker after successful processor work. A spill callback may only arm
+    /// deferred work, so returning from that callback does not complete its forced-spill attempt.
+    void finishSpill(IProcessor * processor);
     void registerProcessor(IProcessor * processor);
     void remove(IProcessor * processor);
 
@@ -52,6 +55,8 @@ private:
         ProcessorMemoryStats stats;
         UInt64 claimed_forced_epoch = 0;
         UInt64 completed_forced_epoch = 0;
+        Int64 memory_before_spill = 0;
+        bool spill_requested = false;
     };
 
     bool enable = true;
@@ -83,3 +88,4 @@ private:
 using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
 
 }
+

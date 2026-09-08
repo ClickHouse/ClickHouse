@@ -1959,9 +1959,20 @@ public:
     {
         ++spill_calls;
         last_spill_size = bytes;
+        spill_pending = spill_succeeds;
         return spill_succeeds;
     }
 
+    void work() override
+    {
+        if (spill_pending)
+        {
+            ++completed_spills;
+            spill_pending = false;
+        }
+    }
+
+    size_t completedSpillCount() const { return completed_spills; }
     size_t spillCallCount() const { return spill_calls; }
     size_t lastSpillSize() const { return last_spill_size; }
 
@@ -1970,8 +1981,96 @@ private:
     bool spill_succeeds;
     size_t spill_calls = 0;
     size_t last_spill_size = 0;
+    size_t completed_spills = 0;
+    bool spill_pending = false;
 };
 
+
+/// Grace hash join only arms its spill in the callback. Another worker must not observe completion
+/// and close the recovery lane before the processor has executed that deferred work.
+TEST(SchedulerSpaceShared, ForcedSpillWaitsForProcessorWork)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor processor(4096, /*spill_succeeds_=*/ true);
+    scheduler.registerProcessor(&processor);
+
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.checkAndSpill(&processor);
+    ASSERT_EQ(processor.spillCallCount(), 1u);
+    ASSERT_EQ(processor.completedSpillCount(), 0u);
+    ASSERT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+
+    processor.work();
+    scheduler.finishSpill(&processor);
+    EXPECT_EQ(processor.completedSpillCount(), 1u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+}
+
+TEST(SchedulerSpaceShared, ForcedSpillWaitsForEveryProcessorWork)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor first(4096, /*spill_succeeds_=*/ true);
+    ManualSpillProcessor second(4096, /*spill_succeeds_=*/ true);
+    scheduler.registerProcessor(&first);
+    scheduler.registerProcessor(&second);
+
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.checkAndSpill(&first);
+    scheduler.checkAndSpill(&second);
+    first.work();
+    scheduler.finishSpill(&first);
+    scheduler.finishSpill(&first);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+
+    second.work();
+    scheduler.finishSpill(&second);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+}
+
+TEST(SchedulerSpaceShared, OldSpillWorkCannotCompleteNewEpoch)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor processor(4096, /*spill_succeeds_=*/ true);
+    scheduler.registerProcessor(&processor);
+
+    const auto old_request = scheduler.requestForcedSpill();
+    scheduler.checkAndSpill(&processor);
+    scheduler.finishMemoryPressure();
+    const auto new_request = scheduler.requestForcedSpill();
+    ASSERT_GT(new_request.epoch, old_request.epoch);
+
+    processor.work();
+    scheduler.finishSpill(&processor);
+    EXPECT_EQ(scheduler.getForcedSpillResult(new_request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+
+    scheduler.checkAndSpill(&processor);
+    processor.work();
+    scheduler.finishSpill(&processor);
+    EXPECT_EQ(scheduler.getForcedSpillResult(new_request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+}
+
+TEST(SchedulerSpaceShared, RejectedSpillCompletesAfterProcessorWork)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor processor(4096, /*spill_succeeds_=*/ false);
+    scheduler.registerProcessor(&processor);
+
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.checkAndSpill(&processor);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+
+    processor.work();
+    scheduler.finishSpill(&processor);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
+}
 
 /// Queue entry starts one spill epoch. Re-observation cannot open another epoch, and suction is
 /// selected by the allocation hierarchy only after this explicit completion.
@@ -1991,6 +2090,8 @@ TEST(SchedulerSpaceShared, QueueEntryOwnsOneForcedSpillEpoch)
     EXPECT_EQ(repeated_request.epoch, first_request.epoch);
 
     scheduler.checkAndSpill(&processor);
+    processor.work();
+    scheduler.finishSpill(&processor);
     EXPECT_EQ(processor.spillCallCount(), 1u);
     EXPECT_EQ(processor.lastSpillSize(), 4096u);
     EXPECT_EQ(scheduler.getForcedSpillResult(first_request.epoch).outcome,
@@ -2018,14 +2119,22 @@ TEST(SchedulerSpaceShared, RunnableProcessorClaimsForcedSpillEpoch)
 
     const auto first = scheduler.requestForcedSpill();
     scheduler.checkAndSpill(&previously_selected);
+    previously_selected.work();
+    scheduler.finishSpill(&previously_selected);
     scheduler.checkAndSpill(&runnable);
+    runnable.work();
+    scheduler.finishSpill(&runnable);
     ASSERT_NE(scheduler.getForcedSpillResult(first.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
     scheduler.finishMemoryPressure();
 
     const auto second = scheduler.requestForcedSpill();
     scheduler.checkAndSpill(&previously_selected);
+    previously_selected.work();
+    scheduler.finishSpill(&previously_selected);
     scheduler.checkAndSpill(&runnable);
+    runnable.work();
+    scheduler.finishSpill(&runnable);
 
     EXPECT_EQ(runnable.spillCallCount(), 2u)
         << "The runnable processor did not participate in every queue-entry spill pass";
@@ -3377,10 +3486,14 @@ TEST(SchedulerSpaceShared, ForcedSpillWaitsForAllRegisteredProcessorStats)
 
     const auto request = scheduler.requestForcedSpill();
     scheduler.checkAndSpill(&empty);
+    empty.work();
+    scheduler.finishSpill(&empty);
     EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     scheduler.checkAndSpill(&spillable);
+    spillable.work();
+    scheduler.finishSpill(&spillable);
     EXPECT_EQ(spillable.spillCallCount(), 1u);
     EXPECT_NE(scheduler.getForcedSpillResult(request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
@@ -3398,6 +3511,8 @@ TEST(SchedulerSpaceShared, ForcedSpillRemovalCompletesEpoch)
 
     const auto request = scheduler.requestForcedSpill();
     scheduler.checkAndSpill(&completed);
+    completed.work();
+    scheduler.finishSpill(&completed);
     EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
@@ -3418,10 +3533,14 @@ TEST(SchedulerSpaceShared, ForcedSpillIncludesProcessorRegisteredDuringEpoch)
     const auto request = scheduler.requestForcedSpill();
     scheduler.registerProcessor(&late);
     scheduler.checkAndSpill(&first);
+    first.work();
+    scheduler.finishSpill(&first);
     EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     scheduler.checkAndSpill(&late);
+    late.work();
+    scheduler.finishSpill(&late);
     EXPECT_EQ(late.spillCallCount(), 1u);
     EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
@@ -3612,4 +3731,5 @@ TEST(SchedulerSpaceShared, SiblingLimitsSharePolicySuctionSlot)
             "");
     }
 }
+
 
