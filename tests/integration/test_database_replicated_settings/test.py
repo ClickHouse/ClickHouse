@@ -6,6 +6,11 @@ from typing import Any, Dict
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.database_disk import (
+    get_database_disk_name,
+    read_metadata,
+    replace_text_in_metadata,
+)
 
 
 cluster = ClickHouseCluster(__file__)
@@ -47,7 +52,7 @@ node_logs_to_keep_overflow = cluster.add_instance(
     ],
     user_configs=["configs/users.xml"],
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
-    macros={"shard": "shard1", "replica": "1"},
+    macros={"shard": "shard3", "replica": "1"},
     stay_alive=True,
     with_zookeeper=True,
 )
@@ -228,7 +233,9 @@ def test_logs_to_keep_from_config_is_clamped(started_cluster):
 def test_logs_to_keep_replay_of_out_of_range_metadata(started_cluster):
     node = node_logs_to_keep_overflow
     db_name = "test_" + get_random_string()
-    metadata_file = f"/var/lib/clickhouse/metadata/{db_name}.sql"
+    # Relative to the root of the database disk: under `/var/lib/clickhouse` by default, on a
+    # remote object storage disk in the `db disk` CI flavor.
+    metadata_file = f"metadata/{db_name}.sql"
 
     # An older server accepted `logs_to_keep` above `UInt32::max` and wrote it into the database
     # definition. Every path that writes the file now validates the value, so the legacy state is
@@ -253,17 +260,19 @@ def test_logs_to_keep_replay_of_out_of_range_metadata(started_cluster):
     )
 
     # 9999999999 rather than the 10000000000 this node's config holds, so the log assertion below
-    # cannot match the warnings caused by the config default. The `grep` guards against the stored
-    # formatting of the SETTINGS clause drifting away from the `sed` pattern.
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"sed -i 's/logs_to_keep = 1000/logs_to_keep = 9999999999/' {metadata_file}"
-            f" && grep -q 9999999999 {metadata_file}",
-        ],
-        user="root",
+    # cannot match the warnings caused by the config default. The file is edited through
+    # `clickhouse disks`, which works for both a local and a remote database disk. The `assert`
+    # guards against the stored formatting of the SETTINGS clause drifting away from the pattern.
+    replace_text_in_metadata(
+        node, metadata_file, "logs_to_keep = 1000", "logs_to_keep = 9999999999"
     )
+    assert "logs_to_keep = 9999999999" in read_metadata(node, metadata_file)
+
+    # The write bypassed the server, and a plain-rewritable database disk caches file metadata, so
+    # the cache has to be dropped for ATTACH to read the edited file.
+    db_disk_name = get_database_disk_name(node)
+    if db_disk_name != "default":
+        node.query(f"SYSTEM CLEAR DISK METADATA CACHE {db_disk_name}")
 
     # The short syntax replays the metadata file: the value is clamped with a warning and the file
     # stays intact, so the warning repeats on every replay rather than disappearing after one.
@@ -271,9 +280,7 @@ def test_logs_to_keep_replay_of_out_of_range_metadata(started_cluster):
     assert node.contains_in_log(
         "`logs_to_keep` of a Replicated database is 9999999999"
     )
-    node.exec_in_container(
-        ["bash", "-c", f"grep -q 9999999999 {metadata_file}"], user="root"
-    )
+    assert "logs_to_keep = 9999999999" in read_metadata(node, metadata_file)
 
     # Server startup replays the same file through a different path (an internal query with the full
     # definition, not the short syntax), and it must clamp too: rejecting would leave a server that
