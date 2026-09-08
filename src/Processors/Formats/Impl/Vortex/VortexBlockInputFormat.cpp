@@ -435,14 +435,11 @@ void VortexBlockInputFormat::prepareReader()
     if (!reader)
         return;
 
-    if (need_only_count)
-        return;
-
     const VortexScanPlan plan = planVortexScan(getPort().getHeader(), *file_schema, format_filter_info.get(), format_settings, log);
 
-    if (plan.column_names.empty())
+    if (need_only_count || plan.column_names.empty())
     {
-        pending_rows_without_columns = vortex_ffi_reader_row_count(reader);
+        pending_rows_without_columns = plan.rows_to_read ? plan.rows_to_read->size() : vortex_ffi_reader_row_count(reader);
         return;
     }
 
@@ -454,12 +451,14 @@ void VortexBlockInputFormat::prepareReader()
 
     FFI_VortexScanOptions options{};
 
-    if (plan.rows_to_read) {
+    preserve_order |= format_settings.vortex.preserve_order;
+
+    if (plan.rows_to_read)
+    {
         options.row_selection_begin = plan.rows_to_read->begin();
         options.row_selection_len = plan.rows_to_read->size();
+        preserve_order = true;
     }
-    options.row_range_begin = 0;
-    options.row_range_end = 0;
 
     options.columns = column_name_pointers.data();
     options.num_columns = column_name_pointers.size();
@@ -573,7 +572,7 @@ Chunk VortexBlockInputFormat::read()
         if (!delivered.empty())
         {
             auto it = delivered.begin();
-            if (!format_settings.vortex.preserve_order || it->first == next_split_index)
+            if (!preserve_order || it->first == next_split_index)
             {
                 const UInt64 split_index = it->first;
                 DeliveredChunk delivered_chunk = std::move(it->second);
@@ -669,8 +668,7 @@ Chunk VortexBlockInputFormat::read()
         }
         lock.lock();
 
-        const bool nothing_deliverable
-            = delivered.empty() || (format_settings.vortex.preserve_order && delivered.begin()->first != next_split_index);
+        const bool nothing_deliverable = delivered.empty() || (preserve_order && delivered.begin()->first != next_split_index);
         if (idle_checks >= IDLE_CHECKS_BEFORE_STUCK && nothing_deliverable && !scan_finished && !background_exception && !is_stopped)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in the Vortex reader (thread pool)");
     }

@@ -208,6 +208,7 @@ private:
     const LoggerPtr log = getLogger("VortexBlockInputFormat");
 
     std::atomic<int> is_stopped{0};
+    bool preserve_order = false;
 };
 
 class VortexSchemaReader final : public ISchemaReader

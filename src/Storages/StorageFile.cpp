@@ -2238,8 +2238,9 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet reader supports both.
-    if (!boost::iequals(storage->format_name, "Parquet"))
+    /// Only Parquet and Vortex readers supports both.
+    if (!boost::iequals(storage->format_name, "Parquet")
+        && !boost::iequals(storage->format_name, "Vortex"))
         return false;
 
     /// A file descriptor (e.g. stdin) is consumed by the main read and cannot be reopened.
@@ -2554,6 +2555,7 @@ public:
                 /// LazyMaterializingTransform would restore the original row order incorrectly.
                 FormatSettings format_settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
                 format_settings.parquet.preserve_order = true;
+                format_settings.vortex.preserve_order = true;
 
                 /// There is no filter and no prewhere here: the surviving rows are known exactly,
                 /// so the deferred columns are read without any filtering expressions.

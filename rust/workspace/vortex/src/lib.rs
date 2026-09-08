@@ -865,7 +865,7 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                         options.row_selection_len as usize,
                     );
                     let buffer = Buffer::copy_from(slice);
-                    let buffer = StrictSortedBuffer::new_unchecked(buffer);
+                    let buffer = StrictSortedBuffer::try_new(buffer).map_err(|e| e.to_string())?;
                     let selection = Selection::IncludeByIndex(buffer);
                     builder = builder.with_selection(selection);
                 }
