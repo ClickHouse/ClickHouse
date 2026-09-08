@@ -2495,9 +2495,9 @@ void Planner::buildPlanForUnionNode()
     {
         /// Every branch of a `UNION` has its own context with its own SETTINGS clause, so branches
         /// must stay isolated from each other: the `Planner` mutates the options it is given (see
-        /// `markDistributedPlanContext`), and sharing one object would let a branch-local setting
-        /// of an earlier branch leak into its siblings and into the enclosing plan. Sticky options
-        /// still travel downwards, because the copy carries them into the branch.
+        /// `markDistributedPlanContext`), and sharing one object would let a branch-local
+        /// `make_distributed_plan` of an earlier branch ban the query result cache reads of its
+        /// siblings. Sticky options still travel downwards, because the copy carries them in.
         SelectQueryOptions branch_select_query_options = select_query_options;
         Planner query_planner(query_node, branch_select_query_options, planner_context->getGlobalPlannerContext());
 
@@ -2509,6 +2509,12 @@ void Planner::buildPlanForUnionNode()
         auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
         query_plans_headers.push_back(query_node_plan->getCurrentHeader());
         query_plans.push_back(std::move(query_node_plan));
+
+        /// The quota and limit exemptions of the system tables are a property of the whole query -
+        /// `InterpreterSelectQueryAnalyzer` reads them back from the options after the plan is
+        /// built - so they keep propagating upwards out of the branch.
+        select_query_options.ignore_quota |= branch_select_query_options.ignore_quota;
+        select_query_options.ignore_limits |= branch_select_query_options.ignore_limits;
     }
 
     Block union_common_header = buildCommonHeaderForUnion(
