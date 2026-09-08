@@ -967,6 +967,16 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         context_->getClientInfo().collaborate_with_initiator
         && can_use_parallel_replicas;
 
+    /// These settings are derived from the ambient session/profile values, and are frozen on the
+    /// storage for every later write. An Iceberg table's metadata is the authoritative source of
+    /// Parquet `field_id`s, so the write path rejects them; a user whose profile enables them would
+    /// otherwise be unable to write to any catalog table at all. The same rule is applied to the
+    /// `ENGINE = Iceberg*` definition path in `createStorageObjectStorage`. They are reset before the
+    /// `FormatSettings` are built, so that an ambient value is not even parsed.
+    auto catalog_format_settings = configuration->isIcebergConfiguration()
+        ? getFormatSettingsIgnoringParquetFieldIds(context_copy)
+        : getFormatSettings(context_copy);
+
     auto result_storage = std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context_copy, /* is_readonly */ false, get_credentials_refresh_callback(StorageID(getDatabaseName(), name, table_uuid))),
@@ -975,7 +985,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* columns */columns,
         /* constraints */ConstraintsDescription{},
         /* comment */"",
-        getFormatSettings(context_copy),
+        catalog_format_settings,
         LoadingStrictnessLevel::CREATE,
         getCatalog(),
         /* if_not_exists*/true,

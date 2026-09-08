@@ -19,6 +19,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/Write.h>
 
 #include <array>
 #include <fmt/ranges.h>
@@ -162,7 +163,7 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     auto it = map.find(element.field_id);
     if (it == map.end())
     {
-        /// Iceberg reserves field ids greater than 2147483447 (Integer.MAX_VALUE - 200) for metadata
+        /// Iceberg reserves field ids greater than `iceberg_max_user_field_id` for metadata
         /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
         /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
         /// write these into data files, but they are not part of the table schema. Per the Iceberg
@@ -170,7 +171,6 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
         /// reserved-range field ids they don't recognize rather than failing. Such a column is
         /// never requested, so returning its physical name lets the existing "unrequested column"
         /// path skip it.
-        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
         if (element.field_id > iceberg_max_user_field_id)
             return element.name;
 
