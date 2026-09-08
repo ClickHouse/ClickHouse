@@ -31,6 +31,7 @@ class InternalTextLogsQueue;
 class ThreadStatus;
 class ThreadGroup;
 class ResourceSchedulingContext;
+class MemoryPressureMonitor;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
@@ -89,6 +90,9 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
+
+    /// The current query's memory-pressure monitor when in a thread group, else the global monitor.
+    static MemoryPressureMonitor & getMemoryPressureMonitor();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);

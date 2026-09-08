@@ -153,6 +153,8 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
     // query, so inherit the parent's per-query scheduling context; otherwise their CPU/IO requests
     // would be scheduled anonymously and escape the per-query fair/las/priority service accounting.
     scheduling_context = parent->scheduling_context;
+    /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
+    memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
 }
 
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
@@ -166,6 +168,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
+    /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
+    memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
+
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
