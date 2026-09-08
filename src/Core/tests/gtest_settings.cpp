@@ -253,6 +253,35 @@ GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
     /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
     ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
 }
+GTEST_TEST(SettingsCompatibility, MarkChangedByCompatibilityAsUnchangedKeepsTheValues)
+{
+    /// The client passes such a Settings object to `Connection::sendQuery`: the values that
+    /// `compatibility` derived must keep acting locally (the client-side network codec is picked
+    /// from them by value), but they must not be serialized to the server, which sends only
+    /// changed settings and re-derives these from `compatibility` itself.
+    DB::Settings settings;
+    settings.set("compatibility", "26.6");
+    ASSERT_TRUE(settings.hasSettingsChangedByCompatibility());
+    ASSERT_TRUE(settings.isChanged("network_compression_method"));
+    const auto derived_method = settings.get("network_compression_method");
+    const auto derived_level = settings.get("network_zstd_compression_level");
+
+    settings.markSettingsChangedByCompatibilityAsUnchanged();
+
+    ASSERT_FALSE(settings.hasSettingsChangedByCompatibility());
+    ASSERT_FALSE(settings.isChanged("network_compression_method"));
+    ASSERT_FALSE(settings.isChanged("network_zstd_compression_level"));
+    ASSERT_EQ(settings.get("network_compression_method"), derived_method);
+    ASSERT_EQ(settings.get("network_zstd_compression_level"), derived_level);
+
+    /// The explicitly set `compatibility` itself stays changed and is still serialized.
+    ASSERT_TRUE(settings.isChanged("compatibility"));
+
+    /// The demoted settings no longer count as compatibility-derived: a later
+    /// `resetSettingsChangedByCompatibility` must not touch them.
+    settings.resetSettingsChangedByCompatibility();
+    ASSERT_EQ(settings.get("network_compression_method"), derived_method);
+}
 
 GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
 {

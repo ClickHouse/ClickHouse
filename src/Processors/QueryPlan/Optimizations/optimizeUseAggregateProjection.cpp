@@ -1137,6 +1137,10 @@ std::optional<String> optimizeUseAggregateProjections(
     if (aggregating && !aggregating->canUseProjection())
         return {};
 
+    /// A merge-only step already consumes aggregate states; requesting projection merge mode for it again makes no sense.
+    if (aggregating && aggregating->getParams().only_merge)
+        return {};
+
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
     if (!reading_node)
         return {};
