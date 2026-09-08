@@ -86,9 +86,8 @@ WHERE current_database = currentDatabase()
     AND query LIKE '%refiner_query_default_pool%'
     AND query NOT LIKE '%query_log%';
 
--- Read-in-order now runs before projection selection, and an in-order read declines
--- projections entirely (`canUseProjectionForReadingStep`), so the projection-index
--- refiner does not attach to in-order read pools and nothing is dropped.
+-- Reading in order terminates early because of the LIMIT, so only the marks
+-- before the matching one are guaranteed to be cut and dropped.
 SELECT
     ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 0 AS dropped_marks
 FROM system.query_log
@@ -123,12 +122,14 @@ WHERE type = 'QueryFinish'
             AND query LIKE '%refiner_query_parallel_replicas_default%'
             AND query NOT LIKE '%query_log%');
 
--- An in-order read declines projections (see above), so the refiner does not attach and
--- no marks are dropped. The former warmup-task-size check is gone with the refiner: without
--- refinement there are no dropped cuts to inflate the warmup task, and the marks read vary
--- with whether parallel replicas engage at all, so nothing stable is left to assert on.
+-- In-order parallel replicas terminate early because of the LIMIT: reading forward only the
+-- marks before the first matching one are guaranteed to be cut and dropped, so assert > 0.
+-- The 100 fully pruned prefix cuts must not inflate the warmup task size: the first surviving
+-- task covers only mark 100, so exactly 1 mark is read; an inflated task would also pick up
+-- the second cluster in mark 106 and read 2.
 SELECT
-    sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 0 AS dropped_marks
+    sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 0 AS dropped_marks,
+    sum(ProfileEvents['ParallelReplicasReadMarks']) <= 1 AS warmup_not_inflated_by_dropped_cuts
 FROM system.query_log
 WHERE type = 'QueryFinish'
     AND initial_query_id IN (
@@ -139,7 +140,7 @@ WHERE type = 'QueryFinish'
             AND query LIKE '%refiner_query_parallel_replicas_in_order%'
             AND query NOT LIKE '%query_log%');
 
--- The reverse in-order read also declines projections, so nothing is dropped here either.
+-- Reading in reverse order has to pass ~150 marks before the last matching mark.
 SELECT sum(ProfileEvents['ReadPoolRangeRefinerDroppedMarks']) > 100 AS dropped_marks
 FROM system.query_log
 WHERE type = 'QueryFinish'

@@ -8,7 +8,6 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -159,17 +158,13 @@ private:
             if (offset)
                 plain->seek(offset, SEEK_SET);
 
-            /// `allow_different_codecs = true`: the data file is append-only, so blocks written by
-            /// different inserts may use different codecs - in particular after a server upgrade that
-            /// changes the default compression codec (e.g. `LZ4` -> `ZSTD`). Each compressed block is
-            /// self-describing (the codec method byte is in its header), so a mixed-codec stream is valid.
             if (limited_by_file_size)
             {
                 limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
-                compressed.emplace(*limited, /* allow_different_codecs = */ true);
+                compressed.emplace(*limited);
             }
             else
-                compressed.emplace(*plain, /* allow_different_codecs = */ true);
+                compressed.emplace(*plain);
         }
 
         std::unique_ptr<ReadBufferFromFileBase> plain;
@@ -993,23 +988,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return saturatedSeconds(lock_timeout);
-}
-
-size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
-{
-    if (!use_marks_file)
-        return 1;
-
-    const auto lock_timeout = getLockTimeout(local_context);
-    loadMarks(lock_timeout);
-
-    ReadLock lock{rwlock, lock_timeout};
-    if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-
-    /// An empty table still produces one `NullSource` in `createReadingPipe`.
-    return std::min(num_streams, std::max(1uz, data_files[INDEX_WITH_REAL_ROW_COUNT].marks.size()));
+    return std::chrono::seconds{lock_timeout};
 }
 
 void StorageLog::drop()

@@ -18,7 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/EnumReflection.h>
@@ -1376,8 +1376,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     ErrorCodes::LOGICAL_ERROR, "Pipeline for view {} refresh must be completed", view_storage_id.getFullTableName());
 
             {
-                CompletedPipelineExecutor executor(pipeline);
-                executor.initialize();
+                PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+                executor.setReadProgressCallback(pipeline.getReadProgressCallback());
 
                 {
                     std::unique_lock exec_lock(execution.executor_mutex);
@@ -1390,7 +1390,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     execution.executor = nullptr;
                 });
 
-                executor.execute();
+                executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
 
                 /// A cancelled PipelineExecutor may return without exception but with incomplete results.
                 /// In this case make sure to:
