@@ -1902,7 +1902,7 @@ def test_math_functions():
         "sgn(vector(-0))",
         500,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "-0"]}]}',
-        [["[]", "1970-01-01 00:08:20.000", -0.0]],
+        [["[]", "1970-01-01 00:08:20.000", "-0"]],
     )
 
     do_query_test(
