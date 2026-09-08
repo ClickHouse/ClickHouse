@@ -1,5 +1,4 @@
 #include <Analyzer/IQueryTreeNode.h>
-#include <Client/Connection.h>
 #include <Client/SecondaryQuerySettings.h>
 #include <Storages/StorageDistributed.h>
 
@@ -55,7 +54,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/stripQuerySettings.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -110,7 +108,6 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
 
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
@@ -1205,26 +1202,6 @@ static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
 }
 
 
-/// Old peers cannot apply even an explicit SQL opt-out of `send_profile_traces`.
-/// Keep a separate query for them so supported peers retain nested query-scope settings.
-static const String & getQueryWithoutProfileTraces(const ASTInsertQuery & query, std::optional<String> & query_without_profile_traces)
-{
-    if (!query_without_profile_traces)
-    {
-        auto legacy_query = query.clone();
-        constexpr std::string_view settings_to_remove[] = {"send_profile_traces"};
-        removeSettingsFromQuery(legacy_query, settings_to_remove);
-
-        WriteBufferFromOwnString buf;
-        IAST::FormatSettings format_settings(
-            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        legacy_query->IAST::format(buf, format_settings);
-        query_without_profile_traces = buf.str();
-    }
-    return *query_without_profile_traces;
-}
-
-
 std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
@@ -1332,7 +1309,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         query_context->setSettings(stripped_settings);
     }
 
-    std::optional<String> query_without_profile_traces;
     size_t available_shards = 0;
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
@@ -1361,14 +1337,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
                     shard_info.shard_num);
             }
 
-            const auto & query_to_send = connections.front()->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_PROFILE_TRACES
-                ? getQueryWithoutProfileTraces(*new_query, query_without_profile_traces)
-                : new_query_str;
-
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
                 = std::make_shared<RemoteQueryExecutor>(
-                    std::move(connections), query_to_send, std::make_shared<Block>(Block{}), query_context,
+                    std::move(connections), new_query_str, std::make_shared<Block>(Block{}), query_context,
                     /*throttler=*/nullptr, Scalars{}, Tables{}, QueryProcessingStage::Complete,
                     /*query_plan=*/nullptr, /*extension=*/std::nullopt, shard_info.pool);
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
@@ -1494,7 +1466,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         predicate, filter.get(), local_context, cluster, storage_metadata);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
-    std::optional<String> query_without_profile_traces;
     size_t replica_index = 0;
     for (const auto & replicas : cluster->getShardsInfo())
     {
@@ -1503,17 +1474,13 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
             timeouts, current_settings, PoolMode::GET_MANY, /*async_callback*/ {}, /*skip_unavailable_endpoints*/ true);
 
         /// There will be only one replica, because we consider each replica as a shard
-        for (auto & try_result : try_results)
+        for (const auto & try_result : try_results)
         {
             IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
 
-            const auto & query_to_send = try_result->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_PROFILE_TRACES
-                ? getQueryWithoutProfileTraces(*new_query, query_without_profile_traces)
-                : new_query_str;
-
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
-                query_to_send,
+                new_query_str,
                 std::make_shared<const Block>(Block{}),
                 query_context,
                 /*throttler=*/nullptr,

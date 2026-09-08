@@ -16,5 +16,23 @@
                 </replica>
             </shard>
         </current_cluster>
+        <older_authenticated>
+            <secret>profile-traces-test-secret</secret>
+            <shard>
+                <replica>
+                    <host>older</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </older_authenticated>
+        <current_authenticated>
+            <secret>profile-traces-test-secret</secret>
+            <shard>
+                <replica>
+                    <host>current</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </current_authenticated>
     </remote_servers>
 </clickhouse>

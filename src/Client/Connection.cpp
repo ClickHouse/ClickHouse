@@ -42,6 +42,10 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Common/FailPoint.h>
 #include <Client/JWTProvider.h>
 
@@ -73,6 +77,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -1009,6 +1016,35 @@ CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings)
 }
 
 
+static std::optional<String> queryWithoutProfileTraceSettings(const String & query, const Settings * settings)
+{
+    if (query.find("send_profile_traces") == String::npos)
+        return std::nullopt;
+
+    ParserQuery parser(query.data() + query.size(), settings && (*settings)[Setting::allow_settings_after_format_in_insert]);
+    /// Forwarded SQL is generated from an already parsed query and can exceed its original input size.
+    auto ast = parseQuery(
+        parser, query, "generated secondary query", /*max_query_size=*/0,
+        settings ? (*settings)[Setting::max_parser_depth].value : DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        settings ? (*settings)[Setting::max_parser_backtracks].value : DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    const auto original_hash = ast->getTreeHash(/*ignore_aliases=*/false);
+    constexpr std::string_view settings_to_remove[] = {"send_profile_traces"};
+    removeSettingsFromQuery(ast, settings_to_remove);
+    /// Preserve the exact SQL if the name occurs only in a literal, comment or identifier.
+    if (ast->getTreeHash(/*ignore_aliases=*/false) == original_hash)
+        return std::nullopt;
+
+    auto result = ast->formatWithSecretsOneLine();
+    if (const char * data = getInsertData(ast))
+    {
+        /// AST formatting omits inline INSERT data; preserve its bytes after the rewritten header.
+        result += '\n';
+        result.append(data, query.data() + query.size() - data);
+    }
+    return result;
+}
+
+
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -1056,6 +1092,12 @@ void Connection::sendQuery(
 
     if (!connected)
         connect(timeouts);
+
+    std::optional<String> legacy_query;
+    if (server_revision < DBMS_MIN_REVISION_WITH_PROFILE_TRACES
+        && client_info && client_info->query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        legacy_query = queryWithoutProfileTraceSettings(query, settings);
+    const String & query_to_send = legacy_query ? *legacy_query : query;
 
     /// Query is not executed within sendQuery() function.
     ///
@@ -1155,7 +1197,7 @@ void Connection::sendQuery(
             if (nonce.has_value())
                 data += std::to_string(nonce.value());
             data += cluster_secret;
-            data += query;
+            data += query_to_send;
             data += query_id;
             data += client_info->initial_user;
             // Also for backwards compatibility
@@ -1186,7 +1228,7 @@ void Connection::sendQuery(
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
 
-    writeStringBinary(query, *out);
+    writeStringBinary(query_to_send, *out);
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         /// Query parameters are written as custom (string-valued) fields, so a parameter whose
