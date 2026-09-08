@@ -35,17 +35,17 @@ SET filesystem_cache_boundary_alignment = $ALIGNMENT;
 SELECT * FROM test WHERE a = 250000 FORMAT Null;
 "
 
-# File segments which do not start at the beginning of the file
-# must not be smaller than the requested alignment.
+# File segments must start at a boundary of the requested alignment
+# (and there must be a file segment which does not start at the beginning of the file,
+# otherwise the check above is trivial).
 $CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM system.filesystem_cache
 WHERE cache_name = '$CLICKHOUSE_TEST_UNIQUE_NAME'
-AND file_segment_range_begin > 0
-AND size < $ALIGNMENT;
+AND file_segment_range_begin % $ALIGNMENT != 0;
 
 SELECT count() > 0 FROM system.filesystem_cache
 WHERE cache_name = '$CLICKHOUSE_TEST_UNIQUE_NAME'
-AND size = $ALIGNMENT;
+AND file_segment_range_begin > 0;
 "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test"
