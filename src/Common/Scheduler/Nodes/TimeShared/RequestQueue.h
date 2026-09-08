@@ -305,19 +305,11 @@ public:
 
     ResourceRequest * pop() override
     {
-        // Lazy re-keying. A request is keyed by `levelOf(attained)` at ENQUEUE, but a query's
-        // attained service grows as its OTHER requests are served, so a waiting request's stored
-        // level goes stale. Attained service only ever grows, so the stored level can only be too
-        // LOW (served too early), never too high. On pop, recompute the front request's level from
-        // the query's CURRENT attained service; if it exceeds the stored level the request is not
-        // actually the least-attained, so defer it — re-key to its true level and re-insert, then
-        // take the next candidate. This restores true (bucketed) LAS when a query has several
-        // requests queued at once (the IO case: concurrent socket ops have independent requests),
-        // and is a no-op when it has one (CPU via CPULeaseAllocation). Bounded churn: geometric
-        // levels mean a request is re-keyed at most ~log2(total_service) times over its lifetime,
-        // and at most once per pop() (attained does not change while this loop runs). The FIFO
-        // sequence tie-break (`scheduling_key.second`) is preserved, so intra-level arrival order
-        // is kept.
+        // Lazy re-keying: a request's stored level (levelOf(attained) at enqueue) only goes stale
+        // too LOW as the query's other requests accrue service. On pop, if the front request's true
+        // level (from current attained) exceeds its key, re-key and defer it; otherwise serve it.
+        // Restores bucketed LAS when a query has several requests queued at once (IO), a no-op with
+        // one (CPU). Bounded to ~log2(total_service) re-keys per request; the FIFO tie-break is kept.
         while (!requests.empty())
         {
             auto it = requests.begin();
@@ -325,12 +317,9 @@ public:
             auto * ctx = request->scheduling_context;
             if (ctx)
             {
-                // Re-key against the query's REAL cumulative service: attained_cost plus the pending
-                // real-vs-estimate correction not yet folded into it (peeked here, consumed below at
-                // the charge — same non-mutating peek `fair` uses for its weight-lowering threshold).
-                // Without the correction, a query that badly under-estimated a finished request would
-                // be re-keyed one estimate too low and could run ahead of a genuinely lighter query,
-                // breaking least-attained-service ordering on the first request after an estimate error.
+                // Real service = attained_cost + pending correction (peeked, as `fair` does), so a
+                // badly under-estimated finished request doesn't key the query too low and let it
+                // jump a genuinely lighter one.
                 auto & state = ctx->getResourceState(leaf);
                 double real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
                 if (real_level > request->scheduling_key.first)
@@ -345,10 +334,8 @@ public:
             if (ctx)
             {
                 auto & state = ctx->getResourceState(leaf);
-                // Charge the declared cost corrected toward real consumption (see
-                // ResourceState::consumeCorrectedCost): attained_cost (the LAS level key) tracks
-                // real bytes/CPU long-term. Never negative, so the level never drops (no backward
-                // motion); a refund is realized by a smaller charge on later requests.
+                // Charge the corrected cost (see consumeCorrectedCost) so attained (the level key)
+                // tracks real bytes/CPU; never negative, so the level never drops.
                 state.attained_cost += state.consumeCorrectedCost(request->scheduling_cost);
                 state.last_activity_ns = clock_gettime_ns();
             }
