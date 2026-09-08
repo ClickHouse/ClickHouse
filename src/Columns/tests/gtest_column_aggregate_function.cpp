@@ -72,12 +72,9 @@ TEST(ColumnAggregateFunction, EnsureOwnershipExceptionLeavesCorruptedState)
     view_column->insertDefault();
 }
 
-/// `argMin` never reads its parameters, so they are no longer part of its state type, while a type
-/// decoded from the binary encoding keeps whatever parameters were encoded with it. Every state
-/// serialized into a `Field` carries a state name, so a `Field` taken from such a type names
-/// parameters that its own state type does not, and a `Map` parameter makes that name unparseable.
-/// This is not reachable from SQL, where a `Map`-parameterized `AggregateFunction` type cannot be
-/// declared, so only this test covers the two places that accept such a name.
+/// A `Field` taken from a type that kept parameters `argMin` never reads names parameters its own
+/// state type does not, and a `Map` parameter makes that name unparseable. No SQL construct produces
+/// such a name, so both places that accept one are covered here.
 TEST(ColumnAggregateFunction, AcceptsStateNameSpellingUnreadParameters)
 {
     tryRegisterAggregateFunctions();
