@@ -1,11 +1,31 @@
+/* No motion anywhere in the documentation. Every state change is instantaneous:
+   opening a panel, expanding a sidebar group, hovering a card, revealing the
+   navbar. Transitions and animations delay the content the reader asked for and
+   make the site feel sluggish, and a transition on a property that is updated
+   while dragging (a panel height, for example) makes the element lag behind the
+   pointer and re-render continuously.
+
+   This is a global override rather than a set of local fixes because most of
+   the motion comes from Mintlify's own bundle and its Tailwind utility classes
+   (`transition-colors`, `animate-*`), which are not ours to edit. Zeroing the
+   durations and delays - instead of `transition: none` / `animation: none` -
+   keeps every final state intact: an animation still runs and still applies its
+   `animation-fill-mode`, it just completes at once, so nothing that fades in
+   can get stuck invisible. */
+*,
+*::before,
+*::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+}
+
 /* Reserve the scrollbar gutter at all times so nothing shifts when a modal
    locks body scroll and the scrollbar disappears. react-remove-scroll
    compensates with margin-right on body, but that double-compensates when
    the gutter is already reserved — zero it out. */
 /* Hero cards on the home page */
-.ch-hero-card {
-    transition: border-color 0.12s ease !important;
-}
 .dark .ch-hero-card {
     background-color: #191919 !important;
     border-color: #2B2B2B !important;
@@ -66,7 +86,6 @@ html:not(.dark) .multi-view-dropdown-trigger {
 }
 .ch-page-visible {
     opacity: 1;
-    transition: opacity 0.1s ease-out;
 }
 /* Overlay image drop shadow (hero cards with overlayImg) */
 .ch-overlay-shadow {
@@ -258,7 +277,6 @@ body[data-scroll-locked] {
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 600;
-    transition: background-color 120ms ease, transform 80ms ease;
 }
 
 .ch-agent-prompt-copy-button:hover {
@@ -324,7 +342,6 @@ body[data-scroll-locked] {
 
 .ch-agent-prompt-outline-chevron {
     flex-shrink: 0;
-    transition: transform 150ms ease;
 }
 
 .ch-agent-prompt-outline[open] > .ch-agent-prompt-outline-summary > .ch-agent-prompt-outline-chevron {
@@ -424,7 +441,6 @@ html.dark .prose a.ch-agent-prompt-repository-link,
     margin-left: auto;
     padding: 2px 3px;
     border-radius: 6px;
-    transition: background-color 0.12s ease;
 }
 #sidebar button[aria-expanded] > div:last-child:hover {
     background-color: rgba(15, 23, 42, 0.08);
@@ -446,7 +462,6 @@ html.dark .prose a.ch-agent-prompt-repository-link,
     padding: 1px 6px;
     margin: -1px -6px;
     border-radius: 6px;
-    transition: background-color 0.12s ease;
 }
 #sidebar li[id^="/"] > button[aria-expanded] > div:not(.shrink-0):hover {
     background-color: rgba(15, 23, 42, 0.08);
@@ -482,7 +497,6 @@ html:not(.ch-navbar-revealed) #navbar-transition-maple:not(.ch-navbar-ready) {
 }
 #navbar-transition-maple.ch-navbar-ready {
     opacity: 1;
-    transition: opacity 0.15s ease-out;
 }
 
 /* ============================================
@@ -606,7 +620,6 @@ details.accordion > summary,
     border-color: #e5e7eb !important;
     border-radius: 0.5rem !important;
     color: #6b7280 !important;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 .feedback-toolbar button:hover,
 .feedback-toolbar a:hover {
@@ -883,7 +896,6 @@ details.accordion > summary,
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     cursor: pointer;
-    transition: all 0.2s ease;
     font-size: 1rem;
     font-weight: 500;
     color: inherit;
@@ -1365,7 +1377,6 @@ html.dark .dark\:bg-primary-light,
     font-weight: 600;
     line-height: 1.125rem;
     text-decoration: none !important;
-    transition: background-color 0.15s;
 }
 
 .ch-install-cloud-cta:hover {
@@ -1497,7 +1508,6 @@ html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary:hover {
 html:not(.dark) .card:hover {
     background-color: #f7f7f7 !important;
     border-color: #9ca3af !important;
-    transition: border-color 0.12s ease !important;
 }
 
 /* Override card hover border color in dark mode */
@@ -3266,10 +3276,6 @@ html:not(.dark) .card a {
 
 /* External goal-card links: the arrow rotates to point up-right on hover,
    hinting that the link leaves the docs site */
-.goal-card-link .ch-external-arrow {
-    transition: transform 0.15s ease;
-}
-
 .goal-card-link:hover .ch-external-arrow {
     transform: rotate(-45deg);
 }
@@ -3296,7 +3302,6 @@ a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
     fill: none !important;
     color: #9ca3af !important;
     opacity: 0.6 !important;
-    transition: color 150ms ease, opacity 150ms ease, transform 150ms ease;
 }
 
 a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
