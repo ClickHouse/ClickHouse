@@ -428,11 +428,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 #endif
 
-    /// Plan-based parallel replicas is not supported without the analyzer, so never apply it there.
-    /// `canUseParallelReplicasOnInitiator` already refuses when the analyzer is off, but only while
-    /// `parallel_replicas_only_with_analyzer` is set, so check the analyzer here as well: turning that
-    /// setting off must fall back to the query-based implementation, not to a plan-based read the
-    /// planner never built a distributed plan for.
+    /// The plan-based implementation requires the analyzer: without it the planner never builds the
+    /// distributed plan this optimization works on.
     enable_parallel_replicas = from->canUseParallelReplicasOnInitiator()
         && from->getSettingsRef()[Setting::parallel_replicas_plan_based]
         && from->getSettingsRef()[Setting::allow_experimental_analyzer];
