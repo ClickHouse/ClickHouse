@@ -60,19 +60,19 @@ Las condiciones sobre la partición y las columnas clave del registro de consult
 * `exception_code` ([Int32](/es/reference/data-types/int-uint)) — Código de excepción.
 * `exception` ([String](/es/reference/data-types/string)) — Mensaje de excepción.
 * `stack_trace` ([String](/es/reference/data-types/string)) — Traza de pila. Cadena vacía si la consulta se completó correctamente.
-* `is_initial_query` ([UInt8](/es/reference/data-types/int-uint)) — Tipo de consulta. Valores posibles: 1 — la consulta fue iniciada por el cliente; 0 — la consulta fue iniciada por otra consulta como parte de la ejecución distribuida de consultas.
+* `is_initial_query` ([UInt8](/es/reference/data-types/int-uint)) — Indica si la consulta es inicial. Valores posibles: 1 — una consulta inicial (de nivel superior); 0 — una consulta secundaria iniciada por otra consulta, incluidas las consultas para ejecución distribuida y las subconsultas internas.
 * `connection_address` ([IPv6](/es/reference/data-types/ipv6)) — Dirección IP del cliente desde la que se estableció la conexión. Si la conexión se realiza mediante un proxy, será la dirección del proxy.
 * `connection_port` ([UInt16](/es/reference/data-types/int-uint)) — Puerto del cliente desde el que se estableció la conexión. Si la conexión se realiza mediante un proxy, será el puerto del proxy.
 * `user` ([String](/es/reference/data-types/string)) — Nombre del usuario que inició la consulta actual.
 * `query_id` ([String](/es/reference/data-types/string)) — ID de la consulta.
 * `address` ([IPv6](/es/reference/data-types/ipv6)) — Dirección IP utilizada para realizar la consulta. Si la conexión se realiza mediante un proxy y se establece `auth_use_forwarded_address`, será la dirección del cliente en lugar de la del proxy.
 * `port` ([UInt16](/es/reference/data-types/int-uint)) — Puerto del cliente utilizado para realizar la consulta. Si la conexión se realiza mediante un proxy y se establece `auth_use_forwarded_address`, será el puerto del cliente en lugar del del proxy.
-* `initial_user` ([String](/es/reference/data-types/string)) — Nombre del usuario que ejecutó la consulta inicial (para la ejecución distribuida de consultas).
-* `initial_query_id` ([String](/es/reference/data-types/string)) — ID de la consulta inicial (para la ejecución distribuida de consultas).
-* `initial_address` ([IPv6](/es/reference/data-types/ipv6)) — Dirección IP desde la que se inició la consulta principal.
-* `initial_port` ([UInt16](/es/reference/data-types/int-uint)) — Puerto del cliente utilizado para realizar la consulta principal.
-* `initial_query_start_time` ([DateTime](/es/reference/data-types/datetime)) — Hora de inicio de la consulta inicial (para la ejecución distribuida de consultas).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/es/reference/data-types/datetime64)) — Hora de inicio de la consulta inicial con precisión de microsegundos (para la ejecución distribuida de consultas).
+* `initial_user` ([String](/es/reference/data-types/string)) — Nombre del usuario que ejecutó la consulta inicial en la misma cadena de consultas.
+* `initial_query_id` ([String](/es/reference/data-types/string)) — ID de la consulta inicial en la misma cadena de consultas.
+* `initial_address` ([IPv6](/es/reference/data-types/ipv6)) — Dirección IP desde la que se inició la consulta inicial en la misma cadena de consultas.
+* `initial_port` ([UInt16](/es/reference/data-types/int-uint)) — Puerto del cliente desde el que se inició la consulta inicial en la misma cadena de consultas.
+* `initial_query_start_time` ([DateTime](/es/reference/data-types/datetime)) — Hora de inicio de la consulta inicial en la misma cadena de consultas.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/es/reference/data-types/datetime64)) — Hora de inicio de la consulta inicial en la misma cadena de consultas, con precisión de microsegundos.
 * `authenticated_user` ([String](/es/reference/data-types/string)) — Nombre del usuario autenticado en la sesión.
 * `interface` ([UInt8](/es/reference/data-types/int-uint)) — Interfaz desde la que se inició la consulta. Valores posibles: 1 — TCP; 2 — HTTP.
 * `is_secure` ([UInt8](/es/reference/data-types/int-uint)) — Indicador de si una consulta se ejecutó a través de una interfaz segura

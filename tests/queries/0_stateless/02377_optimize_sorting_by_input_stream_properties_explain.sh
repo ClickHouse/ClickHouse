@@ -22,8 +22,6 @@ function explain_sorting {
 }
 
 function explain_sortmode {
-    echo "-- QUERY: "$1
-    $CLICKHOUSE_CLIENT --enable_analyzer=0 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -q "$1" | eval $FIND_SORTMODE
     echo "-- QUERY (analyzer): "$1
     $CLICKHOUSE_CLIENT --enable_analyzer=1 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -q "$1" | eval $FIND_SORTMODE
 }

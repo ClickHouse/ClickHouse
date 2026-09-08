@@ -68,7 +68,6 @@ SerializationPtr SerializationObjectSharedDataPath::create(const SerializationPt
 struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::DeserializeBinaryBulkState
 {
     ISerialization::DeserializeBinaryBulkStatePtr map_state;
-    ColumnPtr map_column;
 
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
@@ -78,20 +77,6 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
         new_state->map_state = map_state ? map_state->clone() : nullptr;
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (map_column)
-            callback(map_column);
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (map_state)
-            callback(map_state);
-        if (structure_state)
-            callback(structure_state);
     }
 };
 
@@ -234,8 +219,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::DeserializeBinaryBulkStatePtr & state,
@@ -252,24 +236,19 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         size_t num_read_rows = 0;
         if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP)
         {
-            /// Initialize map column if needed.
-            if (column->empty() || !shared_data_path_state->map_column)
-                shared_data_path_state->map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
-
             if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
             {
-                std::tie(shared_data_path_state->map_column, num_read_rows) = *cached_column_with_num_read_rows;
+                std::tie(map_column, num_read_rows) = *cached_column_with_num_read_rows;
             }
-            /// If we don't have it in cache, deserialize and put deserialized map in cache.
+            /// Otherwise deserialize the whole shared data map and cache it for other path subcolumns.
             else
             {
-                size_t prev_size = shared_data_path_state->map_column->size();
-                serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_path_state->map_column, rows_offset, limit, settings, shared_data_path_state->map_state, cache);
-                num_read_rows = shared_data_path_state->map_column->size() - prev_size;
-                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_path_state->map_column, num_read_rows);
+                auto mutable_map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
+                serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_map_column, limit, settings, shared_data_path_state->map_state, cache);
+                num_read_rows = mutable_map_column->size();
+                map_column = std::move(mutable_map_column);
+                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, map_column, num_read_rows);
             }
-
-            map_column = shared_data_path_state->map_column;
         }
         else
         {
@@ -280,14 +259,12 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             {
                 map_column = cached_column_with_num_read_rows->first;
             }
-            /// If we don't have it in cache, deserialize and put deserialized map in cache.
+            /// If we don't have it in cache, deserialize the bucket's map into a fresh column and cache it.
             else
             {
-                /// Don't use shared_data_path_state->map_column here, because map column from bucket is never present in the result columns,
-                /// so we don't need to preserve old rows to keep valid usage of substreams cache (when column in cache is also present in the result columns).
-                /// Here we can store only rows from current deserialization even in cache.
-                map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
-                serialization_map->deserializeBinaryBulkWithMultipleStreams(map_column, rows_offset, limit, settings, shared_data_path_state->map_state, cache);
+                auto mutable_map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
+                serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_map_column, limit, settings, shared_data_path_state->map_state, cache);
+                map_column = std::move(mutable_map_column);
                 addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, map_column, map_column->size());
             }
 
@@ -298,19 +275,20 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         size_t map_column_offset = map_column->size() - num_read_rows;
 
         /// If we need to read a subcolumn from Dynamic column, create an empty Dynamic column, fill it and extract subcolumn.
-        MutableColumnPtr dynamic_column = path_subcolumn.empty() ? column->assumeMutable() : dynamic_type->createColumn();
+        auto temp_dynamic_column = path_subcolumn.empty() ? MutableColumnPtr{} : dynamic_type->createColumn();
+        IColumn & dynamic_column = path_subcolumn.empty() ? column : *temp_dynamic_column;
         /// Check if we don't have any paths in shared data in current range.
         const auto & offsets = assert_cast<const ColumnArray &>(*map_column).getOffsets();
         if (offsets.back() == offsets[ssize_t(map_column_offset) - 1])
-            dynamic_column->insertManyDefaults(num_read_rows);
+            dynamic_column.insertManyDefaults(num_read_rows);
         else
-            ColumnObject::fillPathColumnFromSharedData(*dynamic_column, path, map_column, map_column_offset, map_column->size());
+            ColumnObject::fillPathColumnFromSharedData(dynamic_column, path, map_column, map_column_offset, map_column->size());
 
         /// Extract subcolumn from Dynamic column if needed.
         if (!path_subcolumn.empty())
         {
-            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column->getPtr());
-            column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column.getPtr());
+            column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
     }
     else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
@@ -319,7 +297,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         settings.path.back().bucket = bucket;
 
         auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_path_state->structure_state);
-        auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);
+        auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
         auto paths_infos_granules = SerializationObjectSharedData::deserializePathsInfos(*structure_granules, *shared_data_structure_state, settings, cache);
         auto paths_data_granules = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
 
@@ -336,7 +314,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             /// Skip granule if it doesn't have requested path.
             if (!paths_info_granule.path_to_info.contains(path))
             {
-                column->assumeMutable()->insertManyDefaults(structure_granule.limit);
+                column.insertManyDefaults(structure_granule.limit);
                 continue;
             }
 
@@ -347,13 +325,13 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 /// If no subcolumn is requested, just insert path data into destination column.
                 if (path_subcolumn.empty())
                 {
-                    column->assumeMutable()->insertRangeFrom(*path_data_it->second, structure_granule.offset, structure_granule.limit);
+                    column.insertRangeFrom(*path_data_it->second, structure_granule.offset, structure_granule.limit);
                 }
                 /// If subcolumn is requested, extract it from the path data.
                 else
                 {
                     auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second);
-                    column->assumeMutable()->insertRangeFrom(*subcolumn, structure_granule.offset, structure_granule.limit);
+                    column.insertRangeFrom(*subcolumn, structure_granule.offset, structure_granule.limit);
                 }
             }
             /// If no subcolumn is requested we must have path data.
@@ -372,7 +350,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 if (subcolumn_data_it == path_subcolumns_data_it->second.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Data of subcolumn {} of path {} is not deserialized", path_subcolumn, path);
 
-                column->assumeMutable()->insertRangeFrom(*subcolumn_data_it->second, structure_granule.offset, structure_granule.limit);
+                column.insertRangeFrom(*subcolumn_data_it->second, structure_granule.offset, structure_granule.limit);
             }
         }
 

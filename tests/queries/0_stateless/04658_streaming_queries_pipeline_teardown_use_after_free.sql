@@ -3,7 +3,7 @@
 -- no-parallel-replicas: streaming reads are always local.
 
 -- Regression test for a heap-use-after-free in `ExecutingGraph::updateNode` found by the AST fuzzer.
--- A streaming query runs one `MergeTreeCommitOrderSequentialSource` per stream, all feeding a single
+-- A streaming query runs one `MergeTreeCommitOrderSource` per stream, all feeding a single
 -- `LimitTransform`, and every source repeatedly attaches and removes its snapshot-reading sub-pipeline
 -- at run time. Removing the sub-pipeline freed graph edges whose pointers were still queued in
 -- `updateNode`'s local work-list, and a later pop dereferenced freed memory.
