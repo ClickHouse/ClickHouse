@@ -44,6 +44,19 @@ def dense(children, names, offsets=offs):
     return pa.UnionArray.from_dense(tids, offsets, children, names)
 
 
+def dense_not_null(children, names, type_ids, offsets, length):
+    # A dense union whose children are declared non-nullable, which `UnionArray.from_dense` cannot
+    # express: it makes every child nullable, and a nullable child decodes with a null map, which
+    # makes the decoder gather every element. Only non-nullable children reach the layout below.
+    union_type = pa.dense_union(
+        [pa.field(name, child.type, nullable=False) for name, child in zip(names, children)])
+    value_buffers = [pa.array(type_ids, type=pa.int8()).buffers()[1],
+                     pa.array(offsets, type=pa.int32()).buffers()[1]]
+    # A union has no validity bitmap, but some pyarrow versions still count a leading slot for it.
+    padding = [None] * (union_type.num_buffers - len(value_buffers))
+    return pa.Array.from_buffers(union_type, length, padding + value_buffers, children=children)
+
+
 def bool_int8():
     return dense([pa.array([True, False]), pa.array([7, -8], type=pa.int8())], ["b", "i"])
 
@@ -63,16 +76,28 @@ columns = {
     # A `binary` branch holding text: the raw-byte width sniff declines and the cast text-parses it.
     "text_binary_int32": dense(
         [pa.array([b"::1", b"1.2.3.4"], type=pa.binary()), pa.array([7, 8], type=pa.int32())], ["b", "i"]),
+    # The same shape holding a value that is neither 16 raw bytes nor `IPv6` text. Every branch takes an
+    # alternative, so the read reaches the value conversion and fails there.
+    "unparseable_binary_int32": dense(
+        [pa.array([b"not-an-ip", b"1.2.3.4"], type=pa.binary()), pa.array([7, 8], type=pa.int32())],
+        ["b", "i"]),
     # A `date32` branch is excluded by design: whether a day number is range-checked, saturated or copied
     # verbatim is decided inside the decoder, from a hint this post-decode repair cannot supply.
     "date32_utf8": dense([pa.array([19000, 19001], type=pa.date32()), pa.array(["x", "y"])], ["d", "s"]),
     # Both branches can only take `UInt8`, so any assignment would put two branches on one alternative.
     "bool_uint8": dense([pa.array([True, False]), pa.array([7, 8], type=pa.uint8())], ["b", "i"]),
-    # A dense branch retaining a slot no row selects (the value 9, outside the requested `Enum8`). The
-    # trailing `null`-typed child keeps the total child row count at or below the union's, which is what
-    # makes the decoder keep the retained slot; a value-checking repair must not see it.
+    # A dense branch whose retained slot the decoder gathers away, so the repair never sees the value 9.
     "retained": dense([pa.array([1, 9, 2], type=pa.int8()), pa.nulls(1)], ["i", "n"],
                       offsets=pa.array([0, 0, 2, 0], type=pa.int32())),
+    # A dense branch whose retained slot the decoder keeps, which needs all three of: non-nullable
+    # children, so no child contributes a null map; a total child row count no larger than the union's;
+    # and a slot no row selects. Two rows aliasing slot 0 supply the third row the count needs while
+    # leaving slot 1 unreferenced. That 2-byte slot must not decide how the referenced 16-byte values
+    # are read: it is outside every row's reach, and the Arrow spec leaves its bytes undefined.
+    "aliased_retained": dense_not_null(
+        [pa.array([b"\x00" * 15 + b"\x01", b"zz", b"\x00" * 15 + b"\x02"], type=pa.binary()),
+         pa.array([42], type=pa.int32())],
+        ["b", "i"], [0, 0, 0, 1], [0, 0, 2, 0], 4),
     # Neither branch prefers a requested alternative and both match both, so nothing is assigned.
     "binary_fsb": dense([pa.array([b"aa", b"bb"], type=pa.binary()), fsb], ["b", "f"]),
     # The Arrow child order differs from the sorted `Variant` order, so the repair must map local to global.
@@ -106,6 +131,15 @@ rejected()
         | grep -oE 'Cannot convert type [^.]+\.' | head -1
 }
 
+# usage: named_error <column> <requested type>; prints the reported error name, so the arm pins which
+# failure is reported and not merely that the read failed
+named_error()
+{
+    ${CLICKHOUSE_CLIENT} --query \
+        "SELECT $1 FROM file('${DATA}/unions.Arrow', 'Arrow', \$\$$1 $2\$\$)" 2>&1 \
+        | grep -oE '\([A-Z][A-Z0-9_]+\)' | tail -1
+}
+
 echo "--- union<bool, int8> as Variant(Bool, UInt8) ---"
 read_column bool_int8 'Variant(Bool, UInt8)'
 echo "--- union<bool, utf8> as Variant(UInt8, String): Bool and UInt8 differ only by name ---"
@@ -120,6 +154,8 @@ echo "--- a binary branch holding text falls back to text parsing ---"
 read_column text_binary_int32 'Variant(IPv6, UInt32)'
 echo "--- a retained slot no row selects must not reach the Enum8 repair ---"
 read_column retained "Variant(Enum8('a' = 1, 'b' = 2))"
+echo "--- nor decide the width of the values that are selected ---"
+read_column aliased_retained 'Variant(IPv6, UInt32)'
 echo "--- the Arrow child order need not be the sorted Variant order ---"
 read_column utf8_int32 'Variant(String, UInt32)'
 echo "--- a sparse union ---"
@@ -134,6 +170,8 @@ echo "--- two branches may never end up on one alternative ---"
 rejected bool_uint8 'Variant(UInt8, String)'
 echo "--- an ambiguous branch gets no alternative, so this stays rejected ---"
 rejected binary_fsb 'Variant(IPv6, Int128)'
+echo "--- and where every branch is assigned, a value that cannot convert is reported as itself ---"
+named_error unparseable_binary_int32 'Variant(IPv6, UInt32)'
 
 echo "--- schema inference has no requested type, so it is unaffected ---"
 ${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/unions.Arrow', 'Arrow')"

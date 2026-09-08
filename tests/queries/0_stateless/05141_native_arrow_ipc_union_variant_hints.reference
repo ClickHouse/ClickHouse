@@ -37,6 +37,11 @@ a	Variant(Enum8(\'a\' = 1, \'b\' = 2))
 \N	Variant(Enum8(\'a\' = 1, \'b\' = 2))
 b	Variant(Enum8(\'a\' = 1, \'b\' = 2))
 \N	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+--- nor decide the width of the values that are selected ---
+::1	Variant(IPv6, UInt32)
+::1	Variant(IPv6, UInt32)
+::2	Variant(IPv6, UInt32)
+42	Variant(IPv6, UInt32)
 --- the Arrow child order need not be the sorted Variant order ---
 x	Variant(String, UInt32)
 1	Variant(String, UInt32)
@@ -62,15 +67,19 @@ Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 Cannot convert type Variant(Bool, UInt8) to Variant(String, UInt8).
 --- an ambiguous branch gets no alternative, so this stays rejected ---
 Cannot convert type Variant(FixedString(16), String) to Variant(IPv6, Int128).
+--- and where every branch is assigned, a value that cannot convert is reported as itself ---
+(CANNOT_PARSE_IPV6)
 --- schema inference has no requested type, so it is unaffected ---
 bool_int8	Variant(Bool, Int8)					
 bool_utf8	Variant(Bool, String)					
 fsb_utf8	Variant(FixedString(16), String)					
 dict_fsb_utf8	Variant(FixedString(16), String)					
 text_binary_int32	Variant(Int32, String)					
+unparseable_binary_int32	Variant(Int32, String)					
 date32_utf8	Variant(Date32, String)					
 bool_uint8	Variant(Bool, UInt8)					
 retained	Variant(Int8)					
+aliased_retained	Variant(Int32, String)					
 binary_fsb	Variant(FixedString(16), String)					
 utf8_int32	Variant(Int32, String)					
 sparse	Variant(Bool, Int8)					
