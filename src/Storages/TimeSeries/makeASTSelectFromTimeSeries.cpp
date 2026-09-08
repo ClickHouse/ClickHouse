@@ -763,24 +763,9 @@ ASTPtr makeASTSelectFromTimeSeries(
 SettingsChanges getSettingsForSelectFromTimeSeries()
 {
     SettingsChanges changes;
-
-    /// If `aggregate_functions_null_for_empty` is 1 then the `time_series` column would become Nullable and
-    /// could return NULL instead of an empty array (because that setting rewrites every aggregate,
-    /// including the `groupArray`s in `arrayZip(groupArray(timestamp), groupArray(value))`,
-    /// to its `...OrNull` variant).
     changes.emplace_back("aggregate_functions_null_for_empty", Field{false});
-
-    /// If `join_use_nulls` is 1 then the generated query would return NULLs in the non-Nullable outer columns:
-    /// in `metric_family`/`type`/`unit`/`help` for a series with no metadata row, and in `time_series` for a
-    /// metric family with no series (because the unmatched side of a FULL JOIN then produces NULLs instead of
-    /// the default values - an empty string / empty array - on which the reconstruction relies).
     changes.emplace_back("join_use_nulls", Field{false});
-
-    /// If `optimize_aggregation_in_order` is 0 then the GROUP BY id over the "samples" table would build a hash
-    /// table of all the series in memory (because only this setting lets the aggregation stream in sorting-key
-    /// order, which is possible here: `id` is the first column of the default samples sorting key `(id, timestamp)`).
     changes.emplace_back("optimize_aggregation_in_order", Field{true});
-
     return changes;
 }
 
