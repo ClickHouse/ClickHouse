@@ -5,11 +5,12 @@
 -- itself still prunes. Asserted through `read_rows`, since the worker's index analysis shows up
 -- neither in the result nor in `EXPLAIN`.
 --
--- `system.query_log` keeps every past run, and `SYSTEM FLUSH LOGS` does not clear it, so the probes
--- are read with `argMax` over the event time rather than an aggregate over the whole history: on a
--- server where the test ran before, a stale row would otherwise answer for this run and hide a
--- regression. The time fence covers the other direction, where this run's row is missing entirely
--- and only stale ones match - that then reports no rows instead of a stale verdict.
+-- Each harness run gets its own database, so `current_database` normally leaves exactly one row per
+-- probe. Run against a fixed database instead - by hand, say - `system.query_log` accumulates, and
+-- `SYSTEM FLUSH LOGS` does not clear it, so the newest matching row is taken rather than an aggregate
+-- over the whole history: a stale row from an earlier healthy run would otherwise answer for this one
+-- and hide a regression. The time fence drops rows old enough to predate this run; with nothing left
+-- to match, the aggregate yields 0 and the assertion fails rather than passing on a stale row.
 --
 -- Parallel replicas are pinned off rather than tagged away: under `automatic_parallel_replicas_mode`
 -- the read is planned elsewhere and the set the query owns stops pruning too, which would leave the
