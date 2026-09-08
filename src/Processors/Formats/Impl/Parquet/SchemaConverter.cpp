@@ -164,22 +164,29 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     auto it = map.find(element.field_id);
     if (it == map.end())
     {
-        /// The field id is not part of the table schema: either the column was dropped from the
-        /// table (a metadata-only operation, data files keep it), or it is a reserved-range id
-        /// (> 2147483447), e.g. the v3 row-lineage fields `_row_id` and
-        /// `_last_updated_sequence_number`. A reader projects by field id, so such a column is
-        /// simply not selected (https://iceberg.apache.org/spec/#column-projection).
+        /// The field id is not part of the read schema. Such a column is not selected, because a
+        /// reader projects by field id (https://iceberg.apache.org/spec/#column-projection), but
+        /// only if the table could have written it in the first place, which holds for:
+        /// - a reserved-range id (> 2147483447), e.g. the v3 row-lineage fields `_row_id` and
+        ///   `_last_updated_sequence_number`, which spec-compliant writers materialize into data
+        ///   files without them being part of the table schema;
+        /// - an id the table has assigned before, i.e. one at or below `last-column-id` of the
+        ///   table metadata. That is a column dropped from the table: `DROP COLUMN` is a
+        ///   metadata-only operation, so the existing data files keep the column.
+        /// Any other id means the file does not belong to this table, or the schema of the file
+        /// was resolved to the wrong one, and is reported rather than silently ignored.
         static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
-        auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
-        if (element.field_id <= iceberg_max_user_field_id && last_assigned_field_id.has_value()
-            && element.field_id > *last_assigned_field_id)
+        const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
+        const bool table_could_have_assigned_it = element.field_id > iceberg_max_user_field_id
+            || (element.field_id >= 1 && last_assigned_field_id.has_value() && element.field_id <= *last_assigned_field_id);
+        if (!table_could_have_assigned_it)
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Parquet file has column {} with field_id {} that is not in datalake metadata and is above the highest field id "
-                "the table ever assigned ({})",
+                "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
+                "assigned that field id: the highest field id it ever assigned is {}",
                 element.name,
                 element.field_id,
-                *last_assigned_field_id);
+                last_assigned_field_id.has_value() ? std::to_string(*last_assigned_field_id) : String("unknown"));
 
         out_not_in_schema = true;
         return element.name;
