@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/Engine/TaskScheduler.h>
+#include <Processors/Executors/Runtime/Engine/WorkerPool.h>
 #include <Processors/Executors/Runtime/Engine/WorkerSlot.h>
 #include <Processors/Executors/Runtime/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/Pipeline/ExecutingPipeline.h>
@@ -26,7 +27,7 @@ class Worker
     void notifyOwner(ProcessorState & owner);
 
 public:
-    Worker(size_t worker_id_, TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_);
+    Worker(size_t worker_id_, TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_, WorkerPool & pool_);
 
     void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
 
@@ -35,6 +36,7 @@ private:
     TaskScheduler & scheduler;
     WorkersCoordinator & coordinator;
     ExecutingPipeline & pipeline;
+    WorkerPool & pool;
 };
 
 }

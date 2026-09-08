@@ -12,6 +12,7 @@ class WorkStealingQueue
 {
 public:
     void pushBack(Task task);
+    void moveBackToFront();
     Task popFront();
     Task popBack();
 

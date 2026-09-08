@@ -14,17 +14,28 @@ namespace DB
 
 class TaskScheduler
 {
-    struct GuardedQueue
+    struct GlobalState
     {
         std::mutex mutex;
         WorkStealingQueue queue;
-        size_t pops = 0;
     };
 
-    std::optional<Task> takeFrom(GuardedQueue & from, bool oldest);
-    std::optional<Task> takeFromQueues(GuardedQueue & own, bool oldest);
+    struct LocalState
+    {
+        std::mutex mutex;
+        WorkStealingQueue queue;
+
+        size_t pops_count = 0;
+        size_t lifo_used_count = 0;
+        bool pushed_since_last_pop = false;
+    };
+    using LocalStates = std::vector<LocalState>;
+
+    void pushToLocalQueue(LocalState & own, Task task);
+    void offloadToGlobalQueue(LocalState & own);
+    std::optional<Task> takeFromLocal(LocalState & own);
+    std::optional<Task> takeFromGlobal();
     std::optional<Task> steal(size_t worker_id);
-    void moveOldestHalfToGlobal(GuardedQueue & own);
 
 public:
     TaskScheduler(Poller & poller_, size_t max_workers);
@@ -42,8 +53,8 @@ public:
 
 private:
     Poller & poller;
-    std::vector<GuardedQueue> local;
-    GuardedQueue global;
+    GlobalState global;
+    LocalStates local;
     std::atomic<size_t> queued_count = 0;
     std::atomic<size_t> total_count = 0;
 };

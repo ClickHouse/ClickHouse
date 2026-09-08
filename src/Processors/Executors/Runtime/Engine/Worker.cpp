@@ -39,11 +39,12 @@ bool canAddInfoToException(const Exception & exception)
 
 }
 
-Worker::Worker(size_t worker_id_, TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_)
+Worker::Worker(size_t worker_id_, TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_, WorkerPool & pool_)
     : worker_id(worker_id_)
     , scheduler(scheduler_)
     , coordinator(coordinator_)
     , pipeline(pipeline_)
+    , pool(pool_)
 {
 }
 
@@ -67,7 +68,10 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
         runTask(*task);
 
         if (scheduler.queued() > 1)
+        {
             coordinator.wakeOne();
+            pool.grow();
+        }
 
         if (pipeline.hasReadyForRemoval())
             pipeline.removeReady();
@@ -167,10 +171,10 @@ void Worker::runPrepare(ProcessorState & state)
             profileWaits(processor, last_status, new_status);
 
         state.round_updates.drain(changed_inputs, changed_outputs);
-        for (auto * output : changed_outputs | std::views::reverse)
-            notifyNeighbour(output->getInputPort());
         for (auto * input : changed_inputs | std::views::reverse)
             notifyNeighbour(input->getOutputPort());
+        for (auto * output : changed_outputs | std::views::reverse)
+            notifyNeighbour(output->getInputPort());
 
         switch (new_status)
         {

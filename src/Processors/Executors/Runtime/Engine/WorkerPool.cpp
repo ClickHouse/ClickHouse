@@ -130,8 +130,8 @@ void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
     coordinator.enter(worker_id);
     try
     {
-        WorkerSlot worker_slot(std::move(slot), *this, reservation, tracker);
-        Worker(worker_id, scheduler, coordinator, pipeline).run(worker_slot, yield_flag);
+        WorkerSlot worker_slot(std::move(slot), reservation, tracker);
+        Worker(worker_id, scheduler, coordinator, pipeline, *this).run(worker_slot, yield_flag);
     }
     catch (...)
     {

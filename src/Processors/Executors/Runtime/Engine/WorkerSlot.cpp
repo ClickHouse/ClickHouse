@@ -1,5 +1,4 @@
 #include <Processors/Executors/Runtime/Engine/WorkerSlot.h>
-#include <Processors/Executors/Runtime/Engine/WorkerPool.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Stopwatch.h>
 
@@ -13,12 +12,11 @@ constexpr UInt64 renew_period_ns = 1'000'000;
 
 }
 
-WorkerSlot::WorkerSlot(AcquiredSlotPtr slot_, WorkerPool & pool_, MemoryReservation * reservation_, MemoryTracker * tracker_)
+WorkerSlot::WorkerSlot(AcquiredSlotPtr slot_, MemoryReservation * reservation_, MemoryTracker * tracker_)
     : slot(std::move(slot_))
-    , pool(pool_)
+    , lease(dynamic_cast<ISlotLease *>(slot.get()))
     , reservation(reservation_)
     , tracker(tracker_)
-    , lease(dynamic_cast<ISlotLease *>(slot.get()))
 {
     if (lease)
         lease->startConsumption();
@@ -26,8 +24,6 @@ WorkerSlot::WorkerSlot(AcquiredSlotPtr slot_, WorkerPool & pool_, MemoryReservat
 
 bool WorkerSlot::keepGoing()
 {
-    pool.grow();
-
     if (lease)
     {
         const UInt64 now_ns = clock_gettime_ns();
