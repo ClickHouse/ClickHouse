@@ -7,6 +7,8 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET use_query_condition_cache = 1;
+-- the propagated predicate is the only selective one, without it nothing populates the cache
+SET query_plan_propagate_predicate_across_join = 1;
 
 DROP TABLE IF EXISTS prop_qcc_src;
 DROP TABLE IF EXISTS prop_qcc_dst;
