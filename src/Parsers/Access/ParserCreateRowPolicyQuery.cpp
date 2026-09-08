@@ -467,6 +467,10 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
 
+## Tables that read from other tables {#tables-that-read-from-other-tables}
+
+A row policy filters rows where the data is actually read. When a table returns the rows of another table as its own, such as an `Alias` table, a materialized view read through its target table, or a `Buffer` table with a destination table, the row policies of that underlying table apply to reads through the wrapper as well. They are combined with the policies of the wrapper itself using a logical `AND`. A `Merge` table applies the policies of every table it reads from.
+
 ## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
 
 A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](/reference/engines/table-engines/special/distributed) table or a wrapper over one (for example, a materialized view with a `Distributed` target), only ships the query text to the remote servers and cannot apply the policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
