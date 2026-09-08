@@ -169,25 +169,62 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     {
         auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
 
-        for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
-        {
-            if (nopr_hash == it->second)
+        /// A step that contributes nothing to the key adopts its child's key (see
+        /// `calculateHashTableCacheKeys`), so a chain of such steps - and the step below it - all
+        /// answer to the same hash. The hash map's order is unspecified, so walk the plan instead, and
+        /// pick from the chain deliberately rather than taking whatever comes first.
+        ///
+        /// Take the LOWEST node of the chain, because the numbers the chain shares are the ones its
+        /// bottom produces. Instrumenting a wrapper above it measures something else: an `Aggregating`
+        /// with a rename over it is such a chain (the rename preserves rows and byte layout, so it is
+        /// transparent), but the aggregation records the partial states replicas would ship, while the
+        /// rename above it sees the finalized values - `04100_autopr_input_bytes_estimation_aggregation_in_order`
+        /// catches this as an output estimate ~3x too small.
+        ///
+        /// The one exception is a chain that bottoms out in the reading step, which records only input
+        /// bytes: take the lowest wrapper above it, which does record output bytes. That mirrors
+        /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read that is a
+        /// whole chain on its own is still returned, so the caller's fail-close for it stays reachable.
+        const QueryPlan::Node * matched_node = nullptr;
+        const QueryPlan::Node * matched_leaf = nullptr;
+        Stack traversal_stack;
+        traverseQueryPlan(
+            traversal_stack,
+            single_replica_plan_root,
+            NoOp{},
+            [&](auto & frame_node)
             {
-                if (!nopr_node->step->supportsDataflowStatisticsCollection())
-                {
-                    LOG_DEBUG(
-                        getLogger("optimizeTree"),
-                        "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
-                        nopr_node->step->getName());
-                    return std::make_pair(nullptr, 0);
-                }
+                if (matched_node)
+                    return;
+                if (auto hash_it = nopr_node_hashes.find(&frame_node);
+                    hash_it == nopr_node_hashes.end() || hash_it->second != it->second)
+                    return;
+                if (frame_node.children.empty())
+                    matched_leaf = &frame_node;
+                else
+                    matched_node = &frame_node;
+            });
 
-                LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", nopr_node->step->getName());
-                return std::make_pair(nopr_node, nopr_hash);
-            }
+        if (!matched_node)
+            matched_node = matched_leaf;
+
+        if (!matched_node)
+        {
+            LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
+            return std::make_pair(nullptr, 0);
         }
-        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
-        return std::make_pair(nullptr, 0);
+
+        if (!matched_node->step->supportsDataflowStatisticsCollection())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
+                matched_node->step->getName());
+            return std::make_pair(nullptr, 0);
+        }
+
+        LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", matched_node->step->getName());
+        return std::make_pair(matched_node, it->second);
     }
     else
     {

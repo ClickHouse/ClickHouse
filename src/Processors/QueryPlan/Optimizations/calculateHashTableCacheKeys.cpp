@@ -331,18 +331,46 @@ void calculateHashTableCacheKeys(
                 frame.hash.update(cache_keys[child]);
         }
 
+        bool contributes_nothing = false;
         if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*source));
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+        {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
+            else
+                contributes_nothing = true;
+        }
 
-        const auto raw = frame.hash.get64();
-        raw_hashes[&node] = raw;
-        cache_keys[&node] = raw;
+        /// A step that contributes nothing must not contribute a hashing round either. Hashing its
+        /// child through it gives `SipHash(key(child))`, which is not `key(child)`, so the mere
+        /// presence of such a step shifts every key above it - the step is free of content but not
+        /// free of position. Adopt the child's key instead, which makes it genuinely invisible: a
+        /// plan that carries one and a plan that does not then agree on every key above it.
+        ///
+        /// This is what keeps `optimizePrewhere` from moving the keys. A filter fully moved into
+        /// PREWHERE leaves an `Expression` in the `Filter`'s place, and expression merging has
+        /// already run by then, so the plan is left with two neighbouring `Expression` steps that no
+        /// plan built any other way carries. That step is a rename, hence row- and layout-preserving,
+        /// hence transparent here - and with the adoption below the automatic-parallel-replicas
+        /// decision can still find its counterpart in the other plan.
+        ///
+        /// A transforming step always has exactly one child, so the join branches above never reach
+        /// this; the guard is for safety, not for a shape that occurs.
+        if (contributes_nothing && node.children.size() == 1)
+        {
+            raw_hashes[&node] = raw_hashes[node.children.front()];
+            cache_keys[&node] = cache_keys[node.children.front()];
+        }
+        else
+        {
+            const auto raw = frame.hash.get64();
+            raw_hashes[&node] = raw;
+            cache_keys[&node] = raw;
+        }
 
         stack.pop_back();
     }
