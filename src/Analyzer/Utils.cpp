@@ -1669,9 +1669,10 @@ bool literalIdentifiesValue(const IDataType & type)
 }
 
 /// Name the active member's own type, so the receiving cast rebuilds the subtype the initiator held rather than
-/// the one the literal infers back to. A string-like member is skipped: the receiving cast re-parses it under
-/// `cast_string_to_dynamic_use_inference`. A member inside `array`/`map` is skipped because those resolve one
-/// element type from all their arguments, so named `Int64` and `UInt64` siblings have no common type unless
+/// the one the literal infers back to. A string-like member is skipped: the receiving side decides with
+/// `cast_string_to_dynamic_use_inference` whether to re-parse its text, so naming it would make the arriving
+/// type depend on that setting. A member inside `array`/`map` is skipped because those resolve one element type
+/// from all their arguments, so named `Int64` and `UInt64` siblings have no common type unless
 /// `use_variant_as_common_type` builds a Variant, while bare literals of different widths simply widen; `tuple`
 /// types each argument independently, so its elements are named normally.
 ASTPtr nameDynamicMemberAST(ASTPtr value, const DataTypePtr & member_type, bool inside_unifying_container)
