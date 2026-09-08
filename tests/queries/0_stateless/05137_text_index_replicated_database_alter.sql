@@ -28,7 +28,7 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached
 ENGINE = MergeTree ORDER BY tuple();
 
 -- A full-definition `ATTACH` is fresh DDL on the initiating replica, even in a `Replicated` database.
-DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached FORMAT Null;
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached PERMANENTLY FORMAT Null;
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached
 (
     t Array(Array(String)),
