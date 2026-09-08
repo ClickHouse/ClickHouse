@@ -396,6 +396,11 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         ++run_count;
     }
 
+    /// `filterNonConstKeys` removed all grouping keys, so every row in this stream
+    /// belongs to one logical group and no later input can produce another output row.
+    if (grouping_key_positions.empty() && current_group_rows_seen >= group_limit_end)
+        stopReading();
+
     /// Save the last grouping key so the next chunk can detect whether its first
     /// row continues the same group or starts a new one. With no non-constant grouping
     /// keys this is a no-op (nothing to remember).

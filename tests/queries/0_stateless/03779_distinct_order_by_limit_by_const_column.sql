@@ -71,3 +71,27 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '03779_limit_by_const_early_stop'
   AND type = 'QueryFinish';
+
+SELECT count() > 0
+FROM (EXPLAIN PIPELINE
+      SELECT number, 1 AS k
+      FROM numbers_mt(100000)
+      ORDER BY k
+      LIMIT 2 BY k
+      SETTINGS max_threads = 4, max_block_size = 10)
+WHERE explain LIKE '%LimitBySortedStreamTransform%';
+
+SELECT number, 1 AS k
+FROM numbers_mt(100000)
+ORDER BY k
+LIMIT 2 BY k
+FORMAT Null
+SETTINGS max_threads = 4, max_block_size = 10, log_comment = '03779_limit_by_const_early_stop_sorted';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT if(count() > 0 AND max(read_rows) < 1000, 'OK', 'FAIL')
+FROM system.query_log
+WHERE current_database() = currentDatabase()
+  AND log_comment = '03779_limit_by_const_early_stop_sorted'
+  AND type = 'QueryFinish';
