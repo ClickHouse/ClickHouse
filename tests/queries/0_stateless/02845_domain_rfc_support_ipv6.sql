@@ -14,6 +14,9 @@ SELECT domainRFC('http://user.name@[2001:db8::1') FORMAT CSV;
 -- The bracket contents must be a real IPv6 address, not just a bracket-balanced string.
 SELECT domainRFC('http://[2001db81]:80') FORMAT CSV;
 SELECT domainRFC('http://user@[2001db81]:80') FORMAT CSV;
+-- A mixed IPv6/IPv4 tail literal is a valid IPv6 address and its dot must not be rejected.
+SELECT domainRFC('http://[::ffff:192.0.2.128]:80') FORMAT CSV;
+SELECT domainRFC('http://user@[::ffff:192.0.2.128]:80') FORMAT CSV;
 -- Does not conform to the IPv6 format.
 SELECT domainRFC('[2001db81]:80') FORMAT CSV;
 SELECT domainRFC('[20[01:db8::1]:80') FORMAT CSV;

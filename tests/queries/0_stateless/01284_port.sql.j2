@@ -64,3 +64,8 @@ select portRFC('http://user:password@[2001:db8::8a2e:370:7334]:80/');
 select 'ipv6-RFC-query-fragment';
 select portRFC('http://[2001:db8::8a2e:370:7334]:80?x=1');
 select portRFC('http://[2001:db8::8a2e:370:7334]:80#fragment');
+
+-- a mixed IPv6/IPv4 tail literal is a valid IPv6 address
+select 'ipv6-RFC-mixed';
+select portRFC('http://[::ffff:192.0.2.128]:80');
+select portRFC('http://user@[::ffff:192.0.2.128]:80/', toUInt16(443));
