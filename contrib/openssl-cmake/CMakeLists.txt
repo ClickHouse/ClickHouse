@@ -61,6 +61,13 @@ if(OPENSSL_NO_ASM)
     else()
         add_definitions(-DL_ENDIAN)
     endif()
+    if(ENABLE_FILC)
+        # The portable C sources still carry GNU inline assembly for byte swaps and multiplies
+        # (`BSWAP4`/`BSWAP8` in `include/crypto/modes.h`, `md32_common.h`, SHA, ChaCha, BN, ...),
+        # guarded by `OPENSSL_NO_ASM`/`OPENSSL_NO_INLINE_ASM`. FilC supports inline assembly only
+        # on x86_64 and traps at run time otherwise, so select the pure C fallbacks.
+        add_definitions(-DOPENSSL_NO_ASM -DOPENSSL_NO_INLINE_ASM)
+    endif()
 elseif(ARCH_AMD64)
     if(OS_DARWIN)
         set(PLATFORM_DIRECTORY darwin_x86_64)

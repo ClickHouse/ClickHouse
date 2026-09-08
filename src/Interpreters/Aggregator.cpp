@@ -772,7 +772,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
     /// See `enable_packed_string_keys_in_aggregation` for why the legacy method may be preferred.
-    if (!params.enable_packed_string_keys && method_chosen == AggregatedDataVariants::Type::key_packed_string)
+#if defined(__FILC__)
+    /// `PackedStringRef` keeps the key pointer in 6 bytes, which cannot carry a FilC allocation
+    /// capability, so the packed method is never usable under FilC.
+    constexpr bool packed_string_keys_supported = false;
+#else
+    constexpr bool packed_string_keys_supported = true;
+#endif
+    if ((!params.enable_packed_string_keys || !packed_string_keys_supported)
+        && method_chosen == AggregatedDataVariants::Type::key_packed_string)
         method_chosen = AggregatedDataVariants::Type::key_string;
 
     /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped hash
