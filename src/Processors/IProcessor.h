@@ -244,7 +244,7 @@ public:
       * This method cannot access any port, but it can create new ports for current processor.
       *
       * Method should return set of new already connected processors or disconnected finished processors.
-      * All returned processors must be connected only to each other or current processor.
+      * All returned processors must be connected only to each other, current processor or processors listed in to_reconnect.
       *
       * Method can't move data from/to port or perform calculations.
       * 'prepare' should be called again after this operation.
@@ -253,6 +253,7 @@ public:
     {
         Processors to_add;
         Processors to_remove;
+        Processors to_reconnect;
     };
     virtual PipelineUpdate updatePipeline();
 

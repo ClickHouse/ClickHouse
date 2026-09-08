@@ -34,6 +34,7 @@ public:
 
     std::vector<ProcessorState *> sinks();
     std::vector<ProcessorState *> addProcessors(ProcessorState & requester, const Processors & to_add);
+    std::vector<ProcessorState *> reconnectProcessors(const Processors & to_reconnect);
 
     void submitForRemoval(Processors group);
     void recordAsFinished(IProcessor & processor);

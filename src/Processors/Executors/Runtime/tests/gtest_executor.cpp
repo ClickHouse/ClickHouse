@@ -530,6 +530,137 @@ private:
     std::vector<std::weak_ptr<IProcessor>> batch_history;
 };
 
+/// Gets its inputs from outside one by one, like MergingSortedTransform under an external sort; once told it has them all,
+/// pulls one chunk from every input and emits how many it got.
+class Collector final : public IProcessor
+{
+public:
+    explicit Collector(SharedHeader header_) : IProcessor({}, {Block(*header_)}) {}
+
+    String getName() const override { return "Collector"; }
+
+    void addInput() { inputs.emplace_back(outputs.front().getHeader(), this); }
+    void setHaveAllInputs() { have_all_inputs = true; }
+
+    Status prepare() override
+    {
+        if (!have_all_inputs)
+            return Status::NeedData;
+
+        auto & output = outputs.front();
+        if (output.isFinished())
+        {
+            for (auto & input : inputs)
+                input.close();
+            return Status::Finished;
+        }
+
+        if (emitted)
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        bool all_done = true;
+        for (auto & input : inputs)
+        {
+            if (input.isFinished())
+                continue;
+
+            input.setNeeded();
+            all_done = false;
+            if (input.hasData())
+                collected += input.pull().getNumRows();
+        }
+
+        if (!all_done)
+            return Status::NeedData;
+
+        output.push(makeChunk(static_cast<UInt8>(collected)));
+        emitted = true;
+        return Status::PortFull;
+    }
+
+private:
+    bool have_all_inputs = false;
+    bool emitted = false;
+    size_t collected = 0;
+};
+
+/// Spills like MergeSortingTransform: every update adds one source and connects it to a new input of the collector,
+/// which itself is added with the first spill and declared in to_reconnect afterwards; the last spill tells the collector it has all inputs.
+class Spiller final : public IProcessor
+{
+public:
+    Spiller(SharedHeader header_, size_t spills_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+        , spills(spills_)
+    {
+    }
+
+    String getName() const override { return "Spiller"; }
+
+    Status prepare() override
+    {
+        if (spills_started < spills)
+            return Status::UpdatePipeline;
+
+        auto & input = inputs.front();
+        auto & output = outputs.front();
+
+        if (input.isFinished())
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        input.setNeeded();
+        if (!input.hasData())
+            return Status::NeedData;
+
+        output.push(input.pull());
+        return Status::PortFull;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (!collector)
+        {
+            collector = std::make_shared<Collector>(header);
+            inputs.emplace_back(*header, this);
+            connect(collector->getOutputs().front(), inputs.back());
+            update.to_add.push_back(collector);
+        }
+        else
+            update.to_reconnect.push_back(collector);
+
+        auto source = std::make_shared<SingleValueSource>(header, static_cast<UInt8>(spills_started));
+        collector->addInput();
+        connect(source->getOutputs().front(), collector->getInputs().back());
+        update.to_add.push_back(source);
+
+        if (++spills_started == spills)
+            collector->setHaveAllInputs();
+
+        return update;
+    }
+
+private:
+    const SharedHeader header;
+    const size_t spills;
+    size_t spills_started = 0;
+    std::shared_ptr<Collector> collector;
+};
+
 std::shared_ptr<Processors> chain(const std::vector<ProcessorPtr> & processors)
 {
     for (size_t i = 0; i + 1 < processors.size(); ++i)
@@ -657,6 +788,21 @@ TEST(Executor, UpdatePipelineDeferredRemovalOfUnfinishedProcessors)
         EXPECT_TRUE(weak.expired());
 
     EXPECT_EQ(coordinator->getInputs().size(), 1u);
+}
+
+TEST(Executor, UpdatePipelineAddsInputsToAnExistingProcessor)
+{
+    auto header = makeHeader();
+    constexpr size_t spills = 5;
+    auto spiller = std::make_shared<Spiller>(header, spills);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    auto processors = chain({spiller, sink});
+    Executor executor(processors, nullptr);
+    executor.execute(2, false);
+
+    EXPECT_EQ(sink->values, (std::vector<UInt8>{spills}));
+    EXPECT_EQ(processors->size(), 2 + 1 + spills);
 }
 
 TEST(Executor, CancelInsidePrepareStopsBeforeTheUpdate)

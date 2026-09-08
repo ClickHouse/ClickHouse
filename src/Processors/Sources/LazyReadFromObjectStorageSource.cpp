@@ -257,7 +257,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     connect(source_output, inputs.back());
     inputs.back().setNeeded();
 
-    return PipelineUpdate{.to_add = {source}, .to_remove = {}};
+    return PipelineUpdate{.to_add = {source}, .to_remove = {}, .to_reconnect = {}};
 }
 
 }

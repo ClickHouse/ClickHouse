@@ -26,6 +26,16 @@ public:
     OutputPort & output() { return outputs.front(); }
 };
 
+/// Grows its inputs from outside, like a merging transform fed by spills.
+class Collector final : public IProcessor
+{
+public:
+    Collector() : IProcessor({}, {}) {}
+    String getName() const override { return "Collector"; }
+    Status prepare() override { return Status::Finished; }
+    InputPort & addInput() { return inputs.emplace_back(Block(*makeHeader()), this); }
+};
+
 class Sink final : public IProcessor
 {
 public:
@@ -106,6 +116,43 @@ TEST(ProcessorStates, AddWiresTheGroupAndTheRequester)
 
     sink_state.incoming_updates.drain(hint_inputs, hint_outputs);
     EXPECT_EQ(std::vector<InputPort *>{&sink->input()}, hint_inputs);
+    EXPECT_TRUE(hint_outputs.empty());
+}
+
+TEST(ProcessorStates, ReconnectWiresNewPortsOfAListedProcessor)
+{
+    auto requester = std::make_shared<Source>();
+    auto collector = std::make_shared<Collector>();
+    auto processors = std::make_shared<Processors>(Processors{requester, collector});
+    ProcessorStates states(processors);
+    ProcessorState & requester_state = states.get(*requester);
+    ProcessorState & collector_state = states.get(*collector);
+
+    auto spill = std::make_shared<Source>();
+    InputPort & new_input = collector->addInput();
+    connect(spill->output(), new_input);
+
+    auto added = states.add(requester_state, {spill});
+    ASSERT_EQ(1u, added.size());
+    EXPECT_EQ(spill.get(), added.front()->processor);
+    EXPECT_FALSE(new_input.getUpdateChannel().isConnected());
+
+    auto reconnected = states.reconnect({collector});
+    ASSERT_EQ(1u, reconnected.size());
+    EXPECT_EQ(&collector_state, reconnected.front());
+
+    EXPECT_EQ(&collector_state, &new_input.getUpdateChannel().getOwner());
+    EXPECT_EQ(added.front(), &spill->output().getUpdateChannel().getOwner());
+
+    IProcessor::UpdatedInputPorts hint_inputs;
+    IProcessor::UpdatedOutputPorts hint_outputs;
+    collector_state.incoming_updates.drain(hint_inputs, hint_outputs);
+    EXPECT_EQ(std::vector<InputPort *>{&new_input}, hint_inputs);
+    EXPECT_TRUE(hint_outputs.empty());
+
+    states.reconnect({collector});
+    collector_state.incoming_updates.drain(hint_inputs, hint_outputs);
+    EXPECT_TRUE(hint_inputs.empty());
     EXPECT_TRUE(hint_outputs.empty());
 }
 

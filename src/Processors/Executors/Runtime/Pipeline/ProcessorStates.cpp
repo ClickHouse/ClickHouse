@@ -68,6 +68,22 @@ void connectPorts(const std::unordered_map<const IProcessor *, ProcessorState> &
     }
 }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+void checkEveryConnectedPortHasAChannel(std::unordered_map<const IProcessor *, ProcessorState> & states)
+{
+    for (auto & [processor, state] : states)
+    {
+        for (auto & input : state.processor->getInputs())
+            if (input.isConnected() && !input.getUpdateChannel().isConnected())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected input port from a pipeline update that did not list it in to_reconnect", describeProcessor(processor));
+
+        for (auto & output : state.processor->getOutputs())
+            if (output.isConnected() && !output.getUpdateChannel().isConnected())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected output port from a pipeline update that did not list it in to_reconnect", describeProcessor(processor));
+    }
+}
+#endif
+
 }
 
 ProcessorStates::ProcessorStates(std::shared_ptr<Processors> processors_)
@@ -114,6 +130,28 @@ std::vector<ProcessorState *> ProcessorStates::add(ProcessorState & requester, c
         connectPorts(states, *state);
 
     return added;
+}
+
+std::vector<ProcessorState *> ProcessorStates::reconnect(const Processors & to_reconnect)
+{
+    std::lock_guard lock(mutex);
+
+    std::vector<ProcessorState *> reconnected;
+    for (const auto & processor : to_reconnect)
+    {
+        auto it = states.find(processor.get());
+        if (it == states.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} listed in to_reconnect does not exist in pipeline", processor->getName());
+
+        connectPorts(states, it->second);
+        reconnected.push_back(&it->second);
+    }
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    checkEveryConnectedPortHasAChannel(states);
+#endif
+
+    return reconnected;
 }
 
 void ProcessorStates::remove(const Processors & to_remove)

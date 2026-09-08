@@ -231,7 +231,7 @@ public:
         inputs.emplace_back(Block(*makeHeader()), this);
         auto source = std::make_shared<CountingSource>(2);
         connect(source->getOutputs().front(), inputs.back());
-        return PipelineUpdate{.to_add = {source}, .to_remove = {}};
+        return PipelineUpdate{.to_add = {source}, .to_remove = {}, .to_reconnect = {}};
     }
 };
 

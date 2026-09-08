@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int QUOTA_EXCEEDED;
@@ -120,6 +119,19 @@ void Worker::runTask(Task task)
     }
 }
 
+void Worker::notifyOwner(ProcessorState & owner)
+{
+    if (owner.lock.isFinished())
+        return;
+
+    owner.lock.notify();
+
+    if (owner.lock.tryLock())
+        scheduler.push(Task{.state = &owner, .kind = Task::Kind::Prepare}, worker_id);
+    else
+        owner.processor->onUpdatePorts();
+}
+
 template <class PortT>
 void Worker::notifyNeighbour(PortT & neighbour)
 {
@@ -128,12 +140,7 @@ void Worker::notifyNeighbour(PortT & neighbour)
         return;
 
     owner.incoming_updates.push(neighbour);
-    owner.lock.notify();
-
-    if (owner.lock.tryLock())
-        scheduler.push(Task{.state = &owner, .kind = Task::Kind::Prepare}, worker_id);
-    else
-        owner.processor->onUpdatePorts();
+    notifyOwner(owner);
 }
 
 void Worker::runPrepare(ProcessorState & state)
@@ -292,6 +299,7 @@ void Worker::runUpdatePipeline(ProcessorState & requester)
             processor->inheritQueryPlanStepFromParent(*requester.processor, requester.processor->getQueryPlanStepGroup());
 
     auto added = pipeline.addProcessors(requester, update.to_add);
+    auto reconnected = pipeline.reconnectProcessors(update.to_reconnect);
     if (!update.to_remove.empty())
         pipeline.submitForRemoval(std::move(update.to_remove));
 
@@ -299,12 +307,10 @@ void Worker::runUpdatePipeline(ProcessorState & requester)
         return;
 
     for (auto * state : added)
-    {
-        if (!state->lock.tryLock())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} added by {} is already locked", state->processor->getName(), requester.processor->getName());
+        notifyOwner(*state);
 
-        scheduler.push(Task{.state = state, .kind = Task::Kind::Prepare}, worker_id);
-    }
+    for (auto * state : reconnected)
+        notifyOwner(*state);
 
     scheduler.push(Task{.state = &requester, .kind = Task::Kind::Prepare}, worker_id);
 }

@@ -114,6 +114,11 @@ std::vector<ProcessorState *> ExecutingPipeline::addProcessors(ProcessorState & 
     return added;
 }
 
+std::vector<ProcessorState *> ExecutingPipeline::reconnectProcessors(const Processors & to_reconnect)
+{
+    return states.reconnect(to_reconnect);
+}
+
 void ExecutingPipeline::submitForRemoval(Processors group)
 {
     removals.submit(std::move(group));

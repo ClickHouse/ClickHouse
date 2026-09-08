@@ -166,7 +166,7 @@ IProcessor::PipelineUpdate DelayedSource::updatePipeline()
     }
 
     /// Executor will check that all processors are connected.
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}, .to_reconnect = {}};
 }
 
 Pipe createDelayedPipe(SharedHeader header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port)

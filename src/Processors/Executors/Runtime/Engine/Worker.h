@@ -23,6 +23,7 @@ class Worker
 
     template <class PortT>
     void notifyNeighbour(PortT & neighbour);
+    void notifyOwner(ProcessorState & owner);
 
 public:
     Worker(size_t worker_id_, TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_);
