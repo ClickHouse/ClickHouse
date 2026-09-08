@@ -35,6 +35,27 @@ SELECT has(materialize(['a', NULL, 'b']), materialize('b'));
 SELECT has(materialize(['a', NULL, 'b']), materialize('c'));
 
 
+SELECT has(array_value, needle), indexOf(array_value, needle), countEqual(array_value, needle)
+FROM VALUES('array_value Array(String), needle Nullable(String)',
+    ([''], NULL),
+    ([''], ''),
+    (['a'], NULL),
+    (['a'], 'a'),
+    (['a', ''], NULL),
+    (['a', ''], 'a'),
+    ([], NULL));
+
+SELECT has(array_value, needle), indexOf(array_value, needle), countEqual(array_value, needle)
+FROM VALUES('array_value Array(Nullable(String)), needle Nullable(String)',
+    ([NULL], NULL),
+    ([''], NULL),
+    (['a'], NULL),
+    (['a', NULL], NULL),
+    (['a', ''], ''),
+    (['a', NULL], 'a'),
+    ([], NULL));
+
+
 SELECT has([111, 222], 111);
 SELECT has([111, 222], 222);
 SELECT has([111, 222], 333);

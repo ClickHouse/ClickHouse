@@ -410,11 +410,25 @@ private:
                         if (!(*item_map)[i])
                             continue;
                     }
-                    else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                    else
+                    {
+                        if constexpr (HasNullMapItem)
+                            if ((*item_map)[i])
+                                continue;
+
+                        if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                            continue;
+                    }
+                }
+                else
+                {
+                    if constexpr (HasNullMapItem)
+                        if ((*item_map)[i])
+                            continue;
+
+                    if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
                         continue;
                 }
-                else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
-                    continue;
 
                 ConcreteAction::apply(current, j);
 
