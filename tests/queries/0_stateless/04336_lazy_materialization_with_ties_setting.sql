@@ -70,6 +70,32 @@ FROM
     SETTINGS query_plan_max_limit_for_lazy_materialization = 0, query_plan_optimize_lazy_materialization_with_ties = 1
 );
 
+-- The dedicated flag stays authoritative when the max limit is unbounded: without it,
+-- `LIMIT ... WITH TIES` must not be optimized no matter how the limit compares to the bound.
+SELECT 'unbounded max keeps with ties disabled';
+SELECT countIf(explain LIKE '%Lazily read columns:%')
+FROM
+(
+    EXPLAIN PLAN actions = 1
+    SELECT k, payload
+    FROM test_lazy_materialization_with_ties_setting
+    ORDER BY tie
+    LIMIT 11 WITH TIES
+    SETTINGS query_plan_max_limit_for_lazy_materialization = 0, query_plan_optimize_lazy_materialization_with_ties = 0
+);
+
+SELECT 'unbounded max keeps small limit with ties disabled';
+SELECT countIf(explain LIKE '%Lazily read columns:%')
+FROM
+(
+    EXPLAIN PLAN actions = 1
+    SELECT k, payload
+    FROM test_lazy_materialization_with_ties_setting
+    ORDER BY tie
+    LIMIT 3 WITH TIES
+    SETTINGS query_plan_max_limit_for_lazy_materialization = 0, query_plan_optimize_lazy_materialization_with_ties = 0
+);
+
 SELECT 'result check';
 SELECT count(), sum(k)
 FROM
