@@ -3,7 +3,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(Conversion)
+static void registerConversionBasic(FunctionFactory & factory)
 {
     /// toUInt8 documentation
     FunctionDocumentation::Description toUInt8_description = R"(
@@ -1630,7 +1630,10 @@ from_date32:     1509840000
     FunctionDocumentation documentation_to_unix_timestamp = {description_to_unix_timestamp, syntax_to_unix_timestamp, arguments_to_unix_timestamp, {}, returned_value_to_unix_timestamp, examples_to_unix_timestamp, introduced_in_to_unix_timestamp, category_to_unix_timestamp};
 
     factory.registerFunction<detail::FunctionToUnixTimestamp>(documentation_to_unix_timestamp);
+}
 
+static void registerConversionOrZero(FunctionFactory & factory)
+{
     /// toUInt8OrZero documentation
     FunctionDocumentation::Description description_toUInt8OrZero = R"(
 Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](/reference/data-types/int-uint) but returns `0` in case of an error.
@@ -2811,7 +2814,10 @@ SELECT
     FunctionDocumentation documentation_toIPv6OrZero = {description_toIPv6OrZero, syntax_toIPv6OrZero, arguments_toIPv6OrZero, {}, returned_value_toIPv6OrZero, examples_toIPv6OrZero, introduced_in_toIPv6OrZero, category_toIPv6OrZero};
 
     factory.registerFunction<detail::FunctionToIPv6OrZero>(documentation_toIPv6OrZero);
+}
 
+static void registerConversionOrNull(FunctionFactory & factory)
+{
     /// toUInt8OrNull documentation
     FunctionDocumentation::Description description_toUInt8OrNull = R"(
 Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](/reference/data-types/int-uint) but returns `NULL` in case of an error.
@@ -4070,7 +4076,10 @@ SELECT
     FunctionDocumentation documentation_toIPv6OrNull = {description_toIPv6OrNull, syntax_toIPv6OrNull, arguments_toIPv6OrNull, {}, returned_value_toIPv6OrNull, examples_toIPv6OrNull, introduced_in_toIPv6OrNull, category_toIPv6OrNull};
 
     factory.registerFunction<detail::FunctionToIPv6OrNull>(documentation_toIPv6OrNull);
+}
 
+static void registerConversionDateTimeParsing(FunctionFactory & factory)
+{
     /// parseDateTimeBestEffort documentation
     FunctionDocumentation::Description parseDateTimeBestEffort_description = R"(
 Converts a date and time in the String representation to DateTime data type.
@@ -4656,7 +4665,10 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
     FunctionDocumentation parseDateTime64BestEffortUSOrNull_documentation = {description_parseDateTime64BestEffortUSOrNull, syntax_parseDateTime64BestEffortUSOrNull, arguments_parseDateTime64BestEffortUSOrNull, {}, returned_value_parseDateTime64BestEffortUSOrNull, examples_parseDateTime64BestEffortUSOrNull, introduced_in_parseDateTime64BestEffortUSOrNull, category_parseDateTime64BestEffortUSOrNull};
 
     factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrNull>(parseDateTime64BestEffortUSOrNull_documentation);
+}
 
+static void registerConversionIntervals(FunctionFactory & factory)
+{
     /// toIntervalSecond documentation
     FunctionDocumentation::Description description_toIntervalSecond = R"(
 Returns an interval of `n` seconds of data type [`IntervalSecond`](/reference/data-types/special-data-types/interval).
@@ -4987,6 +4999,15 @@ SELECT date + interval_to_year AS result
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalMonth, detail::PositiveMonotonicity>>(documentation_toIntervalMonth);
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalQuarter, detail::PositiveMonotonicity>>(documentation_toIntervalQuarter);
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalYear, detail::PositiveMonotonicity>>(documentation_toIntervalYear);
+}
+
+REGISTER_FUNCTION(Conversion)
+{
+    registerConversionBasic(factory);
+    registerConversionOrZero(factory);
+    registerConversionOrNull(factory);
+    registerConversionDateTimeParsing(factory);
+    registerConversionIntervals(factory);
 }
 
 }

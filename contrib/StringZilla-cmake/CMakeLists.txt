@@ -40,6 +40,10 @@ if (ARCH_AMD64)
             "SZ_USE_SVE2AES=0"
     )
 elseif (ARCH_AARCH64)
+    set(STRINGZILLA_USE_SVE 1)
+    if (ENABLE_FILC)
+        set(STRINGZILLA_USE_SVE 0)
+    endif ()
     target_compile_definitions(
             _stringzilla PRIVATE
             "SZ_USE_WESTMERE=0"
@@ -50,9 +54,9 @@ elseif (ARCH_AARCH64)
             "SZ_USE_NEON=1"
             "SZ_USE_NEONAES=1"
             "SZ_USE_NEONSHA=1"
-            "SZ_USE_SVE=1"
-            "SZ_USE_SVE2=1"
-            "SZ_USE_SVE2AES=1"
+            "SZ_USE_SVE=${STRINGZILLA_USE_SVE}"
+            "SZ_USE_SVE2=${STRINGZILLA_USE_SVE}"
+            "SZ_USE_SVE2AES=${STRINGZILLA_USE_SVE}"
     )
 endif ()
 

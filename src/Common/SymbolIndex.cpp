@@ -702,6 +702,11 @@ const SymbolIndex::Object * find(const void * address, const std::vector<SymbolI
 
 void SymbolIndex::load()
 {
+#if defined(__FILC__)
+    /// Native loader enumeration is unsupported; FilC reports its own instrumented stack traces.
+    return;
+#endif
+
 #if defined(__ELF__)
     dl_iterate_phdr(collectSymbols, &data);
 #elif defined(OS_DARWIN)

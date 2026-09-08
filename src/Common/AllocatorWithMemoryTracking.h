@@ -54,9 +54,15 @@ struct AllocatorWithMemoryTracking
     AllocatorWithMemoryTracking() = default;
 
     template <typename U>
+#if defined(__FILC__)
+    constexpr AllocatorWithMemoryTracking(const AllocatorWithMemoryTracking<U> &) noexcept
+    {
+    }
+#else
     constexpr explicit AllocatorWithMemoryTracking(const AllocatorWithMemoryTracking<U> &) noexcept
     {
     }
+#endif
 
     [[nodiscard]] T * allocate(size_t n)
     {

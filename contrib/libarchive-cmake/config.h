@@ -1245,7 +1245,11 @@ typedef uint64_t uintmax_t;
 #define HAVE_UTIME_H 1
 
 /* Define to 1 if you have the `vfork' function. */
+#if defined(__FILC__)
+#define HAVE_VFORK 0
+#else
 #define HAVE_VFORK 1
+#endif
 
 /* Define to 1 if you have the `vprintf' function. */
 #define HAVE_VPRINTF 1

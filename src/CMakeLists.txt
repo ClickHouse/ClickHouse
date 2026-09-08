@@ -1060,3 +1060,13 @@ endif ()
 if (TARGET ch_contrib::jwt-cpp)
     add_object_library(clickhouse_client_jwt Client/jwt)
 endif()
+
+if (ENABLE_FILC)
+    # Avoid the measured optimizer bottlenecks in these large translation units.
+    set_source_files_properties(Core/Settings.cpp Interpreters/Aggregator.cpp PROPERTIES COMPILE_OPTIONS "-O0")
+    set_source_files_properties(
+        Functions/FunctionsConversion_reg.cpp
+        Functions/FunctionsNumericIndexedVector.cpp
+        Functions/FunctionsRound.cpp
+        DIRECTORY Functions PROPERTIES COMPILE_OPTIONS "-O0")
+endif ()

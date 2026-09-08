@@ -1,3 +1,12 @@
+if (ENABLE_FILC)
+    # FilC must supply its instrumented libc, C++ ABI, and collector runtime.
+    add_library(Threads::Threads INTERFACE IMPORTED)
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+    add_compile_definitions(STD_EXCEPTION_HAS_STACK_TRACE=0 BOOST_ALL_NO_EMBEDDED_GDB_SCRIPTS)
+    add_subdirectory(base/harmful)
+    return()
+endif()
+
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
 

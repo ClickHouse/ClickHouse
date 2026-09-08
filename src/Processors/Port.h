@@ -11,6 +11,10 @@
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
 
+#if defined(__FILC__)
+#include <stdfil.h>
+#endif
+
 namespace DB
 {
 
@@ -67,7 +71,15 @@ protected:
 
     private:
         static std::uintptr_t getUInt(Data * data) { return reinterpret_cast<std::uintptr_t>(data); }
-        static Data * getPtr(std::uintptr_t data) { return reinterpret_cast<Data *>(data); }
+        static Data * getPtr(std::uintptr_t address, [[maybe_unused]] Data * source)
+        {
+#if defined(__FILC__)
+            /// Preserve the allocation capability of `source` when changing pointer tag bits.
+            return static_cast<Data *>(zmkptr(source, address));
+#else
+            return reinterpret_cast<Data *>(address);
+#endif
+        }
 
     public:
 
@@ -95,7 +107,7 @@ protected:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not alignment memory for Port");
             }
             /// Pointer can store flags in case of exception in swap.
-            ~DataPtr() { delete getPtr(getUInt(data) & PTR_MASK); }
+            ~DataPtr() { delete getPtr(getUInt(data) & PTR_MASK, data); }
 
             DataPtr(DataPtr const &) : data(new Data()) {}
             DataPtr& operator=(DataPtr const &) = delete;
@@ -116,14 +128,14 @@ protected:
             uintptr_t ALWAYS_INLINE swap(std::atomic<Data *> & value, std::uintptr_t flags, std::uintptr_t mask) /// NOLINT
             {
                 Data * expected = nullptr;
-                Data * desired = getPtr(flags | getUInt(data));
+                Data * desired = getPtr(flags | getUInt(data), data);
 
                 while (!value.compare_exchange_weak(expected, desired))
-                    desired = getPtr((getUInt(expected) & FLAGS_MASK & (~mask)) | flags | getUInt(data));
+                    desired = getPtr((getUInt(expected) & FLAGS_MASK & (~mask)) | flags | getUInt(data), data);
 
                 /// It's not very safe. In case of exception after exchange and before assignment we will get leak.
                 /// Don't know how to make it better.
-                data = getPtr(getUInt(expected) & PTR_MASK);
+                data = getPtr(getUInt(expected) & PTR_MASK, expected);
 
                 return getUInt(expected) & FLAGS_MASK;
             }
@@ -146,7 +158,7 @@ protected:
 
             while (!data.compare_exchange_weak(expected, desired));
 
-            expected = getPtr(getUInt(expected) & PTR_MASK);
+            expected = getPtr(getUInt(expected) & PTR_MASK, expected);
             delete expected;
         }
 
@@ -186,10 +198,10 @@ protected:
         std::uintptr_t ALWAYS_INLINE setFlags(std::uintptr_t flags, std::uintptr_t mask)
         {
             Data * expected = nullptr;
-            Data * desired = getPtr(flags);
+            Data * desired = getPtr(flags, nullptr);
 
             while (!data.compare_exchange_weak(expected, desired))
-                desired = getPtr((getUInt(expected) & FLAGS_MASK & (~mask)) | flags | (getUInt(expected) & PTR_MASK));
+                desired = getPtr((getUInt(expected) & FLAGS_MASK & (~mask)) | flags | (getUInt(expected) & PTR_MASK), expected);
 
             return getUInt(expected) & FLAGS_MASK;
         }

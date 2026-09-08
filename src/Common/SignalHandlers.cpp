@@ -878,7 +878,12 @@ void HandledSignals::setupCommonDeadlySignalHandlers()
 #else
     const std::vector<int> unwind_recovery_signals;
 #endif
+#if defined(__FILC__)
+    /// FilC owns synchronous fault signals and rejects installing user handlers for them.
+    const std::vector<int> fault_signals{SIGABRT, SIGSYS};
+#else
     const std::vector<int> fault_signals{SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTRAP};
+#endif
     /// Each call masks the other's signals, so both keep the `sa_mask` of the single registration that
     /// once covered all eight.
     std::vector<int> fault_masked_signals = unwind_recovery_signals;

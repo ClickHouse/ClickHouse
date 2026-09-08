@@ -32,8 +32,8 @@
 /// Every supported platform builds `contrib/libcxx-cmake` (see `cmake/cxx.cmake`, which every
 /// `cmake/*/default_libs.cmake` includes), so losing this would silently strip the throw-site
 /// stack trace from every exception. Only a port linking a foreign C++ standard library - the
-/// standalone parser in `utils/wasm-parser`, for one - is allowed to be without it.
-#if defined(OS_LINUX) || defined(OS_DARWIN) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+/// standalone parser in `utils/wasm-parser`, or FilC with its instrumented libc++ - is allowed to be without it.
+#if !defined(__FILC__) && (defined(OS_LINUX) || defined(OS_DARWIN) || defined(OS_FREEBSD) || defined(OS_SUNOS))
 static_assert(STD_EXCEPTION_HAS_STACK_TRACE == 1, "ClickHouse's patched libc++ is not being linked");
 #endif
 

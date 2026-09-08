@@ -53,6 +53,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>

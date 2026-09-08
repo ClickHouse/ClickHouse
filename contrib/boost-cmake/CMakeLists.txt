@@ -107,7 +107,9 @@ set (SRCS_CONTEXT
     "${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp"
 )
 
-if (ARCH_AARCH64)
+if (ENABLE_FILC)
+    list (APPEND SRCS_CONTEXT "${CMAKE_CURRENT_SOURCE_DIR}/disabled_fcontext.cpp")
+elseif (ARCH_AARCH64)
     if (OS_DARWIN)
         set (SRCS_CONTEXT ${SRCS_CONTEXT}
             "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_macho_gas.S"
