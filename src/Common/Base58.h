@@ -27,6 +27,17 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
 constexpr auto BASE58_ENCODED_32_LEN = 44UL;
 constexpr auto BASE58_ENCODED_64_LEN = 88UL;
 
+/// The same bound for an arbitrary body length: 1366/1000 exceeds 8/log2(58), so the largest
+/// `body_length`-byte value needs at most this many digits. `body_length` is the matching lower
+/// bound, because a leading zero byte takes one '1' and any other byte takes at least one digit.
+constexpr size_t maxBase58EncodedLength(size_t body_length)
+{
+    return body_length * 1366 / 1000 + 1;
+}
+
+static_assert(maxBase58EncodedLength(32) == BASE58_ENCODED_32_LEN);
+static_assert(maxBase58EncodedLength(64) == BASE58_ENCODED_64_LEN);
+
 size_t encodeBase58_32(const UInt8 * src, UInt8 * dst);
 size_t encodeBase58_64(const UInt8 * src, UInt8 * dst);
 

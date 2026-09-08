@@ -93,8 +93,18 @@ SELECT tryBase58Decode(repeat('z', 44), 32) = '';
 SELECT tryBase58Decode(repeat('z', 88), 64) = '';
 SELECT tryBase58Decode('invalid!chars', 32) = '';
 
-SELECT 'size hint other than 32 or 64 places no requirement';
-SELECT base58Decode(base58Encode('Hello world!'), 99) = 'Hello world!';
+-- The requirement holds at every size, not only at the two the removed fixed-size decoders served.
+-- The first pair is the asymmetry that used to exist: both decode to one byte, and both are rejected.
+SELECT 'expected size applies to every size';
+SELECT base58Decode('2', 32); -- { serverError INCORRECT_DATA }
+SELECT base58Decode('2', 34); -- { serverError INCORRECT_DATA }
+SELECT base58Decode('2', 1) = unhex('01');
+SELECT base58Decode(base58Encode('Hello world!'), 12) = 'Hello world!';
+SELECT base58Decode(base58Encode('Hello world!'), 11); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(base58Encode('Hello world!'), 99); -- { serverError INCORRECT_DATA }
+SELECT base58Decode(repeat('1', 33), 33) = repeat(unhex('00'), 33);
+SELECT base58Decode('2', 18446744073709551615); -- { serverError INCORRECT_DATA }
+SELECT tryBase58Decode('2', 34) = '';
 
 SELECT 'bulk round-trip';
 SELECT sum(dec = rs) == 100 FROM (SELECT randomString(32) AS rs, base58Decode(base58Encode(rs)) AS dec FROM numbers(100));

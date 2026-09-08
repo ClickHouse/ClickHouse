@@ -61,7 +61,10 @@ tryBase58Decode with size hint
 1
 1
 1
-size hint other than 32 or 64 places no requirement
+expected size applies to every size
+1
+1
+1
 1
 bulk round-trip
 1
