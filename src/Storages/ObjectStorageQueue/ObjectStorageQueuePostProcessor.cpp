@@ -86,11 +86,14 @@ void ObjectStorageQueuePostProcessor::process(
     StoredObjects successful_objects;
 
     SCOPE_EXIT({
-        for (const auto & object : objects)
-            failed_object_paths.insert(object.remote_path);
-
+        UnorderedSetWithMemoryTracking<std::string_view> successful_paths;
+        successful_paths.reserve(successful_objects.size());
         for (const auto & object : successful_objects)
-            failed_object_paths.erase(object.remote_path);
+            successful_paths.insert(object.remote_path);
+
+        for (const auto & object : objects)
+            if (!successful_paths.contains(object.remote_path))
+                failed_object_paths.insert(object.remote_path);
     });
 
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
@@ -260,7 +263,13 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
 
     std::atomic<size_t> moved_objects = 0;
 
-    successful_objects.resize(objects.size());
+    std::vector<UInt8> succeeded(objects.size(), 0);
+
+    SCOPE_EXIT({
+        for (size_t i = 0; i < objects.size(); ++i)
+            if (succeeded[i])
+                successful_objects.emplace_back(objects[i]);
+    });
 
     try
     {
@@ -282,7 +291,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                         object_storage->removeObjectIfExists(object_from);
                     });
 
-                    successful_objects[objects_index] = object_from;
+                    succeeded[objects_index] = 1;
 
                     ++moved_objects;
                 }
@@ -301,7 +310,6 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
         }
         task_tracker.waitAll();
 
-        std::erase_if(successful_objects, [](const StoredObject& object) { return object.remote_path.empty(); });
     }
     catch (...)
     {

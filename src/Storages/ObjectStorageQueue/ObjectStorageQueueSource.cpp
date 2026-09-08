@@ -89,7 +89,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
-    extern const int S3_OBJECTS_WERE_NOT_POST_PROCESSED;
+    extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -1883,7 +1883,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                     insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message, post_processing_failed_paths);
 
                 throw Exception(
-                    ErrorCodes::S3_OBJECTS_WERE_NOT_POST_PROCESSED,
+                    ErrorCodes::OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED,
                     "The after_processing action did not complete for {} object(s): {}",
                     post_processing_failed_paths.size(), post_processing_failed_paths);
             }

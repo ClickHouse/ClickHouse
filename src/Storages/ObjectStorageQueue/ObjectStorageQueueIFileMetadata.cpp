@@ -22,6 +22,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueTrySetProcessingRequests;
     extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
     extern const Event ObjectStorageQueueTrySetProcessingFailed;
+    extern const Event ObjectStorageQueueExclusiveModeProcessingErrors;
 };
 
 namespace DB
@@ -170,15 +171,19 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             }
             else if (!processing_node_path.empty())
                 file_status->onFailed("Unprocessed exception");
-            else
+            else if (file_status->state.load() != FileStatus::State::Failed)
+            {
                 LOG_WARNING(log, "File {} will NOT be marked as 'Failed' and will remain in '{}' state.",
                             path, file_status->state.load());
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExclusiveModeProcessingErrors);
+            }
         }
         else
         {
             chassert(file_status->state == FileStatus::State::Failed);
         }
 
+        /// Empty in case of exclusive mode only, where we do not store state in keeper.
         if (processing_node_path.empty())
             return;
 

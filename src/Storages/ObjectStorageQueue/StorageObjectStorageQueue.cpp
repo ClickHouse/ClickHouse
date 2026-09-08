@@ -169,7 +169,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_IS_DROPPED;
-    extern const int S3_OBJECTS_WERE_NOT_POST_PROCESSED;
+    extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
 }
 
 namespace
@@ -1391,7 +1391,7 @@ void StorageObjectStorageQueue::commit(
 
     if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
         throw Exception(
-            ErrorCodes::S3_OBJECTS_WERE_NOT_POST_PROCESSED,
+            ErrorCodes::OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED,
             "The after_processing action did not complete for {} object(s): {}",
             post_processing_failed_paths.size(), post_processing_failed_paths);
 
