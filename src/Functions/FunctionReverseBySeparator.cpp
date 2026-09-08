@@ -258,12 +258,12 @@ REGISTER_FUNCTION(ReverseBySeparator)
     };
 
     FunctionDocumentation::Examples examples = {
-        {"Basic domain reversal", "SELECT reverseBySeparator('www.google.com')", "'com.google.www'"},
-        {"Path reversal", "SELECT reverseBySeparator('a/b/c', '/')", "'c/b/a'"},
-        {"Custom separator", "SELECT reverseBySeparator('x::y::z', '::')", "'z::y::x'"},
-        {"Edge case with dots", "SELECT reverseBySeparator('.a.b.', '.')", "'.b.a.'"},
-        {"Single element", "SELECT reverseBySeparator('single')", "'single'"},
-        {"Empty separator", "SELECT reverseBySeparator('abcde', '')", "'edcba'"}
+        {"Basic domain reversal", "SELECT reverseBySeparator('www.google.com')", "com.google.www"},
+        {"Path reversal", "SELECT reverseBySeparator('a/b/c', '/')", "c/b/a"},
+        {"Custom separator", "SELECT reverseBySeparator('x::y::z', '::')", "z::y::x"},
+        {"Edge case with dots", "SELECT reverseBySeparator('.a.b.', '.')", ".b.a."},
+        {"Single element", "SELECT reverseBySeparator('single')", "single"},
+        {"Empty separator", "SELECT reverseBySeparator('abcde', '')", "edcba"}
     };
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};

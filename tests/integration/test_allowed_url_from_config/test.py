@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", main_configs=["configs/config_with_hosts.xml"])
@@ -21,6 +21,11 @@ node5 = cluster.add_instance(
     user_configs=["configs/allow_server_credentials.xml"],
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
+
+if not is_arm():
+    node7 = cluster.add_instance(
+        "node7", main_configs=["configs/config_for_redirect.xml"], with_hdfs=True
+    )
 
 
 @pytest.fixture(scope="module")
@@ -351,3 +356,93 @@ def test_storage_engine_remote(start_cluster):
             == "Distributed"
         )
         node6.query("DROP TABLE test_remote_engine")
+
+
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
+def test_redirect(start_cluster):
+    hdfs_api = start_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage", "1\t\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\t\n"
+    node7.query(
+        "CREATE TABLE table_test_7_1 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)"
+    )
+    assert "not allowed" in node7.query_and_get_error(
+        "SET max_http_get_redirects=1; SELECT * from table_test_7_1"
+    )
+    node7.query("DROP TABLE table_test_7_1")
+
+
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
+def test_HDFS(start_cluster):
+    assert "not allowed" in node7.query_and_get_error(
+        "CREATE TABLE table_test_7_2 (word String) ENGINE=HDFS('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'CSV')"
+    )
+    assert "not allowed" in node7.query_and_get_error(
+        "SELECT * FROM hdfs('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'word String')"
+    )
+
+
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
+def test_schema_inference(start_cluster):
+    # Schema inference in the URL engine must check `remote_url_allow_hosts` before
+    # any connection attempt: the error has to come from the host check, not from
+    # the HTTP layer.
+    error = node7.query_and_get_error("desc url('http://test.com', 'TSVRaw')")
+    assert "not allowed" in error
+    assert error.find("ReadWriteBufferFromHTTPBase") == -1
+
+
+# The AI functions read their HTTP endpoint from a named collection, so `NAMED COLLECTION ADMIN`
+# alone must not let a user aim the server's HTTP client at a host the operator did not allow.
+# Nothing listens on port 1; the check runs before any connection, so no server is needed.
+AI_ENDPOINT = "http://localhost:1/v1/chat/completions"
+
+AI_QUERIES = [
+    "SELECT aiGenerate('x', map('credentials', 'ai_text'))",
+    "SELECT aiEmbed('x', 'test-model', map('credentials', 'ai_embed'))",
+    "SELECT aiSimilarity('x', 'y', 'test-model', map('credentials', 'ai_embed'))",
+]
+
+
+def create_ai_collections(node):
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS ai_text AS provider = 'openai', "
+        f"endpoint = '{AI_ENDPOINT}', model = 'test-model', api_key = 'test-key'"
+    )
+    # An embedding collection must not define `model`: `aiEmbed` and `aiSimilarity` take it as an
+    # argument and reject a collection that declares it too.
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS ai_embed AS provider = 'openai', "
+        f"endpoint = '{AI_ENDPOINT}', api_key = 'test-key'"
+    )
+
+
+def drop_ai_collections(node):
+    node.query("DROP NAMED COLLECTION IF EXISTS ai_text")
+    node.query("DROP NAMED COLLECTION IF EXISTS ai_embed")
+
+
+def test_ai_functions_host_filter(start_cluster):
+    # `node5` declares an empty `remote_url_allow_hosts` (allows nothing); `node4` declares none at
+    # all, so its filter stays uninitialized and allows everything. Same collections, same endpoint.
+    create_ai_collections(node4)
+    create_ai_collections(node5)
+    try:
+        for query in AI_QUERIES:
+            error = node5.query_and_get_error(
+                query, settings={"ai_function_max_retries": 0}
+            )
+            assert "UNACCEPTABLE_URL" in error, f"{query}: {error}"
+            # The check must run before the request, so the refusal carries no connection error.
+            assert "Connection refused" not in error, f"{query}: {error}"
+
+            # Control: without an allow-list the same call gets past the check and fails at the
+            # network instead. Without this arm, a filter that rejected everything would also pass.
+            error = node4.query_and_get_error(
+                query, settings={"ai_function_max_retries": 0}
+            )
+            assert "UNACCEPTABLE_URL" not in error, f"{query}: {error}"
+    finally:
+        drop_ai_collections(node4)
+        drop_ai_collections(node5)
