@@ -800,29 +800,41 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
 TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
     using enum PostingsSerialization::Flags;
-    output_postings_buffer.clear();
-    output_postings_buffer.reserve(total_cardinality);
+    TokenPostingsInfo token_info;
 
+    /// Raw postings are fewer than the encoder granularity, so the queue passes all of them in one chunk.
     mergePostings([&](std::span<const UInt32> row_ids)
     {
-        output_postings_buffer.insert(row_ids.begin(), row_ids.end());
+        if (token_info.cardinality != 0)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Raw postings must be passed in one chunk, got {} row ids after {}",
+                row_ids.size(), token_info.cardinality);
+        }
+
+        token_info.cardinality = static_cast<UInt32>(row_ids.size());
+
+        /// Embedded postings are serialized into the dictionary block by flushDictionaryBlock.
+        if (row_ids.size() <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+        {
+            token_info.header = RawPostings | EmbeddedPostings;
+            token_info.embedded_postings.assign(row_ids.begin(), row_ids.end());
+        }
+        else
+        {
+            token_info.header = RawPostings | SingleBlock;
+            token_info.offsets.emplace_back(postings_stream.plain_hashing.count());
+            token_info.ranges.emplace_back(row_ids.front(), row_ids.back());
+            TextIndexSerialization::serializeRawPostings(row_ids, postings_stream.plain_hashing);
+        }
     });
 
-    TokenPostingsInfo token_info;
-    token_info.cardinality = static_cast<UInt32>(output_postings_buffer.size());
-
-    if (token_info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    /// Sources own disjoint row sets, so the merged cardinality must equal the sum of source cardinalities.
+    if (token_info.cardinality != total_cardinality)
     {
-        /// Embedded postings are serialized into the dictionary block by flushDictionaryBlock.
-        token_info.header = RawPostings | EmbeddedPostings;
-        token_info.embedded_postings.assign(output_postings_buffer.begin(), output_postings_buffer.end());
-    }
-    else
-    {
-        token_info.header = RawPostings | SingleBlock;
-        token_info.offsets.emplace_back(postings_stream.plain_hashing.count());
-        token_info.ranges.emplace_back(output_postings_buffer.front(), output_postings_buffer.back());
-        TextIndexSerialization::serializeRawPostings({output_postings_buffer.data(), output_postings_buffer.size()}, postings_stream.plain_hashing);
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Merged posting list has {} row ids while source posting lists have {} in total",
+            token_info.cardinality, total_cardinality);
     }
 
     return token_info;

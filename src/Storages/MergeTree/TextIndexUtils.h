@@ -198,8 +198,6 @@ private:
 
     /// Sources of the current token's postings, one per input part or segment.
     std::vector<TokenSource> output_sources;
-    /// Reusable buffer for the merged row ids of the current token.
-    PaddedPODArray<UInt32> output_postings_buffer;
     /// Merges the postings cursors of the current token; drained by every mergePostings call.
     std::unique_ptr<PostingsMergeQueue> postings_queue;
 
