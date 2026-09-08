@@ -1115,7 +1115,7 @@ private:
     std::vector<bool> in_where_prewhere_stack;
 
     /// Enclosing correlated queries, innermost last. A rewrite candidate always sits inside a
-    /// QueryNode, and a correlated column is registered on every crossed QueryNode scope, so
+    /// `QueryNode`, and a correlated column is registered on every crossed `QueryNode` scope, so
     /// tracking correlated queries covers every candidate.
     std::vector<const QueryNode *> correlated_scopes;
 
