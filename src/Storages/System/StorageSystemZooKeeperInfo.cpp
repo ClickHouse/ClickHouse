@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -168,37 +169,37 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
                 // /* 7 */ {"avg_latency", std::make_shared<DataTypeUInt64>(), "The average latency."},
                 if (const auto it = mntr_responses_map.find("zk_avg_latency"); it != mntr_responses_map.end())
-                    res_columns[7]->insert(parse<int>(it->second));
+                    res_columns[7]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[7]->insertDefault();
 
                 // /* 8 */ {"max_latency", std::make_shared<DataTypeUInt64>(), "The max latency."},
                 if (const auto it = mntr_responses_map.find("zk_max_latency"); it != mntr_responses_map.end())
-                    res_columns[8]->insert(parse<int>(it->second));
+                    res_columns[8]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[8]->insertDefault();
 
                 //  /* 9 */ {"min_latency", std::make_shared<DataTypeUInt64>(), "The min latency."},
                 if (const auto it = mntr_responses_map.find("zk_min_latency"); it != mntr_responses_map.end())
-                    res_columns[9]->insert(parse<int>(it->second));
+                    res_columns[9]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[9]->insertDefault();
 
                 // /* 10 */ {"packets_received", std::make_shared<DataTypeUInt64>(), "The number of packets received."},
                 if (const auto it = mntr_responses_map.find("zk_packets_received"); it != mntr_responses_map.end())
-                    res_columns[10]->insert(parse<int>(it->second));
+                    res_columns[10]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[10]->insertDefault();
 
                 // /* 11 */ {"packets_sent", std::make_shared<DataTypeUInt64>(), "The number of packets sent."},
                 if (const auto it = mntr_responses_map.find("zk_packets_sent"); it != mntr_responses_map.end())
-                    res_columns[11]->insert(parse<int>(it->second));
+                    res_columns[11]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[11]->insertDefault();
 
                 // /* 12 */ {"outstanding_requests", std::make_shared<DataTypeUInt64>(), "The number of outstanding requests."},
                 if (const auto it = mntr_responses_map.find("zk_outstanding_requests"); it != mntr_responses_map.end())
-                    res_columns[12]->insert(parse<int>(it->second));
+                    res_columns[12]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[12]->insertDefault();
 
@@ -209,12 +210,12 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                     res_columns[13]->insertDefault();
 
                 ///* 15 */ {"znode_count", std::make_shared<DataTypeUInt64>(), "The znode count."},
-                int followers = 0;
+                UInt64 followers = 0;
                 if (const auto it = mntr_responses_map.find("zk_followers"); it != mntr_responses_map.end())
                 {
                     auto followers_in_string = mntr_responses_map["zk_followers"];
                     if (!followers_in_string.empty())
-                        followers = parse<int>(followers_in_string);
+                        followers = parse<UInt64>(followers_in_string);
 
                     ///* 14 */ {"is_leader", std::make_shared<DataTypeUInt8>(), "Is this zookeeper leader."},
                     res_columns[14]->insert(followers > 0);
@@ -223,31 +224,31 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                     res_columns[14]->insertDefault();
 
                 if (const auto it = mntr_responses_map.find("zk_znode_count"); it != mntr_responses_map.end())
-                    res_columns[15]->insert(parse<int>(it->second));
+                    res_columns[15]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[15]->insertDefault();
 
                 // /* 16 */ {"watch_count", std::make_shared<DataTypeUInt64>(), "The watch count."},
                 if (const auto it = mntr_responses_map.find("zk_watch_count"); it != mntr_responses_map.end())
-                    res_columns[16]->insert(parse<int>(it->second));
+                    res_columns[16]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[16]->insertDefault();
 
                 // /* 17 */ {"ephemerals_count", std::make_shared<DataTypeUInt64>(), "The ephemerals count."},
                 if (const auto it = mntr_responses_map.find("zk_ephemerals_count"); it != mntr_responses_map.end())
-                    res_columns[17]->insert(parse<int>(it->second));
+                    res_columns[17]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[17]->insertDefault();
 
                 // /* 18 */ {"approximate_data_size", std::make_shared<DataTypeUInt64>(), "The approximate data size."},
                 if (const auto it = mntr_responses_map.find("zk_approximate_data_size"); it != mntr_responses_map.end())
-                    res_columns[18]->insert(parse<int>(it->second));
+                    res_columns[18]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[18]->insertDefault();
 
                 // /* 19 */ {"followers", std::make_shared<DataTypeUInt64>(), "The followers of the leader. This field is only exposed by the leader."},
                 if (const auto it = mntr_responses_map.find("zk_followers"); it != mntr_responses_map.end())
-                    res_columns[19]->insert(parse<int>(it->second));
+                    res_columns[19]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[19]->insertDefault();
 
@@ -255,7 +256,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 // /* 21 */ {"pending_syncs", std::make_shared<DataTypeUInt64>(), "The pending syncs of the leader. This field is only exposed by the leader."},
                 if (const auto it = mntr_responses_map.find("zk_synced_followers"); it != mntr_responses_map.end())
                 {
-                    int synced_followers = parse<int>(it->second);
+                    UInt64 synced_followers = parse<UInt64>(it->second);
                     res_columns[20]->insert(synced_followers);
                     res_columns[21]->insert(followers - synced_followers);
                 }
@@ -265,15 +266,26 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                     res_columns[21]->insertDefault();
                 }
 
+                /// Keeper reports -1 for the file descriptor counts it could not determine.
+                /// Otherwise the values are unsigned: `max_file_descriptor_count` is printed as a `size_t`
+                /// and equals 2^64 - 1 (`RLIM_INFINITY`) when the limit is unlimited, so it must not be parsed as `Int64`.
+                auto insert_if_non_negative = [](IColumn & column, std::string_view value)
+                {
+                    if (value == "-1")
+                        column.insertDefault();
+                    else
+                        column.insert(parse<UInt64>(value));
+                };
+
                 // /* 22 */ {"open_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The open file descriptor count. Only available on Unix platforms."},
                 if (const auto it = mntr_responses_map.find("zk_open_file_descriptor_count"); it != mntr_responses_map.end())
-                    res_columns[22]->insert(parse<int>(it->second));
+                    insert_if_non_negative(*res_columns[22], it->second);
                 else
                     res_columns[22]->insertDefault();
 
                 // /* 23 */ {"max_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The max file descriptor count. Only available on Unix platforms."},
                 if (const auto it = mntr_responses_map.find("zk_max_file_descriptor_count"); it != mntr_responses_map.end())
-                    res_columns[23]->insert(parse<int>(it->second));
+                    insert_if_non_negative(*res_columns[23], it->second);
                 else
                     res_columns[23]->insertDefault();
             }
@@ -287,25 +299,25 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
                 ///* 24 */ {"connections", std::make_shared<DataTypeUInt64>(), "The ZooKeeper connections."},
                 if (const auto it = srvr_responses_map.find("Connections"); it != srvr_responses_map.end())
-                    res_columns[24]->insert(parse<int>(it->second));
+                    res_columns[24]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[24]->insertDefault();
 
                 ///* 25 */ {"outstanding", std::make_shared<DataTypeUInt64>(), "The ZooKeeper outstanding."},
                 if (const auto it = srvr_responses_map.find("Outstanding"); it != srvr_responses_map.end())
-                    res_columns[25]->insert(parse<int>(it->second));
+                    res_columns[25]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[25]->insertDefault();
 
                 //* 26 */ {"zxid", std::make_shared<DataTypeInt64>(), "The ZooKeeper zxid."},
                 if (const auto it = srvr_responses_map.find("Zxid"); it != srvr_responses_map.end())
-                    res_columns[26]->insert(parseIntInBase<16, int>(it->second.substr(2))); /// we skip the 0x prefix
+                    res_columns[26]->insert(parseIntInBase<16, Int64>(it->second.substr(2))); /// we skip the 0x prefix
                 else
                     res_columns[26]->insertDefault();
 
                 //* 27 */ {"node_count", std::make_shared<DataTypeUInt64>(), "The ZooKeeper node count."},
                 if (const auto it = srvr_responses_map.find("Node count"); it != srvr_responses_map.end())
-                    res_columns[27]->insert(parse<int>(it->second));
+                    res_columns[27]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[27]->insertDefault();
             }
@@ -320,13 +332,13 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
                 //* 28 */ {"snapshot_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper snapshot directory size."},
                 if (const auto it = dirs_responses_map.find("snapshot_dir_size"); it != dirs_responses_map.end())
-                    res_columns[28]->insert(parse<int>(it->second));
+                    res_columns[28]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[28]->insertDefault();
 
                 //* 29 */ {"log_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper log directory size."},
                 if (const auto it = dirs_responses_map.find("log_dir_size"); it != dirs_responses_map.end())
-                    res_columns[29]->insert(parse<int>(it->second));
+                    res_columns[29]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[29]->insertDefault();
             }
@@ -340,49 +352,49 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
                 // /* 30 */ {"first_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log index."},
                 if (const auto it = lgif_responses_map.find("first_log_idx"); it != lgif_responses_map.end())
-                    res_columns[30]->insert(parse<int>(it->second));
+                    res_columns[30]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[30]->insertDefault();
 
                 // /* 31 */ {"first_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log term."},
                 if (const auto it = lgif_responses_map.find("first_log_term"); it != lgif_responses_map.end())
-                    res_columns[31]->insert(parse<int>(it->second));
+                    res_columns[31]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[31]->insertDefault();
 
                 // /* 32 */ {"last_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log index."},
                 if (const auto it = lgif_responses_map.find("last_log_idx"); it != lgif_responses_map.end())
-                    res_columns[32]->insert(parse<int>(it->second));
+                    res_columns[32]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[32]->insertDefault();
 
                 // /* 33 */ {"last_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log term."},
                 if (const auto it = lgif_responses_map.find("last_log_term"); it != lgif_responses_map.end())
-                    res_columns[33]->insert(parse<int>(it->second));
+                    res_columns[33]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[33]->insertDefault();
 
                 // /* 34 */ {"last_committed_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last committed index."},
                 if (const auto it = lgif_responses_map.find("last_committed_log_idx"); it != lgif_responses_map.end())
-                    res_columns[34]->insert(parse<int>(it->second));
+                    res_columns[34]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[34]->insertDefault();
 
                 // /* 35 */ {"leader_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper leader committed log index."},
                 if (const auto it = lgif_responses_map.find("leader_committed_log_idx"); it != lgif_responses_map.end())
-                    res_columns[35]->insert(parse<int>(it->second));
+                    res_columns[35]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[35]->insertDefault();
 
                 // /* 36 */ {"target_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper target committed log index."},
                 if (const auto it = lgif_responses_map.find("target_committed_log_idx"); it != lgif_responses_map.end())
-                    res_columns[36]->insert(parse<int>(it->second));
+                    res_columns[36]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[36]->insertDefault();
 
                 // /* 37 */ {"last_snapshot_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last snapshot index."},
                 if (const auto it = lgif_responses_map.find("last_snapshot_idx"); it != lgif_responses_map.end())
-                    res_columns[37]->insert(parse<int>(it->second));
+                    res_columns[37]->insert(parse<UInt64>(it->second));
                 else
                     res_columns[37]->insertDefault();
             }
@@ -427,3 +439,6 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
 
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperInfo) }

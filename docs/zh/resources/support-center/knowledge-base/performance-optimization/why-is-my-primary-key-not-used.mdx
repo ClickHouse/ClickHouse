@@ -1,0 +1,253 @@
+---
+title: 为什么我的主键没有被使用？如何检查？
+description: "介绍了排序时未使用主键的一个常见原因，以及如何确认这一点"
+date: 2024-12-12
+tags: ['性能与优化']
+keywords: ['主键']
+---
+
+<div id="checking-your-primary-key">
+  ## 检查主键使用情况
+</div>
+
+用户有时会发现，自己明明认为是在按主键排序或过滤，但查询速度仍比预期更慢。本文将说明如何确认是否使用了该键，并重点介绍一些未使用该键的常见原因。
+
+<div id="create-table">
+  ## 创建表
+</div>
+
+下面是一个简单的表示例：
+
+```sql
+CREATE TABLE logs
+(
+    `code` LowCardinality(String),
+    `timestamp` DateTime64(3)
+)
+ENGINE = MergeTree
+ORDER BY (code, toUnixTimestamp(timestamp))
+```
+
+请注意，我们的排序键中的第二个条目是 `toUnixTimestamp(timestamp)`。
+
+<div id="populate-data">
+  ## 填充数据
+</div>
+
+向此表写入 1 亿行数据：
+
+```sql
+INSERT INTO logs SELECT
+ ['200', '404', '502', '403'][toInt32(randBinomial(4, 0.1)) + 1] AS code,
+    now() + toIntervalMinute(number) AS timestamp
+FROM numbers(100000000)
+
+0 rows in set. Elapsed: 15.845 sec. Processed 100.00 million rows, 800.00 MB (6.31 million rows/s., 50.49 MB/s.)
+
+SELECT count()
+FROM logs
+
+┌───count()─┐
+│ 100000000 │ -- 1 亿
+└───────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+<div id="basic-filtering">
+  ## 基本过滤
+</div>
+
+如果按代码过滤，我们可以在输出中看到扫描的行数：- `49.15 thousand`。请注意，这只是总计 1 亿行中的一部分。
+
+```sql
+SELECT count() AS c
+FROM logs
+WHERE code = '200'
+
+┌────────c─┐
+│ 65607542 │ -- 6561 万
+└──────────┘
+
+1 行记录。耗时：0.021 秒。已处理 4.915 万行，49.17 KB（每秒 234 万行，2.34 MB/s。）
+峰值内存占用：92.70 KiB。
+```
+
+此外，我们还可以通过 `EXPLAIN indexes=1` 子句来确认已使用该索引：
+
+```sql
+EXPLAIN indexes = 1
+SELECT count() AS c
+FROM logs
+WHERE code = '200'
+
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   AggregatingProjection                                            │
+│     Expression (Before GROUP BY)                                   │
+│       Filter ((WHERE + Change column names to column identifiers)) │
+│         ReadFromMergeTree (default.logs)                           │
+│         Indexes:                                                   │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               code                                                 │
+│             Condition: (code in ['200', '200'])                    │
+│             Parts: 3/3 │
+│             Granules: 8012/12209 │
+│     ReadFromPreparedSource (_minmax_count_projection)              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+注意，扫描的粒度数 `8012` 仅占总数 `12209` 的一部分。下方高亮的部分表明这里使用了主键。
+
+```bash
+PrimaryKey
+  Keys: 
+   code 
+```
+
+粒度是 ClickHouse 中的数据处理单元，每个粒度通常包含 8192 行。有关粒度及其过滤方式的更多信息，建议阅读[本指南](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#mark-files-are-used-for-locating-granules)。
+
+<Note>
+  对排序键中靠后的键进行过滤，其效率不如对元组中靠前的键进行过滤。原因请参见[这里](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)
+</Note>
+
+<div id="multi-key-filtering">
+  ## 按多个键过滤
+</div>
+
+假设我们按 `code` 和 `timestamp` 进行过滤：
+
+```sql
+SELECT count()
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+
+┌─count()─┐
+│  689742 │
+└─────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 712.70 thousand rows, 6.41 MB (88.92 million rows/s., 799.27 MB/s.)
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+
+┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                                                                                         │
+│   Aggregating                                                                                                                                                     │
+│     Expression (Before GROUP BY)                                                                                                                                  │
+│       Expression                                                                                                                                                  │
+│         ReadFromMergeTree (default.logs)                                                                                                                          │
+│         Indexes:                                                                                                                                                  │
+│           PrimaryKey                                                                                                                                              │
+│             Keys:                                                                                                                                                 │
+│               code                                                                                                                                                │
+│               toUnixTimestamp(timestamp)                                                                                                                          │
+│             Condition: and((toUnixTimestamp(timestamp) in (-Inf, 1767225600]), and((toUnixTimestamp(timestamp) in [1735689600, +Inf)), (code in ['200', '200']))) │
+│             Parts: 3/3 │
+│             Granules: 87/12209 │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.002 sec.
+
+```
+
+在这种情况下，这两个排序键都会用于过滤行，因此只需要读取 `87` 个粒度。
+
+<div id="using-keys-in-sorting">
+  ## 在排序中使用键
+</div>
+
+ClickHouse 还可以利用排序键高效地进行排序。具体来说，
+
+当 [optimize&#95;read&#95;in&#95;order](/zh/reference/statements/select/order-by#optimization-of-data-reading) 设置启用时 (默认即为启用) ，ClickHouse server 会使用表索引，并按 ORDER BY 键的顺序读取数据。这样一来，在指定 LIMIT 的情况下，就可以避免读取全部数据。因此，对于数据量大且 LIMIT 较小的查询，处理速度会更快。更多详情请参见[这里](/zh/reference/statements/select/order-by#optimization-of-data-reading)和[这里](/zh/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order#what-about-optimize_read_in_order)。
+
+不过，这要求所使用的键保持一致。
+
+例如，考虑以下查询：
+
+```sql
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY timestamp ASC
+LIMIT 10
+
+┌─code─┬───────────────timestamp─┐
+│ 200 │ 2025-01-01 00:00:01.000 │
+│ 200 │ 2025-01-01 00:00:45.000 │
+│ 200 │ 2025-01-01 00:01:01.000 │
+│ 200 │ 2025-01-01 00:01:45.000 │
+│ 200 │ 2025-01-01 00:02:01.000 │
+│ 200 │ 2025-01-01 00:03:01.000 │
+│ 200 │ 2025-01-01 00:03:45.000 │
+│ 200 │ 2025-01-01 00:04:01.000 │
+│ 200 │ 2025-01-01 00:05:45.000 │
+│ 200 │ 2025-01-01 00:06:01.000 │
+└──────┴─────────────────────────
+
+10 行，耗时 0.009 秒。已处理 712.70 千行，6.41 MB（80.13 百万行/秒，720.27 MB/秒）
+峰值内存占用：125.50 KiB。
+```
+
+我们可以通过 `EXPLAIN pipeline` 确认这里并未应用该优化：
+
+```sql
+EXPLAIN PIPELINE
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY timestamp ASC
+LIMIT 10
+
+┌─explain───────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                                  │
+│ ExpressionTransform                                                           │
+│   (Limit)                                                                     │
+│   Limit │
+│     (Sorting)                                                                 │
+│     MergingSortedTransform 12 → 1 │
+│       MergeSortingTransform × 12 │
+│         LimitsCheckingTransform × 12 │
+│           PartialSortingTransform × 12 │
+│             (Expression)                                                      │
+│             ExpressionTransform × 12 │
+│               (Expression)                                                    │
+│               ExpressionTransform × 12 │
+│                 (ReadFromMergeTree)                                           │
+│                 MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 12 0 → 1 │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+15 rows in set. Elapsed: 0.004 sec.
+```
+
+这里的 `MergeTreeSelect(pool: ReadPool, algorithm: Thread)` 这一行并不表示使用了该优化，而是表示一次常规读取。这是因为我们的表排序键使用的是 `toUnixTimestamp(Timestamp)`，而**不是** `timestamp`。修正这种不匹配即可解决该问题：
+
+```sql
+EXPLAIN PIPELINE
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY toUnixTimestamp(timestamp) ASC
+LIMIT 10
+
+┌─explain──────────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                                     │
+│ ExpressionTransform                                                              │
+│   (Limit)                                                                        │
+│   Limit │
+│     (Sorting)                                                                    │
+│     MergingSortedTransform 3 → 1 │
+│       BufferChunks × 3 │
+│         (Expression)                                                             │
+│         ExpressionTransform × 3 │
+│           (Expression)                                                           │
+│           ExpressionTransform × 3 │
+│             (ReadFromMergeTree)                                                  │
+│             MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 3 0 → 1 │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.003 sec.
+```

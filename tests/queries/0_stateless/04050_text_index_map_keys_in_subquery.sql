@@ -4,6 +4,7 @@
 -- when a query uses map_column['key'] IN (SELECT ... subquery).
 -- The bug: traverseMapElementKeyNode clones the IN expression DAG and tries
 -- to execute it, but the Set from the subquery is not built yet at that point.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;

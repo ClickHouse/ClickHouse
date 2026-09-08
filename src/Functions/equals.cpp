@@ -1,12 +1,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/isNotDistinctFrom.h>
 
 
 namespace DB
 {
 
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+/// Used through `FunctionIsNotDistinctFrom` in `executeArrayLexicographic`; instantiated in isNotDistinctFrom.cpp.
+extern template class FunctionComparison<EqualsOp, NameEquals, true>;
 
 REGISTER_FUNCTION(Equals)
 {
@@ -49,6 +52,24 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
         func_builder_equals,
         func_builder_and,
         x, y, tuple_size, input_rows_count);
+}
+
+template <>
+ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    /// Array element equality is null-as-value at every nesting level, so use the null-safe equals
+    /// comparator: it returns a definite UInt8
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
+
+    return executeArrayLexicographicEqualityImpl(
+        equals_resolver,
+        column_type_name0,
+        column_type_name1,
+        input_rows_count);
 }
 
 }

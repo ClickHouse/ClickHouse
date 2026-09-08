@@ -26,6 +26,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <map>
 #include <unordered_map>
 #include <vector>
 
@@ -43,6 +44,11 @@ class ThreadStatus;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
+
+/// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
+/// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
+struct MemoryReservation;
+using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
 
 enum CancelReason
 {
@@ -101,8 +107,9 @@ protected:
     UInt64 normalized_query_hash;
     ClientInfo client_info;
 
-    /// Query slot scheduling for workloads
+    /// Acquired workload resources
     QuerySlotPtr query_slot;
+    MemoryReservationPtr memory_reservation;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -205,6 +212,7 @@ public:
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
+        MemoryReservationPtr && memory_reservation_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
@@ -232,6 +240,11 @@ public:
 
     MemoryTracker * getMemoryTracker() const;
 
+    MemoryReservation * getMemoryReservation() const
+    {
+        return memory_reservation.get();
+    }
+
     bool hasThreadGroup() const
     {
         return bool(thread_group);
@@ -242,7 +255,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns);
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 
     /// Cancels the current query.
     /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
@@ -281,8 +294,17 @@ public:
         return is_internal;
     }
 
-    /// Manually release query slot (if any).
-    void releaseQuerySlot() { query_slot.reset(); }
+    /// Manually release all acquired workload resources.
+    void releaseWorkloadResources();
+
+    /// Release the query slot only. Safe to call while the query pipeline is still running:
+    /// pipeline threads do not access the query slot.
+    void releaseQuerySlot();
+
+    /// Release the memory reservation only. MUST NOT be called while the query pipeline is still
+    /// running: pipeline threads hold raw pointers to `MemoryReservation` (see `WorkloadResources`
+    /// in `PipelineExecutor`) and would race with its destruction.
+    void releaseMemoryReservation();
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -379,6 +401,8 @@ public:
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
     /// query_id -> User
     using QueriesToUser = std::unordered_map<String, String>;
+    /// A PostgreSQL connection's `BackendKeyData` pair -> the query_id of its current statement
+    using PostgreSQLCancellationKeys = std::map<std::pair<Int32, UInt32>, String>;
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
@@ -409,6 +433,12 @@ protected:
 
     /// Stores query IDs and associated users, used for query ID uniqueness check
     QueriesToUser queries_to_user;
+
+    /// A `CancelRequest` arrives on its own unauthenticated connection and carries only the pair from
+    /// `BackendKeyData`, so the secret is the credential. It is kept here rather than in the query ID
+    /// because `system.processes` and `system.query_log` expose query IDs verbatim. Keying on the whole
+    /// pair keeps a connection that reuses a connection ID from displacing a live one.
+    PostgreSQLCancellationKeys postgresql_cancellation_keys;
 
     /// Stores info about queries grouped by their priority
     QueryPriorities priorities;
@@ -532,6 +562,15 @@ public:
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
+
+    /// Remember the `BackendKeyData` pair that authenticates `CancelRequest` for a PostgreSQL
+    /// connection, and the query ID of its current statement. Call again when that ID changes.
+    void registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id);
+    void unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key);
+
+    /// Cancel an unauthenticated PostgreSQL request. Cancels only the query of the connection that
+    /// was given exactly this pair; queries from other interfaces never match.
+    CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
     void killAllQueries();
 };

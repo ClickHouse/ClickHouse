@@ -3,7 +3,7 @@ import datetime
 import logging
 import time
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from . import poll_direct_select_result
 
 cluster = ClickHouseCluster(__file__)
 
@@ -390,19 +390,20 @@ def test_rabbitmq_virtual_column_table(started_cluster):
         """
     )
 
-    result = ""
-    for _ in range(100):
-        result += instance.query(
-            """
-            SELECT key, value, _exchange_name, _table
-            FROM test_virt.rabbitmq_source
-            SETTINGS stream_like_engine_allow_direct_select=1
-            """
-        )
-        lines = [l for l in result.strip().split("\n") if l]
-        if len(lines) == 10:
-            break
-        time.sleep(0.5)
+    result = poll_direct_select_result(
+        instance,
+        """
+        SELECT key, value, _exchange_name, _table
+        FROM test_virt.rabbitmq_source
+        SETTINGS stream_like_engine_allow_direct_select=1
+        """,
+        lambda current_result: len(
+            [l for l in current_result.strip().split("\n") if l]
+        ) == 10,
+        timeout=50,
+        ignore_error=False,
+        sleep_time=0.5,
+    )
 
     lines = [l for l in result.strip().split("\n") if l]
     assert len(lines) == 10, f"Expected 10 rows, got {len(lines)}"

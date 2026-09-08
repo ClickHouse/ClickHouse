@@ -1,0 +1,56 @@
+---
+title: 'AWS 서비스 한도 및 쿼터 관리'
+slug: /cloud/reference/byoc/aws-service-limits
+sidebarTitle: 'AWS 서비스 한도 및 쿼터'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', '서비스 쿼터', '서비스 한도', 'EC2', 'EKS', 'VPC', 'EBS']
+description: 'BYOC 온보딩 전에 확인해야 할 AWS 서비스 쿼터, 증설 요청 방법, 그리고 서비스 규모가 확장될 때 모니터링해야 할 사항'
+doc_type: '참고'
+---
+
+성공적인 BYOC 배포를 위해서는 AWS 계정에 충분한 AWS 서비스 쿼터(이전 명칭: *서비스 한도*)가 있어야 합니다. AWS는 대부분의 서비스에 리전별 기본 쿼터를 적용합니다. 이러한 기본값 중 상당수는 프로덕션 BYOC 배포에 필요한 수준보다 낮으며, 특히 새로 생성했거나 사용량이 많지 않은 AWS 계정에서는 더욱 그렇습니다.
+
+이 페이지에서는 배포 전 쿼터 점검 목록을 제공합니다. 사용량을 지속적으로 모니터링하고, 쿼터 증설이 필요하면 클라우드 서비스 제공업체에 직접 요청하십시오.
+
+<div id="pre-deployment-quota-checklist">
+  ## 배포 전 쿼터 점검 목록
+</div>
+
+BYOC 온보딩을 시작하기 전에 배포하려는 AWS Region에서 다음 쿼터를 확인하십시오. 쿼터는 Region 및 계정별로 적용됩니다.
+
+<div id="required-quotas">
+  ### 필수 쿼터
+</div>
+
+| 서비스                        | 쿼터 이름                                                       | BYOC 요구 사항                                                                               | 기본값                     | 조치                                                         |
+| -------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------- |
+| **EC2**                    | Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) 인스턴스 | ≥ 서비스 티어의 최대 vCPU × 1.5 (자동 스케일링 및 MBB 업그레이드를 위한 여유 용량) + 시스템 및 Keeper 워크로드용 100 vCPU 코어 | 신규 계정에서는 보통 32–256 vCPU | BYOC 요구 사항에 맞게 **증가 요청**                                   |
+| **EC2 (VPC)**              | 리전당 VPC 수                                                   | ≥ 1 (BYOC는 전용 VPC 1개를 생성합니다)                                                             | 5                       | 사용 가능 여부 확인                                                |
+| **EC2 (VPC)**              | 리전당 Elastic IP 수                                            | ≥ 3 (NAT Gateway용으로 AZ당 1개)                                                              | 5                       | 사용 가능 여부를 확인하십시오. 동일한 리전에서 여러 BYOC 배포를 실행하는 경우 증가를 요청하십시오. |
+| **EC2 (VPC)**              | AZ당 NAT Gateway 수                                           | ≥ 1                                                                                      | 5                       | 사용 가능 여부 확인                                                |
+| **EC2 (VPC)**              | 리전당 Internet Gateway 수                                      | ≥ 1                                                                                      | 5                       | 사용 가능 여부 확인                                                |
+| **EC2 (VPC)**              | VPC당 서브넷 수                                                  | ≥ 6 (퍼블릭 3개 + 프라이빗 3개)                                                                   | 200                     | 조치 없음                                                      |
+| **EC2 (VPC)**              | VPC당 보안 그룹 수                                                | ≥ 10                                                                                     | 2,500                   | 조치 없음                                                      |
+| **EKS**                    | 리전당 클러스터 수                                                  | ≥ 1                                                                                      | 100                     | 조치 없음                                                      |
+| **EKS**                    | 클러스터당 관리형 노드 그룹 수                                           | ≥ 4                                                                                      | 30                      | 조치 없음                                                      |
+| **EKS**                    | 관리형 노드 그룹당 노드 수                                             | ≥ 서비스 티어의 최대 노드 수                                                                        | 450                     | 조치 없음                                                      |
+| **S3**                     | 계정당 버킷 수                                                    | ≥ 4 (데이터, 백업, 청구, 모니터링)                                                                  | 100 (최대 1,000까지 증가 지원)  | 다른 워크로드를 위한 여유 용량 확인                                       |
+| **EBS**                    | 범용 SSD (gp3) 스토리지                                           | ≥ 최대 ClickHouse 로그 + OS 볼륨 × 노드 수                                                        | 50 TiB                  | 사용 가능 여부 확인                                                |
+| **Elastic Load Balancing** | 리전당 Network Load Balancer 수                                 | ≥ ClickHouse 서비스당 1개                                                                     | 50                      | 사용 가능 여부 확인                                                |
+| **CloudWatch Logs**        | 리전당 로그 그룹 수                                                 | ≥ 5                                                                                      | 1,000,000               | 조치 없음                                                      |
+
+<div id="optional-feature-quotas">
+  ### 선택적 기능 활성화 여부를 확인하기 위한 쿼터
+</div>
+
+| 활성화된 기능         | 서비스       | Quota                                                                             |
+| --------------- | --------- | --------------------------------------------------------------------------------- |
+| AWS PrivateLink | EC2 (VPC) | Region별 VPC 엔드포인트 서비스(기본 20개) — 동시에 사용하는 각 PrivateLink 활성화 서비스에 대해 한도 증설을 요청하십시오. |
+| VPC Peering     | EC2 (VPC) | VPC별 활성 VPC 피어링 연결(기본 50개).                                                       |
+
+<div id="related">
+  ## 관련
+</div>
+
+* [청구 대상 AWS 서비스](/ko/products/bring-your-own-cloud/reference/billable-aws-services) — BYOC에서 프로비저닝하는 AWS 서비스의 전체 목록
+* [BYOC 비용 모델 (AWS)](/ko/products/bring-your-own-cloud/reference/cost-model-aws) — ClickHouse Cloud 요금과 AWS 요금이 어떻게 합산되는지 설명합니다
+* [BYOC 아키텍처](/ko/products/bring-your-own-cloud/overview/architecture) — ClickHouse Cloud가 계정에 배포하는 구성 요소

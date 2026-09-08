@@ -1,0 +1,13 @@
+-- 1. explicit columns, no SELECT/INSERT on the local target: rejected
+1
+-- 1. with SELECT but without INSERT: still rejected
+1
+-- 1. with both SELECT and INSERT: allowed
+42
+-- 2. omitted columns: inferred under the user's context (rejected without access)
+1
+-- 2. omitted columns: with access, the structure is inferred from the local target
+x	UInt64
+42
+-- 3. a Remote table built from a named collection blocks DROP NAMED COLLECTION
+1

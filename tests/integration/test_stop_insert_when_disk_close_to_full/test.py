@@ -42,7 +42,7 @@ def test_min_free_disk_settings(start_cluster):
     node.query("DROP TABLE IF EXISTS test_table SYNC")
 
     node.query(
-        f"""
+        """
         CREATE TABLE test_table (
             id UInt32,
             data String
@@ -79,7 +79,7 @@ def test_min_free_disk_settings(start_cluster):
 
     # server setting for min_free_disk_ratio_to_perform_insert is 1 but we can overwrite at table level
     node.query(
-        f"""
+        """
         CREATE TABLE test_table (
             id UInt32,
             data String
@@ -199,7 +199,7 @@ def test_jbod_disk_failover(start_cluster):
                 "INSERT INTO test_jbod SELECT number, repeat('a', 10000) FROM numbers(1)"
             )
             count += 1
-        except QueryRuntimeException as e:
+        except QueryRuntimeException:
             pass
 
     jbod_disk2_free = int(

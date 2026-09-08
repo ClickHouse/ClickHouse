@@ -1,0 +1,60 @@
+---
+slug: '/examples/aggregate-function-combinators/sumForEach'
+title: 'sumForEach'
+description: 'مثال على استخدام دالة sumForEach التجميعية'
+keywords: ['sum', 'ForEach', 'combinator', 'examples', 'sumForEach']
+sidebarTitle: 'sumForEach'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`ForEach`](/ar/reference/functions/aggregate-functions/combinators#-foreach)
+على الدالة التجميعية [`sum`](/ar/reference/functions/aggregate-functions/sum) لتحويلها من دالة تجميعية
+تعمل على قيم الصفوف إلى دالة تجميعية تعمل على
+أعمدة المصفوفات، بحيث يُطبَّق التجميع على كل عنصر في المصفوفة عبر الصفوف.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+في هذا المثال، سنستخدم مجموعة البيانات `hits` المتاحة في [SQL playground](https://sql.clickhouse.com/).
+
+يحتوي جدول `hits` على عمود باسم `isMobile` من النوع UInt8، ويمكن أن تكون قيمته
+`0` لأجهزة سطح المكتب أو `1` للأجهزة المحمولة:
+
+<RunnableCode>
+  ```sql
+  SELECT EventTime, IsMobile FROM metrica.hits ORDER BY rand() LIMIT 10
+  ```
+</RunnableCode>
+
+سنستخدم دالة `sumForEach` من نوع aggregate مُركِّب لتحليل كيفية
+اختلاف الزيارات بين أجهزة سطح المكتب والأجهزة المحمولة بحسب ساعة اليوم. انقر على زر play
+أدناه لتشغيل الاستعلام بشكل تفاعلي:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toHour(EventTime) AS hour_of_day,
+      -- استخدم sumForEach لعدّ زيارات أجهزة سطح المكتب والأجهزة المحمولة في خطوة واحدة
+      sumForEach([
+          IsMobile = 0, -- زيارات أجهزة سطح المكتب (IsMobile = 0)
+          IsMobile = 1  -- زيارات الأجهزة المحمولة (IsMobile = 1)
+      ]) AS device_counts
+  FROM metrica.hits
+  GROUP BY hour_of_day
+  ORDER BY hour_of_day;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`sum`](/ar/reference/functions/aggregate-functions/sum)
+* [`ForEach` مُركِّب](/ar/reference/functions/aggregate-functions/combinators#-foreach)

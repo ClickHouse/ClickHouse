@@ -1,6 +1,7 @@
 import concurrent.futures
 import logging
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -218,11 +219,86 @@ class AwsGlueCatalogManager(CatalogManager):
         log.info("Created Glue Iceberg table '%s'", table_identifier)
         return table_name
 
-    def wait_for_table_ready(self, table_name: str) -> None:
-        pass
+    def _namespace_for(self, table_name: str) -> Optional[str]:
+        # Each create_table() puts the table in its own namespace; use the
+        # most recent matching entry.
+        for ns, tn in reversed(self._tables_created):
+            if tn == table_name:
+                return ns
+        return None
 
-    def wait_for_table_gone(self, table_name: str) -> None:
-        pass
+    def wait_for_table_ready(
+        self,
+        table_name: str,
+        timeout: float = 120,
+        poll_interval: float = 5,
+    ) -> None:
+        """Poll until the table is both loadable AND visible in the Glue
+        namespace listing. Glue is eventually-consistent for GetTables, so a
+        freshly-created table can be briefly absent from the listing.
+        """
+        namespace = self._namespace_for(table_name)
+        if namespace is None:
+            return
+        identifier = f"{namespace}.{table_name}"
+        deadline = time.monotonic() + timeout
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                self.catalog.load_table(identifier)
+                listed = self.catalog.list_tables(namespace)
+                listed_names = [t[-1] for t in listed]
+                if table_name in listed_names:
+                    log.info(
+                        "Table '%s' ready and listed after %d attempts",
+                        identifier, attempt,
+                    )
+                    return
+                log.warning(
+                    "Table '%s' loadable but not yet listed (attempt %d)",
+                    identifier, attempt,
+                )
+            except Exception as exc:
+                log.warning(
+                    "load_table('%s') failed (attempt %d): %s",
+                    identifier, attempt, exc,
+                )
+
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Table '{identifier}' not ready/listed via pyiceberg "
+                    f"after {timeout}s ({attempt} attempts)."
+                )
+            time.sleep(poll_interval)
+
+    def wait_for_table_gone(
+        self,
+        table_name: str,
+        timeout: float = 120,
+        poll_interval: float = 5,
+    ) -> None:
+        """Poll until load_table raises, confirming the table is gone."""
+        namespace = self._namespace_for(table_name)
+        if namespace is None:
+            return
+        identifier = f"{namespace}.{table_name}"
+        deadline = time.monotonic() + timeout
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                self.catalog.load_table(identifier)
+            except Exception:
+                log.info("Table '%s' gone after %d attempts", identifier, attempt)
+                return
+
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Table '{identifier}' still visible via pyiceberg "
+                    f"after {timeout}s ({attempt} attempts)."
+                )
+            time.sleep(poll_interval)
 
     def _delete_s3_prefix(self, namespace: str, table_name: str) -> None:
         prefix = f"{self.config.prefix}/{namespace}/{table_name}/"

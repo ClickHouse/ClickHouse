@@ -18,7 +18,7 @@ namespace
 
     void formatAsRestrictiveOrPermissive(bool is_restrictive, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " AS " << (is_restrictive ? "restrictive" : "permissive");
+        ostr << " AS " << (is_restrictive ? "RESTRICTIVE" : "PERMISSIVE");
     }
 
 

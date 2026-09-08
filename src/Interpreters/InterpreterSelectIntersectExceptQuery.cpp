@@ -109,14 +109,19 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_)
 {
+    /// Each branch must plan in its own settings scope: a branch may disable parallel replicas
+    /// for itself (e.g. on FINAL), and that must not retroactively change a sibling's already
+    /// decided processing stage through a shared mutable context.
+    auto child_context = Context::createCopy(context);
+
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, child_context, options);
 
     if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, child_context, options);
 
     if (ast_ptr_->as<ASTSelectIntersectExceptQuery>())
-        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, child_context, options);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query: {}", ast_ptr_->getID());
 }

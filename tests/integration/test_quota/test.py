@@ -452,87 +452,89 @@ def test_tracking_quota():
 
 
 def test_exceed_quota():
-    # Change quota, now the limits are tiny so we will exceed the quota.
-    copy_quota_xml("tiny_limits.xml")
-    check_system_quotas(
-        [
+    try:
+        # Change quota, now the limits are tiny so we will exceed the quota.
+        copy_quota_xml("tiny_limits.xml")
+        check_system_quotas(
             [
-                "myQuota",
-                "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users_xml",
-                "['user_name']",
-                "[31556952]",
-                0,
-                "['default']",
-                "[]",
+                [
+                    "myQuota",
+                    "e651da9c-a748-8703-061a-7e5e5096dae7",
+                    "users_xml",
+                    "['user_name']",
+                    "[31556952]",
+                    0,
+                    "['default']",
+                    "[]",
+                ]
             ]
-        ]
-    )
-    system_quota_limits(
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]]
-    )
-    system_quota_usage(
-        [
+        )
+        system_quota_limits(
+            [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]]
+        )
+        system_quota_usage(
             [
-                "myQuota",
-                "default",
-                31556952,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                "\\N",
-                0,
-                1,
-                0,
-                "\\N",
-                "\\N",
-                "1",
+                [
+                    "myQuota",
+                    "default",
+                    31556952,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    "\\N",
+                    "1",
+                ]
             ]
-        ]
-    )
+        )
 
-    assert re.search(
-        "Quota.*has been exceeded",
-        instance.query_and_get_error("SELECT * from test_table"),
-    )
-    system_quota_usage(
-        [
+        assert re.search(
+            "Quota.*has been exceeded",
+            instance.query_and_get_error("SELECT * from test_table"),
+        )
+        system_quota_usage(
             [
-                "myQuota",
-                "default",
-                31556952,
-                1,
-                1,
-                1,
-                1,
-                0,
-                1,
-                1,
-                1,
-                0,
-                1,
-                0,
-                "\\N",
-                50,
-                1,
-                0,
-                "\\N",
-                "\\N",
-                "1",
+                [
+                    "myQuota",
+                    "default",
+                    31556952,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    50,
+                    1,
+                    0,
+                    "\\N",
+                    "\\N",
+                    "1",
+                ]
             ]
-        ]
-    )
+        )
+    finally:
+        # Change quota, now the limits are enough to execute queries.
+        copy_quota_xml("normal_limits.xml")
 
-    # Change quota, now the limits are enough to execute queries.
-    copy_quota_xml("normal_limits.xml")
     check_system_quotas(
         [
             [
@@ -1421,28 +1423,36 @@ def test_reload_users_xml_by_timer():
 
     time.sleep(1)  # The modification time of the 'quota.xml' file should be different,
     # because config files are reload by timer only when the modification time is changed.
-    copy_quota_xml("tiny_limits.xml", reload_immediately=False)
-    assert_eq_with_retry(
-        instance,
-        "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
-        [
+    try:
+        copy_quota_xml("tiny_limits.xml", reload_immediately=False)
+        assert_eq_with_retry(
+            instance,
+            "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
             [
-                "myQuota",
-                "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users_xml",
-                ["user_name"],
-                "[31556952]",
-                0,
-                "['default']",
-                "[]",
-            ]
-        ],
-    )
-    assert_eq_with_retry(
-        instance,
-        "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits",
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
-    )
+                [
+                    "myQuota",
+                    "e651da9c-a748-8703-061a-7e5e5096dae7",
+                    "users_xml",
+                    ["user_name"],
+                    "[31556952]",
+                    0,
+                    "['default']",
+                    "[]",
+                ]
+            ],
+            user="user_with_no_quota",
+        )
+        assert_eq_with_retry(
+            instance,
+            "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits",
+            [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
+            user="user_with_no_quota",
+        )
+    finally:
+        # Restore a clean config so later periodic reloads do not fail.
+        copy_quota_xml("no_quotas.xml")
+
+    check_system_quotas("")
 
 
 def test_dcl_introspection():
@@ -1814,6 +1824,20 @@ def test_quota_with_ip_prefix_bits_from_users_xml():
     copy_quota_xml("keyed_with_prefix_invalid.xml", reload_immediately=False)
     error = instance.query_and_get_error("SYSTEM RELOAD CONFIG", user="user_with_no_quota")
     assert "keyed_by_ip or keyed_by_forwarded_ip" in error
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")
+
+
+def test_quota_keyed_by_normalized_query_hash_from_users_xml():
+    # A quota keyed by normalized_query_hash must load from static config and
+    # expose the key type via system.quotas, mirroring the SQL path which
+    # supports KEYED BY normalized_query_hash.
+    copy_quota_xml("keyed_by_normalized_query_hash.xml")
+    assert (
+        instance.query("SELECT keys FROM system.quotas WHERE name = 'myQuota'")
+        == "['normalized_query_hash']\n"
+    )
 
     # Restore a clean config so later periodic reloads do not fail.
     copy_quota_xml("no_quotas.xml")

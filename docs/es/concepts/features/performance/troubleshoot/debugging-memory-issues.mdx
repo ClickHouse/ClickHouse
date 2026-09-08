@@ -1,0 +1,93 @@
+---
+slug: /guides/developer/debugging-memory-issues
+sidebarTitle: 'Depuración de problemas de memoria'
+description: 'Consultas para ayudarle a depurar problemas de memoria.'
+keywords: ['problemas de memoria']
+title: 'Depuración de problemas de memoria'
+doc_type: 'guide'
+---
+
+Cuando se producen problemas de memoria o una fuga de memoria, resulta útil saber qué consultas y recursos están consumiendo una cantidad significativa de memoria. A continuación, encontrará consultas que pueden ayudarle a depurar problemas de memoria al identificar qué consultas, bases de datos y tablas pueden optimizarse:
+
+<div id="list-currently-running-processes-by-peak-memory">
+  ## Enumera los procesos en ejecución según el uso máximo de memoria
+</div>
+
+```sql
+SELECT
+    initial_query_id,
+    query,
+    elapsed,
+    formatReadableSize(memory_usage),
+    formatReadableSize(peak_memory_usage),
+FROM system.processes
+ORDER BY peak_memory_usage DESC
+LIMIT 100;
+```
+
+<div id="list-metrics-for-memory-usage">
+  ## Listar métricas de uso de memoria
+</div>
+
+```sql
+SELECT
+    metric, description, formatReadableSize(value) size
+FROM
+    system.asynchronous_metrics
+WHERE
+    metric LIKE '%Cach%'
+    OR metric LIKE '%Mem%'
+ORDER BY
+    value DESC;
+```
+
+<div id="list-tables-by-current-memory-usage">
+  ## Listar tablas por uso actual de memoria
+</div>
+
+```sql
+SELECT
+    database,
+    name,
+    formatReadableSize(total_bytes)
+FROM system.tables
+WHERE engine IN ('Memory','Set','Join');
+```
+
+<div id="output-total-memory-used-by-merges">
+  ## Mostrar la memoria total utilizada por las operaciones de merge
+</div>
+
+```sql
+SELECT formatReadableSize(sum(memory_usage)) FROM system.merges;
+```
+
+<div id="output-total-memory-used-by-currently-running-processes">
+  ## Mostrar la memoria total utilizada por los procesos en ejecución
+</div>
+
+```sql
+SELECT formatReadableSize(sum(memory_usage)) FROM system.processes;
+```
+
+<div id="output-total-memory-used-by-dictionaries">
+  ## Mostrar la memoria total que utilizan los diccionarios
+</div>
+
+```sql
+SELECT formatReadableSize(sum(bytes_allocated)) FROM system.dictionaries;
+```
+
+<div id="output-total-memory-used-by-primary-keys">
+  ## Mostrar la memoria total que utilizan las claves primarias y la granularidad del índice
+</div>
+
+```sql
+SELECT
+    sumIf(data_uncompressed_bytes, part_type = 'InMemory') AS memory_parts,
+    formatReadableSize(sum(primary_key_bytes_in_memory)) AS primary_key_bytes_in_memory,
+    formatReadableSize(sum(primary_key_bytes_in_memory_allocated)) AS primary_key_bytes_in_memory_allocated,
+    formatReadableSize(sum(index_granularity_bytes_in_memory)) AS index_granularity_bytes_in_memory,
+    formatReadableSize(sum(index_granularity_bytes_in_memory_allocated)) AS index_granularity_bytes_in_memory_allocated
+FROM system.parts;
+```

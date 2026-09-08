@@ -3,6 +3,7 @@
 #include <base/TypeName.h>
 
 #include <Columns/ColumnVector.h>
+#include <Core/DecimalFunctions.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
@@ -15,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DECIMAL_OVERFLOW;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -52,10 +54,27 @@ void SerializationDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precisio
 }
 
 template <typename T>
+void SerializationDecimal<T>::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    /// Hive `DECIMAL` supports precision up to 38 only, so wider decimals (`Decimal256` covers
+    /// precisions 39..76) could not be declared by any Hive schema and are rejected instead of
+    /// being written.
+    if (this->precision > DecimalUtils::max_precision<Decimal128>)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Decimal precision {} is not supported by the HiveText output format: the maximum precision of Hive DECIMAL is {}",
+            this->precision, DecimalUtils::max_precision<Decimal128>);
+
+    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
+}
+
+template <typename T>
 void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros,
+              /* fixed_fractional_length= */ false, /* fractional_length= */ 0,
+              settings.always_write_decimal_point_in_float_and_decimal);
 }
 
 template <typename T>
@@ -103,7 +122,11 @@ void SerializationDecimal<T>::serializeTextJSON(const IColumn & column, size_t r
     if (settings.json.quote_decimals)
         writeChar('"', ostr);
 
-    serializeText(column, row_num, ostr, settings);
+    /// Do not force a trailing decimal point in JSON: a bare `1.` is not a valid JSON number when
+    /// `output_format_json_quote_decimals = 0`. This mirrors `SerializationNumber::serializeTextJSON`,
+    /// which goes through `writeJSONNumber` and never forces the point either.
+    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
 
     if (settings.json.quote_decimals)
         writeChar('"', ostr);

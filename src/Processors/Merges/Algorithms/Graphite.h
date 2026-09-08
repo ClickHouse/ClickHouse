@@ -151,6 +151,8 @@ struct Params
     void updateHash(SipHash & hash) const;
 };
 
+bool operator==(const Params & a, const Params & b);
+
 using RollupRule = std::pair<const RetentionPattern *, const AggregationPattern *>;
 
 Graphite::RollupRule selectPatternForPath(const Graphite::Params & params, std::string_view path);
