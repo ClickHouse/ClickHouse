@@ -209,21 +209,21 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
-    /// `spill_codec_authorized` is registered in serialization version 8. A pre-v8 peer cannot safely
-    /// execute a plan that can spill with an experimental codec because it would silently lose the opt-in.
-    /// For v8 and later it goes on the wire only when the spill behavior of this step actually depends on it:
-    /// `MergeSortingTransform::consume`
-    /// touches the temporary data only when `max_bytes_before_external_sort` is set, so a sort that stays
-    /// in memory never resolves the codec and must not carry the opt-in. See the matching comment in
-    /// `AggregatingStep::serializeSettings` and `spillCodecAuthorizationMustBeSerialized`.
-    if (spillCodecAuthorizationMustBeSerialized(
+    /// `spill_codec_authorized` goes on the wire only when the spill behavior of this step actually depends
+    /// on it: `MergeSortingTransform::consume` touches the temporary data only when
+    /// `max_bytes_before_external_sort` is set, so a sort that stays in memory never resolves the codec and
+    /// must not carry the opt-in. See the matching comment in `AggregatingStep::serializeSettings` and
+    /// `spillCodecAuthorizationMustBeSerialized`.
+    ///
+    /// A peer below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC` is simply not
+    /// told: it predates the `temporary_files_codec` gate itself, so it never looks for an opt-in and
+    /// withholding the name leaves it with exactly the behavior it has today, rather than having the plan
+    /// refused for a sort that may well never spill. See the matching comment in
+    /// `JoinSettings::updatePlanSettings`.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC
+        && spillCodecAuthorizationMustBeSerialized(
             sorting_is_reachable && max_bytes_in_block_before_external_sort != 0, spill_codec_authorized, temporary_files_codec))
     {
-        if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "An experimental temporary-files codec requires query plan serialization version >= {}",
-                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
-
         settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
     }
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;

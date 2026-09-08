@@ -143,11 +143,11 @@ TEST(ExperimentalSpillCodecPlanSetting, SortingStepEmitsItOnlyForAnExternalSort)
     EXPECT_FALSE(sortingStepCarriesSetting(plain_codec, true, 1_MiB));
     EXPECT_FALSE(sortingStepCarriesSetting(experimental_codec, false, 1_MiB));
 
-    /// A pre-v8 worker would silently lose the opt-in and fail only after spilling, so reject the plan
-    /// before sending it to that worker.
-    EXPECT_THROW(sortingStepCarriesSetting(
+    /// A worker that cannot know the setting name is not told: it predates the `temporary_files_codec`
+    /// gate, so it never looks for an opt-in.
+    EXPECT_FALSE(sortingStepCarriesSetting(
         experimental_codec, true, 1_MiB, /*sorting_is_reachable=*/true,
-        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1), Exception);
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
 }
 
 TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)

@@ -224,10 +224,15 @@ TEST(AggregatingStepSettingsRoundTrip, ExperimentalSpillCodecOptInIsVersioned)
         /*serialize_string_with_zero_byte=*/false,
         /*temporary_files_codec=*/"ZXC",
         /*spill_codec_authorized=*/true);
-    QueryPlanSerializationSettings settings;
-    EXPECT_THROW(
-        step->serializeSettings(settings, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1), Exception);
+    /// A peer that cannot know the setting name is not told: it predates the `temporary_files_codec` gate,
+    /// so it never looks for an opt-in and would reject the unknown name.
+    QueryPlanSerializationSettings old_peer_settings;
+    step->serializeSettings(old_peer_settings, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1);
+    WriteBufferFromOwnString old_peer_out;
+    old_peer_settings.writeChangedBinary(old_peer_out);
+    EXPECT_FALSE(old_peer_out.str().contains("spill_codec_authorized"));
 
+    QueryPlanSerializationSettings settings;
     step->serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     WriteBufferFromOwnString out;
     settings.writeChangedBinary(out);

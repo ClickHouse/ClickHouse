@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -304,16 +303,16 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
     /// `spillCodecAuthorizationMustBeSerialized`.
-    /// Older workers cannot safely execute a plan that can spill with a gated codec, because they would
-    /// silently lose the opt-in.
-    if (spillCodecAuthorizationMustBeSerialized(
+    /// A peer below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC` is simply not
+    /// told: it predates the `temporary_files_codec` gate itself, so it never looks for an opt-in and
+    /// withholding the name leaves it with exactly the behavior it has today. Refusing the plan instead
+    /// would reject a join that may well never spill - whether the executing peer has temporary storage at
+    /// all cannot be observed from here - and a codec that peer does not know at all still fails where it
+    /// resolves it, as any codec new to a mixed-version cluster does.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC
+        && spillCodecAuthorizationMustBeSerialized(
             canSpillToTemporaryFiles(join_operator), spill_codec_authorized, temporary_files_codec))
     {
-        if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "An experimental temporary-files codec requires query plan serialization version >= {}",
-                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
-
         settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
     }
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
