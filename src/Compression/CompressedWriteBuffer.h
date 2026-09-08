@@ -82,6 +82,9 @@ private:
 
     /// Whether the current block is written in place inside `out` rather than into `memory`.
     bool block_is_written_in_place = false;
+
+    /// `out.count()` when the in-place frame was reserved; any foreign write or flush changes it.
+    size_t frame_out_count = 0;
 };
 
 }

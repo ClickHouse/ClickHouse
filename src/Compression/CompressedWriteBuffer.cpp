@@ -39,6 +39,7 @@ void CompressedWriteBuffer::setupBufferForNextBlock()
             working_buffer = Buffer(data_begin, data_begin + block_size);
             pos = working_buffer.begin();
             block_is_written_in_place = true;
+            frame_out_count = out.count();
             return;
         }
     }
@@ -67,8 +68,10 @@ void CompressedWriteBuffer::nextImpl()
         /// wrappers such as `HashingWriteBuffer` hand that alias further out, so a foreign write or
         /// flush would otherwise be committed to disk as a well-formed block of wrong bytes. Failing
         /// here cancels the whole chain (see `WriteBuffer::next`), so nothing incorrect is written.
+        /// `out.count()` also catches a foreign write that was flushed and happened to leave the
+        /// position back at the start of the frame, which the pointer alone does not distinguish.
         char * frame_begin = working_buffer.begin() - COMPRESSED_BLOCK_PREFIX_SIZE;
-        if (out.position() != frame_begin)
+        if (out.position() != frame_begin || out.count() != frame_out_count)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "The output buffer of CompressedWriteBuffer was declared exclusive, but it was written to or flushed "

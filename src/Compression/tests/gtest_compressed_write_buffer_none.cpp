@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <memory>
 #include <random>
+#include <string>
 #include <vector>
 
 
@@ -196,6 +197,31 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
 
     /// Someone else writes to `out` even though it was declared exclusive.
     out.write("x", 1);
+
+    EXPECT_THROW(compressed_out.next(), DB::Exception);
+    EXPECT_TRUE(compressed_out.isCanceled());
+#endif
+}
+
+TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetectedAfterForeignFlush)
+{
+    /// A foreign write that is flushed leaves the position of `out` back at the start of the frame,
+    /// so the pointer alone looks intact; the recorded `out.count()` is what catches it.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
+    auto tmp_file = createTemporaryFile("/tmp/");
+    DB::WriteBufferFromFile out(tmp_file->path(), 4096);
+    DB::CompressedWriteBuffer compressed_out(out, std::make_shared<DB::CompressionCodecNone>(), 1024);
+    compressed_out.declareOutBufferExclusive();
+
+    compressed_out.write("hello", 5);
+
+    char * frame_begin = out.position();
+    std::string filler(out.buffer().size(), 'x');
+    out.write(filler.data(), filler.size());
+    out.next();
+    ASSERT_EQ(out.position(), frame_begin);
 
     EXPECT_THROW(compressed_out.next(), DB::Exception);
     EXPECT_TRUE(compressed_out.isCanceled());
