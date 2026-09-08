@@ -8,13 +8,13 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/NamePrompter.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
-
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/iter_find.hpp>
 
 #include <cfloat>
 #include <random>
+#include <ranges>
 
 // clang-format off
 /// Available events. Add something here as you wish.
@@ -1007,6 +1007,7 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationDrainedRecords, "How many delayed records the adaptive aggregation drained into the shared table at merge time.", ValueType::Number) \
     M(AdaptiveAggregationPressureSweeps, "How many times the adaptive aggregation drained staged records early because of memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationPressureDrainedRecords, "How many staged records the adaptive aggregation drained early under memory pressure.", ValueType::Number) \
+    M(AdaptiveAggregationSpillBacklogSheds, "How many times the adaptive aggregation shed the staged backlog because a thread on the baseline algorithm - one the thaw put back there, or one that stood down on its own - was about to spill while staged records were still resident.", ValueType::Number) \
     M(AdaptiveAggregationResidueReleases, "How many times the adaptive aggregation wrote its shared drain table out because a thread back on the baseline algorithm was about to spill on account of it.", ValueType::Number) \
     M(AdaptiveAggregationSharedTableSpills, "How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.", ValueType::Number) \
@@ -1748,6 +1749,7 @@ The server successfully detected this situation and will download merged part fr
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SERVER_OVERLOADED;
 }
 
@@ -1946,15 +1948,22 @@ Counters::Snapshot::Snapshot()
 {}
 
 Counters::Snapshot::Snapshot(const Snapshot & other)
-    : counters_holder(new Count[num_counters] {})
+    /// Every counter is overwritten right below, so zeroing the 12 KB first is pure waste. A query log
+    /// element carries a snapshot and is copied on every logged query.
+    : counters_holder(std::make_unique_for_overwrite<Count[]>(num_counters))
 {
     std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
 }
 
 Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
 {
-    Snapshot tmp(other);
-    counters_holder = std::move(tmp.counters_holder);
+    if (this == &other)
+        return *this;
+
+    if (!counters_holder)
+        counters_holder = std::make_unique_for_overwrite<Count[]>(num_counters);
+
+    std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
     return *this;
 }
 
@@ -1993,14 +2002,26 @@ const std::string_view & getDocumentation(Event event)
 /// Get ProfileEvent by its name
 Event getByName(std::string_view name)
 {
-    static std::unordered_map<std::string_view, Event> map =
+    static const std::unordered_map<std::string_view, Event> map =
     {
 #define M(NAME, DOCUMENTATION, VALUE_TYPE) {#NAME, ProfileEvents::NAME},
         APPLY_FOR_EVENTS(M)
 #undef M
     };
 
-    return map.at(name);
+    auto it = map.find(name);
+    if (it == map.end())
+    {
+        DB::VectorWithMemoryTracking<String> all_names;
+        all_names.reserve(names.size());
+        for (const auto & known_name : names)
+            all_names.emplace_back(known_name);
+
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown profile event: {}{}",
+            name, DB::getHintsErrorMessageSuffix(DB::NamePrompter<3>::getHints(String(name), all_names)));
+    }
+
+    return it->second;
 }
 
 void Counters::setTraceProfileEvent(Event event)
@@ -2022,14 +2043,31 @@ void Counters::setTraceProfileEvent(Event event)
     trace_array[event].store(true, std::memory_order_relaxed);
 }
 
+/// A range adaptor that applies `trimWhitespace` to every element,
+/// e.g. `std::views::split(list, ',') | trimWhitespaceTransform`.
+/// It is kept local to this file on purpose: `Common/StringUtils.h` is directly included by more than
+/// two hundred translation units, and exporting this adaptor from there would pull `<ranges>` into all of them.
+static constexpr auto trimWhitespaceTransform = std::views::transform([](auto && token)
+{
+    return trimWhitespace(std::string_view(token.begin(), token.end()));
+});
+
 void Counters::setTraceProfileEvents(const String & events_list)
 {
-    for (auto it = boost::make_split_iterator(events_list, boost::first_finder(",", boost::is_equal()));
-        it != decltype(it)();
-        ++it)
+    /// The list is written by a human, so allow spaces around the names and a trailing comma.
+    bool has_any = false;
+    for (const auto name : std::views::split(std::string_view(events_list), ',') | trimWhitespaceTransform)
     {
-        setTraceProfileEvent(getByName(std::string_view(*it)));
+        if (name.empty())
+            continue;
+
+        setTraceProfileEvent(getByName(name));
+        has_any = true;
     }
+
+    /// An empty list means "trace everything" - keep this behaviour when the list contains only separators and spaces.
+    if (!has_any)
+        setTraceAllProfileEvents();
 }
 
 
