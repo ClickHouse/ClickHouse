@@ -29,7 +29,7 @@ SELECT toTypeName(toDateTime64(toDateTime('2020-01-01 00:00:00', 'Europe/Amsterd
 
 -- Time and Time64 carry no time zone, so toTime takes a scale but never a time zone.
 SELECT toTypeName(toTime(now(), 3));
-SELECT toTime(now(), 'UTC'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTime(now(), 'UTC'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- A single NULL argument of range makes the whole result NULL, whatever the other arguments are.
 SELECT range(NULL), range(10, NULL), range('string', NULL), range(10, 2, NULL);

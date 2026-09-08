@@ -3262,6 +3262,28 @@ public:
             return {};
     }
 
+    static const DataTypePtr & extractType(const DataTypePtr & type) { return type; }
+    static const DataTypePtr & extractType(const ColumnWithTypeAndName & argument) { return argument.type; }
+
+    /// `toTime` is the one conversion whose declarative signature is wider than the legacy
+    /// contract. Its second arm `(Any, const scale NativeUInt)` puts *every* two-argument call in
+    /// range, so a timezone-like call such as `toTime(x, 'UTC')` would be reported as a type
+    /// mismatch (`ILLEGAL_TYPE_OF_ARGUMENT`). Historically the second argument was admitted only
+    /// as the `Time64` scale -- `Time` carries no timezone -- and anything else was a wrong number
+    /// of arguments. Preserve that error code, which users match on.
+    template <typename Arguments>
+    void checkLegacyToTimeArity(const Arguments & arguments) const
+    {
+        if constexpr (std::is_same_v<Name, NameToTime>)
+        {
+            if (arguments.size() == 2 && !isUInt(extractType(arguments[1])))
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "An incorrect number of arguments was specified for function '{}'. Expected 1 argument, got 2 arguments",
+                    getName());
+        }
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Every conversion `Name` is authoritative: the per-`Name` declarative signature owns the
@@ -3269,6 +3291,8 @@ public:
         /// only-NULL arguments. The one rule the signature cannot express is conversion-specific:
         /// under `cast_keep_nullable` a Variant or Dynamic argument keeps the result Nullable (they
         /// can contain NULL). Apply just that, then defer to the declarative path.
+        checkLegacyToTimeArity(arguments);
+
         if (settings.cast_keep_nullable)
         {
             for (const auto & arg : arguments)
@@ -3284,6 +3308,8 @@ public:
     /// same `cast_keep_nullable` rule before deferring to the declarative path.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        checkLegacyToTimeArity(arguments);
+
         if (settings.cast_keep_nullable)
         {
             for (const auto & type : arguments)
