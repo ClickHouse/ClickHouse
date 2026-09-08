@@ -551,10 +551,6 @@ void generateManifestFile(
             setVersionedField(manifest, sequence_number, Iceberg::f_sequence_number);
             setVersionedField(manifest, file_sequence_number, Iceberg::f_file_sequence_number);
         }
-        if (version > 2)
-        {
-            setVersionedField(manifest, new_snapshot->getValue<Int64>(Iceberg::f_first_row_id), Iceberg::f_first_row_id);
-        }
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
         if (version > 1)
             data_file.field(Iceberg::f_content) = avro::GenericDatum(static_cast<Int32>(content_type));
@@ -776,6 +772,10 @@ void generateManifestList(
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
     Int64 cum_rows = 0;
+    Int64 next_first_row_id = version > 2 && new_snapshot->has(Iceberg::f_first_row_id)
+            && !new_snapshot->isNull(Iceberg::f_first_row_id)
+        ? new_snapshot->getValue<Int64>(Iceberg::f_first_row_id)
+        : 0;
     /// Copy entries from the parent snapshot's manifest list: `use_previous_snapshots` copies all, `carry_forward_manifest_paths` copies only the listed manifests.
     if (use_previous_snapshots || !carry_forward_manifest_paths.empty())
     {
@@ -849,7 +849,7 @@ void generateManifestList(
                         }
                         if (version > 2)
                         {
-                            add_field_to_datum(Iceberg::f_first_row_id);
+                            add_field_to_datum(Iceberg::f_manifest_first_row_id);
                             cum_rows += old_entry.field(Iceberg::f_added_rows_count).value<Int64>();
                         }
                         writer.write(new_datum);
@@ -906,7 +906,7 @@ void generateManifestList(
             setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
             setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
-            setVersionedField(entry, cum_rows, Iceberg::f_first_row_id);
+            setVersionedField(entry, cum_rows, Iceberg::f_manifest_first_row_id);
 
             /// Recompute the `partitions` summary so pruning bounds survive the rewrite (lower_bound == upper_bound per field).
             if (!entry_partition_summaries.empty())
@@ -971,25 +971,22 @@ void generateManifestList(
             else
                 entry.field(Iceberg::f_deleted_rows_count) = 0;
         }
-        if (entry_content == Iceberg::FileContentType::DATA)
-        {
-            setVersionedField(
-                entry,
-                summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0,
-                Iceberg::f_added_rows_count);
-        }
-        else
-        {
-            setVersionedField(
-                entry,
-                summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0,
-                Iceberg::f_added_rows_count);
-        }
+        const Int64 added_rows_count = entry_content == Iceberg::FileContentType::DATA
+            ? (summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0)
+            : (summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0);
+        setVersionedField(entry, added_rows_count, Iceberg::f_added_rows_count);
         setVersionedField(
             entry,
             0,
             Iceberg::f_existing_rows_count);
         setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
+
+        /// Only data files get row ids, so a delete manifest leaves the field null.
+        if (version > 2 && entry_content == Iceberg::FileContentType::DATA)
+        {
+            setVersionedField(entry, next_first_row_id, Iceberg::f_manifest_first_row_id);
+            next_first_row_id += added_rows_count;
+        }
 
         writer.write(entry_datum);
     }
