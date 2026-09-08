@@ -18,6 +18,7 @@ class TaskScheduler
     {
         std::mutex mutex;
         WorkStealingQueue queue;
+        size_t lifo_pops = 0;
     };
 
     std::optional<Task> takeFromLocal(GuardedQueue & own);

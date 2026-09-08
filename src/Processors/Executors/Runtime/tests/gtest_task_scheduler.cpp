@@ -39,7 +39,7 @@ struct Fixture
 
 }
 
-TEST(TaskScheduler, OwnQueueIsPoppedInPushOrder)
+TEST(TaskScheduler, OwnQueueIsPoppedNewestFirst)
 {
     Fixture f(2);
     f.scheduler.push(f.task(0), 0);
@@ -48,11 +48,32 @@ TEST(TaskScheduler, OwnQueueIsPoppedInPushOrder)
 
     auto first = f.scheduler.tryPop(0);
     ASSERT_TRUE(first);
-    EXPECT_EQ(f.states.data(), first->state);
-    EXPECT_EQ(Task::Kind::Prepare, first->kind);
+    EXPECT_EQ(&f.states[1], first->state);
+    EXPECT_EQ(Task::Kind::Work, first->kind);
 
-    EXPECT_EQ(1u, f.popIndex(0));
+    EXPECT_EQ(0u, f.popIndex(0));
     EXPECT_EQ(0u, f.scheduler.queued());
+    EXPECT_FALSE(f.scheduler.tryPop(0));
+}
+
+TEST(TaskScheduler, TheOldestTaskGetsATurnAfterARowOfNewest)
+{
+    Fixture f(1, 2);
+    f.scheduler.push(f.task(0), 0);
+
+    size_t newest_in_a_row = 0;
+    while (true)
+    {
+        f.scheduler.push(f.task(1), 0);
+        const size_t popped = f.popIndex(0);
+        if (popped == 0)
+            break;
+        ASSERT_EQ(1u, popped);
+        ASSERT_LT(++newest_in_a_row, 1000u);
+    }
+
+    EXPECT_GT(newest_in_a_row, 1u);
+    EXPECT_EQ(1u, f.popIndex(0));
     EXPECT_FALSE(f.scheduler.tryPop(0));
 }
 
@@ -64,23 +85,23 @@ TEST(TaskScheduler, GlobalQueueIsTakenFromTheFront)
 
     EXPECT_EQ(0u, f.popIndex(1));
     EXPECT_EQ(5u, f.scheduler.queued());
-    EXPECT_EQ(1u, f.popIndex(1));
     EXPECT_EQ(2u, f.popIndex(1));
+    EXPECT_EQ(1u, f.popIndex(1));
     EXPECT_EQ(3u, f.popIndex(0));
 }
 
-TEST(TaskScheduler, StealTakesTheNewestHalfOfAnotherWorker)
+TEST(TaskScheduler, StealTakesTheOldestHalfOfAnotherWorker)
 {
     Fixture f(2);
     for (size_t i = 0; i < 6; ++i)
         f.scheduler.push(f.task(i), 0);
 
-    EXPECT_EQ(3u, f.popIndex(1));
-    EXPECT_EQ(4u, f.popIndex(1));
-    EXPECT_EQ(0u, f.popIndex(0));
-    EXPECT_EQ(1u, f.popIndex(0));
-    EXPECT_EQ(2u, f.popIndex(0));
+    EXPECT_EQ(0u, f.popIndex(1));
+    EXPECT_EQ(2u, f.popIndex(1));
     EXPECT_EQ(5u, f.popIndex(0));
+    EXPECT_EQ(4u, f.popIndex(0));
+    EXPECT_EQ(3u, f.popIndex(0));
+    EXPECT_EQ(1u, f.popIndex(0));
     EXPECT_EQ(0u, f.scheduler.queued());
 }
 
@@ -97,7 +118,7 @@ TEST(TaskScheduler, DrainHandsTheQueueToTheGlobalQueue)
 }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFront)
+TEST(TaskScheduler, FiredFdBecomesAsyncReadyPoppedFirst)
 {
     Fixture f(1, 2);
 

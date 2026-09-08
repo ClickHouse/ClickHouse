@@ -37,7 +37,7 @@ struct Fixture
 
 }
 
-TEST(WorkStealingQueue, OwnerPopsInPushOrder)
+TEST(WorkStealingQueue, PopFrontTakesTheOldestInOrder)
 {
     Fixture f;
     WorkStealingQueue deque;
@@ -67,30 +67,19 @@ TEST(WorkStealingQueue, PopBackTakesTheNewest)
     EXPECT_TRUE(deque.empty());
 }
 
-TEST(WorkStealingQueue, PushFrontIsPoppedBeforeTheRest)
-{
-    Fixture f;
-    WorkStealingQueue deque;
-    f.fill(deque, 0, 3);
-    deque.pushFront(f.task(3));
-    EXPECT_EQ(4u, deque.size());
-
-    f.expectPops(deque, {3, 0, 1, 2});
-}
-
-TEST(WorkStealingQueue, StealTakesNewestHalfInOrder)
+TEST(WorkStealingQueue, StealTakesOldestHalfInOrder)
 {
     Fixture f;
     WorkStealingQueue victim;
     WorkStealingQueue thief;
     f.fill(victim, 0, 6);
 
-    EXPECT_EQ(3u, thief.takeLast(victim, 7));
+    EXPECT_EQ(3u, thief.takeFirst(victim, 7));
     EXPECT_EQ(3u, thief.size());
     EXPECT_EQ(3u, victim.size());
 
-    f.expectPops(thief, {3, 4, 5});
-    f.expectPops(victim, {0, 1, 2});
+    f.expectPops(thief, {0, 1, 2});
+    f.expectPops(victim, {3, 4, 5});
 }
 
 TEST(WorkStealingQueue, StealRoundsUpAndAppendsBehindOwnTasks)
@@ -101,9 +90,9 @@ TEST(WorkStealingQueue, StealRoundsUpAndAppendsBehindOwnTasks)
     f.fill(victim, 0, 5);
     thief.pushBack(f.task(7));
 
-    EXPECT_EQ(3u, thief.takeLast(victim, 7));
-    f.expectPops(thief, {7, 2, 3, 4});
-    f.expectPops(victim, {0, 1});
+    EXPECT_EQ(3u, thief.takeFirst(victim, 7));
+    f.expectPops(thief, {7, 0, 1, 2});
+    f.expectPops(victim, {3, 4});
 }
 
 TEST(WorkStealingQueue, StealIsCappedByMaxCount)
@@ -113,30 +102,25 @@ TEST(WorkStealingQueue, StealIsCappedByMaxCount)
     WorkStealingQueue thief;
     f.fill(victim, 0, 20);
 
-    EXPECT_EQ(7u, thief.takeLast(victim, 7));
-    f.expectPops(thief, {13, 14, 15, 16, 17, 18, 19});
+    EXPECT_EQ(7u, thief.takeFirst(victim, 7));
+    f.expectPops(thief, {0, 1, 2, 3, 4, 5, 6});
 
-    EXPECT_EQ(2u, thief.takeLast(victim, 2));
-    f.expectPops(thief, {11, 12});
-    f.expectPops(victim, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+    EXPECT_EQ(2u, thief.takeFirst(victim, 2));
+    f.expectPops(thief, {7, 8});
+    f.expectPops(victim, {9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19});
 }
 
-TEST(WorkStealingQueue, TakeFrontTakesOldestHalfInOrder)
+TEST(WorkStealingQueue, TakeAllAppendsBehindOwnTasks)
 {
     Fixture f;
     WorkStealingQueue victim;
     WorkStealingQueue thief;
-    f.fill(victim, 0, 6);
+    f.fill(victim, 0, 3);
     thief.pushBack(f.task(7));
 
-    EXPECT_EQ(3u, thief.takeFirst(victim, 7));
+    EXPECT_EQ(3u, thief.takeAll(victim));
+    EXPECT_TRUE(victim.empty());
     f.expectPops(thief, {7, 0, 1, 2});
-    f.expectPops(victim, {3, 4, 5});
-
-    f.fill(victim, 0, 20);
-    EXPECT_EQ(2u, thief.takeFirst(victim, 2));
-    f.expectPops(thief, {0, 1});
-    EXPECT_EQ(18u, victim.size());
 }
 
 TEST(WorkStealingQueue, StealFromSingleAndEmpty)
@@ -145,11 +129,11 @@ TEST(WorkStealingQueue, StealFromSingleAndEmpty)
     WorkStealingQueue victim;
     WorkStealingQueue thief;
 
-    EXPECT_EQ(0u, thief.takeLast(victim, 7));
+    EXPECT_EQ(0u, thief.takeFirst(victim, 7));
     EXPECT_TRUE(thief.empty());
 
     victim.pushBack(f.task(0));
-    EXPECT_EQ(1u, thief.takeLast(victim, 7));
+    EXPECT_EQ(1u, thief.takeFirst(victim, 7));
     EXPECT_TRUE(victim.empty());
     f.expectPops(thief, {0});
 }

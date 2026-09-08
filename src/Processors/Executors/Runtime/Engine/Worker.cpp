@@ -12,6 +12,8 @@
 #include <Common/ThreadStatus.h>
 #include <base/scope_guard.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -165,10 +167,10 @@ void Worker::runPrepare(ProcessorState & state)
             profileWaits(processor, last_status, new_status);
 
         state.round_updates.drain(changed_inputs, changed_outputs);
-        for (auto * input : changed_inputs)
-            notifyNeighbour(input->getOutputPort());
-        for (auto * output : changed_outputs)
+        for (auto * output : changed_outputs | std::views::reverse)
             notifyNeighbour(output->getInputPort());
+        for (auto * input : changed_inputs | std::views::reverse)
+            notifyNeighbour(input->getOutputPort());
 
         switch (new_status)
         {
@@ -306,10 +308,10 @@ void Worker::runUpdatePipeline(ProcessorState & requester)
     if (pipeline.cancelled())
         return;
 
-    for (auto * state : added)
+    for (auto * state : added | std::views::reverse)
         notifyOwner(*state);
 
-    for (auto * state : reconnected)
+    for (auto * state : reconnected | std::views::reverse)
         notifyOwner(*state);
 
     scheduler.push(Task{.state = &requester, .kind = Task::Kind::Prepare}, worker_id);

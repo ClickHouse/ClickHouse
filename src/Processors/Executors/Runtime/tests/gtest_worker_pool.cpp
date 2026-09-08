@@ -195,17 +195,17 @@ public:
     Status prepare() override
     {
         auto & input = inputs.front();
+        if (input.hasData())
+        {
+            input.pull();
+            ++pulled;
+        }
 
         if (input.isFinished())
             return Status::Finished;
 
         input.setNeeded();
-        if (!input.hasData())
-            return Status::NeedData;
-
-        input.pull();
-        ++pulled;
-        return Status::PortFull;
+        return Status::NeedData;
     }
 
     std::atomic<size_t> pulled = 0;

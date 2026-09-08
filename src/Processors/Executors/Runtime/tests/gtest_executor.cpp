@@ -6,6 +6,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Parsers/IAST.h>
 #include <Processors/Executors/Runtime/Executor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/Port.h>
 #include <Processors/ResizeProcessor.h>
@@ -135,6 +136,28 @@ protected:
     }
 };
 
+/// Passes the first chunk through and drops every later one, like a filter that matches once in an endless stream.
+class MatchOnceTransform final : public ISimpleTransform
+{
+public:
+    explicit MatchOnceTransform(SharedHeader header_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/true)
+    {
+    }
+
+    String getName() const override { return "MatchOnceTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        if (std::exchange(matched, true))
+            chunk = Chunk();
+    }
+
+private:
+    bool matched = false;
+};
+
 class ThrowingSource final : public ISource
 {
 public:
@@ -169,27 +192,27 @@ public:
     {
         auto & input = inputs.front();
 
+        if (input.hasData())
+        {
+            auto chunk = input.pull();
+            const auto & col = assert_cast<const ColumnUInt8 &>(*chunk.getColumns().front());
+            values.push_back(col.getElement(0));
+            ++pulled;
+
+            if (limit && values.size() >= limit)
+            {
+                if (on_limit)
+                    std::exchange(on_limit, {})();
+
+                input.close();
+                return Status::Finished;
+            }
+        }
+
         if (input.isFinished())
             return Status::Finished;
 
         input.setNeeded();
-        if (!input.hasData())
-            return Status::NeedData;
-
-        auto chunk = input.pull();
-        const auto & col = assert_cast<const ColumnUInt8 &>(*chunk.getColumns().front());
-        values.push_back(col.getElement(0));
-        ++pulled;
-
-        if (limit && values.size() >= limit)
-        {
-            if (on_limit)
-                std::exchange(on_limit, {})();
-
-            input.close();
-            return Status::Finished;
-        }
-
         return Status::NeedData;
     }
 
@@ -710,6 +733,32 @@ TEST(Executor, UpdatePipeline)
     /// Input slot was reused, not grown.
     EXPECT_EQ(coordinator->getInputs().size(), 1u);
     EXPECT_EQ(coordinator->getOutputs().size(), 1u);
+}
+
+TEST(Executor, OneWorkerGivesTheOtherBranchATurn)
+{
+    auto header = makeHeader();
+    auto resize = std::make_shared<ResizeProcessor>(header, 2, 1);
+    auto sink = std::make_shared<CollectingSink>(header, 2);
+
+    Processors processors;
+    for (auto & input : resize->getInputs())
+    {
+        auto source = std::make_shared<EndlessSource>(header);
+        auto filter = std::make_shared<MatchOnceTransform>(header);
+        connect(source->getOutputs().front(), filter->getInputs().front());
+        connect(filter->getOutputs().front(), input);
+        processors.push_back(source);
+        processors.push_back(filter);
+    }
+    connect(resize->getOutputs().front(), sink->getInputs().front());
+    processors.push_back(resize);
+    processors.push_back(sink);
+
+    Executor executor(std::make_shared<Processors>(std::move(processors)), nullptr);
+    executor.execute(1, false);
+
+    EXPECT_EQ(2u, sink->pulled);
 }
 
 TEST(Executor, UpdatePipelineMultipleCoordinatorsMultithreaded)

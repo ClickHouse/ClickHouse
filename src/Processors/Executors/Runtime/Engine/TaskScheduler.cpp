@@ -13,6 +13,7 @@ namespace
 {
 
 constexpr size_t max_to_take = 7;
+constexpr size_t max_lifo_pops = 128;
 
 size_t randomWorker(size_t count)
 {
@@ -32,11 +33,22 @@ std::optional<Task> TaskScheduler::takeFromLocal(GuardedQueue & own)
 {
     std::lock_guard lock(own.mutex);
     if (own.queue.empty())
+    {
+        own.lifo_pops = 0;
         return std::nullopt;
+    }
 
     --queued_count;
     --total_count;
-    return own.queue.popFront();
+
+    if (own.lifo_pops == max_lifo_pops)
+    {
+        own.lifo_pops = 0;
+        return own.queue.popFront();
+    }
+
+    ++own.lifo_pops;
+    return own.queue.popBack();
 }
 
 std::optional<Task> TaskScheduler::keepAndPopFirst(GuardedQueue & own, WorkStealingQueue & taken)
@@ -76,7 +88,7 @@ std::optional<Task> TaskScheduler::steal(size_t worker_id)
             continue;
 
         std::lock_guard lock(local[victim].mutex);
-        taken.takeLast(local[victim].queue, max_to_take - taken.size());
+        taken.takeFirst(local[victim].queue, max_to_take - taken.size());
     }
 
     return keepAndPopFirst(local[worker_id], taken);
@@ -132,7 +144,7 @@ size_t TaskScheduler::poll(size_t worker_id, int timeout_ms)
     std::lock_guard lock(local[worker_id].mutex);
 
     for (auto * state : fired | std::views::reverse)
-        local[worker_id].queue.pushFront(Task{.state = state, .kind = Task::Kind::AsyncReady});
+        local[worker_id].queue.pushBack(Task{.state = state, .kind = Task::Kind::AsyncReady});
 
     queued_count += fired.size();
     return fired.size();

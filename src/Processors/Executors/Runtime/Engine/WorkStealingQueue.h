@@ -12,12 +12,10 @@ class WorkStealingQueue
 {
 public:
     void pushBack(Task task);
-    void pushFront(Task task);
     Task popFront();
     Task popBack();
 
     size_t takeFirst(WorkStealingQueue & victim, size_t max_to_take);
-    size_t takeLast(WorkStealingQueue & victim, size_t max_to_take);
     size_t takeAll(WorkStealingQueue & victim);
 
     bool empty() const;
