@@ -256,7 +256,6 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "GET command can only be applied to a database of type string");
 
             auto [table, table_lock] = resolveTable(db, mapping);
-            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, mapping.value_column});
             std::vector<std::vector<Field>> keys{{get_request.getKey()}};
             auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
 
@@ -278,7 +277,6 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MGET command can only be applied to a database of type string");
 
             auto [table, table_lock] = resolveTable(db, mapping);
-            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, mapping.value_column});
 
             /// All the keys are looked up in one call, so that a single command cannot mix values
             /// from different states of the table.
@@ -375,6 +373,15 @@ RedisProtocol::MapDescription RedisHandler::getMapDescription(UInt32 db_) const
 
 RedisHandler::ResolvedTable RedisHandler::resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const
 {
+    /// Check the privileges on the configured table before touching the catalog. Otherwise a user
+    /// without `SELECT` on it could tell a missing table from a misconfigured one and from a working
+    /// one by the error of the resolution and of the validation below. The commands additionally
+    /// check the columns they read.
+    Strings columns_to_check{mapping.key_column};
+    if (mapping.db_type == RedisProtocol::DBType::STRING)
+        columns_to_check.push_back(mapping.value_column);
+    query_context->checkAccess(AccessType::SELECT, StorageID{mapping.clickhouse_db, mapping.clickhouse_table}, columns_to_check);
+
     /// Resolve the table again for every request: a session must not keep serving data from a table
     /// that has been dropped, renamed, or recreated in the meantime.
     auto table = DatabaseCatalog::instance().getTable(StorageID{mapping.clickhouse_db, mapping.clickhouse_table}, query_context);

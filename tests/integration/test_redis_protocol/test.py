@@ -181,13 +181,34 @@ def test_auth(started_cluster):
     assert "Authentication failed" in str(err.value) or "invalid username-password pair" in str(err.value)
     client.close()
 
-    # A user without the SELECT grant on the mapped table cannot read data.
+    # A user without the SELECT grant on the mapped table is refused by `SELECT` already:
+    # the state of the mapped table must not be observable without the privilege on it.
     client = Redis(host=ip, port=server_port, username="limited_user", password="secret")
-    assert client.select(1)
     with pytest.raises(exceptions.ResponseError) as resp_err:
-        client.get("Alice")
+        client.select(1)
     assert "Not enough privileges" in str(resp_err.value)
     client.close()
+
+
+def test_unprivileged_user_cannot_probe_the_mapped_table(started_cluster):
+    # A user without the SELECT grant must get the same answer for a database mapped to a
+    # working table (0, 1), to an absent one (2), to a table that cannot serve lookups (3)
+    # and to one with an unrepresentable value column (5), so that the state of the backing
+    # table cannot be probed through the error message.
+    ip = started_cluster.get_instance_ip("node")
+    client = Redis(host=ip, port=server_port, username="limited_user", password="secret")
+    try:
+        for db in (0, 1, 2, 3, 5):
+            with pytest.raises(exceptions.ResponseError) as resp_err:
+                client.select(db)
+            assert "Not enough privileges" in str(resp_err.value)
+
+        # A database that is not configured at all exposes nothing about a table.
+        with pytest.raises(exceptions.ResponseError) as resp_err:
+            client.select(200)
+        assert "DB index is out of range" in str(resp_err.value)
+    finally:
+        client.close()
 
 
 def test_unsupported_join_variant(redis_client):
