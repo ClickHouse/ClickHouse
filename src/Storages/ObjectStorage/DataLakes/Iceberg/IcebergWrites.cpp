@@ -906,7 +906,9 @@ void generateManifestList(
             setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
             setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
-            setVersionedField(entry, cum_rows, Iceberg::f_manifest_first_row_id);
+            /// Only a v3 manifest list has the field at all.
+            if (version > 2)
+                setVersionedField(entry, cum_rows, Iceberg::f_manifest_first_row_id);
 
             /// Recompute the `partitions` summary so pruning bounds survive the rewrite (lower_bound == upper_bound per field).
             if (!entry_partition_summaries.empty())
