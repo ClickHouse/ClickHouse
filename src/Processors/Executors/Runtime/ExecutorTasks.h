@@ -7,6 +7,8 @@
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -121,7 +123,12 @@ public:
     /// Resume execution of a previously preempted slot.
     void resume(size_t slot_id);
 
-    void processAsyncTasks();
+    /// Wait for and dispatch asynchronous tasks until the pipeline is finished.
+    /// `before_async_job`, if set, is called right before every `onAsyncJobReady`
+    /// callback, in the same context as that callback (i.e. with the internal mutex
+    /// held), so that the caller can lazily set up state it needs only when this thread
+    /// actually executes async jobs.
+    void processAsyncTasks(const std::function<void()> & before_async_job = {});
 
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
 

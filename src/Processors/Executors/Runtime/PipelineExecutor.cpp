@@ -1,5 +1,6 @@
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <IO/WriteBufferFromString.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Scheduler/MemoryReservation.h>
@@ -801,17 +802,31 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
             }
 
             {
-                /// The calling thread is not idle while the spawned workers run: it executes
-                /// `IProcessor::onAsyncJobReady` callbacks (e.g. `RemoteSource` handling
-                /// parallel-replica control packets), so it accumulates its own
-                /// `max_untracked_memory` buffer and has to carry a reservation too.
-                SpeculativeMemoryReservation speculative_memory_reservation;
+                /// The calling thread is not always idle while the spawned workers run: it
+                /// executes `IProcessor::onAsyncJobReady` callbacks (e.g. `RemoteSource`
+                /// handling parallel-replica control packets), so once it runs those it
+                /// accumulates its own `max_untracked_memory` buffer and has to carry a
+                /// reservation too.
+                ///
+                /// The reservation is therefore taken lazily, on the first such callback,
+                /// and kept until the wait loop ends, because the thread's untracked-memory
+                /// buffer survives between callbacks. A fully synchronous pipeline - where
+                /// this thread only blocks in `async_task_queue.wait` and never allocates -
+                /// takes no reservation at all, so ordinary pipelines keep exactly one
+                /// reservation per worker thread instead of `num_threads + 1`.
+                std::optional<SpeculativeMemoryReservation> speculative_memory_reservation;
                 SCOPE_EXIT({
-                    if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+                    if (speculative_memory_reservation && speculative_memory_reservation->shouldFlushUntrackedMemory())
                         CurrentThread::flushUntrackedMemory();
                 });
 
-                tasks.processAsyncTasks();
+                /// May throw `MEMORY_LIMIT_EXCEEDED`, like the `onAsyncJobReady` callback
+                /// that follows it; the surrounding `catch` cancels the pipeline.
+                tasks.processAsyncTasks([&]
+                {
+                    if (!speculative_memory_reservation)
+                        speculative_memory_reservation.emplace();
+                });
             }
 
             pool->wait();
