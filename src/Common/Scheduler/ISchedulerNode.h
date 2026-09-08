@@ -84,7 +84,7 @@ struct SchedulerNodeInfo
 ///      dev       prod     | WorkloadNode<BaseNode> (workload root)
 ///       |         |       |__________________________________________________
 ///       |         |       |                       |
-///     fifo       fifo     | RequestQueue          | AllocationQueue
+///     queue     queue     | RequestQueue          | AllocationQueue
 /// ________________________|_______________________|__________________________
 ///                         |                       |
 ///             RESOURCE:   | CPU, IO, QuerySlot    | MemoryReservation

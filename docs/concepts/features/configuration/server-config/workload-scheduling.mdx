@@ -435,10 +435,10 @@ graph TD
     -->nw_semp[\"semaphore"/]
     -->|100 concurrent requests| nw_fair("p0_fair")
     -->|75% bandwidth| nw_prod{{"production"}}
-    -->nw_prod_q["fifo"]
+    -->nw_prod_q["queue"]
     nw_fair
     -->|25% bandwidth| nw_dev{{"development"}}
-    -->nw_dev_q["fifo"]
+    -->nw_dev_q["queue"]
 
     mem_root(["memory"])
     -->mem_all{{"all"}}
@@ -456,7 +456,7 @@ graph TD
 * `bandwidth_limit` (constraint) - blocks if current bandwidth exceeds `max_speed` (0 means unlimited) or burst exceeds `max_burst` (by default equals `max_speed`); must have a single child.
 * `fair` (policy) - selects the next request to serve from one of its children nodes according to max-min fairness; children nodes may specify `weight` (default is 1).
 * `priority` (policy) - selects the next request to serve from one of its children nodes according to static priorities (lower value means higher priority); children nodes should specify `priority` (default is 0).
-* `fifo` (queue) - leaf of the hierarchy capable of holding requests that exceed resource capacity.
+* `queue` - leaf of the hierarchy capable of holding requests that exceed resource capacity.
 
 **Space-shared node types:**
 * `limit` - makes sure child total allocation never exceeds a limit, initiates eviction procedure in a subtree if necessary; must have a single child.
