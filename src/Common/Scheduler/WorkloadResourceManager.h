@@ -58,7 +58,7 @@ namespace DB
  *            /     \
  *    production     development   - WorkloadNode
  *        |               |
- *      queue           queue      - FifoQueue (part of parent WorkloadNode internal structure)
+ *      queue           queue      - RequestQueue (part of parent WorkloadNode internal structure)
  *
  * === UPDATING WORKLOADS ===
  * Workload may be created, updated or deleted.
@@ -112,7 +112,7 @@ namespace DB
  *  - all events are processed by specific scheduler thread
  *  - hierarchy-wide actions: requests dequeueing, activations propagation and nodes updates.
  *  - resource version control management
- * FifoQueue::mutex and SemaphoreContraint::mutex
+ * RequestQueue::mutex and SemaphoreContraint::mutex
  *  - serializes query and scheduler threads on specific node accesses
  *  - resource request processing: enqueueRequest(), dequeueRequest() and finishRequest()
  */

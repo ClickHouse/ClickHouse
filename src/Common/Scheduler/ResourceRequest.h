@@ -16,7 +16,6 @@ namespace DB
 // Forward declarations
 class ISchedulerQueue;
 class ISchedulerConstraint;
-class FifoQueue;
 class RequestQueue;
 class FifoAlgorithm;
 class FairAlgorithm;
@@ -156,7 +155,6 @@ public:
     bool addConstraint(ISchedulerConstraint * new_constraint);
 
 private:
-    friend class FifoQueue;
     friend class FifoAlgorithm; // uses `enqueued_hook` for the `fifo` scheduler
     friend class FairAlgorithm; // uses `scheduling_hook` + `scheduling_key` for the `fair` scheduler
     friend class LasAlgorithm; // uses `scheduling_hook` + `scheduling_key` for the `las` scheduler
@@ -164,7 +162,7 @@ private:
     friend class RequestQueue;
     friend class CPUSlotsAllocation; // hack for tests only
 
-    /// For an intrusive list of enqueued requests (FifoQueue and the `fifo` scheduler).
+    /// For an intrusive list of enqueued requests (the `fifo` scheduler).
     /// NOTE: Can only be accessed under the owning queue's mutex.
     boost::intrusive::list_member_hook<> enqueued_hook;
     using EnqueuedHook = boost::intrusive::member_hook<ResourceRequest, boost::intrusive::list_member_hook<>, &ResourceRequest::enqueued_hook>;

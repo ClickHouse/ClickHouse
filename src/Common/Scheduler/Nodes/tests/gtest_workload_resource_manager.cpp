@@ -473,7 +473,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
         g.waitFailed("is about to be destructed");
     });
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
 
@@ -519,7 +519,7 @@ TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
     });
 
     sync_before_drop.arrive_and_wait();
-    t.query("CREATE WORKLOAD leaf IN intermediate"); // detaches and purges intermediate's FifoQueue
+    t.query("CREATE WORKLOAD leaf IN intermediate"); // detaches and purges intermediate's RequestQueue
     sync_after_drop.arrive_and_wait();
     t.wait();
 }
@@ -556,7 +556,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
         });
     }
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
 
@@ -613,7 +613,7 @@ TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDeferRequestIsGran
         });
     });
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD child IN production");
     sync_after_drop.arrive_and_wait();
 
@@ -676,7 +676,7 @@ TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDefaultRequestIsGr
 
     sync_leader_ready.arrive_and_wait(); // leader is holding the `production` slot
     sync_worker_ready.arrive_and_wait(); // worker is about to enqueue its (doomed) request
-    t.query("CREATE WORKLOAD child IN production"); // triggers FifoQueue destruction, failing the worker's request
+    t.query("CREATE WORKLOAD child IN production"); // triggers RequestQueue destruction, failing the worker's request
     sync_after_drop.arrive_and_wait(); // release the leader
 
     t.wait(); // Wait for threads to finish before destructing locals

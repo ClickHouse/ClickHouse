@@ -63,7 +63,7 @@ struct ResourceHolder
     template <class... Args>
     ResourceLink addQueue(const String & path, Args... args)
     {
-        return {.queue = static_cast<ISchedulerQueue *>(ResourceTest::add<FifoQueue>(t.scheduler.event_queue, root_node, path, std::forward<Args>(args)...))};
+        return {.queue = static_cast<ISchedulerQueue *>(ResourceTest::add<RequestQueue>(t.scheduler.event_queue, root_node, path, std::forward<Args>(args)...))};
     }
 
     void registerResource()

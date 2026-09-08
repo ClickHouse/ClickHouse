@@ -14,7 +14,6 @@
 #include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
 #include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
-#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/RequestQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
@@ -170,7 +169,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 
     static constexpr bool addRawPointerThrottler = false; // ThrottlerConstraint does not call `request->addConstraint()`
     static constexpr bool addRawPointerSemaphore = true; // SemaphoreConstraint may be stored as a raw pointer in ResourceRequest
-    static constexpr bool addRawPointerQueue = true; // ResourceLink holds raw pointer to FifoQueue - so we need to enforce destruction order here
+    static constexpr bool addRawPointerQueue = true; // ResourceLink holds raw pointer to the leaf queue - so we need to enforce destruction order here
 };
 
 template <>
@@ -471,7 +470,7 @@ protected:
     /// Handles degenerate case of zero children (a fifo queue) or delegate to `ChildrenBranch`.
     struct QueueOrChildrenBranch
     {
-        NodePtr queue; /// FifoQueue or AllocationQueue node is used if there are no children
+        NodePtr queue; /// RequestQueue or AllocationQueue node is used if there are no children
         ChildrenBranch branch; /// Used if there is at least one child
         WorkloadSettings settings;
         CostUnit unit = CostUnit::IOByte;

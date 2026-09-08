@@ -32,7 +32,7 @@ namespace ErrorCodes
 }
 
 /// Which scheduling algorithm a `RequestQueue` leaf runs. Selected by the WORKLOAD setting
-/// `scheduler`. `fifo` reproduces the historical FifoQueue behaviour and is the default.
+/// `scheduler`. `fifo` reproduces the historical first-come-first-served behaviour and is the default.
 enum class SchedulerAlgorithm
 {
     Fifo, /// First-come-first-served
@@ -82,7 +82,7 @@ public:
     virtual bool empty() const = 0;
 };
 
-/// `fifo` — first-come-first-served. Byte-for-byte the historical FifoQueue ordering.
+/// `fifo` — first-come-first-served. Byte-for-byte the historical leaf ordering.
 class FifoAlgorithm final : public ISchedulingAlgorithm
 {
 public:
@@ -512,7 +512,7 @@ private:
 
 /*
  * Time-shared scheduler leaf that runs one of several pluggable scheduling algorithms, chosen by
- * the workload setting `scheduler` (default `fifo`). Replaces the standalone FifoQueue as the
+ * the workload setting `scheduler` (default `fifo`). It is the time-shared
  * workload leaf. The leaf owns the cross-cutting concerns (mutex, budget via `ISchedulerQueue`,
  * `max_waiting_queries`, counters, activation) and delegates ordering to an `ISchedulingAlgorithm`.
  *
