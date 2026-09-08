@@ -356,6 +356,17 @@ StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr
 #endif
 }
 
+UInt64 StackTrace::resolveAddressForStorage(const void * virtual_addr)
+{
+    const ResolvedAddress resolved = resolveAddress(virtual_addr);
+    /// Only the main executable's offsets are unambiguous on their own: a column of bare numbers has
+    /// nowhere to record which library an offset belongs to, and `addressToSymbol` on such a number
+    /// would answer with the main executable's symbol at the same offset.
+    if (resolved.kind != AddressKind::MainObject)
+        return reinterpret_cast<UInt64>(virtual_addr);
+    return reinterpret_cast<UInt64>(resolved.address);
+}
+
 void StackTrace::forEachFrame(
     const FramePointers & frame_pointers,
     size_t offset,

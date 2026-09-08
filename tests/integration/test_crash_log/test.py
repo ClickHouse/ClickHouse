@@ -62,6 +62,27 @@ def wait_for_clickhouse_stop(started_node):
     assert result == "OK", "ClickHouse process is still running"
 
 
+def main_executable(node):
+    """The running server's executable and its size, which bounds every file offset into it.
+    `SymbolIndex` takes that file from `/proc/self/exe`: the running process is the only authority on
+    which file that is."""
+    path = node.exec_in_container(
+        ["bash", "-c", "readlink -f /proc/$(pgrep -n -x clickhouse)/exe"], nothrow=True
+    ).strip()
+    assert path.startswith("/"), (
+        f"cannot read the server executable's path from the container, got {path!r}, so an offset "
+        "into it would be left with nothing bounding it"
+    )
+    size = node.exec_in_container(
+        ["bash", "-c", f"stat -c %s {shlex.quote(path)}"], nothrow=True
+    ).strip()
+    assert size.isdigit(), (
+        f"cannot read the size of {path} from the container, got {size!r}, so an offset into it "
+        "would be left with nothing bounding it"
+    )
+    return path, int(size)
+
+
 def test_crash_log_synchronous(started_node):
     started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
 
@@ -75,6 +96,21 @@ def test_crash_log_synchronous(started_node):
         assert (
             started_node.query("SELECT COUNT(*) FROM system.crash_log")
             == f"{crashes_count}\n"
+        )
+
+        # A frame in the main executable is stored as its file offset, which is what keeps the row
+        # resolvable after the restart a crash forces. Frames in other objects stay runtime
+        # addresses, so what has to hold is that the executable's own frames are offsets, not that
+        # every element of the column is one.
+        _, main_size = main_executable(started_node)
+        assert (
+            started_node.query(
+                f"SELECT countIf(x < {main_size}) > 3 FROM (SELECT arrayJoin(trace) AS x FROM "
+                "(SELECT trace FROM system.crash_log ORDER BY event_time DESC LIMIT 1))"
+            ).strip()
+            == "1"
+        ), started_node.query(
+            "SELECT arrayMap(x -> hex(x), trace) FROM system.crash_log ORDER BY event_time DESC LIMIT 1"
         )
 
 
@@ -226,23 +262,8 @@ def test_bare_stack_trace_uses_the_same_addresses_as_the_symbolized_one(started_
     assert blocks, "this fault logged no bare stack trace with symbolized lines after it"
 
     # A frame in the main executable is printed with no object, so the executable itself is what
-    # bounds it, and `SymbolIndex` takes that file from `/proc/self/exe`: the running process is the
-    # only authority on which file that is.
-    main_path = started_node.exec_in_container(
-        ["bash", "-c", "readlink -f /proc/$(pgrep -n -x clickhouse)/exe"], nothrow=True
-    ).strip()
-    assert main_path.startswith("/"), (
-        f"cannot read the server executable's path from the container, got {main_path!r}, so the "
-        "frames that carry no object would be left with nothing bounding them"
-    )
-    main_size = started_node.exec_in_container(
-        ["bash", "-c", f"stat -c %s {shlex.quote(main_path)}"], nothrow=True
-    ).strip()
-    assert main_size.isdigit(), (
-        f"cannot read the size of {main_path} from the container, got {main_size!r}, so the frames "
-        "that carry no object would be left with nothing bounding them"
-    )
-    main_size = int(main_size)
+    # bounds it.
+    main_path, main_size = main_executable(started_node)
 
     for block in blocks:
         # Subtracting the load base is what makes the two comparable, so this is substantive only for

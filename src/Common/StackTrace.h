@@ -143,6 +143,11 @@ public:
     /// symbolized trace lines use, so that it can be fed to `addr2line` or `llvm-symbolizer`.
     static ResolvedAddress resolveAddress(const void * virtual_addr);
 
+    /// The form to store an address in a bare integer column: an address in the main executable
+    /// becomes its file offset, which stays valid across restarts and hosts, while any other address
+    /// is kept as is, because a stored offset into a library reads as a main executable one.
+    static UInt64 resolveAddressForStorage(const void * virtual_addr);
+
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;
     static void toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback);
     static void toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback);
