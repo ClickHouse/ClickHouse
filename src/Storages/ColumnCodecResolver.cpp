@@ -5,6 +5,10 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/IAST.h>
 
 #include <Common/Exception.h>
 
@@ -20,6 +24,36 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Keep only generic compression stages without replacing symbolic Default.
+ASTPtr getGenericCodecDescription(const ASTPtr & codec)
+{
+    const auto & codec_function = codec->as<ASTFunction &>();
+    ASTs generic_stages;
+    for (const auto & stage : codec_function.arguments->children)
+    {
+        const auto * identifier = stage->as<ASTIdentifier>();
+        if (identifier && identifier->name() == DEFAULT_CODEC_NAME)
+        {
+            generic_stages.push_back(stage->clone());
+            continue;
+        }
+
+        auto single_stage = makeASTFunction("CODEC", stage->clone());
+        if (CompressionCodecFactory::instance()
+                .get(single_stage, static_cast<const IDataType *>(nullptr), nullptr, /* only_generic = */ true)
+                ->isGenericCompression())
+            generic_stages.push_back(stage->clone());
+    }
+
+    if (generic_stages.empty())
+        generic_stages.push_back(make_intrusive<ASTIdentifier>("NONE"));
+
+    auto result = makeASTFunction("CODEC");
+    result->setKind(ASTFunction::Kind::CODEC);
+    result->arguments->children = std::move(generic_stages);
+    return result;
+}
 
 /// Find the Tuple path represented by a partial written column once per resolver.
 CodecPath getWrittenColumnPrefix(const NameAndTypePair & written_column, const DataTypePtr & owning_type)
@@ -98,11 +132,7 @@ ResolvedCodecDeclaration ColumnCodecResolver::resolve(const ISerialization::Subs
     auto resolved = resolveRaw(stream_path);
     /// Preserve symbolic Default when no concrete part default is available for introspection.
     if (resolved.stream.structural && resolved.codec && !(resolved.codec_is_part_default && !part_default))
-    {
-        resolved.codec = CompressionCodecFactory::instance()
-                             .get(resolved.codec, static_cast<const IDataType *>(nullptr), nullptr, /* only_generic = */ true)
-                             ->getFullCodecDesc();
-    }
+        resolved.codec = getGenericCodecDescription(resolved.codec);
     return resolved;
 }
 

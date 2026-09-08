@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <Core/NamesAndTypes.h>
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTDataType.h>
@@ -14,6 +16,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnCodecDescription.h>
 #include <Storages/ColumnCodecAST.h>
+#include <Storages/ColumnCodecResolver.h>
 #include <Storages/ColumnCodecValidation.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -114,6 +117,8 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
 {
     const String declaration_text =
         "c Tuple(items Array(Tuple(id UInt64 CODEC(ZSTD(3)), text String)), state Enum8('ok' = 1) CODEC(LZ4))";
+    const String formatted_declaration_text =
+        "`c` Tuple(items Array(Tuple(id UInt64 CODEC(ZSTD(3)), text String)), state Enum8('ok' = 1) CODEC(LZ4))";
     const auto parsed = parseColumnDeclaration(declaration_text);
     const auto & declaration = parsed->as<ASTColumnDeclaration &>();
 
@@ -132,7 +137,7 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
     EXPECT_TRUE(inner_codec_operations[0]);
     EXPECT_TRUE(outer_codec_operations[1]);
 
-    EXPECT_EQ(declaration.formatWithSecretsOneLine(), declaration_text);
+    EXPECT_EQ(declaration.formatWithSecretsOneLine(), formatted_declaration_text);
     EXPECT_EQ(
         DataTypeFactory::instance().get(declaration.getType())->getName(),
         "Tuple(items Array(Tuple(id UInt64, text String)), state Enum8('ok' = 1))");
@@ -148,7 +153,7 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
     restored.name = declaration.name;
     restored.setType(dataTypeToAST(logical_type));
     applyCodecDescriptionToAST(restored, logical_type, codec);
-    EXPECT_EQ(restored.formatWithSecretsOneLine(), declaration_text);
+    EXPECT_EQ(restored.formatWithSecretsOneLine(), formatted_declaration_text);
 
     const auto removal = parseAlterColumnDeclaration("c Tuple(id UInt64 REMOVE CODEC, text String)");
     const auto & removal_tuple = removal->as<ASTColumnDeclaration &>().getType()->as<ASTTupleDataType &>();
@@ -158,7 +163,7 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
     ASSERT_TRUE(removal_operation);
     EXPECT_EQ(removal_operation->kind, TupleElementCodecOperationKind::Remove);
     EXPECT_FALSE(removal_operation->getCodec());
-    EXPECT_EQ(removal->formatWithSecretsOneLine(), "c Tuple(id UInt64 REMOVE CODEC, text String)");
+    EXPECT_EQ(removal->formatWithSecretsOneLine(), "`c` Tuple(id UInt64 REMOVE CODEC, text String)");
     EXPECT_EQ(removal->clone()->getTreeHash(false), removal->getTreeHash(false));
 }
 
@@ -207,6 +212,36 @@ TEST(ColumnCodecDescription, DormantDeclarationKeepsImplicitParameters)
     codec.erase(CodecPath{"b"});
     codec = validateColumnCodecDescription(codec, logical_type, CodecValidationSettings::trusted());
     EXPECT_EQ(codec.getRoot()->formatWithSecretsOneLine(), "CODEC(Delta(8))");
+}
+
+TEST(ColumnCodecDescription, StructuralIntrospectionPreservesSymbolicDefault)
+{
+    const auto parsed = parseColumnDeclaration(
+        "payload Tuple(a Array(UInt64) CODEC(Delta, Default))");
+    const auto & declaration = parsed->as<ASTColumnDeclaration &>();
+    const auto logical_type = DataTypeFactory::instance().get(declaration.getType());
+    const auto codec = codecDescriptionFromAST(declaration, logical_type, CodecValidationSettings::trusted());
+    const ColumnCodecResolver resolver(
+        codec,
+        logical_type,
+        NameAndTypePair(declaration.name, logical_type),
+        nullptr);
+
+    bool found_array_offsets = false;
+    IDataType::forEachSubcolumn(
+        [&](const auto & path, const auto & name, const auto &)
+        {
+            if (name != "a.size0")
+                return;
+
+            found_array_offsets = true;
+            const auto resolved = resolver.resolve(path);
+            EXPECT_TRUE(resolved.stream.structural);
+            ASSERT_TRUE(resolved.codec);
+            EXPECT_EQ(resolved.codec->formatWithSecretsOneLine(), "CODEC(Default)");
+        },
+        ISerialization::SubstreamData(logical_type->getDefaultSerialization()).withType(logical_type));
+    EXPECT_TRUE(found_array_offsets);
 }
 
 TEST(ColumnCodecDescription, VersionedColumnsMetadata)
