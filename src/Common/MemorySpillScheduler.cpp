@@ -237,4 +237,3 @@ IProcessor * MemorySpillScheduler::selectSpilledProcessor(
     return top_processor;
 }
 }
-
