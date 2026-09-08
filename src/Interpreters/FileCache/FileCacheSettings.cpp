@@ -141,7 +141,11 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
 
     result.add(
         ColumnDescription(
-            "current_size", std::make_shared<DataTypeUInt64>(), "Current cache size"));
+            "current_size",
+            std::make_shared<DataTypeUInt64>(),
+            "Current cache size. By default this is the sum of the reserved sizes of the cache file segments. "
+            "If `use_real_disk_size` is enabled for this cache, the reservations are accounted in filesystem "
+            "block-aligned units instead, so the value approximates the space the cache occupies on disk"));
     result.add(
         ColumnDescription(
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
