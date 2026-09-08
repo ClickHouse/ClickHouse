@@ -1,0 +1,8 @@
+[Event "Variation Escape"]
+[White "Alice"]
+[Black "Bob"]
+[Result "1-0"]
+
+1.e4 (1... c5
+% an escape line with a ) parenthesis, ignored to the end of the line
+2.Nf3) e5 1-0

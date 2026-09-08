@@ -194,7 +194,9 @@ private:
 
         while (!in.eof() && depth > 0)
         {
-            if (*in.position() == '{')
+            if (isEscapeLine(in))
+                skipLineComment(in);
+            else if (*in.position() == '{')
                 skipBlockComment(in);
             else if (*in.position() == ';')
                 skipLineComment(in);
@@ -416,8 +418,15 @@ private:
 
         game.has_moves = !game.moves.empty();
 
-        if (game.moves.empty() && game.result.empty())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid PGN game: missing moves and result");
+        if (game.result.empty())
+        {
+            if (game.moves.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid PGN game: missing moves and result");
+
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Invalid PGN game: the movetext has no game termination marker and there is no 'Result' tag");
+        }
 
         return true;
     }
@@ -615,7 +624,8 @@ expression of the target table is applied to it. An Elo rating that the file spe
 `?` or `-`) is reported as absent as well; a rating that is neither a number nor one of those is an error.
 When the `Result` tag is missing, the result is taken from the game termination marker of the move text.
 A `Result` tag whose value is not one of `1-0`, `0-1`, `1/2-1/2` or `*` is an error, and so is a game
-termination marker that contradicts the game result.
+termination marker that contradicts the game result. A game that has neither a `Result` tag nor a game
+termination marker is an error as well, because the `result` column is always one of the four values above.
 
 ## Example usage {#example-usage}
 
