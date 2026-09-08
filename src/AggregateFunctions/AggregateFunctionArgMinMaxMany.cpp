@@ -466,6 +466,15 @@ A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
         {
             "Basic usage",
             R"(
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('intern', 500), ('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argMaxMany(2)(user, salary) FROM salary;
             )",
             R"(
@@ -523,11 +532,20 @@ A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
         {
             "Basic usage",
             R"(
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('intern', 500), ('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argMinMany(2)(user, salary) FROM salary;
             )",
             R"(
 ┌─argMinMany(2)(user, salary)─┐
-│ ['worker','intern']         │
+│ ['intern','worker']         │
 └─────────────────────────────┘
             )"
         }
