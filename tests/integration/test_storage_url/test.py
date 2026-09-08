@@ -690,6 +690,17 @@ def test_url_archive_path_braces_are_expanded_without_index_listing():
     assert "No such file: data/archive_braces/missing.zip" in error
 
 
+def test_url_cluster_archive_processing_modes_do_not_duplicate_members():
+    source = "http://resolver:8087/data/multi_member_archive.zip :: *.tsv"
+    for process_on_multiple_nodes in (0, 1):
+        result = node1.query(
+            "SELECT count(), sum(x), uniqExact(_path) FROM urlCluster("
+            f"'test_cluster_two_shards', '{source}', 'TSV', 'x UInt64') "
+            f"SETTINGS cluster_function_process_archive_on_multiple_nodes={process_on_multiple_nodes}"
+        )
+        assert result.strip() == "2\t3\t2"
+
+
 def test_url_archive_without_url_wildcards():
     for archive_name in ("simple_archive.zip", "simple_archive.tar", "simple_archive.tar.gz"):
         archive_url = f"http://resolver:8087/data/{archive_name} :: eod.csv"

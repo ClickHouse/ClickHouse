@@ -305,6 +305,9 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     ClusterPtr cluster,
     StorageMetadataPtr storage_metadata_snapshot) const
 {
+    const bool send_over_whole_archive
+        = !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
+
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),
@@ -318,8 +321,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         hive_partition_columns_to_read_from_file_path,
         nullptr,
         local_context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/false,
-        /*skip_object_metadata=*/true);
+        /* ignore_archive_globs */ send_over_whole_archive,
+        /* skip_object_metadata */ true);
 
     if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
     {
@@ -347,7 +350,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
         iterator,
         std::move(ids_of_hosts),
-        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
+        send_over_whole_archive);
 
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
