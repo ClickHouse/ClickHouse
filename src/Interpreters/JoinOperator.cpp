@@ -305,8 +305,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
     /// `spillCodecAuthorizationMustBeSerialized`.
-    /// The setting was added in serialization version 10. Older workers cannot safely execute a plan that
-    /// can spill with an experimental codec because they would silently lose the opt-in.
+    /// Older workers cannot safely execute a plan that can spill with a gated codec, because they would
+    /// silently lose the opt-in.
     if (spillCodecAuthorizationMustBeSerialized(
             canSpillToTemporaryFiles(join_operator), spill_codec_authorized, temporary_files_codec))
     {
@@ -660,6 +660,14 @@ bool JoinOperator::buildsMixedJoinExpression() const
             continue;
 
         auto [op, lhs, rhs] = condition.asBinaryPredicate();
+
+        /// A condition over both inputs that is not one of the binary join operators - e.g.
+        /// `startsWith(l.s, r.p)` - can be claimed neither as a hash-join key nor as the ASOF key, so it
+        /// does become part of the mixed join expression. `asBinaryPredicate` reports such a condition as
+        /// `Unknown` with null operands, which must not be inspected.
+        if (op == JoinConditionOperator::Unknown)
+            return true;
+
         const bool operands_are_cross_side = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
 
         /// Claimed as a hash-join key (`addJoinPredicatesToTableJoin`).
