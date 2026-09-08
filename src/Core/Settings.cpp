@@ -2262,9 +2262,11 @@ See also:
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
 )", 0) \
     DECLARE(Bool, log_query_plans, false, R"(
-Capture the query plan that was actually executed, together with per-step runtime statistics: the plan tree, the expressions behind each step, and per-step rows, bytes, time and parallelism — the same information [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze) shows, but taken from an execution that already happened rather than from running the query a second time.
+Write the query plan that was executed, together with its per-step runtime statistics, to the `query_plan` column of [`system.query_log`](/reference/system-tables/query_log). The column has the `JSON` type, so the statistics are stored as numbers and can be aggregated by a query rather than only read.
 
-Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured.
+The plan carries the same information [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze) shows — the tree of steps, what each step does, and per-step rows, bytes, wall-clock time and parallelism — but taken from an execution that already happened, rather than from running the query a second time.
+
+Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured, and only where the row itself is written, so [`log_queries`](/reference/settings/session-settings/log#log_queries) must also be enabled. A query that failed during execution is captured with the plan it was running but without statistics, which are collected when the pipeline is finalized — a point a failing query never reaches. The column is empty on `QueryStart` rows, because no plan exists yet when they are written.
 
 Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected.
 
@@ -2272,6 +2274,7 @@ It also causes step descriptions produced by plan optimizations (for example mer
 
 See also:
 
+- [`system.query_log`](/reference/system-tables/query_log)
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
 )", 0) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
