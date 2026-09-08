@@ -10,12 +10,18 @@
 # Asserted from the transform's own trace, the way the other lazy FINAL tests assert theirs. Only the
 # presence of the line is checked: how many granules it drops depends on the granularity the test
 # randomizer picks, while being consulted at all is the property under test.
+#
+# The analyzer is requested explicitly, as every other lazy FINAL test does: without it
+# `optimizeLazyFinal` does not run at all, so `LazyFinalKeyAnalysisTransform` never reaches index
+# analysis and the assertion below has nothing to observe.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "
+settings="--enable_analyzer=1"
+
+$CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE IF EXISTS t_lazy_final_text_index;
     CREATE TABLE t_lazy_final_text_index
     (
@@ -39,15 +45,15 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 echo "-- correctness does not depend on lazy FINAL"
-$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
-$CLICKHOUSE_CLIENT -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0"
+$CLICKHOUSE_CLIENT $settings -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
+$CLICKHOUSE_CLIENT $settings -q "SELECT count(), uniqExact(m['k']) FROM t_lazy_final_text_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0"
 
 echo "-- the text index is consulted for the set the query owns"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT $settings -q "
     SELECT count() FROM t_lazy_final_text_index FINAL WHERE status = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0
 " --send_logs_level='debug' 2>&1 \
     | grep -c -F 'LazyFinalKeyAnalysisTransform: Index `idx_keys` has dropped' \
     | sed 's/^0$/no/; s/^[1-9][0-9]*$/yes/'
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_text_index"
+$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_final_text_index"
