@@ -211,6 +211,14 @@ inline const Configuration & configuration()
     return result;
 }
 
+/// The catalogue is incomplete, including publishers reached through callback destructors.
+/// Standalone adapters may use paged storage; process counters must remain dense.
+inline void requireDenseProcessCounters()
+{
+    if (configuration().mode != Mode::Dense)
+        COUNTER_EXPERIMENT_FAIL("Counter experiment: paged process counters are disabled pending the nonallocating publisher audit", 78);
+}
+
 inline Mode kind(const Count * pointer) noexcept
 {
     return static_cast<Mode>(reinterpret_cast<uintptr_t>(pointer) & 3);

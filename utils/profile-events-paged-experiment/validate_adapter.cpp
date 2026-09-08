@@ -275,6 +275,11 @@ int main(int argc, char ** argv)
         }
         return 0;
     }
+    if (test == "process_storage")
+    {
+        Experiment::requireDenseProcessCounters();
+        return 0;
+    }
     if (test == "configuration")
         return 0;
     Owner original;

@@ -1,7 +1,7 @@
 #pragma once
 
 /// Initial audited nonallocating events; legacy dynamic/destructor publishers still require an audit.
-/// Frequency-based layouts must reserve these events before exposing compact counter objects.
+/// Standalone layouts reserve this subset; it does not authorize paged process-counter storage.
 #define APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M) \
     M(QueryProfilerConcurrencyOverruns) \
     M(QueryProfilerSignalOverruns) \

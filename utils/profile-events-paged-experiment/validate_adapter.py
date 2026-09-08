@@ -102,7 +102,11 @@ def main():
         env.update(CH_COUNTER_STORAGE=backend, CH_COUNTER_LAYOUT=str(layout), CH_COUNTER_HOT=str(hot), CH_COUNTER_PAGE='32')
         diagnostics = out/(name + '.bin')
         env['CH_COUNTER_DIAGNOSTICS'] = str(diagnostics)
-        env.update(overrides or {})
+        for key, value in (overrides or {}).items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
         with (out/(name + '.log')).open('w') as log:
             process = subprocess.run([str(binary), test], env=env, stdout=log, stderr=subprocess.STDOUT)
         text = (out/(name + '.log')).read_text()
@@ -144,6 +148,11 @@ def main():
             run(f'actual_layout_hot{hot}', hot=hot, test='catalogue_layout')
             run(f'actual_reserved_hot{hot}', hot=hot, test='reserved_updates')
             run(f'actual_fault_hot{hot}', hot=hot, test='allocation_failure')
+    run('process_dense', backend='dense', test='process_storage')
+    run('process_default_dense', test='process_storage', overrides={'CH_COUNTER_STORAGE': None})
+    for hot in [128, 1562]:
+        run(f'process_paged_rejected_hot{hot}', hot=hot, test='process_storage', code=78,
+            message='paged process counters are disabled pending the nonallocating publisher audit')
     run('reservation_layout', test='reservations')
     for backend in ['dense', 'paged']:
         for hot in [128, 1562]:

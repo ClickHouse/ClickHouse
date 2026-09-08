@@ -1798,8 +1798,12 @@ ALWAYS_INLINE inline std::atomic_ref<Count> cell(Count * counters, size_t cpu, E
     return std::atomic_ref<Count>(counters[cpu * per_cpu_stride + event]);
 }
 
-ALWAYS_INLINE inline AlignedCounters allocateCounters(size_t n)
+ALWAYS_INLINE inline AlignedCounters allocateCounters(size_t n, [[maybe_unused]] VariableContext level)
 {
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (level == VariableContext::Process)
+        PagedExperiment::requireDenseProcessCounters();
+#endif
     return AlignedCounters(new (std::align_val_t{DB::CH_CACHE_LINE_SIZE}) Count[n] {});
 }
 
@@ -1877,24 +1881,14 @@ Counters::Counters(VariableContext level_, Counters * parent_)
     /// other levels stay single-row (`cpus == 0`). `cpus` is read once and the allocation is
     /// sized from it, so the layout and the row count cannot disagree.
     : cpus(level_ == VariableContext::User ? user_counters_cpus.load(std::memory_order_relaxed) : 0)
-#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
-    , counters_holder(level_ == VariableContext::Process
-            && PagedExperiment::configuration().mode != PagedExperiment::Mode::Dense
-        ? AlignedCounters{} : allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
-#else
-    , counters_holder(allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
-#endif
+    , counters_holder(allocateCounters(cellCount(cpus.load(std::memory_order_relaxed)), level_))
     , parent(parent_)
     , level(level_)
 {
     counters = counters_holder.get();
 #if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
     if (level == VariableContext::Process)
-    {
-        if (!counters)
-            counters = PagedExperiment::create();
         PagedExperiment::constructed(counters, sizeof(Counters));
-    }
 #endif
 }
 
