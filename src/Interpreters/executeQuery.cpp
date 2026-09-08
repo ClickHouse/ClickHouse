@@ -102,6 +102,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingsSecrets.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -551,7 +552,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
-        elem.formatted_query = query_ast->formatWithSecretsOneLine();
+        elem.formatted_query = query_ast->formatForLogging();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
@@ -599,7 +600,7 @@ QueryLogElement logQueryStart(
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
             if (settings[Setting::log_query_settings])
-                elem.query_settings = settings.changedToFlatMap();
+                elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
             else if (settings[Setting::log_query_settings].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
@@ -812,7 +813,7 @@ static void logQueryFinishImpl(
             /// Unset unless the QUERY_START row was logged and built them already. Settings cannot change
             /// while the query runs, so building them here gives the same values.
             if (settings[Setting::log_query_settings] && !elem.query_settings)
-                elem.query_settings = settings.changedToFlatMap();
+                elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (auto query_log = context->getQueryLog())
                 query_log->add([&](QueryLogElement & e) { e = elem; });
@@ -843,7 +844,9 @@ static void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+                String value = convertFieldToString(change.value);
+                CoreSettings::maskSettingValue(change.name, change.value, value);
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), value);
             }
         }
         query_span->finish(time);
@@ -952,7 +955,7 @@ void logQueryException(
         && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
     {
         if (settings[Setting::log_query_settings] && !elem.query_settings)
-            elem.query_settings = settings.changedToFlatMap();
+            elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
         if (auto query_log = context->getQueryLog())
             query_log->add([&](QueryLogElement & e) { e = elem; });
@@ -1007,7 +1010,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = ast->formatWithSecretsOneLine();
+            elem.formatted_query = ast->formatForLogging();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1032,7 +1035,7 @@ void logExceptionBeforeStart(
         elem.tid = txn->tid;
 
     if (settings[Setting::log_query_settings])
-        elem.query_settings = settings.changedToFlatMap();
+        elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
     if (settings[Setting::calculate_text_stack_trace])
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
