@@ -59,6 +59,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    QueryPlanStepPtr clone() const override;
+
     const JoinPtr & getJoin() const { return join; }
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     void setLogicalJoinInfo(LogicalJoinInfo && logical_join_info);
@@ -131,6 +133,13 @@ public:
 
 /// Special step for the case when Join is already filled.
 /// For StorageJoin and Dictionary.
+///
+/// Intentionally does not implement `clone` (unlike `JoinStep`): `join` wraps state that is
+/// already filled from the storage, and `IJoin::clone` constructs an empty join to be refilled
+/// rather than copying the filled state, while sharing the pointer between two plans would let
+/// two executions accumulate per-run lookup state (e.g. join-used flags of RIGHT/FULL joins).
+/// `IN`-subquery plans with this step take the destructive fallback in
+/// `FutureSetFromSubquery::buildOrderedSetInplace`.
 class FilledJoinStep : public ITransformingStep
 {
 public:

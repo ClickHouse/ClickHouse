@@ -24,6 +24,8 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
 

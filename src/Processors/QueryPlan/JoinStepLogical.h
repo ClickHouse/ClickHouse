@@ -244,6 +244,10 @@ private:
 };
 
 
+/// Intentionally does not implement `clone` (unlike `JoinStep`): it owns `prepared_join_storage`,
+/// a live handle into `StorageJoin` or an `IKeyValueEntity`, whose sharing semantics between two
+/// executing plans are not defined, and its own `child_plan`. `IN`-subquery plans with this step
+/// take the destructive fallback in `FutureSetFromSubquery::buildOrderedSetInplace`.
 class JoinStepLogicalLookup final : public ISourceStep
 {
 public:

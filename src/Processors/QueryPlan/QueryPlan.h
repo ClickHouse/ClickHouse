@@ -203,7 +203,7 @@ public:
 
     /// Extract subplan from plan from the root node.
     /// The root node and all the children will be removed from the nodes.
-    static QueryPlan extractSubplan(Node * root, Nodes & nodes);
+    static QueryPlan extractSubplan(Node * root, Nodes & nodes, size_t max_threads = 0, bool concurrency_control = false);
 
     Node * getRootNode() const { return root; }
     void replaceRootNode(Node * new_root) { root = new_root; }

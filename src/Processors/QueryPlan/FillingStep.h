@@ -26,6 +26,8 @@ public:
 
     const SortDescription & getSortDescription() const override { return sort_description; }
 
+    QueryPlanStepPtr clone() const override;
+
 private:
     void updateOutputHeader() override;
 
