@@ -9,7 +9,9 @@ enum class VariableContext : uint8_t
     Global = 0,
     User,           /// Group of processes
     Process,        /// For example, a query or a merge
+    Scope,          /// A scope for piece of a process, it tracks all jobs scheduled in thread pools from this scope
     Thread,         /// A thread of a process
+
 
     Max, /// size of the enum, not a real level
 };

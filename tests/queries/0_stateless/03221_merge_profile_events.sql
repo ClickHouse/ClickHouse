@@ -24,7 +24,10 @@ SELECT
     ProfileEvents['MergeHorizontalStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeHorizontalStageExecuteMilliseconds'] > 0,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
-FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_merge_profile_events_1' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
+-- `table_uuid` pins the row to THIS run's table incarnation (`DROP`/`CREATE` gives a fresh UUID),
+-- so a stale `MergeParts` row from a previous attempt in the same database cannot satisfy the check.
+FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_merge_profile_events_1' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1'
+  AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_merge_profile_events_1');
 
 DROP TABLE IF EXISTS t_merge_profile_events_1;
 
@@ -54,7 +57,10 @@ SELECT
     ProfileEvents['MergeVerticalStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeVerticalStageExecuteMilliseconds'] > 0,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
-FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_merge_profile_events_2' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
+-- `table_uuid` pins the row to THIS run's table incarnation (`DROP`/`CREATE` gives a fresh UUID),
+-- so a stale `MergeParts` row from a previous attempt in the same database cannot satisfy the check.
+FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_merge_profile_events_2' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1'
+  AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_merge_profile_events_2');
 
 DROP TABLE IF EXISTS t_merge_profile_events_2;
 
@@ -85,9 +91,18 @@ SELECT
     ProfileEvents['MergeVerticalStageExecuteMilliseconds'] > 0,
     ProfileEvents['MergeProjectionStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeProjectionStageExecuteMilliseconds'] > 0,
-    ProfileEvents['MergeExecuteMilliseconds'] <= duration_ms,
-    ProfileEvents['MergeTotalMilliseconds'] <= duration_ms,
-    ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
-FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_merge_profile_events_3' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
+    -- The merge time profile events are now accumulated per `ThreadGroup` over all participating
+    -- threads (the merge thread itself plus any thread-pool / nested-task threads it spawns), so
+    -- they are cumulative thread time and are no longer bounded by the wall-clock `duration_ms` of
+    -- the operation; for a parallel merge the cumulative time can even exceed `duration_ms`. We keep
+    -- the internal invariant that the busy execution time is a subset of the total merge time
+    -- instead of the previous (now incorrect) `MergeExecuteMilliseconds <= duration_ms` and
+    -- `MergeTotalMilliseconds <= duration_ms` checks.
+    ProfileEvents['MergeExecuteMilliseconds'] <= ProfileEvents['MergeTotalMilliseconds'],
+    ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0
+-- `table_uuid` pins the row to THIS run's table incarnation (`DROP`/`CREATE` gives a fresh UUID),
+-- so a stale `MergeParts` row from a previous attempt in the same database cannot satisfy the check.
+FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_merge_profile_events_3' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1'
+  AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_merge_profile_events_3');
 
 DROP TABLE IF EXISTS t_merge_profile_events_3;

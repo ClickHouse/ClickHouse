@@ -16,6 +16,7 @@ namespace DB
     M(AST_FUZZER, "ASTFuzzer") \
     M(ASYNC_COPY, "AsyncCopy") \
     M(ASYNC_INSERT_QUEUE, "AsyncInsertQue") \
+    M(ASYNC_INSERT_FLUSH, "AsyncInsertFlu") \
     M(ASYNC_LOGGER, "AsyncLogger") \
     M(ASYNC_METRICS, "AsyncMetrics") \
     M(ASYNC_TABLE_LOADER, "AsyncTblLoader") \
@@ -98,6 +99,7 @@ namespace DB
     M(MERGE_MUTATE, "MergeMutate") \
     M(MERGETREE_COMMON, "Common") \
     M(MERGETREE_FETCH, "Fetch") \
+    M(MERGETREE_ATTACH, "Attach") \
     M(MERGETREE_FETCH_PARTITION, "FetchPartition") \
     M(MERGETREE_FREEZE_PART, "FreezePart") \
     M(MERGETREE_INDEX, "MergeTreeIndex") \
@@ -109,6 +111,7 @@ namespace DB
     M(MERGETREE_PREWARM_CACHE, "PrewarmCaches") \
     M(MERGETREE_READ, "MergeTreeRead") \
     M(MERGETREE_VECTOR_SIM_INDEX, "VectorSimIndex") \
+    M(MERGETREE_WRITE_PART, "WritePart") \
     M(METRIC_LOG, "MetricLog") \
     M(METRICS_TRANSMITTER, "MetricsTransmtr") \
     M(MSG_BROKER_SCHEDULE_POOL, "BgMBSchPool") \

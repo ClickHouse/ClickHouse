@@ -51,6 +51,7 @@ const ContextDataType::Values TraceLogElement::context_values =
     {"Global", static_cast<Int8>(VariableContext::Global)},
     {"User", static_cast<Int8>(VariableContext::User)},
     {"Process", static_cast<Int8>(VariableContext::Process)},
+    {"Scope", static_cast<Int8>(VariableContext::Scope)},
     {"Thread", static_cast<Int8>(VariableContext::Thread)},
     /// Only for MemoryTrackerBlockerInThread, Max means inactive.
     {"Max", static_cast<Int8>(VariableContext::Max)},
@@ -65,6 +66,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         "`Global` represents server context. "
         "`User` represents user/merge context. "
         "`Process` represents process (i.e. query) context. "
+        "`Scope` represents a scope (a piece of a process that tracks jobs scheduled in thread pools) context. "
         "`Thread` represents thread (thread of particular process) context. "
         "`Max` this is a special value means that memory tracker is not blocked (for blocked_context column). ";
 

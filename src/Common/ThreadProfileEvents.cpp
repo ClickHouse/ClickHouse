@@ -520,6 +520,11 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         disablePerfEvent(fd);
     }
 
+    updateProfileEvents(profile_events);
+}
+
+void PerfEventsCounters::updateProfileEvents(ProfileEvents::Counters & profile_events)
+{
     // Read the counter values.
     PerfEventValue current_values[NUMBER_OF_RAW_EVENTS];
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)

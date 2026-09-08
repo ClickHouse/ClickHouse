@@ -1,0 +1,13 @@
+# Note, this file is ignorelist file [1] not suppressions [2].
+#
+#  [1]: https://clang.llvm.org/docs/SanitizerSpecialCaseList.html
+#  [2]: https://github.com/google/sanitizers/wiki/MemorySanitizer
+#
+[memory]
+# The sqids-cpp blocklist header constructs/destructs global std::string objects
+# during static initialization. With -fsanitize-memory-use-after-dtor, the
+# destructor poisons those strings' memory. When the Azure CurlConnectionPool
+# global constructor later calls curl_global_init -> OPENSSL_init_ssl, OpenSSL
+# loads the uninstrumented FIPS provider (/etc/ssl/fips.so) which reads memory
+# that overlaps with the poisoned region, triggering a false positive.
+src:*/contrib/sqids-cpp/include/sqids/blocklist.hpp

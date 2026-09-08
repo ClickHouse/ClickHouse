@@ -1,0 +1,3 @@
+rows	2
+flushed insert attributed to the inserting user	1	flushed insert wrote rows	1
+flush attributed to the flushing user	1	flush rolled up the insert counters	1

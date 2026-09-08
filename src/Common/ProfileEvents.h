@@ -149,6 +149,11 @@ namespace ProfileEvents
         /// Every single value is fetched atomically, but not all values as a whole.
         Snapshot getPartiallyAtomicSnapshot() const;
 
+        /// Adds a snapshot to this counter only, without propagating it to its parent.
+        /// Used for accounting work from a nested query in its enclosing query group without
+        /// attributing that work to the enclosing query's user counters.
+        void addSnapshotLocally(const Snapshot & snapshot);
+
         /// Reset all counters to zero and reset parent.
         void reset();
 

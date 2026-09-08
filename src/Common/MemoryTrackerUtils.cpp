@@ -11,8 +11,13 @@ std::optional<UInt64> getMostStrictAvailableSystemMemory()
     MemoryTracker * query_memory_tracker = nullptr;
     if (query_memory_tracker = DB::CurrentThread::getMemoryTracker(); !query_memory_tracker)
         return {};
-    /// query-level memory tracker
-    if (query_memory_tracker = query_memory_tracker->getParent(); !query_memory_tracker)
+    /// query-level memory tracker; Scope-level trackers are accounting roll-ups inside
+    /// a query (see ThreadGroup::createForScope), not the query itself, so skip them.
+    do
+    {
+        query_memory_tracker = query_memory_tracker->getParent();
+    } while (query_memory_tracker && query_memory_tracker->level == VariableContext::Scope);
+    if (!query_memory_tracker)
         return {};
 
     Int64 available = std::numeric_limits<Int64>::max();
@@ -52,9 +57,11 @@ std::optional<UInt64> getCurrentQueryHardLimit()
 
 Int64 getCurrentQueryMemoryUsage()
 {
-    /// Use query-level memory tracker
+    /// Use query-level memory tracker, skipping the Thread and Scope levels below it
+    /// (Scope groups are accounting roll-ups inside a query, see ThreadGroup::createForScope).
     auto * current_memory_tracker = DB::CurrentThread::getMemoryTracker();
-    while (current_memory_tracker && current_memory_tracker->level == VariableContext::Thread)
+    while (current_memory_tracker
+        && (current_memory_tracker->level == VariableContext::Thread || current_memory_tracker->level == VariableContext::Scope))
         current_memory_tracker = current_memory_tracker->getParent();
 
     if (!current_memory_tracker || current_memory_tracker->level != VariableContext::Process)
@@ -70,7 +77,10 @@ std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery()
     if (!thread_memory_tracker || thread_memory_tracker->level != VariableContext::Thread)
         return nullptr;
 
+    /// Skip Scope-level trackers between the thread and the query (see ThreadGroup::createForScope).
     auto * query_memory_tracker = thread_memory_tracker->getParent();
+    while (query_memory_tracker && query_memory_tracker->level == VariableContext::Scope)
+        query_memory_tracker = query_memory_tracker->getParent();
     if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
         return nullptr;
 
