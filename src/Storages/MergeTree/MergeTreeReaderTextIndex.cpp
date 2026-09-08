@@ -948,8 +948,9 @@ bool useRankCursors(const PhraseTerms & terms)
     UInt64 total_cardinality = 0;
     for (const auto * info : terms.unique_infos)
     {
-        /// Postings without a block index (embedded, raw or uncompressed) cannot be walked by rank.
-        if (!(info->header & PostingsSerialization::Flags::HasBlockIndex))
+        /// A flat list (embedded or raw) is walked by index; anything else needs the block index to seek in.
+        const bool is_flat = info->header & PostingsSerialization::Flags::RawPostings;
+        if (!is_flat && !(info->header & PostingsSerialization::Flags::HasBlockIndex))
             return false;
 
         min_cardinality = std::min<UInt64>(min_cardinality, info->cardinality);
@@ -1193,7 +1194,19 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
     cursors.reserve(num_tokens);
     for (size_t u = 0; u < num_tokens; ++u)
     {
-        cursors.emplace_back(getPostingsStream(unique_tokens[u]), *unique_infos[u]);
+        const auto & token_info = *unique_infos[u];
+        if (token_info.header & PostingsSerialization::Flags::RawPostings)
+        {
+            const PostingList postings = readAllPostingsForToken(unique_tokens[u], token_info);
+            std::vector<UInt32> docs(postings.cardinality());
+            postings.toUint32Array(docs.data());
+            cursors.emplace_back(std::move(docs));
+        }
+        else
+        {
+            cursors.emplace_back(getPostingsStream(unique_tokens[u]), token_info);
+        }
+
         if (!cursors.back().valid())
             return {};
     }

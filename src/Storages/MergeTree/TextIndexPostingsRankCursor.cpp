@@ -47,6 +47,16 @@ TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(MergeTreeReaderStream &
     }
 }
 
+TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(std::vector<UInt32> docs)
+{
+    is_flat = true;
+    decoded_doc_ids = std::move(docs);
+    decoded_count = decoded_doc_ids.size();
+    is_valid = decoded_count != 0;
+    if (is_valid)
+        current_doc_id = decoded_doc_ids[0];
+}
+
 TextIndexPostingsRankCursor::SegmentHeader TextIndexPostingsRankCursor::readSegmentHeader(size_t segment_idx)
 {
     stream->seekToMark({info->offsets[segment_idx], 0});
@@ -219,6 +229,12 @@ void TextIndexPostingsRankCursor::next()
         return;
     }
 
+    if (is_flat)
+    {
+        is_valid = false;
+        return;
+    }
+
     if (current_block + 1 < segment.blockCount())
     {
         decodeBlock(current_block + 1);
@@ -261,6 +277,19 @@ void TextIndexPostingsRankCursor::advance(UInt32 target)
 {
     if (!is_valid || current_doc_id >= target)
         return;
+
+    if (is_flat)
+    {
+        const auto end = decoded_doc_ids.begin() + decoded_count;
+        const auto it = std::lower_bound(decoded_doc_ids.begin(), end, target);
+        is_valid = it != end;
+        if (is_valid)
+        {
+            index_in_block = static_cast<size_t>(it - decoded_doc_ids.begin());
+            current_doc_id = *it;
+        }
+        return;
+    }
 
     /// info->ranges bounds each segment's row ids, so the covering segment is found without reading payloads.
     for (size_t idx = current_segment_idx; idx < total_segments; ++idx)

@@ -16,6 +16,8 @@ class TextIndexPostingsRankCursor
 {
 public:
     TextIndexPostingsRankCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_);
+    /// Over a flat posting list (embedded or raw), where a document's rank is its index.
+    explicit TextIndexPostingsRankCursor(std::vector<UInt32> docs);
 
     bool valid() const { return is_valid; }
     UInt32 docId() const { return current_doc_id; }
@@ -72,6 +74,7 @@ private:
     UInt64 block_first_rank = 0;
     UInt32 current_doc_id = 0;
     bool is_valid = false;
+    bool is_flat = false;
 
     std::unique_ptr<IPostingListBlockCodec> block_codec;
     std::vector<UInt32> decoded_doc_ids;
