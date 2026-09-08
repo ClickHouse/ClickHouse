@@ -808,7 +808,7 @@ struct ToTime64TransformUnsigned
         /// Clamped in the source domain when the source is wider than `time_t`: narrowing a 128- or
         /// 256-bit value first would let a value far above the range pass the clamp as an in-range
         /// timestamp. The `UInt64` comparison below is unsigned for the same reason.
-        time_t clamped;
+        time_t clamped = 0;
         if constexpr (is_big_int_v<FromType>)
             clamped = from > FromType(MAX_TIME_TIMESTAMP) ? MAX_TIME_TIMESTAMP : static_cast<time_t>(from);
         else
@@ -840,7 +840,7 @@ struct ToTime64TransformSigned
         /// For Saturate / Ignore overflow modes the value still has to be clamped to the representable
         /// Time64 range. Otherwise two casts can produce Time64 values that render identically as e.g.
         /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
-        Int64 clamped;
+        Int64 clamped = 0;
         if constexpr (is_big_int_v<FromType>)
         {
             /// Compared in the source domain: the cast to `Int64` would otherwise truncate a 128- or
