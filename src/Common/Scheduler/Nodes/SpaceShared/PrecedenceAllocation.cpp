@@ -69,7 +69,7 @@ ISchedulerNode * PrecedenceAllocation::getChild(const String & child_name)
 
 ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
-    // The victim is always the least-precedence running child (the tail of `running_children`).
+    // Prefer unprotected victims among eligible children, retaining precedence within each class.
     // Cases to consider:
     // 1. Killer is not part of this node (`&killer != increase`):
     //    - the decision to kill inside this subtree was already taken by a parent.
@@ -92,6 +92,9 @@ ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseReques
         }
     }
 
+    ResourceAllocation * protected_victim = nullptr;
+    String protected_details;
+
     /// Search all policy-eligible children from lowest to highest precedence. The killer branch is
     /// derived from the hierarchy rather than the currently visible increase, because suction runs
     /// while that increase is intentionally parked.
@@ -105,10 +108,24 @@ ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseReques
             if (victim_higher || (victim_equal && killer.kind == IncreaseRequest::Kind::Pending))
                 continue;
         }
-        if (ResourceAllocation * victim = victim_child.selectAllocationToKill(killer, limit, details))
-            return victim;
+        String candidate_details = details;
+        if (ResourceAllocation * victim = victim_child.selectAllocationToKill(killer, limit, candidate_details))
+        {
+            if (!victim->isProtectedFromEviction())
+            {
+                details = std::move(candidate_details);
+                return victim;
+            }
+            if (!protected_victim)
+            {
+                protected_victim = victim;
+                protected_details = std::move(candidate_details);
+            }
+        }
     }
-    return nullptr;
+    if (protected_victim)
+        details = std::move(protected_details);
+    return protected_victim;
 }
 
 void PrecedenceAllocation::approveIncrease()

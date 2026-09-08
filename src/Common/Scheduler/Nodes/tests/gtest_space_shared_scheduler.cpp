@@ -888,6 +888,84 @@ private: // interaction with the scheduler thread
 };
 
 
+static void checkProtectedSiblingSelection(bool use_precedence)
+{
+    for (bool protect_second : {false, true})
+    {
+        SCOPED_TRACE(protect_second);
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        auto limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+        std::shared_ptr<ISpaceSharedNode> policy;
+        if (use_precedence)
+            policy = std::make_shared<PrecedenceAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+        else
+            policy = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+        policy->basename = "policy";
+        auto * policy_ptr = policy.get();
+        limit->attachChild(policy);
+
+        SchedulerNodeInfo first_info;
+        if (use_precedence)
+            first_info.setPrecedence(1);
+        auto first_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, first_info);
+        first_queue->basename = "first";
+        auto * first_queue_ptr = first_queue.get();
+        policy->attachChild(first_queue);
+
+        auto second_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+        second_queue->basename = "second";
+        auto * second_queue_ptr = second_queue.get();
+        policy->attachChild(second_queue);
+        r.root_node = limit;
+        first_queue.reset();
+        second_queue.reset();
+        policy.reset();
+        limit.reset();
+        r.registerResource();
+
+        ManualAllocation first(first_queue_ptr, "first", 8000, true, protectedFromEvictionPolicy());
+        ManualAllocation second(second_queue_ptr, "second", 1000, true,
+            protect_second ? protectedFromEvictionPolicy() : ResourceAllocation::MemoryPressurePolicy{});
+
+        auto select_victim = [&](ResourceAllocation & killer, IncreaseRequest::Kind kind)
+        {
+            std::promise<ResourceAllocation *> result;
+            auto future = result.get_future();
+            t.scheduler.event_queue.enqueue([&]
+            {
+                IncreaseRequest request(killer);
+                request.prepare(3000, kind);
+                String details;
+                result.set_value(policy_ptr->selectAllocationToKill(request, 10000, details));
+            });
+            return future.get();
+        };
+
+        /// The first child wins the policy order, but protection must not hide a later eligible
+        /// unprotected victim. If all candidates are protected, retain the original fallback.
+        EXPECT_EQ(select_victim(second, IncreaseRequest::Kind::Regular), protect_second ? &first : &second);
+
+        /// A pending request still cannot cross a Fair child boundary, while Precedence allows it
+        /// to reclaim from the strictly lower-precedence first child.
+        EXPECT_EQ(select_victim(second, IncreaseRequest::Kind::Pending), use_precedence ? &first : nullptr);
+
+        /// Protection does not make a higher-precedence victim eligible for a lower-precedence request.
+        EXPECT_EQ(select_victim(first, IncreaseRequest::Kind::Regular),
+            use_precedence || protect_second ? &first : &second);
+    }
+}
+
+TEST(SchedulerSpaceShared, FairProtectionSearchesAllEligibleSiblings)
+{
+    checkProtectedSiblingSelection(false);
+}
+
+TEST(SchedulerSpaceShared, PrecedenceProtectionSearchesAllEligibleSiblings)
+{
+    checkProtectedSiblingSelection(true);
+}
+
 /// Destroy a failed pending allocation inside its notification, before the queue can continue.
 /// This makes a stale request dereference deterministic under ASan without thread timing.
 static void checkPendingAllocationDestruction(const std::function<void(AllocationQueue &, ResourceAllocation &)> & reject)

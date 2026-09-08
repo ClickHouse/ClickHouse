@@ -95,6 +95,9 @@ ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest & ki
         }
     }
 
+    ResourceAllocation * protected_victim = nullptr;
+    String protected_details;
+
     /// Search every child in reverse acquisition order. A protected or already-killed allocation
     /// in the largest child must not hide an eligible victim in a later sibling.
     for (auto it = running_children.rbegin(); it != running_children.rend(); ++it)
@@ -102,10 +105,24 @@ ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest & ki
         ISpaceSharedNode & victim_child = *it;
         if (killer.kind == IncreaseRequest::Kind::Pending && killer_child && killer_child != &victim_child)
             continue;
-        if (ResourceAllocation * victim = victim_child.selectAllocationToKill(killer, limit, details))
-            return victim;
+        String candidate_details = details;
+        if (ResourceAllocation * victim = victim_child.selectAllocationToKill(killer, limit, candidate_details))
+        {
+            if (!victim->isProtectedFromEviction())
+            {
+                details = std::move(candidate_details);
+                return victim;
+            }
+            if (!protected_victim)
+            {
+                protected_victim = victim;
+                protected_details = std::move(candidate_details);
+            }
+        }
     }
-    return nullptr;
+    if (protected_victim)
+        details = std::move(protected_details);
+    return protected_victim;
 }
 
 void FairAllocation::approveIncrease()
