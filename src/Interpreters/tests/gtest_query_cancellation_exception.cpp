@@ -85,7 +85,7 @@ TEST(QueryCancellationException, IdentityBlockerAndThreadGroup)
         Query first;
         Query second;
         auto exception = customException();
-        auto same_exception = exception;
+        auto same_exception = exception; // NOLINT(performance-unnecessary-copy-initialization) - intentionally testing copied exception identity
         auto other_exception = customException();
         auto first_group = std::make_shared<ThreadGroup>(first.context, 0);
         auto second_group = std::make_shared<ThreadGroup>(second.context, 0);
