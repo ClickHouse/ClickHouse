@@ -1,3 +1,4 @@
+#include <cmath>
 #include <limits>
 #include <base/getMemoryAmount.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -190,8 +191,11 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             return value;
         }
 
-        static Int64 getInt64(const Field & field)
+        static Int64 getInt64(const Field & field_)
         {
+            /// `CREATE WORKLOAD` keeps a number literal deferred, so resolve it to a concrete number first.
+            const Field field = field_.resolveNumberLiteral();
+
             {
                 UInt64 val = 0;
                 if (field.tryGet(val))
@@ -213,6 +217,32 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                 String val; // To handle suffixes
                 if (field.tryGet(val))
                     return parseWithSizeSuffix<Int64>(val);
+            }
+
+            /// A decimal literal too large for UInt64 resolves to a wide integer, and `1e3` resolves to
+            /// Float64. Both are numbers: an integral value is taken with the same saturation as the
+            /// UInt64 branch above, while a fractional value such as `1.5` still fails as `Bad get`.
+            switch (field.getType())
+            {
+                case Field::Types::Float64:
+                case Field::Types::UInt128:
+                case Field::Types::Int128:
+                case Field::Types::UInt256:
+                case Field::Types::Int256:
+                {
+                    Float64 value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
+                    if (std::isfinite(value) && value == std::trunc(value))
+                    {
+                        if (value >= static_cast<Float64>(std::numeric_limits<Int64>::max()))
+                            return std::numeric_limits<Int64>::max();
+                        if (value <= static_cast<Float64>(std::numeric_limits<Int64>::min()))
+                            return std::numeric_limits<Int64>::min();
+                        return static_cast<Int64>(value);
+                    }
+                    break;
+                }
+                default:
+                    break;
             }
 
             return field.safeGet<Int64>();
