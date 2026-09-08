@@ -151,6 +151,7 @@ public:
 
         bool enable_adaptive_aggregator = false;
         UInt64 adaptive_aggregator_freeze_threshold = 0;
+        UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
 
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
@@ -232,7 +233,8 @@ public:
             bool enable_parallel_single_level_merge_,
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
-            UInt64 adaptive_aggregator_freeze_threshold_);
+            UInt64 adaptive_aggregator_freeze_threshold_,
+            UInt64 adaptive_aggregator_freeze_threshold_bytes_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -325,17 +327,73 @@ public:
     /// time the last finisher assembles the merge.
     void flushPendingChunks(AdaptiveAggregationProducer & adaptive) const;
 
-    /// The production-time memory valve: claims a bounded batch of staged chunks under the
-    /// sweep lock, drains it into a producer-local table outside the lock, and writes that
-    /// table through the ordinary external machinery; a sub-floor tail accumulates in the
-    /// session's shared table instead. Producers over the trigger block on the claim
+    /// The production-time memory valve: claims batches of staged chunks bounded in records
+    /// and in bytes under the sweep lock, drains each into a producer-local table outside the
+    /// lock, and writes that table through the ordinary external machinery, until the query is
+    /// back under the threshold or only a tail too small for a part is left, which accumulates
+    /// in the session's shared table instead. Producers over the trigger block on the claim
     /// deliberately - pausing production is the backpressure that makes the bound hold.
     void drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
 
+    /// One claim of the sweep: a full batch drained into a producer-local table and written,
+    /// after which it returns true so the sweep claims again; or the tail drained into the
+    /// shared table, nothing to claim, the query under the threshold, or a declined
+    /// reservation, after which it returns false and the sweep ends.
+    bool drainStagedChunksBatchUnderMemoryPressure(
+        AdaptiveAggregationSession & shared, PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
-    /// merge goes external, spilling at the part floor as it goes, and throws if anything
+    /// merge goes external, spilling at the part bound as it goes, and throws if anything
     /// would be left behind.
     void drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) const;
+
+    /// How large a pressure-drained part may grow, how many records fill one on the states
+    /// alone, and how many detached bytes may be in flight to the writer at once. The sweeps
+    /// are the valve that holds the query under `max_bytes_before_external_group_by`, so their
+    /// own working set - the batch a sweep claims, the table it drains that batch into, the
+    /// residue the tails share and the writes in flight - is sized from that threshold instead
+    /// of from an absolute constant, or the valve costs more memory than it sheds. Without a
+    /// threshold to size against, the part bound is unlimited and the absolute ceilings stand.
+    /// The per-record charge is read from the drain table's variant, because the hash cell
+    /// of a `keys128` or `keys256` table is not that of a `UInt64` or a string key.
+    size_t adaptivePressurePartBytes() const;
+    size_t adaptiveDrainRecordBytes(AggregatedDataVariants::Type type) const;
+    size_t adaptivePressurePartRecords(AggregatedDataVariants::Type type) const;
+    size_t adaptivePressureDetachedBytesBudget() const;
+
+    /// The bytes a claimed batch is expected to occupy once drained into a table of the given
+    /// variant: the per-record cells and aggregate states of the destination table, plus the
+    /// batch's own staged bytes, which stay resident beside that table until the drain
+    /// returns. Saturating, because an absurd product only means "ask for the whole budget".
+    size_t estimateAdaptiveDrainBytes(AggregatedDataVariants::Type type, size_t records, size_t staged_bytes) const;
+
+    /// One claim of a drain, from the chunks in order starting at `begin`: the batch takes the
+    /// next chunk while the batch with it stays under both targets, and is closed before the
+    /// chunk that would take it to either, which is left for the next claim, so the table a
+    /// drain builds stays under the bound the targets were sized to. Only a first chunk that is
+    /// over a target alone is taken regardless, because a chunk is claimed whole. A claim that
+    /// reached a target, or was closed before the chunk that would have reached it, is full - a
+    /// part of its own; one that ran out of chunks is the tail.
+    struct StagedChunkClaim
+    {
+        /// One past the last chunk claimed.
+        size_t end = 0;
+        size_t records = 0;
+        size_t staged_bytes = 0;
+        bool full = false;
+    };
+    StagedChunkClaim claimStagedChunksToBound(
+        const std::vector<StagedChunkPtr> & chunks,
+        size_t begin,
+        AggregatedDataVariants::Type type,
+        size_t records_target,
+        size_t bytes_target) const;
+
+    /// For a producer back on the baseline path, which cannot free the shared drain table by
+    /// flushing its own: writes that table out regardless of the part floor, then returns query
+    /// memory sampled with none of it resident and no detached table in flight. Empty when no
+    /// producer ever froze, so there is no shared table, or when the query was cancelled.
+    std::optional<Int64> releaseAdaptiveDrainResidue(AdaptiveAggregationSession & shared) const;
 
     /** This array serves two purposes.
       *
@@ -780,10 +838,19 @@ private:
         const std::vector<MutableStagedChunkPtr> & minis,
         StagedChunk & chunk) const;
 
-    /// The single publication point: finishes the chunk (builds its preparation in place,
-    /// checks the structural invariants in debug builds) and hands it over as immutable to
-    /// the session's backlog.
+    /// The single publication point: checks the structural invariants in debug builds, cuts
+    /// the chunk at the part bound if it is over it, and enqueues the result.
     void publishStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
+
+    /// Finishes one chunk (builds its preparation in place) and hands it over as immutable to
+    /// the session's backlog.
+    void enqueueStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
+
+    /// Cuts a chunk whose drain is estimated over `adaptivePressurePartBytes` into pieces
+    /// along bucket boundaries, each estimated within the bound where a single bucket allows;
+    /// empty when the chunk fits as it is, so no copy is made in the common case.
+    std::vector<MutableStagedChunkPtr> splitStagedChunkAtPartBound(
+        const AdaptiveAggregationSession & shared, const StagedChunk & chunk) const;
 
     /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
     /// its argument columns, in the chunk's own stable storage.
@@ -1008,6 +1075,9 @@ private:
     /// dataflow statistics must describe the untruncated aggregation output (it prices the
     /// shipping term of the parallel-replicas plan, where the partial aggregation materializes
     /// every group), so the chunk of a truncated conversion cannot be measured as is.
+    /// `full_group_count`, when non-null, receives the bucket table's group count: the group-by
+    /// limit must be enforced against the true cardinality, which the chunk's row count
+    /// understates when the Top-K conversion truncates it.
     template <typename Method>
     AggregatedChunk convertOneBucketToChunk(
         AggregatedDataVariants & data_variants,
@@ -1015,7 +1085,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        UInt64 * topk_full_key_bytes) const;
+        UInt64 * topk_full_key_bytes,
+        size_t * full_group_count) const;
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
@@ -1034,13 +1105,16 @@ private:
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
 
+    /// `full_group_count`, when non-null, receives the merged bucket's group count (see
+    /// `convertOneBucketToChunk`).
     AggregatedChunk mergeAndConvertOneBucketToChunk(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         bool final,
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+        size_t * full_group_count) const;
 
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
@@ -1173,6 +1247,17 @@ private:
         Columns columns,
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
+        AggregateFunctionInstructions & instructions,
+        NestedColumnsHolder & nested_columns_holder) const;
+
+    /// The instruction-building tail of `prepareAggregateInstructions`: the combinator
+    /// unwrapping (-State, -Array) and the batch wiring for one aggregate whose argument
+    /// pointers are already in place. Called directly for staged chunks, whose payload
+    /// columns the seal already normalized to the drain's form.
+    void buildAggregateFunctionInstruction(
+        size_t i,
+        bool has_sparse_arguments,
+        AggregateColumns & aggregate_columns,
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder) const;
 

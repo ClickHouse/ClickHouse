@@ -25,8 +25,9 @@ ManifestListPruner::ManifestListPruner(
         return;
 
     std::vector<Int32> used_columns_in_filter;
+    std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns_in_filter;
     auto transformed_dag = renameFilterDagColumnsToFieldIds(
-        schema_processor_, current_schema_id_, partition_schema_id_, filter_dag, used_columns_in_filter);
+        schema_processor_, current_schema_id_, partition_schema_id_, filter_dag, used_columns_in_filter, row_lineage_columns_in_filter);
 
     for (UInt32 i = 0; i < partition_specs->size(); ++i)
     {
@@ -46,7 +47,7 @@ ManifestListPruner::ManifestListPruner(
         DB::KeyCondition condition(
             inverted_dag, context, partition_key.key_description->column_names, partition_key.key_description->expression);
         conditions_by_spec_id.emplace(
-            spec->getValue<Int32>(f_spec_id), SpecCondition{std::move(*partition_key.key_description), std::move(condition)});
+            spec->getValue<Int32>(f_spec_id), SpecCondition{*partition_key.key_description, std::move(condition)});
     }
 }
 
