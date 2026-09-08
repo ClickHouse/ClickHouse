@@ -5,8 +5,16 @@
 
 #include <bit>
 
-#if USE_MULTITARGET_CODE
+/// The `heks` AVX/AVX2 entry points are needed both by the runtime-dispatched `x86_64_v3`
+/// target - which only exists under `USE_MULTITARGET_CODE` - and by builds whose own baseline
+/// already guarantees those instruction sets. The latter matters for `-DX86_ARCH_LEVEL=4`,
+/// for which `src/CMakeLists.txt` deliberately turns multi-target dispatch off: without the
+/// `__AVX__` / `__AVX2__` arms below `fast_hex_inline.hpp` would not even compile the vector
+/// entry points, and such a build would silently fall back to the scalar loops.
+#if USE_MULTITARGET_CODE || defined(__AVX__)
 #define FAST_HEX_AVX 1
+#endif
+#if USE_MULTITARGET_CODE || defined(__AVX2__)
 #define FAST_HEX_AVX2 1
 #endif
 #if defined(__aarch64__)
@@ -140,6 +148,70 @@ static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt6
 
 ) // DECLARE_DEFAULT_CODE
 
+#elif defined(__AVX2__)
+
+/// The baseline of this build already guarantees AVX2 (`-DX86_ARCH_LEVEL=3` or higher), so the
+/// default code can use the vector paths directly. This is what keeps the accelerated backend
+/// on `-DX86_ARCH_LEVEL=4` builds, where `src/CMakeLists.txt` disables multi-target dispatch and
+/// the `x86_64_v3` specialization below is therefore not compiled at all.
+DECLARE_DEFAULT_CODE(
+
+template <typename Case>
+static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes, Case c)
+{
+    switch (num_bytes)
+    {
+        case 8:
+        {
+            UInt64 v;
+            memcpy(&v, value, 8);
+            heks::encode_integral8(dst, v, c);
+            return;
+        }
+        case 16:
+        {
+            UInt128 v;
+            memcpy(&v, value, 16);
+            heks::encode_integral16(dst, v, c);
+            return;
+        }
+        case 32:
+        {
+            constexpr auto case_type = Case::value;
+            const auto * src = static_cast<const uint8_t *>(value);
+            heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst, src + 16);
+            heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst + 32, src);
+            return;
+        }
+        default:
+            UNREACHABLE();
+    }
+}
+
+template <typename Case>
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case)
+{
+    constexpr auto case_type = Case::value;
+    heks::heks_detail::encodeHexVecImpl<case_type>(dst, src, heks::RawLength{size});
+}
+
+static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
+{
+    if (size >= 32)
+        heks::decodeHexVec(dst, src, heks::RawLength{size});
+    else
+        heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+}
+
+template <typename Case>
+static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case)
+{
+    constexpr auto case_type = Case::value;
+    heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst, src);
+}
+
+) // DECLARE_DEFAULT_CODE
+
 #else
 
 DECLARE_DEFAULT_CODE(
@@ -197,6 +269,16 @@ static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case c)
     heks::encode_integral_naive(dst, high, c);
     heks::encode_integral_naive(dst + 16, low, c);
 }
+
+) // DECLARE_DEFAULT_CODE
+
+#endif
+
+#if !defined(__aarch64__)
+
+/// Identical for both x86-64 default variants above; it only dispatches through
+/// `decodeHexStringImpl`, which each of them defines in this same namespace.
+DECLARE_DEFAULT_CODE(
 
 template <bool = true>
 static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
