@@ -31,11 +31,7 @@ url="http://localhost:11111/test/${CLICKHOUSE_DATABASE}"
 #     2 * max_download_buffer_size = 20 MiB, so the ~11 MiB object sits in the band where the old
 #     code WOULD have prefetched - making RemoteFSPrefetches = 0 a proof of the gate, not just of
 #     the object being too large for any prefetch.
-#   - enable_parallel_replicas = 0: with parallel replicas enabled server-side (the ParallelReplicas
-#     job installs it into the default profile) `parallel_replicas_for_cluster_engines` rewrites
-#     `s3` to `s3Cluster`, the object is read on the replicas, and none of their ProfileEvents reach
-#     the initiator's query_log row - every assertion below would read 0 prefetches.
-read_settings="remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, max_read_buffer_size=1048576, max_download_buffer_size=10485760, input_format_parquet_filter_push_down=1, optimize_count_from_files=0, enable_parallel_replicas=0"
+read_settings="remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, max_read_buffer_size=1048576, max_download_buffer_size=10485760, input_format_parquet_filter_push_down=1, optimize_count_from_files=0"
 
 # big object: > 1 read buffer. The incompressible string column inflates it well past 1 MiB.
 ${CLICKHOUSE_CLIENT} --query "
@@ -75,24 +71,29 @@ run "$qid_big_no_seeks" big.parquet "input_format_allow_seeks=0"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
+# The object is not necessarily read by the initiator: with parallel replicas enabled server-side
+# (the ParallelReplicas job installs that into the default profile)
+# `parallel_replicas_for_cluster_engines` rewrites `s3` to `s3Cluster`, and the read - along with
+# its profile events - happens on a replica. Sum over `initial_query_id` so every node that ran the
+# query is counted, in both topologies. The default `file` split granularity gives the whole object
+# to one node, so the totals match the single-node ones. `count() > 0` guards the `= 0` assertion
+# against passing on an empty set, where `sum` would also be 0. The query ids carry the random
+# database name, so they are unique on their own and no `current_database` filter is needed - one
+# less way for a secondary query's row to be filtered out.
+prefetches() {
+    ${CLICKHOUSE_CLIENT} --query "
+    SELECT $2
+    FROM system.query_log
+    WHERE initial_query_id = '$1' AND type = 'QueryFinish'
+    "
+}
+
 # big object -> from-start prefetch is gated off.
-${CLICKHOUSE_CLIENT} --query "
-SELECT ProfileEvents['RemoteFSPrefetches'] = 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND query_id = '${qid_big}' AND type = 'QueryFinish'
-"
+prefetches "$qid_big" "sum(ProfileEvents['RemoteFSPrefetches']) = 0 AND count() > 0"
 
 # small object -> whole-file prefetch still fires (and serves the footer from memory).
-${CLICKHOUSE_CLIENT} --query "
-SELECT ProfileEvents['RemoteFSPrefetches'] >= 1
-FROM system.query_log
-WHERE current_database = currentDatabase() AND query_id = '${qid_small}' AND type = 'QueryFinish'
-"
+prefetches "$qid_small" "sum(ProfileEvents['RemoteFSPrefetches']) >= 1"
 
 # big object with input_format_allow_seeks=0 -> the read is sequential from the start, so the
 # from-start prefetch is useful and must still fire.
-${CLICKHOUSE_CLIENT} --query "
-SELECT ProfileEvents['RemoteFSPrefetches'] >= 1
-FROM system.query_log
-WHERE current_database = currentDatabase() AND query_id = '${qid_big_no_seeks}' AND type = 'QueryFinish'
-"
+prefetches "$qid_big_no_seeks" "sum(ProfileEvents['RemoteFSPrefetches']) >= 1"
