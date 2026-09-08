@@ -430,10 +430,11 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
         for (const auto & desc : result_sort_desc)
             has_collation |= desc.collator != nullptr;
 
-        /// With the read-ahead disabled and no buffering the transform would be a plain
-        /// pass-through: the merge alone already consumes the streams strictly on demand
-        /// (a port is left NotNeeded after a virtual row), which is exactly what a zero
-        /// window means. Skip the extra hop then.
+        /// With the read-ahead disabled and no buffering the transform would only hold one
+        /// chunk per active lane, which is not worth an extra processor: the merge alone
+        /// already consumes the streams strictly on demand (a port is left NotNeeded after
+        /// a virtual row). A zero window still allows buffering of active streams when
+        /// buffering is enabled. Skip the extra hop otherwise.
         if (apply_virtual_row_conversions && !has_collation && (read_ahead_window > 0 || deep_buffering))
         {
             /// The streams announce their positions with virtual rows; this transform owns the
