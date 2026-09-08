@@ -541,7 +541,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_darwin)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   sign_macos_binary_amd_darwin:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, release-runner]
     needs: [build_amd_darwin, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U2lnbiBtYWNPUyBiaW5hcnkgKGFtZF9kYXJ3aW4p') }}
     name: "Sign macOS binary (amd_darwin)"
@@ -576,7 +576,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Sign macOS binary (amd_darwin)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   sign_macos_binary_arm_darwin:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, release-runner]
     needs: [build_arm_darwin, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U2lnbiBtYWNPUyBiaW5hcnkgKGFybV9kYXJ3aW4p') }}
     name: "Sign macOS binary (arm_darwin)"
