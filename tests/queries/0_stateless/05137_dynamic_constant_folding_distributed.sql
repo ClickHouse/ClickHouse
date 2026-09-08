@@ -30,10 +30,18 @@ WHERE v = CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic);
 SELECT DISTINCT dynamicType(materialize(CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic(max_types = 0))))
 FROM remote('127.0.0.1', system.one);
 
--- Elements of an Array(Dynamic) must each keep their own member type AND stay unifiable: array()
--- resolves its result type from its arguments, so two differently named member types alone would
--- have no supertype.
+-- array() resolves one element type from all its arguments. Elements named as their own concrete
+-- types need use_variant_as_common_type to acquire a common type at all, while unnamed literals of
+-- different widths simply widen, so a Dynamic inside an array is left exactly as it was.
 SELECT DISTINCT arrayMap(x -> dynamicType(x), materialize([1::Int64::Dynamic, 1::UInt64::Dynamic]))
-FROM remote('127.0.0.1', system.one);
+FROM remote('127.0.0.1', system.one) SETTINGS use_variant_as_common_type = 0;
+
+-- A DateTime is written as local text, and both instants of a DST overlap share that text, so
+-- naming its member type would turn a visible type mismatch into a silently different instant.
+-- 1698543000 is the later of the two occurrences; its own text re-parses to the earlier one.
+SELECT DISTINCT dynamicType(c), c FROM (
+    SELECT materialize(CAST(toDateTime(1698543000, 'Europe/Berlin') AS Dynamic)) AS c
+    FROM remote('127.0.0.1', system.one))
+SETTINGS cast_string_to_dynamic_use_inference = 0;
 
 DROP TABLE t_dynamic_const_fold;
