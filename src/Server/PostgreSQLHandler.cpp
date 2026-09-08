@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -26,6 +27,7 @@
 #include <Common/QueryScope.h>
 #include <Common/SettingSource.h>
 #include <Common/SettingsChanges.h>
+#include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <Core/PostgreSQLProtocol.h>
@@ -436,7 +438,10 @@ void PostgreSQLHandler::run()
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
-                    /// A simple query is a complete protocol cycle.
+                    /// A simple query is a complete protocol cycle, and it also destroys the
+                    /// unnamed prepared statement and the unnamed portal.
+                    in_extended_query_cycle = false;
+                    prepared_statements_manager.dropUnnamedStatementAndPortal();
                     processQuery();
                     need_ready_for_query = true;
                     message_transport->flush();
@@ -445,26 +450,30 @@ void PostgreSQLHandler::run()
                     LOG_DEBUG(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
-                    /// Extended-query cycles end only at `Sync`.
+                    /// An extended-query cycle ends at its `Sync` or at a simple query.
+                    in_extended_query_cycle = true;
                     processParseQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
+                    in_extended_query_cycle = true;
                     processBindQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::EXECUTE:
+                    in_extended_query_cycle = true;
                     processExecuteQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::SYNC:
                     /// `Sync` ends the cycle and produces one `ReadyForQuery`.
-                    ignore_until_sync = false;
+                    in_extended_query_cycle = false;
                     processSyncQuery();
                     need_ready_for_query = true;
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE:
+                    in_extended_query_cycle = true;
                     processDescribeQuery();
                     message_transport->flush();
                     break;
@@ -477,10 +486,10 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Client tried to access via extended query protocol");
                     message_transport->dropMessage();
-                    /// Discard the rest of this extended-query cycle.
-                    ignore_until_sync = true;
+                    recoverFromRejectedMessage();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
+                    in_extended_query_cycle = true;
                     processCloseQuery();
                     message_transport->flush();
                     break;
@@ -493,8 +502,7 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
-                    /// Treat unsupported messages as extended-query errors.
-                    ignore_until_sync = true;
+                    recoverFromRejectedMessage();
             }
         }
     }
@@ -503,6 +511,17 @@ void PostgreSQLHandler::run()
         log->log(exc);
     }
 
+}
+
+void PostgreSQLHandler::recoverFromRejectedMessage()
+{
+    /// A rejected message belonging to an extended-query cycle is recovered at that
+    /// cycle's `Sync`, which is where its `ReadyForQuery` comes from. Without an open
+    /// cycle there is no `Sync` to wait for, so the client is owed one right away.
+    if (in_extended_query_cycle)
+        ignore_until_sync = true;
+    else
+        need_ready_for_query = true;
 }
 
 bool PostgreSQLHandler::startup()
@@ -740,9 +759,16 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 /// Removing the qualifier at the token level maps such queries onto them.
 /// String literals are left intact - only a `pg_catalog` identifier that is not
 /// itself qualified and is followed by a dot and another identifier is removed.
+/// PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG` names
+/// the same schema and is matched case-insensitively; a quoted identifier keeps its
+/// case in PostgreSQL, so only the exact `"pg_catalog"` spelling is matched there.
 static String removePgCatalogQualifier(const String & query)
 {
-    if (!query.contains("pg_catalog"))
+    static constexpr std::string_view pg_catalog = "pg_catalog";
+
+    /// A fast path for the common case of a query that does not mention the schema at all.
+    if (std::search(query.begin(), query.end(), pg_catalog.begin(), pg_catalog.end(),
+            [](char a, char b) { return equalsCaseInsensitive(a, b); }) == query.end())
         return query;
 
     std::vector<Token> tokens;
@@ -753,7 +779,7 @@ static String removePgCatalogQualifier(const String & query)
     auto is_pg_catalog = [](const Token & token)
     {
         std::string_view text(token.begin, token.size());
-        return (token.type == TokenType::BareWord && text == "pg_catalog")
+        return (token.type == TokenType::BareWord && equalsCaseInsensitive(text, pg_catalog))
             || (token.type == TokenType::QuotedIdentifier && text == "\"pg_catalog\"");
     };
 
@@ -1435,10 +1461,27 @@ SELECT * FROM VALUES(
 
     /// Fixed rows are the namespaces PostgreSQL clients expect to always exist
     /// (their well-known oids are hardcoded in some drivers, e.g. 11 for `pg_catalog`).
-    /// The rest of the namespaces are the real databases; their oids are synthesized
-    /// by hashing the name, consistently with `relnamespace` in `pg_class` below.
-    /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for
-    /// the system, so synthesized oids cannot collide with the well-known ones.
+    /// The rest of the namespaces are the real databases. An oid identifies an object,
+    /// and PostgreSQL clients are allowed to remember one and use it in a later query, so
+    /// it is a pure function of the name of the object: a hash of the name - qualified
+    /// with the database for a relation - and nothing else. Whatever else is currently
+    /// visible - and therefore any unrelated DDL or grant change - cannot renumber an
+    /// object that a client already saw.
+    /// The oids are also expected to be unique, because clients join `pg_class` to
+    /// `pg_namespace` on them. A mapping into a bounded space cannot guarantee both
+    /// properties at once, and PostgreSQL gets uniqueness only because it assigns oids
+    /// from a persistent counter, which a stateless emulation of the catalog has no
+    /// analog of. Stability is the more important of the two - a renumbering is a wrong
+    /// answer to a client that cached an oid, while a hash collision merely lists one of
+    /// two objects under a wrong schema - so the hash is spread over the whole available
+    /// range instead of being corrected: two visible names share an oid only if their
+    /// hashes collide, which takes tens of thousands of databases or tables in a single
+    /// catalog to become likely at all.
+    /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for the
+    /// system, so synthesized oids cannot collide with the well-known ones; namespaces
+    /// take the even oids and the tables of `pg_class` the odd ones, so the two
+    /// enumerations cannot collide with each other either. The modulo keeps the result
+    /// below 2^32, the width of an oid.
     /// `SQL SECURITY INVOKER` makes the view run with the privileges of the session
     /// user. `system.databases` is implicitly SELECTable by every user and hides
     /// the databases the user has no `SHOW` privilege for, so the view exposes
@@ -1454,7 +1497,9 @@ SELECT * FROM VALUES(
     (100,   'pg_toast_temp_1')
 )
 UNION ALL
-SELECT toUInt32(16384 + sipHash64(name) % 4294900000) AS oid, name AS nspname
+SELECT
+    toUInt32(16384 + 2 * (sipHash64(name) % 2000000000)) AS oid,
+    name AS nspname
 FROM system.databases)");
 
     /// Fixed rows (oid, relkind) are preserved for driver compatibility; they belong
@@ -1462,6 +1507,10 @@ FROM system.databases)");
     /// The rest are the tables of the current database - the analog of the PostgreSQL
     /// search path - which makes commands like `\d` in psql list the actual tables.
     /// `relam` is the access method: 2 (`heap`) for tables and 0 for views, as in PostgreSQL.
+    /// The oid of a relation is a hash of its qualified name - the database and the table
+    /// name - and not of the table name alone: a session can switch the current database
+    /// with `USE`, and two same-named tables in two databases are different objects that
+    /// must not share an oid.
     /// `SQL SECURITY INVOKER` for the same reason as `pg_namespace` above:
     /// `system.tables` hides the tables the session user cannot `SHOW`.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY INVOKER AS
@@ -1478,9 +1527,9 @@ SELECT * FROM VALUES(
 )
 UNION ALL
 SELECT
-    toUInt32(16384 + sipHash64(database, name) % 4294900000) AS oid,
+    toUInt32(16385 + 2 * (sipHash64(database, name) % 2000000000)) AS oid,
     name AS relname,
-    toUInt32(16384 + sipHash64(database) % 4294900000) AS relnamespace,
+    toUInt32(16384 + 2 * (sipHash64(currentDatabase()) % 2000000000)) AS relnamespace,
     toUInt32(10) AS relowner,
     toUInt32(if(endsWith(engine, 'View'), 0, 2)) AS relam,
     multiIf(engine = 'MaterializedView', 'm', endsWith(engine, 'View'), 'v', 'r') AS relkind
