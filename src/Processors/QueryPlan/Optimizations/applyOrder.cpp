@@ -42,13 +42,17 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
+/// Marks the reading step below `node` as preferring multiple streams, so that per-stream work
+/// installed above it (the pre-distinct transforms of distinct-in-order, the per-stream `LIMIT BY`
+/// pre-filter of `pushLimitByIntoSort`) is not collapsed into a single stream and serialized by
+/// `PrefetchingConcatProcessor`.
+///
 /// Distinct-in-order can be installed either here (from plan sorting properties) or by
 /// `optimizeDistinctInOrder`. The latter sets `prefer_multiple_streams` on the underlying
-/// `ReadFromMergeTree` so that the parallel pre-distinct transforms (one per input stream)
-/// are not collapsed into a single stream by `PrefetchingConcatProcessor`. When distinct order
-/// is applied from sorting properties instead, the reading step does not get that signal, so we
-/// propagate it here as well by descending through order-preserving steps to the reading step.
-static void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
+/// `ReadFromMergeTree` itself. When distinct order is applied from sorting properties instead, the
+/// reading step does not get that signal, so we propagate it here by descending through
+/// order-preserving steps to the reading step.
+void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
 {
     while (node)
     {

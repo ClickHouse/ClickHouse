@@ -1343,26 +1343,11 @@ InputOrderInfoPtr buildInputOrderInfo(
             if (find_reading_ctx.passed_residual_cpu_step)
                 reading->setPreferMultipleStreams();
 
-            /// An `ORDER BY ... LIMIT BY ...` whose `BY` columns are a prefix of the sorting key is
-            /// pushed into this sort by `pushLimitByIntoSort`, which attaches a per-stream
-            /// `LimitBySortedStreamTransform` pre-filter (`SortingStep::addPerStreamLimitByIfNeeded`).
-            /// That pre-filter only runs while the pipeline still has multiple streams. Keep the
-            /// per-stream pipeline parallel for the same reason as the no-`ORDER BY` `LimitByStep`
-            /// path: `PrefetchingConcatProcessor` would otherwise collapse a single-part filtered
-            /// read into one stream and serialize the `LIMIT BY` reduction. `pushLimitByIntoSort`
-            /// runs on the ancestor `LimitByStep` before this pass reaches the descendant
-            /// `SortingStep` (pre-order traversal), so the hint is already set here.
-            ///
-            /// The hint alone is not enough: `SortingStep::transformPipeline` attaches the
-            /// pre-filter only when the read already provides the full sort order. When the read
-            /// gives a shorter prefix, the step still has to run `finishSorting`, and applying
-            /// `LIMIT BY` before the final order is known could drop the wrong rows, so the
-            /// per-stream pre-filter is deliberately skipped. In that case there is no parallel
-            /// work to protect, and opting out would lose `PrefetchingConcatProcessor` for
-            /// nothing - hence the same condition that keeps `need_finish_sorting` false there.
-            if (sorting.hasLimitByHint()
-                && order_info.input_order->sort_description_for_merging.size() >= description.size())
-                reading->setPreferMultipleStreams();
+            /// An `ORDER BY ... LIMIT BY ...` whose `BY` columns are a prefix of the sorting key
+            /// gets a per-stream `LimitBySortedStreamTransform` pre-filter attached to this sort by
+            /// `pushLimitByIntoSort`, which also opts that read out of `PrefetchingConcatProcessor`.
+            /// It cannot be done here: `pushLimitByIntoSort` runs after this pass, so the hint is
+            /// not set yet.
 
             /// When the order is preserved through a `JOIN`, the join keeps exactly the
             /// probe-side streams it receives and runs one `JoiningTransform` per stream: a
@@ -1396,10 +1381,8 @@ InputOrderInfoPtr buildInputOrderInfo(
                 return nullptr;
 
             /// Same as for the direct `ReadFromMergeTree` path above, forwarded to the child reads.
-            if (find_reading_ctx.passed_residual_cpu_step
-                || (sorting.hasLimitByHint()
-                    && order_info.input_order->sort_description_for_merging.size() >= description.size())
-                || find_reading_ctx.passed_order_preserving_join)
+            /// The `LIMIT BY` opt-out is handled by `pushLimitByIntoSort`, see above.
+            if (find_reading_ctx.passed_residual_cpu_step || find_reading_ctx.passed_order_preserving_join)
                 merge->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
