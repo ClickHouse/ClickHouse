@@ -9490,11 +9490,10 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
-    void resetToDefaultRespectingCompatibility(std::string_view name);
     void markSettingsChangedByCompatibilityAsUnchanged();
+    void applyCompatibilitySetting(const String & compatibility);
 
 private:
-    void applyCompatibilitySetting(const String & compatibility);
 
     /// Which settings the compatibility setting changed, as a bitmap over setting indexes. An old
     /// `compatibility` value marks hundreds of them on every query that sets it, so a hash set of names
@@ -9853,16 +9852,6 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
     }
 }
 
-void SettingsImpl::resetToDefaultRespectingCompatibility(std::string_view name)
-{
-    resetToDefault(name);
-    /// A setting that is not assigned holds the value the active `compatibility` implies for it, so
-    /// clearing one has to re-run the derivation. Reading `compatibility` after the reset is what
-    /// makes resetting `compatibility` itself revert every setting it derived.
-    const String compatibility_value = get("compatibility").safeGet<String>();
-    applyCompatibilitySetting(compatibility_value);
-}
-
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SettingsTraits, LIST_OF_SETTINGS, Settings, Setting)
 
 Settings::Settings()
@@ -9947,9 +9936,9 @@ void Settings::setDefaultValue(std::string_view name)
     impl->resetToDefault(name);
 }
 
-void Settings::setDefaultValueRespectingCompatibility(std::string_view name)
+void Settings::reapplyCompatibility()
 {
-    impl->resetToDefaultRespectingCompatibility(name);
+    impl->applyCompatibilitySetting(impl->get("compatibility").safeGet<String>());
 }
 
 bool Settings::hasSettingsChangedByCompatibility() const

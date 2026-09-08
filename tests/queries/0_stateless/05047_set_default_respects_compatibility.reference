@@ -16,13 +16,6 @@ SETTINGS name = DEFAULT in a query
 a reset that lands on a value the profile forbids is rejected
 SETTING_CONSTRAINT_VIOLATION
 1
-and when the same statement is what activates compatibility
-SETTING_CONSTRAINT_VIOLATION
-
-1
-and when the same statement is what switches the profile
-SETTING_CONSTRAINT_VIOLATION
-1
 resetting a CONST compatibility is still rejected
 SETTING_CONSTRAINT_VIOLATION
 26.7

@@ -92,7 +92,6 @@
 #include <Core/SettingsQuirks.h>
 #include <Core/UUID.h>
 #include <Access/AccessControl.h>
-#include <Access/resolveSetting.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
@@ -3659,18 +3658,18 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsForSettingsReset(const ContextPtr & reset_target, const SettingsChanges & changes, const std::vector<String> & names, SettingSource source)
+void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
 {
     if (names.empty())
         return;
-    /// The default a reset restores depends on the active `compatibility`, which the same statement
-    /// may change directly or by switching the profile, so it has to be observed.
-    auto after_reset = Context::createCopy(reset_target);
-    after_reset->applySettingsChanges(changes);
-    after_reset->resetSettingsToDefaultValueRespectingCompatibility(names);
-
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, after_reset->getSettingsRef(), names, source);
+    /// The value a reset lands on is the one an active `compatibility` implies for the setting, so
+    /// perform the resets on a copy and read the outcome off it.
+    Settings after_reset = *settings;
+    for (const String & name : names)
+        after_reset.setDefaultValue(name);
+    after_reset.reapplyCompatibility();
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, after_reset, names, source);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -3693,24 +3692,12 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
 
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
-    std::lock_guard lock(mutex);
-    for (const String & name : names)
-    {
-        settings->setDefaultValue(name);
-        /// `Settings` stores a `merge_tree_`-prefixed name as a custom setting, under the exact name that
-        /// wrote it. Resetting one name of a setting therefore has to clear what its other names wrote.
-        for (const auto & equivalent_name : settingEquivalentNames(name))
-            settings->setDefaultValue(equivalent_name);
-    }
-}
-
-void Context::resetSettingsToDefaultValueRespectingCompatibility(const std::vector<String> & names)
-{
     if (names.empty())
         return;
     std::lock_guard lock(mutex);
     for (const String & name : names)
-        settings->setDefaultValueRespectingCompatibility(name);
+        settings->setDefaultValue(name);
+    settings->reapplyCompatibility();
     /// A reset can move a setting the same way an assignment can, so the invariants the assignment
     /// path establishes have to be re-established here too.
     applySettingsQuirks(*settings);

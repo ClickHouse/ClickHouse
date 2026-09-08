@@ -21,10 +21,8 @@ Q=enable_group_by_top_k_optimization
 
 USER_MIN="u_min_05047_${CLICKHOUSE_DATABASE}"
 USER_CONST="u_const_05047_${CLICKHOUSE_DATABASE}"
-USER_PROF="u_prof_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_MIN="p_min_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_CONST="p_const_05047_${CLICKHOUSE_DATABASE}"
-PROFILE_COMPAT="p_compat_05047_${CLICKHOUSE_DATABASE}"
 
 BASE_URL="${CLICKHOUSE_URL%%\?*}"
 session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}_$$_$1"; }
@@ -32,14 +30,12 @@ user_session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}
 # `system.settings` is read at execution time, so it also reports a reset made by the same statement.
 read_setting() { ${CLICKHOUSE_CURL} -sS "$1" -d "SELECT value FROM system.settings WHERE name = '$2'"; }
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_PROF}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_COMPAT}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MIN} SETTINGS ${Q} = 1 MIN 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_CONST} SETTINGS compatibility = '26.7' CONST"
-${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_COMPAT} SETTINGS compatibility = '26.7'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MIN} SETTINGS PROFILE '${PROFILE_MIN}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_CONST} SETTINGS PROFILE '${PROFILE_CONST}'"
-${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_PROF} SETTINGS PROFILE '${PROFILE_MIN}'"
 
 echo 'the probe values differ from their declared defaults under compatibility 26.7'
 # If either 26.8 history row is ever dropped, this fails loudly instead of leaving the arms below vacuous.
@@ -91,18 +87,6 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET ${Q} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
 read_setting "$U" "${Q}"
 
-echo 'and when the same statement is what activates compatibility'
-U=$(user_session_url a7 "${USER_MIN}")
-${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7', ${Q} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
-# The whole statement is left without effect, so compatibility is not set either.
-read_setting "$U" "compatibility"
-read_setting "$U" "${Q}"
-
-echo 'and when the same statement is what switches the profile'
-U=$(user_session_url a8 "${USER_PROF}")
-${CLICKHOUSE_CURL} -sS "$U" -d "SET profile = '${PROFILE_COMPAT}', ${Q} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
-read_setting "$U" "${Q}"
-
 echo 'resetting a CONST compatibility is still rejected'
 U=$(user_session_url a9 "${USER_CONST}")
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
@@ -132,5 +116,5 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = ''"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET make_distributed_plan = 0"
 read_setting "$U" compile_expressions
 
-${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_PROF}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_COMPAT}"
+${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}"

@@ -267,10 +267,11 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
     {
         if (settingIsBuiltin(name))
         {
-            /// `after_reset` holds the value a `Settings` setting lands on, which an active `compatibility`
-            /// may derive. A `merge_tree_`-prefixed name is a custom setting there and is absent once reset,
-            /// so what it lands on is the declared `MergeTreeSettings` default.
-            const Field value = Settings::hasBuiltin(name) ? after_reset.get(name) : settingDefaultValue(name);
+            /// A `merge_tree_`-prefixed name is a custom setting in `Settings` and is absent once reset,
+            /// so what it lands on is the declared `MergeTreeSettings` default. Any other name is a
+            /// `Settings` setting, whose landed value an active `compatibility` may derive.
+            const Field value
+                = name.starts_with(MERGE_TREE_SETTINGS_PREFIX) ? settingDefaultValue(name) : after_reset.get(name);
             check(current_settings, SettingChange{name, value}, source);
             continue;
         }

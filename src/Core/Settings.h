@@ -162,10 +162,11 @@ struct Settings
     /// built-in setting. Used to transport query parameters (whose names may match a setting name).
     void setCustom(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
-    /// Reset `name` to the default that is in effect for it: its declared default, or the value the
-    /// active `compatibility` setting implies. `setDefaultValue` restores the declared default only
-    /// and leaves the compatibility bookkeeping untouched.
-    void setDefaultValueRespectingCompatibility(std::string_view name);
+    /// Re-derive every unassigned setting from the current `compatibility` value. A setting that is
+    /// not assigned holds what the active `compatibility` implies for it, so clearing one has to
+    /// re-run the derivation; reading `compatibility` here is what makes clearing `compatibility`
+    /// itself revert every setting it derived.
+    void reapplyCompatibility();
 
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.
     bool hasSettingsChangedByCompatibility() const;
