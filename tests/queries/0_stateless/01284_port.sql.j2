@@ -74,6 +74,6 @@ select portRFC('http://user@[::ffff:192.0.2.128]:80/', toUInt16(443));
 select 'ipv6-RFC-userinfo-multicolon';
 select portRFC('http://user:pass:word@[2001:db8::1]:80', toUInt16(443));
 
--- a second '@' means the real host is whatever follows the LAST '@', see 05137_domain_rfc_multiple_at_sign
+-- a second '@' makes the authority unparseable, see 05137_domain_rfc_multiple_at_sign
 select 'ipv6-RFC-multiple-at-sign';
-select portRFC('http://user@paypal.com@[2001:db8::1]:80');
+select portRFC('http://user@paypal.com@[2001:db8::1]:80', toUInt16(443));
