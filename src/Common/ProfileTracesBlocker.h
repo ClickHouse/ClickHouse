@@ -1,13 +1,40 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
+#include <Common/FiberLocal.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadStatus.h>
 
-#include <atomic>
-
 namespace DB
 {
+
+/// Suppress delivery to the live stream without changing memory accounting or `system.trace_log`.
+/// The flag belongs to the execution context, including stackful coroutines and migrating silk fibers.
+/// Unlike the stronger synchronous guard below, this scope may span a suspended network read.
+class ProfileTracesStreamBlocker
+{
+public:
+    ProfileTracesStreamBlocker()
+        : was_blocked(FiberLocalStorage::exchangeAtomic<FiberLocalSlot::PROFILE_TRACES_BLOCKED>(true))
+    {
+    }
+
+    ~ProfileTracesStreamBlocker()
+    {
+        FiberLocalStorage::exchangeAtomic<FiberLocalSlot::PROFILE_TRACES_BLOCKED>(was_blocked);
+    }
+
+    static bool isBlocked()
+    {
+        return FiberLocalStorage::loadAtomic<FiberLocalSlot::PROFILE_TRACES_BLOCKED>();
+    }
+
+    ProfileTracesStreamBlocker(const ProfileTracesStreamBlocker &) = delete;
+    ProfileTracesStreamBlocker & operator=(const ProfileTracesStreamBlocker &) = delete;
+
+private:
+    bool was_blocked;
+};
 
 /// Queueing and serializing samples must not add the delivery path to the trace stream.
 /// The signal-safe flag suppresses streaming without disabling `CPU` and `Real` samples in `system.trace_log`.
@@ -18,8 +45,7 @@ class ProfileTracesBlocker
 {
 public:
     ProfileTracesBlocker()
-        : was_blocked(blocked.exchange(true, std::memory_order_relaxed))
-        , thread(CurrentThread::isInitialized() ? &CurrentThread::get() : nullptr)
+        : thread(CurrentThread::isInitialized() ? &CurrentThread::get() : nullptr)
     {
         if (thread)
         {
@@ -34,22 +60,18 @@ public:
     {
         if (thread)
             thread->setMemorySampleConfig(sample_config);
-        blocked.store(was_blocked, std::memory_order_relaxed);
     }
 
     static bool isBlocked()
     {
-        return blocked.load(std::memory_order_relaxed);
+        return ProfileTracesStreamBlocker::isBlocked();
     }
 
     ProfileTracesBlocker(const ProfileTracesBlocker &) = delete;
     ProfileTracesBlocker & operator=(const ProfileTracesBlocker &) = delete;
 
 private:
-    static inline thread_local constinit std::atomic<bool> blocked{false};
-    static_assert(std::atomic<bool>::is_always_lock_free);
-
-    bool was_blocked;
+    ProfileTracesStreamBlocker stream_blocker;
     MemoryTrackerBlockerInThread accounting_blocker{VariableContext::Global};
     ThreadStatus * thread;
     MemoryTracker::SampleConfig sample_config{};

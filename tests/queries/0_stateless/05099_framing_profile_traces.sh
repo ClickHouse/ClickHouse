@@ -65,12 +65,17 @@ def check_samples(items, expected_query_id=None, terminal="progress", allow_miss
             "event_time_microseconds", "trace", "symbols", "size",
         }, sample
         assert isinstance(sample["host_name"], str) and sample["host_name"], sample
-        assert sample["trace_type"] in {"CPU", "Real", "Memory", "MemorySample", "MemoryPeak"}, sample
         if expected_query_id is not None:
             assert sample["query_id"] == expected_query_id, sample
         for key in ("thread_id", "event_time_microseconds", "size"):
             assert isinstance(sample[key], str), (key, sample)
             int(sample[key])
+        if sample["trace_type"] in {"Dropped", "Incomplete"}:
+            assert not sample["trace"] and not sample["symbols"], sample
+            assert int(sample["thread_id"]) == int(sample["event_time_microseconds"]) == 0, sample
+            assert int(sample["size"]) > 0 if sample["trace_type"] == "Dropped" else int(sample["size"]) == 0, sample
+            continue
+        assert sample["trace_type"] in {"CPU", "Real", "Memory", "MemorySample", "MemoryPeak"}, sample
         assert int(sample["thread_id"]) > 0 and int(sample["event_time_microseconds"]) > 0, sample
         assert sample["trace"] and len(sample["trace"]) == len(sample["symbols"]), sample
         assert all(isinstance(address, str) and int(address) >= 0 for address in sample["trace"]), sample

@@ -18,7 +18,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <unordered_map>
+#include <utility>
 
 namespace DB
 {
@@ -31,6 +33,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char profile_traces_flush_ack_timeout[];
+    extern const char profile_traces_queue_overflow[];
 }
 
 namespace
@@ -115,8 +118,16 @@ void InternalProfileTracesQueue::push(Sample sample)
     static constexpr size_t max_bytes = 16 * 1024 * 1024;
     size_t bytes = sample.byteSize();
     std::lock_guard lock(mutex);
-    if (finished || samples.size() >= max_samples || bytes > max_bytes - buffered_bytes)
+    if (finished)
         return;
+    bool overflow = samples.size() >= max_samples || bytes > max_bytes - buffered_bytes;
+    fiu_do_on(FailPoints::profile_traces_queue_overflow, { overflow = true; });
+    if (overflow)
+    {
+        if (pending_dropped < std::numeric_limits<Int64>::max())
+            ++pending_dropped;
+        return;
+    }
     buffered_bytes += bytes;
     samples.emplace_back(std::move(sample));
 }
@@ -178,6 +189,8 @@ void InternalProfileTracesQueue::finish()
         finished = true;
         if (result == TraceSender::ProfileTracesFlushResult::TimedOut)
         {
+            pending_dropped += std::min<Int64>(samples.size(), std::numeric_limits<Int64>::max() - pending_dropped);
+            pending_incomplete = true;
             samples.clear();
             buffered_bytes = 0;
         }
@@ -194,6 +207,8 @@ void InternalProfileTracesQueue::cancel()
     finished = true;
     samples.clear();
     buffered_bytes = 0;
+    pending_dropped = 0;
+    pending_incomplete = false;
 }
 
 Block InternalProfileTracesQueue::getSampleBlock()
@@ -217,13 +232,27 @@ Block InternalProfileTracesQueue::getBlock()
     std::vector<Sample> batch;
     {
         std::lock_guard lock(mutex);
-        size_t rows = std::min(samples.size(), size_t{1024});
-        batch.reserve(rows);
+        const size_t metadata_rows = (pending_dropped != 0) + pending_incomplete;
+        size_t rows = std::min(samples.size(), size_t{1024} - metadata_rows);
+        batch.reserve(rows + metadata_rows);
         while (batch.size() < rows)
         {
             buffered_bytes -= samples.front().byteSize();
             batch.emplace_back(std::move(samples.front()));
             samples.pop_front();
+        }
+        if (pending_dropped)
+        {
+            Sample status;
+            status.trace_type = "Dropped";
+            status.size = std::exchange(pending_dropped, 0);
+            batch.emplace_back(std::move(status));
+        }
+        if (std::exchange(pending_incomplete, false))
+        {
+            Sample status;
+            status.trace_type = "Incomplete";
+            batch.emplace_back(std::move(status));
         }
     }
 
@@ -293,6 +322,28 @@ void InternalProfileTracesQueue::pushBlock(const Block & block)
     for (size_t row = 0; row < block.rows(); ++row)
     {
         const auto type_name = types.getDataAt(row);
+        const auto trace_begin = traces.getOffsets()[static_cast<ssize_t>(row) - 1];
+        const auto trace_end = traces.getOffsets()[row];
+        const auto symbols_begin = symbols.getOffsets()[static_cast<ssize_t>(row) - 1];
+        const auto symbols_end = symbols.getOffsets()[row];
+        if (type_name == "Dropped" || type_name == "Incomplete")
+        {
+            if (trace_begin != trace_end || symbols_begin != symbols_end || threads[row] || times[row]
+                || (type_name == "Dropped" ? sizes[row] <= 0 : sizes[row] != 0))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid profile trace delivery status");
+
+            /// Each forwarded delta is consumed once, independently of sample queue capacity.
+            /// The next status identifies this coordinator, not the original site of the loss.
+            std::lock_guard lock(mutex);
+            if (!finished)
+            {
+                if (type_name == "Dropped")
+                    pending_dropped += std::min(sizes[row], std::numeric_limits<Int64>::max() - pending_dropped);
+                else
+                    pending_incomplete = true;
+            }
+            continue;
+        }
         const auto type = magic_enum::enum_cast<TraceType>(type_name);
         if (!type || !isSupportedTraceType(*type))
             continue;
@@ -308,10 +359,6 @@ void InternalProfileTracesQueue::pushBlock(const Block & block)
             .size = sizes[row],
             .symbolized = true,
         };
-        const auto trace_begin = traces.getOffsets()[static_cast<ssize_t>(row) - 1];
-        const auto trace_end = traces.getOffsets()[row];
-        const auto symbols_begin = symbols.getOffsets()[static_cast<ssize_t>(row) - 1];
-        const auto symbols_end = symbols.getOffsets()[row];
         if (trace_end - trace_begin != symbols_end - symbols_begin)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Profile trace addresses and symbols have different lengths");
         sample.trace.assign(addresses.begin() + trace_begin, addresses.begin() + trace_end);

@@ -175,6 +175,7 @@ static struct InitFiu
     ONCE(framing_finalize_throw) \
     REGULAR(profile_traces_flush_write_timeout) \
     REGULAR(profile_traces_flush_ack_timeout) \
+    REGULAR(profile_traces_queue_overflow) \
     ONCE(framing_throw_after_writing_packet) \
     ONCE(framing_throw_during_payload_reset) \
     ONCE(framing_throw_before_totals_boundary) \

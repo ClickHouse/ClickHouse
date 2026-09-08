@@ -27,6 +27,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/randomSeed.h>
 #include <Core/Block.h>
@@ -1708,6 +1709,9 @@ Block Connection::receiveProfileEvents()
 
 Block Connection::receiveProfileTraces()
 {
+    /// Decoding may suspend on network I/O. Keep ordinary accounting and `trace_log` sampling,
+    /// but do not feed decoding samples back into the stream being received.
+    ProfileTracesStreamBlocker blocker;
     if (!block_profile_traces_in)
     {
         initMaybeCompressedInput();

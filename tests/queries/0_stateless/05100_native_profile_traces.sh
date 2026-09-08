@@ -23,9 +23,12 @@ check_samples()
     ${CLICKHOUSE_LOCAL} --input-format JSONEachRow --structure "$trace_structure" --query "
         SELECT throwIf(countIf(
                 (notEmpty('$expected_id') AND query_id != '$expected_id')
-                OR empty(host_name) OR empty(query_id) OR thread_id = 0 OR event_time_microseconds = 0
-                OR empty(trace) OR length(trace) != length(symbols)
-                OR trace_type NOT IN ('CPU', 'Real', 'Memory', 'MemorySample', 'MemoryPeak')) > 0,
+                OR empty(host_name) OR empty(query_id)
+                OR if(trace_type IN ('Dropped', 'Incomplete'),
+                    thread_id != 0 OR event_time_microseconds != 0 OR notEmpty(trace) OR notEmpty(symbols)
+                        OR if(trace_type = 'Dropped', size <= 0, size != 0),
+                    thread_id = 0 OR event_time_microseconds = 0 OR empty(trace) OR length(trace) != length(symbols)
+                        OR trace_type NOT IN ('CPU', 'Real', 'Memory', 'MemorySample', 'MemoryPeak'))) > 0,
                 'Invalid streamed profile trace')
             + toUInt8($presence)
         FROM table"

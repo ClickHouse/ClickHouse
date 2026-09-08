@@ -73,6 +73,9 @@ private:
     std::condition_variable flushed;
     std::deque<Sample> samples;
     size_t buffered_bytes = 0;
+    /// Metadata is kept outside the bounded sample queue so overflow cannot hide its own loss count.
+    Int64 pending_dropped = 0;
+    bool pending_incomplete = false;
     bool flush_acknowledged = false;
     bool finished = false;
 };

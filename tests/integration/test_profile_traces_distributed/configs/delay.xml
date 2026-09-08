@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <sleep_in_send_data_ms>0</sleep_in_send_data_ms>
+        </default>
+    </profiles>
+</clickhouse>

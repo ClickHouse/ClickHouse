@@ -132,7 +132,7 @@ In `EventStream`, the event name is `profile_traces` and its single `data:` fiel
 |-------|---------|
 | `host_name` | Host where the sample was collected. |
 | `query_id` | Query identifier on that host. |
-| `trace_type` | One of `CPU`, `Real`, `Memory`, `MemorySample`, or `MemoryPeak`. |
+| `trace_type` | Sample kind: `CPU`, `Real`, `Memory`, `MemorySample`, or `MemoryPeak`; delivery status: `Dropped` or `Incomplete`. |
 | `thread_id` | Sampled thread identifier, encoded as a decimal string. |
 | `event_time_microseconds` | Sample collection time in microseconds since the Unix epoch, encoded as a decimal string. |
 | `trace` | Stack frame addresses, innermost frame first, encoded as decimal strings using the same normalization as `system.trace_log`. |
@@ -140,6 +140,10 @@ In `EventStream`, the event name is `profile_traces` and its single `data:` fiel
 | `size` | Signed allocation size for memory samples, or zero for CPU and real-time samples, encoded as a decimal string. |
 
 All 64-bit integers use strings to preserve precision in JavaScript. All string fields, including symbol names and query identifiers, are sanitized to valid UTF-8 using the replacement character (`U+FFFD`) for invalid sequences.
+
+Delivery status rows use empty `trace` and `symbols` arrays and zero thread/time fields. `Dropped` carries a positive delta of reported server queue losses in `size`, including samples discarded on collector timeout. Sum these deltas across the response, independently of any host filter. Each delta saturates at the maximum `Int64`, which means at least that many losses. `Incomplete` uses `size = "0"` and marks a collector flush timeout: further losses are unknown. Status rows count towards the 1024-row batch limit and may appear without any samples. They must not be added to a flame graph.
+
+Coordinators aggregate forwarded loss deltas once, even when their sample queues are full. Status host/query fields identify the reporting coordinator, not where the losses originated. The count excludes losses in the signal-safe pipe before the collector and metadata discarded by older intermediaries. Absence of a status row does not guarantee completeness. Clients should ignore unrecognized kinds. Actual stack samples retain their producing host and query identifiers across multiple forwarding hops, and symbols are resolved on the producing host.
 
 When `send_profile_traces` or framing is enabled only in the query's `SETTINGS` clause, capture starts after analysis, when the framing queues are reconciled with those settings. Set both on the session or URL to capture earlier samples as well. A query-level `send_profile_traces=0` disables delivery even when the session or URL enables it. With `framing_output_format=None`, HTTP responses contain no profile trace packets.
 

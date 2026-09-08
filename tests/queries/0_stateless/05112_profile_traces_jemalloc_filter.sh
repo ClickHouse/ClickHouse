@@ -85,7 +85,7 @@ for transport in ("native", "HTTP"):
         assert packets and packets[-1]["packet"] == "progress", packets[-1:]
         samples = [sample for packet in packets if packet["packet"] == "profile_traces" for sample in packet["profile_traces"]]
     types = {sample["trace_type"] for sample in samples}
-    assert "MemorySample" in types and types <= {"CPU", "Real", "Memory", "MemorySample", "MemoryPeak"}, sorted(types)
+    assert "MemorySample" in types and types <= {"CPU", "Real", "Memory", "MemorySample", "MemoryPeak", "Dropped", "Incomplete"}, sorted(types)
     wait_for_jemalloc_samples(f"""
         SELECT countIf(trace_type = 'JemallocSample' AND size > 0 AND ptr != 0 AND notEmpty(trace)) > 0
         FROM system.trace_log

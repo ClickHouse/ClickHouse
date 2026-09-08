@@ -2635,6 +2635,8 @@ Delivery is best effort: queues and batches are bounded, and samples can be drop
 
 Remote queries request profile trace packets only when delivery is active for the coordinator's client. Remote SQL opt-ins cannot enable delivery when it is disabled at the coordinator; explicit remote SQL opt-outs remain effective.
 
+Distributed samples retain their producing host and query identifiers. Delivery status rows report bounded server queue losses (`Dropped`) and collector flush timeouts (`Incomplete`); clients must handle them separately from stack samples. Loss deltas are aggregated once across the distributed response and are not attributable to an individual sampled host. Counts exclude losses before the collector and do not certify profile completeness. See [profile trace packets](/interfaces/framing-formats#framing-format-profile-traces).
+
 Possible values:
 
 - 0 — Disabled.
