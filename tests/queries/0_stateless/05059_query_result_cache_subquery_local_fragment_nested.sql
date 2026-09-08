@@ -26,6 +26,10 @@ SET enable_reads_from_query_cache = 1;
 -- `make_distributed_plan` rejects an aggregation with a `max_rows_to_group_by` limit, which some CI
 -- profiles set.
 SET max_rows_to_group_by = 0;
+-- The whole point of the test is that the shard plans are built in this process, and the randomized
+-- `prefer_localhost_replica = 0` sends them to `localhost:9000` over the network instead, where
+-- `make_distributed_plan` refuses the query outright (`SUPPORT_IS_DISABLED`).
+SET prefer_localhost_replica = 1;
 
 -- Both shards of `test_cluster_two_shards_localhost` are local, so the shard plans are built in this
 -- process by `createLocalPlan`. 0 + 1 + ... + 4 = 10, twice (two shards read the same table).

@@ -2359,7 +2359,13 @@ void Planner::buildPlanForUnionNode()
 
     for (const auto & query_node : union_queries_nodes)
     {
-        Planner query_planner(query_node, select_query_options, planner_context->getGlobalPlannerContext());
+        /// Every branch of a `UNION` has its own context with its own SETTINGS clause, so branches
+        /// must stay isolated from each other: the `Planner` mutates the options it is given (see
+        /// `markDistributedPlanContext`), and sharing one object would let a branch-local setting
+        /// of an earlier branch leak into its siblings and into the enclosing plan. Sticky options
+        /// still travel downwards, because the copy carries them into the branch.
+        SelectQueryOptions branch_select_query_options = select_query_options;
+        Planner query_planner(query_node, branch_select_query_options, planner_context->getGlobalPlannerContext());
 
         query_planner.buildQueryPlanIfNeeded();
         for (const auto & row_policy : query_planner.getUsedRowPolicies())
