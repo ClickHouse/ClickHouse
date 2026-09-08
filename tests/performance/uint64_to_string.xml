@@ -1,0 +1,17 @@
+<test>
+    <!-- Conversion of 64-bit integers to text, over the digit-count distributions that occur in
+         practice: identifiers and hashes over the whole range, timestamps, row numbers and small
+         enumeration-like values. -->
+
+    <query>SELECT count() FROM zeros(50000000) WHERE NOT ignore(toString(rand64())) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM zeros(50000000) WHERE NOT ignore(toString(reinterpret(rand64(), 'Int64'))) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM zeros(50000000) WHERE NOT ignore(toString(1700000000 + rand() % 100000000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toString(number)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM zeros(50000000) WHERE NOT ignore(toString(rand64() % 1000)) SETTINGS max_threads = 1</query>
+
+    <!-- A value of a different length on every row, which defeats branch prediction -->
+    <query>SELECT count() FROM zeros(20000000) WHERE NOT ignore(toString(intDiv(rand64(), pow(10, rand() % 20)::UInt64 + 1))) SETTINGS max_threads = 1</query>
+
+    <!-- Through an output format rather than through toString -->
+    <query>SELECT count() FROM zeros(20000000) WHERE NOT ignore(formatRow('TSV', rand64())) SETTINGS max_threads = 1</query>
+</test>

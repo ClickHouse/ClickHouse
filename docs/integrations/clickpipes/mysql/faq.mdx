@@ -87,6 +87,24 @@ To resolve it:
   Clear it in your server configuration (e.g. `my.cnf` or the DB Parameter Group) as well so it persists across restarts.
 - **Resync the pipe** so replication resumes from a clean offset.
 
+### Why is my pipe failing with a require_secure_transport error? {#secure-transport-required}
+
+If your pipe fails with an error similar to:
+
+```text
+MySQL execute error: handleAuthResult: ERROR 3159 (HY000): Connections using insecure transport
+are prohibited while --require_secure_transport=ON.
+```
+
+it means the source server has [`require_secure_transport`](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_require_secure_transport) enabled — it rejects any connection that isn't encrypted — while the ClickPipe has TLS turned off. On RDS for MySQL it comes from the instance's [DB parameter group](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.require-ssl.html). On Aurora MySQL it is a [DB cluster parameter group](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Security.html#AuroraMySQL.Security.SSL.RequireSSL) setting and isn't available in instance parameter groups at all. Neither needs a reboot to take effect, and Aurora MySQL 8.4 defaults it to `ON` where versions 2 and 3 default to `OFF`, so a pipe that has been replicating fine can start failing after a parameter change or a version upgrade, with no change on the pipe's side.
+
+To resolve it:
+
+- **Re-enable TLS on the pipe.** In the pipe's **Settings**, open the connection settings and turn off the **Disable TLS** toggle. If saving then surfaces a certificate error, see [Why am I getting a TLS certificate validation error when connecting to MySQL?](#tls-certificate-validation-error) for how to set a TLS host, upload a root CA, or skip certificate verification.
+- **Or turn off `require_secure_transport` on the source** — in the DB parameter group on RDS, or the DB cluster parameter group on Aurora — if unencrypted connections are acceptable in your environment.
+
+Replication resumes from where it stopped once the connection succeeds. If the pipe was failing for longer than your binlog retention period (see [How is replication managed?](#how-is-replication-managed)), you will need to resync it.
+
 ### Why am I getting a TLS certificate validation error when connecting to MySQL? {#tls-certificate-validation-error}
 
 When connecting to MySQL, you may encounter certificate errors like `x509: certificate is not valid for any names` or `x509: certificate signed by unknown authority`. These occur because ClickPipes enables TLS encryption by default.

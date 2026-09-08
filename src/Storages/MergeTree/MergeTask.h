@@ -15,7 +15,6 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -85,6 +84,12 @@ class MergeTask
 {
 public:
     static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
+    /// Marks the suffix of the throwaway temporary part of `OPTIMIZE ... DRY RUN`. Kept short:
+    /// it replaces the part name in the temporary directory name, so it is paid on every dry run.
+    static constexpr auto DRY_RUN_TEMP_INFIX = "dr_";
+
+    /// Assembles the temporary directory name of a merge.
+    static String buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix);
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -99,7 +104,6 @@ public:
         Names deduplicate_by_columns_,
         bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
-        bool need_prefix,
         ProjectionDescriptionRawPtr projection_,
         IMergeTreeDataPart * parent_part_,
         MergedPartOffsetsPtr merged_part_offsets_,
@@ -134,7 +138,6 @@ public:
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
-            global_ctx->need_prefix = need_prefix;
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
 
@@ -289,7 +292,6 @@ private:
         PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
-        bool need_prefix{};
         String suffix;
         MergeTreeData::MergingParams merging_params{};
 
