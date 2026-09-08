@@ -371,7 +371,10 @@ std::optional<UnwrappedColumn> unwrapColumn(DataTypePtr type, const IColumn & so
 bool canHashRawValue(const IDataType & type)
 {
     const WhichDataType which(type);
-    return which.isStringOrFixedString() || (std::endian::native == std::endian::little && which.isNativeNumber());
+    if constexpr (std::endian::native == std::endian::little)
+        return which.isStringOrFixedString() || which.isNativeNumber();
+    else
+        return which.isStringOrFixedString();
 }
 
 UInt64 hashTypedValue(
