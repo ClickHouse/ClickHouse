@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/Scheduler/ResourceAllocation.h>
@@ -18,26 +19,22 @@ namespace DB
 /// NOTE: All fields and methods can only be accessed from the scheduler thread.
 ///
 /// Reclaimable-memory / spilling invariants (maintained by all subclasses):
-///  - All `reclaimable` state (the aggregate and the reclaimable-filtered sets) is read and written
-///      only on the scheduler thread; queries touch it exclusively through `IAllocationQueue::setReclaimable`.
-///  - `reclaimable` is a bottom-up aggregate: each `setReclaimable` change travels one leaf-to-root path
-///      as `Update::reclaimable_delta`, adding to every ancestor (cost O(depth)).
-///  - The reply to a spill request travels the same path as `Update::spilled`, set by `finishSpill` or by
-///      the removal of an allocation that reported reclaimable memory (an allocation that left the queue
-///      can no longer spill). It reopens the spill gate of every `AllocationLimit` it passes.
-///  - Per allocation `0 <= reclaimable <= allocated`; per node `reclaimable == sum of children reclaimable`
-///      and therefore `0 <= reclaimable <= allocated`.
+///  - Node aggregates and child sets are scheduler-thread-only. Per-allocation counters and the
+///      queue's allocation sets are protected by the queue mutex.
+///  - `reclaimable` sums the uncommitted capacity of allocations, each clamped at zero. Changes travel
+///      one leaf-to-root path as `Update::reclaimable_delta`, adding to every ancestor (cost O(depth)).
+///  - `reclaiming` counts issued but unsettled bytes, including requests not yet executing. Issuance
+///      propagates synchronously from the queue to the root; completion or removal propagates the opposite delta.
+///  - Per allocation `0 <= reclaimable <= max(0, allocated - reclaiming)`; node counters sum the
+///      corresponding child counters. `reclaiming` can exceed `allocated` until a request is settled.
 ///  - Spilling never blocks the increase chain. Only the hard limit (`AllocationLimit::max_allocated`)
 ///      can null out `increase`; a soft-limit breach merely issues a `spillAllocation` signal.
 ///  - Spill victim selection (`selectAllocationToSpill`) touches at most one root-to-leaf path — no more
 ///      scheduling nodes than the existing kill path (`selectAllocationToKill`).
 ///  - Fail-close: if nothing on the chosen path is reclaimable, no spill is issued and the hard limit
 ///      remains the sole enforcement mechanism (reclaimable == 0 everywhere reproduces today's behavior).
-///  - Membership: a child is in its parent's reclaimable set iff its aggregate `reclaimable > 0`; an
-///      allocation is in its queue's reclaimable set iff its `reclaimable > 0`.
-///  - The reclaimable set uses the SAME order as the primary running set at each node, so the spill
-///      victim (top of the reclaimable set) is the same choice the kill path would make among reclaimable
-///      candidates — deterministic, largest-usage / least-precedence / largest-allocation first.
+///  - Membership follows positive uncommitted capacity. Child sets preserve workload ordering;
+///      queues order allocations by their uncommitted reclaimable bytes.
 class ISpaceSharedNode : public ISchedulerNode
 {
 public:
@@ -47,7 +44,8 @@ public:
 
     ResourceCost allocated = 0; /// Currently allocated amount of resource under this node.
     size_t allocations = 0; /// Number of currently running allocations under this node.
-    ResourceCost reclaimable = 0; /// Sum over children of the reclaimable portion of `allocated` that could be spilled on request (advisory).
+    ResourceCost reclaimable = 0; /// Sum of uncommitted capacity available for new spill requests (advisory).
+    ResourceCost reclaiming = 0; /// Bytes requested for spilling but not yet settled, including requests not yet executing.
 
     /// Requests to be processed next from the node or its children.
     /// Keeping these fields up-to-date is part of request processing and activation logic
@@ -70,16 +68,19 @@ public:
         std::optional<IncreaseRequest *> increase; /// New increase request or nullptr if no more increase requests, null_opt means no change
         std::optional<DecreaseRequest *> decrease; /// New decrease request or nullptr if no more decrease requests, null_opt means no change
         ResourceCost reclaimable_delta = 0; /// Change to `reclaimable` to add on every node on the path to the root.
-        bool spilled = false; /// The subtree's spill-signaled allocation finished handling its spill request (or left the queue). Travels with `reclaimable_delta`; reopens the spill gate of every `AllocationLimit` on the path to the root.
+        ResourceCost reclaiming_delta = 0; /// Positive on issuance, negative on settlement.
 
-        explicit operator bool() const { return attached || detached || increase || decrease || reclaimable_delta != 0 || spilled; }
+        explicit operator bool() const
+        {
+            return attached || detached || increase || decrease || reclaimable_delta != 0 || reclaiming_delta != 0;
+        }
 
         Update & setAttached(ISpaceSharedNode * new_attached) & noexcept { attached = new_attached; return *this; }
         Update & setDetached(ISpaceSharedNode * new_detached) & noexcept { detached = new_detached; return *this; }
         Update & setIncrease(IncreaseRequest * new_increase) & noexcept { increase = new_increase; return *this; }
         Update & setDecrease(DecreaseRequest * new_decrease) & noexcept { decrease = new_decrease; return *this; }
         Update & setReclaimableDelta(ResourceCost value) & noexcept { reclaimable_delta = value; return *this; }
-        Update & setSpilled() & noexcept { spilled = true; return *this; }
+        Update & setReclaimingDelta(ResourceCost value) & noexcept { reclaiming_delta = value; return *this; }
         Update & resetAttached() & noexcept { attached = nullptr; return *this; }
         Update & resetDetached() & noexcept { detached = nullptr; return *this; }
         Update & resetIncrease() & noexcept { increase = std::nullopt; return *this; }
@@ -91,7 +92,7 @@ public:
         Update && setIncrease(IncreaseRequest * new_increase) && noexcept { increase = new_increase; return std::move(*this); }
         Update && setDecrease(DecreaseRequest * new_decrease) && noexcept { decrease = new_decrease; return std::move(*this); }
         Update && setReclaimableDelta(ResourceCost value) && noexcept { reclaimable_delta = value; return std::move(*this); }
-        Update && setSpilled() && noexcept { spilled = true; return std::move(*this); }
+        Update && setReclaimingDelta(ResourceCost value) && noexcept { reclaiming_delta = value; return std::move(*this); }
         Update && resetAttached() && noexcept { attached = nullptr; return std::move(*this); }
         Update && resetDetached() && noexcept { detached = nullptr; return std::move(*this); }
         Update && resetIncrease() && noexcept { increase = std::nullopt; return std::move(*this); }
@@ -100,13 +101,13 @@ public:
         // For debugging purposes only
         String toString() const
         {
-            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={}, reclaimable_delta={}, spilled={} }}",
+            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={}, reclaimable_delta={}, reclaiming_delta={} }}",
                 attached ? attached->getPath() : "nullptr",
                 detached ? detached->getPath() : "nullptr",
                 increase ? (*increase ? (*increase)->allocation.id : "nullptr") : "no_change",
                 decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change",
                 reclaimable_delta,
-                spilled);
+                reclaiming_delta);
         }
     };
 
@@ -130,13 +131,8 @@ public:
     virtual ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) = 0;
 
     /// Returns an allocation that should be asked to spill (reclaim) `at_least` bytes, or nullptr if this
-    /// subtree has nothing reclaimable. Selection descends the reclaimable-filtered ordering set at each
-    /// node, using the SAME order as the kill path, so it visits exactly one root-to-leaf
-    /// path and never touches idle/unreclaimable subtrees. Unlike `selectAllocationToKill`,
-    /// this carries no cross-child fairness logic: the largest reclaimable allocation is spilled first,
-    /// even if it is below its fair share. Returns nullptr when nothing on
-    /// the chosen path is reclaimable, in which case no spill is issued and the hard limit governs
-    /// (fail-close).
+    /// subtree has no uncommitted reclaimable memory. Selection follows workload ordering through
+    /// available subtrees and chooses the allocation with the most available bytes in the selected queue.
     virtual ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) = 0;
 
     /// For parent only. Sets the usage key.
@@ -171,14 +167,18 @@ public:
             allocated += update.attached->allocated;
             allocations += update.attached->allocations;
             reclaimable += update.attached->reclaimable;
+            reclaiming += update.attached->reclaiming;
         }
         if (update.detached)
         {
             allocated -= update.detached->allocated;
             allocations -= update.detached->allocations;
             reclaimable -= update.detached->reclaimable;
+            reclaiming -= update.detached->reclaiming;
         }
         reclaimable += update.reclaimable_delta;
+        reclaiming += update.reclaiming_delta;
+        chassert(reclaiming >= 0 && reclaimable >= 0);
         ++updates;
     }
 
@@ -237,7 +237,7 @@ private:
     boost::intrusive::set_member_hook<> running_hook;
     boost::intrusive::set_member_hook<> increasing_hook;
     boost::intrusive::list_member_hook<> decreasing_hook;
-    boost::intrusive::set_member_hook<> reclaimable_hook; /// Membership in the parent's reclaimable-filtered set (linked iff `reclaimable > 0`).
+    boost::intrusive::set_member_hook<> reclaimable_hook; /// Linked iff `reclaimable > 0` and attached.
     using PendingHook    = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::set_member_hook<>, &ISpaceSharedNode::pending_hook>;
     using RunningHook    = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::set_member_hook<>, &ISpaceSharedNode::running_hook>;
     using IncreasingHook = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::set_member_hook<>, &ISpaceSharedNode::increasing_hook>;

@@ -263,7 +263,7 @@ void MemoryReservation::reportReclaimable(bool force, ResourceCost settled_bytes
     }
 
     if (settled_bytes > 0)
-        queue.finishSpill(*this, total);
+        queue.finishSpill(*this, settled_bytes, total);
     else
         queue.setReclaimable(*this, total);
 }
@@ -274,14 +274,15 @@ ResourceCost MemoryReservation::takeSpillRequest(const ISpillable * spillable, R
         return 0;
 
     std::lock_guard lock(mutex);
-    if (enqueued_spill <= 0 || spills_in_flight > 0)
+    if (enqueued_spill <= 0)
         return 0;
 
     auto & entry = spillable->spill_accounting;
     if (entry.in_progress)
         return 0;
 
-    ResourceCost claim = std::exchange(enqueued_spill, 0);
+    ResourceCost claim = std::min(spillable_bytes, enqueued_spill);
+    enqueued_spill -= claim;
     ++spills_in_flight;
     entry.in_progress = true;
     return claim;
@@ -339,10 +340,10 @@ void MemoryReservation::killAllocation(const std::exception_ptr & reason)
     cv.notify_all(); // notify syncWithMemoryTracker
 }
 
-void MemoryReservation::spillAllocation(ResourceCost at_least_bytes)
+void MemoryReservation::spillAllocation(ResourceCost additional_bytes)
 {
     std::lock_guard lock(mutex);
-    enqueued_spill = at_least_bytes;
+    enqueued_spill += additional_bytes;
 }
 
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)

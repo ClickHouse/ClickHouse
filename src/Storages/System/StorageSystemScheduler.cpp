@@ -116,7 +116,12 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
             "For space-shared nodes only. The currently allocated amount of resource under this node."
         },
         {"reclaimable", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For space-shared nodes only. The portion of `allocated` under this node that queries reported as reclaimable (spillable to disk on request)."
+            "For space-shared nodes only. Memory available for new spill requests under this node. "
+            "For each allocation, outstanding requests are subtracted from its reported reclaimable memory and the result is clamped at zero before summing."
+        },
+        {"reclaiming", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
+            "For space-shared nodes only. Memory requested for spilling but not yet settled under this node, including requests that have not started executing. "
+            "Settlement retires the requested amount independently of the amount actually freed."
         },
         {"allocations", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For space-shared nodes only. The current number of running resource allocations under this node."
@@ -199,6 +204,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field tokens;
         Field allocated;
         Field reclaimable;
+        Field reclaiming;
         Field allocations;
         Field updates;
         Field increases;
@@ -255,6 +261,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         {
             allocated = ptr->allocated;
             reclaimable = ptr->reclaimable;
+            reclaiming = ptr->reclaiming;
             allocations = ptr->allocations;
             updates = ptr->updates;
             increases = ptr->increases;
@@ -299,6 +306,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(tokens);
         res_columns[i++]->insert(allocated);
         res_columns[i++]->insert(reclaimable);
+        res_columns[i++]->insert(reclaiming);
         res_columns[i++]->insert(allocations);
         res_columns[i++]->insert(updates);
         res_columns[i++]->insert(increases);

@@ -83,7 +83,7 @@ private:
 
     // Interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override;
-    void spillAllocation(ResourceCost at_least_bytes) override;
+    void spillAllocation(ResourceCost additional_bytes) override;
     void increaseApproved(const IncreaseRequest & increase) override;
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;
@@ -122,7 +122,7 @@ private:
 
     /// Scheduler requested spilling
     ResourceCost enqueued_spill = 0;
-    /// Whether a processor is currently spilling.
+    /// Number of processors that do spilling in parallel
     size_t spills_in_flight = 0;
 
     /// Sum of the last reported per-object reclaimable estimates.

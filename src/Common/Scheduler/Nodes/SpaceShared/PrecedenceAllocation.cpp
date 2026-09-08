@@ -154,9 +154,7 @@ void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update
         else
             update.resetDecrease();
     }
-    // Membership in `reclaimable_children` follows `from_child.reclaimable`. Precedence keys
-    // are constant (a precedence change forces detach/reattach), so no re-keying is ever needed — only
-    // add/remove. `from_child.reclaimable` is already final here.
+    // Precedence keys are constant; availability updates only change membership.
     syncReclaimableMembership(from_child, update.detached == &from_child);
     if (parent && update)
         propagate(std::move(update));
