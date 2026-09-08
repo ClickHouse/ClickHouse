@@ -91,6 +91,54 @@ namespace
         }
     }
 
+    /// Returns the raw (still percent-encoded) path of a request target. The target is normally in
+    /// origin-form (`/path?query`), but a proxy may send it in absolute-form (`http://host/path?query`).
+    std::string_view getRawPath(std::string_view uri)
+    {
+        size_t begin = 0;
+        size_t scheme_end = uri.find("://");
+        if (scheme_end != std::string_view::npos)
+        {
+            size_t authority_end = uri.find('/', scheme_end + 3);
+            if (authority_end == std::string_view::npos)
+                return {};
+            begin = authority_end;
+        }
+
+        size_t end = uri.find_first_of("?#", begin);
+        return uri.substr(begin, (end == std::string_view::npos) ? std::string_view::npos : end - begin);
+    }
+
+    /// Splits a raw path into segments and only then percent-decodes each segment separately.
+    /// Decoding the whole path first (as `Poco::URI` does) would be wrong here for two reasons:
+    /// a `%2F` inside a table name would turn into a segment separator, making a `TimeSeries` table such as
+    /// `` default.`a/b` `` unreachable; and `Poco::URI::getPathSegments` silently drops empty segments, so
+    /// malformed paths with doubled slashes would slip through the exact-shape check below.
+    std::vector<String> splitAndDecodeRawPathSegments(std::string_view raw_path)
+    {
+        std::vector<String> segments;
+
+        /// A well-formed request path is absolute, so it starts with `/`; that leading separator does not
+        /// introduce an empty first segment. Anything else is left as is and fails the shape check.
+        size_t pos = raw_path.starts_with('/') ? 1 : 0;
+
+        while (true)
+        {
+            size_t next = raw_path.find('/', pos);
+            std::string_view encoded = raw_path.substr(pos, (next == std::string_view::npos) ? std::string_view::npos : next - pos);
+
+            String segment;
+            Poco::URI::decode(String{encoded}, segment);
+            segments.push_back(std::move(segment));
+
+            if (next == std::string_view::npos)
+                break;
+            pos = next + 1;
+        }
+
+        return segments;
+    }
+
     QualifiedTableName resolveTableNameFromRequest(
         const PrometheusRequestHandlerConfig & config,
         const HTTPServerRequest & request)
@@ -105,9 +153,8 @@ namespace
         /// enabled routing by mistake) would be silently reinterpreted as `database = "prometheus", table = "api"`.
         const auto expected_suffix = getDynamicRoutingPathSuffix(config);
 
-        Poco::URI uri(request.getURI());
-        std::vector<String> path_segments;
-        uri.getPathSegments(path_segments);
+        const auto raw_path = getRawPath(request.getURI());
+        const auto path_segments = splitAndDecodeRawPathSegments(raw_path);
 
         bool shape_matches = (path_segments.size() == expected_suffix.size() + 2);
         for (size_t i = 0; shape_matches && (i < expected_suffix.size()); ++i)
@@ -121,7 +168,7 @@ namespace
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "URL path '{}' does not match the expected dynamic routing shape '{}'",
-                uri.getPath(), expected_path);
+                raw_path, expected_path);
         }
 
         const String & database = path_segments[0];
@@ -130,7 +177,7 @@ namespace
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "URL path '{}' does not contain a database and a table name",
-                uri.getPath());
+                raw_path);
 
         return QualifiedTableName{database, table};
     }

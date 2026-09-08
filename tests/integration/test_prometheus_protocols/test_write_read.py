@@ -375,6 +375,41 @@ def test_remote_write_dynamic_routing_setting_can_be_altered():
         node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
+def test_remote_write_url_path_routing_with_encoded_slash_in_table_name():
+    # Regression test: the request path must be split into segments *before* percent-decoding, otherwise
+    # a `%2F` inside the table name decodes into a segment separator and a `TimeSeries` table whose name
+    # contains a slash becomes unreachable (the path would look like it has one segment too many).
+    table_name = "prometheus_dynamic/slash"
+    encoded_table_name = "prometheus_dynamic%2Fslash"
+    node.query(f"DROP TABLE IF EXISTS `{table_name}` SYNC")
+    node.query(
+        f"CREATE TABLE `{table_name}` ENGINE=TimeSeries "
+        "SETTINGS prometheus_remote_write_dynamic_routing_enabled = 1"
+    )
+
+    try:
+        timestamp = time.time()
+        write_request = convert_time_series_to_protobuf(
+            [({"__name__": "encoded_slash_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+        )
+
+        send_protobuf_to_remote_write(
+            node.ip_address,
+            9093,
+            f"default/{encoded_table_name}/write",
+            write_request,
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM timeSeriesTags(`{table_name}`) "
+            "WHERE metric_name = 'encoded_slash_metric'",
+            "1",
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS `{table_name}` SYNC")
+
+
 def test_api_v1_url_path_routing_rejects_legacy_fixed_prefix():
     # Regression test: a `prometheus_api_v1` handler that enables URL path routing on the legacy fixed
     # `/prometheus/api/v1` prefix must reject a request to `/prometheus/api/v1/write` (the path does not
