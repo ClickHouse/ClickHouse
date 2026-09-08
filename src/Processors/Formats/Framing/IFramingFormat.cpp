@@ -90,7 +90,11 @@ void IFramingFormat::onPayload(FramedPacketKind kind)
     extractAndWritePayload(kind);
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
-    pumpProfileTraces(/*force=*/ false);
+    if (profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        pumpProfileTraces(/*force=*/ false);
+    }
     flushOut();
 }
 
@@ -102,7 +106,11 @@ void IFramingFormat::onProgress(const Progress & progress)
     emitToOut([&] { writeProgressPacket(progress); });
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
-    pumpProfileTraces(/*force=*/ false);
+    if (profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        pumpProfileTraces(/*force=*/ false);
+    }
     flushOut();
 }
 
@@ -137,7 +145,11 @@ void IFramingFormat::finalize()
         extractAndWritePayload(FramedPacketKind::Data);
     pumpLogs();
     pumpProfileEvents(/*force=*/ true);
-    pumpProfileTraces(/*force=*/ true);
+    if (profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        pumpProfileTraces(/*force=*/ true);
+    }
 
     /// The final progress is written after the logs, profile events and traces above, so a successful
     /// stream ends with it (see `setFinalProgress`). It is suppressed once an exception was
@@ -299,14 +311,14 @@ void IFramingFormat::pumpProfileEvents(bool force)
 
 void IFramingFormat::pumpProfileTraces(bool force)
 {
+    /// The caller's guard also suppresses samples from this function's entry and return paths.
+    chassert(ProfileTracesBlocker::isBlocked());
+
     if (!profile_traces_queue)
         return;
 
     if (!force && profile_traces_watch.elapsedMicroseconds() < profile_traces_period_us)
         return;
-
-    /// Serializing samples must not generate more samples of the telemetry itself.
-    ProfileTracesBlocker blocker;
 
     if (force)
         profile_traces_queue->finish();
