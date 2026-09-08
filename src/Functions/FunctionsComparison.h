@@ -4,8 +4,11 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/formatIPv6.h>
 #include <Common/quoteString.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -13,16 +16,21 @@
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
 #include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
@@ -51,6 +59,76 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+}
+
+/// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
+/// with a non-string type on the other return true to not allow comparison
+static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    /// Unwrap optional top-level LowCardinality/Nullable on both sides before aligning.
+    const auto left = removeLowCardinalityAndNullable(left_type);
+    const auto right = removeLowCardinalityAndNullable(right_type);
+
+    if (const auto * left_array = checkAndGetDataType<DataTypeArray>(left.get()))
+        if (const auto * right_array = checkAndGetDataType<DataTypeArray>(right.get()))
+            return hasAlignedStringVsNonStringElement(left_array->getNestedType(), right_array->getNestedType());
+
+    if (const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(left.get()))
+        if (const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(right.get()))
+        {
+            const DataTypes & left_elems = left_tuple->getElements();
+            const DataTypes & right_elems = right_tuple->getElements();
+            if (left_elems.size() != right_elems.size())
+                return false; /// structural mismatch -- defer to the build probe
+            for (size_t i = 0; i < left_elems.size(); ++i)
+                if (hasAlignedStringVsNonStringElement(left_elems[i], right_elems[i]))
+                    return true;
+            return false;
+        }
+
+    const WhichDataType left_which(left);
+    const WhichDataType right_which(right);
+
+    /// The `FixedString(16)` <-> `IPv6` pair is a genuine full-column comparison (see the dedicated
+    /// path in `executeImpl`, where a `FixedString(16)` is treated as the binary representation of an
+    /// `IPv6`), not a legacy const-string coercion. It is executable element-wise, so do not reject it.
+    auto is_ipv6_binary_fixed_string = [](const DataTypePtr & type)
+    {
+        const auto * fixed_string = checkAndGetDataType<DataTypeFixedString>(type.get());
+        return fixed_string && fixed_string->getN() == IPV6_BINARY_LENGTH;
+    };
+    if ((left_which.isIPv6() && is_ipv6_binary_fixed_string(right))
+        || (right_which.isIPv6() && is_ipv6_binary_fixed_string(left)))
+        return false;
+
+    const bool left_is_string = left_which.isStringOrFixedString();
+    const bool right_is_string = right_which.isStringOrFixedString();
+    return left_is_string != right_is_string;
+}
+
+/// For the array element-comparison path: a bare `Nothing` position carries no value, so the element
+/// comparator declares `Nothing` and the comparison cannot be executed.
+static bool containsUndecidableNothing(const DataTypePtr & type)
+{
+    const auto inner_type = removeLowCardinality(type);
+
+    if (isNothing(inner_type))
+        return true;
+
+    if (inner_type->isNullable())
+    {
+        const auto nested = removeNullable(inner_type);
+        return isNothing(nested) ? false : containsUndecidableNothing(nested);
+    }
+
+    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(inner_type.get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+            if (containsUndecidableNothing(element))
+                return true;
+    }
+
+    return false;
 }
 
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
@@ -723,6 +801,86 @@ template <> struct CompileOp<GreaterOrEqualsOp>
 
 #endif
 
+/** Whether a comparison of two values of these types can throw an exception, see `IFunction::canThrow`.
+  *
+  * A comparison does not throw as long as both sides are compared the way they are stored, or the
+  * narrower side is only widened: numbers are compared by an accurate numeric comparison, strings
+  * byte-wise, and values of exactly the same type by `IColumn::compareAt`. It throws as soon as one
+  * of the sides has to be interpreted as something else: a string parsed as a date, a time or a
+  * tuple (`CANNOT_PARSE_DATE`), a string validated against an enum, or decimals of different scales
+  * brought to a common scale, which can overflow (`DECIMAL_OVERFLOW`).
+  *
+  * These are the same groups of types that `getComparisonOrderDomainForType` keys its domains by:
+  * a comparison inside one domain is direct, a comparison across domains goes through a conversion.
+  * Types that are not listed here are reported as throwing, which is always safe: it only means
+  * that an optimization is lost.
+  */
+inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    /// `Nullable` and `LowCardinality` are unwrapped by the default implementations before the
+    /// comparison itself is executed.
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+
+    const WhichDataType which_left(left);
+    const WhichDataType which_right(right);
+
+    /// Compared by an accurate numeric comparison of both sides as they are stored, without
+    /// converting either of them. `Enum` is compared by its underlying numeric value.
+    auto is_number = [](const WhichDataType & which)
+    {
+        return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum();
+    };
+    if (is_number(which_left) && is_number(which_right))
+        return false;
+
+    /// Compared byte-wise, `FixedString` of different sizes is zero-padded to the wider one.
+    if (which_left.isStringOrFixedString() && which_right.isStringOrFixedString())
+        return false;
+
+    /// Both share the days-since-epoch order, `Date` is only widened to `Date32`.
+    if (which_left.isDateOrDate32() && which_right.isDateOrDate32())
+        return false;
+
+    /// Types that are compared through their scale. Equal scales are compared as the stored
+    /// integers (the narrower side is only widened), different scales are rescaled to a common
+    /// scale first, and that multiplication can overflow.
+    enum class ScaledKind : uint8_t
+    {
+        TimePoint,
+        TimeOfDay,
+        Decimal,
+    };
+    using ScaleAndKind = std::pair<ScaledKind, UInt32>;
+
+    auto scale_and_kind = [](const DataTypePtr & type, const WhichDataType & which) -> std::optional<ScaleAndKind>
+    {
+        if (which.isDateTime())
+            return ScaleAndKind{ScaledKind::TimePoint, 0};
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+            return ScaleAndKind{ScaledKind::TimePoint, date_time64->getScale()};
+        if (which.isTime())
+            return ScaleAndKind{ScaledKind::TimeOfDay, 0};
+        if (const auto * time64 = typeid_cast<const DataTypeTime64 *>(type.get()))
+            return ScaleAndKind{ScaledKind::TimeOfDay, time64->getScale()};
+        if (which.isDecimal())
+            return ScaleAndKind{ScaledKind::Decimal, getDecimalScale(*type)};
+        return {};
+    };
+
+    if (const auto left_scaled = scale_and_kind(left, which_left);
+        left_scaled && left_scaled == scale_and_kind(right, which_right))
+        return false;
+
+    /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
+    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
+    /// dispatches on the type of every individual row.
+    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+        return false;
+
+    return true;
+}
+
 struct ComparisonParams
 {
     bool check_decimal_overflow = false;
@@ -750,6 +908,44 @@ public:
     bool isNameInsensitive() const override { return true; }
 private:
     const ComparisonParams params;
+
+    static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
+    {
+        using Kind = ComparisonOrderDomain::Kind;
+
+        const auto nested_type = removeLowCardinality(type);
+        if (nested_type->isNullable())
+            return {};
+        /// All integer and float widths (`BFloat16` included) share one accurate numeric order
+        /// that never rounds the integer side; `Enum` compares by its underlying numeric value.
+        if (isInteger(nested_type) || isFloat(nested_type) || isEnum(nested_type))
+            return {.kind = Kind::Number};
+        if (isString(nested_type))
+            return {.kind = Kind::String};
+        if (isDateOrDate32(nested_type))
+            return {.kind = Kind::Date};
+        if (isDateTime(nested_type))
+            return {.kind = Kind::TimePoint, .scale = 0};
+        if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(nested_type.get()))
+            return {.kind = Kind::TimePoint, .scale = datetime64_type->getScale()};
+        /// Mixed `Time64` scales rescale and can throw `DECIMAL_OVERFLOW` (interval arithmetic can
+        /// leave values beyond the clamped range), so the scale keys the domain, like `TimePoint`.
+        if (WhichDataType(nested_type).isTime())
+            return {.kind = Kind::TimeOfDay, .scale = 0};
+        if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(nested_type.get()))
+            return {.kind = Kind::TimeOfDay, .scale = time64_type->getScale()};
+        /// Equal-scale decimals compare their underlying integers directly (regardless of width);
+        /// mixed scales rescale and can throw `DECIMAL_OVERFLOW`, so the scale keys the domain.
+        if (isDecimal(nested_type))
+            return {.kind = Kind::Decimal, .scale = getDecimalScale(*nested_type)};
+        /// Cross-width `FixedString` comparisons zero-pad into one shared byte order; `String`
+        /// stays separate, it distinguishes values that differ only in trailing zero bytes.
+        if (isFixedString(nested_type))
+            return {.kind = Kind::FixedString};
+        /// Remaining comparable types chain only with their equal type and its canonical order.
+        /// Three-valued comparisons (Nullable Tuple elements) never reach the pass at all.
+        return {.kind = Kind::ExactType, .exact_type = nested_type};
+    }
 
     template <typename T0, typename T1>
     ColumnPtr executeNumRightType(const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
@@ -1263,6 +1459,292 @@ private:
         return executeGenericIdenticalTypes(c0_converted.get(), c1_converted.get());
     }
 
+    /// Aligned common-prefix elements of two array columns, gathered into flat equally-sized
+    /// columns so they can be compared with a single batch scalar comparison.
+    struct GatheredArrayElements
+    {
+        /// The gathered element columns with `LowCardinality` and top-level `Nullable` removed,
+        ColumnsWithTypeAndName element_args;
+        /// Keep the gathered `Nullable` columns alive: the null map pointers below point into them.
+        ColumnPtr full_elements0;
+        ColumnPtr full_elements1;
+        /// Null maps of the gathered elements (nullptr when the elements are not `Nullable`).
+        const NullMap * null_map0 = nullptr;
+        const NullMap * null_map1 = nullptr;
+        /// Per row: the aligned prefix length both arrays share.
+        PaddedPODArray<UInt64> common_lengths;
+        /// Per row: whether array0 is shorter(-1), equals(0), bigger(1) than array1.
+        PaddedPODArray<Int8> length_cmp;
+        /// Total number of gathered element pairs.
+        size_t num_elements = 0;
+    };
+
+    GatheredArrayElements gatherAlignedArrayElements(
+        const ColumnWithTypeAndName & column_type_name0,
+        const ColumnWithTypeAndName & column_type_name1,
+        size_t input_rows_count) const
+    {
+        /// First, unwrap the two array columns
+        chassert(column_type_name0.column && column_type_name1.column);
+        ColumnPtr full_column0 = column_type_name0.column->convertToFullColumnIfConst();
+        ColumnPtr full_column1 = column_type_name1.column->convertToFullColumnIfConst();
+
+        /// With ColumnArray we have access to offsets and we can handle array of arrays
+        const auto & column_array0 = assert_cast<const ColumnArray &>(*full_column0);
+        const auto & column_array1 = assert_cast<const ColumnArray &>(*full_column1);
+        /// Fetch all offsets from both ColumnArrays
+        const auto & offsets0 = column_array0.getOffsets();
+        const auto & offsets1 = column_array1.getOffsets();
+        /// Create the storage for the indexes
+        auto indexes0 = ColumnUInt64::create();
+        auto indexes1 = ColumnUInt64::create();
+        auto & idx0 = indexes0->getData();
+        auto & idx1 = indexes1->getData();
+
+        GatheredArrayElements gathered;
+        gathered.common_lengths.resize(input_rows_count);
+        gathered.length_cmp.resize(input_rows_count);
+
+        ColumnArray::Offset prev0 = 0;
+        ColumnArray::Offset prev1 = 0;
+
+        /// For each row, collect(Gather) indices of the aligned elements (the common prefix of both arrays)
+        /// and remember the common length and the sign of the length difference for the tie-break.
+        /// Handles [1] = [1] as well as [[1]] = [[1]]
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            ColumnArray::Offset off0 = offsets0[row];
+            ColumnArray::Offset off1 = offsets1[row];
+            size_t len0 = off0 - prev0;
+            size_t len1 = off1 - prev1;
+            size_t common = std::min(len0, len1);
+
+            for (size_t k = 0; k < common; ++k)
+            {
+                /// stores consecutive common positions on both arrays
+                idx0.push_back(prev0 + k);
+                idx1.push_back(prev1 + k);
+            }
+
+            gathered.common_lengths[row] = common;
+            gathered.length_cmp[row] = len0 < len1 ? -1 : (len0 == len1 ? 0 : 1);/// shorter(-1), equals(0), greater(1)
+
+            /// update previous positions with current offsets
+            prev0 = off0;
+            prev1 = off1;
+        }
+
+        gathered.num_elements = idx0.size();
+
+        /// Now we can gather aligned elements into two equally-sized columns and compare them all at once.
+        /// The element types may be wrapped in `LowCardinality` (e.g. `Array(LowCardinality(Nullable(UInt64)))`);
+        DataTypePtr nested_type0 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name0.type).getNestedType());
+        DataTypePtr nested_type1 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType());
+        /// Strip it recursively from both the types and the gathered columns so the `Nullable` unwrapping just
+        /// below and the scalar comparison see plain columns.
+        gathered.full_elements0 = recursiveRemoveLowCardinality(column_array0.getDataPtr()->index(*indexes0, 0));
+        gathered.full_elements1 = recursiveRemoveLowCardinality(column_array1.getDataPtr()->index(*indexes1, 0));
+        ColumnPtr elements0 = gathered.full_elements0;
+        ColumnPtr elements1 = gathered.full_elements1;
+        if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(gathered.full_elements0.get()))
+        {
+            gathered.null_map0 = &nullable0->getNullMapData();
+            elements0 = nullable0->getNestedColumnPtr();
+        }
+        if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(gathered.full_elements1.get()))
+        {
+            gathered.null_map1 = &nullable1->getNullMapData();
+            elements1 = nullable1->getNestedColumnPtr();
+        }
+
+        gathered.element_args = ColumnsWithTypeAndName{
+            {elements0, removeNullable(nested_type0), "left"},
+            {elements1, removeNullable(nested_type1), "right"}};
+
+        return gathered;
+    }
+
+    /// Compares the gathered aligned elements with the given scalar comparison; returns its
+    /// full (non-const) `UInt8` result over all gathered element pairs.
+    static ColumnPtr compareGatheredElements(const FunctionOverloadResolverPtr & resolver, const GatheredArrayElements & gathered)
+    {
+        /// Recurse over indexes to compare flat columns at element-level
+        auto impl = resolver->build(gathered.element_args);
+
+        /// A `Nothing` element type has no values, so it cannot be executed and yields a `ColumnNothing`
+        /// the callers cannot consume.
+        if (isNothing(impl->getResultType()))
+        {
+            auto masked = [&](size_t arg, const NullMap * null_map)
+            {
+                return isNothing(removeLowCardinality(gathered.element_args[arg].type)) && null_map
+                    && std::all_of(null_map->begin(), null_map->begin() + gathered.num_elements,
+                                   [](UInt8 byte) { return byte != 0; });
+            };
+
+            if (masked(0, gathered.null_map0) || masked(1, gathered.null_map1))
+                return ColumnUInt8::create(gathered.num_elements, UInt8(0));
+
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
+                " of function {}", backQuote(gathered.element_args[0].type->getName()),
+                backQuote(gathered.element_args[1].type->getName()), backQuote(name));
+        }
+
+        return impl->execute(gathered.element_args, impl->getResultType(), gathered.num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
+    }
+
+    /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
+    /// (a NULL element is equal only to another NULL). For `!=` and `isDistinctFrom` (instantiated with `NotEqualsOp`)
+    /// the result is inverted into inequality.
+    ColumnPtr executeArrayLexicographicEqualityImpl(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const ColumnWithTypeAndName & column_type_name0,
+        const ColumnWithTypeAndName & column_type_name1,
+        size_t input_rows_count) const
+    {
+        static constexpr bool invert = IsOperation<Op>::not_equals;
+
+        GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
+
+        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
+        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
+
+        /// Fold the unwrapped null maps into element-level equality using array NULL semantics.
+        auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
+
+        /// Null-safe element equality: a NULL is equal only to another NULL.
+        auto elements_equal = [&](size_t j) -> bool
+        {
+            bool n0 = elem_is_null(gathered.null_map0, j);
+            bool n1 = elem_is_null(gathered.null_map1, j);
+            if (n0 || n1)
+                return n0 && n1;
+            return element_equals[j];
+        };
+
+        auto result = ColumnUInt8::create(input_rows_count);
+        auto & res = result->getData();
+
+        size_t pos = 0;
+        /// For each row from both Arrays
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t common_length = gathered.common_lengths[row];
+
+            /// Arrays of different lengths are never equal; otherwise all aligned elements must match.
+            bool equal = gathered.length_cmp[row] == 0;
+            for (size_t k = 0; equal && k < common_length; ++k)
+                equal = elements_equal(pos + k);
+            res[row] = invert ? !equal : equal;
+
+            pos += common_length; /// advance to the next subarray
+        }
+
+        return result;
+    }
+
+    /// Lexicographic order comparison (`<`, `<=`, `>`, `>=`) of two arrays: the first differing aligned element decides via `order_resolver`
+    /// A NULL element is equal only to another NULL and sorts after every non-NULL value. The result is always a non-Nullable `UInt8`
+    ColumnPtr executeArrayLexicographicLessGreaterImpl(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const FunctionOverloadResolverPtr & order_resolver,
+        const ColumnWithTypeAndName & column_type_name0,
+        const ColumnWithTypeAndName & column_type_name1,
+        size_t input_rows_count) const
+    {
+        /// Direction for NULL ordering and the length tie-break.
+        static constexpr bool order_is_less = IsOperation<Op>::less || IsOperation<Op>::less_or_equals;
+        /// True for `<=` and `>=`.
+        static constexpr bool or_equals = IsOperation<Op>::less_or_equals || IsOperation<Op>::greater_or_equals;
+
+        GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
+
+        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
+        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
+        ColumnPtr order_col = compareGatheredElements(order_resolver, gathered);
+        const auto & element_order = assert_cast<const ColumnUInt8 &>(*order_col).getData();
+
+        /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
+        auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
+
+        /// Null-safe element equality: a NULL is equal only to another NULL.
+        auto elements_equal = [&](size_t j) -> bool
+        {
+            bool n0 = elem_is_null(gathered.null_map0, j);
+            bool n1 = elem_is_null(gathered.null_map1, j);
+            if (n0 || n1)
+                return n0 && n1;
+            return element_equals[j];
+        };
+
+        /// Order of the first differing element, with NULL sorting after every non-NULL value.
+        auto element_precedes = [&](size_t j) -> UInt8
+        {
+            bool n0 = elem_is_null(gathered.null_map0, j);
+            bool n1 = elem_is_null(gathered.null_map1, j);
+            /// Exactly one side is NULL here: both-NULL counts as equal and never reaches this point.
+            if (n0 || n1)
+                return (order_is_less ? n1 : n0) ? 1 : 0;
+            return element_order[j];
+        };
+
+        auto result = ColumnUInt8::create(input_rows_count);
+        auto & res = result->getData();
+
+        size_t pos = 0;
+        /// For each row from both Arrays
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t common_length = gathered.common_lengths[row];
+
+            /// The first differing element decides; if the common prefix is equal, the shorter array is "less".
+            UInt8 value = 0;
+            bool decided = false;
+            for (size_t k = 0; k < common_length; ++k)
+            {
+                if (!elements_equal(pos + k))
+                {
+                    value = element_precedes(pos + k);
+                    decided = true;
+                    break;
+                }
+            }
+            if (!decided)
+            {
+                Int8 lc = gathered.length_cmp[row];
+                if (order_is_less)
+                    value = or_equals ? lc <= 0 : lc < 0;
+                else
+                    value = or_equals ? lc >= 0 : lc > 0;
+            }
+            res[row] = value;
+
+            pos += common_length; /// advance to the next subarray
+        }
+
+        return result;
+    }
+
+    /// Entry point for array-vs-array comparison: chooses the strategy based on the least
+    /// supertype of the arguments.
+    ColumnPtr  executeArray(
+        const ColumnWithTypeAndName & c0,
+        const ColumnWithTypeAndName & c1,
+        size_t input_rows_count) const
+    {
+        if (tryGetLeastSupertype(DataTypes{c0.type, c1.type}))
+            return executeGeneric(c0, c1);
+        /// when leastSupertype does not exist (e.g. `Array(UInt64)` vs `Array(Int64)`), the arrays are compared lexicographically
+        /// element-by-element with the accurate scalar comparison.
+        return executeArrayLexicographic(c0, c1, input_rows_count);
+    }
+
+    /// Implemented as a template specialization per operator (`=`, `!=`, `<`, `<=`, `>`, `>=` and the null-safe variants)
+    ColumnPtr executeArrayLexicographic(
+        const ColumnWithTypeAndName & column_type_name0,
+        const ColumnWithTypeAndName & column_type_name1,
+        size_t input_rows_count) const;
+
 public:
     String getName() const override
     {
@@ -1271,7 +1753,29 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & arguments) const override
+    {
+        if constexpr (is_null_safe_cmp_mode || IsOperation<Op>::not_equals)
+            return {};
+
+        if (arguments.size() != 2)
+            return {};
+
+        auto left_domain = getComparisonOrderDomainForType(arguments[0]);
+        if (!left_domain.isValid() || left_domain != getComparisonOrderDomainForType(arguments[1]))
+            return {};
+        return left_domain;
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// A comparison is cheap, so it is not worth executing it lazily, but it is not free of
+    /// exceptions either: comparing a date to a string parses that string. These two properties
+    /// have to be answered separately.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+    }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1316,8 +1820,42 @@ public:
             || (arguments[0]->equals(*arguments[1]))))
         {
             if (!tryGetLeastSupertype(arguments))
+            {
+                /// Arrays with elements types bigger than 32 bits (e.g. `Array(Int64)` vs
+                /// `Array(UInt64)`, can still be compared
+                /// element-wise using the accurate scalar comparison.
+                const auto * left_array = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+                const auto * right_array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+                if (left_array && right_array)
+                {
+                    /// Array element comparison treats inner NULLs as regular comparable values (a NULL
+                    /// is equal only to another NULL and sorts after every non-NULL value)
+                    auto left_nested_type = removeLowCardinalityAndNullable(left_array->getNestedType());
+                    auto right_nested_type = removeLowCardinalityAndNullable(right_array->getNestedType());
+
+                    /// Recurse directly instead of going through an overload resolver.
+                    DataTypePtr element_result_type = getReturnTypeImpl(DataTypes{left_nested_type, right_nested_type});
+
+                    /// Reject only aligned string-vs-non-string positions
+                    bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
+
+                    /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
+                    /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields `Nullable(UInt8)`;
+                    const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
+                    const bool element_result_ok
+                        = WhichDataType(element_result_type.get()).isUInt8()
+                        || (is_equality && element_result_type->isNullable()
+                            && WhichDataType(removeNullable(element_result_type).get()).isUInt8());
+                    /// Tested on the unstripped nested types, so the `Nullable` arms stay visible.
+                    if (element_result_ok && !has_string_vs_non_string
+                        && !containsUndecidableNothing(left_array->getNestedType())
+                        && !containsUndecidableNothing(right_array->getNestedType()))
+                        return std::make_shared<DataTypeUInt8>();
+                }
+
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
                     " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
+            }
         }
 
         bool both_tuples = left_tuple && right_tuple;
@@ -1558,6 +2096,13 @@ public:
         if (types_equal)
         {
             return executeGenericIdenticalTypes(col_left_untyped, col_right_untyped);
+        }
+
+        /// Arrays are compared in executeArray, which chooses the comparison strategy based on
+        /// the least supertype of the arguments.
+        if (which_left.isArray() && which_right.isArray())
+        {
+            return executeArray(col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
 
         return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);

@@ -78,12 +78,14 @@ public:
     std::string_view getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
+
+    /// All arrays are empty iff every offset is zero.
+    bool hasOnlyTypeDefaults() const override;
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
@@ -101,6 +103,7 @@ public:
     void doInsertFrom(const IColumn & src_, size_t n) override;
 #endif
     void insertDefault() override;
+    void insertManyDefaults(size_t length) override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void filter(const Filter & filt) override;
@@ -235,7 +238,6 @@ private:
 
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
-
 
     /// Multiply values if the nested column is ColumnVector<T>.
     template <typename T>

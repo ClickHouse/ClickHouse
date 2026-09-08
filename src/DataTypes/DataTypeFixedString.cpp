@@ -101,7 +101,7 @@ Examples of the values that can be efficiently stored in `FixedString`-typed col
 - Currency codes (USD, RUB, ...).
 - Binary representation of hashes (`FixedString(16)` for MD5, `FixedString(32)` for SHA256).
 
-To store UUID values, use the [UUID](../../sql-reference/data-types/uuid.md) data type.
+To store UUID values, use the [UUID](/reference/data-types/uuid) data type.
 
 When inserting the data, ClickHouse:
 
@@ -133,7 +133,7 @@ FROM FixedStringTable;
 └──────┴──────────────────┴──────────────┴─────────────┘
 ```
 
-Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](/sql-reference/functions/array-functions#empty) function returns `1` in this case.
+Note that the length of the `FixedString(N)` value is constant. The [length](/reference/functions/regular-functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](/reference/functions/regular-functions/array-functions#empty) function returns `1` in this case.
 
 Selecting data with `WHERE` clause return various result depending on how the condition is specified:
 

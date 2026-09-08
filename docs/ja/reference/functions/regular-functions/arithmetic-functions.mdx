@@ -260,7 +260,7 @@ SELECT byteSwap(123294967295)
 
 導入バージョン: v1.1.0
 
-2 つの値 `a` と `b` の商を計算します。結果の型は常に [Float64](/ja/reference/data-types/float) です。
+2 つの値 `a` と `b` の商を計算します。結果型は常に [Float64](/ja/reference/data-types/float) です。
 整数除算には `intDiv` 関数を使用します。
 
 <Note>
@@ -290,7 +290,7 @@ SELECT divide(25,5) AS quotient, toTypeName(quotient)
 ```
 
 ```response title=Response
-5 Float64
+5	Float64
 ```
 
 **ゼロ除算**
@@ -336,7 +336,7 @@ divideDecimal(x, y[, result_scale])
 **例 1**
 
 ```sql title=Query
-divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
+SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
 ```
 
 ```response title=Response
@@ -356,9 +356,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 ┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
 │                                             -5.7 │
 └──────────────────────────────────────────────────┘
-┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
-│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
-└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+┌───a─┬───b─┬─divideDecimal(a, b, 1)─┬─divideDecimal(a, b, 5)─┐
+│ -12 │ 2.1 │                   -5.7 │               -5.71428 │
+└─────┴─────┴────────────────────────┴────────────────────────┘
 ```
 
 <div id="divideOrNull">
@@ -467,7 +467,7 @@ SELECT 1/0 AS infimum, ifNotFinite(infimum,42)
 ```
 
 ```response title=Response
-inf  42
+inf	42
 ```
 
 <div id="intDiv">
@@ -507,9 +507,9 @@ SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
+┌──res─┬─toTypeName(res)─┐
+│ 1000 │ Int64           │
+└──────┴─────────────────┘
 ```
 
 **商が被除数の範囲内に収まらない**
@@ -681,11 +681,11 @@ x が無限大の場合は `1`、それ以外の場合は `0` (`NaN` を含む) 
 **数値が無限大かどうかを判定する**
 
 ```sql title=Query
-SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))
+SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 ```
 
 ```response title=Response
-1 0 0
+1	0	0
 ```
 
 <div id="isNaN">
@@ -775,8 +775,8 @@ max2(x, y)
 
 **引数**
 
-* `x` — 1 つ目の値 [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
-* `y` — 2 つ目の値 [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+* `x` — 1 つ目の値 [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`BFloat16`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+* `y` — 2 つ目の値 [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`BFloat16`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
 
 **戻り値**
 
@@ -896,8 +896,8 @@ min2(x, y)
 
 **引数**
 
-* `x` — 1つ目の値 [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
-* `y` — 2つ目の値 [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+* `x` — 1つ目の値 [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`BFloat16`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+* `y` — 2つ目の値 [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`BFloat16`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
 
 **戻り値**
 
@@ -1047,8 +1047,8 @@ SELECT moduloLegacy(10, 3)
 
 導入バージョン: v25.5.0
 
-`a` を `b` で割ったときの剰余を計算します。関数 `modulo` と似ていますが、`moduloOrNull` は
-右側の引数が 0 の場合に NULL を返します。
+`a` を `b` で割ったときの剰余を計算します。関数 `modulo` と似ていますが、`moduloOrNull` は、通常であれば浮動小数点例外が発生する場合に `NULL` を返します。
+浮動小数点の引数では、これは除数が `0` の場合にのみ発生します。整数の引数では、これに加えて最小の負の値を `-1` で割った剰余も対象になります (たとえば `Int8` の `-128 % -1`) 。
 
 **構文**
 
@@ -1065,7 +1065,7 @@ moduloOrNull(x, y)
 
 **戻り値**
 
-`x` を `y` で割った剰余を返します。除数が 0 の場合は NULL を返します。
+`x` を `y` で割った剰余を返します。除数が 0 の場合、または整数引数で最小の負の値を `-1` で法演算した場合など、演算によって浮動小数点例外が発生する場合は `NULL` を返します。
 
 **例**
 
@@ -1073,6 +1073,16 @@ moduloOrNull(x, y)
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**最小の負の整数を -1 で割った場合の moduloOrNull**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1160,7 +1170,7 @@ SELECT multiply(5,5)
 
 <Note>
   これらの関数は通常の `multiply` と比べて大幅に低速です。
-  精度を厳密に制御する必要がなく、または高速な計算が必要な場合は、[multiply](#multiply) の使用を検討してください
+  精度を厳密に制御する必要がない、または高速な計算が必要な場合は、[multiply](#multiply) の使用を検討してください
 </Note>
 
 **構文**
@@ -1194,7 +1204,8 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 **通常の乗算との違い**
 
 ```sql title=Query
-SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
+SELECT multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
+SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 ```
 
 ```response title=Response
@@ -1206,13 +1217,24 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Decimalのオーバーフロー**
+**multiplyDecimal ではオーバーフローしない**
 
 ```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
     multiplyDecimal(a, b);
+```
+
+```response title=Response
+┌─────────────a─┬─────────────b─┬─multiplyDecimal(a, b)─┐
+│ -12.647987876 │ 123.967645643 │       -1567.941279108 │
+└───────────────┴───────────────┴───────────────────────┘
+```
+
+**通常の乗算でのDecimalオーバーフロー**
+
+```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
@@ -1220,12 +1242,8 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
-│ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
-└───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
-Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow:
-While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
+Received exception:
+Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
 ```
 
 <div id="negate">
@@ -1366,8 +1384,8 @@ SELECT positiveModulo(-1, 10)
 
 導入バージョン: v25.5.0
 
-`a` を `b` で割った剰余を計算します。関数 `positiveModulo` と似ていますが、`positiveModuloOrNull` は
-右側の引数が 0 の場合は NULL を返します。
+`a` を `b` で割った剰余を計算します。関数 `positiveModulo` と似ていますが、`positiveModuloOrNull` は、通常であれば浮動小数点例外が発生する演算の場合に `NULL` を返します。
+浮動小数点の引数では、これは除数が `0` の場合にのみ発生します。整数の引数では、これに加えて最小の負の値を `-1` で割った剰余も含まれます (たとえば `Int8` の `-128 % -1`) 。
 
 **構文**
 
@@ -1383,11 +1401,11 @@ positiveModuloOrNull(x, y)
 
 **戻り値**
 
-`x` から、`y` で割り切れ、かつ `x` 以下の最大の整数を引いた差を返します。除数が 0 の場合は `null` を返します。
+`x` から、`y` で割り切れ、かつ `x` 以下の最大の整数を引いた差を返します。演算によって浮動小数点例外が発生する場合、つまり除数が 0 の場合、または整数引数で最小の負の値を `-1` で法演算する場合は、`NULL` を返します。
 
 **例**
 
-**positiveModuloOrNull**
+**0 を除数とする positiveModuloOrNull**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
@@ -1395,6 +1413,50 @@ SELECT positiveModuloOrNull(5, 0)
 
 ```response title=Response
 \N
+```
+
+**最小の負の整数を -1 で割った場合の positiveModuloOrNull**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
+```
+
+```response title=Response
+\N
+```
+
+<div id="sqr">
+  ## sqr
+</div>
+
+導入バージョン: v26.7.0
+
+値 `x` の二乗を計算します。
+
+**構文**
+
+```sql
+sqr(x)
+```
+
+**引数**
+
+* `x` — 二乗する値。 [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+
+**戻り値**
+
+`x` に `x` 自身を乗じた積を返します。
+
+**例**
+
+**数値を二乗する**
+
+```sql title=Query
+SELECT sqr(5)
+```
+
+```response title=Response
+25
 ```
 
 {/*AUTOGENERATED_END*/}

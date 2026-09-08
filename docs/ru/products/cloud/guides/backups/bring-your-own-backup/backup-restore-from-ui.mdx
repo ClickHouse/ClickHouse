@@ -32,15 +32,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Выполните следующие шаги в своей учетной записи AWS:
 
 <Steps>
-  <Step>
-    ##### Создайте S3 бакет в AWS
-
+  <Step title="Создайте S3 бакет в AWS" id="create-s3-bucket">
     Создайте в своей учетной записи AWS S3 бакет, в который вы хотите экспортировать резервные копии.
   </Step>
 
-  <Step>
-    ##### Создайте роль IAM
-
+  <Step title="Создайте роль IAM" id="create-iam-role">
     AWS использует аутентификацию на основе ролей, поэтому создайте роль IAM, которую сможет использовать сервис ClickHouse Cloud для записи данных в этот S3 бакет.
 
     * a. Получите ARN на странице настроек сервиса ClickHouse Cloud в разделе Network security information. Он выглядит примерно так:
@@ -66,9 +62,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ##### Обновите разрешения для роли
-
+  <Step title="Обновите разрешения для роли" id="update-permissions-for-role">
     Также необходимо настроить разрешения для этой роли, чтобы сервис ClickHouse Cloud мог записывать данные в S3 бакет.
     Для этого создайте для роли политику разрешений с JSON, похожим на приведенный ниже, заменив в обоих местах ARN ресурса на ARN вашего бакета.
 
@@ -119,31 +113,23 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Чтобы настроить внешний бакет, выполните следующие шаги в консоли ClickHouse Cloud:
 
 <Steps>
-  <Step>
-    ##### Изменение внешней резервной копии
-
+  <Step title="Change external backup" id="configure-external-bucket">
     На странице Settings нажмите Set up external backup:
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Изменение внешней резервной копии" size="lg" />
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
-  <Step>
-    ##### Настройка ARN роли AWS IAM и параметров S3 бакета
-
+  <Step title="Настройка ARN роли AWS IAM и параметров S3 бакета" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     На следующем экране укажите ARN только что созданной роли AWS IAM и URL S3 бакета в следующем формате:
 
     <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Настройка ARN роли AWS IAM и параметров S3 бакета" size="lg" />
   </Step>
 
-  <Step>
-    ##### Сохранение изменений
-
+  <Step title="Сохранение изменений" id="save-changes">
     Нажмите “Save External Bucket”, чтобы сохранить настройки
   </Step>
 
-  <Step>
-    ##### Изменение стандартного расписания резервного копирования
-
+  <Step title="Изменение стандартного расписания резервного копирования" id="changing-the-backup-schedule">
     Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию.
     При необходимости вы можете изменить расписание резервного копирования на странице “Settings”.
     Если задано другое расписание, для записи резервных копий в ваш бакет будет использоваться пользовательское расписание,
@@ -151,9 +137,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     принадлежащем ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ##### Просмотр резервных копий, сохранённых в вашем бакете
-
+  <Step title="Просмотр резервных копий, сохранённых в вашем бакете" id="view-backups-stored-in-your-bucket">
     На странице Backups эти резервные копии из вашего бакета будут отображаться в отдельной таблице,
     как показано ниже:
 
@@ -168,24 +152,18 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Следуйте приведённым ниже шагам, чтобы восстановить резервные копии из AWS:
 
 <Steps>
-  <Step>
-    ##### Создайте новый сервис для восстановления
-
+  <Step title="Создайте новый сервис для восстановления" id="create-new-service-to-restore-to">
     Создайте новый сервис, в который будет восстановлена резервная копия.
   </Step>
 
-  <Step>
-    ##### Добавьте ARN сервиса
-
+  <Step title="Добавьте ARN сервиса" id="add-service-arn">
     Добавьте ARN вновь созданного сервиса (со страницы настроек сервиса в консоли ClickHouse
     Cloud) в политику доверия для роли IAM. Это соответствует
     [второму шагу](#create-iam-role) в разделе AWS Steps выше. Это необходимо,
     чтобы новый сервис мог получить доступ к S3 бакету.
   </Step>
 
-  <Step>
-    ##### Получите SQL-команду для восстановления резервной копии
-
+  <Step title="Получите SQL-команду для восстановления резервной копии" id="obtain-sql-command-to-restore-backup">
     Нажмите ссылку “access or restore a backup” над списком резервных копий в
     интерфейсе, чтобы получить SQL-команду для восстановления резервной копии. Команда будет выглядеть так:
 
@@ -208,9 +186,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ##### Выполните команду восстановления
-
+  <Step title="Выполните команду восстановления" id="run-the-restore-command">
     Выполните команду восстановления в SQL-консоли вновь созданного сервиса, чтобы
     восстановить резервную копию.
   </Step>
@@ -231,15 +207,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ##### Создайте бакет хранилища в GCP
-
+  <Step title="Создайте бакет хранилища в GCP" id="create-a-gcp-storage-bucket">
     Создайте бакет хранилища в своей учетной записи GCP, чтобы экспортировать в него резервные копии.
   </Step>
 
-  <Step>
-    ##### Сгенерируйте ключ HMAC и Secret
-
+  <Step title="Сгенерируйте ключ HMAC и Secret" id="generate-an-hmac-key-and-secret">
     Сгенерируйте ключ HMAC и Secret, которые требуются для аутентификации по паролю. Чтобы сгенерировать ключи, выполните следующие действия:
 
     * a. Создайте сервисный аккаунт
@@ -268,31 +240,23 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Чтобы настроить внешний бакет, выполните следующие действия в консоли ClickHouse Cloud:
 
 <Steps>
-  <Step>
-    ##### Изменение внешней резервной копии
-
+  <Step title="Change external backup" id="gcp-configure-external-bucket">
     На странице `Settings` нажмите `Change external backup`
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Изменение внешней резервной копии" size="lg" />
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
-  <Step>
-    ##### Настройка HMAC-ключа и секрета GCP
-
+  <Step title="Настройка HMAC-ключа и секрета GCP" id="gcp-configure-gcp-hmac-key-and-secret">
     Во всплывающем окне укажите путь к бакету GCP, HMAC-ключ и Secret, созданные в предыдущем разделе.
 
     <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Настройка HMAC-ключа и секрета GCP" size="md" />
   </Step>
 
-  <Step>
-    ##### Сохранение внешнего бакета
-
+  <Step title="Save External Bucket" id="gcp-save-external-bucket">
     Нажмите `Save External Bucket`, чтобы сохранить настройки.
   </Step>
 
-  <Step>
-    ##### Изменение расписания резервного копирования по умолчанию
-
+  <Step title="Изменение расписания резервного копирования по умолчанию" id="gcp-changing-the-backup-schedule">
     Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию.
     При необходимости вы можете изменить расписание резервного копирования на странице `Settings`.
     Если задано другое расписание, резервные копии в ваш
@@ -300,9 +264,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     бакете ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ##### Просмотр резервных копий, хранящихся в вашем бакете
-
+  <Step title="Просмотр резервных копий, хранящихся в вашем бакете" id="gcp-view-backups-stored-in-your-bucket">
     На странице Backups эти резервные копии из вашего бакета должны отображаться в отдельной таблице, как показано ниже:
 
     <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="Просмотр резервных копий, хранящихся в вашем бакете" size="lg" />
@@ -316,15 +278,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Чтобы восстановить резервные копии из GCP, выполните следующие шаги:
 
 <Steps>
-  <Step>
-    ##### Создайте новый сервис для восстановления
-
+  <Step title="Создайте новый сервис для восстановления" id="gcp-create-new-service-to-restore-to">
     Создайте новый сервис, в который будет восстановлена резервная копия.
   </Step>
 
-  <Step>
-    ##### Получите SQL-команду для восстановления резервной копии
-
+  <Step title="Получите SQL-команду для восстановления резервной копии" id="gcp-obtain-sql-command-to-restore-backup">
     Нажмите ссылку `access or restore a backup` над списком резервных копий в
     интерфейсе, чтобы получить SQL-команду для восстановления резервной копии. Команда будет выглядеть примерно так;
     вы можете выбрать нужную резервную копию в раскрывающемся списке, чтобы получить команду восстановления
@@ -349,9 +307,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ##### Выполните SQL-команду для восстановления резервной копии
-
+  <Step title="Выполните SQL-команду для восстановления резервной копии" id="gcp-run-sql-command-to-restore-backup">
     Выполните команду восстановления в SQL-консоли во вновь созданном сервисе, чтобы
     восстановить резервную копию.
   </Step>
@@ -372,67 +328,53 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ##### Создайте учетную запись хранилища
-
+  <Step title="Создайте учетную запись хранилища" id="azure-create-a-storage-account">
     Создайте учетную запись хранилища или выберите существующую в портале Azure, где будут храниться резервные копии.
   </Step>
 
-  <Step>
-    ##### Получите строку подключения
-
+  <Step title="Получите строку подключения" id="azure-get-connection-string">
     * a. В обзоре вашей учетной записи хранилища найдите раздел `Security + networking` и нажмите `Access keys`.
     * b. Здесь вы увидите `key1` и `key2`. Под каждым ключом есть поле `Connection string`.
     * c. Нажмите `Show`, чтобы отобразить строку подключения. Скопируйте ее — она понадобится для настройки в ClickHouse Cloud.
   </Step>
 </Steps>
 
-<div id="azure-cloud-steps">
-  #### Шаги, которые нужно выполнить в ClickHouse Cloud
+<div id="gcp-cloud-steps">
+  #### Шаги в ClickHouse Cloud
 </div>
 
-Выполните следующие шаги в консоли ClickHouse Cloud, чтобы настроить внешний бакет:
+Чтобы настроить внешний бакет, выполните следующие действия в консоли ClickHouse Cloud:
 
 <Steps>
-  <Step>
-    ##### Изменение внешней резервной копии
-
+  <Step title="Change external backup" id="azure-configure-external-bucket">
     На странице `Settings` нажмите `Change external backup`
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Изменение внешней резервной копии" size="lg" />
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
-  <Step>
-    ##### Укажите строку подключения и имя контейнера для вашей учетной записи хранилища Azure
+  <Step title="Укажите строку подключения и имя контейнера для вашего аккаунта хранилища Azure" id="azure-provide-connection-string-and-container-name-azure">
+    На следующем экране укажите Connection String и Container Name для вашего
+    аккаунта хранилища Azure, созданного в предыдущем разделе:
 
-    На следующем экране укажите `Connection String` и `Container Name` для вашей
-    учетной записи хранилища Azure, созданной в предыдущем разделе:
-
-    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Укажите строку подключения и имя контейнера для вашей учетной записи хранилища Azure" size="md" />
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Укажите строку подключения и имя контейнера для вашего аккаунта хранилища Azure" size="md" />
   </Step>
 
-  <Step>
-    ##### Сохранение внешнего бакета
-
+  <Step title="Save External Bucket" id="azure-save-external-bucket">
     Нажмите `Save External Bucket`, чтобы сохранить настройки
   </Step>
 
-  <Step>
-    ##### Изменение расписания резервного копирования по умолчанию
-
-    Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию. При необходимости
+  <Step title="Изменение расписания резервного копирования по сравнению с расписанием по умолчанию" id="azure-changing-the-backup-schedule">
+    Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию. Либо
     вы можете настроить расписание резервного копирования на странице `Settings`. Если задано другое расписание,
     для записи резервных копий в ваш бакет будет использоваться пользовательское расписание, а расписание по умолчанию
-    (резервные копии каждые 24 часа) будет использоваться для резервных копий в бакете ClickHouse Cloud.
+    (резервные копии каждые 24 часа) — для резервных копий в бакете, управляемом ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ##### Просмотр резервных копий, хранящихся в вашем бакете
-
+  <Step title="Просмотр резервных копий, сохранённых в вашем бакете" id="azure-view-backups-stored-in-your-bucket">
     На странице Backups эти резервные копии из вашего бакета должны отображаться в отдельной таблице,
     как показано ниже:
 
-    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Просмотр резервных копий, хранящихся в вашем бакете" size="md" />
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="md" />
   </Step>
 </Steps>
 
@@ -443,16 +385,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Чтобы восстановить резервные копии из Azure, выполните следующие действия:
 
 <Steps>
-  <Step>
-    ##### Создайте новый сервис для восстановления
-
+  <Step title="Создайте новый сервис для восстановления" id="azure-create-new-service-to-restore-to">
     Создайте новый сервис, в который будет восстановлена резервная копия. В настоящее время поддерживается
     восстановление резервной копии только в новый сервис.
   </Step>
 
-  <Step>
-    ##### Получите SQL-команду для восстановления резервной копии
-
+  <Step title="Получите SQL-команду для восстановления резервной копии" id="azure-obtain-sql-command-to-restore-backup">
     Нажмите ссылку `access or restore a backup` над списком резервных копий в
     интерфейсе, чтобы получить SQL-команду для восстановления резервной копии. Команда должна выглядеть
     примерно так. Вы можете выбрать нужную резервную копию в раскрывающемся списке, чтобы получить
@@ -478,9 +416,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ##### Выполните SQL-команду для восстановления резервной копии
-
+  <Step title="Выполните SQL-команду для восстановления резервной копии" id="azure-run-sql-command-to-restore-backup">
     Выполните команду восстановления в SQL-консоли нового сервиса, чтобы
     восстановить резервную копию.
   </Step>
