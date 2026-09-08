@@ -192,6 +192,7 @@ SYMBOL_REPORT_BYTES = 64 << 10  # per-symbol size: report at 64 KiB,
 SYMBOL_SIG_BYTES = 512 << 10  # significant at 512 KiB
 MAX_TABLE_ROWS = 20
 MAX_NAME_LEN = 100
+MAX_CLUSTER_ERROR_LEN = 1000
 
 
 @dataclasses.dataclass
@@ -202,6 +203,15 @@ class Section:
     body: str = ""  # markdown, empty = nothing to show
     significant: bool = False
     summary: str = ""  # one line for the job result info
+
+
+def _cluster_payload(response) -> Optional[dict]:
+    """The response body as a JSON object, or None when it is not one."""
+    try:
+        payload = json.loads(response.text)
+    except ValueError:
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 class Db:
@@ -228,11 +238,29 @@ class Db:
             self._cluster = LogCluster(readonly=True, user=user)
 
     def query(self, query: str) -> List[dict]:
-        """Run a SELECT and return rows as dicts. Raises on failure."""
+        """Run a SELECT and return rows as dicts.
+
+        Raises with the HTTP status and what the body says went wrong. The SQL is
+        not repeated: `select` prints it when the status reported the failure, and
+        the traceback names the call site otherwise.
+        """
         response = self._cluster.select(query + " FORMAT JSON")
         if response is None:
-            raise RuntimeError(f"CI logs cluster query failed: {query}")
-        return json.loads(response)["data"]
+            raise RuntimeError(
+                "CI logs cluster query failed: the read-only endpoint returned no response"
+            )
+        payload = _cluster_payload(response)
+        # The `exception` field arrives next to the `data` produced before the
+        # error, so reading `data` alone would pass a truncated result as complete.
+        exception = payload.get("exception", "") if payload is not None else ""
+        rows = payload.get("data") if payload is not None else None
+        if exception or not response.ok or rows is None:
+            detail = exception or response.text
+            raise RuntimeError(
+                f"CI logs cluster query failed with status {response.status_code}: "
+                f"{detail[:MAX_CLUSTER_ERROR_LEN]}"
+            )
+        return rows
 
 
 def quote(s: str) -> str:
