@@ -59,6 +59,10 @@ struct TableSetting
     /// Whether a constraint, or the engine itself, makes the setting read-only. As in the two tables
     /// above, `false` means only that nothing marks it read-only.
     bool readonly = false;
+    /// The value with its credential hidden, when the setting holds one. Filled during enumeration,
+    /// which is the last place the raw `Field` is available - a value can be an AST rather than a
+    /// literal, and no plain string form of it hides anything. Empty when nothing is secret.
+    String masked_value;
 };
 
 using TableSettings = std::vector<TableSetting>;

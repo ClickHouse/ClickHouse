@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/TableSetting.h>
+#include <Storages/maskEngineSettingValue.h>
 
 namespace DB
 {
@@ -21,11 +22,19 @@ TableSettings enumerateSettingsFromImpl(const SettingsImplType & impl)
     {
         TableSetting described;
         described.name = setting.getName();
-        described.value = setting.getValueString();
-        described.default_value = setting.getDefaultValueString();
+        /// The real value, which `masked_value` below hides when the reader may not see it. A
+        /// default is compiled in and holds no credential, so it needs no such treatment.
+        described.value = setting.getValueString(/* show_secrets */ true);
+        described.default_value = setting.getDefaultValueString(/* show_secrets */ false);
         described.type = setting.getTypeName();
         described.description = setting.getDescription();
         described.tier = setting.getTier();
+
+        /// While the `Field` is still here: a setting whose value is an AST cannot be masked from
+        /// the rendered string alone.
+        String masked = described.value;
+        if (maskEngineSettingValue(described.name, setting.getValue(), masked))
+            described.masked_value = std::move(masked);
         described.origin = setting.isValueChanged() ? TableSettingOrigin::Other : TableSettingOrigin::Default;
         if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
             described.aliases.assign(it->second.begin(), it->second.end());

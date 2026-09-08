@@ -14,7 +14,6 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/maskSettingValue.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -170,15 +169,9 @@ protected:
             for (const auto & setting : table->getTableSettings(context))
             {
                 String value = setting.value;
-                bool is_masked = false;
-                if (!show_secrets)
-                {
-                    if (auto masked = maskSettingValue(engine_name, setting.name, value))
-                    {
-                        value = std::move(*masked);
-                        is_masked = true;
-                    }
-                }
+                const bool is_masked = !show_secrets && !setting.masked_value.empty();
+                if (is_masked)
+                    value = setting.masked_value;
 
                 /// A setting that answers to more than one name gets a row per name, as
                 /// `system.settings` does, so that looking it up by the name you happen to know
