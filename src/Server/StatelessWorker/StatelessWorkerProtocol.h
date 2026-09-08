@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <Core/Block.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -25,5 +27,14 @@ struct DistributedQueryTaskStatus
     void write(WriteBuffer & out, UInt64 version) const;
     void read(ReadBuffer & in, UInt64 version);
 };
+
+/// Choose the version used to serialize a `get_status` response. `requested_version` is the
+/// coordinator's `task_status_version` request parameter (nullopt when it did not send one).
+/// A coordinator that does not negotiate (old binary) gets the legacy format; otherwise the
+/// requested version is clamped to what this worker can actually serialize
+/// (DBMS_TCP_PROTOCOL_VERSION). The worker echoes the result in the
+/// X-ClickHouse-Task-Status-Version response header so the coordinator parses the exact same
+/// version it was written with. See StatelessWorkerClient::getTaskStatus.
+UInt64 negotiateTaskStatusVersion(std::optional<UInt64> requested_version);
 
 }
