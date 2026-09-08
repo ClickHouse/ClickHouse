@@ -40,7 +40,11 @@ configure_file (compat.h.in ${LIBURING_COMPAT_HEADER})
 set (LIBURING_GENERATED_INCLUDE_DIR "${ClickHouse_BINARY_DIR}/contrib/liburing/src/include")
 set (LIBURING_VERSION_HEADER "${LIBURING_GENERATED_INCLUDE_DIR}/liburing/io_uring_version.h")
 
-file (READ "${LIBURING_SOURCE_DIR}/../liburing.spec" LIBURING_SPEC)
+set (LIBURING_SPEC_FILE "${LIBURING_SOURCE_DIR}/../liburing.spec")
+# Re-run the configure step when the spec changes (e.g. after a submodule bump),
+# otherwise the generated io_uring_version.h keeps the previous version.
+set_property (DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LIBURING_SPEC_FILE}")
+file (READ "${LIBURING_SPEC_FILE}" LIBURING_SPEC)
 
 string (REGEX MATCH "Version: ([0-9]+)\.([0-9]+)" _ ${LIBURING_SPEC})
 set (LIBURING_VERSION_MAJOR ${CMAKE_MATCH_1})
