@@ -8,7 +8,9 @@
 -- `FutureSetFromSubquery::build`), so abandoning one leaves the set uncreated for good, `FunctionIn`
 -- reports "Not-ready Set is passed as the second argument" from inside the running `FilterTransform`,
 -- and a debug server aborts. So the injection must reach the clone-backed build only, and must not
--- spend its one shot anywhere else, or the build it was armed for runs unfaulted.
+-- spend its one shot anywhere else, or the build it was armed for runs unfaulted. Those two
+-- unfaultable in-place builds are `buildSetInplace` and `buildOrderedSetInplace`'s fallback for a
+-- source that cannot be cloned, and there is an arm below for each.
 
 DROP TABLE IF EXISTS t_fp_scope;
 CREATE TABLE t_fp_scope (k UInt64) ENGINE = MergeTree ORDER BY k;
@@ -32,9 +34,23 @@ SELECT enabled FROM system.fail_points WHERE name = 'prepared_sets_build_ordered
 -- `VirtualColumnUtils::buildSetsForDAG` -> `FutureSetFromSubquery::buildSetInplace` path, which
 -- consumes the subquery source, so abandoning it would leave the set uncreated for good: the shot
 -- must not land here, and the filter must still be applied.
-SELECT count() = (SELECT count() FROM system.tables WHERE database = 'system')
+SELECT count() > 0 AND min(database = 'system')
 FROM system.tables WHERE database IN (SELECT 'system');
 SELECT enabled FROM system.fail_points WHERE name = 'prepared_sets_build_ordered_set_inplace_fail';
+
+-- The ordered in-place build falls back to the destructive path when the subquery source cannot be
+-- cloned: `system.build_options` reads through a step that does not implement `clone()`, so
+-- `buildOrderedSetInplace` catches NOT_IMPLEMENTED and builds through `FutureSetFromSubquery::build`,
+-- which moves `source` out. Abandoning that build would leave the set uncreated for good, so the shot
+-- must not land here either. The error-counter delta around the query is what proves the clone was
+-- really rejected, so this arm cannot pass by quietly taking the clone-backed path instead.
+CREATE TABLE t_fp_scope_errors (value UInt64) ENGINE = MergeTree ORDER BY value;
+INSERT INTO t_fp_scope_errors SELECT sum(value) FROM system.errors WHERE name = 'NOT_IMPLEMENTED';
+SELECT count() FROM t_fp_scope WHERE k IN (SELECT toUInt64(1) FROM system.build_options LIMIT 1);
+INSERT INTO t_fp_scope_errors SELECT sum(value) FROM system.errors WHERE name = 'NOT_IMPLEMENTED';
+SELECT max(value) > min(value) FROM t_fp_scope_errors;
+SELECT enabled FROM system.fail_points WHERE name = 'prepared_sets_build_ordered_set_inplace_fail';
+DROP TABLE t_fp_scope_errors;
 
 -- `k` is the primary key, so this `IN` does run the in-place build, and a plain `MergeTree` read is
 -- clonable: the shot lands on the clone, the deferred build still creates the set from the preserved
