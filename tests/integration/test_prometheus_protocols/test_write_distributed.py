@@ -39,6 +39,12 @@ CLUSTER_SHARD_USER = "prom_cluster_shard_user"
 # What the probe used to select from over that connection, and now does without.
 HIDDEN_SYSTEM_TABLES = ["tables", "columns"]
 
+# The user of the `two_shards_column_granted` cluster entry: it holds the shard INSERT column by
+# column, which is all a remote write sends, and nothing that lets it read a table's metadata.
+CLUSTER_COLUMN_USER = "prom_cluster_column_user"
+# The columns a remote write sends, and so the only ones the shard INSERT names.
+WRITTEN_COLUMNS = "metric_name, tags, time_series"
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -101,6 +107,44 @@ def start_cluster():
         node.query(
             "CREATE TABLE prom_restricted_bad AS shard_0.ts_restricted "
             "ENGINE = Distributed(two_shards_restricted, '', mt_bad, cityHash64(tags['host']))"
+        )
+
+        # The other cluster entry names this user, again before the wrapper is first used. Its own
+        # shard tables once more, so the exact counts of the other tests are untouched.
+        node.query(f"CREATE USER {CLUSTER_COLUMN_USER} IDENTIFIED WITH no_password")
+        node.query("CREATE TABLE shard_0.ts_column_granted ENGINE=TimeSeries")
+        node.query("CREATE TABLE shard_1.ts_column_granted ENGINE=TimeSeries")
+        for shard_db in ("shard_0", "shard_1"):
+            # Only the columns the shard INSERT names, on the table it names: a grant on the table
+            # itself would carry SHOW COLUMNS on it and leave nothing for the probe to be denied.
+            node.query(
+                f"GRANT INSERT({WRITTEN_COLUMNS}) ON {shard_db}.ts_column_granted TO {CLUSTER_COLUMN_USER}"
+            )
+            # The same on the decoy, so its refusal is the engine check rather than an access error.
+            node.query(
+                f"GRANT INSERT({WRITTEN_COLUMNS}) ON {shard_db}.mt_bad TO {CLUSTER_COLUMN_USER}"
+            )
+            # The sink writes the inner tables of a TimeSeries table by name, on the caller's own
+            # context: they are named after the outer table's UUID, and hold no outer column.
+            ts_uuid = node.query(
+                f"SELECT uuid FROM system.tables WHERE database = '{shard_db}' AND name = 'ts_column_granted'"
+            ).strip()
+            for inner in node.query(
+                f"SELECT name FROM system.tables WHERE database = '{shard_db}' AND endsWith(name, '{ts_uuid}')"
+            ).split():
+                node.query(
+                    f"GRANT INSERT ON {shard_db}.`{inner}` TO {CLUSTER_COLUMN_USER}"
+                )
+        # Declaring only the columns a write sends, so the shard INSERT names no more than those.
+        node.query(
+            "CREATE TABLE prom_column_granted (metric_name String, tags Map(String, String), "
+            "time_series Array(Tuple(DateTime64(3), Float64))) "
+            "ENGINE = Distributed(two_shards_column_granted, '', ts_column_granted, cityHash64(tags['host']))"
+        )
+        # The same columns and the same credentials over a shard target that must still be refused.
+        node.query(
+            "CREATE TABLE prom_column_granted_bad AS prom_column_granted "
+            "ENGINE = Distributed(two_shards_column_granted, '', mt_bad, cityHash64(tags['host']))"
         )
         yield cluster
     finally:
@@ -409,3 +453,43 @@ def test_the_probe_asks_the_cluster_user_no_more_than_the_shards_do():
             node.query(
                 f"DROP ROW POLICY IF EXISTS p_rest_{system_table} ON system.{system_table}"
             )
+
+
+def test_the_probe_accepts_a_cluster_user_granted_only_the_written_columns():
+    """The narrower sibling: a column-level INSERT is all the shard write asks for, and it carries no
+    right to read metadata, so the shard-target check may not ask that user for it either.
+    """
+    # The premise: as the cluster user the real shard INSERT runs...
+    node.query(
+        f"INSERT INTO shard_0.ts_column_granted ({WRITTEN_COLUMNS}) VALUES "
+        f"('premise_metric', map('host', 'h3'), [(toDateTime64({START_TIME}, 3), 1)])",
+        user=CLUSTER_COLUMN_USER,
+    )
+    # ...while both statements the probe makes on a remote replica are denied it.
+    for statement in ("SHOW CREATE TABLE", "DESC TABLE"):
+        denied = node.query_and_get_error(
+            f"{statement} shard_0.ts_column_granted", user=CLUSTER_COLUMN_USER
+        )
+        assert "Not enough privileges" in denied, denied
+
+    # A remote write through the wrapper is acknowledged, and every sample is on the shards.
+    response = write("/column_granted/write", "column_granted_metric", HOSTS)
+    assert response.status_code == 204, response.text
+    assert count_on_the_shards(
+        "prom_column_granted", "column_granted_metric", table="ts_column_granted"
+    ) == len(HOSTS)
+
+    # Not vacuous: over the very same credentials a shard target that must be refused still is - by
+    # the shard's own insert, which names the engine it found and the one the INSERT expects.
+    response = write("/column_granted_bad/write", "column_granted_metric", HOSTS)
+    assert response.status_code >= 500, response.text
+    assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    assert "engine MergeTree" in response.text
+    assert "expects TimeSeries" in response.text
+    # And the decoy took nothing, on either shard.
+    assert (
+        node.query(
+            "SELECT (SELECT count() FROM shard_0.mt_bad) + (SELECT count() FROM shard_1.mt_bad)"
+        ).strip()
+        == "0"
+    )
