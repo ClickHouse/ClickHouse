@@ -2,13 +2,15 @@
 slug: /guides/developer/deduplicating-inserts-on-retries
 title: "Déduplication des insertions lors des tentatives"
 description: "Éviter les doublons de données lors des nouvelles tentatives d’insertion"
-keywords: ["déduplication", "dédupliquer", "nouvelles tentatives d’insertion", "insertions"]
+keywords: ["déduplication", "dédupliquer", "nouvelles tentatives d’insertion", "insertions", "insertions asynchrones"]
 doc_type: 'guide'
 ---
 
-Les opérations d’insertion peuvent parfois échouer en raison d’erreurs, comme des expirations de délai. Lorsqu’une insertion échoue, il est possible que les données aient été insérées avec succès, ou non. Ce guide explique comment activer la déduplication lors des nouvelles tentatives d’insertion afin d’éviter que les mêmes données soient insérées plus d’une fois.
+Les opérations d’insertion peuvent parfois échouer en raison d’erreurs, comme des expirations de délai. Lorsqu’une insertion échoue, il est possible que les données aient été insérées avec succès, ou non. Ce guide explique le fonctionnement de la déduplication lors des nouvelles tentatives d’insertion, afin d’éviter que les mêmes données soient insérées plus d’une fois.
 
 Lorsqu’une insertion est relancée, ClickHouse essaie de déterminer si les données ont déjà été insérées avec succès. Si les données insérées sont marquées comme doublons, ClickHouse ne les insère pas dans la table de destination. Toutefois, l’utilisateur recevra tout de même un statut de réussite, comme si les données avaient été insérées normalement.
+
+La déduplication couvre les insertions synchrones, les insertions asynchrones et les requêtes `INSERT ... SELECT`. Un paramètre, `deduplicate_insert`, contrôle les insertions synchrones et asynchrones. `INSERT ... SELECT` nécessite une attention particulière et dispose de son propre paramètre. Consultez les [paramètres qui contrôlent la déduplication des insertions](#settings-that-control-insert-deduplication).
 
 <div id="limitations">
   ## Limites
@@ -26,25 +28,72 @@ L&#39;utilisateur doit réessayer l&#39;opération d&#39;insertion jusqu&#39;à 
 
 Si plus de `*_deduplication_window` autres opérations d&#39;insertion ont lieu pendant la séquence de nouvelles tentatives, la déduplication risque de ne pas fonctionner comme prévu. Dans ce cas, les mêmes données peuvent être insérées plusieurs fois.
 
-<div id="enabling-insert-deduplication-on-retries">
-  ## Activation de la déduplication des insertions en cas de nouvelles tentatives
+<div id="settings-that-control-insert-deduplication">
+  ## Paramètres contrôlant la déduplication des insertions
 </div>
 
+ClickHouse déduplique une insertion uniquement lorsque les deux conditions suivantes sont réunies :
+
+1. La table de destination conserve un journal de déduplication. Il s’agit d’un paramètre défini au niveau de la table.
+2. La déduplication est activée pour la requête. Il s’agit d’un paramètre défini au niveau de la requête.
+
 <div id="insert-deduplication-for-tables">
-  ### Déduplication des insertions pour les tables
+  ### Paramètres au niveau de la table
 </div>
 
 **Seuls les moteurs `*MergeTree` prennent en charge la déduplication à l&#39;insertion.**
 
-Pour les moteurs `*ReplicatedMergeTree`, la déduplication des insertions est activée par défaut et contrôlée par les paramètres [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) et [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds). Pour les moteurs `*MergeTree` non répliqués, la déduplication est contrôlée par le paramètre [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
+Pour les moteurs `*ReplicatedMergeTree`, le journal de déduplication est activé par défaut et contrôlé par les paramètres [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) et [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds). Pour les moteurs `*MergeTree` non répliqués, le journal est contrôlé par le paramètre [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window), qui vaut `0` par défaut. Une table `MergeTree` simple ne déduplique donc rien tant que vous ne définissez pas cette fenêtre sur une valeur positive.
 
 Les paramètres ci-dessus définissent la configuration du journal de déduplication d&#39;une table. Le journal de déduplication stocke un nombre fini de `block_id`, qui déterminent le fonctionnement de la déduplication (voir ci-dessous).
 
+<Note>
+  [`replicated_deduplication_window_for_async_inserts`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts) et [`replicated_deduplication_window_seconds_for_async_inserts`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts) sont des paramètres legacy. Les insertions synchrones et asynchrones partagent désormais un même journal de déduplication, de sorte que `replicated_deduplication_window` régit les deux. Les paramètres legacy limitaient uniquement l&#39;ancien répertoire ClickHouse Keeper, ce qui est important lors d&#39;une mise à niveau progressive.
+</Note>
+
 <div id="query-level-insert-deduplication">
-  ### Déduplication des insertions au niveau de la requête
+  ### Paramètres au niveau de la requête
 </div>
 
-Le paramètre `insert_deduplicate=1` active la déduplication au niveau de la requête. Notez que si vous insérez des données avec `insert_deduplicate=0`, ces données ne peuvent pas être dédupliquées, même si vous relancez une insertion avec `insert_deduplicate=1`. En effet, les `block_id` ne sont pas enregistrés pour les blocs lors des insertions avec `insert_deduplicate=0`.
+| Paramètre                                                                                                                                             | S’applique à                                | Par défaut             | Objectif                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
+| [`deduplicate_insert`](/fr/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)                                                    | Chaque `INSERT`, synchrone ou asynchrone    | `enable`               | Commutateur principal de la déduplication des insertions                                     |
+| [`deduplicate_insert_select`](/fr/reference/settings/session-settings/deduplicate-insert#deduplicate_insert_select)                                      | `INSERT ... SELECT`                         | `enable_when_possible` | Détermine quoi faire lorsque le résultat de `SELECT` n’est pas reproductible                 |
+| [`insert_deduplication_token`](/fr/reference/settings/session-settings/insert#insert_deduplication_token)                                                | Chaque `INSERT`                             | `''`                   | Identifie l’insertion à l’aide d’une chaîne fournie par l’utilisateur plutôt que des données |
+| [`deduplicate_blocks_in_dependent_materialized_views`](/fr/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) | Tables sous-jacentes aux vues matérialisées | `1`                    | Étend la déduplication aux destinations des vues matérialisées dépendantes                   |
+
+`deduplicate_insert` accepte trois valeurs :
+
+* `enable` — la déduplication est activée pour la requête `INSERT`.
+* `disable` — la déduplication est désactivée pour la requête `INSERT`.
+* `backward_compatible_choice` — la décision est déléguée aux paramètres legacy `insert_deduplicate` (insertions synchrones) et `async_insert_deduplicate` (insertions asynchrones).
+
+Notez qu’une requête exécutée avec `deduplicate_insert = disable` n’écrit aucun `block_id` pour ses blocs. Ces données ne peuvent pas être dédupliquées ultérieurement, même si vous réessayez l’insertion avec `deduplicate_insert = enable`. Il en va de même lorsque la table de destination ne conserve aucun journal de déduplication : rien n’est enregistré, donc rien ne peut être comparé lors d’une nouvelle tentative.
+
+<div id="precedence">
+  ### Préséance
+</div>
+
+1. Pour une requête `INSERT ... SELECT`, c&#39;est `deduplicate_insert_select` qui prévaut. Consultez [Déduplication pour INSERT ... SELECT](#deduplication-for-insert-select).
+2. Pour tout autre `INSERT`, c&#39;est `deduplicate_insert` qui prévaut.
+3. `insert_deduplicate` et `async_insert_deduplicate` ne sont lus que lorsque `deduplicate_insert` vaut `backward_compatible_choice`.
+
+<div id="legacy-and-obsolete-settings">
+  ### Paramètres legacy et obsolètes
+</div>
+
+| Paramètre                                                                                                | Statut                                                                          | Utiliser à la place         |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------- |
+| [`insert_deduplicate`](/fr/reference/settings/session-settings/insert#insert_deduplicate)                   | Legacy. Lu uniquement lorsque `deduplicate_insert = backward_compatible_choice` | `deduplicate_insert`        |
+| [`async_insert_deduplicate`](/fr/reference/settings/session-settings/async-insert#async_insert_deduplicate) | Legacy. Lu uniquement lorsque `deduplicate_insert = backward_compatible_choice` | `deduplicate_insert`        |
+| `insert_select_deduplicate`                                                                              | Obsolète. Sans effet                                                            | `deduplicate_insert_select` |
+| `update_insert_deduplication_token_in_dependent_materialized_views`                                      | Obsolète. Sans effet                                                            | —                           |
+
+<Warning>
+  Depuis la version 26.2, `deduplicate_insert` a pour valeur par défaut `enable`. Par conséquent, définir `insert_deduplicate = 0` ne suffit plus à désactiver la déduplication. Pour désactiver la déduplication, définissez `deduplicate_insert = disable`.
+</Warning>
+
+La version 26.2 a également modifié les valeurs par défaut de `async_insert` et de `deduplicate_blocks_in_dependent_materialized_views`, qui sont désormais activés. Le paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) régit ces trois paramètres. Si vous définissez `compatibility` sur une version antérieure à `26.2`, ces paramètres conservent leurs anciennes valeurs par défaut : `deduplicate_insert` devient `backward_compatible_choice`, ce qui laisse la décision à `insert_deduplicate` et `async_insert_deduplicate`. Un paramètre explicitement affecté est toujours respecté et n&#39;est jamais affecté par `compatibility`.
 
 <div id="how-insert-deduplication-works">
   ## Fonctionnement de la déduplication des insertions
@@ -52,14 +101,81 @@ Le paramètre `insert_deduplicate=1` active la déduplication au niveau de la re
 
 Lorsque des données sont insérées dans ClickHouse, celui-ci les découpe en blocs selon le nombre de lignes et d’octets.
 
-Pour les tables utilisant des moteurs `*MergeTree`, chaque bloc se voit attribuer un `block_id` unique, qui est un hachage des données de ce bloc. Ce `block_id` est utilisé comme clé unique pour l’opération d’insertion. Si le même `block_id` est trouvé dans le journal de déduplication, le bloc est considéré comme un doublon et n’est pas inséré dans la table.
+Pour les tables utilisant des moteurs `*MergeTree`, chaque bloc se voit attribuer un `block_id` unique, qui est un hash des données de ce bloc. Ce `block_id` est utilisé comme clé unique pour l’opération d’insertion. Si le même `block_id` est trouvé dans le journal de déduplication, le bloc est considéré comme un doublon et n’est pas inséré dans la table.
 
-Cette approche fonctionne bien lorsque les insertions contiennent des données différentes. En revanche, si les mêmes données sont insérées intentionnellement plusieurs fois, vous devez utiliser le paramètre `insert_deduplication_token` pour contrôler le processus de déduplication. Ce paramètre vous permet de spécifier un jeton unique pour chaque insertion, que ClickHouse utilise pour déterminer si les données constituent un doublon.
+Cette approche fonctionne bien lorsque les insertions contiennent des données différentes. En revanche, si les mêmes données sont insérées intentionnellement plusieurs fois, vous devez utiliser le paramètre `insert_deduplication_token` pour contrôler le processus de déduplication. Ce paramètre vous permet de spécifier un jeton unique pour chaque insertion, que ClickHouse utilise pour déterminer si les données constituent un doublon. `insert_deduplication_token` a une priorité plus élevée : ClickHouse n’utilise pas le hash des données lorsqu’un jeton est fourni.
 
 Pour les requêtes `INSERT ... VALUES`, le découpage des données insérées en blocs est déterministe et dépend des paramètres. Vous devez donc relancer les insertions avec les mêmes valeurs de paramètres que lors de l’opération initiale.
 
-Pour les requêtes `INSERT ... SELECT`, il est important que la partie `SELECT` de la requête renvoie les mêmes données dans le même ordre à chaque opération. Notez toutefois que cela est difficile à obtenir en pratique. Pour garantir un ordre stable des données lors des nouvelles tentatives, définissez une clause `ORDER BY ALL` dans la partie `SELECT` de la requête. À l’heure actuelle, vous devez utiliser exactement `ORDER BY ALL` dans la requête. La prise en charge de `ORDER BY` n’est pas encore implémentée et la partie `SELECT` de la requête ne serait pas considérée comme stable. Gardez à l’esprit qu’il est possible que la table sélectionnée soit mise à jour entre deux tentatives : les données renvoyées peuvent avoir changé et la déduplication n’aura alors pas lieu. En outre, lorsque vous insérez de grands volumes de données, il est possible que le nombre de blocs après les insertions dépasse la fenêtre du journal de déduplication, et ClickHouse ne puisse alors pas dédupliquer les blocs.
-À l’heure actuelle, le comportement de `INSERT ... SELECT` est contrôlé par le paramètre `insert_select_deduplicate`. Ce paramètre détermine si la déduplication est appliquée aux données insérées à l’aide de requêtes `INSERT ... SELECT`. Consultez la documentation liée pour plus de détails et des exemples d’utilisation.
+<div id="deduplication-for-insert-select">
+  ## Déduplication des `INSERT ... SELECT`
+</div>
+
+Pour les requêtes `INSERT ... SELECT`, la partie `SELECT` doit renvoyer les mêmes données dans le même ordre à chaque tentative. Sinon, les blocs diffèrent, les `block_id` diffèrent et la nouvelle tentative n&#39;est pas reconnue comme un doublon.
+
+ClickHouse ne peut pas vérifier que les données sources n&#39;ont pas changé, mais il peut déterminer si la requête produit elle-même un résultat reproductible. Un `SELECT` est considéré comme **stable** lorsque les deux conditions suivantes sont remplies :
+
+* La requête contient une clause `ORDER BY ALL`. Seul le littéral `ORDER BY ALL` est reconnu. Un simple `ORDER BY <expressions>` ne l&#39;est pas, et une `UNION` de deux `SELECT` ou plus n&#39;est jamais stable.
+* Le pipeline de lecture se termine par un seul flux.
+
+Un `insert_deduplication_token` non vide constitue une alternative équivalente à la stabilité, car c&#39;est alors le jeton, et non les données, qui identifie l&#39;insertion.
+
+Le paramètre `deduplicate_insert_select` définit le comportement à adopter :
+
+| Valeur                              | Comportement                                                                                                                                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enable_when_possible` (par défaut) | Déduplique lorsque le `SELECT` est stable ou qu&#39;un jeton est défini. Sinon, ignore la déduplication et écrit un message dans le journal du serveur.                                                                                |
+| `force_enable`                      | Déduplique toujours. Si le `SELECT` n&#39;est pas stable et qu&#39;aucun jeton n&#39;est défini, lève l&#39;exception `DEDUPLICATION_IS_NOT_POSSIBLE`.                                                                                 |
+| `enable_even_for_bad_queries`       | Déduplique indépendamment de la stabilité. Conservé pour assurer la compatibilité descendante. Avec un `SELECT` instable, la nouvelle tentative n&#39;est généralement pas reconnue comme un doublon ; préférez donc une autre valeur. |
+| `disable`                           | Ne déduplique jamais `INSERT ... SELECT`.                                                                                                                                                                                              |
+
+`enable_when_possible` et `enable_even_for_bad_queries` tiennent également compte de `deduplicate_insert` : s&#39;il est défini sur `disable`, la requête n&#39;est pas dédupliquée. `force_enable` surcharge `deduplicate_insert`.
+
+Gardez à l&#39;esprit que la table sélectionnée peut être mise à jour entre deux tentatives. Les deux approches ont alors des effets opposés :
+
+* Sans `insert_deduplication_token`, les `block_id` sont calculés à partir des données. Le résultat modifié produit des `block_id` différents, la déduplication n&#39;a pas lieu et la nouvelle tentative insère les nouvelles données en plus de celles déjà écrites lors de la première tentative.
+* Avec `insert_deduplication_token`, le jeton seul identifie l&#39;insertion. La nouvelle tentative est reconnue comme un doublon et est ignorée, même si elle aurait inséré des données différentes.
+
+Choisissez l&#39;approche qui correspond au sens que vous souhaitez donner à une nouvelle tentative. Par ailleurs, lorsque vous insérez de grandes quantités de données, le nombre de blocs peut dépasser la fenêtre du journal de déduplication, et ClickHouse ne saura alors pas qu&#39;il doit dédupliquer ces blocs.
+
+<div id="deduplication-for-asynchronous-inserts">
+  ## Déduplication des insertions asynchrones
+</div>
+
+Les insertions asynchrones ([`async_insert`](/fr/reference/settings/session-settings/async-insert#async_insert), activées par défaut depuis la version 26.2) sont dédupliquées lors des tentatives ultérieures, de la même manière que les insertions synchrones. `deduplicate_insert` contrôle les deux ; aucun paramètre distinct n&#39;est donc nécessaire.
+
+Les deux types d&#39;insertion partagent également un même journal de déduplication et calculent les `block_id` de la même façon. Vous pouvez donc basculer un client entre les insertions synchrones et asynchrones sans compromettre la déduplication, et une nouvelle tentative envoyée dans un mode reste reconnue comme le doublon d&#39;une tentative envoyée dans l&#39;autre. Le passage d&#39;une charge de travail des insertions synchrones aux insertions asynchrones reste sans risque pour une table qui repose sur la déduplication.
+
+<Note>
+  Avant la version 26.2, la déduplication des insertions asynchrones était désactivée par défaut et contrôlée par `async_insert_deduplicate`. Ce paramètre n&#39;est désormais lu que lorsque `deduplicate_insert` est défini sur `backward_compatible_choice`.
+</Note>
+
+<div id="asynchronous-insert-deduplication-granularity">
+  ### Granularité de la déduplication
+</div>
+
+Le serveur regroupe plusieurs insertions asynchrones dans un même lot et écrit ce lot sous la forme d&#39;une ou plusieurs parties, à raison d&#39;au moins une par valeur distincte de clé de partition. La déduplication s&#39;effectue par requête utilisateur, et non par lot :
+
+* Chaque requête en file d&#39;attente apporte un jeton de déduplication au lot.
+* Un jeton correspond soit à la valeur de `insert_deduplication_token`, lorsque la requête en fournit une, soit à un hash des lignes apportées par cette requête.
+* Le regroupement en lots n&#39;influence pas les jetons, et `insert_deduplication_token` n&#39;influence pas la façon dont les requêtes sont regroupées en lots.
+
+Cela a deux conséquences :
+
+* Lorsqu&#39;une requête d&#39;un lot est un doublon, ClickHouse ne supprime que les lignes de cette requête. Le reste du lot est inséré normalement. Une partie n&#39;est entièrement ignorée que lorsque toutes ses lignes sont supprimées.
+* Lorsque deux requêtes du même lot portent le même jeton, la seconde est supprimée avant l&#39;écriture de la partie. Cela s&#39;applique par partition : si les deux requêtes écrivent des lignes dans des partitions différentes, elles sont toutes deux conservées.
+
+Les événements `DuplicatedAsyncInserts` et `SelfDuplicatedAsyncInserts` de [`system.events`](/fr/reference/system-tables/events) comptabilisent ces deux cas.
+
+<div id="asynchronous-inserts-and-materialized-views">
+  ### Insertions asynchrones et vues matérialisées
+</div>
+
+La déduplication des insertions asynchrones fonctionne avec les vues matérialisées dépendantes. La règle est simple : un bloc en entrée, un bloc en sortie. Si la requête interne d’une vue transforme un bloc d’entrée en un bloc de sortie, la déduplication fonctionne. Si la vue émet un deuxième bloc, ClickHouse lève une exception `NOT_IMPLEMENTED`.
+
+Une vue émet un deuxième bloc lorsque sa sortie ne tient plus dans un seul bloc. [`max_block_size`](/fr/reference/settings/session-settings/max#max_block_size) définit le nombre de lignes qu’un bloc peut contenir. Les transformations de colonnes, le filtrage et l’agrégation n’ajoutent jamais de lignes et restent donc toujours dans un seul bloc. Un `JOIN` peut ajouter des lignes. Il fonctionne tant que le résultat reste inférieur à `max_block_size` et échoue au-delà.
+
+Pour insérer des données via une vue qui émet plus d’un bloc, définissez `deduplicate_blocks_in_dependent_materialized_views = 0` ou utilisez des insertions synchrones.
 
 <div id="insert-deduplication-with-materialized-views">
   ## Déduplication des insertions avec les vues matérialisées
@@ -73,10 +189,9 @@ Vous pouvez contrôler ce processus à l&#39;aide des paramètres suivants pour 
 * [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
 * [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-Vous devez également activer le paramètre de profil utilisateur [`deduplicate_blocks_in_dependent_materialized_views`](/fr/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views).
-Lorsque le paramètre `insert_deduplicate=1` est activé, les données insérées sont dédupliquées dans la table source. Le paramètre `deduplicate_blocks_in_dependent_materialized_views=1` active en plus la déduplication dans les tables dépendantes. Vous devez activer les deux si vous souhaitez une déduplication complète.
+La déduplication dans les tables sous-jacentes à des vues matérialisées est également régie par le paramètre de profil utilisateur [`deduplicate_blocks_in_dependent_materialized_views`](/fr/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views), qui est activé par défaut depuis la version 26.2. Les deux paramètres doivent l&#39;autoriser : `deduplicate_insert` déduplique les données insérées dans la table source, et `deduplicate_blocks_in_dependent_materialized_views` déduplique également les données des tables dépendantes. Activez les deux si vous souhaitez une déduplication complète.
 
-Lors de l&#39;insertion de blocs dans des tables sous des vues matérialisées, ClickHouse calcule le `block_id` en hachant une chaîne qui combine les `block_id` de la table source et des identifiants supplémentaires. Cela garantit une déduplication précise au sein des vues matérialisées, en permettant de distinguer les données selon leur insertion d&#39;origine, indépendamment des transformations appliquées avant qu&#39;elles n&#39;atteignent la table de destination sous la vue matérialisée.
+Lors de l&#39;insertion de blocs dans des tables sous-jacentes à des vues matérialisées, ClickHouse calcule le `block_id` en hachant une chaîne qui combine les `block_id` de la table source et des identifiants supplémentaires. Cela garantit une déduplication précise au sein des vues matérialisées, en permettant de distinguer les données selon leur insertion d&#39;origine, indépendamment des transformations appliquées avant qu&#39;elles n&#39;atteignent la table de destination sous la vue matérialisée.
 
 <div id="examples">
   ## Exemples
@@ -122,11 +237,11 @@ SET min_insert_block_size_bytes=0;
 
 Les paramètres ci-dessus nous permettent d’effectuer une sélection sur une table contenant une série de blocs d’une seule ligne. Ces petits blocs ne sont pas fusionnés et restent inchangés jusqu’à leur insertion dans une table.
 
+Nous activons explicitement la déduplication dans la vue matérialisée, bien qu’elle soit activée par défaut :
+
 ```sql
 SET deduplicate_blocks_in_dependent_materialized_views=1;
 ```
-
-Nous devons activer la déduplication pour la vue matérialisée :
 
 ```sql
 INSERT INTO dst SELECT
