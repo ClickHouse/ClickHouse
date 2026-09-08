@@ -871,9 +871,6 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
 
 std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
 {
-    if (!report_read_progress)
-        return nullptr;
-
     auto callback = std::make_unique<ReadProgressCallback>();
 
     callback->setProgressCallback(progress_callback);
