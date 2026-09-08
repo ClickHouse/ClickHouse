@@ -434,13 +434,13 @@ private:
     /// (already schedule-filtered) writer. `claims` is PARALLEL to `views` - the
     /// caller's held role per writer, so the write never claims itself.
     void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views,
-        const VectorWithMemoryTracking<CacheWriter::Claim> & claims, ByteRange window,
+        const VectorWithMemoryTracking<CacheWriter::FillRole> & claims, ByteRange window,
         const ChainedBuffers & chain, Stats & out_stats);
 
     /// Write `chain ∩ writer-range ∩ window` into ONE writer (the body of the
     /// loops above). `claim` is the caller's held role for this writer, passed as a
     /// guardrail: the write acquires no role of its own.
-    void writeSliceToWriter(CacheWriter * writer, const CacheWriter::Claim & claim,
+    void writeSliceToWriter(CacheWriter * writer, const CacheWriter::FillRole & claim,
         ByteRange window, const ChainedBuffers & chain, Stats & out_stats);
 
     /// Read from source into the pre-allocated `blocks`: DRAIN a held/carried long

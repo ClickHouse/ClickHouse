@@ -84,7 +84,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_allow_merge_tables", false, false, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
             {"enable_reader_executor_log", false, false, "New experimental setting to write one row per `ReaderExecutor` at destruction into `system.reader_executor_log`."},
-            {"reader_executor_window_size", 4194304, 8388608, "Raised the experimental `ReaderExecutor` read window to 8 MiB, so a window covers more marks per source request."},
             {"reader_executor_plan_look_ahead_max_window", 33554432, 33554432, "New experimental setting: plan look-ahead target for the `ReaderExecutor` (floored at `reader_executor_window_size`); the default keeps the plan wider than the fill-ahead lead."},
             {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the `ReaderExecutor` read buffer - consumed bytes kept in memory for cheap backward seeks."},
             {"reader_executor_use_fibers", false, false, "New experimental `ReaderExecutor` setting (off by default): run read-ahead fetch steps as Silk fibers instead of prefetch pool threads."},

@@ -517,9 +517,15 @@ public:
         : range_member(aligned_range), storage(storage_), block_size(block_size_) {}
 
     ByteRange range() const override { return range_member; }
-    IntervalSet committed() const override { return committed_ranges; }
+    /// The committed prefix end, derived from the mock's interval ledger: the first uncovered
+    /// byte of the range, or its end when nothing is left.
+    size_t committed() const override
+    {
+        const auto gaps = committed_ranges.subtract(range_member);
+        return gaps.empty() ? range_member.end() : gaps[0].offset;
+    }
 
-    size_t write(ChainedBuffers data, const Claim &) override
+    size_t write(ChainedBuffers data, const FillRole &) override
     {
         size_t bytes_written = 0;
         for (size_t offset = range_member.offset; offset < range_member.end(); offset += block_size)
@@ -2145,9 +2151,15 @@ public:
         : aligned_range(aligned_range_), seg_idx(seg_idx_), cache(cache_) {}
 
     ByteRange range() const override { return aligned_range; }
-    IntervalSet committed() const override { return committed_ranges; }
+    /// The committed prefix end, derived from the mock's interval ledger: the first uncovered
+    /// byte of the range, or its end when nothing is left.
+    size_t committed() const override
+    {
+        const auto gaps = committed_ranges.subtract(aligned_range);
+        return gaps.empty() ? aligned_range.end() : gaps[0].offset;
+    }
 
-    size_t write(ChainedBuffers data, const Claim &) override
+    size_t write(ChainedBuffers data, const FillRole &) override
     {
         const size_t seg = cache.segmentSize();
         const size_t seg_start = seg_idx * seg;
@@ -3000,9 +3012,15 @@ public:
         : range_member(aligned_range), storage(storage_), put_log(put_log_), block_size(block_size_) {}
 
     ByteRange range() const override { return range_member; }
-    IntervalSet committed() const override { return committed_ranges; }
+    /// The committed prefix end, derived from the mock's interval ledger: the first uncovered
+    /// byte of the range, or its end when nothing is left.
+    size_t committed() const override
+    {
+        const auto gaps = committed_ranges.subtract(range_member);
+        return gaps.empty() ? range_member.end() : gaps[0].offset;
+    }
 
-    size_t write(ChainedBuffers data, const Claim &) override
+    size_t write(ChainedBuffers data, const FillRole &) override
     {
         if (data.empty())
             return 0;
@@ -3468,8 +3486,14 @@ namespace
     public:
         explicit TrackingWriteBuffer(ByteRange aligned_range_) : aligned_range(aligned_range_) {}
         ByteRange range() const override { return aligned_range; }
-        IntervalSet committed() const override { return committed_ranges; }
-        size_t write(ChainedBuffers, const Claim &) override { return 0; }
+        /// The committed prefix end, derived from the mock's interval ledger: the first uncovered
+        /// byte of the range, or its end when nothing is left.
+        size_t committed() const override
+        {
+            const auto gaps = committed_ranges.subtract(aligned_range);
+            return gaps.empty() ? aligned_range.end() : gaps[0].offset;
+        }
+        size_t write(ChainedBuffers, const FillRole &) override { return 0; }
         ChainedBuffers read(ByteRange) override { return {}; }
     private:
         ByteRange aligned_range;

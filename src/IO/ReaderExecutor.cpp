@@ -64,6 +64,7 @@ namespace DB::FailPoints
 #include <Common/VectorWithMemoryTracking.h>
 #include <algorithm>
 #include <cstring>
+#include <ranges>
 
 namespace DB
 {
@@ -592,7 +593,11 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
                     return chain.slice(header_range);
                 }
             }
-            if (cache->populatesOnMiss() && !cache->fillsWholeSegment() && !view->misses().empty())
+            /// A tier that does not populate resolves its misses without a writer, so a miss that
+            /// carries one is what makes this tier a fill target here.
+            const bool any_fill_target = std::ranges::any_of(
+                view->misses(), [](const auto & miss) { return miss.writer != nullptr; });
+            if (any_fill_target && !cache->fillsWholeSegment())
                 populate_views.emplace_back(cache.get(), std::move(view));
         }
     }
@@ -638,12 +643,12 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
                 if (!m.writer)
                     continue;
                 auto lead = m.writer->claimLeadRole(header_range);
-                if (!lead.claim)
+                if (!lead.role)
                     continue;
                 stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(stats, Stats::CachePopulateMicroseconds);
                 stats.add(Stats::BytesPushedToCacheSync,
-                    m.writer->write(fetched.slice(header_range), lead.claim));
+                    m.writer->write(fetched.slice(header_range), lead.role));
             }
         }
     }
@@ -1005,13 +1010,13 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     IntervalSet to_fetch;      /// won tails + bypass gaps -> fetched on this thread
     IntervalSet resolved;      /// available ∪ to_fetch = everything NOT contended
     IntervalSet writer_coverage;
-    VectorWithMemoryTracking<CacheWriter::Claim> claims;
+    VectorWithMemoryTracking<CacheWriter::FillRole> claims;
     for (const auto & view : m.writer_views)
     {
         /// One claim per view, PARALLEL to `m.writer_views` (an empty claim for a null or
         /// non-overlapping view) so the per-tile `pushChainToWriters` can index claim↔view. The
         /// claims are held for the whole fetch step, so the per-tile writes run under them.
-        CacheWriter::Claim claim;
+        CacheWriter::FillRole claim;
         if (view.writer)
         {
             const size_t lo = std::max(window.offset, view.writer->range().offset);
@@ -1026,12 +1031,12 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
                 if (lead.available.size)
                     resolved.add(lead.available);
                 const size_t tail_lo = lead.available.end();
-                if (lead.claim && tail_lo < hi)
+                if (lead.role && tail_lo < hi)
                 {
                     to_fetch.add(ByteRange{tail_lo, hi - tail_lo});
                     resolved.add(ByteRange{tail_lo, hi - tail_lo});
                 }
-                claim = std::move(lead.claim);
+                claim = std::move(lead.role);
             }
         }
         claims.push_back(std::move(claim));
@@ -1171,6 +1176,7 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
         /// `getOrSet` segment-aligned the miss at plan build, in `resolve`).
         auto blocks = allocateBlocks(pr.size, window_block_size);
+        const size_t source_bytes_before = out_stats.get(Stats::BytesFromSource);
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         ChainedBuffers source_chain = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
             bound_advertised, lc, stop, out_stats);
@@ -1179,7 +1185,14 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
         const size_t actual = source_chain.totalBytes();
         out_stats.add(Stats::BytesFromSource, actual);
         if (from_prefetch)
-            out_stats.add(Stats::PrefetchIssuedSourceBytes, actual);
+        {
+            /// Everything this read pulled over the wire, not only what it returns: a reused long
+            /// connection also bridges a small cached gap by discarding it, and `serveFromLongConnection`
+            /// charges those bytes to `BytesFromSource` directly. They are bandwidth this prefetch
+            /// issued, so counting only the returned chain would underreport the wasted bytes a
+            /// discarded prefetch is charged with.
+            out_stats.add(Stats::PrefetchIssuedSourceBytes, out_stats.get(Stats::BytesFromSource) - source_bytes_before);
+        }
         result.append(std::move(source_chain));
         file_pos += pr.size;
 
@@ -1207,7 +1220,7 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
     return result;
 }
 
-void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, const CacheWriter::Claim & claim,
+void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, const CacheWriter::FillRole & claim,
     ByteRange window, const ChainedBuffers & chain, Stats & out_stats)
 {
     chassert(writer);
@@ -1253,7 +1266,7 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, const CacheWriter:
 // ─── Fill lane ─────────────────────────────────────────────────────────────
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views,
-    const VectorWithMemoryTracking<CacheWriter::Claim> & claims, ByteRange window,
+    const VectorWithMemoryTracking<CacheWriter::FillRole> & claims, ByteRange window,
     const ChainedBuffers & chain, Stats & out_stats)
 {
     chassert(claims.size() == views.size());
@@ -1261,14 +1274,15 @@ void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterVie
         writeSliceToWriter(views[i].writer, claims[i], window, chain, out_stats);
 }
 
-/// The committed parts of `window` within `writer`'s cell.
+/// The committed part of `window` within `writer`'s cell. A cell fills append-only, so what is
+/// committed is one prefix and the overlap with `window` is at most one range.
 static VectorWithMemoryTracking<ByteRange> committedPartsIn(const CacheWriter & writer, ByteRange window)
 {
     const size_t lo = std::max(writer.range().offset, window.offset);
-    const size_t hi = std::min(writer.range().end(), window.end());
+    const size_t hi = std::min({writer.range().end(), window.end(), writer.committed()});
     if (lo >= hi)
         return {};
-    return writer.committed().intersect(ByteRange{lo, hi - lo});
+    return {ByteRange{lo, hi - lo}};
 }
 
 VectorWithMemoryTracking<ByteRange> ReaderExecutor::uncommittedIn(
@@ -2480,13 +2494,13 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
     const IntervalSet * request_map_,
     std::optional<size_t> demand_ceiling_phys)
 {
-    /// Per-tier classification the builder needs: the tier id (geometry entry),
-    /// whether it accepts only whole-cell puts, and whether it populates on a
-    /// miss (a read-only/bypass tier contributes no fill cells).
-    struct TierTraits { CacheTier tier; bool whole_cell; bool populates; };
+    /// Per-tier classification the builder needs: the tier id (geometry entry) and whether it
+    /// accepts only whole-cell puts. Whether a tier populates is not a trait any more: a read-only /
+    /// bypass tier resolves its misses without a writer, and a writer-less miss is no fill cell.
+    struct TierTraits { CacheTier tier; bool whole_cell; };
     VectorWithMemoryTracking<TierTraits> traits;
     for (const auto & cache : caches_)
-        traits.push_back(TierTraits{cache->tier(), cache->fillsWholeSegment(), cache->populatesOnMiss()});
+        traits.push_back(TierTraits{cache->tier(), cache->fillsWholeSegment()});
 
     VectorWithMemoryTracking<PieceObservation> pieces;
     size_t piece_file_start = span.offset;
@@ -2560,7 +2574,9 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
                         }
                         else if (res.kind == ICacheProvider::CacheResolution::Kind::Miss)
                         {
-                            if (!traits[ci].populates)
+                            /// No writer: this tier does not populate (read-only / bypass), so the
+                            /// range is read from the source and contributes no fill cell.
+                            if (!res.writer)
                                 continue;
                             entry.aligned_miss.push_back(res.range);
                             view->miss_entries.push_back(MissEntry{res.range, std::move(res.writer)});

@@ -296,7 +296,7 @@ public:
             }
         ASSERT_NE(writer_ptr, nullptr);
         auto lead = writer_ptr->claimLeadRole(writer_ptr->range());
-        ASSERT_EQ(writer_ptr->write(patternChain(content, cell.offset, prefix), lead.claim), prefix);
+        ASSERT_EQ(writer_ptr->write(patternChain(content, cell.offset, prefix), lead.role), prefix);
     }
 
     ByteRange expectedSpan(size_t start) const

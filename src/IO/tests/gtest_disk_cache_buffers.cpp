@@ -67,9 +67,9 @@ ChainedBuffers makeChain(size_t offset, size_t size, char byte)
 size_t claimedWrite(CacheWriter & writer, ChainedBuffers chain)
 {
     auto lead = writer.claimLeadRole(writer.range());
-    if (!lead.claim)
+    if (!lead.role)
         return 0;
-    return writer.write(std::move(chain), lead.claim);
+    return writer.write(std::move(chain), lead.role);
 }
 
 /// Flatten a chain's bytes (in logical order) into a string for comparison.
@@ -215,14 +215,13 @@ TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
     size_t n1 = claimedWrite(writer, makeChain(0, half, 'A'));
     EXPECT_EQ(n1, half);
     EXPECT_FALSE(writer.complete());
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, half}).empty());
-    EXPECT_FALSE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
+    EXPECT_EQ(writer.committed(), half);
 
     // Second window: [half, segment) of 'B' — appends from the grown cwo.
     size_t n2 = claimedWrite(writer, makeChain(half, kSegmentSize - half, 'B'));
     EXPECT_EQ(n2, kSegmentSize - half);
     EXPECT_TRUE(writer.complete());
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
+    EXPECT_EQ(writer.committed(), kSegmentSize);
 
     // read() from the write buffer returns what was written.
     {
@@ -272,7 +271,7 @@ TEST_F(DiskCacheBuffers, IdempotentReWriteReturnsZero)
     // Re-write the same range: append-only at a now-exhausted cwo → 0 bytes.
     size_t n2 = claimedWrite(writer, makeChain(0, kSegmentSize, 'Y'));
     EXPECT_EQ(n2, 0u);
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
+    EXPECT_EQ(writer.committed(), kSegmentSize);
 
     // Overlapping re-write also lands nothing new.
     size_t n3 = claimedWrite(writer, makeChain(0, kSegmentSize / 2, 'Z'));
@@ -297,15 +296,13 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
     size_t n0 = claimedWrite(writer, makeChain(quarter, quarter, 'G'));
     EXPECT_EQ(n0, 0u);
     EXPECT_FALSE(writer.complete());
-    // The WHOLE segment is still uncommitted: the single uncovered sub-range
-    // spans the full range.
-    ASSERT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize}).size(), 1u);
-    EXPECT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize})[0].size, kSegmentSize);
+    // The WHOLE segment is still uncommitted: the committed prefix is empty.
+    EXPECT_EQ(writer.committed(), 0u);
 
     // Now write the front prefix; it lands and advances cwo.
     size_t n1 = claimedWrite(writer, makeChain(0, quarter, 'H'));
     EXPECT_EQ(n1, quarter);
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, quarter}).empty());
+    EXPECT_EQ(writer.committed(), quarter);
 
     // The earlier gap can now be filled contiguously.
     size_t n2 = claimedWrite(writer, makeChain(quarter, kSegmentSize - quarter, 'I'));
@@ -342,10 +339,8 @@ TEST_F(DiskCacheBuffers, ProbeIsReadOnly)
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
     EXPECT_FALSE(writer.complete());
-    // The WHOLE segment is still uncommitted: the single uncovered sub-range
-    // spans the full range.
-    ASSERT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize}).size(), 1u);
-    EXPECT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize})[0].size, kSegmentSize);
+    // The WHOLE segment is still uncommitted: the committed prefix is empty.
+    EXPECT_EQ(writer.committed(), 0u);
     // It is genuinely empty: a full write succeeds entirely.
     EXPECT_EQ(claimedWrite(writer, makeChain(0, kSegmentSize, 'D')), kSegmentSize);
 }
@@ -463,11 +458,11 @@ TEST_F(DiskCacheBuffers, SecondWriterContinuesFromCommittedFrontier)
     auto second = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}});
     auto & writer2 = *second->misses()[0].writer;
     ASSERT_EQ(claimedWrite(writer2, makeChain(half, kSegmentSize - half, 'B')), kSegmentSize - half);
-    /// `complete()` is WRITER-LOCAL by design (its own committed ledger vs its
-    /// cell), so a continuation writer never reports the sibling's prefix; the
-    /// segment truth is the probe's (`allHit` below). Nothing in the engine
-    /// gates on `complete()`.
-    EXPECT_FALSE(writer2.complete());
+    /// `committed()` is the segment's LIVE frontier, not a per-writer ledger, so the
+    /// continuation writer sees the sibling's prefix too and the cell reads complete
+    /// across the two writer lifetimes - the same truth the probe reports (`allHit` below).
+    EXPECT_EQ(writer2.committed(), kSegmentSize);
+    EXPECT_TRUE(writer2.complete());
 
     first->miss_entries.clear();
     second->miss_entries.clear();
@@ -507,11 +502,11 @@ TEST_F(DiskCacheBuffers, FreshClaimServesCommittedPrefixInsteadOfRefetching)
     EXPECT_EQ(lead.available.size, half);
 
     /// The uncommitted tail [available.end(), kSegmentSize) is OURS to fetch: the role is held.
-    EXPECT_TRUE(static_cast<bool>(lead.claim)) << "the cold tail's downloader role is won";
+    EXPECT_TRUE(static_cast<bool>(lead.role)) << "the cold tail's downloader role is won";
     EXPECT_EQ(lead.available.end(), half) << "only the missing tail [half, kSegmentSize) remains";
 
     /// The won role still fills the tail; the segment completes across the two claims.
-    ASSERT_EQ(writer.write(makeChain(half, kSegmentSize - half, 'B'), lead.claim), kSegmentSize - half);
+    ASSERT_EQ(writer.write(makeChain(half, kSegmentSize - half, 'B'), lead.role), kSegmentSize - half);
 }
 
 /// A fresh claim whose overlap is ALREADY fully committed (a partial segment's prefix covers the
@@ -536,7 +531,7 @@ TEST_F(DiskCacheBuffers, ClaimOverFullyCommittedOverlapReleasesRole)
         /// so `claimLeadRole` releases the role before returning - the `Claim` is empty.
         auto lead = writer.claimLeadRole(ByteRange{0, half});
         EXPECT_EQ(lead.available.size, half);
-        EXPECT_FALSE(static_cast<bool>(lead.claim)) << "a fully-committed overlap holds no role";
+        EXPECT_FALSE(static_cast<bool>(lead.role)) << "a fully-committed overlap holds no role";
     }
 
     /// If the role leaked, this self-waits and trips `chassert(!isDownloaderUnlocked)`.
@@ -567,8 +562,8 @@ TEST_F(DiskCacheBuffers, SecondWriterYieldsToHeldClaimThenContinues)
     std::thread sibling([&]
     {
         auto sibling_lead = writer1.claimLeadRole(writer1.range());
-        ASSERT_TRUE(static_cast<bool>(sibling_lead.claim));
-        ASSERT_EQ(writer1.write(makeChain(0, half, 'A'), sibling_lead.claim), half);
+        ASSERT_TRUE(static_cast<bool>(sibling_lead.role));
+        ASSERT_EQ(writer1.write(makeChain(0, half, 'A'), sibling_lead.role), half);
         prefix_committed.count_down();
         release_sibling.wait();
     });
@@ -614,8 +609,8 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
     EXPECT_FALSE(w1.complete());
     EXPECT_EQ(claimedWrite(w1, makeChain(kSegmentSize, kSegmentSize, 'B')), kSegmentSize);
     EXPECT_TRUE(w1.complete());
-    EXPECT_TRUE(w0.committed().subtract(ByteRange{0, kSegmentSize}).empty());
-    EXPECT_TRUE(w1.committed().subtract(ByteRange{kSegmentSize, kSegmentSize}).empty());
+    EXPECT_EQ(w0.committed(), kSegmentSize);
+    EXPECT_EQ(w1.committed(), 2 * kSegmentSize);
 
     // Finalize → both segments DOWNLOADED.
     view_misses->miss_entries.clear();
@@ -666,7 +661,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     size_t n = claimedWrite(writer, makeChain(kSegmentSize, kSegmentSize, 'F'));
     EXPECT_EQ(n, kSegmentSize);
     EXPECT_TRUE(writer.complete());
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{kSegmentSize, kSegmentSize}).empty());
+    EXPECT_EQ(writer.committed(), 2 * kSegmentSize);
 
     view_misses->miss_entries.clear();
 
@@ -809,7 +804,7 @@ TEST_F(DiskCacheBuffers, ClaimReleaseMakesForeignThreadTeardownSafe)
     std::thread worker([&]
     {
         auto lead = misses[0].writer->claimLeadRole(ByteRange{0, kSegmentSize});
-        ASSERT_TRUE(static_cast<bool>(lead.claim)) << "the cold segment is led (downloader role won)";
+        ASSERT_TRUE(static_cast<bool>(lead.role)) << "the cold segment is led (downloader role won)";
         /// The fetch never reached this writer (interrupted); the claim going out of
         /// scope resets the segment - what the claims' lifetime does in production.
     });
