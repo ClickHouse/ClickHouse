@@ -5433,7 +5433,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         if (new_metadata.settings_changes)
         {
             auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-            MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
+            /// The registrations keep a newly defined disk alive while it is looked up by name below.
+            auto disk_registrations
+                = MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
 
             for (const auto & changed : new_changes)
             {
@@ -6056,8 +6058,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
-        MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
-        MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
+        /// The registrations keep a newly defined disk alive for as long as the checks below need it.
+        auto current_disk_registrations
+            = MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
+        auto new_disk_registrations
+            = MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -6459,7 +6464,9 @@ void MergeTreeData::changeSettings(
         bool has_storage_policy_changed = false;
 
         auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
-        MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        /// The registrations keep a newly defined disk alive until the settings below take it over.
+        auto disk_registrations
+            = MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
         StoragePolicyPtr new_storage_policy = nullptr;
 

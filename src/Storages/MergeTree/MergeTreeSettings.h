@@ -9,6 +9,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
+#include <Disks/CustomDiskRegistration.h>
 
 #include <optional>
 
@@ -125,8 +126,11 @@ struct MergeTreeSettings
     static bool isPartFormatSetting(const String & name);
 
     static bool isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes);
-    static void resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
-    static void resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
+    /// Replaces an inline `disk(...)` definition with the name of the disk it describes, creating
+    /// that disk if needed. The returned registrations have to be kept for as long as the disk is
+    /// used; `loadFromQuery`, `applyChanges` and `applyChange` store them in the settings themselves.
+    static CustomDiskRegistrations resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
+    static CustomDiskRegistrations resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
 
     /// Cloud only
     static bool isSMTReadonlySetting(const String & name);

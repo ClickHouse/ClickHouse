@@ -1,0 +1,10 @@
+after create	1
+after detach	0
+after attach	1
+rows after attach	3
+after drop	0
+database disks	2
+after detach database	0
+rows after attach database	4
+after attach database	2
+after drop database	0

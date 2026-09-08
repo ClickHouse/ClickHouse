@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static std::string getOrCreateCustomDisk(
+static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
@@ -99,7 +99,7 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
+    auto [disk, registration] = context->getOrCreateCustomDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
@@ -137,7 +137,7 @@ static std::string getOrCreateCustomDisk(
                 disk_path_expected_prefix);
     }
 
-    return disk_name;
+    return {disk_name, std::move(registration)};
 }
 
 class DiskConfigurationFlattener
@@ -148,6 +148,7 @@ public:
         ContextPtr context;
         bool attach;
         bool for_system_database;
+        CustomDiskRegistrations registrations;
     };
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
@@ -160,7 +161,9 @@ public:
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
-            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach, data.for_system_database);
+            auto [disk_name, registration]
+                = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach, data.for_system_database);
+            data.registrations.push_back(std::move(registration));
             ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
@@ -228,7 +231,7 @@ public:
 };
 
 
-std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool for_system_database)
+CustomDiskFromAST DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool for_system_database)
 {
     if (!isDiskFunction(disk_function_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
@@ -249,10 +252,10 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     auto ast = disk_function_ast->clone();
 
     using FlattenDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationFlattener, false>;
-    FlattenDiskConfigurationVisitor::Data data{context, attach, for_system_database};
+    FlattenDiskConfigurationVisitor::Data data{context, attach, for_system_database, {}};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
-    return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
+    return {assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>(), std::move(data.registrations)};
 }
 
 void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)
