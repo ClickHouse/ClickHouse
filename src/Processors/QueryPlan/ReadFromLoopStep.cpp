@@ -1,5 +1,7 @@
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -11,6 +13,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
@@ -133,6 +136,23 @@ public:
 
         if (plan.isInitialized())
         {
+            /// Rows come from a source resolved by name on every read, while the header advertised
+            /// here is the metadata cached at CREATE: a column whose type has drifted since then
+            /// must be converted, because a port validates only the column count.
+            const auto & advertised_header = getPort().getSharedHeader();
+            if (!blocksHaveEqualStructure(*plan.getCurrentHeader(), *advertised_header))
+            {
+                auto step = std::make_unique<ExpressionStep>(
+                    plan.getCurrentHeader(),
+                    ActionsDAG::makeConvertingActions(
+                        plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                        advertised_header->getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        inner_context));
+                step->setStepDescription("Converting columns");
+                plan.addStep(std::move(step));
+            }
+
             auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
