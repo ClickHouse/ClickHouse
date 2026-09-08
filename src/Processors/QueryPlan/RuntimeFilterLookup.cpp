@@ -2,6 +2,7 @@
 #include <bit>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 #include <utility>
@@ -21,6 +22,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/MergeLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -657,56 +659,56 @@ RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
 {
     if (!range_supported)
     {
-        auto filter_data = data.getWriteEnabled();
-        filter_data->has_range = false;
+        std::lock_guard lock(mutex);
+        data.has_range = false;
     }
 }
 
 void RuntimeFilter::insert(ColumnPtr values)
 {
-    auto filter_data = data.getWriteEnabled();
+    std::lock_guard lock(mutex);
     std::visit(
-        [&](auto & filter)
+        [&](auto & filter) TSA_REQUIRES(mutex)
         {
             using FilterType = std::decay_t<decltype(filter)>;
             if constexpr (!FilterType::is_prebuilt)
             {
-                filter_data->build_state.assertCanInsert();
-                if (filter_data->index_analysis_enabled && range_supported && range_positive && !values->empty())
+                data.build_state.assertCanInsert();
+                if (data.index_analysis_enabled && range_supported && range_positive && !values->empty())
                 {
                     Field column_min;
                     Field column_max;
                     values->getExtremes(column_min, column_max, 0, values->size());
                     if (!column_min.isNull() && !column_max.isNull())
-                        extendRange(filter_data->has_range, filter_data->range_min, filter_data->range_max, column_min, column_max);
+                        extendRange(data.has_range, data.range_min, data.range_max, column_min, column_max);
                 }
                 filter.insert(std::move(values));
             }
         },
-        filter_data->filter);
+        data.filter);
 }
 
 void RuntimeFilter::finishInsert()
 {
-    auto filter_data = data.getWriteEnabled();
-    if (filter_data->build_state.hasPendingMerges())
+    std::lock_guard lock(mutex);
+    if (data.build_state.hasPendingMerges())
         return;
 
-    std::visit([&](auto & filter) { filter.finishInsert(evaluation_state); }, filter_data->filter);
-    filter_data->build_state.finishInserts();
+    std::visit([&](auto & filter) { filter.finishInsert(evaluation_state); }, data.filter);
+    data.build_state.finishInserts();
 }
 
 ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
-    auto filter_data = data.getReadOnly();
-    filter_data->build_state.assertCanFind();
+    SharedLockGuard lock(mutex);
+    data.build_state.assertCanFind();
 
     const size_t rows_in_block = values.column->size();
     if (evaluation_state.shouldSkip(rows_in_block))
         return DataTypeUInt8().createColumnConst(rows_in_block, true);
 
     std::optional<size_t> rows_passed;
-    auto result = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values, rows_passed); }, filter_data->filter);
+    auto result = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values, rows_passed); }, data.filter);
     evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
     return result;
 }
@@ -716,7 +718,7 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
     if (&source == this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge a runtime filter with itself");
 
-    auto [source_data, destination_data] = DB::LockOrderedAccessorPair(readOnly(source.data), writeEnabled(data));
+    MergeLock lock(source.mutex, mutex);
 
     /// `HashJoin::publishSharedRuntimeFilters` may have already replaced this lookup entry with a
     /// prebuilt shared fixed-hash-table filter: the publication step can run as soon as the last
@@ -725,46 +727,39 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
     /// probes the complete build-side hash table, i.e. a superset of anything a late set/bloom
     /// filter could contribute, so ignore the merge (the pre-refactor no-op behavior of
     /// `SharedFixedHashTableRuntimeFilter::merge`) instead of failing the query.
-    if (std::holds_alternative<SharedFixedHashTable>(destination_data->filter))
+    if (std::holds_alternative<SharedFixedHashTable>(data.filter))
         return;
 
-    if (destination_data->filter.index() != source_data->filter.index())
+    if (data.filter.index() != source.data.filter.index())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
+    data.build_state.assertCanMerge();
     std::visit(
-        [&](auto & destination_filter, const auto & source_filter)
+        [](auto & destination_filter, const auto & source_filter)
         {
             using DestinationFilter = std::decay_t<decltype(destination_filter)>;
             using SourceFilter = std::decay_t<decltype(source_filter)>;
             if constexpr (std::is_same_v<DestinationFilter, SourceFilter>)
             {
-                if constexpr (!DestinationFilter::is_prebuilt)
-                    destination_data->build_state.assertCanMerge();
                 destination_filter.mergeFrom(source_filter);
-                if (destination_data->index_analysis_enabled && range_supported && range_positive && source_data->has_range)
-                    extendRange(
-                        destination_data->has_range,
-                        destination_data->range_min,
-                        destination_data->range_max,
-                        source_data->range_min,
-                        source_data->range_max);
-                if constexpr (!DestinationFilter::is_prebuilt)
-                    destination_data->build_state.finishMerge();
             }
             else
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
             }
         },
-        destination_data->filter,
-        source_data->filter);
+        data.filter,
+        source.data.filter);
+    if (data.index_analysis_enabled && range_supported && range_positive && source.data.has_range)
+        extendRange(data.has_range, data.range_min, data.range_max, source.data.range_min, source.data.range_max);
+    data.build_state.finishMerge();
 }
 
 void RuntimeFilter::enableIndexAnalysis()
 {
-    auto filter_data = data.getWriteEnabled();
-    filter_data->build_state.assertCanInsert();
-    filter_data->index_analysis_enabled = true;
+    std::lock_guard lock(mutex);
+    data.build_state.assertCanInsert();
+    data.index_analysis_enabled = true;
 }
 
 ColumnPtr RuntimeFilter::getRecordedKeyValues() const
@@ -772,10 +767,10 @@ ColumnPtr RuntimeFilter::getRecordedKeyValues() const
     if (!range_positive)
         return nullptr;
 
-    auto filter_data = data.getReadOnly();
-    if (!filter_data->index_analysis_enabled || !filter_data->build_state.isFinished())
+    SharedLockGuard lock(mutex);
+    if (!data.index_analysis_enabled || !data.build_state.isFinished())
         return nullptr;
-    return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, filter_data->filter);
+    return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, data.filter);
 }
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
@@ -783,10 +778,10 @@ std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
     if (!range_supported || !range_positive)
         return {};
 
-    auto filter_data = data.getReadOnly();
-    if (!filter_data->has_range || !filter_data->build_state.isFinished() || filter_data->range_min.isNull() || filter_data->range_max.isNull())
+    SharedLockGuard lock(mutex);
+    if (!data.has_range || !data.build_state.isFinished() || data.range_min.isNull() || data.range_max.isNull())
         return {};
-    return Range(filter_data->range_min, true, filter_data->range_max, true);
+    return Range(data.range_min, true, data.range_max, true);
 }
 
 template class ExactSetRuntimeFilter<false>;
@@ -797,14 +792,14 @@ class RuntimeFilterLookup : public IRuntimeFilterLookup
 public:
     void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
     {
-        auto lookup_data = data.getWriteEnabled();
-        auto & filter = lookup_data->filters_by_name[key];
+        std::lock_guard lock(mutex);
+        auto & filter = data.filters_by_name[key];
         if (!filter)
         {
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
             filter.reset(runtime_filter.release()); /// Save new filter.
             /// Record the readable structural name once because the map is keyed by the opaque rendezvous key.
-            lookup_data->display_names.emplace(key, display_name);
+            data.display_names.emplace(key, display_name);
         }
         else
         {
@@ -815,8 +810,8 @@ public:
 
     void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
     {
-        auto lookup_data = data.getWriteEnabled();
-        auto & filter = lookup_data->filters_by_name[name];
+        std::lock_guard lock(mutex);
+        auto & filter = data.filters_by_name[name];
         if (!filter)
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
         filter.reset(runtime_filter.release());
@@ -824,22 +819,22 @@ public:
 
     RuntimeFilterConstPtr find(const String & name) const override
     {
-        auto lookup_data = data.getReadOnly();
-        auto it = lookup_data->filters_by_name.find(name);
-        if (it == lookup_data->filters_by_name.end())
+        SharedLockGuard lock(mutex);
+        auto it = data.filters_by_name.find(name);
+        if (it == data.filters_by_name.end())
             return nullptr;
         return it->second;
     }
 
     void logStats() const override
     {
-        auto lookup_data = data.getReadOnly();
-        for (const auto & [filter_key, filter] : lookup_data->filters_by_name)
+        SharedLockGuard lock(mutex);
+        for (const auto & [filter_key, filter] : data.filters_by_name)
         {
             const auto & stats = filter->getStats();
             /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
-            auto name_it = lookup_data->display_names.find(filter_key);
-            const String & name = (name_it != lookup_data->display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
+            auto name_it = data.display_names.find(filter_key);
+            const String & name = (name_it != data.display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(
                 getLogger("RuntimeFilter"),
                 "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
@@ -861,7 +856,8 @@ private:
         std::unordered_map<String, String> display_names;
     };
 
-    MutexProtected<Data> data;
+    mutable SharedMutex mutex;
+    Data data TSA_GUARDED_BY(mutex);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
