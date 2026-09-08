@@ -617,7 +617,7 @@ struct SettingFieldCustom final
 
     explicit operator Field() const { return value; }
 
-    String toString() const;
+    String toString(bool show_secrets = true) const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;

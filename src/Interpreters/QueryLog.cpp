@@ -275,7 +275,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     if (query_settings)
     {
         auto * column = columns[i++].get();
-        query_settings->dumpToMapColumn(column, true);
+        query_settings->dumpToMapColumn(column, true, /* show_secrets */ false);
     }
     else
     {
