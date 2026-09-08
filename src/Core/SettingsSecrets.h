@@ -43,7 +43,6 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"format_avro_schema_registry_url", maskURLCredentials},
     {"url_base", maskURLCredentials},
-    {"s3_base", maskURLCredentials},
 };
 
 /// Returns whether anything was masked.
