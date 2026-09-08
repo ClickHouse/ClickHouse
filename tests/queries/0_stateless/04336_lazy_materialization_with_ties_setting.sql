@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-parallel-replicas
 
 DROP TABLE IF EXISTS test_lazy_materialization_with_ties_setting;
 
