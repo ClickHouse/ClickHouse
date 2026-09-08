@@ -150,6 +150,32 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
     return false;
 }
 
+/// Whether `dictGet` accepts this key expression shape for the dictionary's key columns.
+/// It mirrors what `dictGet` does with its third argument: the outer `Nullable` is stripped
+/// (`columnGetNested`), a `Tuple` supplies one lookup column per element, and a non-tuple
+/// expression is the bare form that only a single key column accepts. `IDictionary::convertKeyColumns`
+/// then rejects any other shape - but it does so when the query executes, not when it is
+/// analyzed, so a mismatched probe reaches this pass. Rewriting it would replace the
+/// `TYPE_MISMATCH` (or `ILLEGAL_TYPE_OF_ARGUMENT`) that `dictGet` throws with a result, so the
+/// caller skips the rewrite entirely and leaves such a query unoptimized.
+bool keyExprShapeMatchesDictionary(
+    const QueryTreeNodePtr & key_expr_node, const DictionaryStructure & dict_structure, size_t key_cols_size)
+{
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+
+    /// A simple-key dictionary takes the key value itself; `convertKeyColumns` cannot cast a
+    /// `Tuple` to the key type. Complex keys accept the tuple form with one element per key
+    /// column, and the bare form only when there is a single key column.
+    if (!dict_structure.key)
+        return !key_expr_tuple_type;
+
+    if (key_expr_tuple_type)
+        return key_expr_tuple_type->getElements().size() == key_cols_size;
+
+    return key_cols_size == 1;
+}
+
 QueryTreeNodePtr makeTupleElement(const QueryTreeNodePtr & tuple_node, size_t element_index, const ContextPtr & context)
 {
     auto tuple_element_function_node = std::make_shared<FunctionNode>("tupleElement");
@@ -249,15 +275,11 @@ bool mirrorImplicitKeyConversion(QueryTreeNodePtr & key_expr_node, const NamesAn
     }
 
     /// A composite key with several columns is passed to `dictGet` as a tuple and converted
-    /// per key column, so the rewrite has to cast per element as well.
+    /// per key column, so the rewrite has to cast per element as well. The shape was already
+    /// checked by `keyExprShapeMatchesDictionary`, so the tuple and its arity are guaranteed.
     const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
     const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
-
-    /// `dictGet` validates the key shape only when it executes (`IDictionary::convertKeyColumns`),
-    /// so a key expression that does not match the key columns can reach this pass. Leave it
-    /// untouched and let the query keep the behavior it has without the optimization.
-    if (!key_expr_tuple_type || key_expr_tuple_type->getElements().size() != key_cols.size())
-        return true;
+    chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == key_cols.size());
 
     const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
 
@@ -527,6 +549,11 @@ public:
         /// `dictGet(..., id) = 'x'` gives `NULL` for `id = NULL`, and `id IN (...)` also gives
         /// `NULL` for `id = NULL`.
         if (dict_structure.key && hasNullableComponentInComplexKey(dictget_function_info.key_expr_node))
+            return;
+
+        /// A key expression whose shape `dictGet` would reject must not be rewritten: the
+        /// rewrites below can turn the error it throws into a result.
+        if (!keyExprShapeMatchesDictionary(dictget_function_info.key_expr_node, dict_structure, key_cols.size()))
             return;
 
         /// A complex-key dictionary with a single key column also accepts the `tuple()`-wrapped

@@ -515,3 +515,39 @@ SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u
 SELECT 'two-column key, String for UUID column, like, opt off';
 SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) LIKE 'pay%'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- Key expressions whose shape `dictGet` rejects must not be rewritten at all: the constant
+-- fold would otherwise replace the error with a result. `dictGet` only validates the shape
+-- when it executes (`IDictionary::convertKeyColumns`), so these queries do reach the pass.
+-- Every pair below must fail the same way with the optimization on and off.
+
+-- Two key columns, probed with a one-element tuple.
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', tuple(k1)) = 'missing'; -- { serverError TYPE_MISMATCH }
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', tuple(k1)) = 'missing'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError TYPE_MISMATCH }
+
+-- Two key columns, probed with a bare (non-tuple) expression.
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', k1) = 'missing'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', k1) = 'missing'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Two key columns, probed with a three-element tuple.
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8, k2_u8)) = 'missing'; -- { serverError TYPE_MISMATCH }
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8, k2_u8)) = 'missing'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError TYPE_MISMATCH }
+
+-- A single-column complex key probed with a two-element tuple. Both the zero-match fold (the
+-- attribute matches no key) and the matching case have to keep the `dictGet` error; the latter
+-- used to surface as a spurious `accurateCast` failure instead.
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', (k, k2)) = 'missing'; -- { serverError TYPE_MISMATCH }
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', (k, k2)) = 'missing'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError TYPE_MISMATCH }
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', (k, k2)) = 'paywall'; -- { serverError TYPE_MISMATCH }
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', (k, k2)) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError TYPE_MISMATCH }
+
+-- A simple-key dictionary probed with a tuple: rejected without the optimization, so the
+-- rewrite must not make it succeed (nor fail differently) with the optimization on.
+SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', tuple(n)) = 'missing'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', tuple(n)) = 'missing'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
