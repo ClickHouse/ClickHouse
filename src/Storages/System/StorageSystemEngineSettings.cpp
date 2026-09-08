@@ -23,7 +23,9 @@ ColumnsDescription StorageSystemEngineSettings::getColumnsDescription()
         {"name",         std::make_shared<DataTypeString>(), "Setting name."},
         {"value",        std::make_shared<DataTypeString>(), "Value the engine uses on this server. For `MergeTree` and `Distributed` this reflects the server configuration; for engines that have no server-level settings it is the same as `default`."},
         {"default",      std::make_shared<DataTypeString>(), "Value the setting has when nothing configures it."},
-        {"changed",      std::make_shared<DataTypeUInt8>(), "1 if `value` differs from `default`, i.e. the server configuration or the `compatibility` setting changed it. Always 0 for engines that have no server-level settings."},
+        {"changed",      std::make_shared<DataTypeUInt8>(), "1 if something other than the compiled default set this value - the server configuration or the `compatibility` setting. "
+            "Not the same as `value` differing from `default`: a configuration section that sets a setting to the value it already had still counts. "
+            "Always 0 for engines that have no server-level settings."},
         {"description",  std::make_shared<DataTypeString>(), "Setting description."},
         {"min",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Minimum value of the setting, if one is set via the current user's constraints, otherwise NULL. Constraints can only be declared for `MergeTree` settings, so this is NULL for every other engine."},
         {"max",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Maximum value of the setting, if one is set via the current user's constraints, otherwise NULL. Constraints can only be declared for `MergeTree` settings, so this is NULL for every other engine."},
