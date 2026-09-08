@@ -1001,7 +1001,8 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/reference/settings/session-settings/join#join_overflow_mode)
 setting instructs. These two are hard caps and never make a join spill to disk, so setting them at or
 below the spill threshold normally stops the query before it can spill. Two settings change that:
-`enable_adaptive_memory_spill_scheduler` can still spill under memory pressure, and
+`enable_adaptive_memory_spill_scheduler` can still spill a join that the threshold below made
+spill-capable, and
 `legacy_join_size_limits_trigger_spilling` turns the two caps back into spill triggers on disk.
 
 To let a join keep running by spilling the right side to disk instead of failing, use:
@@ -1010,7 +1011,8 @@ To let a join keep running by spilling the right side to disk instead of failing
 - [max_bytes_ratio_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) — Spill threshold as a ratio of available memory.
 
 These are the threshold-based spill trigger for every hash-based algorithm, including `grace_hash`; under memory
-pressure `enable_adaptive_memory_spill_scheduler` can spill earlier than they ask for. The `join_algorithm` you pick
+pressure `enable_adaptive_memory_spill_scheduler` can spill earlier than they ask for — but only once one of
+them is non-zero, since a join with no threshold at all never spills. The `join_algorithm` you pick
 decides how a join spills — `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect
 it in memory and switch over when the threshold is crossed — not whether these settings apply. The one exception is
 `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both thresholds and spills on the two hard caps instead.
