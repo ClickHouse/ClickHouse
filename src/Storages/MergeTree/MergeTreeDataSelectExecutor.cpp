@@ -1629,7 +1629,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
-            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            /// Pending mutations rewrite rows under unchanged part names, so pre-mutation entries are stale.
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+                || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the

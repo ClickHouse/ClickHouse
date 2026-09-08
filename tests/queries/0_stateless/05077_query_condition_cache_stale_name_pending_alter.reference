@@ -1,0 +1,6 @@
+primed	0
+drop+add reads	[0,0,0]
+drop+add x = 0	3
+primed	0
+drop+rename reads	[0,0,0]
+drop+rename x = 0	3
