@@ -2162,9 +2162,15 @@ TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_conte
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this
     /// replica's `CREATE` query still states whatever it was created with.
+    /// `parallel_inserts` is deliberately not here, though `getSettings` reads it from the table
+    /// metadata: `ObjectStorageQueueTableMetadata` declares the field and never populates it - the
+    /// constructor from settings does not set it, `toString` does not write it and the JSON
+    /// constructor does not read it - so the shared metadata does not carry it and saying it does
+    /// would be wrong about a setting this table exists to explain. Whether the value itself can be
+    /// reported at all is a question for the engine rather than for this hook.
     static const NameSet held_in_shared_metadata{
         "mode", "after_processing", "keeper_path", "loading_retries", "processing_threads_num",
-        "parallel_inserts", "last_processed_path", "bucketing_mode", "partitioning_mode",
+        "last_processed_path", "bucketing_mode", "partitioning_mode",
         "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
         "buckets"};
 
