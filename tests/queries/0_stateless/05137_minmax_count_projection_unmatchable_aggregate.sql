@@ -1,10 +1,9 @@
--- Tags: no-fasttest, no-parallel, no-parallel-replicas
--- no-fasttest: SYSTEM ENABLE FAILPOINT needs libfiu, which the ENABLE_LIBRARIES=0 build omits.
+-- Tags: no-parallel, no-parallel-replicas
 -- no-parallel: the failpoint is process-global, so while it is armed any concurrent query
---   aggregating with min/max/count over a MergeTree table throws too, and a co-runner's
---   SYSTEM DISABLE FAILPOINT would silently un-arm the assertions below.
--- no-parallel-replicas: canUseProjectionForReadingStep declines every projection under parallel
---   reading unless parallel_replicas_support_projection, collapsing each EXPLAIN assertion to 0.
+--   aggregating with `min`/`max`/`count` over a `MergeTree` table throws too, and a co-runner's
+--   `SYSTEM DISABLE FAILPOINT` would silently un-arm the assertions below.
+-- no-parallel-replicas: `canUseProjectionForReadingStep` declines every projection under parallel
+--   reading unless `parallel_replicas_support_projection`, collapsing each `EXPLAIN` assertion to 0.
 
 -- The implicit `minmax_count` projection stores only `min`, `max` and `count`, so a query aggregating
 -- with anything else can never be served by it. Declining it before it is analyzed changes no result:

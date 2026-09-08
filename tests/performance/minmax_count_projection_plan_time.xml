@@ -1,17 +1,17 @@
 <test>
     <!--
         Plan-time cost of analysing the implicit `minmax_count` projection, which no other
-        performance test covers: every MergeTree table carries that projection, so an aggregating
+        performance test covers: every `MergeTree` table carries that projection, so an aggregating
         query built an `InterpreterSelectQuery` over its definition during plan optimisation even
         when it aggregates with a function the projection cannot provide. The cost is per plan and
-        not per row, so the fixture is small and the queries are EXPLAIN PLAN, which runs the
+        not per row, so the fixture is small and the queries are `EXPLAIN PLAN`, which runs the
         optimisation while excluding execution, the way `statistics_plan_time_uniq.xml` does.
 
         Two amplifications keep the saving above the 15% relative change the harness needs to see
-        in client_time: a two-column PARTITION BY widens the projection definition that gets
-        interpreted, and eight UNION ALL branches pay for the analysis eight times per statement.
+        in `client_time`: a two-column `PARTITION BY` widens the projection definition that gets
+        interpreted, and eight `UNION ALL` branches pay for the analysis eight times per statement.
         Measured release-vs-release on x86_64, the three declined queries come out at 0.75 to 0.79
-        of the baseline client time.
+        of the baseline `client_time`.
 
         The last two queries are controls: `count()` and `min`/`max`/`count` are exactly the
         aggregates the projection stores, so they must not get slower.
@@ -27,7 +27,8 @@
             `applyTrivialCountIfPossible` answers it from `totalRows` while the query is still
             being planned. Setting it for the whole file changes only that control, because
             the rewrite takes exactly one aggregate and that aggregate must be an
-            `AggregateFunctionCount`: sum/uniq/avg fail the type test, min/max/count the arity one.
+            `AggregateFunctionCount`: `sum`/`uniq`/`avg` fail the type test, `min`/`max`/`count` the
+            arity one.
         -->
         <optimize_trivial_count_query>0</optimize_trivial_count_query>
     </settings>
