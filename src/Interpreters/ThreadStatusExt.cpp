@@ -143,6 +143,8 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
+    /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
+    memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
 }
 
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
@@ -156,6 +158,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
+    /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
+    memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
+
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
