@@ -101,7 +101,8 @@ CREATE CLUSTER test_sql_cluster_05045 (
     )
 ); -- { serverError BAD_ARGUMENTS }
 
-CREATE CLUSTER default (
+-- `default` is removed in tests/config/config.d/clusters.xml; use a config-defined cluster.
+CREATE CLUSTER test_shard_localhost (
     user = 'default',
     SHARD (
         REPLICA (host = '127.0.0.1', port = 9000)
