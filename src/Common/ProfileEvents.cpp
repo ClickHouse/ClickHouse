@@ -1193,6 +1193,8 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageGlobFilteredObjects, "Objects that did not match the glob or regex pattern and were skipped during listing.", ValueType::Number) \
     M(ObjectStoragePredicateFilteredObjects, "Objects removed by virtual column predicate filtering on _path/_file.", ValueType::Number) \
     M(ObjectStorageReadObjects, "Objects actually opened for reading by the object storage source.", ValueType::Number) \
+    M(ObjectStorageListedCommonPrefixes, "Partition directories returned by delimiter-based object storage listing while pruning Hive-style partitioned paths.", ValueType::Number) \
+    M(ObjectStorageHivePartitionPrunedPrefixes, "Partition directories skipped during listing because the query condition on Hive partition columns cannot be satisfied beneath them.", ValueType::Number) \
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds", ValueType::Milliseconds) \
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted", ValueType::Number) \

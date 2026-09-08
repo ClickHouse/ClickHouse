@@ -690,6 +690,12 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
+### Partition pruning during listing {#hive-partition-pruning-during-listing}
+
+When the `WHERE` condition restricts partition columns that appear in directory-level glob segments (`date=*`, `country=*` and `code=*` in the example above), the partition directories are pruned while listing rather than after it. Each such level is enumerated with a delimiter listing request (`ListObjectsV2` with `Delimiter`), and a `name=value` directory that cannot satisfy the condition is skipped together with everything beneath it, so only the objects of the matching partitions are ever listed. In the example, only `date=<matching dates>/country=Netherlands/code=42/` is listed instead of the whole `s3://data/path/` prefix.
+
+This is controlled by the `use_hive_partition_pruning_during_listing` setting (enabled by default). The `hive_partition_pruning_during_listing_max_prefixes` setting bounds the number of directories kept at any level; above it the common prefix is listed at once as before. A `**` segment spans an arbitrary number of levels and stops the level-by-level enumeration, the levels before it are still pruned. The `ObjectStorageListedCommonPrefixes` and `ObjectStorageHivePartitionPrunedPrefixes` profile events show how many directories were enumerated and skipped.
+
 ## Accessing requester-pays buckets {#accessing-requester-pays-buckets}
 
 To access a requester-pays bucket, a header `x-amz-request-payer = requester` must be passed in any requests. This is achieved by passing the parameter `headers('x-amz-request-payer' = 'requester')` to the s3 function. For example:
@@ -1238,6 +1244,12 @@ Use virtual column, created with Hive-style partitioning
 ```sql
 SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
+
+### Partition pruning during listing {#hive-partition-pruning-during-listing}
+
+When the `WHERE` condition restricts partition columns that appear in directory-level glob segments (`date=*`, `country=*` and `code=*` in the example above), the partition directories are pruned while listing rather than after it. Each such level is enumerated with a hierarchical listing request (`List Blobs` with a delimiter), and a `name=value` directory that cannot satisfy the condition is skipped together with everything beneath it, so only the blobs of the matching partitions are ever listed.
+
+This is controlled by the `use_hive_partition_pruning_during_listing` setting (enabled by default). The `hive_partition_pruning_during_listing_max_prefixes` setting bounds the number of directories kept at any level; above it the common prefix is listed at once as before. A `**` segment spans an arbitrary number of levels and stops the level-by-level enumeration, the levels before it are still pruned. The `ObjectStorageListedCommonPrefixes` and `ObjectStorageHivePartitionPrunedPrefixes` profile events show how many directories were enumerated and skipped.
 
 ## Using Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 

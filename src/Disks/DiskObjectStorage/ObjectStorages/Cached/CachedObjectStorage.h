@@ -80,6 +80,10 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
+    bool supportsListingCommonPrefixes() const override { return object_storage->supportsListingCommonPrefixes(); }
+
+    std::vector<std::string> listCommonPrefixes(const std::string & path_prefix, size_t max_keys) const override;
+
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;

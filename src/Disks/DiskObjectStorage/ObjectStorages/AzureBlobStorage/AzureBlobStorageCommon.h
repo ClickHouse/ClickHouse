@@ -117,6 +117,7 @@ using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
 
 using Azure::Storage::Blobs::ListBlobsOptions;
 using Azure::Storage::Blobs::ListBlobsPagedResponse;
+using Azure::Storage::Blobs::ListBlobsByHierarchyPagedResponse;
 using Azure::Storage::Blobs::BlobContainerBatch;
 using BlobContainerPropertiesRespones = Azure::Response<Azure::Storage::Blobs::Models::BlobContainerProperties>;
 using BlobBatchResultResponse = Azure::Response<Azure::Storage::Blobs::Models::SubmitBlobBatchResult>;
@@ -134,6 +135,9 @@ public:
     BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
     BlobContainerPropertiesRespones GetProperties() const;
     ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+    /// Lists one page of blobs and blob prefixes ("directories") under `options.Prefix`, using `delimiter`
+    /// as the hierarchy separator. Blob names and prefixes are returned relative to the endpoint prefix.
+    ListBlobsByHierarchyPagedResponse ListBlobsByHierarchy(const String & delimiter, const ListBlobsOptions & options) const;
 
     BlobContainerBatch CreateBatch() const;
     BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;

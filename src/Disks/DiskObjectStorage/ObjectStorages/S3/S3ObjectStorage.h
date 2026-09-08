@@ -102,6 +102,10 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
 
+    bool supportsListingCommonPrefixes() const override { return true; }
+
+    std::vector<std::string> listCommonPrefixes(const std::string & path_prefix, size_t max_keys) const override;
+
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
