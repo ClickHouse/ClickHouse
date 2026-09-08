@@ -1,0 +1,51 @@
+#!/usr/bin/expect -f
+
+# Regression test: in the `clickhouse_json` dialect a statement can be a `SET`
+# just like in SQL -- a JSON AST of type `SetQuery` is what
+# `parseQueryToJSON('SET dialect = ...')` produces -- and the executor applies
+# its changes before parsing the statement that follows it. The single-line
+# continuation probe must mirror that: after a complete JSON `SET` that switches
+# back to the `clickhouse` dialect, a trailing incomplete `SELECT` has to be
+# probed as SQL and keep the buffer open. Probing it as JSON instead would judge
+# it complete (it does not start with `{`), commit the buffer, and run the `SET`
+# while its last statement is still being typed.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --enable_json_ast_dialect 1 --dialect clickhouse_json --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# A JSON `SET dialect = 'clickhouse'` followed by an unfinished `SELECT (`.
+# The pause between the sends is required: two immediate sends arrive in one
+# pty read and replxx folds them as a paste, regardless of the probe.
+send -- "\{\"type\":\"SetQuery\",\"is_standalone\":true,\"changes\":\[\{\"name\":\"dialect\",\"value\":\{\"field_type\":\"String\",\"value\":\"clickhouse\"\}\}\]\}; SELECT (\r"
+sleep 1
+# Complete the `SELECT` on the continuation line: the whole buffer runs as one,
+# the `SET` switches to SQL, and `SELECT (1 + 1)` prints 2.
+send -- "1 + 1)\r"
+expect {
+    "Syntax error" { exit 1 }
+    "Exception" { exit 1 }
+    -re {│ +2 │} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof

@@ -2,6 +2,8 @@
 
 #include <Parsers/IParserBase.h>
 
+#include <string_view>
+
 namespace DB
 {
 // Even when PRQL is disabled, it is not possible to exclude this parser because changing the dialect via `SET dialect = '...'` queries should succeed.
@@ -21,6 +23,9 @@ public:
     }
 
     const char * getName() const override { return "PRQL Statement"; }
+
+    /// Returns true if the PRQL compiler reports an unexpected end of input.
+    static bool isIncompleteAtEOF(std::string_view query);
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
