@@ -106,6 +106,9 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     UInt64 getLimit() const { return limit; }
+    /// The sort must not stop its input early: the whole stream is needed (`WITH TOTALS`, or
+    /// `exact_rows_before_limit` counting the rows before the `LIMIT`).
+    bool alwaysReadTillEnd() const { return always_read_till_end; }
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 

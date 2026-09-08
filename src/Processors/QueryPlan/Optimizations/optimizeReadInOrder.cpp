@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -1282,7 +1283,8 @@ InputOrderInfoPtr buildInputOrderInfo(
     bool & apply_virtual_row,
     ReadFromMergeTree *& virtual_row_reader,
     QueryPlan::Node & node,
-    const QueryPlanOptimizationSettings & optimization_settings)
+    const QueryPlanOptimizationSettings & optimization_settings,
+    bool limit_reads_till_end)
 {
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
@@ -1300,7 +1302,14 @@ InputOrderInfoPtr buildInputOrderInfo(
     /// different: a non-limit-preserving join can discard left rows, and a preliminary DISTINCT,
     /// `arrayJoin` or non-LEFT `ARRAY JOIN` can consume an arbitrary prefix of the input, so
     /// the output limit does not bound the read there.
-    size_t query_limit = limit;
+    /// ... and only while the `LIMIT` is allowed to stop its input early. A `LIMIT` that must read
+    /// till the end (`exact_rows_before_limit`, or the `WITH TOTALS` cases behind
+    /// `limitAlwaysReadsTillEnd`) consumes the whole stream regardless of its numeric bound, so it
+    /// neither bounds the read nor justifies keeping a poorly-selective in-order plan: there
+    /// read-in-order serializes a full scan, which is exactly what the PK-selectivity guard exists
+    /// to avoid. `SortingStep` keeps that semantic bit separate from `getLimit`, hence the
+    /// `limit_reads_till_end` flag derived from the plan (see `limitReadsTillEnd`).
+    size_t query_limit = limit_reads_till_end ? 0 : limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1762,7 +1771,30 @@ bool wouldReadInOrderBeUseful(
     return order_info.input_order != nullptr;
 }
 
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+/// Whether the `LIMIT` this sort feeds is forbidden to stop its input early, so that the numeric
+/// bound does not shorten the read. That is the case for `exact_rows_before_limit` (the rows before
+/// the `LIMIT` must be counted exactly) and for the `WITH TOTALS` shapes handled by
+/// `limitAlwaysReadsTillEnd`, both of which build the `LimitStep` with `always_read_till_end`.
+/// A `SortingStep` built for such a query carries the same bit (see `addMergeSortingStep`).
+static bool limitReadsTillEnd(const SortingStep & sorting, const Stack & stack)
+{
+    if (sorting.alwaysReadTillEnd())
+        return true;
+
+    for (const auto & frame : stack)
+    {
+        if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()); limit && limit->alwaysReadTillEnd())
+            return true;
+    }
+
+    return false;
+}
+
+void optimizeReadInOrder(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const Stack & stack)
 {
     if (node.children.size() != 1)
         return;
@@ -1770,6 +1802,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     auto * sorting = typeid_cast<SortingStep *>(node.step.get());
     if (!sorting)
         return;
+
+    const bool limit_reads_till_end = limitReadsTillEnd(*sorting, stack);
 
     //std::cerr << "---- optimizeReadInOrder found sorting" << std::endl;
 
@@ -1806,7 +1840,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         for (auto * child : union_node->children)
         {
             ReadFromMergeTree * child_virtual_row_reader = nullptr;
-            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, child_virtual_row_reader, *child, optimization_settings));
+            infos.push_back(buildInputOrderInfo(
+                *sorting, apply_virtual_row, child_virtual_row_reader, *child, optimization_settings, limit_reads_till_end));
             if (child_virtual_row_reader)
                 virtual_row_readers.push_back(child_virtual_row_reader);
 
@@ -1873,7 +1908,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         union_step->disableNarrowing();
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
+    else if (auto order_info = buildInputOrderInfo(
+                 *sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings, limit_reads_till_end))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;

@@ -289,7 +289,9 @@ using Stack = std::vector<Frame>;
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index);
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+/// `stack` is the path from the plan root down to `node`, used to inspect the `LIMIT` above the
+/// sort (see `limitReadsTillEnd`).
+void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings, const Stack & stack);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);

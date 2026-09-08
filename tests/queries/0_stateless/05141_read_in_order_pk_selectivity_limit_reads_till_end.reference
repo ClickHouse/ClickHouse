@@ -1,0 +1,10 @@
+plain LIMIT keeps read-in-order
+0
+exact_rows_before_limit does not let the read stop early
+1
+exact_rows_before_limit with the guard disabled keeps read-in-order
+0
+result
+path/0/file.log
+path/0/file.log
+path/0/file.log
