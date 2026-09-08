@@ -8,6 +8,9 @@ from ci.praktika.info import Info
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Utils
 
+# The build profile collect and diff jobs
+BUILD_PROFILE_USER = "ci_build_profiler"
+
 
 @dataclass(frozen=True)
 class MetaColumn:
@@ -34,7 +37,6 @@ class LogCluster:
     # profile uploads of the whole CI fleet do not compete for one endpoint.
     # Not a secret, unlike the writer endpoint, hence no AWS SSM parameter.
     READONLY_URL = "https://t6h0zvqlgy.us-east-2.aws.clickhouse-staging.com"
-    USER = "ci"
 
     # The CI metadata every export to this cluster carries, defined once so
     # that the DDL of the destination table, the INSERT column list and the
@@ -155,10 +157,10 @@ class LogCluster:
         values = cls.meta_values(check_start_time, check_name)
         return [c.literal.format(values[c.name]) for c in cls.meta_columns()]
 
-    def __init__(self, url="", user="", password=None, readonly=False):
+    def __init__(self, user, url="", password=None, readonly=False):
         # Explicit url/user/password skip the AWS SSM secret lookup - used for
         # running the consumers locally against the cluster.
-        self.user = user or self.USER
+        self.user = user
         self.readonly = readonly
         self.url = url or (self.READONLY_URL if readonly else "")
         self._session = None
@@ -385,9 +387,9 @@ class LogClusterBuildProfileQueries:
         "PerformPendingInstantiations",
     )
 
-    def __init__(self):
+    def __init__(self, user):
         self._info = Info()
-        self._log_cluster = LogCluster()
+        self._log_cluster = LogCluster(user=user)
 
     def _columns(self, table_columns):
         names = LogCluster.meta_column_names() + list(table_columns)
@@ -486,8 +488,3 @@ class LogClusterBuildProfileQueries:
     FROM input('file String, address String, size String, type String, symbol String')
     SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+)(?: ([0-9a-fA-F]+))? (.) (.+)$'
     FORMAT Regexp"""
-
-
-if __name__ == "__main__":
-    LogCluster = LogCluster()
-    assert LogCluster.is_ready()

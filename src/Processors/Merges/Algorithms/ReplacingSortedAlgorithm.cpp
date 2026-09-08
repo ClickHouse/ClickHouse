@@ -52,6 +52,30 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
 
     if (!version_column.empty())
         version_column_number = header_->getPositionByName(version_column);
+
+    /// With a version or an is_deleted column every row of a run must be examined, and row
+    /// sources for a vertical merge must be recorded per row. Without them the only effect of
+    /// processing a row is replacing `selected_row` with it, so runs can be fast-forwarded.
+    /// In the reverse reading order the first row of a run within a source wins instead of the
+    /// last one, so the fast-forward to the last row of the run does not apply either.
+    can_skip_to_run_end = version_column_number == -1 && is_deleted_column_number == -1
+        && out_row_sources_buf == nullptr && !enable_vertical_final && !read_in_reverse;
+    uses_runs_of_equal_keys = can_skip_to_run_end;
+}
+
+void ReplacingSortedAlgorithm::initialize(Inputs inputs)
+{
+    IMergingAlgorithmWithSharedChunks::initialize(std::move(inputs));
+
+    /// Skipping runs needs the queue to actually detect batches. A batch longer than one row is
+    /// not evidence of that on its own: a queue with one cursor left always reports its whole
+    /// remainder as one batch, since there is nothing to compare it against. Without this
+    /// condition the probe for the end of a run would run on every row of a single-input merge -
+    /// which is every `INSERT` into a `ReplacingMergeTree` with `optimize_on_insert` (on by
+    /// default), where `MergeTreeDataWriter::mergeBlock` merges one already sorted block. When
+    /// that block holds no runs of equal keys, the detection is disabled and the merge has to
+    /// cost exactly what it costs with the plain heap.
+    skip_runs_of_equal_keys = can_skip_to_run_end && batch_detection_enabled;
 }
 
 void ReplacingSortedAlgorithm::insertRow()
@@ -115,7 +139,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
     /// Take the rows in needed order and put them into `merged_columns` until rows no more than `max_block_size`
     while (queue.isValid())
     {
-        SortCursor current = queue.current();
+        auto [current_ptr, current_batch_size] = queue.current();
+        SortCursor current = *current_ptr;
         if (current->isLast() && skipLastRowFor(current->order))
         {
             saveChunkForSkippingFinalFromSource(current.impl->order);
@@ -242,9 +267,37 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             setRowRef(selected_row, current);
         }
 
+        /// All rows of one batch come consecutively from the same cursor. When only the last
+        /// row of a run of equal keys is kept and processing a row has no other effects, jump
+        /// to the last row of the run of the current key within the batch: the intermediate
+        /// rows would each merely replace `selected_row` with the next one. Sources with a
+        /// non-zero part level are excluded to keep the exact behavior of
+        /// `rowsHaveDifferentSortColumns`, which does not compare rows of such sources at all.
+        if (skip_runs_of_equal_keys && current_batch_size > 1 && !current->permutation
+            && sources_origin_merge_tree_part_level[current->order] == 0)
+        {
+            size_t run_begin = current->getPos();
+            size_t run_bound = run_begin + current_batch_size;
+
+            /// The last row of the cursor may need to be skipped, leave it to the per-row check.
+            if (run_bound == current->getSize() && skipLastRowFor(current->order))
+                --run_bound;
+
+            if (run_begin + 1 < run_bound)
+            {
+                size_t run_end = getEqualRangeEndAssumeSorted(current->sort_columns, current->desc, run_begin, run_bound);
+                if (run_end > run_begin + 1)
+                {
+                    /// Jump to the last row of the run; the loop processes it as usual.
+                    queue.next(run_end - 1 - run_begin);
+                    continue;
+                }
+            }
+        }
+
         if (!current->isLast())
         {
-            queue.next();
+            queue.next(1);
         }
         else
         {

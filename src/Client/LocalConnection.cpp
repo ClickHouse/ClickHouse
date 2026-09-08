@@ -125,6 +125,14 @@ bool LocalConnection::hasReadPendingData() const
 
 std::optional<UInt64> LocalConnection::checkPacket(size_t)
 {
+    /// Unlike `Connection::checkPacket`, `poll` here advances the query state, so it must not be called
+    /// while the client is still feeding data: for a pushing pipeline `pollImpl` would mark the query
+    /// finished. Refresh the latched packet only once the query has already failed - then `poll` merely
+    /// flushes the buffered logs and schedules the `Exception`, which is what lets the client notice the
+    /// failure and stop sending data instead of pushing the rest of the input into a dead pipeline.
+    if (!next_packet_type && state && state->exception)
+        poll(0);
+
     return next_packet_type;
 }
 
@@ -139,6 +147,31 @@ void LocalConnection::sendProfileEvents()
     state->after_send_profile_events.restart();
     next_packet_type = Protocol::Server::ProfileEvents;
     state->block.emplace(ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, last_sent_snapshots));
+}
+
+void LocalConnection::captureCurrentException()
+{
+    state->io.onException();
+    try
+    {
+        throw;
+    }
+    catch (const Exception & e)
+    {
+        state->exception.reset(e.clone());
+    }
+    catch (const Poco::Exception & e)
+    {
+        state->exception = std::make_unique<Exception>(Exception::CreateFromPocoTag{}, e);
+    }
+    catch (const std::exception & e)
+    {
+        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+    }
+    catch (...) // Ok: wrap unknown exception for the client
+    {
+        state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+    }
 }
 
 void LocalConnection::sendQuery(
@@ -463,20 +496,9 @@ void LocalConnection::sendQuery(
         else if (state->block)
             next_packet_type = Protocol::Server::Data;
     }
-    catch (const Exception & e)
+    catch (...) // Ok: wrap the exception for the client
     {
-        state->io.onException();
-        state->exception.reset(e.clone());
-    }
-    catch (const std::exception & e)
-    {
-        state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
-    }
-    catch (...) // Ok: wrap unknown exception for the client
-    {
-        state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+        captureCurrentException();
     }
 }
 
@@ -490,12 +512,27 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
     if (block.empty())
         return;
 
-    if (state->pushing_async_executor)
-        state->pushing_async_executor->push(block);
-    else if (state->pushing_executor)
-        state->pushing_executor->push(block);
-    else
+    /// A previous block has already failed; the exception awaits delivery to the client, do not feed the pipeline further.
+    if (state->exception)
+        return;
+
+    if (!state->pushing_async_executor && !state->pushing_executor)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown executor");
+
+    try
+    {
+        if (state->pushing_async_executor)
+            state->pushing_async_executor->push(block);
+        else
+            state->pushing_executor->push(block);
+    }
+    catch (...) // Ok: wrap the exception for the client; `push` can rethrow an exception from a sink
+    {
+        captureCurrentException();
+        /// The client learns about the failure from `checkPacket`, which schedules the buffered logs and
+        /// then the `Exception` packet, and stops sending data.
+        return;
+    }
 
     if (send_profile_events)
         sendProfileEvents();
@@ -590,20 +627,33 @@ bool LocalConnection::poll(size_t)
                     return true;
             }
         }
-        catch (const Exception & e)
+        catch (...) // Ok: wrap the exception for the client
         {
-            state->io.onException();
-            state->exception.reset(e.clone());
+            captureCurrentException();
         }
-        catch (const std::exception & e)
+    }
+
+    // pushing executors have to be finished before the final stats are sent
+    if (!state->exception && state->is_finished)
+    {
+        try
         {
-            state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+            if (state->executor)
+            {
+                // no op
+            }
+            else if (state->pushing_async_executor)
+            {
+                state->pushing_async_executor->finish();
+            }
+            else if (state->pushing_executor)
+            {
+                state->pushing_executor->finish();
+            }
         }
-        catch (...) // Ok: wrap unknown exception for the client
+        catch (...) // Ok: wrap the exception for the client; `finish` can rethrow an exception from a sink
         {
-            state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+            captureCurrentException();
         }
     }
 
@@ -614,23 +664,6 @@ bool LocalConnection::poll(size_t)
 
         next_packet_type = Protocol::Server::Exception;
         return true;
-    }
-
-    // pushing executors have to be finished before the final stats are sent
-    if (state->is_finished)
-    {
-        if (state->executor)
-        {
-            // no op
-        }
-        else if (state->pushing_async_executor)
-        {
-            state->pushing_async_executor->finish();
-        }
-        else if (state->pushing_executor)
-        {
-            state->pushing_executor->finish();
-        }
     }
 
     if (state->is_finished && !state->sent_totals)

@@ -69,7 +69,7 @@ import subprocess
 import traceback
 from typing import Dict, List, Optional
 
-from ci.jobs.scripts.log_cluster import LogCluster
+from ci.jobs.scripts.log_cluster import BUILD_PROFILE_USER, LogCluster
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -206,6 +206,8 @@ class Section:
 
 class Db:
     def __init__(self):
+        # CI_LOGS_USER only for local runs
+        user = os.environ.get("CI_LOGS_USER", BUILD_PROFILE_USER)
         # This job only reads, so it goes to the read-only sub-service of the
         # CI logs cluster (LogCluster.READONLY_URL) rather than to the endpoint
         # that ingests the logs and profiles of the whole CI fleet.
@@ -215,15 +217,15 @@ class Db:
         if url:
             if not url.startswith("http"):
                 url = f"https://{url}:8443"
-            password = os.environ.get("CI_LOGS_PASSWORD", os.environ.get("CI_LOGS_PASWORD", ""))
+            password = os.environ.get("CI_LOGS_PASSWORD", "")
             self._cluster = LogCluster(
                 url=url,
-                user=os.environ.get("CI_LOGS_USER", "default"),
+                user=user,
                 password=password,
                 readonly=True,
             )
         else:
-            self._cluster = LogCluster(readonly=True)
+            self._cluster = LogCluster(readonly=True, user=user)
 
     def query(self, query: str) -> List[dict]:
         """Run a SELECT and return rows as dicts. Raises on failure."""
