@@ -1,9 +1,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
@@ -31,27 +29,6 @@ const FormatSettings & getFormatSettings()
 {
     static thread_local const FormatSettings settings;
     return settings;
-}
-
-template <typename Container, typename Compare>
-void sortAndKeepTop(Container & container, size_t limit, Compare compare)
-{
-    if (container.size() <= limit)
-    {
-        std::sort(container.begin(), container.end(), compare);
-        return;
-    }
-
-    if (limit == 0)
-    {
-        container.clear();
-        return;
-    }
-
-    auto nth = container.begin() + limit;
-    std::nth_element(container.begin(), nth, container.end(), compare);
-    container.resize(limit);
-    std::sort(container.begin(), container.end(), compare);
 }
 
 const SerializationPtr & getDynamicSerialization()
@@ -397,56 +374,6 @@ bool ColumnObject::isDefaultAt(size_t n) const
         return false;
 
     return true;
-}
-
-UInt64 ColumnObject::getNumberOfDefaultRows() const
-{
-    /// Avoid the O(rows * paths) per-row virtual `isDefaultAt` calls of the IColumnHelper
-    /// default: query each subcolumn's non-default rows once and union them in a bitmap.
-    const size_t num_rows = size();
-    if (num_rows == 0)
-        return 0;
-
-    PaddedPODArray<UInt8> non_default_anywhere;
-    non_default_anywhere.resize_fill(num_rows);  /// zero-initialised via memset
-    size_t num_non_default = 0;
-
-    auto add_non_defaults_of = [&](const IColumn & column)
-    {
-        if (num_non_default == num_rows)
-            return;
-
-        const size_t num_defaults_in_column = column.getNumberOfDefaultRows();
-        if (num_defaults_in_column == num_rows)
-            return;
-        if (num_defaults_in_column == 0)
-        {
-            std::memset(non_default_anywhere.data(), 1, num_rows);
-            num_non_default = num_rows;
-            return;
-        }
-
-        IColumn::Offsets non_default_indices;
-        column.getIndicesOfNonDefaultRows(non_default_indices, /*from=*/0, /*limit=*/0);
-        for (UInt64 idx : non_default_indices)
-        {
-            if (!non_default_anywhere[idx])
-            {
-                non_default_anywhere[idx] = 1;
-                ++num_non_default;
-            }
-        }
-    };
-
-    for (const auto & [path, column] : typed_paths)
-        add_non_defaults_of(*column);
-
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-        add_non_defaults_of(*column);
-
-    add_non_defaults_of(*shared_data);
-
-    return num_rows - num_non_default;
 }
 
 std::string_view ColumnObject::getDataAt(size_t) const
@@ -1237,27 +1164,12 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             ++dynamic_paths_it;
         }
 
-        /// Hash the value the same way ColumnDynamic hashes a value in its shared variant, so the hash is layout-independent.
+        /// Deserialize value in temporary column to get its hash.
         auto value = shared_data_values->getDataAt(i);
         ReadBufferFromMemory buf(value);
-        auto value_type = decodeDataType(buf);
+        auto tmp_column = ColumnDynamic::create();
+        getDynamicSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
         hash.update(path);
-
-        /// A shared_data entry can be encoded as Nothing (a serialized NULL). Nothing has no usable
-        /// default serialization (SerializationNothing::deserializeBinary always throws), so it must be
-        /// special-cased here just like SerializationDynamic::deserializeBinary does for ColumnDynamic:
-        /// treat it as the null row and hash the same NULL_DISCRIMINATOR that ColumnDynamic::updateHashWithValue
-        /// hashes for a null value, instead of hashing a type name and deserialized value.
-        if (isNothing(value_type))
-        {
-            hash.update(ColumnVariant::NULL_DISCRIMINATOR);
-            continue;
-        }
-
-        auto type_name = value_type->getName();
-        hash.update(type_name);
-        auto tmp_column = value_type->createColumn();
-        getDataTypesCache().getSerialization(type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
     }
 
@@ -1275,11 +1187,18 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
+    /// Typed paths are always in the same order for all instances of the same Object type,
+    /// so there is no need to hash the paths themselves.
     for (const auto & path : sorted_typed_paths)
         typed_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
 
+    /// Dynamic paths may differ, so we hash the paths together with values.
     for (const auto & path : sorted_dynamic_paths)
+    {
+        hash.update(path.size());
+        hash.update(path);
         dynamic_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+    }
 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
@@ -1793,16 +1712,12 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         }
 
         /// If sizes are equal, sort by path names in ascending order (for easier testing purposes).
-        const auto compare_paths = [](const auto & left, const auto & right)
-        {
-            return std::tie(left.first, right.second) < std::tie(right.first, left.second);
-        };
+        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), [](const auto & left, const auto & right){ return std::tie(left.first, right.second) < std::tie(right.first, left.second); });
 
         /// Fill dynamic_paths with first paths in sorted list until we reach the limit.
         size_t paths_to_add = max_dynamic_paths - dynamic_paths.size();
-        sortAndKeepTop(paths_with_sizes, paths_to_add, compare_paths);
-        for (const auto & [_, path] : paths_with_sizes)
-            addNewDynamicPath(path);
+        for (size_t i = 0; i != paths_to_add; ++i)
+            addNewDynamicPath(paths_with_sizes[i].second);
     }
     /// Otherwise keep all paths.
     else
@@ -1860,7 +1775,7 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         /// For this reason we first call ColumnDynamic::reserve with resulting size to preallocate memory for
         /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
         /// for all variants inside Dynamic.
-        dynamic_paths_ptrs[path]->reserve(total_size * factor);
+        dynamic_paths_ptrs[path]->reserve(total_size);
         dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns, factor);
     }
 }
@@ -1956,18 +1871,17 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
             paths_with_sizes.emplace_back(size, path);
 
         /// If sizes are equal, sort by path names in ascending order (for easier testing purposes).
-        const auto compare_paths = [](const auto & left, const auto & right)
-        {
-            return std::tuple(right.first, left.second) < std::tuple(left.first, right.second);
-        };
-        sortAndKeepTop(paths_with_sizes, max_dynamic_paths, compare_paths);
+        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), [](const auto & left, const auto & right){ return std::tuple(right.first, left.second) < std::tuple(left.first, right.second); });
 
         /// Fill dynamic_paths with first max_dynamic_paths paths in sorted list.
-        for (const auto & [_, path] : paths_with_sizes)
+        for (const auto & [size, path] : paths_with_sizes)
         {
-            auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
-            dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
-            sorted_dynamic_paths.insert(it->first);
+            if (dynamic_paths.size() < max_dynamic_paths)
+            {
+                auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
+                dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
+                sorted_dynamic_paths.insert(it->first);
+            }
         }
     }
     /// Use all dynamic paths from all source columns.
@@ -2111,9 +2025,9 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
         candidates_with_sizes.reserve(shared_data_candidates.size());
         for (const auto & [path, size] : shared_data_candidates)
             candidates_with_sizes.emplace_back(size, path);
-        sortAndKeepTop(candidates_with_sizes, Statistics::MAX_SHARED_DATA_STATISTICS_SIZE, std::greater<>());
-        for (const auto & [size, path] : candidates_with_sizes)
-            new_statistics.shared_data_paths_statistics.emplace(path, size);
+        std::sort(candidates_with_sizes.begin(), candidates_with_sizes.end(), std::greater());
+        for (size_t i = 0; i < Statistics::MAX_SHARED_DATA_STATISTICS_SIZE; ++i)
+            new_statistics.shared_data_paths_statistics.emplace(candidates_with_sizes[i].second, candidates_with_sizes[i].first);
     }
 
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
@@ -2211,14 +2125,13 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, std::stri
     }
 }
 
-ColumnObject::SortedPathsIterator::SortedPathsIterator(const ColumnObject & column_object_, size_t row_, bool skip_typed_nulls_)
+ColumnObject::SortedPathsIterator::SortedPathsIterator(const ColumnObject & column_object_, size_t row_)
     : column_object(column_object_)
     , typed_paths_it(column_object.sorted_typed_paths.begin())
     , typed_paths_end(column_object.sorted_typed_paths.end())
     , dynamic_paths_it(column_object.sorted_dynamic_paths.begin())
     , dynamic_paths_end(column_object.sorted_dynamic_paths.end())
     , row(row_)
-    , skip_typed_nulls(skip_typed_nulls_)
 {
     std::tie(shared_data_paths, shared_data_values) = column_object.getSharedDataPathsAndValues();
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
@@ -2253,13 +2166,7 @@ int ColumnObject::SortedPathsIterator::compare(const SortedPathsIterator & rhs, 
     if (path != rhs_path)
         return path < rhs_path ? -1 : 1;
 
-    /// If paths are equal, compare their values. When both values live in shared data they are
-    /// already serialized in Dynamic binary form, so compare them directly via
-    /// ColumnDynamic::compareSerializedValues (same order as the materializing path). Any other
-    /// combination keeps the materializing path unchanged.
-    if (current_path_type == PathType::SHARED_DATA && rhs.current_path_type == PathType::SHARED_DATA)
-        return ColumnDynamic::compareSerializedValues(getCurrentSharedDataValue(), rhs.getCurrentSharedDataValue(), nan_direction_hint);
-
+    /// If paths are equal, compare their values.
     auto [column, n] = getCurrentPathColumnAndRow();
     auto [rhs_column, rhs_n] = rhs.getCurrentPathColumnAndRow();
     return column->compareAt(n, rhs_n, *rhs_column, nan_direction_hint);
@@ -2278,11 +2185,6 @@ void ColumnObject::SortedPathsIterator::setCurrentPath()
     /// Null in dynamic path is considered as absence of this path.
     while (dynamic_paths_it != dynamic_paths_end && column_object.dynamic_paths.find(*dynamic_paths_it)->second->isNullAt(row))
         ++dynamic_paths_it;
-
-    /// If requested, skip typed paths whose value is null (treat them as absent).
-    if (skip_typed_nulls)
-        while (typed_paths_it != typed_paths_end && column_object.typed_paths.find(*typed_paths_it)->second->isNullAt(row))
-            ++typed_paths_it;
 
     std::array<std::pair<PathType, std::optional<std::string_view>>, 3> paths{
         std::pair{PathType::TYPED, typed_paths_it == typed_paths_end ? std::nullopt : std::optional<std::string_view>(*typed_paths_it)},
@@ -2342,11 +2244,6 @@ std::pair<ColumnPtr, size_t> ColumnObject::SortedPathsIterator::getCurrentPathCo
     }
 };
 
-std::string_view ColumnObject::SortedPathsIterator::getCurrentSharedDataValue() const
-{
-    return shared_data_values->getDataAt(shared_data_it);
-}
-
 ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
 {
     PathInfo path_info;
@@ -2354,39 +2251,6 @@ ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::g
     path_info.path = getCurrentPath();
     std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
     return path_info;
-}
-
-void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(
-    const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations,
-    WriteBuffer & buf) const
-{
-    if (current_path_type == PathType::SHARED_DATA)
-    {
-        auto value_data = shared_data_values->getDataAt(shared_data_it);
-        buf.write(value_data.data(), value_data.size());
-        return;
-    }
-
-    if (current_path_type == PathType::DYNAMIC)
-    {
-        const auto & dynamic_col = assert_cast<const ColumnDynamic &>(
-            *column_object.dynamic_paths.find(*dynamic_paths_it)->second);
-        getDynamicSerialization()->serializeBinary(dynamic_col, row, buf, getFormatSettings());
-        return;
-    }
-
-    chassert(current_path_type == PathType::TYPED);
-    const IColumn & col = *column_object.typed_paths.find(*typed_paths_it)->second;
-    auto ser_it = typed_path_serializations.find(String(*typed_paths_it));
-    if (ser_it == typed_path_serializations.end())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "No serialization found for typed path '{}' in serializeCurrentValueBinary",
-            *typed_paths_it);
-
-    /// Write the value bare — no type tag — so the blob can be deserialized
-    /// directly with the same serialization.
-    ser_it->second->serializeBinary(col, row, buf, getFormatSettings());
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

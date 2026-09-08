@@ -10,16 +10,11 @@
   [node]
   {:dbtype "clickhouse"
    :dbname "default"
-   :classname "com.clickhouse.jdbc.ClickHouseDriver"
+   :classname "com.clickhouse.ClickhouseDriver"
    :host (name node)
    :port 8123
    :connectTimeout 30
    :socketTimeout 30
-   ;; Disable server-response compression. The stale clickhouse-jdbc 0.3.2
-   ;; driver otherwise expects an LZ4-compressed HTTP response (magic byte
-   ;; 0x82) from the much newer server and fails with "Magic is not correct"
-   ;; before the query result can be read.
-   :compress false
    :jdbcCompliant false})
 
 (defn open-connection
@@ -27,7 +22,7 @@
    (util/timeout 30000
                (throw (RuntimeException.
                         (str "Connection to " node " timed out")))
-    (util/retry 1
+    (util/retry 0.1
       (let [spec (db-spec node)
             connection (j/get-connection spec)
             added-connection (j/add-connection spec connection)]

@@ -208,9 +208,9 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     )";
     FunctionDocumentation::Syntax syntax = "arrayFirst(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)."},
-        {"source_arr", "The source array to process. [`Array(T)`](/reference/data-types/array)."},
-        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)."}
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the first element of the source array for which `λ` is true, otherwise returns the default value of `T`."};
     FunctionDocumentation::Examples examples = {
@@ -252,9 +252,9 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
     )";
     FunctionDocumentation::Syntax syntax_last = "arrayLast(func(x[, y1, ..., yN]), source[, cond1, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_last = {
-        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)."},
-        {"source", "The source array to process. [`Array(T)`](/reference/data-types/array)."},
-        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)."}
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1, ... , condN]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_last = {"Returns the last element of the source array for which `func` is true, otherwise returns the default value of `T`."};
     FunctionDocumentation::Examples examples_last = {
@@ -277,9 +277,9 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
     )";
     FunctionDocumentation::Syntax syntax_last_null = "arrayLastOrNull(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_last_null = {
-        {"func(x [, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)."},
-        {"source_arr", "The source array to process. [`Array(T)`](/reference/data-types/array)."},
-        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/reference/data-types/array)."}
+        {"func(x [, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`). [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
+        {"source_arr", "The source array to process. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function. [`Array(T)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_last_null = {"Returns the last element of the source array for which `λ` is not true, otherwise returns `NULL`."};
     FunctionDocumentation::Examples examples_last_null = {

@@ -401,8 +401,6 @@ BlobClientOptions getClientOptions(
     retry_options.MaxRetries = static_cast<Int32>(request_settings.sdk_max_retries);
     retry_options.RetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_initial_backoff_ms);
     retry_options.MaxRetryDelay = std::chrono::milliseconds(request_settings.sdk_retry_max_backoff_ms);
-    /// Add 403 to the SDK retry set — RBAC propagation returns a transient 403 the SDK won't otherwise retry.
-    retry_options.StatusCodes.insert(Azure::Core::Http::HttpStatusCode::Forbidden);
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry = retry_options;
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
@@ -633,14 +631,10 @@ std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context,
 {
     auto settings = getRequestSettings(context->getSettingsRef());
 
-    settings->use_native_copy = use_native_copy;
-
-    /// A configured endpoint takes priority over the backup setting, ...
     auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
     if (endpoint_settings)
         settings->use_native_copy = endpoint_settings->use_native_copy;
 
-    /// ... except that the backup setting can always veto native copy.
     if (!use_native_copy)
         settings->use_native_copy = false;
 

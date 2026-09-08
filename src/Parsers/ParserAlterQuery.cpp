@@ -65,10 +65,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_add_constraint(Keyword::ADD_CONSTRAINT);
     ParserKeyword s_drop_constraint(Keyword::DROP_CONSTRAINT);
-    ParserKeyword s_modify_constraint(Keyword::MODIFY_CONSTRAINT);
 
     ParserKeyword s_add_projection(Keyword::ADD_PROJECTION);
-    ParserKeyword s_modify_projection(Keyword::MODIFY_PROJECTION);
     ParserKeyword s_drop_projection(Keyword::DROP_PROJECTION);
     ParserKeyword s_clear_projection(Keyword::CLEAR_PROJECTION);
     ParserKeyword s_materialize_projection(Keyword::MATERIALIZE_PROJECTION);
@@ -524,16 +522,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                 }
             }
-            else if (s_modify_projection.ignore(pos, expected))
-            {
-                if (s_if_exists.ignore(pos, expected))
-                    command->if_exists = true;
-
-                if (!parser_projection_decl.parse(pos, command_projection_decl, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::MODIFY_PROJECTION;
-            }
             else if (s_move_part.ignore(pos, expected))
             {
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
@@ -597,16 +585,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::ADD_CONSTRAINT;
-            }
-            else if (s_modify_constraint.ignore(pos, expected))
-            {
-                if (s_if_exists.ignore(pos, expected))
-                    command->if_exists = true;
-
-                if (!parser_constraint_decl.parse(pos, command_constraint_decl, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::MODIFY_CONSTRAINT;
             }
             else if (s_drop_constraint.ignore(pos, expected))
             {

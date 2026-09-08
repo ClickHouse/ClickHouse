@@ -60,7 +60,7 @@ public:
         /// Store ptr to dictionary to be sure it won't be deleted.
         ColumnPtr dictionary_holder;
         /// Hashes for dictionary keys.
-        std::span<const UInt64> saved_hash;
+        const UInt64 * saved_hash = nullptr;
     };
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
@@ -107,9 +107,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     const IColumn * positions = nullptr;
     size_t size_of_index_type = 0;
 
-    /// saved hash is from current column or from cache. Dictionary positions outside it have no
-    /// saved hash and are hashed from the key.
-    std::span<const UInt64> saved_hash;
+    /// saved hash is from current column or from cache.
+    const UInt64 * saved_hash = nullptr;
     /// Hold dictionary in case saved_hash is from cache to be sure it won't be deleted.
     ColumnPtr dictionary_holder;
 
@@ -245,7 +244,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         bool inserted = false;
         typename Data::LookupResult it;
-        if (row < saved_hash.size())
+        if (saved_hash)
             data.emplace(key_holder, it, inserted, saved_hash[row]);
         else
             data.emplace(key_holder, it, inserted);
@@ -298,7 +297,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         auto key_holder = getKeyHolder(row_, pool);
 
         typename Data::LookupResult it;
-        if (row < saved_hash.size())
+        if (saved_hash)
             it = data.find(keyHolderGetKey(key_holder), saved_hash[row]);
         else
             it = data.find(keyHolderGetKey(key_holder));
@@ -327,7 +326,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
         row = getIndexAt(row);
-        if (row < saved_hash.size())
+        if (saved_hash)
             return saved_hash[row];
 
         return Base::getHash(data, row, pool);
@@ -496,7 +495,7 @@ struct HashMethodSerialized
     /// `Aggregator::executeImpl`'s `prefetch` gate.
     template <typename Data>
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
-        requires prealloc
+        requires(prealloc)
     {
         precomputed_hashes_initialized = true;
         calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
@@ -530,7 +529,7 @@ struct HashMethodSerialized
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
-    requires prealloc
+    requires(prealloc)
     {
         if (use_batch_serialize)
             return ArenaKeyHolder{serialized_keys[row], pool};

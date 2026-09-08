@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/DateTimeTransforms.h>
-#include <base/arithmeticOverflow.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -18,9 +17,6 @@
 #include <algorithm>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-
-#include <libdivide-config.h>
-#include <libdivide.h>
 
 namespace DB
 {
@@ -34,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
-    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -227,87 +222,6 @@ private:
         std::unreachable();
     }
 
-    /// Fast path for the interval kinds and time zones where the result is `roundDownToMultiple` of the unix
-    /// timestamp (see the `*IntervalModularDivisor` methods of `DateLUTImpl`). The generic loop pays a
-    /// hardware division by the run-time divisor for every row; a precomputed libdivide divider turns it
-    /// into multiplication and shifts and lets the DateTime loop vectorize (about 5 times faster).
-    template <IntervalKind::Kind unit, typename TimeColumnType, typename ResultContainer>
-    static bool tryExecuteArithmeticRounding(
-        const typename TimeColumnType::Container & time_data,
-        ResultContainer & result_data,
-        Int64 num_units,
-        const DateLUTImpl & time_zone,
-        Int64 scale_multiplier)
-    {
-        std::optional<Int64> modular_divisor;
-        if constexpr (unit == IntervalKind::Kind::Minute)
-            modular_divisor = time_zone.minuteIntervalModularDivisor(static_cast<UInt64>(num_units));
-        else if constexpr (unit == IntervalKind::Kind::Second)
-            modular_divisor = time_zone.secondIntervalModularDivisor(static_cast<UInt64>(num_units));
-        else
-        {
-            static_assert(unit == IntervalKind::Kind::Hour);
-            modular_divisor = time_zone.hourIntervalModularDivisor(static_cast<UInt64>(num_units));
-        }
-        if (!modular_divisor)
-            return false;
-        const Int64 divisor = *modular_divisor;
-
-        const size_t size = time_data.size();
-        using ResultFieldType = typename ResultContainer::value_type;
-
-        if constexpr (std::is_same_v<TimeColumnType, ColumnDateTime>)
-        {
-            /// The scale multiplier does not apply to DateTime values, and they are never negative.
-            if (divisor > std::numeric_limits<UInt32>::max())
-            {
-                for (size_t i = 0; i != size; ++i)
-                    result_data[i] = static_cast<ResultFieldType>(0);
-            }
-            else
-            {
-                const UInt32 d = static_cast<UInt32>(divisor);
-                const libdivide::divider<UInt32, libdivide::BRANCHFULL> divider(d);
-                for (size_t i = 0; i != size; ++i)
-                    result_data[i] = static_cast<ResultFieldType>(time_data[i] / divider * d);
-            }
-        }
-        else
-        {
-            static_assert(std::is_same_v<TimeColumnType, ColumnDateTime64>);
-            /// There is no 64-bit vector multiply-high instruction, so these loops stay scalar.
-            const libdivide::divider<Int64, libdivide::BRANCHFULL> scale_divider(scale_multiplier);
-            if (divisor == 1)
-            {
-                /// A one-second interval never consults the LUT, so it needs no range check.
-#pragma clang loop vectorize(disable)
-                for (size_t i = 0; i != size; ++i)
-                    result_data[i] = static_cast<ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
-                return true;
-            }
-            const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
-#pragma clang loop vectorize(disable)
-            for (size_t i = 0; i != size; ++i)
-            {
-                const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
-                /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
-                /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
-                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t)))
-                {
-                    result_data[i] = static_cast<ResultFieldType>(
-                        ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
-                    continue;
-                }
-                const Int64 rounded_towards_zero = t / divider * divisor;
-                const Int64 res = t >= 0
-                    ? rounded_towards_zero
-                    : DateLUTImpl::roundDownNegativeToMultiple(t, rounded_towards_zero, divisor);
-                result_data[i] = static_cast<ResultFieldType>(res);
-            }
-        }
-        return true;
-    }
-
     template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
     ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
@@ -328,9 +242,20 @@ private:
             const bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
             const bool is_result_date = isDateOrDate32(result_type);
 
-            /// For large intervals the result scale equals the argument scale: seconds for the non-DateTime64
-            /// argument types and scale_multiplier for DateTime64 arguments.
-            const Int64 result_scale = (isDateTime64(result_type) && !is_small_interval) ? scale_multiplier : 1;
+            Int64 result_scale = scale_multiplier;
+            Int64 origin_scale = 1;
+
+            if (isDateTime64(result_type)) /// We have origin scale only in case if arguments are DateTime64.
+                origin_scale = assert_cast<const DataTypeDateTime64 &>(*origin_column.type).getScaleMultiplier();
+            else if (!is_small_interval) /// In case of large interval and arguments are not DateTime64, we should not have scale in result.
+                result_scale = 1;
+
+            if (is_small_interval)
+                result_scale = assert_cast<const DataTypeDateTime64 &>(*result_type).getScaleMultiplier();
+
+            /// In case if we have a difference between time arguments and Interval, we need to calculate the difference between them
+            /// to get the right precision for the result. In case of large intervals, we should not have scale difference.
+            Int64 scale_diff = is_small_interval ? std::max(result_scale / origin_scale, origin_scale / result_scale) : 1;
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
@@ -341,32 +266,16 @@ private:
                 if (origin > time_arg)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
-                if (is_small_interval)
-                {
-                    result_data[i] = static_cast<typename ResultDataType::FieldType>(
-                        ToStartOfInterval<unit>::execute(time_arg, num_units, time_zone, scale_multiplier, origin));
-                    continue;
-                }
-
-                if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds.
+                if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds or milli-, micro-, nanoseconds.
                 {
                     time_arg *= SECONDS_PER_DAY;
                     origin *= SECONDS_PER_DAY;
                 }
 
-                /// The time and origin arguments have the same scale, so their difference is expressed in the
-                /// argument scale, which for large intervals equals result_scale. ToStartOfInterval returns
-                /// the offset as a whole number of interval units.
-                Int64 time_diff = 0;
-                if (common::subOverflow(time_arg, origin, time_diff))
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                        "The difference between the time argument ({}) and the origin ({}) of function {} does not fit into Int64",
-                        time_arg, origin, getName());
+                Int64 offset = ToStartOfInterval<unit>::execute(time_arg - origin, num_units, time_zone, result_scale, origin);
 
-                Int64 offset = ToStartOfInterval<unit>::execute(time_diff, num_units, time_zone, result_scale, origin);
-
-                /// The offset is a whole number of seconds or days, convert it to the result scale.
-                offset *= result_scale;
+                /// In case if arguments are DateTime64 with large interval, we should apply scale on it.
+                offset *= (!is_small_interval) ? result_scale : 1;
 
                 if (is_result_date) /// Convert back to date after calculations.
                 {
@@ -374,24 +283,12 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                Int64 result = 0;
-                if (common::addOverflow(origin, offset, result))
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                        "The result of function {} for the origin ({}) and the rounding offset ({}) does not fit into Int64",
-                        getName(), origin, offset);
-
-                result_data[i] = static_cast<ResultDataType::FieldType>(result);
-            }
+                result_data[i] = (result_scale < origin_scale) ? static_cast<ResultDataType::FieldType>((origin + offset) / scale_diff)
+                                                               : static_cast<ResultDataType::FieldType>((origin + offset) * scale_diff);
+        }
         }
         else // Overload: Default
         {
-            if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
-                && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))
-            {
-                if (tryExecuteArithmeticRounding<unit, TimeColumnType>(time_data, result_data, num_units, time_zone, scale_multiplier))
-                    return result_col;
-            }
-
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = static_cast<typename ResultDataType::FieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
         }

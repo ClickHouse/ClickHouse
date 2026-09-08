@@ -658,8 +658,6 @@
     M(776, RESOURCE_LIMIT_EXCEEDED) \
     M(777, MEMORY_RESERVATION_KILLED) \
     M(778, MEMORY_RESERVATION_FAILED) \
-    M(779, UNSUPPORTED_MEDIA_TYPE) \
-    M(780, SW_SERVER_NO_WORKERS_AVAILABLE) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -677,11 +675,6 @@
     M(1006, INVALID_CURSOR_LOOKUP) \
     M(1007, ILLEGAL_STREAM) \
     M(1008, TEMPORARY_DATA_NOT_IN_CACHE) \
-    M(1009, S3_OBJECT_CHANGED_DURING_READ) \
-    M(1010, UNIQUE_KEY_DENSE_INDEX_UNREADABLE) \
-    M(1011, HANDLER_ALREADY_EXISTS) \
-    M(1012, HANDLER_DOESNT_EXIST) \
-    M(1013, AMBIGUOUS_HANDLER) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -698,16 +691,8 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1013;
-
-#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
-    /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,
-      * format string, query id and captured stack trace, local and remote - plus a mutex. That is
-      * around 150 KB of data for the whole table, which the server wants for `system.errors` but a
-      * standalone build of the parser has nothing to do with: the names above are all it needs.
-      */
+    constexpr ErrorCode END = 1008;
     ErrorPairHolder values[END + 1]{};
-#endif
 
     struct ErrorCodesNames
     {
@@ -744,19 +729,6 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
-#if defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
-
-    size_t increment(ErrorCode, bool, const std::string &, const std::string &, const FramePointers &)
-    {
-        return 0;
-    }
-
-    void extendedMessage(ErrorCode, bool, size_t, const std::string &)
-    {
-    }
-
-#else
-
     size_t increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
     {
         if (error_code < 0 || error_code >= end())
@@ -780,8 +752,6 @@ namespace ErrorCodes
 
         values[error_code].extendedMessage(remote, error_index, message);
     }
-
-#endif
 
     size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
     {

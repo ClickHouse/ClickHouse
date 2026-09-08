@@ -1,4 +1,3 @@
-#include <Common/StringUtils.h>
 #include <IO/ReadHelpers.h>
 #include <Access/IAccessStorage.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -12,8 +11,11 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
-#include <base/insertAtEnd.h>
 #include <base/range.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
 
 
@@ -22,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -56,15 +57,9 @@ namespace
             if (!parseIdentifiersOrStringLiterals(pos, expected, names))
                 return false;
 
-            String name;
-            for (const auto & part : names)
-            {
-                if (!name.empty())
-                    name += "_or_";
-                name += part;
-            }
-            toLowerASCII(name);
-            std::replace(name.begin(), name.end(), ' ', '_');
+            String name = boost::algorithm::join(names, "_or_");
+            boost::to_lower(name);
+            boost::replace_all(name, " ", "_");
 
             for (auto kt : collections::range(QuotaKeyType::MAX))
             {
@@ -152,7 +147,7 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(trim(f.safeGet<std::string>(), isWhitespaceASCII)));
+            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>())));
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
@@ -167,7 +162,7 @@ namespace
         if (type_info.output_denominator == 1)
             max_value = fieldToNumber<QuotaValue>(max_field);
         else
-            max_value = type_info.scaleToValue(fieldToNumber<double>(max_field));
+            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator));
         return true;
     }
 
@@ -233,13 +228,7 @@ namespace
             if (!parseIntervalKind(pos, expected, interval_kind))
                 return false;
 
-            /// Bound the seconds to the finite Int64 range before the cast: an out-of-range or non-finite
-            /// double (e.g. FOR INTERVAL 1e19 SECOND) makes static_cast<Int64> undefined behavior.
-            double total_seconds = num_intervals * interval_kind.toAvgSeconds();
-            static constexpr double int64_max_as_double = 9223372036854775808.0; /// 2^63, first double above Int64 max
-            if (!std::isfinite(total_seconds) || total_seconds >= int64_max_as_double || total_seconds < -int64_max_as_double)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota interval duration is out of range");
-            limits.duration = std::chrono::seconds(static_cast<Int64>(total_seconds));
+            limits.duration = std::chrono::seconds(static_cast<UInt64>(num_intervals * interval_kind.toAvgSeconds()));
             std::vector<std::pair<QuotaType, QuotaValue>> new_limits;
 
             if (ParserKeyword{Keyword::NO_LIMITS}.ignore(pos, expected))
@@ -264,7 +253,7 @@ namespace
         if (!ParserList::parseUtil(pos, expected, parse_interval_with_limits, false))
             return false;
 
-        insertAtEnd(all_limits, std::move(res_all_limits));
+        all_limits = std::move(res_all_limits);
         return true;
     }
 

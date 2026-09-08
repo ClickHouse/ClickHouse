@@ -112,8 +112,6 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
-
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE

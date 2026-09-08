@@ -126,7 +126,7 @@ ProcessList::EntryPtr ProcessList::insert(
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
-    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port;
+    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -325,10 +325,6 @@ ProcessList::EntryPtr ProcessList::insert(
             thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
             configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), thread_group->memory_tracker, settings);
 
-            /// Reapply sampling
-            if (current_thread)
-                current_thread->resolveMemorySampleConfig();
-
             if (query_context->hasTraceCollector() && settings[Setting::trace_profile_events])
             {
                 const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
@@ -489,8 +485,6 @@ ProcessListEntry::~ProcessListEntry()
     parent.have_space.notify_all();
 
     /// If there are no more queries for the user, then we will reset memory tracker.
-    /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
-    /// reads entries lock-free via raw pointers and relies on them never being erased.
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
 }
@@ -628,7 +622,7 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
         {
             String additional_error_part;
             if (elapsed_ns)
-                additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
+                additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);
@@ -798,6 +792,59 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
     /// The ProcessListEntry cannot be destroy if is_cancelling is true.
     {
         LockAndBlocker lock(mutex);
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        Lock lock(mutex);
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+
+void ProcessList::registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys[{connection_id, secret_key}] = query_id;
+}
+
+
+void ProcessList::unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys.erase({connection_id, secret_key});
+}
+
+
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key)
+{
+    QueryStatusPtr elem;
+
+    {
+        LockAndBlocker lock(mutex);
+
+        /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
+        /// unknown connection.
+        auto cancellation_key = postgresql_cancellation_keys.find({process_id, secret_key});
+        if (cancellation_key == postgresql_cancellation_keys.end())
+            return CancellationCode::NotFound;
+
+        const String & current_query_id = cancellation_key->second;
+        auto query_user = queries_to_user.find(current_query_id);
+        if (query_user == queries_to_user.end())
+            return CancellationCode::NotFound;
+
+        /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
+        elem = tryGetProcessListElement(current_query_id, query_user->second);
+        if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
+            return CancellationCode::NotFound;
+
+        /// Keep the verified entry by pointer to prevent query-id reuse races.
         elem->is_cancelling = true;
     }
 
@@ -988,22 +1035,14 @@ ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) cons
 
 ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
 {
-    /// Snapshot each user outside the lock (with sharded `User` counters `getInfo(true)` is
-    /// O(num_events * cpus)). Safe: `user_to_queries` entries are never erased (see the comment in
-    /// `ProcessListEntry`'s destructor) and `unordered_map` keeps element pointers valid across
-    /// inserts, so they outlive the lock; `getInfo` reads only atomics.
-    std::vector<std::pair<String, const ProcessListForUser *>> users;
-    {
-        LockAndBlocker lock(mutex);
-        users.reserve(user_to_queries.size());
-        for (const auto & [user, user_queries] : user_to_queries)
-            users.emplace_back(user, &user_queries);
-    }
-
     UserInfo per_user_infos;
-    per_user_infos.reserve(users.size());
-    for (const auto & [user, user_queries] : users)
-        per_user_infos.emplace(user, user_queries->getInfo(get_profile_events));
+
+    LockAndBlocker lock(mutex);
+
+    per_user_infos.reserve(user_to_queries.size());
+
+    for (const auto & [user, user_queries] : user_to_queries)
+        per_user_infos.emplace(user, user_queries.getInfo(get_profile_events));
 
     return per_user_infos;
 }

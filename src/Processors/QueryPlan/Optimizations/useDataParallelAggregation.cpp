@@ -4,16 +4,11 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
-
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/QueryPlan/Optimizations/useDataParallelAggregation.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Storages/KeyDescription.h>
 
 using namespace DB;
 
@@ -21,9 +16,6 @@ namespace
 {
 
 
-/// `ExpressionStep`, `FilterStep` and `ArrayJoinStep` all preserve the number of streams and keep
-/// each output row within its input stream, so the partition each row belongs to does not change.
-/// They are the transparent steps the optimization can look through to reach the reading.
 ReadFromMergeTree * findReadingStep(QueryPlan::Node & node)
 {
     auto * step = node.step.get();
@@ -33,7 +25,7 @@ ReadFromMergeTree * findReadingStep(QueryPlan::Node & node)
     if (node.children.size() != 1)
         return nullptr;
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step))
         return findReadingStep(*node.children.front());
 
     return nullptr;
@@ -53,37 +45,25 @@ void buildKeyDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag)
         return;
 
     auto * step = node.step.get();
-    if (!typeid_cast<const ExpressionStep *>(step) && !typeid_cast<const FilterStep *>(step)
-        && !typeid_cast<const ArrayJoinStep *>(step))
+    const ActionsDAG * step_dag = nullptr;
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+        step_dag = &expression->getExpression();
+    else if (const auto * filter = typeid_cast<const FilterStep *>(step))
+        step_dag = &filter->getExpression();
+
+    if (!step_dag)
         return;
 
     buildKeyDAG(*node.children.front(), dag);
-
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
-        appendExpression(dag, expression->getExpression());
-    else if (const auto * filter = typeid_cast<const FilterStep *>(step))
-        appendExpression(dag, filter->getExpression());
-    else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
-    {
-        if (dag)
-        {
-            const auto & cols = array_join->getColumns();
-            dag->removeFromOutputs(NameSet(cols.begin(), cols.end()));
-        }
-    }
+    appendExpression(dag, *step_dag);
 }
-
-}
-
-namespace DB::QueryPlanOptimizations
-{
 
 /// 0. Partition key columns should be a subset of the key columns.
 /// 1. Optimization is applicable if partition by expression is a deterministic function of col1, ..., coln and the keys are injective functions of these col1, ..., coln.
 /// 2. To find col1, ..., coln we apply removeInjectiveFunctionsFromResultsRecursively to the key actions.
 /// 3. We match partition key actions with the key actions to find col1', ..., coln' in partition key actions.
 /// 4. We check that partition key is indeed a deterministic function of col1', ..., coln'.
-bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names)
+bool isPartitionKeyFunctionOfKeys(const ReadFromMergeTree & reading, const ActionsDAG & key_actions, const Names & key_names)
 {
     if (key_actions.hasArrayJoin() || key_actions.hasStatefulFunctions() || key_actions.hasNonDeterministic())
         return false;
@@ -94,6 +74,7 @@ bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const Ac
 
     const auto & key_required_columns = key_dag.getRequiredColumnsNames();
 
+    const auto & partition_key = reading.getStorageMetadata()->getPartitionKey();
     const auto & partition_actions = partition_key.expression->getActionsDAG();
 
     /// Check that PK columns is a subset of key columns.
@@ -114,6 +95,11 @@ bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const Ac
     return allOutputsDependsOnlyOnAllowedNodes(partition_key_outputs, irreducible_nodes, matches);
 }
 
+}
+
+namespace DB::QueryPlanOptimizations
+{
+
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
 {
     if (node.children.size() != 1)
@@ -124,15 +110,6 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
         return;
 
     if (aggregating_step->isGroupingSets())
-        return;
-
-    /// `max_rows_to_group_by` is a global `GROUP BY` limit, enforced during the merge phase in normal
-    /// aggregation. Aggregating each partition independently skips that merge, so the limit would be
-    /// enforced against each partition's own hash table instead of globally, letting a query return
-    /// more groups (or apply `group_by_overflow_mode`) per partition than the global limit allows.
-    /// Fall back to normal aggregation, matching `AggregatingStep::canUseShardedAggregation` and
-    /// `make_distributed_plan`, both of which reject this case for the same reason.
-    if (aggregating_step->getParams().max_rows_to_group_by != 0)
         return;
 
     const auto * expression_node = node.children.front();
@@ -155,8 +132,7 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
         return;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(
-            reading->getStorageMetadata()->getPartitionKey(), expression_step->getExpression(), aggregating_step->getParams().keys))
+        && isPartitionKeyFunctionOfKeys(*reading, expression_step->getExpression(), aggregating_step->getParams().keys))
     {
         if (reading->requestOutputEachPartitionThroughSeparatePortForAggregation())
             aggregating_step->skipMerging();
@@ -181,44 +157,10 @@ void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, con
     if (!dag)
         return;
 
-    if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, limit_by_step->getColumns()))
+    if (!reading->willOutputEachPartitionThroughSeparatePort() && isPartitionKeyFunctionOfKeys(*reading, *dag, limit_by_step->getColumns()))
     {
         if (reading->requestOutputEachPartitionThroughSeparatePortForLimitBy())
             limit_by_step->skipStreamMerging();
-    }
-}
-
-void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
-{
-    if (node.children.size() != 1)
-        return;
-
-    auto * distinct_step = typeid_cast<DistinctStep *>(node.step.get());
-    if (!distinct_step)
-        return;
-
-    /// Trigger only on the preliminary DISTINCT, which sits close to the reading and is where we
-    /// request per-partition reading. The final DISTINCT is handled separately: once the reading is set to
-    /// keep each partition within a single stream, `applyStreamDisjointness` propagates that disjointness up the
-    /// plan and makes the final DISTINCT skip the cross-stream merge, as long as no intermediate step breaks the
-    /// disjointness property.
-    if (!distinct_step->isPreliminary())
-        return;
-
-    auto * reading = findReadingStep(*node.children.front());
-    if (!reading)
-        return;
-
-    std::optional<ActionsDAG> dag;
-    buildKeyDAG(*node.children.front(), dag);
-    if (!dag)
-        return;
-
-    if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, distinct_step->getColumnNames()))
-    {
-        reading->requestOutputEachPartitionThroughSeparatePortForDistinct();
     }
 }
 }
