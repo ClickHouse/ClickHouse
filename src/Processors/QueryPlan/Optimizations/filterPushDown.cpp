@@ -19,14 +19,12 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -1185,45 +1183,7 @@ static bool mayFixColumn(const ActionsDAG::Node * condition)
     return false;
 }
 
-/// Whether a fixed column could change how `plan` reads: does anything in the fragment read by a
-/// sorting key at all. Only that can be asked here - not whether anything would *request* an ordered
-/// read, because at this point the fragment holds just the read (`Expression -> ReadFromMergeTree`);
-/// the `Sorting` or `Window` that decides the order sits in the outer plan and only reaches the read
-/// once the fragment is spliced in. Nor whether the sorting key involves the fixed column, which means
-/// following the condition's columns down through the fragment's projections - `buildInputOrderInfo`'s
-/// job, not a second copy of it here.
-static bool fixedColumnMayChangeReadMode(const QueryPlan * plan)
-{
-    if (!plan || !plan->isInitialized())
-        return false;
-
-    std::vector<const QueryPlan::Node *> stack{plan->getRootNode()};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        const auto * step = node->step.get();
-
-        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
-        {
-            if (!reading->getStorageMetadata()->getSortingKey().column_names.empty())
-                return true;
-        }
-        else if (typeid_cast<const ISourceStep *>(step))
-        {
-            /// A source that only expands into its real reads later (`ReadFromMerge`) has nothing to
-            /// inspect yet; being wrong here costs the mode mismatch this gate exists to prevent.
-            return true;
-        }
-
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-
-    return false;
-}
-
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -1496,19 +1456,18 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        /// Only the initiator's share of the read gets the condition here, so a condition the replicas do
-        /// not also have may not change what this fragment announces to the shared coordinator: an
-        /// equality fixes a sort key column, the fragment then reads in order, and the initiator
-        /// announces `WithOrder` against the replicas' `Default`.
+        /// Only the initiator's share of the read gets the condition here; the replicas get it as well
+        /// only under `parallel_replicas_filter_pushdown`, which splices it into their query. So without
+        /// that setting a condition that can fix a sort key column has to stay out: `tenant = 42` would
+        /// let this fragment read in order, and the initiator would announce `WithOrder` to the shared
+        /// coordinator against the replicas' `Default`.
         ///
-        /// The replicas get it only by the splice into their query, which declines for queries it cannot
-        /// rewrite and conditions it cannot express - so put this condition to it rather than trusting a
-        /// setting, all the more since `parallel_replicas_filter_pushdown` is jointly scoped and the
-        /// value that governs is the shipped query's own. A join runtime filter it can never carry, and
-        /// never has to: see `mayFixColumn`.
-        const bool replicas_get_the_condition = parallel_replicas_local_plan->shippedQueryCanCarry(filter->getExpression());
+        /// A condition that fixes nothing leaves the read mode alone and is safe either way. A join
+        /// runtime filter is the case worth having: it can never travel in the replicas' query, so
+        /// waiting for the setting only means never pushing it at all.
+        const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
 
-        if (replicas_get_the_condition || !fixedColumnMayChangeReadMode(parallel_replicas_local_plan->getQueryPlan()))
+        if (settings.parallel_replicas_filter_pushdown || !condition || !mayFixColumn(condition))
         {
             // actual push down will be done when plan for local parallel replica will be optimized
             FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};

@@ -10,12 +10,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(
-    QueryPlanPtr query_plan_, ContextPtr subquery_context_, std::function<bool(const ActionsDAG &)> can_ship_condition_)
+ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr subquery_context_)
     : ISourceStep(query_plan_->getCurrentHeader())
     , query_plan(std::move(query_plan_))
     , context(std::move(subquery_context_))
-    , can_ship_condition(std::move(can_ship_condition_))
 {
 }
 

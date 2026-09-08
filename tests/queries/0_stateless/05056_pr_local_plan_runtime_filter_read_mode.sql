@@ -58,5 +58,32 @@ SELECT sum(x.c)
 FROM (SELECT a, count() AS c FROM t_rf_read_mode GROUP BY a) AS x
 JOIN b_rf_read_mode AS bb ON x.a = bb.a;
 
+SELECT 'runtime filter conjoined with an ordinary condition';
+-- A view's own `ORDER BY` puts the sort inside the fragment, where an equality on the sort key prefix
+-- would make the read go in order. The two conditions arrive merged into one `Filter`, so the runtime
+-- filter half is taken out and pushed on its own while `tenant = 5` stays above the fragment - pushing
+-- both would leave the initiator reading `InOrder` against the replicas' `Default`.
+DROP TABLE IF EXISTS t2_rf_read_mode;
+DROP VIEW IF EXISTS v_rf_read_mode;
+CREATE TABLE t2_rf_read_mode (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
+    SETTINGS index_granularity = 128;
+INSERT INTO t2_rf_read_mode SELECT number % 100, number FROM numbers(10000);
+CREATE VIEW v_rf_read_mode AS SELECT * FROM t2_rf_read_mode ORDER BY ts;
+
+SET optimize_read_in_order = 1, optimize_aggregation_in_order = 0;
+
+SELECT replaceAll(replaceRegexpOne(explain, '^[^A-Za-z]*', ''), currentDatabase(), 'default') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT v.ts FROM v_rf_read_mode AS v JOIN b_rf_read_mode AS bb ON v.tenant = bb.a
+    WHERE v.tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%' OR explain LIKE '%Filter column%';
+
+SELECT v.ts FROM v_rf_read_mode AS v JOIN b_rf_read_mode AS bb ON v.tenant = bb.a
+WHERE v.tenant = 5 ORDER BY v.ts LIMIT 5;
+
+DROP VIEW v_rf_read_mode;
+DROP TABLE t2_rf_read_mode;
 DROP TABLE t_rf_read_mode;
 DROP TABLE b_rf_read_mode;
