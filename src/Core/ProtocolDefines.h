@@ -108,12 +108,13 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// the version, so a mixed-version cluster fails at plan time instead of at runtime.
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
-/// Version 15 adds filter exchange topology to `BuildRuntimeFilterStep` (runtime filter transport).
+/// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
+/// Version 16 adds filter exchange topology to `BuildRuntimeFilterStep` (runtime filter transport).
 /// An older worker would run the step as a local build and the filter would silently never arrive,
-/// so the serializer throws `SUPPORT_IS_DISABLED` when topology fields are set below version 15.
-/// Version 15 also introduces the `join_runtime_filter_exact_bytes_limit` plan setting and the
+/// so the serializer throws `SUPPORT_IS_DISABLED` when topology fields are set below version 16.
+/// Version 16 also introduces the `join_runtime_filter_exact_bytes_limit` plan setting and the
 /// `MergeRuntimeFilters` step name, both rejected by older peers.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -139,6 +140,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORD
 /// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
 /// mixed-version cluster fails at plan time.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
+/// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
+/// `LimitRangeStep` for `make_distributed_plan`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added runtime filter receive descriptors to the task.
