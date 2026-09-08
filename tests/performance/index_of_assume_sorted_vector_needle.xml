@@ -1,0 +1,52 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS perf_documents</create_query>
+    <create_query>DROP TABLE IF EXISTS perf_feature_requests</create_query>
+
+    <create_query>
+        CREATE TABLE perf_documents
+        (
+            document_id UInt32,
+            sorted_feature_ids Array(UInt32)
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <create_query>
+        CREATE TABLE perf_feature_requests
+        (
+            document_id UInt32,
+            feature_id UInt32
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_documents
+        SELECT
+            number,
+            arrayMap(x -> toUInt32(number + x * 17), range(32768))
+        FROM numbers(4096)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO perf_feature_requests
+        SELECT
+            number,
+            toUInt32(number + (32767 - (number % 1024)) * 17)
+        FROM numbers(4096)
+    </fill_query>
+
+    <query>
+        SELECT sum(indexOfAssumeSorted(d.sorted_feature_ids, r.feature_id))
+        FROM perf_documents AS d
+        INNER JOIN perf_feature_requests AS r USING (document_id)
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_documents</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_feature_requests</drop_query>
+</test>

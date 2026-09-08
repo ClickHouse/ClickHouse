@@ -135,6 +135,12 @@ private:
         return accurate::greaterOrEqualsOp(left[i], right);
     }
 
+    static bool lessOrEqual(
+        const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
+    {
+        return lessOrEqual(left, right[j], i, j);
+    }
+
     static bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) { return left[i] >= right; }
 
     static bool lessOrEqual(const Array & arr, const Field & rhs, size_t pos, size_t)
@@ -145,7 +151,8 @@ private:
 public:
     /** Assuming that the array is sorted, use a binary search */
     template <typename Data, typename Target>
-    static constexpr ResultType lowerBound(const Data & data, const Target & target, size_t array_size, ArrOffset current_offset)
+    static constexpr ResultType lowerBound(
+        const Data & data, const Target & target, size_t array_size, size_t row_index, ArrOffset current_offset)
     {
         ResultType current = 0;
         size_t low = 0;
@@ -153,12 +160,12 @@ public:
         while (high - low > 0)
         {
             auto middle = low + ((high - low) >> 1);
-            auto compare_result = lessOrEqual(data, target, current_offset + middle, 0);
+            auto compare_result = lessOrEqual(data, target, current_offset + middle, row_index);
             /// avoid conditional branching
             high = compare_result ? middle : high;
             low = compare_result ? low : middle + 1;
         }
-        if (low < array_size && compare(data, target, current_offset + low, 0))
+        if (low < array_size && compare(data, target, current_offset + low, row_index))
         {
             ConcreteAction::apply(current, low);
         }
@@ -238,13 +245,12 @@ private:
     {
         /** Use binary search if the following conditions are met.
           *   1. The array type is not nullable. (Case = 1)
-          *   2. Target is not a column or an array.
+          *   2. Target is not a generic column.
           */
         if constexpr (
-            std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, PaddedPODArray<Result>>
-            && !std::is_same_v<Target, IColumn> && Case == 1)
+            std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, IColumn> && Case == 1)
         {
-            return lowerBound(data, target, array_size, current_offset);
+            return lowerBound(data, target, array_size, row_index, current_offset);
         }
         return linearSearch<Case>(data, target, array_size, null_map_data, null_map_item, row_index, current_offset);
     }
@@ -1246,7 +1252,7 @@ private:
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
                     current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
                 else
-                    current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
+                    current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0, 0);
             }
             else
             {

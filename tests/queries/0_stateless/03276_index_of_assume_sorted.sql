@@ -7,6 +7,7 @@ CREATE TABLE test(
 ENGINE = MergeTree()
 ORDER BY id;
 
+INSERT INTO test VALUES(0, [-2, -1, 0, 1]);
 INSERT INTO test VALUES(1, [1, 2, 2, 3, 3, 3, 4, 4, 4, 5, 6, 7]);
 INSERT INTO test VALUES (2, [1, 2, 3, 4, 5, 6, 7, 8]);
 INSERT INTO test VALUES(3, [1, 3, 7, 10]);
@@ -22,5 +23,7 @@ SELECT indexOfAssumeSorted(numbers, 1) FROM test WHERE id = 5;
 SELECT indexOfAssumeSorted([1, 2, 2, 2, 3, 3, 3, 4, 4], 4);
 SELECT indexOfAssumeSorted([10, 10, 10], 1);
 SELECT indexOfAssumeSorted([1, 1, 1], 10);
+
+SELECT indexOfAssumeSorted(numbers, toUInt64(id)) FROM test ORDER BY id;
 
 DROP TABLE IF EXISTS test;
