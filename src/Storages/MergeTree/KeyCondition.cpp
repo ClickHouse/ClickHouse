@@ -2830,10 +2830,19 @@ static bool areTypesCompatibleForHasSetIndex(
             && areTypesCompatibleForHasSetIndex(
                    set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true, only_permuting_casts);
 
-    /// A pair the rule does not describe re-carries the same value (a `String` element against a
-    /// `Dynamic` key, a native integer of another width), so it keeps the set an over-approximation
-    /// even though it is not an exact image of the predicate.
-    return only_permuting_casts;
+    /** A pair the rule does not describe is accepted for a relaxed atom only when the key side is a
+      * `Dynamic`, which carries the element's value as it is, so the transformed set still
+      * over-approximates what `has` compares at runtime.
+      *
+      * Anything else is declined even for a relaxed atom: relaxing permits false positives in
+      * `can_be_true`, not turning a comparison that raises at runtime - `has([toIPv4('1.2.3.4')], x)`
+      * over a `UInt32` column reports `Cannot compare DB::IPv4 with unsigned long` once a granule
+      * reaches the filter - into an empty result.
+      */
+    if (only_permuting_casts && WhichDataType(key_type).isDynamic())
+        return true;
+
+    return false;
 }
 
 static bool areSetAndKeyTypesCompatibleForHas(

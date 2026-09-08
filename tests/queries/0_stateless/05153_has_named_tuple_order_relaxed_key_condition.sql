@@ -31,3 +31,17 @@ SELECT count() FROM t_has_named_tuple WHERE has([CAST((1, 2), 'Tuple(a UInt8, b 
 SELECT count() FROM t_has_named_tuple WHERE has([CAST((1, 2), 'Tuple(b UInt8, a UInt8)')], t);
 
 DROP TABLE t_has_named_tuple;
+
+-- A pair whose raw comparison raises must not be answered by pruning: relaxing an atom permits extra
+-- rows, not turning an exception into an empty result.
+
+DROP TABLE IF EXISTS t_has_ip_key;
+
+CREATE TABLE t_has_ip_key (x UInt32) ENGINE = MergeTree PARTITION BY intDiv(x, 1000000) ORDER BY x
+SETTINGS add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO t_has_ip_key VALUES (1), (2000000);
+
+SELECT count() FROM t_has_ip_key WHERE has([toIPv4('1.2.3.4')], x); -- { serverError BAD_TYPE_OF_FIELD }
+
+DROP TABLE t_has_ip_key;
