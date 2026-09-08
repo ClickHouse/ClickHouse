@@ -22,7 +22,7 @@ This page covers the ClickHouse sink: connecting to ClickHouse Cloud and self-ho
 
 ## Prerequisites {#prerequisites}
 
-- sqlflow **v1.0.6** or later. Earlier releases have data-fidelity defects in this path, so upgrade rather than work around them. v1.0.6 is the first release in which a failed flush keeps its batch: before it, a retried flush could report success having written nothing.
+- sqlflow **v1.0.6** or later.
 - ClickHouse Cloud, or self-hosted ClickHouse. Everything on this page was run against Cloud 26.2 and self-hosted 26.8; no minimum below those has been established.
 - A Kafka broker the pipeline can reach, for the Kafka source used in the example. The WebSocket and webhook sources need no broker.
 - Python 3 with the `confluent-kafka` package (`pip install confluent-kafka`), only for the script in the example that publishes the sample data to Kafka. sqlflow itself needs no Python.
