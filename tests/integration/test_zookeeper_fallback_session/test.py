@@ -57,6 +57,26 @@ def assert_uses_zk_node(node: ClickHouseInstance, zk_node):
     assert host.strip() == zk_node
 
 
+def assert_uses_new_zk_session(node: ClickHouseInstance, zk_node, previous):
+    """Wait until `node` holds a session other than `previous`, and on `zk_node`.
+
+    The host on its own would also be satisfied by `previous`, which was established
+    while zoo1 was the only Keeper reachable.
+    """
+
+    def check_callback(session):
+        session = session.strip()
+        return session != previous and session.split("\t")[0] == zk_node
+
+    session = node.query_with_retry(
+        "select host, client_id from system.zookeeper_connection",
+        check_callback=check_callback,
+    ).strip()
+
+    assert session != previous, f"{node.name} kept the session it had before the heal"
+    assert session.split("\t")[0] == zk_node, f"{node.name} is connected as {session!r}"
+
+
 def get_zk_applied_zxid(cluster: ClickHouseCluster, zk_node):
     """Last zxid applied by `zk_node` itself, or None if it cannot be read.
 
@@ -78,26 +98,8 @@ def get_zk_applied_zxid(cluster: ClickHouseCluster, zk_node):
     return None
 
 
-def get_max_client_zxid(nodes):
-    """Highest zxid any of `nodes` has already seen, or None if one is reconnecting.
-
-    `system.zookeeper_connection` has no row for a session that currently has no
-    connected host, so a read taken while a reconnect is in flight is not a
-    watermark and must not be mistaken for a low one.
-    """
-    seen = []
-    for node in nodes:
-        raw = node.query(
-            "select last_zxid_seen from system.zookeeper_connection"
-        ).strip()
-        if not raw:
-            return None
-        seen.append(int(raw))
-    return max(seen)
-
-
-def wait_zk_node_caught_up(cluster: ClickHouseCluster, zk_node, nodes, timeout=60):
-    """Wait until `zk_node` has applied everything `nodes` have already seen.
+def wait_zk_node_caught_up(cluster: ClickHouseCluster, zk_node, target_zxid, timeout=60):
+    """Wait until `zk_node` has applied everything up to `target_zxid`.
 
     A Keeper refuses a reconnecting client whose `last_zxid_seen` exceeds its
     own applied zxid, telling it to try another server, and the client falls
@@ -106,23 +108,17 @@ def wait_zk_node_caught_up(cluster: ClickHouseCluster, zk_node, nodes, timeout=6
     demoted for the rest of the test.
     """
     deadline = time.monotonic() + timeout
-    applied = client_zxid = None
+    applied = None
     while time.monotonic() < deadline:
         applied = get_zk_applied_zxid(cluster, zk_node)
-        # Read the clients after zk_node, so client_zxid is never older than
-        # applied. A Keeper's committed zxid only grows, so once this holds for
-        # such a pair it stays true for that pair.
-        client_zxid = get_max_client_zxid(nodes)
-        if applied is not None and client_zxid is not None and applied >= client_zxid:
+        if applied is not None and applied >= target_zxid:
             return
         time.sleep(0.2)
 
     raise AssertionError(
-        f"{zk_node} did not catch up within {timeout}s: it has applied "
-        f"{'unreadable (not serving requests?)' if applied is None else applied}"
-        f", while the clients have already seen "
-        f"{'unknown (reconnecting)' if client_zxid is None else client_zxid}. "
-        f"{zk_node} would refuse their sessions and they would fall back to "
+        f"{zk_node} did not reach zxid {target_zxid} within {timeout}s: it has "
+        f"applied {'unreadable (not serving requests?)' if applied is None else applied}. "
+        f"{zk_node} could refuse the nodes' sessions and they would fall back to "
         f"another Keeper."
     )
 
@@ -169,26 +165,73 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
     for node in [node1, node2, node3]:
         assert_uses_zk_node(node, "zoo3")
 
-    # zoo1 is a Raft follower applying the tail of the log asynchronously, so
-    # it can be behind what the nodes saw through zoo3 and would refuse their
-    # new sessions. Waiting closes that catch-up window; the cluster keeps
-    # committing, so this narrows the race rather than removing it.
-    wait_zk_node_caught_up(started_cluster, "zoo1", [node1, node2, node3])
-
     with PartitionManager() as pm:
-        for node in started_cluster.instances.values():
-            pm.add_rule(
-                {
-                    "instance": node,
-                    "source": node.ip_address,
-                    "destination": cluster.get_instance_ip("zoo3"),
-                    "action": "REJECT --reject-with tcp-reset",
-                    "protocol": "tcp",
-                }
+        # Cut the nodes off every Keeper, not only the one they use, so that none of
+        # them can start a session anywhere while zoo1 catches up.
+        for node in [node1, node2, node3]:
+            pm.drop_instance_zk_connections(
+                node, action="REJECT --reject-with tcp-reset"
             )
 
+        # The rule stops only what a node sends, so a reply already on its way could
+        # still raise its `last_zxid_seen`. Finalizing joins the receiving thread,
+        # after which the value cannot move.
         for node in [node1, node2, node3]:
+            node.query("SYSTEM RECONNECT ZOOKEEPER")
+
+        # zoo3 accepted these sessions and has answered every request since, so its
+        # applied zxid bounds what any of the nodes has seen. zoo1 applies the tail of
+        # the log asynchronously and refuses a client that has seen more.
+        target_zxid = get_zk_applied_zxid(started_cluster, "zoo3")
+        assert target_zxid is not None, "zoo3 is not serving requests"
+        wait_zk_node_caught_up(started_cluster, "zoo1", target_zxid)
+
+        # A session is established by walking the host list in order and stopping at
+        # the first Keeper that answers, so with several reachable the outcome depends
+        # on where a walk already is. Shutting zoo2 and zoo3 leaves only zoo1.
+        for node in [node1, node2, node3]:
+            for zk in ["zoo2", "zoo3"]:
+                pm.add_rule(
+                    {
+                        "instance": node,
+                        "source": node.ip_address,
+                        "destination": cluster.get_instance_ip(zk),
+                        "action": "REJECT --reject-with tcp-reset",
+                        "protocol": "tcp",
+                    }
+                )
+
+        for node in [node1, node2, node3]:
+            pm.restore_instance_zk_connections(
+                node, action="REJECT --reject-with tcp-reset"
+            )
+
+        sessions = {}
+        for node in [node1, node2, node3]:
+            # Synchronisation, not the assertion: zoo1 is the only Keeper reachable.
             assert_uses_zk_node(node, "zoo1")
+            sessions[node.name] = node.query_with_retry(
+                "select host, client_id from system.zookeeper_connection",
+                check_callback=lambda session: session.strip() != "",
+            ).strip()
+
+    # `PartitionManager` logs a failed `iptables -D` and carries on, so a rule left
+    # behind would keep zoo1 the only reachable Keeper and satisfy the assertion below.
+    for node in [node1, node2, node3]:
+        rules = node.exec_in_container(
+            ["iptables", "--wait", "-S", "OUTPUT"], user="root"
+        )
+        for zk in ["zoo2", "zoo3"]:
+            assert cluster.get_instance_ip(zk) not in rules, rules
+
+    # A node's `last_zxid_seen` was at or below what zoo1 had applied when it connected
+    # to it, and everything it has seen since came from zoo1, so zoo1 cannot refuse the
+    # new sessions. `in_order` alone decides the host they land on.
+    for node in [node1, node2, node3]:
+        node.query("SYSTEM RECONNECT ZOOKEEPER")
+
+    for node in [node1, node2, node3]:
+        assert_uses_new_zk_session(node, "zoo1", sessions[node.name])
 
     node1.query_with_retry("INSERT INTO simple VALUES ({0}, {0})".format(2))
     for node in [node2, node3]:

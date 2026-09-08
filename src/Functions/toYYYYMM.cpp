@@ -26,13 +26,13 @@ toYYYYMM(datetime[, timezone])
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a UInt32 number containing the year and month number (YYYY * 100 + MM).", {"UInt32"}};
     FunctionDocumentation::Examples examples = {
-        {"Convert current date to YYYYMM format", R"(
-SELECT toYYYYMM(now(), 'US/Eastern')
+        {"Convert a date and time to YYYYMM format in another time zone", R"(
+SELECT toYYYYMM(toDateTime('2026-01-01 03:04:05', 'UTC'), 'US/Eastern')
         )",
         R"(
-┌─toYYYYMM(now(), 'US/Eastern')─┐
-│                        202608 │
-└───────────────────────────────┘
+┌─toYYYYMM(toDateTime('2026-01-01 03:04:05', 'UTC'), 'US/Eastern')─┐
+│                                                           202512 │
+└──────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
