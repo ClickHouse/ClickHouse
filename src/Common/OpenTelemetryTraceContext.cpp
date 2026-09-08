@@ -52,6 +52,22 @@ namespace OpenTelemetry
 /// This code can be executed inside coroutines, we should use coroutine local tracing context.
 static constinit FiberLocal<TracingContextOnThread, FiberLocalSlot::TRACE_CONTEXT> current_trace_context;
 
+bool Span::addAttribute(SpanAttribute attribute) noexcept
+{
+    if (!this->isTraceEnabled())
+        return false;
+
+    try
+    {
+        attributes.push_back(std::move(attribute));
+    }
+    catch (...) // Ok: noexcept, allocation failure
+    {
+        return false;
+    }
+    return true;
+}
+
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
     if (!this->isTraceEnabled() || name.empty())
@@ -180,7 +196,7 @@ SpanHolder::SpanHolder(
 SpanHolder::SpanHolder(
     std::string_view _operation_name,
     SpanKind _kind,
-    std::vector<SpanAttribute> _attributes,
+    SpanAttributes _attributes,
     bool create_trace_if_not_exists)
     : SpanHolder(_operation_name, _kind, create_trace_if_not_exists)
 {
@@ -230,6 +246,82 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
 SpanHolder::~SpanHolder()
 {
     finish(std::chrono::system_clock::now());
+}
+
+ManualSpan::ManualSpan(std::string_view operation_name, SpanKind kind)
+{
+    /// Use try-catch to make sure the ctor is exception safe.
+    try
+    {
+        const TracingContextOnThread & trace_context = CurrentContext();
+        if (!trace_context.isTraceEnabled())
+            return;
+
+        span.trace_id = trace_context.trace_id;
+        span.parent_span_id = trace_context.span_id;
+        span.span_id = TracingContext::generateSpanId();
+        span.operation_name = operation_name;
+        span.kind = kind;
+        span.start_time_us
+            = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        span.addAttribute("clickhouse.thread_id", getThreadId());
+        span_log_table = trace_context.span_log;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__FUNCTION__);
+
+        /// Clear related fields to make sure the span won't be recorded.
+        span.trace_id = UUID();
+    }
+}
+
+void ManualSpan::finish() noexcept
+{
+    if (!span.isTraceEnabled())
+        return;
+
+    try
+    {
+        /// The log might be disabled or already shut down, check it before use.
+        if (auto log = span_log_table.lock())
+        {
+            span.finish_time_us
+                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            log->add([&](OpenTelemetrySpanLogElement & element)
+            {
+                element.span = span;
+            });
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__FUNCTION__);
+    }
+
+    span.trace_id = UUID();
+}
+
+ManualSpan::~ManualSpan()
+{
+    finish();
+
+}
+
+ParentSpanGuard::ParentSpanGuard(UInt64 span_id_)
+{
+    TracingContextOnThread & trace_context = *current_trace_context;
+    if (!span_id_ || !trace_context.isTraceEnabled())
+        return;
+    old_span_id = trace_context.span_id;
+    trace_context.span_id = span_id_;
+    active = true;
+}
+
+ParentSpanGuard::~ParentSpanGuard()
+{
+    if (active)
+        current_trace_context->span_id = old_span_id;
 }
 
 bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String & error)
@@ -373,7 +465,8 @@ TracingContextHolder::TracingContextHolder(
     std::string_view _operation_name,
     TracingContext _parent_trace_context,
     const Settings * settings_ptr,
-    const std::weak_ptr<OpenTelemetrySpanLog> & _span_log)
+    const std::weak_ptr<OpenTelemetrySpanLog> & _span_log,
+    UInt64 _initial_span_id)
 {
     /// Use try-catch to make sure the ctor is exception safe.
     /// If any exception is raised during the construction, the tracing is not enabled on current thread.
@@ -425,7 +518,7 @@ TracingContextHolder::TracingContextHolder(
 
         this->root_span.trace_id = _parent_trace_context.trace_id;
         this->root_span.parent_span_id = _parent_trace_context.span_id;
-        this->root_span.span_id = TracingContext::generateSpanId();
+        this->root_span.span_id = _initial_span_id ? _initial_span_id : TracingContext::generateSpanId();
         this->root_span.operation_name = _operation_name;
         this->root_span.start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();

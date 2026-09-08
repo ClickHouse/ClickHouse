@@ -614,7 +614,7 @@ void ReadFromRemote::addLazyPipe(
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
-            my_unavailable_shard_tracker = unavailable_shard_tracker,
+            my_unavailable_shard_tracker = unavailable_shard_tracker, my_cluster_name = cluster_name,
             query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
@@ -730,6 +730,7 @@ void ReadFromRemote::addLazyPipe(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
+        remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
@@ -825,14 +826,11 @@ void ReadFromRemote::addPipe(
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
+            remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
             remote_query_executor->setQueryPlanFallbackStage(stage);
-            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
-            remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
-            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
-
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
             addConvertingActions(pipes.back(), *output_header, context);
@@ -857,13 +855,11 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
-        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
-        // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
-        // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
         //
         // In every other case a replica executes the whole query, so there should be a single connection
         // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
@@ -1186,6 +1182,8 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     chassert(output_header);
 
+    const size_t replica_number = replica_info.number_of_current_replica;
+
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
         query_string,
@@ -1199,6 +1197,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         connection_pool_with_failover,
         query_plan);
 
+    remote_query_executor->setShardScope({.cluster = cluster->getName(), .replica_num = replica_number});
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));

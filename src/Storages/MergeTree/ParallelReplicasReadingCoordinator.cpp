@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -1210,6 +1211,20 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
+    OpenTelemetry::SpanHolder span("ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement");
+    if (span.isTraceEnabled())
+    {
+        span.addAttribute("clickhouse.replica_num", announcement.replica_num);
+        span.addAttributeIfNotEmpty("clickhouse.stream_id", announcement.stream_id);
+        span.addAttribute("clickhouse.mode", magic_enum::enum_name(announcement.mode));
+        span.addAttribute("clickhouse.parts", announcement.description.size());
+
+        size_t marks_announced = 0;
+        for (const auto & part : announcement.description)
+            marks_announced += part.ranges.getNumberOfMarks();
+        span.addAttribute("clickhouse.marks", marks_announced);
+    }
+
     InitialAllRangesAnnouncementResponse response;
     response.stream_id = announcement.stream_id;
 
@@ -1279,6 +1294,14 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 {
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
+
+    OpenTelemetry::SpanHolder span("ParallelReplicasReadingCoordinator::handleRequest");
+    if (span.isTraceEnabled())
+    {
+        span.addAttribute("clickhouse.replica_num", request.replica_num);
+        span.addAttributeIfNotEmpty("clickhouse.stream_id", request.stream_id);
+        span.addAttribute("clickhouse.mode", magic_enum::enum_name(request.mode));
+    }
 
     ParallelReadResponse response;
     response.finish = true;
@@ -1430,6 +1453,15 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         }
     }
 
+    if (span.isTraceEnabled())
+    {
+        size_t marks_assigned = 0;
+        for (const auto & part : response.description)
+            marks_assigned += part.ranges.getNumberOfMarks();
+        span.addAttribute("clickhouse.marks_assigned", marks_assigned);
+        span.addAttribute("clickhouse.finish", static_cast<UInt64>(response.finish));
+    }
+
     return response;
 }
 
@@ -1519,6 +1551,29 @@ ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
 {
     // the profile event is not in constructor to check that coordinator is destroyed
     ProfileEvents::increment(ProfileEvents::ParallelReplicasQueryCount);
+
+    /// The span itself is emitted by the member's destructor.
+    if (summary_span.isTraceEnabled())
+    {
+        summary_span.addAttribute("clickhouse.replicas_count", replicas_count);
+        summary_span.addAttribute("clickhouse.replicas_used", replicas_used.size());
+        summary_span.addAttribute("clickhouse.unavailable_replicas", unavailable_replicas.size());
+        summary_span.addAttribute("clickhouse.streams", stream_to_coordinator.size());
+        summary_span.addAttribute("clickhouse.reading_completed", static_cast<UInt64>(is_reading_completed.load()));
+
+        size_t total_requests = 0;
+        size_t total_marks_assigned = 0;
+        for (const auto & [_, coordinator] : stream_to_coordinator)
+        {
+            for (const auto & stat : coordinator->stats)
+            {
+                total_requests += stat.number_of_requests;
+                total_marks_assigned += stat.sum_marks;
+            }
+        }
+        summary_span.addAttribute("clickhouse.requests", total_requests);
+        summary_span.addAttribute("clickhouse.marks_assigned", total_marks_assigned);
+    }
 }
 
 void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)

@@ -34,8 +34,8 @@ namespace
 template <typename Func>
 struct TelemetryWrapper
 {
-    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_)
-        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_))
+    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_, DB::OpenTelemetry::SpanAttributes span_attributes_)
+        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_)), span_attributes(std::move(span_attributes_))
     {
     }
 
@@ -43,6 +43,8 @@ struct TelemetryWrapper
     auto operator()(Args &&... args)
     {
         DB::OpenTelemetry::SpanHolder span(span_name);
+        for (const auto & attribute : span_attributes)
+            span.addAttribute(attribute);
         DB::ProfileEventTimeIncrement<DB::Time::Microseconds> increment(event);
         return callback(std::forward<Args>(args)...);
     }
@@ -51,6 +53,7 @@ private:
     Func callback;
     ProfileEvents::Event event;
     std::string span_name;
+    DB::OpenTelemetry::SpanAttributes span_attributes;
 };
 
 }
@@ -85,11 +88,19 @@ ParallelReadingExtension::ParallelReadingExtension(
     , total_nodes_count(total_nodes_count_)
     , stream_id(std::move(stream_id_))
 {
+    /// Identifies which replica the span belongs to: the callbacks of the initiator-local
+    /// replica run on the initiator, so the host of the span alone is not enough.
+    OpenTelemetry::SpanAttributes span_attributes{
+        {"clickhouse.replica_num", number_of_current_replica},
+        {"clickhouse.replicas_count", total_nodes_count}};
+    if (!stream_id.empty())
+        span_attributes.emplace_back("clickhouse.stream_id", stream_id);
+
     all_callback = TelemetryWrapper<MergeTreeAllRangesCallback>{
-        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement"};
+        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement", span_attributes};
 
     callback = TelemetryWrapper<MergeTreeReadTaskCallback>{
-        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
+        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest", std::move(span_attributes)};
 }
 
 std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(

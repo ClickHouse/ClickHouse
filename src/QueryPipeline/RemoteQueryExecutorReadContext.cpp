@@ -25,8 +25,18 @@ namespace ErrorCodes
 }
 
 RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
-    RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this), "RemoteQueryExecutorReadContext")
+    RemoteQueryExecutor & executor_,
+    bool suspend_when_query_sent_,
+    bool read_packet_type_separately_,
+    OpenTelemetry::SpanAttributes initial_span_attributes_,
+    UInt64 initial_span_start_time_us_,
+    UInt64 initial_span_id_)
+    : AsyncTaskExecutor(
+        std::make_unique<Task>(*this),
+        "RemoteQueryExecutor::execute",
+        std::move(initial_span_attributes_),
+        initial_span_start_time_us_,
+        initial_span_id_)
     , executor(executor_)
     , suspend_when_query_sent(suspend_when_query_sent_)
     , read_packet_type_separately(read_packet_type_separately_)
