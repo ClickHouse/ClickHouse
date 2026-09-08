@@ -120,6 +120,17 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT a, b, v FROM t_real_g WHERE a < 100 AND b = 42 SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_g'" \
     | grep -oE 'ReadFromMergeTree \(p_g\)' || echo "real: read from the base table"
 
+# on an adaptive part the constant model can miss a granule, so a decision that close is not claimed
+echo "--- a near-tie on an adaptive-granularity part is not called ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_a;
+    CREATE TABLE t_est_a (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+    INSERT INTO t_est_a SELECT number, number % 100, number FROM numbers(250);
+    CREATE HYPOTHETICAL PROJECTION p_a ON t_est_a (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, b, v FROM t_est_a WHERE b >= 0 SETTINGS ${PIN};
+" | grep -E '^\s+(marks|read_ratio|verdict|reason):' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_a;"
+
 echo "--- not applicable cases ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_key ON t_est (SELECT a, b, v ORDER BY b);

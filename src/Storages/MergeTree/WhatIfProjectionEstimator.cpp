@@ -224,6 +224,7 @@ bool buildProjectionPart(
 MarkRanges pruneSyntheticProjectionPart(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
+    const MergeTreeData & merge_tree,
     const DataPartPtr & parent_part,
     const KeyCondition * key_condition,
     const MergeTreeSettings & mt_settings,
@@ -249,9 +250,15 @@ MarkRanges pruneSyntheticProjectionPart(
         /* blocks_are_granules */ false,
         parent_part->index_granularity_info.mark_type.adaptive);
 
-    /// the writer appends a mark per granule and only then trims the last one (`fillIndexGranularityImpl`
-    /// plus `adjustLastMark`), so a remainder opens a granule of its own
-    const size_t num_marks = (data.rows + granule_rows - 1) / granule_rows;
+    /// the two writers part ways on the remainder: the wide one appends a mark per granule and only
+    /// trims the last (`fillIndexGranularityImpl` plus `adjustLastMark`), the compact one folds a
+    /// remainder below half a granule into the previous mark, so follow the format this part would get
+    const auto part_type
+        = merge_tree.choosePartFormat(data.bytes, data.rows, parent_part->info.level, &projection).part_type;
+    size_t num_marks = (data.rows + granule_rows - 1) / granule_rows;
+    const size_t remainder = data.rows % granule_rows;
+    if (part_type == MergeTreeDataPartType::Compact && num_marks > 1 && remainder != 0 && remainder * 2 < granule_rows)
+        --num_marks;
     const size_t last_mark_rows = data.rows - (num_marks - 1) * granule_rows;
     granularity_out
         = std::make_shared<MergeTreeIndexGranularityConstant>(granule_rows, last_mark_rows, num_marks, /* has_final_mark */ false);
@@ -315,6 +322,7 @@ bool tryEstimateProjection(
     UInt64 projection_rows = 0;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
+    UInt64 adaptive_parts = 0;
 
     for (const auto & part_with_ranges : baseline_parts)
     {
@@ -333,12 +341,15 @@ bool tryEstimateProjection(
 
         ++scanned_parts;
         scanned_marks += part_marks;
+        if (part->index_granularity_info.mark_type.adaptive)
+            ++adaptive_parts;
         if (part_data.rows == 0)
             continue;
 
         MergeTreeIndexGranularityPtr granularity;
         MarkRanges pruned
-            = pruneSyntheticProjectionPart(part_data, projection, part, key_condition, mt_settings, query_settings, granularity, log);
+            = pruneSyntheticProjectionPart(
+                part_data, projection, data, part, key_condition, mt_settings, query_settings, granularity, log);
 
         projection_marks += pruned.getNumberOfMarks();
         projection_rows += granularity->getRowsCountInRanges(pruned);
@@ -347,7 +358,20 @@ bool tryEstimateProjection(
     result.estimated_marks = projection_marks;
     result.estimated_rows = projection_rows;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
-    if (projection_marks != baseline_marks)
+    /// the constant model can miss the adaptive layout by a granule per part, so a decision that
+    /// close to the base read is not one the optimizer would necessarily reach
+    const UInt64 margin = adaptive_parts;
+    const UInt64 difference
+        = projection_marks > baseline_marks ? projection_marks - baseline_marks : baseline_marks - projection_marks;
+    if (margin > 0 && difference <= margin && !sort_order_helps)
+    {
+        result.verdict = "too close to call";
+        result.verdict_reason = fmt::format(
+            "{} against {} from the base table, inside the granule the adaptive-granularity model can miss by",
+            marks_text(projection_marks),
+            baseline_marks);
+    }
+    else if (projection_marks != baseline_marks)
     {
         result.verdict = projection_marks < baseline_marks ? "chosen" : "not chosen";
         result.verdict_reason
