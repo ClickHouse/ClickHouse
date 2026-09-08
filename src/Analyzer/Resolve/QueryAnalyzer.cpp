@@ -5335,6 +5335,20 @@ static bool getColumnsFromTableExpression(
     return true;
 }
 
+/// `ColumnsDescription::get` returns `ALIAS` columns after all physical ones, so censusing `kind`
+/// directly is not in schema order. `All` is in schema order: census it and keep what `kind` admits.
+static void appendColumnNamesInSchemaOrder(
+    const StorageSnapshotPtr & storage_snapshot, GetColumnsOptions::Kind kind, Names & result_columns)
+{
+    NameSet admitted;
+    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions(kind).withSubcolumns()))
+        admitted.insert(column.name);
+
+    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns()))
+        if (admitted.contains(column.name))
+            result_columns.push_back(column.name);
+}
+
 /// Get ordered column names from a table expression, preserving left-to-right order.
 /// Returns false if the table expression type is not supported.
 static bool getOrderedColumnsFromTableExpression(
@@ -5354,18 +5368,14 @@ static bool getOrderedColumnsFromTableExpression(
             {
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
-                auto get_column_options = GetColumnsOptions(kind).withSubcolumns();
-                for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
-                    result_columns.push_back(column.name);
+                appendColumnNamesInSchemaOrder(table_node->getStorageSnapshot(), kind, result_columns);
                 break;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
-                auto get_column_options = GetColumnsOptions(kind).withSubcolumns();
-                for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
-                    result_columns.push_back(column.name);
+                appendColumnNamesInSchemaOrder(table_function_node->getStorageSnapshot(), kind, result_columns);
                 break;
             }
             case QueryTreeNodeType::QUERY:
