@@ -125,9 +125,6 @@ private:
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;
     void publishBackup(const String & backup_file_path, ContextPtr context) override;
-
-    /// Build a fresh state from the committed backups and swap it in.
-    void rebuildFromBackups();
 };
 
 }

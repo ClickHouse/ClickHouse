@@ -38,6 +38,7 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -46,6 +47,8 @@ namespace FailPoints
 {
     extern const char set_or_join_sink_pause_before_publish[];
     extern const char set_or_join_sink_pause_before_replay[];
+    extern const char storage_set_pause_during_backup_replay[];
+    extern const char storage_set_fail_during_backup_replay[];
 }
 
 class SetOrJoinSink final : public SinkToStorage, WithContext
@@ -325,44 +328,56 @@ void StorageSet::finishInsert()
 
 void StorageSet::publishBackup(const String & backup_file_path, ContextPtr context)
 {
+    /// Replay the promoted backup into a private `Set` and publish it with a single swap, instead
+    /// of inserting into the live one. `getSet` hands out a bare `SetPtr` and `Set::insertFromBlock`
+    /// only takes the per-call `Set::rwlock`, so replaying into the live `Set` would let a
+    /// concurrent `... IN set_table` query interleave between blocks and observe the rows of an
+    /// `INSERT` that later throws -- and it would keep observing them for the rest of its lifetime
+    /// through the pointer it had already captured, because rolling back can only replace the
+    /// pointer for future `getSet` calls. The private state has to be built from all committed
+    /// backups (a `Set` cannot be built aside and then merged into another one), which is the cost
+    /// of publishing an update to it atomically.
     try
     {
-        restoreFromFile(backup_file_path, context);
+        auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+        auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
+        new_set->setHeader(metadata_snapshot->getSampleBlock().getColumnsWithTypeAndName());
+
+        forEachBackupBlock([&](const Block & block)
+        {
+            FailPointInjection::pauseFailPoint(FailPoints::storage_set_pause_during_backup_replay);
+            fiu_do_on(FailPoints::storage_set_fail_during_backup_replay,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while replaying the backup of an INSERT into a Set");
+            });
+            new_set->insertFromBlock(block.getColumnsWithTypeAndName());
+        });
+        new_set->finishInsert();
+
+        std::lock_guard lock(mutex);
+        set = std::move(new_set);
     }
     catch (...)
     {
-        /// Restore the previous live state while still inside the publish critical section, so no
-        /// concurrent publish or rollback can replay the backup of this failed insert. The file is
-        /// removed first because the rebuild reads all committed backups.
+        /// The live state was never touched, so there is nothing to restore: only the backup of
+        /// this failed insert has to go, or a restart would restore its rows. It is removed while
+        /// still inside the publish critical section, so no concurrent publish or rollback can
+        /// replay it either.
         try
         {
             disk->removeFileIfExists(backup_file_path);
-            rebuildFromBackups();
         }
         catch (...)
         {
             tryLogCurrentException(
                 getLogger("StorageSet"),
-                fmt::format("Cannot restore the in-memory state of table {} after a failed INSERT", getStorageID().getNameForLogs()));
+                fmt::format(
+                    "Cannot remove the backup file {} of a failed INSERT into table {}",
+                    backup_file_path,
+                    getStorageID().getNameForLogs()));
         }
         throw;
     }
-}
-
-void StorageSet::rebuildFromBackups()
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    auto rebuilt_set = std::make_shared<Set>(SizeLimits(), 0, true);
-    rebuilt_set->setHeader(metadata_snapshot->getSampleBlock().getColumnsWithTypeAndName());
-
-    forEachBackupBlock([&](const Block & block)
-    {
-        rebuilt_set->insertFromBlock(block.getColumnsWithTypeAndName());
-    });
-    rebuilt_set->finishInsert();
-
-    std::lock_guard lock(mutex);
-    set = std::move(rebuilt_set);
 }
 
 size_t StorageSet::getSize(ContextPtr) const
