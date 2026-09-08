@@ -792,8 +792,15 @@ inline void writeColData(
         // Sequential layout: outer offsets at data_offset, nested data immediately after.
         uint8_t * wire_outer = buf.data() + desc.data_offset;
         unalignedStore<uint64_t>(wire_outer, 0ull);
+        // Widen before the multiply: num_rows is only bounded by the uint32_t row-count limit,
+        // and (i + 1u) * 8u computed in uint32_t arithmetic wraps to 0 on the last row of a
+        // frame with 0x20000000 rows - for which buildColDescriptor has reserved a full 4 GiB
+        // offsets area in 64-bit. The wrapped stores would then overwrite the start of that
+        // area instead of filling it, silently corrupting a frame the writer considers valid.
+        // Matches writeComplexData, which already widens.
         for (uint32_t i = 0; i < num_rows; ++i)
-            unalignedStore<uint64_t>(wire_outer + (i + 1u) * 8u, static_cast<uint64_t>(ch_offsets[i]));
+            unalignedStore<uint64_t>(wire_outer + (static_cast<uint64_t>(i) + 1u) * 8u,
+                                     static_cast<uint64_t>(ch_offsets[i]));
 
         writeComplexData(nested, total_elems, buf.data() + desc.data_offset + (num_rows + 1u) * sizeof(uint64_t));
         return;
@@ -824,7 +831,8 @@ inline void writeColData(
             uint64_t str_len = str_end - ch_pos;
             std::memcpy(data_dst + wire_pos, chars.data() + ch_pos, str_len);
             wire_pos += str_len;
-            unalignedStore<uint64_t>(wire_offsets + (i + 1u) * 8u, wire_pos);
+            // Widen before the multiply: same wraparound as the Array branch above.
+            unalignedStore<uint64_t>(wire_offsets + (static_cast<uint64_t>(i) + 1u) * 8u, wire_pos);
             ch_pos = str_end;
         }
         return;
@@ -833,7 +841,10 @@ inline void writeColData(
     const auto * raw      = col->getRawData().data();
     uint32_t     elem_sz  = static_cast<uint32_t>(col->sizeOfValueIfFixed());
 
-    std::memcpy(buf.data() + desc.data_offset, raw, num_rows * elem_sz);
+    // Widen before the multiply: num_rows * elem_sz in uint32_t arithmetic wraps once the
+    // frame carries 2^32 / elem_sz rows, which the uint32_t row-count limit still permits, and
+    // the column would then be written short while its descriptor claims the full size.
+    std::memcpy(buf.data() + desc.data_offset, raw, static_cast<uint64_t>(num_rows) * elem_sz);
 }
 
 // Decode one column from a ColumnBinary frame given its pre-parsed descriptor.
