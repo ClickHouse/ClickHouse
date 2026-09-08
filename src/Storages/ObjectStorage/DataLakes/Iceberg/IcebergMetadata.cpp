@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
@@ -468,6 +469,26 @@ bool IcebergMetadata::optimize(
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
+
+        /// `getHistory` fills `ancestors` only when the table has a current snapshot, so with none -
+        /// `current-snapshot-id` absent, `null` or negative alike - no record is a current ancestor.
+        /// Compaction does not check that: `getPlan` marks a rewrite as needed from any historical
+        /// position delete, and the rewrite republishes a snapshot chain built from append history.
+        /// The table that `SELECT` reads as empty would come back with its historical rows. Nothing
+        /// is expired here, so refuse the rewrite and leave the table as it is (fail-close).
+        ///
+        /// A `current-snapshot-id` that names a snapshot missing from `snapshots` lands here too:
+        /// that metadata is corrupt, and refusing the rewrite is the fail-close answer for it as
+        /// well, so the condition is stated as what was observed - no current ancestor - rather
+        /// than as a claim about `current-snapshot-id`.
+        const bool has_current_ancestor = std::ranges::any_of(
+            snapshots_info, [](const Iceberg::IcebergHistoryRecord & record) { return record.is_current_ancestor; });
+        if (!has_current_ancestor)
+        {
+            LOG_INFO(log, "No snapshot is a current ancestor, skipping compaction");
+            return true;
+        }
+
         compactIcebergTable(
             snapshots_info,
             persistent_components,
