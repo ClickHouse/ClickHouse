@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <IO/Operators.h>
@@ -322,6 +323,19 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
+/// `SortingTransform` drops the constant columns of the header from its sort description, and with nothing left
+/// `MergeSortingTransform` passes its chunks through as they come instead of draining its input first.
+static bool sortsByConstantsOnly(const Block & header, const SortDescription & description)
+{
+    for (const auto & column_description : description)
+    {
+        const auto & column = header.getByName(column_description.column_name);
+        if (!(column.column && isColumnConst(*column.column)))
+            return false;
+    }
+    return true;
+}
+
 Names SortingStep::getPartitionByColumnNames() const
 {
     Names names;
@@ -541,18 +555,30 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
-        auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getSharedHeader(),
-            pipeline.getNumStreams(),
-            result_sort_desc,
-            sort_settings.max_block_size,
-            /*max_block_size_bytes=*/0,
-            /*max_dynamic_subcolumns*/std::nullopt,
-            SortingQueueStrategy::Batch,
-            limit_,
-            always_read_till_end);
+        if (sortsByConstantsOnly(pipeline.getHeader(), result_sort_desc))
+        {
+            /// The streams then arrive unbuffered, and `MergingSortedTransform` waits for a chunk of one specific
+            /// input at a time. That deadlocks behind a `ScatterByPartitionTransform` upstream (a parallel final
+            /// `DISTINCT`, a partitioned `INTERSECT`/`EXCEPT`), which does not consume new input until every
+            /// partition has accepted the previous chunk: the merge waits on the one partition the scatter cannot
+            /// feed before the others drain. There is nothing to merge by, so just gather the streams.
+            pipeline.resize(1);
+        }
+        else
+        {
+            auto transform = std::make_shared<MergingSortedTransform>(
+                pipeline.getSharedHeader(),
+                pipeline.getNumStreams(),
+                result_sort_desc,
+                sort_settings.max_block_size,
+                /*max_block_size_bytes=*/0,
+                /*max_dynamic_subcolumns*/std::nullopt,
+                SortingQueueStrategy::Batch,
+                limit_,
+                always_read_till_end);
 
-        pipeline.addTransform(std::move(transform));
+            pipeline.addTransform(std::move(transform));
+        }
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
 
     }
