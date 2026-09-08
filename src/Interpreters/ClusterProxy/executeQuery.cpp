@@ -371,7 +371,6 @@ void resolveAutomaticUncompressedCacheOptOutInQuery(IAST & query, const Settings
         set_query->changes.emplace_back(String(name), Field(false));
 }
 
-
 /// Single source of truth for the initiator-only setting names. MUST list exactly the settings reset by
 /// `stripInitiatorOnlySettings` above. Used both to test membership (`isInitiatorOnlySettingName`) and to
 /// remove these settings from a query's own `SETTINGS` clause before that query *text* is forwarded to a
@@ -847,6 +846,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         stripInitiatorOnlySettings(new_settings);
         context_mutable->setSettings(new_settings);
     }
+
     return context_mutable;
 }
 

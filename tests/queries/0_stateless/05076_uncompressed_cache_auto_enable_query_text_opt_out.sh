@@ -101,9 +101,29 @@ SELECT sum(length(payload)) = 32768 * 128
 FROM remote('127.0.0.2', currentDatabase(), t_uncompressed_cache_query_text)
 SETTINGS profile = '${AUTO_PROFILE}', max_threads = 1, log_comment = '${PROFILE_OPT_OUT_RUN}'"
 
-$CLICKHOUSE_CLIENT --query "
-SYSTEM FLUSH LOGS query_log;
+# The `system.query_log` entry of a query sent over HTTP is written after the response has been returned,
+# so wait for the row of the secondary query to appear instead of reading the table right away.
+for _ in {1..100}
+do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
+    if [ "$($CLICKHOUSE_CLIENT --query "
+        SELECT count() > 0
+        FROM system.query_log
+        WHERE event_date >= yesterday()
+          AND event_time >= now() - INTERVAL 10 MINUTE
+          AND type = 'QueryFinish'
+          AND is_initial_query = 0
+          AND has(databases, currentDatabase())
+          AND log_comment = '${PROFILE_OPT_OUT_RUN}'")" = "1" ]
+    then
+        break
+    fi
+
+    sleep 0.2
+done
+
+$CLICKHOUSE_CLIENT --query "
 SELECT ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses']
 FROM system.query_log
 WHERE event_date >= yesterday()
