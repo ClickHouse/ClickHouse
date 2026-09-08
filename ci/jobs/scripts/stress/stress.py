@@ -81,6 +81,10 @@ class RandomDisruptor:
         ("STOP MOVES", "START MOVES"),
         ("STOP VIEWS", "START VIEWS"),
         ("PAUSE VIEWS", "START VIEWS"),
+        ("STOP FETCHES", "START FETCHES"),
+        ("STOP DISTRIBUTED SENDS", "START DISTRIBUTED SENDS"),
+        ("STOP REPLICATED SENDS", "START REPLICATED SENDS"),
+        ("STOP REPLICATION QUEUES", "START REPLICATION QUEUES"),
     )
     # Longest an iteration can run, plus margin, so stop() outlasts one of them. The pause
     # branch is the stop, the wait and the start back to back; on shutdown the wait collapses,
@@ -434,10 +438,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
-        if random.random() < 1 / 2:
-            # Track allocations in 1 MiB batches instead of the default 4 MiB, so more
-            # allocations pass through the tracker and can draw an injected fault.
-            client_options.append("max_untracked_memory=1048576")
         # Write sampled allocations to system.trace_log as MemorySample. users.d/memory_profiler.xml
         # sets memory_profiler_step and max_untracked_memory but leaves this at 0, so allocation
         # sampling is off in every stress run today.
@@ -451,7 +451,10 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     if i % 5 == 3:
         # Keeper fault injection: every replicated INSERT commit and every BACKUP/RESTORE
         # coordination step can draw a fault, exercising the retry and dedup logic.
-        client_options.append("insert_keeper_fault_injection_probability=0.005")
+        # users.d/insert_keeper_retries.xml already sets 0.01 server-wide, so only a higher
+        # value adds anything here; it also raises insert_keeper_max_retries to 100.
+        client_options.append("insert_keeper_fault_injection_probability=0.05")
+        # Not set anywhere by default, so any non-zero value is new coverage.
         client_options.append("backup_restore_keeper_fault_injection_probability=0.005")
         # Fault after the ReplicatedMergeTree metadata is written to Keeper but before the
         # table is created, exercising dropIfEmpty() cleanup and re-creation over the leftover
@@ -539,10 +542,9 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("query_metric_log_interval=100")
 
     if random.random() < 0.2:
-        client_options.append("opentelemetry_start_trace_probability=0.1")
-        if random.random() < 1 / 2:
-            # Traced queries also get one span per processor, multiplying the span volume.
-            client_options.append("opentelemetry_trace_processors=1")
+        # users.d/opentelemetry.xml already traces 10% of queries; this gives those traces one
+        # span per processor instead of one per query, multiplying the span volume.
+        client_options.append("opentelemetry_trace_processors=1")
 
     if random.random() < 0.2:
         client_options.append("network_compression_method='zstd'")
