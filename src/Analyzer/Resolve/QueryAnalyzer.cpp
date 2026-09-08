@@ -5255,7 +5255,8 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
-static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
+static bool getColumnsFromTableExpression(
+    const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns, GetColumnsOptions::Kind kind)
 {
     std::stack<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push(root_table_expression.get());
@@ -5272,7 +5273,7 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(kind).withSubcolumns();
                 for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 
@@ -5283,7 +5284,7 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(kind).withSubcolumns();
                 for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 
@@ -5336,7 +5337,8 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
 
 /// Get ordered column names from a table expression, preserving left-to-right order.
 /// Returns false if the table expression type is not supported.
-static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, Names & result_columns)
+static bool getOrderedColumnsFromTableExpression(
+    const QueryTreeNodePtr & root_table_expression, Names & result_columns, GetColumnsOptions::Kind kind)
 {
     std::vector<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(root_table_expression.get());
@@ -5352,7 +5354,7 @@ static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_t
             {
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(kind).withSubcolumns();
                 for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
                     result_columns.push_back(column.name);
                 break;
@@ -5361,7 +5363,7 @@ static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_t
             {
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(kind).withSubcolumns();
                 for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
                     result_columns.push_back(column.name);
                 break;
@@ -5440,12 +5442,15 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         Names left_cols;
         NameSet right_cols;
 
-        if (!getOrderedColumnsFromTableExpression(join_node_typed.getLeftTableExpressionNode(), left_cols))
+        /// A join key must be readable, so EPHEMERAL columns are not `NATURAL JOIN` keys.
+        if (!getOrderedColumnsFromTableExpression(
+                join_node_typed.getLeftTableExpressionNode(), left_cols, GetColumnsOptions::AllPhysicalAndAliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "NATURAL JOIN: cannot determine columns of left table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
 
-        if (!getColumnsFromTableExpression(join_node_typed.getRightTableExpressionNode(), right_cols))
+        if (!getColumnsFromTableExpression(
+                join_node_typed.getRightTableExpressionNode(), right_cols, GetColumnsOptions::AllPhysicalAndAliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "NATURAL JOIN: cannot determine columns of right table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
@@ -5574,7 +5579,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 /// Added column should not conflict with existing column names
                 NameSet existing_columns;
-                if (!getColumnsFromTableExpression(left_table_expression, existing_columns))
+                /// Must cover every name that can be registered as a column identifier, EPHEMERAL included.
+                if (!getColumnsFromTableExpression(left_table_expression, existing_columns, GetColumnsOptions::All))
                     return nullptr;
 
                 NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
