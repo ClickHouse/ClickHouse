@@ -77,6 +77,38 @@ TEST(TaskScheduler, TheOldestTaskGetsATurnAfterARowOfNewest)
     EXPECT_FALSE(f.scheduler.tryPop(0));
 }
 
+TEST(TaskScheduler, OverflowedTasksComeBackOnTheFairnessTurn)
+{
+    Fixture f(1, 1000);
+    for (size_t i = 0; i < f.states.size(); ++i)
+        f.scheduler.push(f.task(i), 0);
+    EXPECT_EQ(f.states.size(), f.scheduler.queued());
+
+    size_t previous = f.states.size();
+    size_t pops = 0;
+    while (true)
+    {
+        const size_t popped = f.popIndex(0);
+        ASSERT_LT(++pops, f.states.size());
+        if (popped == 0)
+            break;
+        ASSERT_LT(popped, previous);
+        previous = popped;
+    }
+
+    EXPECT_EQ(previous - 1, f.popIndex(0));
+
+    pops = 0;
+    while (true)
+    {
+        const size_t popped = f.popIndex(0);
+        ASSERT_LT(++pops, f.states.size());
+        if (popped == 1)
+            break;
+        ASSERT_GT(popped, 6u);
+    }
+}
+
 TEST(TaskScheduler, GlobalQueueIsTakenFromTheFront)
 {
     Fixture f(2);
@@ -85,8 +117,8 @@ TEST(TaskScheduler, GlobalQueueIsTakenFromTheFront)
 
     EXPECT_EQ(0u, f.popIndex(1));
     EXPECT_EQ(5u, f.scheduler.queued());
-    EXPECT_EQ(2u, f.popIndex(1));
     EXPECT_EQ(1u, f.popIndex(1));
+    EXPECT_EQ(2u, f.popIndex(1));
     EXPECT_EQ(3u, f.popIndex(0));
 }
 
@@ -96,12 +128,12 @@ TEST(TaskScheduler, StealTakesTheOldestHalfOfAnotherWorker)
     for (size_t i = 0; i < 6; ++i)
         f.scheduler.push(f.task(i), 0);
 
-    EXPECT_EQ(0u, f.popIndex(1));
     EXPECT_EQ(2u, f.popIndex(1));
+    EXPECT_EQ(1u, f.popIndex(1));
     EXPECT_EQ(5u, f.popIndex(0));
     EXPECT_EQ(4u, f.popIndex(0));
     EXPECT_EQ(3u, f.popIndex(0));
-    EXPECT_EQ(1u, f.popIndex(0));
+    EXPECT_EQ(0u, f.popIndex(0));
     EXPECT_EQ(0u, f.scheduler.queued());
 }
 
@@ -155,6 +187,36 @@ TEST(TaskScheduler, FiredFdBecomesAsyncReadyPoppedFirst)
 #endif
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
+TEST(TaskScheduler, BusyWorkerPicksUpAFiredFdWithinAFewPicks)
+{
+    Fixture f(1, 2);
+
+    int fds[2];
+    ASSERT_EQ(0, ::pipe(fds));
+    f.scheduler.push(AsyncTask{.state = f.states.data(), .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
+    char byte = 0;
+    ASSERT_EQ(1, ::write(fds[1], &byte, 1));
+
+    size_t picks = 0;
+    while (true)
+    {
+        f.scheduler.push(f.task(1), 0);
+        auto popped = f.scheduler.tryPop(0);
+        ASSERT_TRUE(popped);
+        ASSERT_LT(++picks, 1000u);
+        if (popped->kind == Task::Kind::AsyncReady)
+            break;
+        EXPECT_EQ(&f.states[1], popped->state);
+    }
+
+    EXPECT_EQ(0u, f.poller.pending());
+    EXPECT_EQ(1u, f.popIndex(0));
+    EXPECT_FALSE(f.scheduler.tryPop(0));
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+
 TEST(TaskScheduler, TryPopPollsWhenTheQueuesAreEmpty)
 {
     Fixture f(1, 1);

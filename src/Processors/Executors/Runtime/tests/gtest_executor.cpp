@@ -20,9 +20,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <functional>
 #include <thread>
 #include <utility>
+#include <unistd.h>
 
 using namespace DB;
 
@@ -157,6 +159,66 @@ protected:
 private:
     bool matched = false;
 };
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+/// Waits for its pipe, produces its only chunk in work after the event, then finishes.
+class PipeSource final : public IProcessor
+{
+public:
+    explicit PipeSource(SharedHeader header_) : IProcessor({}, {Block(*header_)})
+    {
+        EXPECT_EQ(0, ::pipe(fds));
+    }
+
+    ~PipeSource() override
+    {
+        ::close(fds[0]);
+        ::close(fds[1]);
+    }
+
+    String getName() const override { return "PipeSource"; }
+
+    Status prepare() override
+    {
+        auto & output = outputs.front();
+
+        if (!produced)
+            return Status::Async;
+
+        if (chunk)
+        {
+            if (!output.canPush())
+                return Status::PortFull;
+
+            output.push(std::move(*chunk));
+            chunk.reset();
+            return Status::PortFull;
+        }
+
+        output.finish();
+        return Status::Finished;
+    }
+
+    std::tuple<int, uint32_t, Int64> scheduleForEvent() override { return {fds[0], EPOLLIN | EPOLLERR, -1}; }
+
+    void work() override
+    {
+        chunk = makeChunk(7);
+        produced = true;
+    }
+
+    void fire() const
+    {
+        char byte = 0;
+        EXPECT_EQ(1, ::write(fds[1], &byte, 1));
+    }
+
+private:
+    int fds[2] = {-1, -1};
+    bool produced = false;
+    std::optional<Chunk> chunk;
+};
+#endif
 
 class ThrowingSource final : public ISource
 {
@@ -760,6 +822,30 @@ TEST(Executor, OneWorkerGivesTheOtherBranchATurn)
 
     EXPECT_EQ(2u, sink->pulled);
 }
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+TEST(Executor, OneWorkerPollsWhileAnotherBranchNeverStalls)
+{
+    auto header = makeHeader();
+    auto resize = std::make_shared<ResizeProcessor>(header, 2, 1);
+    auto sink = std::make_shared<CollectingSink>(header, 2);
+
+    auto endless = std::make_shared<EndlessSource>(header);
+    auto filter = std::make_shared<MatchOnceTransform>(header);
+    auto waiting = std::make_shared<PipeSource>(header);
+    connect(endless->getOutputs().front(), filter->getInputs().front());
+    connect(filter->getOutputs().front(), resize->getInputs().front());
+    connect(waiting->getOutputs().front(), resize->getInputs().back());
+    connect(resize->getOutputs().front(), sink->getInputs().front());
+    waiting->fire();
+
+    Executor executor(std::make_shared<Processors>(Processors{endless, filter, waiting, resize, sink}), nullptr);
+    executor.execute(1, false);
+
+    EXPECT_EQ(2u, sink->pulled);
+    EXPECT_TRUE(std::ranges::contains(sink->values, 7));
+}
+#endif
 
 TEST(Executor, UpdatePipelineMultipleCoordinatorsMultithreaded)
 {

@@ -39,6 +39,7 @@ private:
     mutable std::mutex mutex;
     Epoll epoll;
     std::unordered_map<ProcessorState *, int> fds;
+    std::atomic<size_t> pending_count = 0;
 
     /// In-flight timers
     std::unique_ptr<Deadlines> deadlines;

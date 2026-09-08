@@ -76,6 +76,7 @@ void Poller::unregister(ProcessorState * state)
 
     epoll.remove(it->second);
     fds.erase(it);
+    --pending_count;
     deadlines->cancel(state);
 }
 
@@ -120,6 +121,7 @@ void Poller::add(ProcessorState & state, int fd, uint32_t events, int64_t timeou
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor state {} is already registered in the poller", static_cast<const void *>(&state));
 
     epoll.add(fd, &state, events);
+    ++pending_count;
 
     if (timeout_ms >= 0)
     {
@@ -181,8 +183,7 @@ std::vector<ProcessorState *> Poller::poll(int timeout_ms)
 
 size_t Poller::pending() const
 {
-    std::lock_guard lock(mutex);
-    return fds.size();
+    return pending_count.load();
 }
 
 void Poller::wakeup()

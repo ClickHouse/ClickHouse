@@ -18,13 +18,13 @@ class TaskScheduler
     {
         std::mutex mutex;
         WorkStealingQueue queue;
-        size_t lifo_pops = 0;
+        size_t pops = 0;
     };
 
-    std::optional<Task> takeFromLocal(GuardedQueue & own);
-    std::optional<Task> takeFromGlobal(GuardedQueue & own);
+    std::optional<Task> takeFrom(GuardedQueue & from, bool oldest);
+    std::optional<Task> takeFromQueues(GuardedQueue & own, bool oldest);
     std::optional<Task> steal(size_t worker_id);
-    std::optional<Task> keepAndPopFirst(GuardedQueue & own, WorkStealingQueue & taken);
+    void moveOldestHalfToGlobal(GuardedQueue & own);
 
 public:
     TaskScheduler(Poller & poller_, size_t max_workers);
