@@ -12,6 +12,9 @@ namespace DB
 class ActionsDAG;
 class QueryPlan;
 
+struct BuiltSetsByHash;
+using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
+
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
 public:
@@ -86,7 +89,7 @@ public:
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
-    const std::function<std::unique_ptr<QueryPlan>()> & getQueryPlanWithParallelReplicasBuilder() const
+    const std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> & getQueryPlanWithParallelReplicasBuilder() const
     {
         return query_plan_with_parallel_replicas_builder;
     }
@@ -101,7 +104,7 @@ private:
     Planner planner;
     QueryPlanProfilerPtr plan_profiler;
 
-    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 };
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
