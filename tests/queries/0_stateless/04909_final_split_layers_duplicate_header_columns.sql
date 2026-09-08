@@ -30,24 +30,6 @@ SET do_not_merge_across_partitions_select_final = 0;
 SET max_threads = 4;
 SET max_final_threads = 4;
 
-SET enable_analyzer = 0;
-
-SELECT toUInt128(folder), sampling, toUInt128(item)
-FROM t_final_split_dup FINAL
-PREWHERE (org_id = 1) AND (modulo(toUInt128(folder), 4) = 0) AND (sampling < 512)
-WHERE NOT is_deleted
-ORDER BY toUInt128(folder), sampling, toUInt128(item)
-LIMIT 5;
-
-SELECT count()
-FROM
-(
-    SELECT toUInt128(folder), sampling, toUInt128(item)
-    FROM t_final_split_dup FINAL
-    PREWHERE (org_id = 1) AND (modulo(toUInt128(folder), 4) = 0) AND (sampling < 512)
-    WHERE NOT is_deleted
-);
-
 SET enable_analyzer = 1;
 
 SELECT toUInt128(folder), sampling, toUInt128(item)
