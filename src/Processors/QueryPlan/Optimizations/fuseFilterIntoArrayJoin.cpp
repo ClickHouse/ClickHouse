@@ -38,25 +38,15 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
 
     /// The step evaluates the filter over the elements: the joined columns plus the other columns the filter
     /// reads, which are broadcast to each row's elements. A filter that reads no element stays where it is.
-    const auto * condition = expression.tryFindInOutputs(filter->getFilterColumnName());
-    if (!condition)
+    const auto required
+        = ActionsDAG::cloneSubDAG({&expression.findInOutputs(filter->getFilterColumnName())}, false).getRequiredColumnsNames();
+    if (std::ranges::none_of(required, [&](const auto & name) { return joined_set.contains(name); }))
         return 0;
-    const auto required = ActionsDAG::cloneSubDAG({condition}, /*remove_aliases=*/false).getRequiredColumnsNames();
     NameSet required_set(required.begin(), required.end());
-    bool reads_element = false;
-    for (const auto & name : required)
-        reads_element |= joined_set.contains(name);
-    if (!reads_element)
-        return 0;
     ColumnsWithTypeAndName all_inputs;
-    Names available_inputs;
     for (const auto & column : filter->getInputHeaders().front()->getColumnsWithTypeAndName())
-    {
-        if (!joined_set.contains(column.name) && !required_set.contains(column.name))
-            continue;
-        all_inputs.push_back(column);
-        available_inputs.push_back(column.name);
-    }
+        if (required_set.contains(column.name))
+            all_inputs.push_back(column);
 
     /// Only fuse when the WHOLE filter moves into the ARRAY JOIN. If any conjunct must stay above, lifting
     /// an element conjunct out of the AND changes short-circuit evaluation - a throwing element predicate
@@ -66,7 +56,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     auto split = residual.splitActionsForFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
-        available_inputs,
+        required,
         all_inputs,
         /*allow_non_deterministic_functions=*/false);
     if (!split)

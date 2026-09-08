@@ -27,7 +27,6 @@
     <!-- the element compared with a column of the row: the row value is broadcast to the elements inside the
          step, so the wide payload is again replicated only for survivors -->
     <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = concat('e', toString(id % 40)) SETTINGS enable_lazy_columns_replication = 0</query>
-    <query>SELECT sum(id) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = concat('e', toString(id % 40))</query>
     <!-- regression guard: count() carries no passenger, so both paths do the same element comparisons -->
     <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
 

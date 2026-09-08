@@ -26,7 +26,7 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// The columns a fused filter reads must stay available to the step, so they are pinned like the joined ones.
     Names pinned_columns = array_join_step->getColumns();
-    if (const auto * element_filter = array_join_step->getElementFilter())
+    if (const auto & element_filter = array_join_step->getElementFilter())
         for (const auto & name : element_filter->getRequiredColumnsNames())
             pinned_columns.push_back(name);
     const auto & expression = expression_step ? expression_step->getExpression()
