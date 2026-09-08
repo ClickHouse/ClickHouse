@@ -2058,6 +2058,8 @@ public:
     void setSpillBlocked(bool blocked) { spill_blocked = blocked; }
     size_t workCallCount() const { return work_calls; }
     void runOnDedicatedSpill(std::function<void()> callback) { on_dedicated_spill = std::move(callback); }
+    void setSpillTarget(const void * target) { spill_target = target; }
+    const void * getMemoryReservationSpillTarget() const override { return spill_target ? spill_target : this; }
 
     bool spillForMemoryReservation() override
     {
@@ -2081,7 +2083,24 @@ private:
     bool spill_blocked = false;
     size_t work_calls = 0;
     std::function<void()> on_dedicated_spill;
+    const void * spill_target = nullptr;
 };
+
+TEST(SchedulerSpaceShared, DedicatedSpillVisitsSharedTargetOnce)
+{
+    MemorySpillScheduler scheduler(false);
+    ManualSpillProcessor first(4096, true);
+    ManualSpillProcessor second(4096, true);
+    first.setSpillTarget(&scheduler);
+    second.setSpillTarget(&scheduler);
+    scheduler.registerProcessor(&first);
+    scheduler.registerProcessor(&second);
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.executeForcedSpill(request.epoch);
+    EXPECT_EQ(first.spillCallCount() + second.spillCallCount(), 1u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+}
 
 TEST(SchedulerSpaceShared, ForcedSpillVisitsIdleProcessorsWithoutWork)
 {

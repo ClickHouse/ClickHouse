@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <mutex>
+#include <unordered_set>
+#include <vector>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Processors/IProcessor.h>
@@ -154,6 +156,9 @@ MemorySpillScheduler::ForcedSpillRequest MemorySpillScheduler::requestForcedSpil
 void MemorySpillScheduler::executeForcedSpill(UInt64 epoch)
 {
     std::lock_guard execution_lock(forced_spill_execution_mutex);
+    std::unordered_set<const void *> visited_targets;
+    /// Keep target identities alive until the pass ends, including after processor removal.
+    std::vector<std::shared_ptr<IProcessor>> visited_lifetimes;
     while (true)
     {
         IProcessor * processor = nullptr;
@@ -187,7 +192,13 @@ void MemorySpillScheduler::executeForcedSpill(UInt64 epoch)
             return;
 
         const Int64 memory_before = getCurrentQueryMemoryUsage();
-        const bool spilled = processor->spillForMemoryReservation();
+        bool spilled = false;
+        if (visited_targets.insert(processor->getMemoryReservationSpillTarget()).second)
+        {
+            if (lifetime)
+                visited_lifetimes.push_back(lifetime);
+            spilled = processor->spillForMemoryReservation();
+        }
         const Int64 reclaimed_bytes = std::max<Int64>(memory_before - getCurrentQueryMemoryUsage(), 0);
 
         std::lock_guard lock(mutex);
