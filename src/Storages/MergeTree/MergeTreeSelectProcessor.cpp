@@ -22,13 +22,10 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
-
-#include <boost/functional/hash.hpp>
 
 namespace
 {
@@ -422,41 +419,22 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     && !task->appliesMutationsBeforePrewhere()
                     && !row_level_filter
                     /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
-                    && task->getInfo().data_part_info->getDataPart())
+                    && task->getInfo().data_part_info->getDataPart()
+                    && reader_settings.query_condition_cache_prewhere_condition)
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
-                    {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
-                                continue;
+                    auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                    const auto & data_part_info = task->getInfo().data_part_info;
 
-                            /// If output is an alias, resolve the original condition to cache it instead of the alias.
-                            /// Specifically matters for the queries served by projections which add an artificial alias node
-                            /// to the condition.
-                            const auto & condition_node = ActionsDAG::resolveAliases(*output);
-
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            const auto & data_part_info = task->getInfo().data_part_info;
-
-                            size_t condition_hash = condition_node.getHash(true /* skip_aliases */);
-                            if (reader_settings.query_condition_cache_top_k_salt)
-                                boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
-
-                            const auto part_name = QueryConditionCache::makePartNameFromDataPartInfoForReader(*data_part_info);
-                            query_condition_cache->write(
-                                /// QueryConditionCache is a coordinator feature; concrete part present here.
-                                data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
-                                condition_hash,
-                                condition_node.result_name,
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
-
-                            break;
-                        }
-                    }
+                    const auto part_name = QueryConditionCache::makePartNameFromDataPartInfoForReader(*data_part_info);
+                    query_condition_cache->write(
+                        /// QueryConditionCache is a coordinator feature; concrete part present here.
+                        data_part_info->getDataPart()->storage.getStorageID().uuid,
+                        part_name,
+                        reader_settings.query_condition_cache_prewhere_condition->hash,
+                        reader_settings.query_condition_cache_prewhere_condition->condition,
+                        task->getPrewhereUnmatchedMarks(),
+                        data_part_info->getIndexGranularity().getMarksCount(),
+                        data_part_info->getIndexGranularity().hasFinalMark());
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());

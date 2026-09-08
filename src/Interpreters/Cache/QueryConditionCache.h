@@ -3,8 +3,9 @@
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
-#include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
 {
@@ -74,6 +75,21 @@ private:
 public:
     using Cache = CacheBase<Key, Entry, UInt128TrivialHash, EntryWeight>;
 
+    enum class PrewhereConditionSource
+    {
+        /// Prewhere actions graph output should be used
+        Prewhere,
+        /// Full filter graph should be used. Used in case when TopK condition was pushed into the `PREWHERE`,
+        /// while there's a FilterStep that affects the TopK threshold. Since all the predicates are involved,
+        /// the whole graph should be used for caching.
+        FullFilterGraph,
+        /// Prewhere filtering results should not be cached.
+        None,
+    };
+
+    static PrewhereConditionSource getPrewhereConditionSource(const ActionsDAG::Node & prewhere_output,
+        const ActionsDAG * filter_actions_dag, bool has_top_k_with_where_clause);
+
     /// Compute cache key from table UUID, part name and condition hash
     static Key makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash);
 
@@ -93,7 +109,7 @@ public:
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
+    /// Add an entry to the cache. The passed marks represent ranges of the column without matches of the predicate.
     void write(
         const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);

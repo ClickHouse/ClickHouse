@@ -18,6 +18,31 @@
 --- correctness: the same, for the dynamic-filtering shape
 500
 500
+--- correctness: a TopK read with a different WHERE must not reuse the __topKFilter exclusions
+0
+1
+2
+3
+4
+1
+19500
+19501
+19502
+19503
+19504
+--- correctness: the same, when the first TopK read has no WHERE at all
+0
+1000
+2000
+3000
+4000
+19500
+19501
+19502
+19503
+19504
+--- a non-deterministic WHERE under TopK writes nothing
+0
 --- an aliased condition shares its cache entry with the unaliased spelling
 0
 0
@@ -46,6 +71,10 @@
 05045_assert_poison_topk_dyn	0	0	1
 05045_assert_poison_dyn_check_projection	0	0	1
 05045_assert_poison_dyn_check_base	0	0	0
+05045_assert_cross_where_prime	0	0	0
+05045_assert_cross_where_other	0	0	0
+05045_assert_no_where_prime	0	0	0
+05045_assert_no_where_other	0	0	0
 05045_assert_alias_plain_prime	0	0	0
 05045_assert_alias_aliased_reuse	1	1	0
 05045_assert_alias_aliased_prime	0	0	0

@@ -1772,16 +1772,32 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     if (const auto & prewhere_info = select_query_info.prewhere_info)
     {
-        for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
         {
-            if (outputs->result_name == prewhere_info->prewhere_column_name)
+            if (output->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(outputs);
-                LOG_DEBUG(log,
-                        "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
-                        stats.granules_dropped,
-                        stats.total_granules,
-                        stats.condition);
+                const auto condition_source = QueryConditionCache::getPrewhereConditionSource(*output,
+                    select_query_info.filter_actions_dag.get(),
+                    top_k_filter_info && top_k_filter_info->where_clause /* has_top_k_with_where_clause */);
+                if (condition_source == QueryConditionCache::PrewhereConditionSource::Prewhere)
+                {
+                    auto stats = drop_mark_ranges(output);
+                    LOG_DEBUG(log,
+                            "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
+                            stats.granules_dropped,
+                            stats.total_granules,
+                            stats.condition);
+                }
+                else
+                {
+                    const auto * condition_node = &ActionsDAG::resolveAliases(*output);
+                    LOG_DEBUG(log,
+                        "PREWHERE condition {} is not checked: {}.",
+                        condition_node->result_name,
+                        condition_source == QueryConditionCache::PrewhereConditionSource::None ?
+                        "Condition caching is not allowed" :
+                        "Full filter graph should be checked instead");
+                }
                 break;
             }
         }

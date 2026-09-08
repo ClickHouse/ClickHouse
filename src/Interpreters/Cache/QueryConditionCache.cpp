@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
@@ -207,6 +208,47 @@ QueryConditionCache::Entry::Entry(size_t mark_count)
 {
 }
 
+QueryConditionCache::PrewhereConditionSource QueryConditionCache::getPrewhereConditionSource(const ActionsDAG::Node & prewhere_output,
+    const ActionsDAG * filter_actions_dag,
+    bool has_top_k_with_where_clause)
+{
+    /// It's safe to use `PREWHERE` output if it's deterministic.
+    if (VirtualColumnUtils::isDeterministic(&prewhere_output))
+    {
+        return PrewhereConditionSource::Prewhere;
+    }
+
+    /// There're some non-deterministic functions in the `PREWHERE` output, not safe to cache.
+    if (!VirtualColumnUtils::isDeterministicAllowingTopKFilter(&prewhere_output))
+    {
+        return PrewhereConditionSource::None;
+    }
+
+    if (!filter_actions_dag)
+    {
+        /// `filter_actions_dag == nullptr` does not mean that there's no `FilterStep` above the `PREWHERE` that may affect the TopK
+        /// behavior. So conservatively assume that caching is not allowed, unless the caller provides us a confirming hint.
+        return !has_top_k_with_where_clause ? PrewhereConditionSource::Prewhere : PrewhereConditionSource::None;
+    }
+
+    /// TODO: There's an implicit invariant that filter graph has a single output relied on in e.g. `updateQueryConditionCache` and
+    /// `filterPushDown`. With projections' filter graphs fixed, it should be safe to assert that the filter graph has a single output.
+    /// Though it needs to be checked additionally, so just avoid caching for now.
+    if (filter_actions_dag->getOutputs().size() != 1)
+    {
+        return PrewhereConditionSource::None;
+    }
+
+    const auto * output = filter_actions_dag->getOutputs()[0];
+    if (!VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+    {
+        return PrewhereConditionSource::None;
+    }
+
+    /// The only source of non-determinism is TopK, but some predicates out of `PREWHERE` stage affect the behavior, so cache only the whole
+    /// filter graph.
+    return PrewhereConditionSource::FullFilterGraph;
+}
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
 QueryConditionCache::Entry::Entry(

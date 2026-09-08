@@ -229,6 +229,81 @@ SELECT count() FROM (SELECT pk FROM t_qcc_proj WHERE b < 1000 LIMIT 1000000)
 SETTINGS max_threads = 1, optimize_use_projections = 0,
     log_comment = '05045_assert_poison_dyn_check_base';
 
+
+-- The three sections below pin the key of the entry the reader writes for a dynamic-filtering TopK
+-- read. With `optimize_move_to_prewhere = 0` the reader evaluates only `__topKFilter(a)` in PREWHERE,
+-- while the WHERE stays in a `FilterStep` above the read. The granules `__topKFilter` rejects depend
+-- on the threshold, and the threshold is computed from rows that already passed the WHERE, so the
+-- entry must be keyed on the whole pushed-down predicate, not on the `__topKFilter` node alone.
+-- Otherwise two TopK reads with the same sort column, direction and LIMIT but different WHERE
+-- clauses share one entry and the second read skips granules that hold its result. The sections run
+-- on the base table (`optimize_use_projections = 0`): the key is built the same way for both, and the
+-- projection shape is covered above. `max_block_size = 1024` splits the part into enough blocks for
+-- the threshold to settle early and reject most of the remaining granules.
+
+SELECT '--- correctness: a TopK read with a different WHERE must not reuse the __topKFilter exclusions';
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- `b < 1000` selects `pk` 0..499, whose `a` is 0..499, so the top 5 are `a` 0..4 and the threshold
+-- settles at 4. From then on `__topKFilter` rejects every granule whose `a` values all exceed 4,
+-- which is most of the part. The second read needs `a` 500..504 from `pk` 19500..19504, granules the
+-- first read rejected. If the entry were keyed on `__topKFilter(a)` alone the second read would skip
+-- them and return nothing. The entry count after the first read must be one: the PREWHERE write and
+-- the `FilterTransform` write land on the same key and refine one entry instead of creating two.
+SELECT pk FROM t_qcc_proj WHERE b < 1000 ORDER BY a, pk LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, optimize_move_to_prewhere = 0,
+    use_top_k_dynamic_filtering = 1, use_skip_indexes_for_top_k = 0,
+    query_plan_max_limit_for_top_k_optimization = 1000,
+    use_query_condition_cache_for_top_k = 1, optimize_use_projections = 0,
+    log_comment = '05045_assert_cross_where_prime';
+SELECT count() FROM system.query_condition_cache;
+SELECT pk FROM t_qcc_proj WHERE b >= 38000 AND a >= 500 ORDER BY a, pk LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, optimize_move_to_prewhere = 0,
+    use_top_k_dynamic_filtering = 1, use_skip_indexes_for_top_k = 0,
+    query_plan_max_limit_for_top_k_optimization = 1000,
+    use_query_condition_cache_for_top_k = 1, optimize_use_projections = 0,
+    log_comment = '05045_assert_cross_where_other';
+
+
+SELECT '--- correctness: the same, when the first TopK read has no WHERE at all';
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- Without a WHERE the pushed-down predicate is `__topKFilter(a)` alone, and the entry is legitimately
+-- keyed on it: nothing else shapes the threshold. `a` is 0 for every multiple of 1000, so the top 5
+-- are `pk` 0, 1000, ..., 4000, the threshold settles at 0 and almost every granule is rejected. A
+-- later read with the same TopK plan but a WHERE must not probe that key from its PREWHERE.
+SELECT pk FROM t_qcc_proj ORDER BY a, pk LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, optimize_move_to_prewhere = 0,
+    use_top_k_dynamic_filtering = 1, use_skip_indexes_for_top_k = 0,
+    query_plan_max_limit_for_top_k_optimization = 1000,
+    use_query_condition_cache_for_top_k = 1, optimize_use_projections = 0,
+    log_comment = '05045_assert_no_where_prime';
+SELECT pk FROM t_qcc_proj WHERE b >= 38000 AND a >= 500 ORDER BY a, pk LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, optimize_move_to_prewhere = 0,
+    use_top_k_dynamic_filtering = 1, use_skip_indexes_for_top_k = 0,
+    query_plan_max_limit_for_top_k_optimization = 1000,
+    use_query_condition_cache_for_top_k = 1, optimize_use_projections = 0,
+    log_comment = '05045_assert_no_where_other';
+
+
+SELECT '--- a non-deterministic WHERE under TopK writes nothing';
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- `rand()` makes the predicate unrepeatable, so no path may leave an entry: not the `FilterStep`,
+-- not the index analysis, and not the `__topKFilter` PREWHERE either, whose threshold was computed
+-- from a random subset of rows. Before the reader keyed on the whole predicate it only inspected the
+-- PREWHERE node, which is deterministic apart from `__topKFilter`, and wrote an entry here.
+SELECT pk FROM t_qcc_proj WHERE b < 1000 AND rand() % 2 = 0 ORDER BY a, pk LIMIT 5 FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 1024, optimize_move_to_prewhere = 0,
+    use_top_k_dynamic_filtering = 1, use_skip_indexes_for_top_k = 0,
+    query_plan_max_limit_for_top_k_optimization = 1000,
+    use_query_condition_cache_for_top_k = 1, optimize_use_projections = 0;
+SELECT count() FROM system.query_condition_cache;
+
+
 SELECT '--- an aliased condition shares its cache entry with the unaliased spelling';
 
 -- `Node::updateHash` folds `result_name` into the hash, so without alias resolution `cond` and the
