@@ -35,4 +35,16 @@ SELECT bitShiftLeft(bitNot(c0), toUInt8(2)), bitShiftRight(bitNot(c0), toUInt8(2
        bitRotateLeft(bitNot(c0), toUInt8(2)), bitRotateRight(bitNot(c0), toUInt8(2))
 FROM t_jit_bits ORDER BY c0 SETTINGS compile_expressions = 0;
 
+-- The compiled shift clamps at the width of the left operand, which the interpreted path uses too,
+-- and not at the width both operands were widened to for the compiled body.
+
+SELECT bitShiftLeft(bitNot(c0), toUInt16(8)), bitShiftRight(bitNot(c0), toUInt16(8))
+FROM t_jit_bits ORDER BY c0 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
+
+SELECT bitShiftLeft(bitNot(c0), toUInt16(8)), bitShiftRight(bitNot(c0), toUInt16(8))
+FROM t_jit_bits ORDER BY c0 SETTINGS compile_expressions = 0;
+
+SELECT bitShiftRight(toInt8(-1) + toInt8(0), toUInt16(8)) SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
+SELECT bitShiftRight(toInt8(-1) + toInt8(0), toUInt16(8)) SETTINGS compile_expressions = 0;
+
 DROP TABLE t_jit_bits;

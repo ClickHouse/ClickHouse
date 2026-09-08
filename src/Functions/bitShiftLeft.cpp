@@ -163,8 +163,10 @@ struct BitShiftLeftImpl
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftLeftImpl expected an integral type");
 
-        /// A shift by the width or more is zero above, while `shl` by such an amount is poison.
-        auto * width = llvm::ConstantInt::get(left->getType(), left->getType()->getIntegerBitWidth());
+        /// A shift by the width of the left operand or more answers zero above, while `shl` by such an
+        /// amount is poison. The width is that of the operand as declared: `compileImpl` has already
+        /// widened both values to the result type, while the interpreted path clamps at `8 * sizeof(A)`.
+        auto * width = llvm::ConstantInt::get(left->getType(), 8 * sizeof(A));
         return b.CreateSelect(
             b.CreateICmpULT(right, width), b.CreateShl(left, right), llvm::ConstantInt::get(left->getType(), 0));
     }
