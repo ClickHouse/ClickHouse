@@ -25,14 +25,17 @@ Union
       Join
         Expression
           Expression
-            Join
-              Expression
+            Expression
+              Join
                 Expression
-                  ReadFromMergeTree
-              Expression
-                ReadFromMemoryStorage
+                  Expression
+                    ReadFromMergeTree
+                Expression
+                  Expression
+                    ReadFromMemoryStorage
         Expression
-          ReadFromMemoryStorage
+          Expression
+            ReadFromMemoryStorage
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -71,17 +74,21 @@ Expression
       Expression
         Sorting
           Expression
-            Join
-              Expression
+            Expression
+              Join
                 Expression
-                  Join
+                  Expression
                     Expression
-                      Expression
-                        ReadFromMergeTree
-                    Expression
-                      ReadFromMemoryStorage
-              Expression
-                ReadFromMemoryStorage
+                      Join
+                        Expression
+                          Expression
+                            ReadFromMergeTree
+                        Expression
+                          Expression
+                            ReadFromMemoryStorage
+                Expression
+                  Expression
+                    ReadFromMemoryStorage
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -109,17 +116,21 @@ Expression
           Expression
             Aggregating
               Expression
-                Join
-                  Expression
+                Expression
+                  Join
                     Expression
-                      Join
+                      Expression
                         Expression
-                          Expression
-                            ReadFromMergeTree
-                        Expression
-                          ReadFromMemoryStorage
-                  Expression
-                    ReadFromMemoryStorage
+                          Join
+                            Expression
+                              Expression
+                                ReadFromMergeTree
+                            Expression
+                              Expression
+                                ReadFromMemoryStorage
+                    Expression
+                      Expression
+                        ReadFromMemoryStorage
           Expression
             ReadFromRemoteParallelReplicas
 --
@@ -155,26 +166,29 @@ select * from sub5 order by x;
 Expression
   Sorting
     Expression
-      Join
-        Expression
-          Union
-            Expression
+      Expression
+        Join
+          Expression
+            Union
               Expression
-                Join
+                Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    ReadFromMemoryStorage
-            Expression
-              ReadFromRemoteParallelReplicas
-        Expression
-          Union
-            Expression
+                    Join
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        Expression
+                          ReadFromMemoryStorage
               Expression
-                ReadFromMergeTree
-            Expression
-              ReadFromRemoteParallelReplicas
+                ReadFromRemoteParallelReplicas
+          Expression
+            Union
+              Expression
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
 -- ORDER BY in sub1 : sub1 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2 order by y),
@@ -208,31 +222,33 @@ select * from sub5 order by x;
 Expression
   Sorting
     Expression
-      Join
-        Expression
+      Expression
+        Join
           Expression
-            Join
-              Expression
-                Union
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    ReadFromRemoteParallelReplicas
-              Expression
-                Union
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    ReadFromRemoteParallelReplicas
-        Expression
-          Union
             Expression
               Expression
-                ReadFromMergeTree
-            Expression
-              ReadFromRemoteParallelReplicas
+                Join
+                  Expression
+                    Union
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
+                  Expression
+                    Union
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
+          Expression
+            Union
+              Expression
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub3: sub3 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
@@ -269,14 +285,17 @@ Union
       Join
         Expression
           Expression
-            Join
-              Expression
-                ReadFromMemoryStorage
-              Expression
+            Expression
+              Join
                 Expression
-                  ReadFromMergeTree
+                  Expression
+                    ReadFromMemoryStorage
+                Expression
+                  Expression
+                    ReadFromMergeTree
         Expression
-          ReadFromMemoryStorage
+          Expression
+            ReadFromMemoryStorage
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -315,18 +334,21 @@ Expression
       Expression
         Sorting
           Expression
-            Join
-              Expression
-                ReadFromMemoryStorage
-              Expression
+            Expression
+              Join
                 Expression
-                  Join
+                  Expression
+                    ReadFromMemoryStorage
+                Expression
+                  Expression
                     Expression
-                      Expression
-                        ReadFromMergeTree
-                    Expression
-                      Expression
-                        ReadFromMergeTree
+                      Join
+                        Expression
+                          Expression
+                            ReadFromMergeTree
+                        Expression
+                          Expression
+                            ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -365,18 +387,23 @@ Expression
       Expression
         Sorting
           Expression
-            Join
-              Expression
+            Expression
+              Join
                 Expression
-                  Join
+                  Expression
                     Expression
-                      CreatingSets
+                      Join
                         Expression
-                          ReadFromMergeTree
-                    Expression
-                      ReadFromMemoryStorage
-              Expression
-                ReadFromMemoryStorage
+                          Expression
+                            CreatingSets
+                              Expression
+                                ReadFromMergeTree
+                        Expression
+                          Expression
+                            ReadFromMemoryStorage
+                Expression
+                  Expression
+                    ReadFromMemoryStorage
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -414,28 +441,31 @@ SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery 
 Expression
   Sorting
     Expression
-      Join
-        Expression
+      Expression
+        Join
           Expression
-            Join
+            Expression
               Expression
-                CreatingSets
-                  Expression
-                    ReadFromMergeTree
-              Expression
-                Union
+                Join
                   Expression
                     Expression
-                      ReadFromMergeTree
+                      CreatingSets
+                        Expression
+                          ReadFromMergeTree
                   Expression
-                    ReadFromRemoteParallelReplicas
-        Expression
-          Union
-            Expression
+                    Union
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
+          Expression
+            Union
               Expression
-                ReadFromMergeTree
-            Expression
-              ReadFromRemoteParallelReplicas
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 set parallel_replicas_prefer_local_join = 1;
 -- A query with only INNER/LEFT joins is fully send to replicas. JOIN is executed in GLOBAL mode.
 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z order by x;
@@ -461,13 +491,14 @@ Union
       Join
         Expression
           Expression
-            Join
-              Expression
+            Expression
+              Join
                 Expression
-                  ReadFromMergeTree
-              Expression
+                  Expression
+                    ReadFromMergeTree
                 Expression
-                  ReadFromMergeTree
+                  Expression
+                    ReadFromMergeTree
         Expression
           Expression
             ReadFromMergeTree
@@ -509,19 +540,21 @@ Expression
       Expression
         Sorting
           Expression
-            Join
-              Expression
+            Expression
+              Join
                 Expression
-                  Join
+                  Expression
                     Expression
-                      Expression
-                        ReadFromMergeTree
-                    Expression
-                      Expression
-                        ReadFromMergeTree
-              Expression
+                      Join
+                        Expression
+                          Expression
+                            ReadFromMergeTree
+                        Expression
+                          Expression
+                            ReadFromMergeTree
                 Expression
-                  ReadFromMergeTree
+                  Expression
+                    ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -549,19 +582,21 @@ Expression
           Expression
             Aggregating
               Expression
-                Join
-                  Expression
+                Expression
+                  Join
                     Expression
-                      Join
+                      Expression
                         Expression
-                          Expression
-                            ReadFromMergeTree
-                        Expression
-                          Expression
-                            ReadFromMergeTree
-                  Expression
+                          Join
+                            Expression
+                              Expression
+                                ReadFromMergeTree
+                            Expression
+                              Expression
+                                ReadFromMergeTree
                     Expression
-                      ReadFromMergeTree
+                      Expression
+                        ReadFromMergeTree
           Expression
             ReadFromRemoteParallelReplicas
 --
@@ -597,27 +632,29 @@ select * from sub5 order by x;
 Expression
   Sorting
     Expression
-      Join
-        Expression
-          Union
-            Expression
+      Expression
+        Join
+          Expression
+            Union
               Expression
-                Join
+                Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-            Expression
-              ReadFromRemoteParallelReplicas
-        Expression
-          Union
-            Expression
+                    Join
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        Expression
+                          ReadFromMergeTree
               Expression
-                ReadFromMergeTree
-            Expression
-              ReadFromRemoteParallelReplicas
+                ReadFromRemoteParallelReplicas
+          Expression
+            Union
+              Expression
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
 -- ORDER BY in sub1 : sub1 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2 order by y),
@@ -651,31 +688,33 @@ select * from sub5 order by x;
 Expression
   Sorting
     Expression
-      Join
-        Expression
+      Expression
+        Join
           Expression
-            Join
-              Expression
-                Union
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    ReadFromRemoteParallelReplicas
-              Expression
-                Union
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    ReadFromRemoteParallelReplicas
-        Expression
-          Union
             Expression
               Expression
-                ReadFromMergeTree
-            Expression
-              ReadFromRemoteParallelReplicas
+                Join
+                  Expression
+                    Union
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
+                  Expression
+                    Union
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
+          Expression
+            Union
+              Expression
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub3: sub3 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
@@ -807,20 +846,23 @@ Expression
       Expression
         Sorting
           Expression
-            Join
-              Expression
+            Expression
+              Join
                 Expression
-                  Join
+                  Expression
                     Expression
-                      CreatingSets
+                      Join
                         Expression
-                          ReadFromMergeTree
-                    Expression
-                      Expression
-                        ReadFromMergeTree
-              Expression
+                          Expression
+                            CreatingSets
+                              Expression
+                                ReadFromMergeTree
+                        Expression
+                          Expression
+                            ReadFromMergeTree
                 Expression
-                  ReadFromMergeTree
+                  Expression
+                    ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -858,25 +900,28 @@ SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery 
 Expression
   Sorting
     Expression
-      Join
-        Expression
+      Expression
+        Join
           Expression
-            Join
+            Expression
               Expression
-                CreatingSets
-                  Expression
-                    ReadFromMergeTree
-              Expression
-                Union
+                Join
                   Expression
                     Expression
-                      ReadFromMergeTree
+                      CreatingSets
+                        Expression
+                          ReadFromMergeTree
                   Expression
-                    ReadFromRemoteParallelReplicas
-        Expression
-          Union
-            Expression
+                    Union
+                      Expression
+                        Expression
+                          ReadFromMergeTree
+                      Expression
+                        ReadFromRemoteParallelReplicas
+          Expression
+            Union
               Expression
-                ReadFromMergeTree
-            Expression
-              ReadFromRemoteParallelReplicas
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas

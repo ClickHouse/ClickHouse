@@ -21,23 +21,22 @@ SELECT *
 FROM test
 WHERE d = '2026-01-01'
 SETTINGS use_partition_pruning = 1;
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test)
-    Indexes:
-      Min-Max
-        Keys:
-          d
-        Condition: (d in [20454, 20454])
-        Parts: 1/2
-        Granules: 1/2
-      Partition
-        Keys:
-          toYYYYMM(d)
-        Condition: (toYYYYMM(d) in [202601, 202601])
-        Parts: 1/1
-        Granules: 1/1
-      Ranges: 1
+Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
+  ReadFromMergeTree (default.test)
+  Indexes:
+    Min-Max
+      Keys:
+        d
+      Condition: (d in [20454, 20454])
+      Parts: 1/2
+      Granules: 1/2
+    Partition
+      Keys:
+        toYYYYMM(d)
+      Condition: (toYYYYMM(d) in [202601, 202601])
+      Parts: 1/1
+      Granules: 1/1
+    Ranges: 1
 SELECT *
 FROM test
 WHERE d = '2026-01-01'
@@ -48,19 +47,18 @@ SELECT *
 FROM test
 WHERE d = '2026-01-01'
 SETTINGS use_partition_pruning = 0, use_skip_indexes = 0;
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test)
-    Indexes:
-      Min-Max
-        Condition: true
-        Parts: 2/2
-        Granules: 2/2
-      Partition
-        Condition: true
-        Parts: 2/2
-        Granules: 2/2
-      Ranges: 2
+Expression (((Project names + Projection) + (WHERE + Change column names to column identifiers)))
+  ReadFromMergeTree (default.test)
+  Indexes:
+    Min-Max
+      Condition: true
+      Parts: 2/2
+      Granules: 2/2
+    Partition
+      Condition: true
+      Parts: 2/2
+      Granules: 2/2
+    Ranges: 2
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (

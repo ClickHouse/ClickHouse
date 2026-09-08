@@ -1,6 +1,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -19,6 +21,7 @@
 #include <memory>
 #include <stack>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -390,24 +393,34 @@ void optimizeTreeSecondPass(
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
-        traverseQueryPlan(stack, root,
-            [&](auto & frame_node)
-            {
-                optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
-            });
-
         /// A filter fully moved into PREWHERE leaves an `Expression` in the `Filter`'s place, and
         /// expression merging has already run by now - so the plan can end up with two neighbouring
         /// `Expression` steps, which no plan built any other way has. That difference is not only
         /// cosmetic: `calculateHashTableCacheKeys` hashes a step's child through it even when the step
         /// itself contributes nothing, so one extra step renumbers every node above it and the
         /// automatic-parallel-replicas decision can no longer find its counterpart in the other plan.
-        if (optimization_settings.merge_expressions)
-            traverseQueryPlan(stack, root,
-                [&](auto & frame_node)
-                {
+        ///
+        /// Merge only above the nodes this pass rewrote. A whole-plan pass would also collapse
+        /// neighbours that the earlier merging left alone for its own reasons, which is a much wider
+        /// change than repairing what PREWHERE just introduced. Children are visited before their
+        /// parent, so by the time a node is left every rewrite below it is already recorded.
+        std::unordered_set<const QueryPlan::Node *> replaced_with_expression;
+
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                const bool was_filter = typeid_cast<const FilterStep *>(frame_node.step.get()) != nullptr;
+                optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
+                if (was_filter && typeid_cast<const ExpressionStep *>(frame_node.step.get()))
+                    replaced_with_expression.insert(&frame_node);
+            },
+            [&](auto & frame_node)
+            {
+                if (!optimization_settings.merge_expressions)
+                    return;
+                if (frame_node.children.size() == 1 && replaced_with_expression.contains(frame_node.children.front()))
                     tryMergeExpressions(&frame_node, nodes, extra_settings);
-                });
+            });
     }
 
     /// Some plans are optimized more than once (e.g. StorageMerge child plans, set subplans). The

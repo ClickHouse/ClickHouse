@@ -19,18 +19,17 @@ Expression ((Project names + Projection))
           InputSelector
             LazyFinalKeyAnalysis
               CreatingSet
-                Expression
-                  Expression
-                    ReadFromMergeTree (default.t_lazy_final_combined)
-                    Indexes:
-                      PrimaryKey
-                        Keys:
-                          key
-                        Condition: and((key in (-Inf, 5499]), (key in [500, +Inf)))
-                        Parts: 2/2
-                        Granules: 56/62
-                        Search Algorithm: binary search
-                      Ranges: 2
+                Expression (( + ))
+                  ReadFromMergeTree (default.t_lazy_final_combined)
+                  Indexes:
+                    PrimaryKey
+                      Keys:
+                        key
+                      Condition: and((key in (-Inf, 5499]), (key in [500, +Inf)))
+                      Parts: 2/2
+                      Granules: 56/62
+                      Search Algorithm: binary search
+                    Ranges: 2
             JoinLazyColumnsStep
               LazyReadReplacingFinal
                 Expression
@@ -70,4 +69,4 @@ Expression ((Project names + Projection))
               Search Algorithm: binary search
             Ranges: 2
 === Set plan reads only needed columns ===
-                    Header: key UInt64
+                  Header: key UInt64

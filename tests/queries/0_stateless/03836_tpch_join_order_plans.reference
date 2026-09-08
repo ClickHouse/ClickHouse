@@ -5,9 +5,8 @@ Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
       MergingAggregated
         GatherExchange
           Aggregating
-            Expression (Before GROUP BY)
-              Expression ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (ParallelRead default.lineitem)
+            Expression ((Before GROUP BY + (WHERE + Change column names to column identifiers)))
+              ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q02
 Expression (Project names)
   Limit (preliminary LIMIT)
@@ -77,10 +76,9 @@ Expression (Project names)
           Aggregating
             Expression ((Before GROUP BY + WHERE))
               JoinLogical (Shuffle HashJoin )
-                Expression (Create result for always true EXISTS expression)
-                  Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.lineitem)
+                Expression ((Create result for always true EXISTS expression + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))))
+                  ShuffleExchange
+                    ReadFromMergeTree (ParallelRead default.lineitem)
                 Expression ((WHERE + Change column names to column identifiers))
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.orders)
@@ -114,9 +112,8 @@ Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
-        Expression (Before GROUP BY)
-          Expression ((WHERE + Change column names to column identifiers))
-            ReadFromMergeTree (ParallelRead default.lineitem)
+        Expression ((Before GROUP BY + (WHERE + Change column names to column identifiers)))
+          ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q07
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
@@ -316,10 +313,9 @@ Expression (Project names)
             GatherExchange
               Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))))
                 Aggregating
-                  Expression (Before GROUP BY)
-                    Expression ((WHERE + Change column names to column identifiers))
-                      ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.lineitem)
+                  Expression ((Before GROUP BY + (WHERE + Change column names to column identifiers)))
+                    ShuffleExchange
+                      ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q16
 DelayedCreatingSets
   Expression (Project names)
@@ -352,9 +348,8 @@ Expression (Project names)
                   Expression ((WHERE + Change column names to column identifiers))
                     ShuffleExchange
                       ReadFromMergeTree (ParallelRead default.part)
-                Expression (Create result for always true EXISTS expression)
-                  Expression (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + (WHERE + Change column names to column identifiers)))
-                    ReadFromMergeTree (ReplicatedRead default.supplier)
+                Expression ((Create result for always true EXISTS expression + ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + (WHERE + Change column names to column identifiers))))
+                  ReadFromMergeTree (ReplicatedRead default.supplier)
 -- Q17
 Expression ((Project names + Projection))
   MergingAggregated
@@ -370,10 +365,9 @@ Expression ((Project names + Projection))
                   JoinLogical (Shuffle HashJoin )
                     Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
                       Aggregating
-                        Expression (Before GROUP BY)
-                          Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                            ShuffleExchange
-                              ReadFromMergeTree (ParallelRead default.lineitem)
+                        Expression ((Before GROUP BY + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))))
+                          ShuffleExchange
+                            ReadFromMergeTree (ParallelRead default.lineitem)
                     Expression ((WHERE + Change column names to column identifiers))
                       ShuffleExchange
                         ReadFromMergeTree (ParallelRead default.part)
@@ -476,9 +470,8 @@ Expression (Project names)
                         JoinLogical (Broadcast HashJoin  swapped)
                           Expression (((((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + WHERE) + WHERE) + Change column names to column identifiers))
                             ReadFromMergeTree (ParallelRead default.partsupp)
-                          Expression (Create result for always true EXISTS expression)
-                            Expression (((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + (WHERE + Change column names to column identifiers)))
-                              ReadFromMergeTree (ReplicatedRead default.part)
+                          Expression ((Create result for always true EXISTS expression + ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))) + (WHERE + Change column names to column identifiers))))
+                            ReadFromMergeTree (ReplicatedRead default.part)
 -- Q21
 Expression (Project names)
   Limit (preliminary LIMIT)

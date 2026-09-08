@@ -41,9 +41,8 @@ Expression (Project names)
       Expression (Before ORDER BY)
         Distinct (Preliminary DISTINCT)
           Union
-            Expression (Projection)
-              Expression ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (default.test_distinct_proj_partial_projection)
+            Expression ((Projection + (WHERE + Change column names to column identifiers)))
+              ReadFromMergeTree (default.test_distinct_proj_partial_projection)
             Filter
               ReadFromPreparedSource (p)
 SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a >= 4 ORDER BY a, b;
@@ -57,9 +56,8 @@ Expression (Project names)
       Expression (Before ORDER BY)
         Distinct (Preliminary DISTINCT)
           Union
-            Expression (Projection)
-              Expression ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (default.test_distinct_proj_partial_projection)
+            Expression ((Projection + (WHERE + Change column names to column identifiers)))
+              ReadFromMergeTree (default.test_distinct_proj_partial_projection)
             Filter
               ReadFromMergeTree (p)
 SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a = 3 ORDER BY a, b;
@@ -71,9 +69,8 @@ Expression (Project names)
       Expression (Before ORDER BY)
         Distinct (Preliminary DISTINCT)
           Union
-            Expression (Projection)
-              Expression ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (default.test_distinct_proj_partial_projection)
+            Expression ((Projection + (WHERE + Change column names to column identifiers)))
+              ReadFromMergeTree (default.test_distinct_proj_partial_projection)
             Filter
               ReadFromMergeTree (p)
 DROP TABLE test_distinct_proj_partial_projection;
