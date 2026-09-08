@@ -1156,7 +1156,7 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
 bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & column_name) const
 {
     const auto it = columns.get<1>().find(column_name);
-    if (it == columns.get<1>().end() || it->codec == nullptr)
+    if (it == columns.get<1>().end() || !it->codec.hasRoot() || it->codec.hasSubcolumns())
         return false;
 
     /// The stored codec descriptor is a `CODEC(...)` function whose arguments are the pipeline
@@ -1165,7 +1165,7 @@ bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & colum
     /// codec". It can be the only stage (`CODEC(Default)`) or the generic-compression stage of a
     /// longer pipeline (`CODEC(Delta, Default)`, `CODEC(NONE, Default)`), so look for it among all
     /// stages rather than requiring the degenerate single-stage form.
-    const auto * codec_func = it->codec->as<ASTFunction>();
+    const auto * codec_func = it->codec.getRoot()->as<ASTFunction>();
     if (!codec_func || !codec_func->arguments)
         return false;
 

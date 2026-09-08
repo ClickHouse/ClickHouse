@@ -254,7 +254,8 @@ public:
     /// `CODEC(Delta, Default)`, ...)? Such a column carries a codec descriptor (so
     /// `hasCompressionCodec` is true), yet its generic-compression stage is the part's default
     /// codec, so its `.bin` proves the default codec family - unlike a column with an explicit
-    /// non-default codec.
+    /// non-default codec. Returns false for a policy with tuple-element declarations because an
+    /// arbitrary stream of such a column may use an element-specific codec.
     bool hasExplicitDefaultCompressionCodec(const String & column_name) const;
 
     String toString(bool include_comments) const;
