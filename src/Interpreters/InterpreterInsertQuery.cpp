@@ -1092,9 +1092,11 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
                     select_settings[Setting::max_expanded_ast_elements]);
             ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
-            /// Resolve the source's tables under the same context: `getLeftTableStorage` can interpret
-            /// a table-function source, and it must not read settings the source SELECT has overridden.
-            JoinedTables joined_tables(Context::createCopy(select_context), *sq);
+            /// `select_context` is deliberately not used here: the only settings-sensitive part of
+            /// `getLeftTableStorage` is a table-function source, and that is executed through
+            /// `getQueryContext()`, which `Context::createCopy` carries over unchanged. The ordinary
+            /// path resolves table functions under the query context too.
+            JoinedTables joined_tables(Context::createCopy(local_context), *sq);
             if (joined_tables.tablesCount() == 1)
                 src_storage = joined_tables.getLeftTableStorage();
         }
