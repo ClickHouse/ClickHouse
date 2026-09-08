@@ -4817,3 +4817,77 @@ def test_oversized_lease_object_is_reclaimed(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+def test_global_leader_election_default_and_detached_tables_on_rename(started_cluster):
+    """
+    Regression for `RENAME DATABASE` with permanently detached tables, under a server-wide
+    `merge_tree.leader_election = 1` default.
+
+    `DETACH TABLE ... PERMANENTLY` moves a table out of the database's `tables` map into
+    `snapshot_detached_tables` and keeps its metadata, which `RENAME DATABASE` renames along with
+    the database. The guard that asks every attached storage saw nothing to reject, so
+    `DETACH TABLE` -> `RENAME DATABASE` -> `ATTACH TABLE` brought the same shared-storage table back
+    under a new database name while the peers kept tracking the old one. The detached tables are now
+    answered for from their own metadata, by the same predicate the lazy-table proxy uses.
+
+    That predicate must keep looking at the query shape, not only at the engine name: a view has no
+    engine of its own (a materialized view names the engine of its inner table, which is a table of
+    its own), and the storage of a view never implements the hook, so a detached view must not block
+    the rename just because the server-wide default is on.
+    `05136_leader_election_rename_database_detached.sh` covers the directions that do not need such
+    a default.
+    """
+    node = node6_global_leader_election_default
+    ensure_node_up(node)
+    table_db = "detached_table_le_db"
+    view_db = "detached_view_le_db"
+    databases = (table_db, f"{table_db}_new", view_db, f"{view_db}_new")
+    try:
+        for name in databases:
+            node.query(f"DROP DATABASE IF EXISTS {name} SYNC")
+        # Created while the server-wide default is still off: a `MergeTree` table on a local disk
+        # cannot be created (nor attached) once it is on, and the tables must survive the restart
+        # below as metadata only, which is what `PERMANENTLY` gives.
+        node.query(f"CREATE DATABASE {table_db} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+        node.query(f"CREATE TABLE {table_db}.mt (x UInt64) ENGINE = MergeTree ORDER BY x")
+        node.query(f"DETACH TABLE {table_db}.mt PERMANENTLY")
+
+        node.query(f"CREATE DATABASE {view_db} ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+        node.query(f"CREATE VIEW {view_db}.v AS SELECT 1 AS x")
+        node.query(f"DETACH VIEW {view_db}.v PERMANENTLY")
+
+        # Turn the default on. `Context::getMergeTreeSettings` reads the `merge_tree` config section
+        # once per process, so this needs a restart, not `SYSTEM RELOAD CONFIG`.
+        node.replace_config(GLOBAL_LEADER_ELECTION_CONFIG_PATH, GLOBAL_LEADER_ELECTION_CONFIG)
+        node.restart_clickhouse()
+
+        # The detached `MergeTree` table inherits the default, so it may carry the guard: reject.
+        error = node.query_and_get_error(f"RENAME DATABASE {table_db} TO {table_db}_new")
+        assert "SUPPORT_IS_DISABLED" in error and "mt" in error, (
+            f"The rename was not rejected because of the detached `leader_election` table: {error}"
+        )
+        assert (
+            node.query(f"SELECT count() FROM system.databases WHERE name = '{table_db}_new'").strip()
+            == "0"
+        ), "The database was renamed despite the rejection"
+
+        # The detached view cannot carry the guard, whatever the default is: rename it.
+        node.query(f"RENAME DATABASE {view_db} TO {view_db}_new")
+        detached = node.query(
+            f"SELECT name FROM system.detached_tables WHERE database = '{view_db}_new'"
+        ).strip()
+        assert detached == "v", (
+            f"The renamed database did not keep its detached view, got: {detached}"
+        )
+    finally:
+        node.remove_file_from_container(GLOBAL_LEADER_ELECTION_CONFIG_PATH)
+        try:
+            node.restart_clickhouse()
+        except Exception:
+            ensure_node_up(node)
+        for name in databases:
+            try:
+                node.query(f"DROP DATABASE IF EXISTS {name} SYNC")
+            except Exception:
+                pass

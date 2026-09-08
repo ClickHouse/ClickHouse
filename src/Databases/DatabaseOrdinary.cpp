@@ -62,7 +62,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsString storage_policy;
-    extern const MergeTreeSettingsBool leader_election;
 }
 
 namespace ServerSetting
@@ -529,48 +528,18 @@ void DatabaseOrdinary::loadTableLazy(
     };
 
     /// `RENAME DATABASE` asks every table whether it forbids the rename, via
-    /// `checkTableCanBeRenamedByDatabaseRename`. That hook is overridden only by
-    /// `StorageMergeTree`, and there it throws only under `leader_election`, so answering it for
-    /// a lazy table needs nothing from the storage: only the engine name, which says whether the
-    /// hook is that override at all, and the effective value of that one `MergeTree` setting.
-    /// Both are available from the `CREATE` query here at no cost. Without this the proxy would
-    /// have to materialize (and `startup()`) every table in the database on each rename.
-
-    /// The engines backed by `StorageMergeTree` are the `MergeTree` family minus the `Replicated`
-    /// (`StorageReplicatedMergeTree`) and `Shared` (Cloud) variants — the same test
-    /// `DatabaseReplicated` uses to recognize them. For every other engine the hook is
-    /// `IStorage`'s no-op, so the value of `leader_election` says nothing there and must not drag
-    /// the table into a load it does not need. That is not hypothetical: a `ReplicatedMergeTree`
-    /// cannot carry `leader_election` in its own `CREATE` query (that is rejected at create), but
-    /// it does inherit a server-wide `merge_tree` default, and under such a default materializing
-    /// it fails the whole `RENAME DATABASE`, because `StorageReplicatedMergeTree` refuses to
-    /// attach with the setting on. An engine name is always present for a lazily loaded table
-    /// (`shouldLazyLoad` excludes views, dictionaries and table functions, the shapes that have
-    /// no engine); keep the guard rather than depend on that.
-    const String engine_name = query.storage && query.storage->engine ? query.storage->engine->name : "";
-    const bool engine_may_reject_database_rename = engine_name.empty()
-        || (endsWith(engine_name, "MergeTree") && !startsWith(engine_name, "Replicated") && !startsWith(engine_name, "Shared"));
-
-    /// The table's own `SETTINGS` decide when they mention the setting; otherwise the server-wide
-    /// `merge_tree` default does, read at check time the same way the storage itself would read it.
-    std::optional<bool> leader_election_in_query;
-    if (query.storage && query.storage->settings)
-    {
-        for (const auto & change : query.storage->settings->changes)
-        {
-            if (change.name == "leader_election")
-                leader_election_in_query = static_cast<bool>(SettingFieldBool{change.value});
-        }
-    }
-
+    /// `checkTableCanBeRenamedByDatabaseRename`. Answering it for a lazy table needs nothing from
+    /// the storage — see `DatabaseRenameGuardHint`, which resolves the answer from the `CREATE`
+    /// query available here at no cost. Without this the proxy would have to materialize (and
+    /// `startup()`) every table in the database on each rename. That is not a hypothetical cost: a
+    /// `ReplicatedMergeTree` cannot carry `leader_election` in its own `CREATE` query (that is
+    /// rejected at create), but it does inherit a server-wide `merge_tree` default, and under such
+    /// a default materializing it fails the whole `RENAME DATABASE`, because
+    /// `StorageReplicatedMergeTree` refuses to attach with the setting on.
     auto may_need_database_rename_guard
-        = [engine_may_reject_database_rename, leader_election_in_query, global_context = local_context->getGlobalContext()]
+        = [hint = DatabaseRenameGuardHint::fromCreateQuery(query), global_context = local_context->getGlobalContext()]
     {
-        if (!engine_may_reject_database_rename)
-            return false;
-        if (leader_election_in_query.has_value())
-            return *leader_election_in_query;
-        return static_cast<bool>(global_context->getMergeTreeSettings()[MergeTreeSetting::leader_election]);
+        return hint.mayNeedGuard(global_context);
     };
 
     auto proxy = std::make_shared<StorageTableProxy>(

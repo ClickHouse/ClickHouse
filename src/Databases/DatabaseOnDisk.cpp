@@ -27,6 +27,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
@@ -42,6 +43,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
 
 
@@ -63,6 +65,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool leader_election;
 }
 
 namespace ErrorCodes
@@ -173,6 +180,51 @@ std::pair<String, StoragePtr> createTableFromAST(
     return {
         ast->getTable(),
         StorageFactory::instance().get(*ast, table_data_path_relative, context, context->getGlobalContext(), columns, constraints, mode)};
+}
+
+
+DatabaseRenameGuardHint DatabaseRenameGuardHint::fromCreateQuery(const ASTCreateQuery & query)
+{
+    DatabaseRenameGuardHint hint;
+
+    /// Only a plain table can be backed by `StorageMergeTree`. A view names an engine too — a
+    /// materialized view names the engine of its inner table — but the storage of the view itself
+    /// is `StorageMaterializedView`, whose hook is `IStorage`'s no-op; its inner table is a table
+    /// of its own, with its own metadata, and is answered for separately. The same holds for a
+    /// dictionary and for `CREATE TABLE ... AS f(...)`.
+    if (query.isView() || query.is_dictionary || query.as_table_function)
+    {
+        hint.engine_may_reject = false;
+        return hint;
+    }
+
+    /// An engine name is always present for a plain table that has metadata on disk; keep the
+    /// conservative answer rather than depend on that.
+    const String engine_name = query.storage && query.storage->engine ? query.storage->engine->name : "";
+    hint.engine_may_reject = engine_name.empty()
+        || (endsWith(engine_name, "MergeTree") && !startsWith(engine_name, "Replicated") && !startsWith(engine_name, "Shared"));
+
+    if (query.storage && query.storage->settings)
+    {
+        for (const auto & change : query.storage->settings->changes)
+        {
+            if (change.name == "leader_election")
+                hint.leader_election_in_query = static_cast<bool>(SettingFieldBool{change.value});
+        }
+    }
+
+    return hint;
+}
+
+bool DatabaseRenameGuardHint::mayNeedGuard(const ContextPtr & context) const
+{
+    if (!engine_may_reject)
+        return false;
+    /// The table's own `SETTINGS` decide when they mention the setting; otherwise the server-wide
+    /// `merge_tree` default does.
+    if (leader_election_in_query.has_value())
+        return *leader_election_in_query;
+    return static_cast<bool>(context->getMergeTreeSettings()[MergeTreeSetting::leader_election]);
 }
 
 
