@@ -1,0 +1,15 @@
+-- canary: variant A fires for the spill query
+Expression ((Project names + Projection))
+  Aggregating
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table2.j)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_spill_dims)
+      GatherExchange
+        Aggregating
+          Expression
+            ReadFromMergeTree (ParallelRead default.t_spill_facts)
+-- merge spilled to disk
+1
+-- digest: pushed (with spill) vs hand-computed constants
+100000	500000000	2499750000000

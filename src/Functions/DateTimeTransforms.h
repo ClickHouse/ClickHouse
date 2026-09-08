@@ -464,7 +464,9 @@ struct ToStartOfDayImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toDate(static_cast<time_t>(t.whole)));
+        /// Clamped, not wrapped: the seconds value must stay monotonic because the primary index treats
+        /// this transform as always monotonic.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(static_cast<time_t>(t.whole)), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> &, const DateLUTImpl &)
     {
@@ -480,7 +482,8 @@ struct ToStartOfDayImpl
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toDate(DayNum(d)));
+        /// Clamped: a Date past 2106-02-07 has a start-of-day beyond UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -1071,7 +1074,8 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
 {
     static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+        /// Clamped: a Date past 2106-02-07 floors to a value beyond UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days), 0, std::numeric_limits<UInt32>::max()));
     }
     static Int64 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
@@ -1239,7 +1243,8 @@ struct ToStartOfMinuteImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfMinute(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfMinute(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1544,7 +1549,8 @@ struct ToStartOfFiveMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfFiveMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfFiveMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1584,7 +1590,8 @@ struct ToStartOfTenMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfTenMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfTenMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1628,7 +1635,8 @@ struct ToStartOfFifteenMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfFifteenMinutes(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfFifteenMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1673,7 +1681,8 @@ struct TimeSlotImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
-        return static_cast<UInt32>(t.whole / 1800 * 1800);
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(t.whole / 1800 * 1800, 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
@@ -1729,7 +1738,8 @@ struct ToStartOfHourImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfHour(t.whole));
+        /// Clamped: see ToStartOfDayImpl.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfHour(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
@@ -2201,6 +2211,39 @@ struct ToSecondImpl
     using FactorTransform = ToStartOfMinuteImpl;
 };
 
+/// The factor transform of the subsecond extractors. They restart at zero every second, so their
+/// monotonicity claim holds only where both ends of the key range fall into the same second.
+/// For the argument types where the extractor is the constant 0 - a `DateTime` has no subsecond part,
+/// and neither does a `DateTime64(0)` - or is not supported at all, every pair of endpoints has to
+/// share a factor, because a constant function is monotonic; the extractors' own `execute` overloads
+/// reject the unsupported types before index analysis can be reached.
+struct ToStartOfSecondFactorImpl
+{
+    static constexpr auto name = "toStartOfSecond";
+
+    static DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        /// A zero-precision value has no subsecond part at all, so the extractor is the constant 0 on it.
+        if (scale_multiplier == 1)
+            return DateTime64(0);
+        return ToStartOfSecondImpl::execute(datetime64, scale_multiplier, time_zone);
+    }
+
+    static Time64 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        if (scale_multiplier == 1)
+            return Time64(0);
+        return ToStartOfSecondImpl::execute(time64, scale_multiplier, time_zone);
+    }
+
+    static UInt32 execute(UInt32, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(Int32, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(Int64, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(UInt16, const DateLUTImpl &) { return 0; }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToMillisecondImpl
 {
     static constexpr auto name = "toMillisecond";
@@ -2233,7 +2276,7 @@ struct ToMillisecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToMicrosecondImpl
@@ -2268,7 +2311,7 @@ struct ToMicrosecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToNanosecondImpl
@@ -2303,7 +2346,7 @@ struct ToNanosecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToISOYearImpl
@@ -2468,7 +2511,8 @@ struct ToYearNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toYearSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toYearSinceEpoch(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toYearSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2564,7 +2608,8 @@ struct ToMonthNumSinceEpochImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toMonthNumSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toMonthNumSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2596,7 +2641,8 @@ struct ToRelativeWeekNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return time_zone.toRelativeWeekNum(t);
         else
-            return static_cast<UInt16>(time_zone.toRelativeWeekNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toRelativeWeekNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2628,7 +2674,8 @@ struct ToRelativeDayNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toDayNum(t));
         else
-            return static_cast<UInt16>(time_zone.toDayNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt16>(std::clamp<Int64>(time_zone.toDayNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2660,7 +2707,8 @@ struct ToRelativeHourNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(t));
         else
-            return static_cast<UInt32>(time_zone.toRelativeHourNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(t), 0, std::numeric_limits<UInt32>::max()));
     }
     ALWAYS_INLINE static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2698,7 +2746,8 @@ struct ToRelativeMinuteNumImpl
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toRelativeMinuteNum(t));
         else
-            return static_cast<UInt32>(time_zone.toRelativeMinuteNum(t));
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(t), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2725,9 +2774,13 @@ struct ToRelativeSecondNumImpl
 {
     static constexpr auto name = "toRelativeSecondNum";
 
-    static Int64 execute(Int64 t, const DateLUTImpl &)
+    static auto execute(Int64 t, const DateLUTImpl &)
     {
-        return t;
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return t;
+        else
+            /// Clamped: see ToStartOfDayImpl.
+            return static_cast<UInt32>(std::clamp<Int64>(t, 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 t, const DateLUTImpl &)
     {
@@ -2742,7 +2795,8 @@ struct ToRelativeSecondNumImpl
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
+        /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 

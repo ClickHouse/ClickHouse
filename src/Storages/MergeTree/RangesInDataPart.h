@@ -43,6 +43,8 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
 
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
+    /// Only the totals, without listing every part and range (the full list can be megabytes in size).
+    String describeShort() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
 
     void merge(const RangesInDataPartsDescription & other);
