@@ -72,6 +72,8 @@ WHERE current_database = currentDatabase()
   AND log_comment = '03779_limit_by_const_early_stop'
   AND type = 'QueryFinish';
 
+SET enable_analyzer = 1;
+
 SELECT count() > 0
 FROM (EXPLAIN PIPELINE
       SELECT number, 1 AS k
@@ -92,6 +94,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT if(count() > 0 AND max(read_rows) < 1000, 'OK', 'FAIL')
 FROM system.query_log
-WHERE current_database() = currentDatabase()
+WHERE current_database = currentDatabase()
   AND log_comment = '03779_limit_by_const_early_stop_sorted'
   AND type = 'QueryFinish';
