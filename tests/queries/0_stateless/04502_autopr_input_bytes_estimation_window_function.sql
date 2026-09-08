@@ -2,8 +2,8 @@
 -- optimization. Before the Window step supported dataflow statistics collection, any plan containing a
 -- window function was rejected outright (`optimizeTree: Some steps in the plan don't support dataflow
 -- statistics collection ... Unsupported steps: Window_...`) and no statistics were gathered. Now the
--- plan passes the "simple enough" gate, and statistics are collected when (and only when) the
--- replica-output boundary can actually estimate the number of bytes replicas would send to the
+-- plan passes the "simple enough" gate, and statistics are collected at whichever boundary the two
+-- plans have in common, as long as that boundary can observe the bytes replicas would send to the
 -- initiator.
 
 DROP TABLE IF EXISTS t;
@@ -20,12 +20,14 @@ SET automatic_parallel_replicas_min_bytes_per_replica=0;
 
 INSERT INTO t SELECT number, number * 2 FROM numbers(1e6);
 
--- A window function over a bare table scan: with parallel replicas, the replicas would execute only the
--- reading step (the window itself is computed on the initiator), so the matched statistics-collection
--- boundary is the reading step itself. The reading step records only input bytes — output bytes cannot
--- be estimated at this boundary — so `considerEnablingParallelReplicas` must skip the optimization
--- entirely (fail close) instead of feeding `output_bytes = 0` (i.e. "shipping all pre-window rows to the
--- initiator is free") into the cost model. No statistics must be collected for this query.
+-- A window function over a bare table scan: with parallel replicas the replicas execute only the reading
+-- step, since the window itself is computed on the initiator. The reading step records input bytes only,
+-- so `findTopNodeOfReplicasPlan` stops one step above it rather than peeling all the way down, and the
+-- wrapper it stops on does record output bytes - the pre-window rows the replicas would ship. Statistics
+-- are therefore collected for this query, and the cost model gets to decide on real numbers instead of
+-- being skipped: the wrapper passes its rows through, so output comes out roughly equal to input, the
+-- replicas cost more than reading locally, and the optimization is not applied. Before the boundary was
+-- moved above the read this shape failed close, matching the reading step and collecting nothing.
 SELECT key, sum(value) OVER (PARTITION BY key % 10 ORDER BY key) AS s
 FROM t
 FORMAT Null SETTINGS log_comment='04502_autopr_window_function_query';
@@ -62,10 +64,17 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The bare-scan window query must be skipped before any statistics collection: the read boundary cannot
--- observe output bytes, and caching `output_bytes = 0` would make the cost model treat the network
--- transfer of all pre-window rows as free.
-SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0 AS read_boundary_skipped
+-- The bare-scan window query is instrumented at the wrapper above the read, which sees the pre-window
+-- rows. Statistics must be collected, and the recorded output must be a real measurement rather than the
+-- `0` a read boundary would report - caching `output_bytes = 0` would make the cost model treat the
+-- network transfer of all pre-window rows as free. The wrapper ships what it read, so its output stays
+-- in the same range as its input.
+SELECT log_comment,
+    (ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0)
+        AND (ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0)
+        AND (ProfileEvents['RuntimeDataflowStatisticsOutputBytes']
+             <= (2 * ProfileEvents['RuntimeDataflowStatisticsInputBytes']))
+        AS output_measured_above_read
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '04502_autopr_window_function_query') AND (type = 'QueryFinish')
 ORDER BY log_comment

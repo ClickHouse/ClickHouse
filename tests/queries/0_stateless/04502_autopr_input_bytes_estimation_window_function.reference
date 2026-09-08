@@ -1,4 +1,4 @@
-log_comment	read_boundary_skipped
+log_comment	output_measured_above_read
 04502_autopr_window_function_query	1
 stats_collected	window_result_not_counted_as_output
 1	1
