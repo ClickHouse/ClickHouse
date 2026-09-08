@@ -848,9 +848,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
         auto & value = const_value.safeGet<String>();
-        /// Compile the pattern as `match` execution does, so an invalid regexp
-        /// raises an exception instead of being silently pruned.
-        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
+        /// Validate the regexp before using its required substring to build
+        /// the skip-index condition.
+        static thread_local Regexps::LocalCacheTable regexp_cache;
+        [[maybe_unused]] auto regexp
+            = regexp_cache.getOrSet</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
         if (result.required_substring.empty() && result.alternatives.empty())
