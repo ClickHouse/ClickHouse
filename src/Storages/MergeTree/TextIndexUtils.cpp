@@ -303,6 +303,21 @@ static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_pa
     return static_cast<UInt32>(new_offset);
 }
 
+struct MergeTextIndexesTask::PostingsMergeCursor
+{
+    const TokenSource * source = nullptr;
+    /// Position of the current row id in the row_ids array.
+    size_t pos = 0;
+    /// Next entry of info.offsets to decode.
+    size_t next_segment = 0;
+    /// Decoded and remapped row ids of the current segment, or of the whole source.
+    PaddedPODArray<UInt32> row_ids;
+
+    UInt32 current() const { return row_ids[pos]; }
+    bool isValid() const { return pos < row_ids.size(); }
+    std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
+};
+
 /// Merges the row ids of several postings cursors in the globally sorted order.
 ///
 /// Sources own disjoint row sets but may interleave arbitrarily.

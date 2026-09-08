@@ -124,23 +124,10 @@ private:
         TokenPostingsInfo info;
     };
 
-    /// Streams the sorted (remapped) row ids of one source, one decoded segment at a time.
-    struct PostingsMergeCursor
-    {
-        const TokenSource * source = nullptr;
-        /// Next entry of info.offsets to decode.
-        size_t next_segment = 0;
-        /// Decoded and remapped row ids of the current segment, or of the whole source.
-        PaddedPODArray<UInt32> row_ids;
-        /// Position of the first row id of the segment that is not merged yet.
-        size_t pos = 0;
+    /// Cursor over the sorted (remapped) row ids of one source, one decoded segment at a time.
+    struct PostingsMergeCursor;
 
-        UInt32 current() const { return row_ids[pos]; }
-        bool isValid() const { return pos < row_ids.size(); }
-        std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
-    };
-
-    /// Merges the row ids of several postings cursors in the globally sorted order.
+    /// A merge queue that streams the row ids of several postings cursors in the globally sorted order.
     class PostingsMergeQueue;
 
     /// Points the cursor at a source and decodes its first postings.
