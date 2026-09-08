@@ -8,10 +8,14 @@ min/max/count are still served by the projection
 1
 1
 1
+a wrapped min/max still reports the base name, so a Nullable key is still served
+1
 a filtered count still falls back to counting exact ranges
 1
 a query with no aggregates is unaffected
 0
+the analysis is entered for min/max/count and skipped for everything else
+299985000
 force_optimize_projection still reports exactly the queries no projection can serve
 0	19999	20000
 results are unchanged, projection or not
