@@ -22,6 +22,8 @@ enum class SQLSubqueryType
     /// The mark is a hint: it has effect only if the setting `enable_materialized_cte` is enabled on the
     /// executing context (the entry points running the generated SQL enable it), and the analyzer falls
     /// back to inlining a marked subquery if it turns out to be referenced only once.
+    /// The entry points also disable `force_materialized_cte` on their query context, so the mark never
+    /// turns into an error when the caller has disabled materialization.
     ///
     /// Only per-series grids (one row per series) should be marked: their materialized size is bounded
     /// by the series count, while a raw-data (per-sample) stream could buffer arbitrary amounts of data.

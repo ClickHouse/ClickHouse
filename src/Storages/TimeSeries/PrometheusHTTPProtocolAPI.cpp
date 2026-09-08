@@ -246,6 +246,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto query_context = Context::createCopy(getContext());
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
+    /// The MATERIALIZED marks are generated hints, not user intent.
+    query_context->setSetting("force_materialized_cte", false);
 
     /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
     query_context->setSetting("allow_experimental_analyzer", true);

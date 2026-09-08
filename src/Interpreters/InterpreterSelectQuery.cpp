@@ -158,6 +158,7 @@ namespace Setting
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool extremes;
+    extern const SettingsBool force_materialized_cte;
     extern const SettingsBool final;
     extern const SettingsBool force_aggregation_in_order;
     extern const SettingsUInt64 group_by_two_level_threshold;
@@ -615,7 +616,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor::visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr, settings[Setting::force_materialized_cte]);
     }
 
     query_info.query = query_ptr->clone();

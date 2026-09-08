@@ -49,7 +49,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT item.no_such_column FROM item" 2>&1 | grep -cF "
 # A materialized CTE is backed by a temporary table with a generated name; the CTE name is what the user
 # wrote, so that is what the message must show.
 echo -n 'materialized CTE: '
-${CLICKHOUSE_CLIENT} -q "WITH cte AS MATERIALIZED (SELECT 1 AS x) SELECT a.no_such FROM cte AS a" 2>&1 \
+${CLICKHOUSE_CLIENT} --enable_materialized_cte=1 -q "WITH cte AS MATERIALIZED (SELECT 1 AS x) SELECT a.no_such FROM cte AS a" 2>&1 \
     | grep -m1 -oE "an alias of [A-Za-z_][A-Za-z_0-9]*" || true
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE date_dim; DROP TABLE store_sales; DROP TABLE item"

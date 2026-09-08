@@ -10,11 +10,17 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
@@ -42,6 +48,11 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         {
             visit(child, new_data ? *new_data : data);
             auto * ast_with_elem = child->as<ASTWithElement>();
+            if (ast_with_elem && ast_with_elem->is_materialized && data.throw_on_materialized_cte)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "CTE `{}` is declared `AS MATERIALIZED`, but materialized CTEs are supported only by the analyzer (`enable_analyzer = 1`) with `enable_materialized_cte = 1`. "
+                    "Disable setting `force_materialized_cte` to inline it as a regular CTE",
+                    ast_with_elem->name);
             auto child_alias = child->tryGetAlias();
             if (ast_with_elem || !child_alias.empty())
             {

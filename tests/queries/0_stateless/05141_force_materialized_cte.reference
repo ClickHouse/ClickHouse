@@ -1,0 +1,11 @@
+analyzer, materialization disabled: throws
+analyzer, force disabled: inlined
+9
+2
+analyzer, materialization enabled: works
+9
+9
+compatibility restores the old behaviour
+9
+old analyzer: throws, force disabled inlines
+9

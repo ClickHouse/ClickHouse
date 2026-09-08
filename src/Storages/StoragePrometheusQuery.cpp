@@ -202,6 +202,8 @@ void StoragePrometheusQuery::readImpl(
     auto query_context = Context::createCopy(context);
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
+    /// The MATERIALIZED marks are generated hints, not user intent.
+    query_context->setSetting("force_materialized_cte", false);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
