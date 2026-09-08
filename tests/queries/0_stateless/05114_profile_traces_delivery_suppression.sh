@@ -82,7 +82,7 @@ for transport in ("Native", "HTTP"):
             if allocations:
                 query = "SELECT length(range(number + 100000)) FROM numbers(128) FORMAT Null"
             else:
-                query = "SELECT sipHash64(number) FROM numbers(1000000000) FORMAT Null"
+                query = "SELECT sum(sipHash64(number)) FROM numbers(1000000000) FORMAT Null"
                 options.update(memory_profiler_sample_probability=0, memory_profiler_step=0,
                                query_profiler_cpu_time_period_ns=10000000, query_profiler_real_time_period_ns=100000000,
                                max_rows_to_read=0, max_execution_time=2, timeout_overflow_mode="break")
