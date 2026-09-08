@@ -863,6 +863,22 @@ inline MutableColumnPtr readColumnFromDesc(
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: descriptor sets COL_IS_NULLABLE but declared type {} is not Nullable",
             result_type->getName());
+    // The opposite mismatch is equally bad input and must be reported the same way. Without
+    // this the declared Nullable(T) would be carried on as the base type, and the branches
+    // below ask the base type for the width of its value in memory - which a Nullable does not
+    // have, so it raises a logical error instead of a parse error. A frame reaches here from a
+    // file, a network peer or a WASM guest, so every disagreement between it and the declared
+    // type has to stay INCORRECT_DATA.
+    //
+    // No legitimate caller lands here: the COL_LOWCARD branch serializes the dictionary of a
+    // LowCardinality(Nullable(T)) as a non-nullable sub-column and already strips the wrapper
+    // with removeNullable before recursing, and Variant alternatives are never Nullable, their
+    // nullability being carried by the NULL discriminator.
+    if (!is_nullable_wire && nullable_result_type)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: declared type {} is Nullable but the descriptor does not set "
+            "COL_IS_NULLABLE, so the frame carries no null map for it",
+            result_type->getName());
     const DataTypePtr & base_type = is_nullable_wire
         ? nullable_result_type->getNestedType()
         : result_type;
