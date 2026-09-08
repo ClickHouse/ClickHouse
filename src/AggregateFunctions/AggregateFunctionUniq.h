@@ -253,16 +253,6 @@ struct AggregateFunctionUniqHLLData
     static String getName() { return "uniqHLL"; }
 };
 
-template <bool is_exact_, bool argument_is_tuple_>
-struct AggregateFunctionUniqHLLDataForVariadic : AggregateFunctionUniqHLLData
-{
-    constexpr static bool is_able_to_parallelize_merge = false;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
-    constexpr static bool is_variadic = true;
-    constexpr static bool is_exact = is_exact_;
-    constexpr static bool argument_is_tuple = argument_is_tuple_;
-};
-
 #endif
 
 namespace detail
