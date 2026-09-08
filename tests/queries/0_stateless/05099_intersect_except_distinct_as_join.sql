@@ -1,5 +1,7 @@
 -- INTERSECT DISTINCT and EXCEPT DISTINCT are executed as a SEMI or ANTI LEFT JOIN on all columns followed by DISTINCT.
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_set_left;
 DROP TABLE IF EXISTS t_set_right;
 DROP TABLE IF EXISTS t_set_third;
