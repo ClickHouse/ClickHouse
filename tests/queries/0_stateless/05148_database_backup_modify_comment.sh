@@ -34,14 +34,15 @@ SELECT count() FROM $ATTACHED_DATABASE_NAME.test_table;
 SELECT comment FROM system.databases WHERE name = '$ATTACHED_DATABASE_NAME';
 """
 
-# A locator serialized as a string literal is the form the metadata carried after the comment change
-# on an older server, so it must keep loading.
+# A locator serialized as a string literal is accepted only while loading metadata an older server
+# rewrote: in a statement a user writes it must be the function it is, because that is the form the
+# secret masker redacts.
 $CLICKHOUSE_CLIENT -q """
 DROP DATABASE $ATTACHED_DATABASE_NAME;
 CREATE DATABASE $ATTACHED_DATABASE_NAME ENGINE = Backup('$BACKUP_DATABASE_NAME', 'Disk(\\'backups\\', \\'$BACKUP_DATABASE_NAME\\')');
+""" 2>&1 | grep -q -F 'Expected function' && echo 'refused'
 
-SELECT count() FROM $ATTACHED_DATABASE_NAME.test_table;
-
-DROP DATABASE $ATTACHED_DATABASE_NAME;
+$CLICKHOUSE_CLIENT -q """
+DROP DATABASE IF EXISTS $ATTACHED_DATABASE_NAME;
 DROP DATABASE $BACKUP_DATABASE_NAME;
 """
