@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSCoreProducer.h>
@@ -35,6 +36,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -94,6 +96,10 @@ extern const int CANNOT_CONNECT_NATS;
 extern const int QUERY_NOT_ALLOWED;
 }
 
+namespace FailPoints
+{
+extern const char nats_pause_before_building_insert_pipeline[];
+}
 
 StorageNATS::StorageNATS(
     const StorageID & table_id_,
@@ -353,6 +359,27 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
+            /// A consumer can reach this point still subscribed, because `unsubscribeConsumers`
+            /// only reaches the consumers that are in the pool at that moment: a direct `SELECT`
+            /// holds one out of the pool and hands it back subscribed whenever it found it that
+            /// way. What such a consumer buffered belongs to the window when the table was not
+            /// streaming - messages published while the materialized view was detached - and must
+            /// not be inserted into the views by the cycles that follow. Clearing the queue alone
+            /// does not guarantee that: `onMsg` keeps appending from the NATS client thread, and
+            /// `subscribe` does nothing for a consumer that is subscribed already, so the live
+            /// subscription is replaced the way `unsubscribeConsumers` would have replaced it. The
+            /// queue is finished before the drain inside `unsubscribe` delivers what the
+            /// subscription still holds, so nothing from that window can land behind the cleanup,
+            /// and a JetStream message goes back to the broker while the subscription it arrived
+            /// on is still alive, so it is redelivered at once rather than after the ACK deadline.
+            if (consumer->isSubscribed())
+            {
+                consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+                consumer->unsubscribe();
+            }
+
+            /// What an unsubscribed consumer still holds are leftovers of a subscription that is
+            /// already gone, which can only be thrown away.
             consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
@@ -374,10 +401,51 @@ bool StorageNATS::subscribeConsumers()
     return are_consumers_initialized;
 }
 
-bool StorageNATS::consumersNeedResubscribe()
+void StorageNATS::resubscribeStaleConsumers()
 {
     std::lock_guard lock(consumers_mutex);
-    return std::ranges::any_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); });
+    for (auto & consumer : consumers)
+    {
+        if (!consumer->needsResubscribe())
+            continue;
+
+        /// Nothing the consumer holds locally can outlive its subscription: a `natsMsg` keeps a
+        /// plain pointer to the `natsSubscription` it arrived on, and `natsMsg_Ack` follows it to
+        /// reach the JetStream context and the connection, so acknowledging a message whose
+        /// subscription has been destroyed reads freed memory. Recovery therefore prefers a
+        /// consumer that holds nothing: the streaming cycles insert and acknowledge what the
+        /// broker delivered before it went stale, and a stale subscription delivers nothing more,
+        /// so the queue does drain and the reconnect this keys on is still reported once it has.
+        if (!consumer->queueEmpty())
+        {
+            LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
+            continue;
+        }
+
+        LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
+
+        /// The check above is only a snapshot: `onMsg` runs on the NATS client thread and appends
+        /// to the queue without `consumers_mutex`, and the drain inside `unsubscribe` delivers
+        /// whatever the subscription still has. So the messages are returned to the broker rather
+        /// than destroyed, while the subscription they arrived on is still alive, and the queue is
+        /// finished first so that nothing can be appended behind that.
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
+
+        try
+        {
+            consumer->subscribe();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            /// A consumer left unsubscribed no longer reports that it needs to be recovered, so it
+            /// would stay silent. Hand it to `subscribeConsumers`, which only runs while the
+            /// consumers are not ready.
+            consumers_ready.store(false);
+            break;
+        }
+    }
 }
 
 void StorageNATS::unsubscribeConsumers()
@@ -385,8 +453,8 @@ void StorageNATS::unsubscribeConsumers()
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
     {
-        consumer->unsubscribe(/*finish_queue=*/true);
-        consumer->dropBuffered();
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
     }
 
     consumers_ready.store(false);
@@ -699,13 +767,10 @@ void StorageNATS::threadFunc()
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
 
-    /// A consumer whose subscription the NATS client has closed never receives another message,
-    /// so drop the subscriptions here and let the cycle below subscribe again.
-    if (consumers_ready && consumersNeedResubscribe())
-    {
-        LOG_INFO(log, "A subscription was closed by the NATS server, resubscribing");
-        unsubscribeConsumers();
-    }
+    /// A subscription the NATS client has closed, or one that outlived a reconnect, never receives
+    /// another message, so replace it here, keeping everything the consumer already holds locally.
+    if (consumers_ready)
+        resubscribeStaleConsumers();
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
     const bool is_connected = consumers_connection && consumers_connection->isConnected();
@@ -808,6 +873,8 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     /// ensure no stale state is reused.
     new_context->makeQueryContext();
 
+    FailPointInjection::pauseFailPoint(FailPoints::nats_pause_before_building_insert_pipeline);
+
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
@@ -817,6 +884,24 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /* no_destination */ true,
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
+
+    /// `threadFunc` streams only while the table has ready dependent views, but the interpreter looks
+    /// them up again, and a `DROP VIEW` or `DETACH TABLE` landing in between leaves it with nowhere
+    /// to insert into: the pipeline it builds then discards whatever the sources consume (see
+    /// `InsertDependenciesBuilder::createChainWithDependencies`), and the acknowledgement below
+    /// would confirm to the broker messages that were never inserted anywhere. Such a cycle must not
+    /// consume anything. What the consumers hold goes back to the broker when the next cycle finds
+    /// the last view gone and unsubscribes them, or stays with them until the view is attached again.
+    /// This repeats the readiness check of `threadFunc`, not a check of the dependency metadata or of
+    /// the shape of the pipeline: a plain `DETACH TABLE` keeps the dependency registered while the
+    /// view is gone, and a materialized view whose target is `Null` legitimately ends in the same
+    /// discarding sink while being a view the table streams to. The check can only err towards
+    /// skipping a cycle whose pipeline would have inserted somewhere, which consumes nothing.
+    if (!checkDependencies(table_id))
+    {
+        LOG_DEBUG(log, "The last materialized view was dropped or detached while the streaming cycle was being prepared, nothing to stream to");
+        return true;
+    }
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
@@ -852,6 +937,7 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
         source->setWaitForFlushInterval(
             (*nats_settings)[NATSSetting::nats_wait_for_flush_interval] && max_execution_time.totalMicroseconds() > 0);
+        source->setBackgroundStreaming(true);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));

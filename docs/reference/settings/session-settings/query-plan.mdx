@@ -378,6 +378,28 @@ When non-zero, the join order optimizer uses randomly generated cardinalities an
 When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
 This is intended for testing to find errors caused by different join orderings.
 
+## query_plan_optimize_join_order_use_cd_a_conflict_detector {#query_plan_optimize_join_order_use_cd_a_conflict_detector}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to use the CD-A conflict detector for join reordering validity in the DPsub join order algorithm."}]}]}/>
+
+Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
+reorderings are valid using the CD-A conflict detector).
+
+## query_plan_optimize_join_order_use_cd_c_conflict_detector {#query_plan_optimize_join_order_use_cd_c_conflict_detector}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to use the CD-C (correct and complete) conflict detector for join reordering validity in the DPsub join order algorithm."}]}]}/>
+
+Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
+are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_cd_a_conflict_detector` when both are enabled.
+
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

@@ -34,6 +34,7 @@ if [ "${#COMMITS[@]}" -ne "${#COVERAGE_URLS[@]}" ]; then
 fi
 
 FOUND=0
+FOUND_INDEX=0
 FIRST_BASE_COMMIT=""
 for i in "${!COMMITS[@]}"; do
 TEST_COMMIT="${COMMITS[$i]}"
@@ -44,6 +45,7 @@ echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
 FIRST_BASE_COMMIT="${TEST_COMMIT}"
 FOUND=1
+FOUND_INDEX=$i
 break
 fi
 done
@@ -52,10 +54,6 @@ if [ $FOUND -eq 0 ]; then
   echo "ERROR: Could not find baseline coverage file after checking ${#COMMITS[@]} commits"
   exit 1
 fi
-
-# Note: base_llvm_coverage_{2..6}.info (extra older master baselines) are not
-# downloaded anywhere. The slot loop below is a no-op unless something else
-# populates those files.
 
 export CURRENT_COMMIT
 export BASE_COMMIT
@@ -110,6 +108,37 @@ done < <(echo "$changed_files")
 
 if [ ${#patterns[@]} -eq 0 ]; then
   echo "No coverable C/C++ source files changed (contrib/ is excluded from coverage), skipping differential coverage report"
+  # In this outcome llvm_coverage_job.py runs the global newly-covered-lines
+  # analysis instead (see newly_covered_lines.py). Download up to
+  # EXTRA_BASELINES_MAX older master baselines so that analysis can require
+  # agreement between several master runs, filtering out lines that fire only
+  # occasionally on master (background/async code). Only this outcome consumes
+  # them, so the downloads are gated here and C/C++ PRs pay nothing.
+  #
+  # The extras are best-effort: the analysis works with however many are
+  # present, so a flaked download must not fail the script (set -e) and turn an
+  # optional stabilization input into a CI-failure path. A failed download only
+  # removes its partial file - the slot is reused by the next candidate commit.
+  EXTRA_BASELINES_MAX=3
+  slot=2
+  for (( j=FOUND_INDEX+1; j<${#COMMITS[@]}; j++ )); do
+    if [ $((slot - 2)) -ge "$EXTRA_BASELINES_MAX" ]; then
+      break
+    fi
+    TEST_COMMIT="${COMMITS[$j]}"
+    COVERAGE_URL="${COVERAGE_URLS[$j]}"
+    echo "Checking extra baseline for commit ${TEST_COMMIT}..."
+    if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
+      echo "Found extra baseline #$((slot - 1)) at ${COVERAGE_URL}"
+      if wget --quiet "${COVERAGE_URL}" -O "base_llvm_coverage_${slot}.info"; then
+        slot=$((slot + 1))
+      else
+        rm -f "base_llvm_coverage_${slot}.info"
+        echo "WARNING: failed to download extra baseline from ${COVERAGE_URL}, continuing without it"
+      fi
+    fi
+  done
+  echo "Downloaded $((slot - 2)) extra master baselines"
   echo "no_cpp_changes" > "$OUTCOME_MARKER"
   exit 0
 fi
@@ -123,22 +152,6 @@ lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --ignore-errors inconsistent,corrupt,empty,unsupported,unused \
   --quiet \
   -o baseline.changed.info
-
-# If an extra older master baseline exists in slots 2-6, extract the same
-# changed-file slice from it too, for print_uncovered_code.py's LBC
-# cross-validation (intersecting them avoids false-positive LBC alerts from
-# lines that only occasionally fire in background/async code). Nothing
-# currently downloads these files, so this loop is presently a no-op.
-for slot in 2 3 4 5 6; do
-  src="base_llvm_coverage_${slot}.info"
-  if [ -f "$src" ] && [ -s "$src" ]; then
-    lcov --extract "$src" "${patterns[@]}" \
-      --ignore-errors inconsistent,corrupt,empty,unsupported,unused \
-      --quiet \
-      -o "baseline_${slot}.changed.info"
-    echo "Extracted changed-file slice from extra baseline #${slot}."
-  fi
-done
 
 current_sf_count=$(grep -c '^SF:' current.changed.info 2>/dev/null || true)
 baseline_sf_count=$(grep -c '^SF:' baseline.changed.info 2>/dev/null || true)

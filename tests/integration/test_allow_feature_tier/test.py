@@ -53,6 +53,7 @@ EXPERIMENTAL_SETTING = (
     "allow_experimental_time_series_table"  # also in configs/users.d/users.xml
 )
 BETA_SETTING = "allow_experimental_lightweight_update"
+PRIVATE_PREVIEW_SETTING = "distributed_plan_workers_num"
 
 # A `MergeTree` setting is written by its bare name in a table's own `SETTINGS` or `ALTER ... MODIFY
 # SETTING`, and with a `merge_tree_` prefix in a profile, user or session `SETTINGS` clause.
@@ -88,6 +89,7 @@ MERGE_TREE_FORBIDDEN_DEFAULT_MIN = 16384
 
 EXPERIMENTAL_BLOCKED = "Changes to EXPERIMENTAL settings are disabled"
 BETA_BLOCKED = "Changes to BETA settings are disabled"
+PRIVATE_PREVIEW_BLOCKED = "Changes to PRIVATE PREVIEW settings are disabled"
 
 
 @pytest.fixture(scope="module")
@@ -161,6 +163,64 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     output, error = instance.query_and_get_answer_with_error(query_with_beta_setting)
     assert output == ""
     assert BETA_BLOCKED in error
+
+    # Leave the server as it was
+    instance.replace_in_config(feature_tier_path, "3", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+
+
+def test_allow_feature_tier_in_private_preview_settings(start_cluster):
+    query_with_private_preview_setting = (
+        f"SELECT 1 SETTINGS {PRIVATE_PREVIEW_SETTING}=1"
+    )
+    query_with_experimental_setting = f"SELECT 1 SETTINGS {EXPERIMENTAL_SETTING}=1"
+
+    assert "0" == get_current_tier_value(instance)
+    output, error = instance.query_and_get_answer_with_error(
+        query_with_private_preview_setting
+    )
+    assert error == ""
+    assert "1" == output.strip()
+
+    # Disable experimental settings; private preview is still allowed
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        query_with_private_preview_setting
+    )
+    assert error == ""
+    assert "1" == output.strip()
+
+    output, error = instance.query_and_get_answer_with_error(
+        query_with_experimental_setting
+    )
+    assert output == ""
+    assert EXPERIMENTAL_BLOCKED in error
+
+    # Disable private preview settings too
+    instance.replace_in_config(feature_tier_path, "1", "2")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "2" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        query_with_private_preview_setting
+    )
+    assert output == ""
+    assert PRIVATE_PREVIEW_BLOCKED in error
+
+    # Disable beta settings as well; private preview stays blocked
+    instance.replace_in_config(feature_tier_path, "2", "3")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "3" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        query_with_private_preview_setting
+    )
+    assert output == ""
+    assert PRIVATE_PREVIEW_BLOCKED in error
 
     # Leave the server as it was
     instance.replace_in_config(feature_tier_path, "3", "0")

@@ -1855,7 +1855,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
                 auto subquery_node = std::move(in_second_argument);
 
-                String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
+                /// Name the column after the subquery it projects rather than at random: two
+                /// identical `IN` expressions have to stay identical through the rewrite, or the
+                /// analyzer rejects a query that repeats one of them under a single alias with
+                /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` - a query it accepts without the rewrite. The
+                /// name only has to differ from the names of the outer scope, which the prefix
+                /// already takes care of.
+                const auto subquery_hash = subquery_node->getTreeHash(/*compare_options=*/ {.compare_aliases = false});
+                String unique_column_name
+                    = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
 
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();

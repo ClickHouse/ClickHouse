@@ -198,14 +198,47 @@ bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
     return added;
 }
 
+/// Same as above, but for a filter DAG whose result column is erased by name after the DAG runs.
+/// A requested column that is already an output is still erased when it happens to BE that filter
+/// column (a bare `PREWHERE c`, or a row policy `USING b`), so there the remove-filter flag is
+/// cleared instead: after filtering the column keeps its original values for the surviving rows.
+/// Only the filter column itself is exempted, so a computed filter column keeps being removed.
+/// Same reasoning and shape as `reexpose_in_filter` in `addStartingPartOffsetAndPartOffset`.
+bool restoreFilterDAGInputs(ActionsDAG & dag, const String & filter_column_name, bool & remove_filter_column, const NameSet & inputs)
+{
+    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    bool added = false;
+    for (const auto * input : dag.getInputs())
+    {
+        if (!inputs.contains(input->result_name))
+            continue;
+
+        if (!outputs.contains(input))
+        {
+            dag.getOutputs().push_back(input);
+            added = true;
+        }
+        else if (remove_filter_column && input->result_name == filter_column_name)
+        {
+            remove_filter_column = false;
+            added = true;
+        }
+    }
+
+    return added;
+}
+
 bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info, const NameSet & inputs)
 {
     bool added = false;
+    /// Both DAGs must be visited: `||` would short-circuit and skip the prewhere restore.
     if (row_level_filter)
-        added = added || restoreDAGInputs(row_level_filter->actions, inputs);
+        added |= restoreFilterDAGInputs(
+            row_level_filter->actions, row_level_filter->column_name, row_level_filter->do_remove_column, inputs);
 
     if (info)
-        added = added || restoreDAGInputs(info->prewhere_actions, inputs);
+        added |= restoreFilterDAGInputs(
+            info->prewhere_actions, info->prewhere_column_name, info->remove_prewhere_column, inputs);
 
     return added;
 }
@@ -1166,6 +1199,19 @@ Pipe ReadFromMergeTree::readByLayers(
 
     if (reader_settings.read_in_order)
     {
+        /// `PREWHERE` runs before the sorting expression added below and may have removed an input
+        /// column that the sorting key needs. Prohibit removing those inputs; the sorting expression
+        /// keeps them, and they are dropped when the pipe header is converted to the step header.
+        /// Same reasoning as in `spreadMarkRangesAmongStreamsWithOrder`.
+        if (query_info.prewhere_info || query_info.row_level_filter)
+        {
+            NameSet sorting_key_columns;
+            for (const auto & column : storage_snapshot->metadata->getSortingKey().expression->getRequiredColumnsWithTypes())
+                sorting_key_columns.insert(column.name);
+
+            restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), sorting_key_columns);
+        }
+
         NameSet column_names_set(column_names.begin(), column_names.end());
         in_order_column_names_to_read = column_names;
 

@@ -812,7 +812,6 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
             for (auto i : collections::range(prev_off[0], off))
             {
-                all_has_nullable = arrays.nullable_result;
                 typename Map::LookupResult pair = nullptr;
 
                 if (arg.null_map && (*arg.null_map)[i])

@@ -1331,14 +1331,25 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     auto * union_node = cte_node->as<UnionNode>();
 
     bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
-    if (is_materialized_cte && scope.context->getSettingsRef()[Setting::enable_materialized_cte])
+    if (is_materialized_cte)
     {
-        /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
-        /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
-        auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
-        table_node->setAlias(full_name);
+        if (scope.context->getSettingsRef()[Setting::enable_materialized_cte])
+        {
+            /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
+            /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
+            auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
+            table_node->setAlias(full_name);
 
-        cte_node = table_node;
+            cte_node = table_node;
+        }
+        else
+        {
+            LOG_WARNING(
+                getLogger("QueryAnalyzer"),
+                "CTE '{}' is declared as MATERIALIZED, but the setting 'enable_materialized_cte' is disabled: "
+                "the MATERIALIZED keyword is ignored and the CTE is inlined at each reference",
+                full_name);
+        }
     }
 
     return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
@@ -3369,6 +3380,22 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 materialized_cte_ptr->cte_name,
                                 scope.scope_node,
                                 /*throw_on_mismatch=*/ true);
+                        }
+                    }
+                    else if (isTableExpressionNodeType(resolved_identifier_node->getNodeType()))
+                    {
+                        /// A table expression that also appears in an enclosing query's join tree must
+                        /// not be shared with this argument: later stages rewrite each argument instance
+                        /// in place (`createUniqueAliasesIfNecessary`, `GLOBAL IN` external tables,
+                        /// `rewrite_in_to_join`), and with a shared node those edits land in the join tree.
+                        for (const auto * scope_to_check = &scope; scope_to_check != nullptr;
+                             scope_to_check = scope_to_check->parent_scope)
+                        {
+                            if (scope_to_check->registered_table_expression_nodes.contains(resolved_identifier_node))
+                            {
+                                resolved_identifier_node = resolved_identifier_node->clone();
+                                break;
+                            }
                         }
                     }
                 }
@@ -6577,6 +6604,19 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+    }
+    else if (query_node_typed.isGroupByAll())
+    {
+        /// GROUP BY ALL keys must be registered as nullable_group_by_keys before the projection is resolved: expand
+        /// them from a throwaway resolution, then restore the unresolved projection so it is resolved once below,
+        /// after registration. Re-resolving in place would keep the subqueries, which resolveQuery skips as resolved.
+        auto unresolved_projection = query_node_typed.getProjectionNode()->clone();
+        auto saved_subquery_counter = subquery_counter;
+        resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        expandGroupByAll(query_node_typed);
+        query_node_typed.getProjectionNode() = std::move(unresolved_projection);
+        /// The discarded resolution must not consume _subquery_N projection names.
+        subquery_counter = saved_subquery_counter;
     }
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())

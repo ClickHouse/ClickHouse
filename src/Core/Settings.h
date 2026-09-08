@@ -7,6 +7,7 @@
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
+#include <Common/FlatStringMap.h>
 #include <Common/SettingsChanges.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -194,7 +195,7 @@ struct Settings
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
-    std::map<String, String> changedToMap() const;
+    FlatStringMap changedToFlatMap() const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);

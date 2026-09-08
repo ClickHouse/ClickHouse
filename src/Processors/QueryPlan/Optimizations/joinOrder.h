@@ -79,11 +79,44 @@ struct RelationStats
     RowEstimateSource source = RowEstimateSource::NoSource;
 };
 
+/// One binary join operator captured verbatim from the original (pre-flattening) join tree.
+/// Used only by the optional conflict detector for DPsub (CD-A or CD-C; see conflictDetector.h).
+///   - `left` / `right`: the relation sets of the operator's two input subtrees;
+///   - `nel`: the relations referenced by the operator's ON clause (its SES);
+///   - `kind`: the operator's join kind.
+/// Relation ids are in the final (global) QueryGraph numbering.
+struct ConflictJoinOp
+{
+    BitSet left;
+    BitSet right;
+    BitSet nel;
+    /// Relations on whose attributes the ON predicate rejects nulls (Definition 1 of the paper);
+    /// a subset of `nel`. Enables the null-rejection-dependent reorderability entries.
+    /// See `ConflictOpMask::nr_rels`.
+    BitSet nr_rels;
+    JoinKind kind = JoinKind::Inner;
+    /// Strictness distinguishes plain joins (All) from semi/anti joins, which the detectors model as
+    /// distinct operator types with their own reorderability (assoc / l-asscom / r-asscom) rules.
+    JoinStrictness strictness = JoinStrictness::All;
+};
+
 struct QueryGraph
 {
     std::vector<RelationStats> relation_stats;
 
     std::vector<JoinActionRef> edges;
+
+    /// Operators of the original join tree, in tree (not enumeration) order. Populated during
+    /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
+    /// otherwise. See `ConflictJoinOp`.
+    std::vector<ConflictJoinOp> conflict_ops;
+
+    /// When either is true, DPsub builds its reordering constraints from the conflict detector
+    /// (see conflictDetector.h) over `conflict_ops` instead of the per-relation `join_kinds`
+    /// restrictions. CD-C takes precedence over CD-A when both are set. Set from settings in
+    /// `optimizeJoinOrder`; affects only the DPsub algorithm.
+    bool use_cd_a_conflict_detector = false;
+    bool use_cd_c_conflict_detector = false;
 
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).

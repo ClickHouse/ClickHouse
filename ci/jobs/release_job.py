@@ -9,7 +9,6 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
-import json
 import os
 import re
 import shlex
@@ -23,6 +22,11 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+from ci.jobs.scripts.create_release import (
+    ReleaseContextManager,
+    ReleaseInfo,
+    ReleaseProgress,
+)
 
 _GH_TOKEN_SECRET = Secret.Config(
     name="/github-tokens/robot-1",
@@ -319,64 +323,38 @@ def main():
         command=[
             f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
             f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
+            f"{' --skip-repo' if args.skip_repo else ''}"
+            f"{' --skip-docker' if args.skip_docker else ''}"
             f" {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
     )
 
-    # Prepare decides whether this run creates a new release (push tag, bump
-    # version, changelog PR) or only re-publishes artifacts for an existing /
-    # out-of-order ref. The creation steps below run only when it does; a
-    # recovery (skip-repo/skip-docker) or an out-of-order full run skips them
-    # without erroring and just re-exports repos / rebuilds docker.
-    # If a prior step failed (ok is False) the prepared flags are unread; default both landmarks to "already done" so no creation step fires.
-    is_tag_pushed = True
-    is_bump_landed = True
-    if ok:
-        with open(RELEASE_INFO_FILE) as f:
-            _prepared = json.load(f)
-        is_tag_pushed = _prepared["is_tag_pushed"]
-        is_bump_landed = _prepared["is_bump_landed"]
+    # Read the prepared release info once; the steps below reuse it. The fields
+    # they read (release_tag, is_tag_pushed, latest, is_bump_landed) are written by
+    # prepare and stable for the rest of the run, so a single read is enough.
+    release_info = ReleaseInfo.from_file() if ok else None
 
-    # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
-    # for an already-created release (repo/Docker recovery). If the ref resolves
-    # to a new release, they would otherwise fall through to the creation steps
-    # below (push tag, bump version, PRs) and produce a partial new release, so
-    # reject that misuse and require the release tag instead.
-    if ok and not is_tag_pushed and (args.skip_repo or args.skip_docker):
+    def _push_git_tag_for_release():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
+        ) as release_info:
+            release_info.push_release_tag(dry_run=args.dry_run)
 
-        def _require_recovery_ref():
-            raise RuntimeError(
-                "skip-repo/skip-docker re-publish an existing release and must be "
-                "run against its release tag (recovery); the given ref resolves to "
-                "a new release. Pass the release tag as the ref."
-            )
+    def _push_new_release_branch():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
+        ) as release_info:
+            release_info.push_new_release_branch(dry_run=args.dry_run)
 
-        step(name="Validate Recovery Ref", command=_require_recovery_ref)
-
-    # patch pushes its changelog to master; detect whether it is already there so a rerun is idempotent. The "new" bump self-checks the master version instead.
-    changelog_absent = False
-    if args.release_type == "patch":
-        if args.dry_run:
-            changelog_absent = not is_tag_pushed
-        elif ok:
-            with open(RELEASE_INFO_FILE) as f:
-                _info = json.load(f)
-            changelog_path = f"docs/changelogs/{_info['release_tag']}.md"
-            on_master = bool(
-                Shell.get_output(
-                    f"git ls-tree --name-only origin/master -- {shlex.quote(changelog_path)}"
-                ).strip()
-            )
-            changelog_absent = not on_master
-            print(
-                f"ChangeLog [{changelog_path}] on master: "
-                + ("yes — skipping" if on_master else "no — will push")
-            )
+    def _bump_version():
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.BUMP_VERSION
+        ) as release_info:
+            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
 
     # Fail-fast: verify the release packages exist (this downloads them) before
-    # pushing the tag or opening the changelog PR, so a missing-artifacts run
-    # aborts without leaving a tag / PR behind.
+    # pushing the tag, so a missing-artifacts run aborts without leaving a tag behind.
     if args.release_type == "patch" and not args.skip_repo:
         step(
             name="Download All Release Artifacts",
@@ -387,143 +365,143 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if not is_tag_pushed:
-        step(
-            name="Push Git Tag for the Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-release-tag"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
+    step(
+        name="Push Git Tag for the Release",
+        command=_push_git_tag_for_release,
+        workdir=REPO_PATH,
+    )
 
-    if args.release_type == "new" and not is_tag_pushed:
-        step(
-            name="Push New Release Branch",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-new-release-branch"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
-
-    # "new" bumps master here (idempotent — it self-checks master's version). "patch" defers its branch bump to the end of the run for recovery-safety; see the deferred step near the end of main.
     if args.release_type == "new":
         step(
+            name="Push New Release Branch",
+            command=_push_new_release_branch,
+            workdir=REPO_PATH,
+        )
+        # "new" bumps master here (idempotent — it self-checks master's version). "patch" defers its branch bump to the end of the run for recovery-safety; see the deferred step near the end of main.
+        step(
             name="Bump CH Version and Update Contributors' List",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
-                f" {dry_run_flag}".strip()
-            ],
+            command=_bump_version,
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and changelog_absent:
-        with open(RELEASE_INFO_FILE) as f:
-            release_tag = json.load(f)["release_tag"]
+    # patch generates its changelog and pushes it (with the version bump) to
+    # master, but only when it is not already there so a rerun is idempotent; the
+    # "new" bump self-checks the master version instead. Detection and both uses
+    # of the result live in this one step, so the state stays a local.
+    def _push_changelog_to_master():
+        if args.dry_run:
+            changelog_absent = not release_info.is_tag_pushed
+        else:
+            changelog_path = f"docs/changelogs/{release_info.release_tag}.md"
+            on_master = bool(
+                Shell.get_output(
+                    f"git ls-tree --name-only origin/master -- {shlex.quote(changelog_path)}"
+                ).strip()
+            )
+            changelog_absent = not on_master
+            print(
+                f"ChangeLog [{changelog_path}] on master: "
+                + ("yes — skipping" if on_master else "no — will push")
+            )
+        if not changelog_absent:
+            return
+
         uid = os.getuid()
         gid = os.getgid()
-        step(
-            name="Bump Docker Versions, Changelog, Security",
-            command=[
-                "echo 'List versions'",
-                "./utils/list-versions/list-versions.sh"
-                " > ./utils/list-versions/version_date.tsv",
-                "echo 'Update docker version'",
-                "./utils/list-versions/update-docker-version.sh",
-                "echo 'Generate ChangeLog'",
-                "docker pull clickhouse/style-test:latest",
-                # changelog.py runs inside the container, which cannot see the
-                # host gh session, so pass the robot token in via `-e GH_TOKEN`
-                # (inherited from the job-wide export) and `--gh-user-or-token`.
-                # The command string carries `$GH_TOKEN`, not its value, so
-                # verbose logging never prints the token.
-                f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
-                f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
-                f" clickhouse/style-test:latest"
-                f" ./tests/ci/changelog.py -v --debug-helpers"
-                f' --gh-user-or-token "$GH_TOKEN"'
-                f" --jobs=5"
-                f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
-                f"git add ./docs/changelogs/{release_tag}.md",
-                "echo 'Generate Security'",
-                "python3 ./utils/security-generator/generate_security.py"
-                " > SECURITY.md",
-                "git diff HEAD",
-            ],
-            workdir=REPO_PATH,
+        for cmd in [
+            "echo 'List versions'",
+            "./utils/list-versions/list-versions.sh"
+            " > ./utils/list-versions/version_date.tsv",
+            "echo 'Update docker version'",
+            "./utils/list-versions/update-docker-version.sh",
+            "echo 'Generate ChangeLog'",
+            "docker pull clickhouse/style-test:latest",
+            # changelog.py runs in the container (no host gh session): the robot token goes in via -e GH_TOKEN / --gh-user-or-token, and the string carries $GH_TOKEN, not its value.
+            f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
+            f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+            f" clickhouse/style-test:latest"
+            f" ./tests/ci/changelog.py -v --debug-helpers"
+            f' --gh-user-or-token "$GH_TOKEN"'
+            f" --jobs=5"
+            f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
+            f"git add ./docs/changelogs/{release_info.release_tag}.md",
+            "echo 'Generate Security'",
+            "python3 ./utils/security-generator/generate_security.py"
+            " > SECURITY.md",
+            "git diff HEAD",
+        ]:
+            Shell.check(cmd, strict=True, verbose=True)
+
+        # A dry run generates the changelog but publishes nothing.
+        if args.dry_run:
+            return
+
+        commit_msg = f"Update version_date.tsv and changelogs after {release_info.release_tag}"
+        Shell.check(
+            "git config user.email robot-clickhouse@users.noreply.github.com"
+            " && git config user.name robot-clickhouse",
+            strict=True,
         )
-
-    if ok and args.release_type == "patch" and not args.dry_run and changelog_absent:
-        with open(RELEASE_INFO_FILE) as f:
-            release_tag = json.load(f)["release_tag"]
-
-        def push_changelog_to_master():
-            commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
+        # The exact files the generation above touches; scanned vs HEAD + untracked.
+        pathspec = " ".join(
+            [
+                "utils/list-versions/version_date.tsv",
+                "docs/changelogs/" + shlex.quote(release_info.release_tag) + ".md",
+                "SECURITY.md",
+                "docker/keeper/Dockerfile",
+                "docker/keeper/Dockerfile.distroless",
+                "docker/server/Dockerfile.alpine",
+                "docker/server/Dockerfile.distroless",
+                "docker/server/Dockerfile.ubuntu",
+            ]
+        )
+        changed = Shell.get_output(
+            f"git diff --name-only HEAD -- {pathspec}", strict=True
+        )
+        untracked = Shell.get_output(
+            f"git ls-files --others --exclude-standard -- {pathspec}", strict=True
+        )
+        artifact_files = sorted(
+            {f for f in changed.splitlines() + untracked.splitlines() if f.strip()}
+        )
+        assert artifact_files, "no changelog artifacts were generated"
+        # Back up the generated files; the checkout below discards the worktree.
+        backup_dir = tempfile.mkdtemp(prefix="changelog-artifacts-")
+        for f in artifact_files:
+            dst = os.path.join(backup_dir, f)
+            os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+            shutil.copy2(f, dst)
+        try:
             Shell.check(
-                "git config user.email robot-clickhouse@users.noreply.github.com"
-                " && git config user.name robot-clickhouse",
+                "git fetch --quiet origin master && git checkout -f FETCH_HEAD",
                 strict=True,
             )
-            # The exact files the generation step touches; scanned vs HEAD + untracked.
-            pathspec = " ".join(
-                [
-                    "utils/list-versions/version_date.tsv",
-                    "docs/changelogs/" + shlex.quote(release_tag) + ".md",
-                    "SECURITY.md",
-                    "docker/keeper/Dockerfile",
-                    "docker/keeper/Dockerfile.distroless",
-                    "docker/server/Dockerfile.alpine",
-                    "docker/server/Dockerfile.distroless",
-                    "docker/server/Dockerfile.ubuntu",
-                ]
-            )
-            changed = Shell.get_output(
-                f"git diff --name-only HEAD -- {pathspec}", strict=True
-            )
-            untracked = Shell.get_output(
-                f"git ls-files --others --exclude-standard -- {pathspec}", strict=True
-            )
-            artifact_files = sorted(
-                {f for f in changed.splitlines() + untracked.splitlines() if f.strip()}
-            )
-            assert artifact_files, "no changelog artifacts were generated"
-            # Back up the generated files; the checkout below discards the worktree.
-            backup_dir = tempfile.mkdtemp(prefix="changelog-artifacts-")
             for f in artifact_files:
-                dst = os.path.join(backup_dir, f)
-                os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
-                shutil.copy2(f, dst)
-            try:
-                Shell.check(
-                    "git fetch --quiet origin master && git checkout -f FETCH_HEAD",
-                    strict=True,
-                )
-                for f in artifact_files:
-                    os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
-                    shutil.copy2(os.path.join(backup_dir, f), f)
-                Shell.check(
-                    "git add -- " + " ".join(shlex.quote(f) for f in artifact_files),
-                    strict=True,
-                )
-                # Already on master (rerun) — nothing to push.
-                if Shell.check("git diff --cached --quiet"):
-                    print("ChangeLog already on master — nothing to push")
-                    return
-                Shell.check(f"git commit -m {shlex.quote(commit_msg)}", strict=True)
-                Git.push(
-                    "ClickHouse/ClickHouse",
-                    "HEAD:refs/heads/master",
-                    strict=True,
-                    retries=3,
-                    rebase_retries=5,
-                )
-            finally:
-                shutil.rmtree(backup_dir, ignore_errors=True)
+                os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
+                shutil.copy2(os.path.join(backup_dir, f), f)
+            Shell.check(
+                "git add -- " + " ".join(shlex.quote(f) for f in artifact_files),
+                strict=True,
+            )
+            # Already on master (rerun) — nothing to push.
+            if Shell.check("git diff --cached --quiet"):
+                print("ChangeLog already on master — nothing to push")
+                return
+            Shell.check(f"git commit -m {shlex.quote(commit_msg)}", strict=True)
+            Git.push(
+                "ClickHouse/ClickHouse",
+                "HEAD:refs/heads/master",
+                strict=True,
+                retries=3,
+                rebase_retries=5,
+            )
+        finally:
+            shutil.rmtree(backup_dir, ignore_errors=True)
 
+    if args.release_type == "patch":
         step(
-            name="Push ChangeLog to master",
-            command=push_changelog_to_master,
+            name="Bump Changelog and Push to master",
+            command=_push_changelog_to_master,
             workdir=REPO_PATH,
         )
 
@@ -574,22 +552,16 @@ def main():
         and not args.dry_run
         and not args.skip_docker
     ):
-        with open(RELEASE_INFO_FILE) as f:
-            release_info = json.load(f)
-        release_tag = release_info["release_tag"]
-        # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
-        is_bump_landed = release_info["is_bump_landed"]
-        is_latest = release_info["latest"]
 
         def _make_docker_build(
             image: str,
             build_configs: List[Tuple[str, str, str]],
         ):
             def build():
-                Shell.check(f"git checkout {release_tag}", strict=True)
+                Shell.check(f"git checkout {release_info.release_tag}", strict=True)
 
-                m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_tag)
-                assert m, f"Cannot parse version from tag {release_tag}"
+                m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_info.release_tag)
+                assert m, f"Cannot parse version from tag {release_info.release_tag}"
                 version_string = m.group(1)
                 parts = version_string.split(".")
                 version_minor = ".".join(parts[:3])
@@ -607,14 +579,14 @@ def main():
                     # Always publish the exact version tag.
                     tags = [f"--tag={image}:{version_string}{version_suffix}"]
                     # Move the floating minor/major tags only for the branch head (bump not landed), so a later recovery does not point them back at an older image.
-                    if not is_bump_landed:
+                    if not release_info.is_bump_landed:
                         tags += [
                             f"--tag={image}:{version_minor}{version_suffix}",
                             f"--tag={image}:{version_major}{version_suffix}",
                         ]
                         # `latest` additionally requires the branch to be the
                         # latest release branch.
-                        if is_latest:
+                        if release_info.latest:
                             tags.append(f"--tag={image}:latest{version_suffix}")
 
                     # The multi-arch buildx log is large; praktika captures and
@@ -746,14 +718,11 @@ def main():
     if results[-1].status != Result.Status.OK:
         ok = False
 
-    # Deferred to the end so a rerun before it sees an un-bumped branch and prepare recovers the release; `not is_bump_landed` completes an unfinished bump once and never rewrites a landed one.
-    if not is_bump_landed and args.release_type == "patch":
+    # Deferred to the end so a rerun before it sees an un-bumped branch and prepare recovers the release; the step self-skips a landed bump (late recovery), so it completes an unfinished bump once and never rewrites a landed one.
+    if args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
-                f" {dry_run_flag}".strip()
-            ],
+            command=_bump_version,
             workdir=REPO_PATH,
         )
 

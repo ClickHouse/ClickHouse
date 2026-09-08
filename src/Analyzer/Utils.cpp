@@ -1300,10 +1300,11 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context)
 {
     auto * function = expression->as<FunctionNode>();
-    if (!function)
-        return;
 
-    if (function->getFunctionName() != "and")
+    /// Anything that is not an `and` conjunction is kept or dropped as a whole, bare
+    /// columns and constants included: a column whose source is not `table_expression`
+    /// would be left with a dangling source.
+    if (!function || function->getFunctionName() != "and")
     {
         if (hasUnknownColumn(expression, table_expression))
             expression = nullptr;

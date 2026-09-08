@@ -372,7 +372,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 <a id="aes-256-gcm-siv"></a>
 <a id="adaptive-codec-selection"></a>
 
-By default, ClickHouse applies `ZSTD(3)` compression in the self-managed version, and `zstd` in ClickHouse Cloud. For the `MergeTree` family the default is size-aware: the faster `LZ4` is used below 100 MB and `ZSTD(3)` at or above it, so freshly inserted data starts as `LZ4` and the bigger parts produced by background merges switch to `ZSTD(3)`. The threshold is applied to the part size known when the codec has to be chosen, before the data is written - `0` for a freshly inserted part, and the size of the source parts for a merge or a mutation - not to the size of the resulting part. You can also define the compression method for each individual column in the `CREATE TABLE` query:
+By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. You can also define the compression method for each individual column in the `CREATE TABLE` query:
 
 ```sql
 CREATE TABLE codec_example

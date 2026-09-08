@@ -46,8 +46,9 @@ using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
 struct PatchMergeReadResult : public PatchReadResult
 {
     Block block;
-    UInt64 min_part_offset = 0;
-    UInt64 max_part_offset = 0;
+    /// Offsets of the source part covered by the read range. Not set if the range has no rows of that part.
+    std::optional<UInt64> min_part_offset;
+    std::optional<UInt64> max_part_offset;
 
     bool empty() const override { return block.rows() == 0; }
 };

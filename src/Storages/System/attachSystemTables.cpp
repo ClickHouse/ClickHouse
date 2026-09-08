@@ -124,6 +124,7 @@
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
+#include <Storages/System/StorageSystemJemallocSampledAllocations.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperCluster.h>
@@ -335,8 +336,10 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemBackgroundSchedulePool>(context, system_database, "background_schedule_pool", "Contains information about tasks in all BackgroundSchedulePool instances. Each row represents a task.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
-    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc.");
+    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc. For small size classes the slab columns (`slab_size`, `nonfull_slabs` and the `waste` alias) measure memory lost to slab fragmentation.", /*per_arena_=*/ false);
+    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_arena_bins", "Same as `system.jemalloc_bins` but with one row per (arena, bin) instead of aggregating over arenas. Slabs belong to a single arena, so this table locates fragmentation in a specific arena (including the dedicated MergeTree metadata, JIT and cache arenas) and joins to `system.jemalloc_sampled_allocations` on both `arena` and size class.", /*per_arena_=*/ true);
     attachNoDescription<StorageSystemJemallocProfileText>(context, system_database, "jemalloc_profile_text", "Displays the symbolized jemalloc heap profile. Run 'SYSTEM JEMALLOC FLUSH PROFILE' to generate a profile first.");
+    attachNoDescription<StorageSystemJemallocSampledAllocations>(context, system_database, "jemalloc_sampled_allocations", "One row per live sampled allocation from the jemalloc heap profiler; reading the table flushes a fresh heap profile. Only threads with the profiler armed contribute (`jemalloc_enable_profiler` setting or `jemalloc_enable_global_profiler` config); each row represents roughly `weight` similar allocations.");
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
