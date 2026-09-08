@@ -722,6 +722,11 @@ struct ContextSharedPart : boost::noncopyable
 
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
+    /// The `compatibility` each of the two above was built with. Whichever context first asks for a
+    /// baseline decides it for the lifetime of the server, so a reader cannot recover it by looking
+    /// at its own settings - see `Context::getMergeTreeSettingsCompatibility`.
+    String merge_tree_settings_compatibility TSA_GUARDED_BY(mutex);
+    String replicated_merge_tree_settings_compatibility TSA_GUARDED_BY(mutex);
     std::optional<DatabaseReplicatedSettings> database_replicated_settings TSA_GUARDED_BY(mutex); /// Settings of DatabaseReplicated engine.
     std::optional<DistributedSettings> distributed_settings TSA_GUARDED_BY(mutex);
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -7504,13 +7509,28 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        const String compatibility = (*settings)[Setting::compatibility];
+        shared->merge_tree_settings_compatibility = compatibility;
+        mt_settings.applyCompatibilitySetting(compatibility);
 
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
     }
 
     return *shared->merge_tree_settings;
+}
+
+String Context::getMergeTreeSettingsCompatibility(bool replicated) const
+{
+    /// Builds the baseline if nothing has yet, so the answer is never the empty string merely
+    /// because no table has been created; the two are then consistent by construction.
+    if (replicated)
+        getReplicatedMergeTreeSettings();
+    else
+        getMergeTreeSettings();
+
+    std::lock_guard lock(shared->mutex);
+    return replicated ? shared->replicated_merge_tree_settings_compatibility : shared->merge_tree_settings_compatibility;
 }
 
 const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
@@ -7524,7 +7544,9 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        const String compatibility = (*settings)[Setting::compatibility];
+        shared->replicated_merge_tree_settings_compatibility = compatibility;
+        mt_settings.applyCompatibilitySetting(compatibility);
 
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);

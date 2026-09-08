@@ -14044,13 +14044,16 @@ TableSettings MergeTreeData::getTableSettings(ContextPtr query_context) const
     const MergeTreeSettings compiled_defaults;
     MergeTreeSettings after_compatibility(compiled_defaults);
 
-    /// From the global context, not this query's: `Context::getMergeTreeSettings` applies the
-    /// global `compatibility` when it builds the instance a table is created from, so reading a
-    /// session's own value here would compare against a baseline the server never used.
+    /// Ask the context which `compatibility` it actually built the baseline with, rather than
+    /// reading one here. `Context::getMergeTreeSettings` caches the instance a table is created
+    /// from, and whichever context first asked for it decided the value for the lifetime of the
+    /// server - so a reader that consults its own settings, global or otherwise, can compare
+    /// against a baseline the server never used and report `other` where it should say
+    /// `compatibility`.
     ///
     /// Empty by default, and then `applyCompatibilitySetting` does nothing and no setting can have
     /// come from it - so the second baseline costs nothing in the ordinary case.
-    const String compatibility = query_context->getGlobalContext()->getSettingsRef()[Setting::compatibility];
+    const String compatibility = query_context->getMergeTreeSettingsCompatibility(supportsReplication());
     if (!compatibility.empty())
         after_compatibility.applyCompatibilitySetting(compatibility);
 

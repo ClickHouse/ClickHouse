@@ -1808,6 +1808,9 @@ public:
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
+    /// The `compatibility` the cached baseline above was actually built with, which is whatever the
+    /// first caller's settings said and not necessarily what any later reader sees.
+    String getMergeTreeSettingsCompatibility(bool replicated) const;
     const DatabaseReplicatedSettings & getDatabaseReplicatedSettings() const;
     const DistributedSettings & getDistributedSettings() const;
     const S3SettingsByEndpoint & getStorageS3Settings() const;
