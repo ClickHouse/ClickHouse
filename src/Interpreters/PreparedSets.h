@@ -235,7 +235,7 @@ private:
     /// plan, which its callers would silently take for "nothing left to build".
     std::exception_ptr in_place_build_failure;
 
-    /// Serializes `buildOrderedSetInplace`; see the rationale at its lock site.
+    /// Serializes the in-place builds; see the rationale at the `buildOrderedSetInplace` lock site.
     std::mutex inplace_build_mutex;
 };
 

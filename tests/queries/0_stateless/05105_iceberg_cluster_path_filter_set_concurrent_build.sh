@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: requires the IcebergLocal engine (USE_AVRO build option).
+#
+# A cluster read of an Iceberg table filtered by `_path IN (subquery)`. The coordinator builds no
+# set for that shape, so on the shard the Iceberg manifest producer thread and the query thread
+# reach the same unbuilt set at the same time: one builds it for the path/file filter, the other
+# for manifest pruning. The assertions below are deterministic; the concurrency oracle is CI's
+# sanitizer and stress arms, which have no other test reaching that pair.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+TABLE="t_ice_pathset_${CLICKHOUSE_DATABASE}"
+TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
+
+trap "rm -rf '${TABLE_PATH}'" EXIT
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE} (part UInt32, v UInt32)
+    ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
+"
+
+# One INSERT per partition, so the snapshot carries several data manifests to decode.
+for p in 1 2 3 4 5 6; do
+    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --max_threads=1 --query "
+        INSERT INTO ${TABLE} SELECT ${p} AS part, ${p} * 100 + number AS v FROM numbers(10)
+    "
+done
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE paths (p String) ENGINE = MergeTree ORDER BY p"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO paths SELECT DISTINCT _path FROM ${TABLE} WHERE part IN (2, 3)
+"
+
+# The subquery is slow on purpose: whichever thread builds the set first holds the build long
+# enough for the other to arrive while it is still running.
+${CLICKHOUSE_CLIENT} --query "
+SELECT count(), sum(v)
+FROM icebergLocalCluster('test_shard_localhost', '${TABLE_PATH}', 'Parquet')
+WHERE _path IN (SELECT p FROM ${CLICKHOUSE_DATABASE}.paths WHERE NOT ignore(sleepEachRow(0.4)))
+SETTINGS enable_analyzer = 1, iceberg_manifest_decode_concurrency = 4
+"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"

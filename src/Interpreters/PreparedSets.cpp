@@ -460,6 +460,10 @@ void FutureSetFromSubquery::prepareForDistributedPlan(const ContextPtr & context
 
 void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {
+    /// `build` below moves `source` out, and `buildOrderedSetInplace` tests and dereferences it under
+    /// this mutex, so both in-place builders must hold it. Rationale at the other lock site.
+    std::lock_guard lock(inplace_build_mutex);
+
     if (external_table_set)
         external_table_set->buildSetInplace(context);
 
