@@ -1610,6 +1610,13 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
         /// The ordered build enforces that by refusing to build, but refusing to build is not the same
         /// as refusing to use: `ReadFromMergeTree::applyFilters` builds PREWHERE sets unordered when the
         /// setting is off, and a read step analyzed after that finds the set ready. Ask the setting.
+        ///
+        /// This does not reach a `make_distributed_plan` worker task, where the set arrives as shipped
+        /// values (`SetSerializationKind::TupleValues`) and is rebuilt as a `FutureSetFromTuple`, losing
+        /// the fact that it came from a subquery. That gap is older and wider than this check: every
+        /// index consumer takes the same set through `buildOrderedSetInplace`, which never consults the
+        /// setting for a tuple carrier, so a worker also uses the primary key index for `pk IN (SELECT ...)`
+        /// with the setting off. Closing it means carrying the origin through set serialization.
         if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries]
             && typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
             return false;
