@@ -30,10 +30,9 @@ SET join_use_nulls = 0;
 SET query_plan_join_swap_table = 'false';
 
 -- { echoOn }
-{% for extra_settings in ['', ', partial_merge_join_rows_in_right_blocks = 2', ', max_joined_block_size_rows = 3', ', max_rows_in_join = 2', ', partial_merge_join_rows_in_right_blocks = 2, max_joined_block_size_rows = 3, max_rows_in_join = 2'] -%}
 {% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
 {% for algorithm in ['hash', 'partial_merge'] -%}
-{% set settings = "SETTINGS join_algorithm = '" ~ algorithm ~ "'" ~ (extra_settings if algorithm == 'partial_merge' else '') -%}
+{% set settings = "SETTINGS join_algorithm = '" ~ algorithm ~ "'" -%}
 SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL {{ settings }};
 SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL {{ settings }};
 SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL {{ settings }};
@@ -41,6 +40,18 @@ SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.a <
 SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL {{ settings }};
 -- Mixed condition combined with single-side filter conditions.
 SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL {{ settings }};
+{% endfor -%}
+{% endfor -%}
+
+-- Block-splitting and spilling machinery variants: keep two representative conditions
+-- (a passing mixed condition and an all-pairs-fail condition, the latter is the most
+-- sensitive to non-matched row bookkeeping across cuts and blocks).
+{% for extra_settings in [', partial_merge_join_rows_in_right_blocks = 2', ', max_joined_block_size_rows = 3', ', max_rows_in_join = 2', ', partial_merge_join_rows_in_right_blocks = 2, max_joined_block_size_rows = 3, max_rows_in_join = 2'] -%}
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+{% set settings = "SETTINGS join_algorithm = '" ~ algorithm ~ "'" ~ (extra_settings if algorithm == 'partial_merge' else '') -%}
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL {{ settings }};
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL {{ settings }};
 {% endfor -%}
 {% endfor -%}
 {% endfor -%}
@@ -101,9 +112,9 @@ DROP TABLE IF EXISTS big2;
 CREATE TABLE big1 (key UInt32, x UInt32, payload String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE big2 (key UInt32, y UInt32, payload String) ENGINE = MergeTree ORDER BY tuple();
 
--- Skewed keys: key = number % 100, so ~100 duplicates per key on each side.
-INSERT INTO big1 SELECT number % 100, number % 37, 'l' || toString(number) FROM numbers(10000);
-INSERT INTO big2 SELECT number % 100, number % 41, 'r' || toString(number) FROM numbers(10000);
+-- Skewed keys: key = number % 50, so 60 duplicates per key on each side.
+INSERT INTO big1 SELECT number % 50, number % 37, 'l' || toString(number) FROM numbers(3000);
+INSERT INTO big2 SELECT number % 50, number % 41, 'r' || toString(number) FROM numbers(3000);
 
 DROP TABLE IF EXISTS digests;
 CREATE TABLE digests (algorithm String, join_type String, cnt UInt64, digest UInt64) ENGINE = Memory;
@@ -113,7 +124,7 @@ CREATE TABLE digests (algorithm String, join_type String, cnt UInt64, digest UIn
 INSERT INTO digests
 SELECT '{{ algorithm }}', '{{ join_type }}', count(), sum(cityHash64(big1.key, big1.x, big1.payload, big2.key, big2.y, big2.payload))
 FROM big1 {{ join_type }} JOIN big2 ON big1.key = big2.key AND big1.x < big2.y
-SETTINGS join_algorithm = '{{ algorithm }}'{% if algorithm == 'partial_merge' %}, partial_merge_join_rows_in_right_blocks = 100, max_rows_in_join = 1000, max_joined_block_size_rows = 1000{% endif %};
+SETTINGS join_algorithm = '{{ algorithm }}'{% if algorithm == 'partial_merge' %}, partial_merge_join_rows_in_right_blocks = 50, max_rows_in_join = 500, max_joined_block_size_rows = 500{% endif %};
 {% endfor -%}
 {% endfor -%}
 
