@@ -17,12 +17,14 @@ void registerStatements()
     registerStatementCreate(factory);
     registerStatementCreateFunction(factory);
     registerStatementCreateHandler(factory);
+    registerStatementCreateToken(factory);
     registerStatementDelete(factory);
     registerStatementDescribeTable(factory);
     registerStatementDrop(factory);
     registerStatementExists(factory);
     registerStatementExplain(factory);
     registerStatementHypotheticalIndex(factory);
+    registerStatementHypotheticalProjection(factory);
     registerStatementIn(factory);
     registerStatementInsert(factory);
     registerStatementKillQuery(factory);
