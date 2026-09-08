@@ -9,7 +9,6 @@
 
 
 #include <Common/PODArray.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -35,13 +34,13 @@ namespace
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
 */
-class FunctionEvalMLMethod final : public IFunction
+class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionEvalMLMethod>(context_);
+        return std::make_shared<FunctionEvalMLMethod>(context);
     }
     explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
     {}
@@ -100,7 +99,6 @@ public:
         return agg_function->predictValues(arguments, context);
     }
 
-private:
     ContextPtr context;
 };
 
@@ -121,38 +119,21 @@ Applies a trained machine learning model to input features to generate predictio
     {
         "Example usage",
         R"(
-CREATE TABLE trips (pickup_datetime DateTime('UTC'), trip_distance Float64, total_amount Float64) ENGINE = Memory;
-
--- A fare of 3, plus 2.5 for every unit of distance.
-INSERT INTO trips
-SELECT toDateTime('2020-01-01 00:00:00', 'UTC') + number * 60, number % 10 + 1, 2.5 * (number % 10 + 1) + 3
-FROM numbers(1000);
-
--- One model per year of the data.
-CREATE TABLE models ENGINE = Memory AS
 SELECT
-    toYear(pickup_datetime) AS year,
-    stochasticLinearRegressionState(0.01, 0.0, 10, 'SGD')(total_amount, trip_distance) AS model
-FROM trips
-GROUP BY year;
-
-SELECT
-    trip_distance,
-    round(evalMLMethod(model, trip_distance), 2) AS predicted,
-    total_amount
+evalMLMethod(model, trip_distance),
+total_amount
 FROM trips
 LEFT JOIN models ON year = toYear(pickup_datetime)
-ORDER BY pickup_datetime
 LIMIT 5
         )",
         R"(
-┌─trip_distance─┬─predicted─┬─total_amount─┐
-│             1 │      4.05 │          5.5 │
-│             2 │      6.79 │            8 │
-│             3 │      9.53 │         10.5 │
-│             4 │     12.28 │           13 │
-│             5 │     15.02 │         15.5 │
-└───────────────┴───────────┴──────────────┘
+┌─evalMLMethod(model, trip_distance)─┬─total_amount─┐
+│ 8.087692004204174                  │ 5.4          │
+│ 7.861181608305352                  │ 4.6          │
+│ 26.661544467907536                 │ 23.4         │
+│ 8.767223191900637                  │ 5.8          │
+│ 10.80581675499003                  │ 9            │
+└────────────────────────────────────┴──────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};

@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Source for the Distributed engine on-disk file for async INSERT.
-class DistributedAsyncInsertSource final : public ISource
+class DistributedAsyncInsertSource : public ISource
 {
     struct Data;
     explicit DistributedAsyncInsertSource(std::unique_ptr<Data> data);
