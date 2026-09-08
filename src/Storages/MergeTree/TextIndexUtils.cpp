@@ -304,12 +304,20 @@ static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_pa
 }
 
 /// Merges the row ids of several postings cursors in the globally sorted order.
+///
+/// Sources own disjoint row sets but may interleave arbitrarily.
+/// The row ids are united through a bitset over aligned windows of WINDOW_ROWS rows:
+/// 1. A window starts at the smallest head of the cursors.
+/// 2. If the second smallest head is beyond the window, the smallest source is alone in it
+///    and its run below the second head is passed to the sink without touching the bitset.
+/// 3. Otherwise every cursor sets a bit for each of its row ids inside the window, refilling its segment on the way.
+///
+/// The cost per row id is a bit set and a bit scan, independent of the interleaving and the number of sources.
+/// Row ids are passed to the sink in chunks that are multiples of the posting list encoder granularity,
+/// buffered only where a run or a window does not align.
 class MergeTextIndexesTask::PostingsMergeQueue
 {
 public:
-    static constexpr size_t WINDOW_ROWS = 4096;
-
-    /// Keeps one reusable cursor per source of the merge.
     PostingsMergeQueue(MergeTextIndexesTask & task_, size_t max_sources) : task(task_), cursors(max_sources)
     {
         active_cursors.reserve(max_sources);
@@ -319,10 +327,13 @@ public:
     bool isValid() const { return !active_cursors.empty(); }
 
     /// Passes the row ids of the active cursors to the sink in the globally sorted order.
-    template <typename Sink>
-    void merge(Sink && sink);
+    /// Aligned runs of a single source are passed through without copying, the rest is buffered.
+    template <typename Sink> void merge(Sink && sink);
 
 private:
+    static constexpr size_t WINDOW_ROWS = 4096;
+    static constexpr size_t ROWS_TO_BUFFER = 8 * WINDOW_ROWS;
+
     struct Window
     {
         /// Position of the cursor with the smallest head.
@@ -340,17 +351,24 @@ private:
     /// Selects the window of the smallest head from active cursors.
     Window selectWindow() const;
 
-    /// Passes the run of the smallest source below the second head to the sink.
+    /// Sets a bit in window_bits for every row id of every cursor inside the window.
+    /// Returns the number of consumed row ids and the mask of non-empty words of window_bits.
+    std::pair<UInt64, UInt64> consumeWindow(Window window);
+
+    /// Extracts row ids with set bits inside the window and appends them to the buffer.
+    void processWindow(Window window);
+
+    /// Flushes the run of the smallest source below the second head to the sink.
     template <typename Sink>
-    void passRun(Window window, Sink && sink);
+    void flushRun(Window window, Sink && sink);
 
-    /// Sets a bit for every row id of every cursor inside the window.
-    /// Returns the number of row ids consumed.
-    size_t fillWindow(Window window);
+    /// Flushes the row ids to the sink directly if they are a aligned with append_granularity, otherwise buffers them.
+    template <typename Sink>
+    void flushDirect(std::span<const UInt32> row_ids, Sink && sink);
 
-    /// Extracts the set bits of the window in order.
-    /// There must be exactly num_consumed of them.
-    std::span<const UInt32> extractWindow(Window window, size_t num_consumed);
+    /// Flushes the aligned prefix of the buffered row ids to the sink once enough are accumulated, or all of them at the end.
+    template <typename Sink>
+    void flushBuffered(bool is_final, Sink && sink);
 
     /// Loads the next segment of the exhausted cursor or drops it.
     void refill(size_t pos);
@@ -362,9 +380,7 @@ private:
     std::vector<PostingsMergeCursor *> active_cursors;
     /// Bitset of the current window.
     std::array<UInt64, WINDOW_ROWS / 64> window_bits{};
-    /// Summary of the non-empty words in the window.
-    UInt64 window_bits_summary = 0;
-    /// Reusable buffer for the row ids extracted from a window.
+    /// Row ids buffered for the sink.
     PaddedPODArray<UInt32> buffer;
 };
 
@@ -481,7 +497,7 @@ void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t p
         row_id = adjustPartOffset(*merged_part_offsets, part_index, row_id);
 }
 
-void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenSource & source)
+void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source)
 {
     cursor.source = &source;
     cursor.next_segment = 0;
@@ -491,7 +507,7 @@ void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenS
 
     if (info.embedded_postings.empty() && !has_positions)
     {
-        bool advanced = advanceCursorSegment(cursor);
+        bool advanced = advancePostingsCursor(cursor);
         chassert(advanced);
         return;
     }
@@ -528,7 +544,7 @@ void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_
     source_postings_serializations[source.source_num].deserializeToArray(*stream->getDataBuffer(), info.header, info.cardinality, row_ids);
 }
 
-bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
+bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
 {
     const auto & source = *cursor.source;
     if (cursor.next_segment == source.info.offsets.size())
@@ -559,12 +575,12 @@ MergeTextIndexesTask::PostingsMergeQueue::Window MergeTextIndexesTask::PostingsM
         if (head < min_head)
         {
             second_head = min_head;
-            min_head = head;
             min_pos = i;
+            min_head = head;
         }
-        else
+        else if (head < second_head)
         {
-            second_head = std::min(second_head, head);
+            second_head = head;
         }
     }
 
@@ -572,28 +588,12 @@ MergeTextIndexesTask::PostingsMergeQueue::Window MergeTextIndexesTask::PostingsM
     return Window{.min_pos = min_pos, .second_head = second_head, .begin = begin, .end = begin + WINDOW_ROWS};
 }
 
-template <typename Sink>
-void MergeTextIndexesTask::PostingsMergeQueue::passRun(Window window, Sink && sink)
+std::pair<UInt64, UInt64> MergeTextIndexesTask::PostingsMergeQueue::consumeWindow(Window window)
 {
-    chassert(window.hasOneSource());
-    auto & cursor = *active_cursors[window.min_pos];
-    auto remaining = cursor.remaining();
+    chassert(std::ranges::all_of(window_bits, [](UInt64 word) { return word == 0; }));
 
-    size_t run_length = remaining.back() < window.second_head
-        ? remaining.size()
-        : std::lower_bound(remaining.begin(), remaining.end(), window.second_head) - remaining.begin();
-
-    sink(remaining.first(run_length));
-    cursor.pos += run_length;
-
-    if (!cursor.isValid())
-        refill(window.min_pos);
-}
-
-size_t MergeTextIndexesTask::PostingsMergeQueue::fillWindow(Window window)
-{
     UInt64 num_consumed = 0;
-    UInt64 non_empty_words = 0;
+    UInt64 bits_summary = 0;
 
     for (size_t i = 0; i < active_cursors.size();)
     {
@@ -605,7 +605,7 @@ size_t MergeTextIndexesTask::PostingsMergeQueue::fillWindow(Window window)
         {
             UInt32 bit = static_cast<UInt32>(row_ids[pos] - window.begin);
             window_bits[bit / 64] |= 1ULL << (bit % 64);
-            non_empty_words |= 1ULL << (bit / 64);
+            bits_summary |= 1ULL << (bit / 64);
             ++pos;
         }
 
@@ -620,20 +620,21 @@ size_t MergeTextIndexesTask::PostingsMergeQueue::fillWindow(Window window)
             refill(i);
     }
 
-    window_bits_summary = non_empty_words;
-    return num_consumed;
+    return {num_consumed, bits_summary};
 }
 
-std::span<const UInt32> MergeTextIndexesTask::PostingsMergeQueue::extractWindow(Window window, size_t num_consumed)
+void MergeTextIndexesTask::PostingsMergeQueue::processWindow(Window window)
 {
-    buffer.resize(num_consumed);
-    UInt32 * out = buffer.data();
-    UInt64 non_empty_words = std::exchange(window_bits_summary, 0);
+    auto [num_consumed, bits_summary] = consumeWindow(window);
 
-    while (non_empty_words)
+    size_t old_size = buffer.size();
+    buffer.resize(old_size + num_consumed);
+    UInt32 * out = buffer.data() + old_size;
+
+    while (bits_summary)
     {
-        size_t word_idx = std::countr_zero(non_empty_words);
-        non_empty_words &= non_empty_words - 1;
+        size_t word_idx = std::countr_zero(bits_summary);
+        bits_summary &= bits_summary - 1;
 
         UInt64 word = std::exchange(window_bits[word_idx], 0);
         UInt64 word_begin = window.begin + word_idx * 64;
@@ -645,7 +646,7 @@ std::span<const UInt32> MergeTextIndexesTask::PostingsMergeQueue::extractWindow(
         }
     }
 
-    size_t num_distinct = out - buffer.data();
+    size_t num_distinct = out - (buffer.data() + old_size);
 
     /// Sources own disjoint row sets, so every consumed row id must have set its own bit.
     if (num_distinct != num_consumed)
@@ -654,14 +655,84 @@ std::span<const UInt32> MergeTextIndexesTask::PostingsMergeQueue::extractWindow(
             "Source posting lists have overlapping row ids: {} distinct row ids out of {} in rows [{}, {})",
             num_distinct, num_consumed, window.begin, window.end);
     }
+}
 
-    return {buffer.data(), num_consumed};
+template <typename Sink>
+void MergeTextIndexesTask::PostingsMergeQueue::flushRun(Window window, Sink && sink)
+{
+    chassert(window.hasOneSource());
+    auto & cursor = *active_cursors[window.min_pos];
+    auto remaining = cursor.remaining();
+
+    size_t run_length = remaining.back() < window.second_head
+        ? remaining.size()
+        : std::lower_bound(remaining.begin(), remaining.end(), window.second_head) - remaining.begin();
+
+    flushDirect(remaining.first(run_length), sink);
+    cursor.pos += run_length;
+
+    if (!cursor.isValid())
+        refill(window.min_pos);
+}
+
+template <typename Sink>
+void MergeTextIndexesTask::PostingsMergeQueue::flushDirect(std::span<const UInt32> row_ids, Sink && sink)
+{
+    constexpr size_t granularity = IPostingListEncoder::append_granularity;
+
+    if (row_ids.size() < granularity)
+    {
+        buffer.insert(row_ids.begin(), row_ids.end());
+        flushBuffered(false, sink);
+        return;
+    }
+
+    /// The buffered row ids precede the run, so they are completed to the granularity and passed first.
+    if (!buffer.empty())
+    {
+        size_t prefix_to_buffer = granularity - buffer.size() % granularity;
+        buffer.insert(row_ids.begin(), row_ids.begin() + prefix_to_buffer);
+        sink(std::span<const UInt32>(buffer.data(), buffer.size()));
+        row_ids = row_ids.subspan(prefix_to_buffer);
+        buffer.clear();
+    }
+
+    size_t prefix_to_flush = row_ids.size() - row_ids.size() % granularity;
+
+    if (prefix_to_flush != 0)
+    {
+        sink(row_ids.first(prefix_to_flush));
+        row_ids = row_ids.subspan(prefix_to_flush);
+    }
+
+    buffer.insert(row_ids.begin(), row_ids.end());
+    flushBuffered(false, sink);
+}
+
+template <typename Sink>
+void MergeTextIndexesTask::PostingsMergeQueue::flushBuffered(bool is_final, Sink && sink)
+{
+    size_t count = buffer.size();
+
+    if (!is_final)
+    {
+        if (count < ROWS_TO_BUFFER)
+            return;
+
+        count -= count % IPostingListEncoder::append_granularity;
+    }
+
+    if (count == 0)
+        return;
+
+    sink(std::span<const UInt32>(buffer.data(), count));
+    buffer.erase(buffer.begin(), buffer.begin() + count);
 }
 
 void MergeTextIndexesTask::PostingsMergeQueue::refill(size_t pos)
 {
     chassert(!active_cursors[pos]->isValid());
-    if (task.advanceCursorSegment(*active_cursors[pos]))
+    if (task.advancePostingsCursor(*active_cursors[pos]))
         return;
 
     active_cursors[pos] = active_cursors.back();
@@ -672,25 +743,26 @@ void MergeTextIndexesTask::PostingsMergeQueue::push(const TokenSource & source)
 {
     chassert(active_cursors.size() < cursors.size());
     auto & cursor = cursors[active_cursors.size()];
-    task.initCursor(cursor, source);
+    task.initPostingsCursor(cursor, source);
     active_cursors.push_back(&cursor);
 }
 
 template <typename Sink>
 void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink)
 {
+    chassert(buffer.empty());
+
     if (active_cursors.size() == 1)
     {
         auto & cursor = *active_cursors.front();
 
         do
         {
-            sink(cursor.remaining());
+            flushDirect(cursor.remaining(), sink);
         }
-        while (task.advanceCursorSegment(cursor));
+        while (task.advancePostingsCursor(cursor));
 
         active_cursors.clear();
-        return;
     }
 
     while (!active_cursors.empty())
@@ -699,14 +771,16 @@ void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink)
 
         if (window.hasOneSource())
         {
-            passRun(window, sink);
+            flushRun(window, sink);
         }
         else
         {
-            size_t num_consumed = fillWindow(window);
-            sink(extractWindow(window, num_consumed));
+            processWindow(window);
+            flushBuffered(false, sink);
         }
     }
+
+    flushBuffered(true, sink);
 }
 
 template <typename Sink>
@@ -759,33 +833,11 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
     const auto * codec = postings_serialization.getPostingListCodec();
     size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
     auto encoder = codec->createEncoder();
-    constexpr size_t max_buffered_size = IPostingListEncoder::append_granularity * 64;
-
-    output_postings_buffer.clear();
-    output_postings_buffer.reserve(max_buffered_size);
 
     mergePostings([&](std::span<const UInt32> row_ids)
     {
-        if (output_postings_buffer.empty() && row_ids.size() % IPostingListEncoder::append_granularity == 0)
-        {
-            encoder->append(row_ids, segment_size);
-            return;
-        }
-
-        output_postings_buffer.insert(row_ids.begin(), row_ids.end());
-
-        if (output_postings_buffer.size() >= max_buffered_size)
-        {
-            size_t count = output_postings_buffer.size() - output_postings_buffer.size() % IPostingListEncoder::append_granularity;
-            encoder->append({output_postings_buffer.data(), count}, segment_size);
-            output_postings_buffer.erase(output_postings_buffer.begin(), output_postings_buffer.begin() + count);
-        }
+        encoder->append(row_ids, segment_size);
     });
-
-    if (!output_postings_buffer.empty())
-    {
-        encoder->append({output_postings_buffer.data(), output_postings_buffer.size()}, segment_size);
-    }
 
     /// Sources own disjoint row sets, so the merged cardinality must equal the sum of source cardinalities.
     if (encoder->cardinality() != total_cardinality)

@@ -145,16 +145,15 @@ private:
 
     /// Points the cursor at a source and decodes its first postings.
     /// A source with positions is decoded at once because positions are addressed by posting rank.
-    void initCursor(PostingsMergeCursor & cursor, const TokenSource & source);
+    void initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source);
     /// Decodes one posting list segment of the source and appends its row ids in pre-remap order.
     void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids);
     /// Decodes the source's next segment; returns false when the source is exhausted.
-    bool advanceCursorSegment(PostingsMergeCursor & cursor);
+    bool advancePostingsCursor(PostingsMergeCursor & cursor);
 
-    /// Merges the postings of output_sources and passes sorted non-empty
-    /// chunks of row ids to the sink in the globally sorted order.
-    template <typename Sink>
-    void mergePostings(Sink && sink);
+    /// Merges the postings of output_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
+    /// Every chunk but the last holds a multiple of IPostingListEncoder::append_granularity row ids, as the posting list encoder requires.
+    template <typename Sink> void mergePostings(Sink && sink);
 
     TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
     TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
