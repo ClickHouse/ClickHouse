@@ -79,6 +79,14 @@ public:
         return to_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
     }
 
+    /** Whether this node produces the complete result (not a mergeable state to be merged further),
+      * so it may apply operators that must run once over the whole merged input, e.g. WITH FILL.
+      */
+    bool isFinalizingStage() const
+    {
+        return to_stage == QueryProcessingStage::Complete;
+    }
+
     bool isFromAggregationState() const
     {
         return from_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;

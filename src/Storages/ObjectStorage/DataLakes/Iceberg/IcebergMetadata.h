@@ -50,6 +50,7 @@ struct IcebergFileRecord
     std::map<Int32, Int64> column_sizes;
     std::map<Int32, Int64> value_counts;
     std::vector<Int32> equality_ids;
+    std::optional<UInt64> first_row_id;
 };
 
 class IcebergMetadata : public IDataLakeMetadata
@@ -122,6 +123,8 @@ public:
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
     bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
+
+    bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
@@ -215,6 +218,10 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;
+
+    /// Refuse `operation` while the table root is deeper than the queried path, because anything
+    /// scoped to the queried path reaches beyond this table there.
+    void checkTableRootIsQueriedPath(std::string_view operation) const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;

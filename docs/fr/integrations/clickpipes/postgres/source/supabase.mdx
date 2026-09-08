@@ -62,7 +62,7 @@ Connectez-vous à votre instance Supabase en tant qu’utilisateur admin, puis e
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publication `clickpipes` contiendra l’ensemble des événements de modification générés à partir des tables spécifiées, et sera ensuite utilisée pour ingérer le flux de réplication.
+La publication `clickpipes` définit l’ensemble des tables dont les événements de modification seront diffusés vers ClickPipes. Nous déconseillons d’utiliser `FOR ALL TABLES` sauf si vous avez l’intention de répliquer chaque table, car inclure des tables inutiles augmente le trafic WAL de Postgres vers ClickPipes et réduit l’efficacité globale de la réplication.
 
 <div id="increase-max_slot_wal_keep_size">
   ## Augmentez `max_slot_wal_keep_size`

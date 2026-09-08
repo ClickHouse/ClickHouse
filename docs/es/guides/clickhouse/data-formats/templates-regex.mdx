@@ -144,7 +144,7 @@ FORMAT Template SETTINGS format_template_resultset = 'output.results',
   ### Exportación a archivos HTML
 </div>
 
-Los resultados basados en plantillas también se pueden exportar a archivos mediante la cláusula [`INTO OUTFILE`](/es/reference/statements/select/into-outfile). Generemos archivos HTML a partir de los formatos [conjunto de resultados](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.results) y [fila](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.row) proporcionados:
+Los resultados basados en Template también se pueden exportar a archivos mediante la cláusula [`INTO OUTFILE`](/es/reference/statements/select/into-outfile). Generemos archivos HTML a partir de los formatos [conjunto de resultados](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.results) y [fila](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.row) proporcionados:
 
 ```sql
 SELECT
@@ -248,7 +248,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-De forma predeterminada, ClickHouse generará un error si hay filas sin coincidencia. Si prefiere omitirlas, habilite la opción [format&#95;regexp&#95;skip&#95;unmatched](/es/reference/settings/formats#format_regexp_skip_unmatched):
+De forma predeterminada, ClickHouse generará un error si hay filas sin coincidencia. Si prefiere omitirlas, habilite la opción [format&#95;regexp&#95;skip&#95;unmatched](/es/reference/settings/formats/format-regexp#format_regexp_skip_unmatched):
 
 ```sql
 SET format_regexp_skip_unmatched = 1;
