@@ -2723,12 +2723,22 @@ KeyCondition::SetIndexAnalysisResult KeyCondition::analyzePredicateExpressionFor
             result.args_count = arg_tuple.getArgumentsSize();
             /// Keep the packed tuple mapping in addition to the per-component mappings. The
             /// former can use a key such as `tuple(a, b)`, while the latter can use `a` and `b`.
-            /// The packed mapping is an extra atom for the same leaf, so it is subject to the
-            /// `analyze_index_with_multiple_key_columns_per_condition` setting.
-            if (multiple_key_columns_per_condition)
-                get_key_tuple_position_mapping(arg, 0, true);
+            get_key_tuple_position_mapping(arg, 0, true);
             for (size_t i = 0; i < result.args_count; ++i)
                 get_key_tuple_position_mapping(arg_tuple.getArgumentAt(i), i);
+
+            /// The two mappings produce two atoms for the same leaf, so with
+            /// `analyze_index_with_multiple_key_columns_per_condition` disabled only one of them is
+            /// kept. The per-component mapping has priority, because it is the one that was always
+            /// built; the packed mapping is kept when there is no component mapping at all, so that
+            /// a Tuple-typed key column keeps being used for such a leaf.
+            if (!multiple_key_columns_per_condition && !result.indexes_mapping.empty())
+            {
+                result.whole_tuple_indexes_mapping.clear();
+                result.whole_tuple_set_transforming_dags.clear();
+                result.whole_tuple_data_types.clear();
+                result.whole_tuple_is_relaxed = false;
+            }
         }
         else
         {
