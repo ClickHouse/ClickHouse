@@ -3309,7 +3309,7 @@ void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPt
     if (!join_node
         || join_node->getKind() != JoinKind::Right
         || join_node->getStrictness() != JoinStrictness::All
-        || !join_node->isOnJoinExpression())
+        || !join_node->hasJoinExpression())
         return;
 
     const auto & settings = context->getSettingsRef();
@@ -3325,6 +3325,36 @@ void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPt
     if (!left_storage || !right_storage || left_storage->getShardCount() < 2 || right_storage->getShardCount() < 2)
         return;
 
+    /** A `JOIN USING` key records its sides positionally, the left one first. The join condition, the
+      * `USING (a AS b)` clause shipped to the shards and the key supertype all read that order, so the
+      * sides have to be swapped together with the table expressions. A key that does not hold a plain
+      * column per side is not swappable that way, so leave such a query alone. `NATURAL` needs no separate
+      * handling: the analyzer has already turned it into `USING` by now.
+      */
+    std::vector<ListNode *> using_key_sides;
+    if (join_node->isUsingJoinExpression())
+    {
+        for (const auto & using_key : join_node->getJoinExpression()->as<ListNode &>().getNodes())
+        {
+            auto * using_column = using_key->as<ColumnNode>();
+            if (!using_column || !using_column->hasExpression())
+                return;
+
+            auto * key_sides = using_column->getExpression()->as<ListNode>();
+            if (!key_sides || key_sides->getNodes().size() != 2)
+                return;
+
+            for (const auto & side : key_sides->getNodes())
+            {
+                const auto * side_column = side->as<ColumnNode>();
+                if (!side_column || side_column->hasExpression())
+                    return;
+            }
+
+            using_key_sides.push_back(key_sides);
+        }
+    }
+
     /** A `GLOBAL RIGHT JOIN` cannot run with the left table sharded and the right table broadcast.
       * Every shard would independently emit unmatched rows from the complete right table.
       * Swap the inputs before choosing the `Distributed` table that will execute the query, so the
@@ -3332,6 +3362,8 @@ void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPt
       * Projection nodes are already resolved and keep the user-visible column order unchanged.
       */
     std::swap(join_node->getLeftTableExpressionNode(), join_node->getRightTableExpressionNode());
+    for (auto * key_sides : using_key_sides)
+        std::swap(key_sides->getNodes()[0], key_sides->getNodes()[1]);
     join_node->setKind(JoinKind::Left);
 }
 
