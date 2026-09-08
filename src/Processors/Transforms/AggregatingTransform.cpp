@@ -217,6 +217,14 @@ public:
         /// limit is checked against this running total.
         std::atomic<size_t> single_level_merged_rows = 0;
 
+        /// Groups the two-level bucket merge has converted so far; a throw-mode group limit is
+        /// checked against this running total, taken from the bucket tables rather than from
+        /// the converted chunks, which the bucket-local Top-K conversion truncates. For the
+        /// adaptive aggregator this is the only enforcement the staged keys ever get: the
+        /// frozen tables are bounded and the staged cardinality is unknown until the merge.
+        /// The buckets partition the key space, so the sum counts every group exactly once.
+        std::atomic<size_t> two_level_merged_groups = 0;
+
         SharedData()
         {
             for (auto & flag : is_bucket_processed)
@@ -276,14 +284,32 @@ protected:
             params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), bucket_arena, bucket_num, *adaptive_session, shared_data->is_cancelled);
         }
 
+        /// The bucket's group count is taken from the table rather than from the chunk: the
+        /// bucket-local Top-K conversion truncates the chunk to its n best groups, and the
+        /// group-by limit must be enforced against the true cardinality.
+        size_t full_group_count = 0;
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
-            *data, bucket_arena, params->final, bucket_num, shared_data->is_cancelled, updater);
+            *data, bucket_arena, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
 
+        /// A throw-mode group limit is enforced against the merged totals for every run: the
+        /// baseline producers' checks cannot see the merged cardinality (their tables are
+        /// checked one by one), and the adaptive producers' checks cannot see the staged keys
+        /// at all, so this is where the limit catches what they miss. The dropping modes keep
+        /// the merge untouched: their contract is decided at the producers, and stopping the
+        /// merge here would drop already-aggregated groups.
+        if (params->params.max_rows_to_group_by != 0 && params->params.group_by_overflow_mode == OverflowMode::THROW
+            && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
+        {
+            bool no_more_keys = false;
+            const size_t total = shared_data->two_level_merged_groups.fetch_add(full_group_count) + full_group_count;
+            params->aggregator.checkLimits(total, no_more_keys);
+        }
+
         /// Retire the bucket's working memory only after a successful conversion: the output
-        /// chunk either copied the values out or captured the arena slot's ownership. A
-        /// cancelled bucket skips retirement and leaves everything to the ordinary destruction
-        /// of the variants, which still owns every non-retired slot.
+        /// chunk either copied the values out or captured the arena slot's ownership. A throw
+        /// above or a cancellation skips retirement and leaves everything to the ordinary
+        /// destruction of the variants, which still owns every non-retired slot.
         if (adaptive_session && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
             params->aggregator.retireAdaptiveMergedBucket(*data->at(0), *adaptive_session, bucket_num);
 
