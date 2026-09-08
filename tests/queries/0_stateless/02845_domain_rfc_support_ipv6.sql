@@ -19,6 +19,9 @@ SELECT domainRFC('http://[::ffff:192.0.2.128]:80') FORMAT CSV;
 SELECT domainRFC('http://user@[::ffff:192.0.2.128]:80') FORMAT CSV;
 -- userinfo may contain more than one ':' (RFC 3986); it must not be mistaken for the host:port separator.
 SELECT domainRFC('http://user:pass:word@[2001:db8::1]:80') FORMAT CSV;
+-- userinfo cannot legally contain a raw '@' (RFC 3986); a second '@' means the real host is
+-- whatever follows the LAST '@', not the fake host-looking segment in between.
+SELECT domainRFC('http://user@paypal.com@[2001:db8::1]:80') FORMAT CSV;
 -- Does not conform to the IPv6 format.
 SELECT domainRFC('[2001db81]:80') FORMAT CSV;
 SELECT domainRFC('[20[01:db8::1]:80') FORMAT CSV;

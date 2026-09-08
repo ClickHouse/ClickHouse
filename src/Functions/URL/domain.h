@@ -116,8 +116,11 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '#':
             goto done;
         case '@': /// myemail@gmail.com
+            /// userinfo cannot legally contain a raw '@' (RFC 3986), so a second (or later) '@'
+            /// means everything up to it was actually userinfo, not the host found so far - keep
+            /// re-anchoring on the latest '@' instead of returning the fake "host" in between,
+            /// e.g. "user@paypal.com@evil.com" must resolve to "evil.com", not "paypal.com".
             if (has_terminator_after_colon) return std::string_view{};
-            if (has_at_symbol) goto done;
             if (has_open_bracket) return std::string_view{}; /// '@' cannot appear inside an IP-literal
             has_sub_delims = false;
             has_at_symbol = true;
