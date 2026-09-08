@@ -896,7 +896,8 @@ String escapeForLikePattern(std::string_view needle)
 }
 
 /// Returns one pattern, or nothing when the pattern is not eligible for a dictionary scan.
-std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
+std::vector<OptimizedRegularExpression>
+MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const
 {
     const String value = preprocessor->processConstant(field.safeGet<String>());
     if (value.empty())
@@ -915,7 +916,7 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     };
 
     /// Special case: the array tokenizer does not split a value, so a token is the whole value.
-    if (tokenizer->getType() == ITokenizer::Type::Array)
+    if (allow_arbitrary_patterns && tokenizer->getType() == ITokenizer::Type::Array)
     {
         /// A non-ASCII needle is unsafe: `match` folds case for ASCII only, `ilike` for the whole of UTF-8.
         if (case_insensitive && !isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
@@ -1409,7 +1410,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         {
             const auto & needle = value_field.safeGet<String>();
             const auto affix_pattern = is_prefix ? escapeForLikePattern(needle) + "%" : "%" + escapeForLikePattern(needle);
-            auto patterns = stringLikeToPatterns(affix_pattern, /*case_insensitive=*/ false);
+            auto patterns = stringLikeToPatterns(affix_pattern, /*case_insensitive=*/ false, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
             if (patterns.size() == 1 && affix_patterns_allowed)
             {
                 const auto is_exact = is_array_tokenizer && candidate_for_exact_mode;
@@ -1451,7 +1452,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// 2. Seek the sorted dictionary to the matching range of 'foo%' instead of scanning every block.
             /// 3. Bypass a non-selective hint: it prunes nothing and still costs a dictionary scan.
             const auto & like_pattern = value_field.safeGet<String>();
-            auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false);
+            auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
             const bool is_infix = isInfixPattern(like_pattern);
             if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
             {
@@ -1486,7 +1487,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & like_pattern = value_field.safeGet<String>();
-        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true);
+        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
         const bool is_infix = isInfixPattern(like_pattern);
         if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
         {

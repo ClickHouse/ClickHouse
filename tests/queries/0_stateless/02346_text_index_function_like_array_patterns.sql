@@ -282,6 +282,33 @@ SELECT 'ilike non-ascii', countIf(explain LIKE '%\_\_text_index\_%') > 0 FROM (E
 
 DROP TABLE tab;
 
+SELECT 'An arbitrary pattern on a nullable value is left to the original condition';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt64,
+    name Nullable(String),
+    INDEX idx(name) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab SELECT number, if(number % 7 = 0, NULL, format('service-{}-prod', number % 1000)) FROM numbers(100000);
+
+SELECT 'An exact read of a NULL value raises in the fallback reader, so the arbitrary-pattern path needs a non-nullable value';
+SELECT count() FROM tab WHERE name LIKE '%service%9%prod%' SETTINGS text_index_like_max_postings_to_read = 1, cast_keep_nullable = 1;
+SELECT count() FROM tab WHERE name LIKE '%service%9%prod%' SETTINGS text_index_like_max_postings_to_read = 1, cast_keep_nullable = 0;
+SELECT count() FROM tab WHERE name LIKE '%service%9%prod%' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE name LIKE '%9%prod' SETTINGS text_index_like_max_postings_to_read = 1, cast_keep_nullable = 1;
+SELECT count() FROM tab WHERE name LIKE '%9%prod' SETTINGS use_skip_indexes = 0;
+
+SELECT 'multi-needle, nullable', countIf(explain LIKE '%\_\_text_index\_%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE name LIKE '%service%9%prod%');
+
+DROP TABLE tab;
+
 SELECT 'A FixedString value keeps its zero padding, which the pattern matches against';
 
 CREATE TABLE tab

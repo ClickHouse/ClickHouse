@@ -107,7 +107,7 @@ A NULL value is not returned by a negated pattern
 [4]
 [4]
 not like	0
-infix	1
+infix	0
 prefix	0
 A non-ASCII ILIKE needle is left to the original condition
 The dictionary scan folds case for ASCII only, while ilike folds the whole of UTF-8, so a non-ASCII needle must not reach the scan
@@ -122,6 +122,14 @@ An ASCII needle still reaches the scan, and a case-sensitive non-ASCII pattern i
 [2]
 ilike ascii	1
 ilike non-ascii	0
+An arbitrary pattern on a nullable value is left to the original condition
+An exact read of a NULL value raises in the fallback reader, so the arbitrary-pattern path needs a non-nullable value
+23228
+23228
+23228
+23228
+23228
+multi-needle, nullable	0
 A FixedString value keeps its zero padding, which the pattern matches against
 [1]
 [1]
