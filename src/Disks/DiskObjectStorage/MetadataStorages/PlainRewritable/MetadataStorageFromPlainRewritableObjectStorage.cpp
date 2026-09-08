@@ -62,15 +62,17 @@ fs::path normalizeDirectoryPath(const fs::path & path)
     return path / "";
 }
 
-/// Names under `PlainRewritableLayout::REMOVED_NAME_PREFIX` denote garbage that is deleted on the next load, so nobody may create them.
+/// The names of `PlainRewritableLayout::generateRemovedName` denote garbage that is deleted on the next load,
+/// so nobody may create them.
 void checkNotReservedPath(const std::string & path)
 {
     if (PlainRewritableLayout::isRemovedLocalPath(path))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot create '{}' on a plain_rewritable disk: names starting with '{}' are reserved",
+            "Cannot create '{}' on a plain_rewritable disk: the names of '{}' followed by {} lowercase Latin letters are reserved",
             path,
-            PlainRewritableLayout::REMOVED_NAME_PREFIX);
+            PlainRewritableLayout::REMOVED_NAME_PREFIX,
+            PlainRewritableLayout::REMOVED_NAME_RANDOM_PART_SIZE);
 }
 
 }

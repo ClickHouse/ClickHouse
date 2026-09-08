@@ -4,10 +4,12 @@ they are kept under reserved names and reclaimed when the metadata is loaded on 
 """
 
 import concurrent.futures
+import io
 import threading
 import time
 
 import pytest
+from minio.error import S3Error
 
 from helpers.cluster import ClickHouseCluster
 
@@ -44,6 +46,26 @@ def list_keys():
             cluster.minio_bucket, KEY_PREFIX, recursive=True
         )
     )
+
+
+def key_exists(key):
+    try:
+        cluster.minio_client.stat_object(cluster.minio_bucket, key)
+        return True
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            return False
+        raise
+
+
+def put_key(key, data):
+    cluster.minio_client.put_object(
+        cluster.minio_bucket, key, io.BytesIO(data), len(data)
+    )
+
+
+def remove_key(key):
+    cluster.minio_client.remove_object(cluster.minio_bucket, key)
 
 
 def read_key(key):
@@ -189,3 +211,52 @@ def test_drop_table_killed_before_finalize(
         == "0\n"
     )
     assert node.contains_in_log("orphaned objects left by removals")
+
+
+def test_names_that_only_look_reserved_are_kept():
+    """Only the exact shape of `PlainRewritableLayout::generateRemovedName` denotes an unfinished removal.
+    A name that merely starts with the prefix could have been created as ordinary data before the shape
+    became reserved, so it is loaded as usual and never deleted.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1)")
+
+    node.stop_clickhouse()
+
+    look_alike_names = [
+        # A name that an older server could have been asked to create, for example for a backup.
+        REMOVED_NAME_PREFIX + "mybackup",
+        # One character short of the generated shape, and one character too long.
+        REMOVED_NAME_PREFIX + "b" * 15,
+        REMOVED_NAME_PREFIX + "b" * 17,
+        # The right length, but not the alphabet of the generated shape.
+        REMOVED_NAME_PREFIX + "B" * 16,
+    ]
+
+    # A top-level directory and a root file with each of these names, as an older server would have left them.
+    preexisting_keys = []
+    for index, name in enumerate(look_alike_names):
+        remote_name = "abcdefghijklmno" + chr(ord("a") + index)
+        keys = {
+            f"{KEY_PREFIX}__root/{name}": b"a root file",
+            f"{KEY_PREFIX}__meta/{remote_name}/prefix.path": f"{name}/".encode(),
+            f"{KEY_PREFIX}{remote_name}/data.bin": b"a file of a directory",
+        }
+        for key, data in keys.items():
+            put_key(key, data)
+        preexisting_keys += list(keys)
+
+    node.start_clickhouse()
+    assert int(node.query("SELECT count() FROM t")) == 1
+
+    assert [key for key in preexisting_keys if not key_exists(key)] == []
+
+    node.query("DROP TABLE t SYNC")
+    for key in preexisting_keys:
+        remove_key(key)
+    wait_for_empty_prefix()

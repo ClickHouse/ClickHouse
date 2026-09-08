@@ -6,6 +6,7 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace DB
@@ -43,12 +44,19 @@ std::string PlainRewritableLayout::constructDirectoryObjectKey(const std::string
 
 std::string PlainRewritableLayout::generateRemovedName()
 {
-    return REMOVED_NAME_PREFIX + getRandomASCIIString(16);
+    return REMOVED_NAME_PREFIX + getRandomASCIIString(REMOVED_NAME_RANDOM_PART_SIZE);
 }
 
 bool PlainRewritableLayout::isRemovedName(std::string_view name)
 {
-    return name.starts_with(REMOVED_NAME_PREFIX);
+    if (name.size() != REMOVED_NAME_PREFIX.size() + REMOVED_NAME_RANDOM_PART_SIZE)
+        return false;
+
+    if (!name.starts_with(REMOVED_NAME_PREFIX))
+        return false;
+
+    /// The alphabet of `getRandomASCIIString`.
+    return std::all_of(name.begin() + REMOVED_NAME_PREFIX.size(), name.end(), [](char c) { return 'a' <= c && c <= 'z'; });
 }
 
 bool PlainRewritableLayout::isRemovedLocalPath(const std::string & local_path)
