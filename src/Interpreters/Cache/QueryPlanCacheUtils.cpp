@@ -38,6 +38,7 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
@@ -242,6 +243,30 @@ bool isStorageEligibleForPlanCache(const StoragePtr & storage, const StorageMeta
     {
         LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: dependency {}.{} is temporary, system, remote or Merge",
             database, table);
+        return false;
+    }
+
+    /// An `Alias` forwards every read to its target table, and the semantics of that target are
+    /// not representable in this dependency record, which describes the alias only:
+    ///   - `PlannerJoinTree::getEffectiveRowPolicyFilter` bakes the *combination* of the alias's
+    ///     and the target's `SELECT` row policies into the plan, while `dep.row_policy_hash`
+    ///     fingerprints the alias's policy alone - tightening the target's policy would leave the
+    ///     entry valid and a hit would keep returning rows the current policy hides. For the same
+    ///     reason the store-time "row policy contains a subquery / calls an executable UDF" guard
+    ///     never sees the target's policy.
+    ///   - `StorageAlias::read` re-checks the plan's column names against the target table, so a
+    ///     cached zero-column read replays the helper column chosen at store time (the divergence
+    ///     `storageRechecksColumnAccessOnRead` describes for `MaterializedView` and `Buffer`).
+    ///   - The target is not a dependency of its own, so neither its schema nor - for an alias
+    ///     folded into a scalar subquery, where no plan leaf survives to re-check it - its column
+    ///     grants are revalidated on a hit.
+    /// Modelling all of this would mean resolving the target and recording it as a second
+    /// dependency with the combined filter; until then, refuse to cache reads through an `Alias`.
+    if (typeid_cast<const StorageAlias *>(storage.get()))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: dependency {}.{} is an Alias, whose target table's row policies and column grants "
+            "are not part of the dependency record", database, table);
         return false;
     }
 
@@ -1014,6 +1039,17 @@ QueryPlan materializeCachedQueryPlan(
 
     /// Rebuild `PreparedSet` objects for IN (...) subqueries embedded in the plan.
     auto plan = QueryPlan::makeSets(std::move(plan_and_sets), context);
+
+    /// The blob also carries the plan-level execution limits, which `QueryPlan::buildQueryPipeline`
+    /// applies through `limitMaxThreads`. They describe the execution the plan was stored for, not
+    /// its structure, and `max_threads` is deliberately not part of the cache key (see
+    /// `isSettingIgnoredInQueryPlanCache`), so replaying the stored value would let a warm-up with
+    /// `SETTINGS max_threads = 1` cap every later hit. The analyzer - which builds every cacheable
+    /// plan - never sets this field (only `InterpreterSelectQuery`, i.e. the old analyzer, and
+    /// `DistributedPlanExecutor` do), so clearing it reproduces the miss path exactly. The other
+    /// limit, `concurrency_control`, is re-derived from the current context by
+    /// `InterpreterSelectQueryFromPlan::execute`.
+    plan.setMaxThreads(0);
 
     /// Replace `ReadFromTable` placeholders with storage-specific reads against the current data
     /// snapshots, requiring every leaf to resolve to a storage that `validateQueryPlanCacheEntry`
