@@ -1456,7 +1456,7 @@ Print a readable number tip on the right side of the table if the block consists
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0) \
     DECLARE(Bool, output_format_vertical_display_control_characters, true, R"(
-If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the Vertical output format are displayed as Unicode "Control Pictures" (such as ␀, ␉, ␊) instead of being printed as raw bytes that are usually swallowed by the terminal.
+If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the values and column names of the Vertical output format are displayed as Unicode "Control Pictures" (such as ␀, ␉, ␊) instead of being printed as raw bytes that are usually swallowed by the terminal.
 )", 0) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.

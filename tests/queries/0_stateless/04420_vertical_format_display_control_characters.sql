@@ -17,3 +17,9 @@ SELECT 'snowman ☃ and é' AS value FORMAT Vertical;
 
 -- The setting can be disabled to print raw bytes (the old behavior).
 SELECT 'tab\tand\nnewline' AS value FORMAT Vertical SETTINGS output_format_vertical_display_control_characters = 0;
+
+-- Control characters in column names are displayed as well, and their Control Pictures are taken into
+-- account when the names are padded to the same width.
+SELECT 1 AS `tab\there` FORMAT Vertical;
+SELECT 1 AS `line\nbreak`, 2 AS ok FORMAT Vertical;
+SELECT 1 AS `tab\there` FORMAT Vertical SETTINGS output_format_vertical_display_control_characters = 0;

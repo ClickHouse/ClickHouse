@@ -37,7 +37,12 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
-        const String & name = sample.getByPosition(i).name;
+        /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<TAB>b``), so it gets
+        /// the same treatment as the values: the replacement happens before truncation, because a
+        /// Control Picture takes one visible position while the raw control character takes none.
+        String name = sample.getByPosition(i).name;
+        if (format_settings.pretty.vertical_display_control_characters)
+            name = replaceControlCharactersWithPictures(std::move(name));
 
         auto [name_cut, width] = truncateName(name,
           format_settings.pretty.max_column_name_width_cut_to,
@@ -273,7 +278,7 @@ x: 1
 y: ᴺᵁᴸᴸ
 ```
 
-By default, non-printable control characters (C0 controls `0x00`–`0x1F` and `DEL` `0x7F`) are displayed as the corresponding Unicode "Control Pictures" (`U+2400`–`U+2421`), so they stay visible instead of being silently swallowed by the terminal. For example, a tab is shown as `␉` and a line feed as `␊`:
+By default, non-printable control characters (C0 controls `0x00`–`0x1F` and `DEL` `0x7F`) in values and in column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`–`U+2421`), so they stay visible instead of being silently swallowed by the terminal. For example, a tab is shown as `␉` and a line feed as `␊`:
 
 ```sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical

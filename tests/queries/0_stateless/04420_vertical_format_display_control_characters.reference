@@ -32,3 +32,13 @@ Row 1:
 ──────
 value: tab	and
 newline
+Row 1:
+──────
+tab␉here: 1
+Row 1:
+──────
+line␊break: 1
+ok:         2
+Row 1:
+──────
+tab	here: 1
