@@ -39,11 +39,21 @@ INSERT INTO transactional_count_duplicate_sparsity SELECT number, if(number % 20
 INSERT INTO transactional_count_duplicate_sparsity SELECT number, if(number % 20 = 0, number + 1, 0) FROM numbers(20000);
 INSERT INTO transactional_count_duplicate_sparsity SELECT number, if(number % 20 = 0, number + 1, 0) FROM numbers(20000);
 
--- Guard against the test silently becoming vacuous: if the rewrite stops engaging for this table and
--- predicate shape, the queries below would return the right answer for the wrong reason.
-SELECT 'the sparsity filter rewrite must engage, otherwise nothing below is meaningful';
+-- The bug is replicas multiplying the result, so parallel replicas are enforced here instead of being left
+-- to the CI job profile. `automatic_parallel_replicas_mode = 2` would only collect statistics, and the
+-- failpoint reasoning above relies on the initiator's local plan.
+SET automatic_parallel_replicas_mode = 0;
+SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
+
+-- Guards against the test silently becoming vacuous: the rewrite must engage for this table and predicate
+-- shape, and a read that cannot be served from metadata must be planned across the replicas.
+SELECT 'the sparsity filter rewrite must engage';
 SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') > 0
     FROM (EXPLAIN SELECT count() FROM transactional_count_duplicate_sparsity WHERE s = 0);
+SELECT 'a plain read must be planned across the replicas';
+SELECT countIf(explain LIKE '%ReadFromRemoteParallelReplicas%') > 0
+    FROM (EXPLAIN SELECT count() FROM transactional_count_duplicate_sparsity WHERE NOT ignore(*));
 
 SELECT 'baseline outside a transaction, defaults of `s` out of 160000 rows';
 SELECT count() FROM transactional_count_duplicate_sparsity WHERE s = 0;
