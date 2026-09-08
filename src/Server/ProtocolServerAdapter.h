@@ -38,7 +38,16 @@ public:
 #endif
 
     /// Starts the server. A new thread will be created that waits for and accepts incoming connections.
-    void start() { impl->start(); }
+    /// Does nothing if the server has already been started: a server may be started ahead of the
+    /// common start loop (e.g. Prometheus starts before tables are loaded), and the underlying
+    /// implementation does not support being started twice.
+    void start()
+    {
+        if (started)
+            return;
+        impl->start();
+        started = true;
+    }
 
     /// Stops the server. No new connections will be accepted.
     void stop() { impl->stop(); }
@@ -56,6 +65,12 @@ public:
     /// Returns the port this server is listening to.
     UInt16 portNumber() const { return impl->portNumber(); }
 
+    /// Whether the listening socket is bound by `start` instead of when this adapter is created.
+    /// gRPC-based servers (gRPC and Arrow Flight) let gRPC own the socket, so for them binding - and
+    /// therefore a possible `EADDRINUSE` - happens on `start`, while every other protocol is already
+    /// bound and listening by the time the adapter exists.
+    bool bindsOnStart() const { return impl->bindsOnStart(); }
+
     bool supportsRuntimeReconfiguration() const { return supports_runtime_reconfiguration; }
 
     const std::string & getListenHost() const { return listen_host; }
@@ -72,6 +87,7 @@ private:
         virtual void start() = 0;
         virtual void stop() = 0;
         virtual bool isStopping() const = 0;
+        virtual bool bindsOnStart() const = 0;
         virtual UInt16 portNumber() const = 0;
         virtual size_t currentConnections() const = 0;
         virtual size_t currentThreads() const = 0;
@@ -85,6 +101,7 @@ private:
     std::string description;
     std::unique_ptr<Impl> impl;
     bool supports_runtime_reconfiguration = true;
+    bool started = false;
 };
 
 }

@@ -1,40 +1,61 @@
 """
-Workflow hook that blocks merge whenever any job has posted an error or
-warning to the workflow-level report (``Result.ext["errors"]`` /
+Workflow hook that posts an informational GH commit status summarising the
+errors and warnings from the workflow-level report (``Result.ext["errors"]`` /
 ``Result.ext["warnings"]`` on the top-level workflow result).
 
-Warnings are treated as blocking on purpose: if a job decides to surface a
-warning on the workflow page, it is something a human should acknowledge
-before the PR is merged.  After the issue is reviewed (and, if appropriate,
-fixed in a follow-up), the merge can proceed by re-running CI once the
-warning is no longer produced.
+The status is always posted as success (green) and the hook always exits 0:
+it is purely informational and must never show up as red or block the merge.
+Its description carries the error/warning counts and it links to the report
+page, where the messages are listed in the notification panels at the top.
+When there are no messages, no status is posted.
 """
 
-import sys
-
+from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 
+STATUS_NAME = "CI Infrastructure Messages"
+
 
 def check():
-    info = Info()
-    workflow_result = Result.from_fs(info.workflow_name)
-    ext = workflow_result.ext
+    try:
+        info = Info()
+        workflow_result = Result.from_fs(info.workflow_name)
+        ext = workflow_result.ext
 
-    errors = ext.get("errors", [])
-    warnings = ext.get("warnings", [])
+        errors = ext.get("errors", [])
+        warnings = ext.get("warnings", [])
 
-    ok = True
-    for item in errors:
-        print(f"ERROR: {item.get('message', '')} (from: {item.get('from', '')})")
-        ok = False
-    for item in warnings:
-        print(f"WARNING: {item.get('message', '')} (from: {item.get('from', '')})")
-        ok = False
+        for item in errors:
+            print(f"ERROR: {item.get('message', '')} (from: {item.get('from', '')})")
+        for item in warnings:
+            print(f"WARNING: {item.get('message', '')} (from: {item.get('from', '')})")
 
-    return ok
+        if errors or warnings:
+            parts = []
+            if errors:
+                parts.append(f"{len(errors)} error(s)")
+            if warnings:
+                parts.append(f"{len(warnings)} warning(s)")
+            description = ", ".join(parts)
+            # Link the status to the workflow report page, where the error and
+            # warning messages are listed in the notification panels at the top.
+            try:
+                url = info.get_report_url()
+            except Exception as e:
+                print(f"WARNING: failed to build report url: {e}")
+                url = ""
+            # Always green: this status is informational and must not block the
+            # merge or show up as red, even when errors/warnings are present.
+            GH.post_commit_status(
+                name=STATUS_NAME,
+                status=Result.Status.OK,
+                description=description,
+                url=url,
+            )
+    except Exception as e:
+        print(f"WARNING: check_report_messages failed: {e}")
 
 
 if __name__ == "__main__":
-    if not check():
-        sys.exit(1)
+    check()

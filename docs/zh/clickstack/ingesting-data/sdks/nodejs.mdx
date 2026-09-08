@@ -1,0 +1,409 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nodejs
+description: '适用于 ClickStack 的 Node.js SDK - ClickHouse 可观测性技术栈'
+title: 'Node.js'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', '日志', '集成', '应用监控']
+---
+
+ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志、指标、
+链路追踪和异常) 。链路追踪会通过自动插桩自动生成，因此无需手动
+插桩即可获得链路追踪能力。
+
+本指南涵盖：
+
+* **日志**
+* **指标**
+* **链路追踪**
+* **异常**
+
+<div id="getting-started">
+  ## 入门
+</div>
+
+<div id="install-hyperdx-opentelemetry-instrumentation-package">
+  ### 安装 HyperDX OpenTelemetry 插桩包
+</div>
+
+使用以下命令安装 [ClickStack OpenTelemetry 包](https://www.npmjs.com/package/@hyperdx/node-opentelemetry)。
+
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+</Tabs>
+
+<div id="initializin-the-sdk">
+  ### 初始化 SDK
+</div>
+
+要初始化 SDK，需要在应用程序入口文件的顶部调用 `init` 函数。
+
+<Tabs>
+  <Tab title="require">
+    ```javascript
+    const HyperDX = require('@hyperdx/node-opentelemetry');
+
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        service: 'my-service'
+    });
+    ```
+  </Tab>
+
+  <Tab title="import">
+    ```javascript
+    import * as HyperDX from '@hyperdx/node-opentelemetry';
+
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        service: 'my-service'
+    });
+    ```
+  </Tab>
+</Tabs>
+
+这样会自动采集 Node.js 应用程序中的链路追踪、指标和日志。
+
+<div id="setup-log-collection">
+  ### 设置日志收集
+</div>
+
+默认情况下，会自动收集 `console.*` 日志。如果你使用的是 `winston` 或 `pino`
+等日志库，则需要为日志记录器添加一个 transport，才能将
+日志发送到 ClickStack。如果你使用的是其他类型的日志记录器，
+请[联系我们](mailto:support@clickhouse.com)，或在适用时查看我们的平台
+集成 (例如 [Kubernetes](/zh/clickstack/integration-examples/kubernetes)) 。
+
+<Tabs>
+  <Tab title="Winston">
+    如果你使用 `winston` 作为日志记录器，则需要为日志记录器添加以下 transport。
+
+    ```typescript
+        import winston from 'winston';
+        import * as HyperDX from '@hyperdx/node-opentelemetry';
+
+        const logger = winston.createLogger({
+          level: 'info',
+          format: winston.format.json(),
+          transports: [
+            new winston.transports.Console(),
+            HyperDX.getWinstonTransport('info', { // 发送 info 及以上级别的日志
+              detectResources: true,
+            }),
+          ],
+        });
+
+        export default logger;
+    ```
+  </Tab>
+
+  <Tab title="Pino">
+    如果你使用 `pino` 作为日志记录器，则需要为日志记录器添加以下 transport，并指定一个 `mixin` 来将日志与链路追踪关联起来。
+
+    ```typescript
+    import pino from 'pino';
+    import * as HyperDX from '@hyperdx/node-opentelemetry';
+
+    const logger = pino(
+        pino.transport({
+        mixin: HyperDX.getPinoMixinFunction,
+        targets: [
+            HyperDX.getPinoTransport('info', { // 发送 info 及以上级别的日志
+            detectResources: true,
+            }),
+        ],
+        }),
+    );
+
+    export default logger;
+    ```
+  </Tab>
+
+  <Tab title="console.log">
+    默认情况下，开箱即用支持 `console.*` 方法，无需额外配置。
+
+    你可以将 `HDX_NODE_CONSOLE_CAPTURE` 环境变量设为 0，或向 `init` 函数传入 `consoleCapture: false` 来禁用此功能。
+  </Tab>
+</Tabs>
+
+<div id="setup-error-collection">
+  ### 设置错误收集
+</div>
+
+ClickStack SDK 可以自动捕获应用中的未捕获异常和错误，并附带完整的堆栈跟踪和代码上下文。
+
+要启用此功能，你需要将以下代码添加到应用错误处理中间件的末尾，或者使用 `recordException` 函数手动记录异常。
+
+<Tabs>
+  <Tab title="Express">
+    ```javascript
+    const HyperDX = require('@hyperdx/node-opentelemetry');
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        service: 'my-service'
+    });
+    const app = express();
+
+    // 添加你的路由等。
+
+    // 在所有路由之后添加此代码，
+    // 但要在定义任何其他错误处理中间件之前
+    HyperDX.setupExpressErrorHandler(app);
+
+    app.listen(3000);
+    ```
+  </Tab>
+
+  <Tab title="Koa">
+    ```javascript
+    const Koa = require("koa");
+    const Router = require("@koa/router");
+    const HyperDX = require('@hyperdx/node-opentelemetry');
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        service: 'my-service'
+    });
+
+    const router = new Router();
+    const app = new Koa();
+
+    HyperDX.setupKoaErrorHandler(app);
+
+    // 添加你的路由等。
+
+    app.listen(3030);
+    ```
+  </Tab>
+
+  <Tab title="手动">
+    ```javascript
+    const HyperDX = require('@hyperdx/node-opentelemetry');
+
+    function myErrorHandler(error, req, res, next) {
+        // 这可以在应用中的任何位置使用
+        HyperDX.recordException(error);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+如果你在使用 SDK 时遇到问题，可以将
+`OTEL_LOG_LEVEL` 环境变量设为 `debug`，以启用详细日志。
+
+```shell
+export OTEL_LOG_LEVEL=debug
+```
+
+<div id="advanced-instrumentation-configuration">
+  ## 高级插桩配置
+</div>
+
+<div id="capture-console-logs">
+  ### 捕获控制台日志
+</div>
+
+默认情况下，ClickStack SDK 会捕获控制台日志。你可以通过
+将 `HDX_NODE_CONSOLE_CAPTURE` 环境变量设为 0 来禁用此功能。
+
+```sh copy
+export HDX_NODE_CONSOLE_CAPTURE=0
+```
+
+<div id="attach-user-information-or-metadata">
+  ### 附加用户信息或元数据
+</div>
+
+为了方便给与特定属性或标识符 (例如用户 id
+或电子邮件) 相关的所有事件打上标签，你可以调用 `setTraceAttributes` 函数。调用后，它会为与当前 trace 关联的每条
+日志/span 添加已声明的
+属性。建议在给定请求/trace 中尽可能早地调用此函数 (例如在 Express 中间件栈中尽可能靠前的位置) 。
+
+这是一种很方便的方式，可确保所有日志/spans 都会自动带上
+后续搜索所需的正确标识符，而不必由你自己手动
+打标签并传递这些标识符。
+
+`userId`、`userEmail`、`userName` 和 `teamName` 会将对应的值填充到 sessions UI
+中，但也可以省略。你还可以指定任何其他附加值，并用其搜索事件。
+
+```typescript
+import * as HyperDX from '@hyperdx/node-opentelemetry';
+
+app.use((req, res, next) => {
+  // 从请求中获取用户信息...
+
+  // 将用户信息附加到当前 trace
+  HyperDX.setTraceAttributes({
+    userId,
+    userEmail,
+  });
+
+  next();
+});
+```
+
+请确保启用 Beta 模式：将 `HDX_NODE_BETA_MODE` 环境
+变量设为 1，或向 `init` 函数传入 `betaMode: true`，以
+启用 trace 属性。
+
+```shell
+export HDX_NODE_BETA_MODE=1
+```
+
+<div id="google-cloud-run">
+  ### Google Cloud Run
+</div>
+
+如果您在 Google Cloud Run 上运行应用，Cloud Trace 会自动将采样请求头注入传入请求，目前会将每个实例的链路追踪采样限制为每秒 0.1 个请求。
+
+`@hyperdx/node-opentelemetry` 包默认会将采样率覆盖为 1.0。
+
+若要更改此行为，或配置其他 OpenTelemetry 安装，您可以手动配置环境变量
+`OTEL_TRACES_SAMPLER=parentbased_always_on` 和 `OTEL_TRACES_SAMPLER_ARG=1`，以
+达到相同效果。
+
+如需了解更多信息，以及强制对特定请求启用链路追踪，请参阅
+[Google Cloud Run 文档](https://cloud.google.com/run/docs/trace)。
+
+<div id="auto-instrumented-libraries">
+  ### 自动插桩的库
+</div>
+
+以下库将由 SDK 自动插桩 (生成 trace) ：
+
+* [`dns`](https://nodejs.org/dist/latest/docs/api/dns.html)
+* [`express`](https://www.npmjs.com/package/express)
+* [`graphql`](https://www.npmjs.com/package/graphql)
+* [`hapi`](https://www.npmjs.com/package/@hapi/hapi)
+* [`http`](https://nodejs.org/dist/latest/docs/api/http.html)
+* [`ioredis`](https://www.npmjs.com/package/ioredis)
+* [`knex`](https://www.npmjs.com/package/knex)
+* [`koa`](https://www.npmjs.com/package/koa)
+* [`mongodb`](https://www.npmjs.com/package/mongodb)
+* [`mongoose`](https://www.npmjs.com/package/mongoose)
+* [`mysql`](https://www.npmjs.com/package/mysql)
+* [`mysql2`](https://www.npmjs.com/package/mysql2)
+* [`net`](https://nodejs.org/dist/latest/docs/api/net.html)
+* [`pg`](https://www.npmjs.com/package/pg)
+* [`pino`](https://www.npmjs.com/package/pino)
+* [`redis`](https://www.npmjs.com/package/redis)
+* [`winston`](https://www.npmjs.com/package/winston)
+
+<div id="alternative-installation">
+  ## 其他安装方式
+</div>
+
+<div id="run-the-application-with-cli">
+  ### 使用 ClickStack OpenTelemetry CLI 运行应用
+</div>
+
+或者，你也可以使用 `opentelemetry-instrument` CLI 或 Node.js 的 `--require` 标志，无需修改任何代码即可为应用自动插桩。通过 CLI 安装可支持更多自动插桩的库和框架。
+
+<Tabs>
+  <Tab title="使用 NPX">
+    <Info>
+      **托管 ClickStack**
+
+      对于托管 ClickStack，可以省略 `HYPERDX_API_KEY`。
+    </Info>
+
+    ```shell
+    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
+    ```
+  </Tab>
+
+  <Tab title="自定义入口点（例如 Nodemon、ts-node 等）">
+    <Info>
+      **托管 ClickStack**
+
+      对于托管 ClickStack，可以省略 `HYPERDX_API_KEY`。
+    </Info>
+
+    ```shell
+    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+    ```
+  </Tab>
+
+  <Tab title="代码导入">
+    ```javascript
+    // 将此导入放在应用加载的第一个文件的最顶部
+    // 你仍需通过 `HYPERDX_API_KEY` 环境变量指定 API key
+    import { initSDK } from '@hyperdx/node-opentelemetry';
+
+    initSDK({
+        consoleCapture: true, // 可选，默认值：true
+        additionalInstrumentations: [], // 可选，默认值：[]
+    });
+    ```
+  </Tab>
+</Tabs>
+
+*`OTEL_SERVICE_NAME` 环境变量用于在 HyperDX 应用中标识你的服务，你可以将其设为任意名称。*
+
+<div id="enabling-exception-capturing">
+  ### 启用异常捕获
+</div>
+
+要启用未捕获异常捕获功能，您需要将 `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` 环境变量设置为 1。
+
+```shell
+HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
+```
+
+之后，如需自动捕获来自 Express、Koa 的异常，或手动捕获异常，请按照上文 [设置错误收集](#setup-error-collection) 部分中的说明操作。
+
+<div id="auto-instrumented-libraries">
+  ### 自动插桩的库
+</div>
+
+以下库将通过上述安装方法自动插桩 (生成追踪) ：
+
+* [`amqplib`](https://www.npmjs.com/package/amqplib)
+* [`AWS Lambda Functions`](https://docs.aws.amazon.com/lambda/latest/dg/nodejs-handler.html)
+* [`aws-sdk`](https://www.npmjs.com/package/aws-sdk)
+* [`bunyan`](https://www.npmjs.com/package/bunyan)
+* [`cassandra-driver`](https://www.npmjs.com/package/cassandra-driver)
+* [`connect`](https://www.npmjs.com/package/connect)
+* [`cucumber`](https://www.npmjs.com/package/@cucumber/cucumber)
+* [`dataloader`](https://www.npmjs.com/package/dataloader)
+* [`dns`](https://nodejs.org/dist/latest/docs/api/dns.html)
+* [`express`](https://www.npmjs.com/package/express)
+* [`fastify`](https://www.npmjs.com/package/fastify)
+* [`generic-pool`](https://www.npmjs.com/package/generic-pool)
+* [`graphql`](https://www.npmjs.com/package/graphql)
+* [`grpc`](https://www.npmjs.com/package/@grpc/grpc-js)
+* [`hapi`](https://www.npmjs.com/package/@hapi/hapi)
+* [`http`](https://nodejs.org/dist/latest/docs/api/http.html)
+* [`ioredis`](https://www.npmjs.com/package/ioredis)
+* [`knex`](https://www.npmjs.com/package/knex)
+* [`koa`](https://www.npmjs.com/package/koa)
+* [`lru-memoizer`](https://www.npmjs.com/package/lru-memoizer)
+* [`memcached`](https://www.npmjs.com/package/memcached)
+* [`mongodb`](https://www.npmjs.com/package/mongodb)
+* [`mongoose`](https://www.npmjs.com/package/mongoose)
+* [`mysql`](https://www.npmjs.com/package/mysql)
+* [`mysql2`](https://www.npmjs.com/package/mysql2)
+* [`nestjs-core`](https://www.npmjs.com/package/@nestjs/core)
+* [`net`](https://nodejs.org/dist/latest/docs/api/net.html)
+* [`pg`](https://www.npmjs.com/package/pg)
+* [`pino`](https://www.npmjs.com/package/pino)
+* [`redis`](https://www.npmjs.com/package/redis)
+* [`restify`](https://www.npmjs.com/package/restify)
+* [`socket.io`](https://www.npmjs.com/package/socket.io)
+* [`winston`](https://www.npmjs.com/package/winston)

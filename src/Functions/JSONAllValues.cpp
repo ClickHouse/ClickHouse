@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
@@ -13,9 +14,17 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypesCache.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool type_json_skip_null_typed_paths;
+}
 
 namespace ErrorCodes
 {
@@ -34,7 +43,11 @@ class FunctionJSONAllValues final : public IFunction
 public:
     static constexpr auto name = "JSONAllValues";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionJSONAllValues>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionJSONAllValues>(context); }
+    explicit FunctionJSONAllValues(ContextPtr context)
+        : skip_null_typed_paths(context->getSettingsRef()[Setting::type_json_skip_null_typed_paths])
+    {
+    }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -76,15 +89,19 @@ private:
         const IColumn * column;
         SerializationPtr serialization;
         bool is_dynamic; /// dynamic paths need a null check before serialization
+        bool is_typed; /// typed paths may need a null check when skip_null_typed_paths is enabled
     };
 
     ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
     {
-        auto res = ColumnArray::create(ColumnString::create());
-        auto & offsets = res->getOffsets();
-        auto & result_data = assert_cast<ColumnString &>(res->getData());
+        auto result_data_column = ColumnString::create();
+        auto offsets_column = ColumnArray::ColumnOffsets::create();
+        auto & result_data = *result_data_column;
+        auto & offsets = offsets_column->getData();
 
         FormatSettings format_settings;
+        /// Values can be JSON objects themselves, so the setting must reach nested serializers.
+        format_settings.json.type_json_skip_null_typed_paths = skip_null_typed_paths;
 
         /// Collect typed + dynamic paths, sorted for deterministic output order.
         const auto & typed_path_types = type_object.getTypedPaths();
@@ -92,25 +109,25 @@ private:
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         auto dynamic_serialization = SerializationDynamic::create();
 
-        std::vector<PathInfo> sorted_paths;
+        VectorWithMemoryTracking<PathInfo> sorted_paths;
         sorted_paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
 
         for (const auto & [path, type] : typed_path_types)
         {
             const auto & column = typed_path_columns.at(path);
-            sorted_paths.push_back({path, column.get(), type->getDefaultSerialization(), false});
+            sorted_paths.push_back({path, column.get(), type->getDefaultSerialization(), false, true});
         }
 
         for (const auto & [path, column] : dynamic_path_columns)
-            sorted_paths.push_back({path, column.get(), dynamic_serialization, true});
+            sorted_paths.push_back({path, column.get(), dynamic_serialization, true, false});
 
         std::sort(sorted_paths.begin(), sorted_paths.end(),
             [](const PathInfo & a, const PathInfo & b) { return a.path < b.path; });
 
         /// Cache of reusable (serialization, column) structs keyed by type name,
         /// to avoid createColumn and getDefaultSerialization per shared data value.
-        std::unordered_map<String, SerializationPtr> shared_serializations_cache;
-        std::unordered_map<String, MutableColumnPtr> shared_columns_cache;
+        UnorderedMapWithMemoryTracking<String, SerializationPtr> shared_serializations_cache;
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> shared_columns_cache;
 
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
         const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
@@ -146,16 +163,19 @@ private:
             offsets.push_back(result_data.size());
         }
 
-        return res;
+        return ColumnArray::create(std::move(result_data_column), std::move(offsets_column));
     }
 
-    static void emitValue(
+    void emitValue(
         const PathInfo & entry,
         size_t row,
         const FormatSettings & format_settings,
-        ColumnString & result_data)
+        ColumnString & result_data) const
     {
         if (entry.is_dynamic && entry.column->isNullAt(row))
+            return;
+
+        if (entry.is_typed && skip_null_typed_paths && entry.column->isNullAt(row))
             return;
 
         serializeValueIntoResult(*entry.serialization, *entry.column, row, format_settings, result_data);
@@ -165,8 +185,8 @@ private:
         std::string_view value_data,
         const FormatSettings & format_settings,
         ColumnString & data,
-        std::unordered_map<String, SerializationPtr> & shared_serializations_cache,
-        std::unordered_map<String, MutableColumnPtr> & shared_columns_cache)
+        UnorderedMapWithMemoryTracking<String, SerializationPtr> & shared_serializations_cache,
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & shared_columns_cache)
     {
         ReadBufferFromMemory buf(value_data);
 
@@ -198,7 +218,7 @@ private:
             temp_column.popBack(1);
         };
 
-        char type_index;
+        char type_index = 0;
         if (!buf.peek(type_index))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared data value of JSON: no type index found");
 
@@ -240,6 +260,8 @@ private:
 
         result_offsets.push_back(result_chars.size());
     }
+
+    bool skip_null_typed_paths = false;
 };
 
 }
@@ -260,15 +282,15 @@ Values are serialized in their text representation and ordered by their path nam
         "Usage example",
         R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}};
 SELECT json, JSONAllValues(json) FROM test;
         )",
         R"(
-┌─json─────────────────────────────────┬─JSONAllValues(json)──────┐
-│ {"a":42}                             │ ['42']                   │
-│ {"b":"Hello"}                        │ ['Hello']                │
-│ {"a":[1,2,3],"c":"2020-01-01"}       │ ['[1,2,3]','2020-01-01'] │
-└──────────────────────────────────────┴──────────────────────────┘
+┌─json───────────────────────────┬─JSONAllValues(json)──────┐
+│ {"a":42}                       │ ['42']                   │
+│ {"b":"Hello"}                  │ ['Hello']                │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['[1,2,3]','2020-01-01'] │
+└────────────────────────────────┴──────────────────────────┘
         )"
     }
     };

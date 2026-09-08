@@ -31,8 +31,6 @@ String storageTypeToKeyType(RedisStorageType type)
             return "string";
         case RedisStorageType::HASH_MAP:
             return "hash";
-        default:
-            return "none";
     }
 
     UNREACHABLE();
@@ -46,8 +44,6 @@ String serializeStorageType(RedisStorageType storage_type)
             return "simple";
         case RedisStorageType::HASH_MAP:
             return "hash_map";
-        default:
-            return "none";
     }
 }
 

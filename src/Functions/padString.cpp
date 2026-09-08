@@ -1,6 +1,7 @@
 #include <memory>
 #include <Columns/ColumnFixedString.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
@@ -114,7 +115,7 @@ namespace
         /// utf8_offsets[1] is the offset of the second code point in `pad_string`;
         /// utf8_offsets[2] is the offset of the third code point in `pad_string`;
         /// ...
-        std::vector<size_t> utf8_offsets;
+        VectorWithMemoryTracking<size_t> utf8_offsets;
     };
 
     /// Returns the number of characters in a slice.

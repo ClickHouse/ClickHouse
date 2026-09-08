@@ -1,0 +1,183 @@
+---
+keywords: ['clickhouse', 'python', 'client', 'connect', 'integrate']
+slug: /integrations/python
+description: 'El conjunto de proyectos ClickHouse Connect para conectar Python con ClickHouse'
+title: Introducción
+sidebarTitle: 'Introducción'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+
+ClickHouse Connect es un driver principal de base de datos que ofrece interoperabilidad con una amplia variedad de aplicaciones Python.
+
+* Las interfaces principales son `Client`, síncrona, y `AsyncClient`, nativa basada en aiohttp, en `clickhouse_connect.driver`. El paquete del driver también proporciona contextos de consulta e inserción, funciones auxiliares de streaming, compatibilidad con DB-API y métodos HTTP de nivel inferior.
+* El paquete `clickhouse_connect.datatypes` serializa y deserializa tipos de ClickHouse mediante el formato binario nativo columnar de ClickHouse.
+* Las extensiones opcionales de Cython en `clickhouse_connect.driverc` aceleran las rutas habituales de serialización, conversión y almacenamiento en búfer. También sigue disponible una ruta en pure Python en plataformas donde no se pueden compilar las extensiones.
+* El paquete incluye información de tipos PEP 561, por lo que los verificadores de tipos posteriores pueden usar annotations para las superficies públicas del driver, DB-API y SQLAlchemy.
+* El dialecto de [SQLAlchemy](https://www.sqlalchemy.org/) en `clickhouse_connect.cc_sqlalchemy` admite SQLAlchemy Core, reflection de esquemas, clauses de consulta específicas de ClickHouse y table engines, así como migrations de Alembic. Las lecturas e inserciones básicas de ORM funcionan, pero el dialecto está diseñado para cargas de trabajo analíticas, no para ofrecer todo el comportamiento ORM de unidad de trabajo.
+* El driver principal y la implementación de [ClickHouse Connect SQLAlchemy](/es/integrations/language-clients/python/sqlalchemy) son el método preferido para conectar ClickHouse con Apache Superset. Use la conexión de base de datos `ClickHouse Connect` o la cadena de conexión del dialecto SQLAlchemy `clickhousedb`.
+
+Esta documentación está actualizada para clickhouse-connect 1.6.0. Si está actualizando desde la versión 0.15.x o anterior, consulte la [guía de migración a 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
+
+<Note>
+  Los Clients estándar de ClickHouse Connect usan la interfaz HTTP. Esto permite usar balanceadores de carga HTTP, proxies y controles de red empresariales habituales. ClickHouse Connect también tiene un backend [chDB](#embedded-chdb-backend) experimental en el mismo proceso.
+</Note>
+
+<div id="requirements-and-compatibility">
+  ## Requisitos y compatibilidad
+</div>
+
+| Componente  | Versiones compatibles                                                                                           |
+| ----------- | --------------------------------------------------------------------------------------------------------------- |
+| Python      | De 3.10 a 3.14. Las compilaciones free-threaded, como 3.14t, tienen soporte experimental.                       |
+| ClickHouse  | releases de ClickHouse con soporte activo. CI realiza pruebas con releases recientes LTS y stable del servidor. |
+| SQLAlchemy  | 1.4.40 o posterior, inferior a 3.0                                                                              |
+| Pandas      | 2.x y 3.x                                                                                                       |
+| Polars      | 1.0 o posterior                                                                                                 |
+| aiohttp     | 3.9 o posterior                                                                                                 |
+| Plataformas | Linux, macOS y Windows en las arquitecturas para las que se publican wheels de cada versión de Python           |
+
+El package incluye wheels compilados cuando están disponibles y recurre a una implementación en pure Python cuando no se pueden compilar las extensiones de Cython. PyArrow es compatible con Python de 3.10 a 3.14. Python 3.14 requiere PyArrow 22 o posterior.
+
+<div id="installation">
+  ## Instalación
+</div>
+
+Instala ClickHouse Connect desde [PyPI](https://pypi.org/project/clickhouse-connect/) con pip:
+
+```bash
+pip install clickhouse-connect
+```
+
+Las integraciones opcionales se instalan con extras:
+
+```bash
+pip install "clickhouse-connect[async]"      # Native asyncio client
+pip install "clickhouse-connect[pandas]"     # Pandas
+pip install "clickhouse-connect[arrow]"      # PyArrow
+pip install "clickhouse-connect[polars]"     # Polars
+pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
+pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
+pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
+pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
+```
+
+ClickHouse Connect también puede instalarse desde el código fuente:
+
+* Haz `git clone` del [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-connect).
+* Ve a la raíz del proyecto y ejecuta `pip install .`. El sistema de compilación instala Cython automáticamente para compilar las extensiones C opcionales.
+
+La versión instalada está disponible en `clickhouse_connect.__version__`.
+
+<div id="support-policy">
+  ## Política de soporte
+</div>
+
+Actualiza a la versión más reciente de ClickHouse Connect antes de reportar un issue. Registra los issues en el [proyecto de GitHub](https://github.com/ClickHouse/clickhouse-connect/issues). ClickHouse Connect está pensado para las [versiones de ClickHouse con soporte activo](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) en el momento de cada versión del driver. A menudo también funciona con versiones anteriores del servidor, pero los tipos de datos y las funciones del protocolo más recientes pueden requerir un servidor más reciente.
+
+<div id="basic-usage">
+  ## Uso básico
+</div>
+
+<div id="gather-your-connection-details">
+  ### Obtén los detalles de conexión
+</div>
+
+<ConnectionDetails />
+
+<div id="establish-a-connection">
+  ### Establecer una conexión
+</div>
+
+Se muestran dos ejemplos de conexión a ClickHouse:
+
+* Conexión a un servidor de ClickHouse en localhost.
+* Conexión a un servicio de ClickHouse Cloud.
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
+  #### Usa una instancia Client de ClickHouse Connect para conectarte a un servidor de ClickHouse en localhost:
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host="localhost",
+    username="default",
+    password="password",
+)
+```
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
+  #### Usa una instancia del Client ClickHouse Connect para conectarte a un servicio de ClickHouse Cloud:
+</div>
+
+<Tip>
+  Usa los datos de conexión recopilados anteriormente. Los servicios de ClickHouse Cloud requieren TLS, así que usa el puerto 8443.
+</Tip>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host="HOSTNAME.clickhouse.cloud",
+    port=8443,
+    username="default",
+    password="your password",
+)
+```
+
+<div id="interact-with-your-database">
+  ### Interactúa con tu base de datos
+</div>
+
+Para ejecutar un comando de ClickHouse SQL, usa el método `command` del Client:
+
+```python
+client.command(
+    "CREATE TABLE new_table "
+    "(key UInt32, value String, metric Float64) "
+    "ENGINE MergeTree ORDER BY key"
+)
+```
+
+Para insertar datos por lotes, use el método `insert` del Client con un array bidimensional de filas y valores:
+
+```python
+row1 = [1000, "String Value 1000", 5.233]
+row2 = [2000, "String Value 2000", -107.04]
+data = [row1, row2]
+client.insert("new_table", data, column_names=["key", "value", "metric"])
+```
+
+Para recuperar datos con ClickHouse SQL, use el método `query` del Client:
+
+```python
+result = client.query("SELECT max(key), avg(metric) FROM new_table")
+print(result.result_rows)
+# Output: [(2000, -50.9035)]
+
+client.close()
+```
+
+<div id="embedded-chdb-backend">
+  ## Backend embebido de chDB
+</div>
+
+El backend experimental de chDB ejecuta consultas de ClickHouse dentro del proceso de Python, sin necesidad de un servidor HTTP. Instala el extra `chdb` y luego selecciona el backend con `interface="chdb"` o un DSN `chdb://`:
+
+```python
+import clickhouse_connect
+
+with clickhouse_connect.get_client(interface="chdb") as client:
+    result = client.query("SELECT number FROM numbers(3)")
+    print(result.result_rows)
+    # Output: [(0,), (1,), (2,)]
+```
+
+La base de datos predeterminada está en memoria. Pase `path="/data/my_chdb"` o use `dsn="chdb:///data/my_chdb"` para almacenamiento persistente. chDB permite una sola ruta de engine por proceso. No es compatible con el Client async ni con datos externos.

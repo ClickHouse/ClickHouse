@@ -1,0 +1,7 @@
+ClickHouse <span class="accent">Reference</span>
+':::' + name.toLowerCase()
+(?:title|label)=
+'Note', 'Warning', 'Tip', 'Info', 'Check', 'Danger', 'Caution',
+replace(/<[A-Z][A-Za-z0-9]*(?:\s[^>]*)?\/>/g
+1
+1

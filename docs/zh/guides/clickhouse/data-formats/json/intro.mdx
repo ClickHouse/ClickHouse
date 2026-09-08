@@ -1,0 +1,31 @@
+---
+sidebarTitle: '概览'
+title: '使用 JSON'
+slug: /integrations/data-formats/json/overview
+description: '在 ClickHouse 中使用 JSON'
+keywords: ['json', 'clickhouse']
+score: 10
+doc_type: 'guide'
+---
+
+<Frame>
+  <iframe
+    src="//www.youtube.com/embed/gCg5ISOujtc"
+    frameborder="0"
+    allow="autoplay;
+fullscreen;
+picture-in-picture"
+    allowfullscreen
+  />
+</Frame>
+
+<br />
+
+ClickHouse 提供了多种处理 JSON 的方式，每种方式都有各自的优缺点和适用场景。在本指南中，我们将介绍如何加载 JSON，以及如何更合理地设计 schema。本指南包含以下几个部分：
+
+* [加载 JSON](/zh/guides/clickhouse/data-formats/json/loading) - 在 ClickHouse 中使用简单 schema 加载和查询结构化及半结构化 JSON。
+* [JSON schema 推断](/zh/guides/clickhouse/data-formats/json/inference) - 使用 JSON schema 推断来查询 JSON 并创建表 schema。
+* [设计 JSON schema](/zh/guides/clickhouse/data-formats/json/schema) - 设计和优化 JSON schema 的步骤。
+* [导出 JSON](/zh/guides/clickhouse/data-formats/json/exporting) - 如何导出 JSON。
+* [处理其他 JSON 格式](/zh/guides/clickhouse/data-formats/json/formats) - 处理换行分隔 (NDJSON) 以外的 JSON 格式的一些技巧。
+* [其他 JSON 建模方式](/zh/guides/clickhouse/data-formats/json/other) - 旧版的 JSON 建模方式。**不推荐。**

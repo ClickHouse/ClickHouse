@@ -172,6 +172,21 @@ def test_drop():
     check()
 
 
+def test_drop_and_kill():
+    instance.query(
+        "CREATE SETTINGS PROFILE stale_profile SETTINGS max_memory_usage = 111"
+    )
+
+    instance.restart_clickhouse()
+    instance.query("DROP SETTINGS PROFILE stale_profile")
+    instance.restart_clickhouse(kill=True)
+
+    assert instance.query("SELECT 1") == "1\n"
+    assert "There is no settings profile `stale_profile`" in instance.query_and_get_error(
+        "SHOW CREATE SETTINGS PROFILE stale_profile"
+    )
+
+
 def test_drop_role_cascades_to_disk():
     """
     Regression test for https://github.com/ClickHouse/ClickHouse/issues/104298.

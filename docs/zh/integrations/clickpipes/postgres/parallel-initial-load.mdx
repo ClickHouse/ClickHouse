@@ -1,0 +1,69 @@
+---
+title: 'Postgres ClickPipe 中的并行快照'
+description: '介绍 Postgres ClickPipe 中并行快照的文档'
+slug: /integrations/clickpipes/postgres/parallel_initial_load
+sidebarTitle: '并行快照的工作原理'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'PostgreSQL', 'CDC', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本文档介绍 Postgres ClickPipe 中并行快照/初始加载的工作原理，并说明可用于控制该过程的快照参数。
+
+<div id="overview-pg-snapshot">
+  ## 概览
+</div>
+
+初始加载是 CDC ClickPipe 的第一阶段：在开始 CDC 之前，ClickPipe 会先将源数据库中各张表的历史数据同步到 ClickHouse。很多开发者都会以单线程方式执行这一过程，例如使用 pg&#95;dump 或 pg&#95;restore，或者仅用一个线程从源数据库读取数据并写入 ClickHouse。
+不过，Postgres ClickPipe 可以将这一过程并行化，从而显著加快初始加载速度。
+
+<div id="ctid-pg-snapshot">
+  ### Postgres 中的 CTID 列
+</div>
+
+在 Postgres 中，表里的每一行都有一个名为 CTID 的唯一标识符。它是一个系统列，默认不会显示给你，但可用于唯一标识表中的行。CTID 由块号和块内偏移量组成，因此可以高效地访问行。
+
+<div id="logical-partitioning-pg-snapshot">
+  ### 逻辑分区
+</div>
+
+Postgres ClickPipe 使用 CTID 列对源表进行逻辑分区。它会先对源表执行 `COUNT(*)`，再通过窗口函数分区查询获取各个分区的 CTID 范围。这样，ClickPipe 就能并行读取源表，并由独立线程分别处理每个分区。
+
+下面来看看这些设置：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="快照参数" size="md" />
+
+<div id="numrows-pg-snapshot">
+  #### 每个分区的快照行数
+</div>
+
+此设置用于控制一个分区包含多少行。ClickPipe 会按此大小分块读取源表，并根据设置的初始加载并行度并行处理这些分块。默认值为每个分区 100,000 行。
+
+<div id="parallelism-pg-snapshot">
+  #### 初始加载并行度
+</div>
+
+此设置用于控制可并行处理的分区数量。默认值为 4，即 ClickPipe 会并行读取源表的 4 个分区。增大该值可以加快初始加载速度，但建议根据源实例的规格将其控制在合理范围内，以免给源数据库带来过大压力。ClickPipe 还会根据源表的大小以及每个分区的行数，自动调整分区数量。
+
+<div id="tables-parallel-pg-snapshot">
+  #### 并行快照中的表数量
+</div>
+
+虽然这并不完全属于并行快照本身的范畴，但此设置控制的是在初始加载期间并行处理的表数量。默认值为 1。请注意，这一层并行度是叠加在分区并行度之上的，因此如果你有 4 个分区和 2 张表，ClickPipe 将并行读取 8 个分区。
+
+<div id="monitoring-parallel-pg-snapshot">
+  ### 在 Postgres 中监控并行快照
+</div>
+
+你可以通过分析 **pg&#95;stat&#95;activity** 来观察并行快照的运行情况。ClickPipe 会建立多个到源数据库的连接，每个连接读取源表的不同分区。如果你看到带有不同 CTID 范围的 **FETCH** 查询，就说明 ClickPipe 正在读取源表。你还可以在这里看到 COUNT(*) 和分区查询。
+
+<div id="limitations-parallel-pg-snapshot">
+  ### 限制
+</div>
+
+* 管道创建后，无法再编辑快照参数。如需更改这些参数，必须创建一个新的 ClickPipe。
+* 向现有 ClickPipe 添加表时，无法更改快照参数。新表将沿用现有参数。

@@ -12,12 +12,9 @@ import queue
 import socket
 import struct
 import threading
-import time
 import traceback
-import os
 
 import pytest
-from kazoo.client import KazooClient
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster

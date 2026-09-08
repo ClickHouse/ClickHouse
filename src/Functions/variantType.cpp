@@ -46,7 +46,7 @@ public:
 
         const auto * variant_type = checkAndGetDataType<DataTypeVariant>(arguments[0].type.get());
         const auto & variants = variant_type->getVariants();
-        std::vector<std::pair<String, Int8>> enum_values;
+        DataTypeEnum<Int8>::Values enum_values;
         enum_values.reserve(variants.size() + 1);
         for (ColumnVariant::Discriminator i = 0; i != variants.size(); ++i)
             enum_values.emplace_back(variants[i]->getName(), i);

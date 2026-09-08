@@ -618,19 +618,24 @@
 #define PG_MAJORVERSION_NUM 18
 
 /* PostgreSQL minor version number */
-#define PG_MINORVERSION_NUM 3
+#define PG_MINORVERSION_NUM 4
 
-/* Define to best printf format archetype, usually gnu_printf if available. */
-#define PG_PRINTF_ATTRIBUTE gnu_printf
+/* Define to best C++ printf format archetype, usually gnu_printf if
+   available. */
+#define PG_CXX_PRINTF_ATTRIBUTE gnu_printf
+
+/* Define to best C printf format archetype, usually gnu_printf if available.
+   */
+#define PG_C_PRINTF_ATTRIBUTE gnu_printf
 
 /* PostgreSQL version as a string */
-#define PG_VERSION "18.3"
+#define PG_VERSION "18.4"
 
 /* PostgreSQL version as a number */
-#define PG_VERSION_NUM 180003
+#define PG_VERSION_NUM 180004
 
 /* A string containing the version number, platform, and C compiler */
-#define PG_VERSION_STR "PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.1 20250813, 64-bit"
+#define PG_VERSION_STR "PostgreSQL 18.4 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.1 20250813, 64-bit"
 
 /* Define to 1 to allow profiling output to be saved separately for each
    process. */

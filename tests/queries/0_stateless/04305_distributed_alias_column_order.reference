@@ -1,0 +1,44 @@
+local
+true	false	1
+distributed
+true	false	1
+local_sub
+42_suffix	42
+distributed_sub
+42_suffix	42
+local_nested
+11	12
+distributed_nested
+11	12
+local_expr
+42_suffix	42
+distributed_expr
+42_suffix	42
+local_prefix
+42_suffix	42
+distributed_prefix
+42_suffix	42
+local_deep
+11	13
+distributed_deep
+11	13
+local_prefix_collision
+5	105	205
+distributed_prefix_collision
+5	105	205
+local_dup_mixed
+42_suffix	42	42
+distributed_dup_mixed
+42_suffix	42	42
+local_dup_interleaved
+42	42	42_suffix
+distributed_dup_interleaved
+42	42	42_suffix
+local_same_expr
+7	7
+distributed_same_expr
+7	7
+local_const_stage
+2026-02-27 14:27:49	42	a	a_x	a_x!	a_y
+distributed_const_stage
+2026-02-27 14:27:49	42	a	a_x	a_x!	a_y

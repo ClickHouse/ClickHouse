@@ -1,0 +1,18 @@
+-- query_plan_optimize_lazy_materialization_for_object_storage = 1
+-- a JSON subcolumn is deferred through its parent column
+1
+999	u999
+998	u998
+997	u997
+-- a deferred parent column whose subcolumn is a sort key input
+{"user":{"age":999,"name":"u999"}}
+{"user":{"age":998,"name":"u998"}}
+-- query_plan_optimize_lazy_materialization_for_object_storage = 0
+-- a JSON subcolumn is deferred through its parent column
+0
+999	u999
+998	u998
+997	u997
+-- a deferred parent column whose subcolumn is a sort key input
+{"user":{"age":999,"name":"u999"}}
+{"user":{"age":998,"name":"u998"}}

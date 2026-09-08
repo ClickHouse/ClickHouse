@@ -70,7 +70,7 @@ public:
 
         auto tag_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 2);
 
-        std::vector<Group> new_groups;
+        VectorWithMemoryTracking<Group> new_groups;
 
         if (dest_groups.size() == 1)
             new_groups = tags_collector->copyTag(dest_groups[0], src_groups, tag_to_copy);
@@ -116,9 +116,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
        timeSeriesGroupToTags(result_group)
         )",
         R"(
-┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)────────────────────────┐
-│          1 │         2 │            3 │ [('__name__','http_codes'),('code','404'),('region','eu')] │
-└────────────┴───────────┴──────────────┴────────────────────────────────────────────────────────────┘
+┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)───────────────────────┐
+│          1 │         2 │            3 │ [('__name__','http_codes'),('env','dev'),('region','eu')] │
+└────────────┴───────────┴──────────────┴───────────────────────────────────────────────────────────┘
         )"
     }
     };

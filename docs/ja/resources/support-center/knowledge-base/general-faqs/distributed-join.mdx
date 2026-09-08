@@ -1,0 +1,21 @@
+---
+title: 'ClickHouse は分散 JOIN をサポートしていますか？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'ClickHouse は分散 JOIN をサポートしています'
+doc_type: 'reference'
+keywords: ['distributed', 'join']
+---
+
+はい、ClickHouse はクラスター上での分散 JOIN をサポートしています。
+
+データがクラスター内で同じノード上に配置されている場合 (たとえば、ユーザー識別子で JOIN を実行し、その識別子が分散キーでもある場合) 、ClickHouse ではネットワーク上でデータを移動させることなく JOIN を実行できます。
+
+データが同じノード上に配置されていない場合、ClickHouse ではブロードキャスト JOIN を使用できます。この場合、結合対象データの一部がクラスター内の各ノードに配布されます。
+
+2025年時点では、ClickHouse はシャッフル JOIN を実行しません。つまり、JOIN のどちらの側も、結合キーに基づいてクラスターのネットワーク全体に再分散されることはありません。
+
+<Tip>
+  ClickHouse の JOIN に関する一般的な情報については、[&quot;JOIN 句&quot;](/ja/reference/statements/select/join#supported-types-of-join) のページを参照してください。
+</Tip>

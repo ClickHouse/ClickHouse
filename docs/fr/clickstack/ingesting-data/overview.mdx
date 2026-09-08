@@ -1,0 +1,43 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/overview
+title: 'Ingestion de données dans ClickStack'
+sidebarTitle: 'Vue d’ensemble'
+description: 'Vue d’ensemble de l’ingestion de données dans ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'observabilité', 'logs', 'monitoring', 'plateforme']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Toutes les données sont ingérées dans Open Source ClickStack ou Managed ClickStack via un **collecteur OpenTelemetry (OTel)**. Celui-ci constitue le point d&#39;entrée principal pour les logs, les métriques, les traces et les données de session.
+
+La différence essentielle entre les architectures tient à l&#39;endroit où les composants sont hébergés. Dans les deux cas, vous exécutez un OpenTelemetry Collector pour recevoir les données de télémétrie de vos applications. Avec Open Source ClickStack, vous gérez et hébergez également vous-même ClickHouse ainsi que l&#39;interface ClickStack (HyperDX). Avec Managed ClickStack, ClickHouse et l&#39;interface HyperDX sont hébergés et gérés dans ClickHouse Cloud, avec authentification intégrée et gestion opérationnelle prises en charge pour vous.
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="Architecture Managed avec flux" size="md" />
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="Architecture simple avec flux" size="md" />
+  </Tab>
+</Tabs>
+
+Dans les deux modèles de déploiement, le collecteur expose deux points de terminaison OTLP :
+
+* **HTTP** - port `4318`
+* **gRPC** - port `4317`
+
+Vous pouvez envoyer des données vers ces points de terminaison soit directement depuis les [SDKs de langage](/fr/clickstack/ingesting-data/sdks/index), soit via des agents de collecte de données compatibles OTel, par exemple d&#39;autres collecteurs OTel qui collectent les métriques et les logs d&#39;infrastructure.
+
+Plus précisément :
+
+* Les [**SDKs de langage**](/fr/clickstack/ingesting-data/sdks/index) sont chargés de collecter la télémétrie au sein de votre application — notamment les **traces** et les **logs** — puis d&#39;exporter ces données vers l&#39;OpenTelemetry Collector, via le point de terminaison OTLP, qui gère l&#39;ingestion dans ClickHouse. Pour plus de détails sur les SDKs de langage disponibles avec ClickStack, consultez [SDKs](/fr/clickstack/ingesting-data/sdks/index).
+
+* Les **agents de collecte de données** sont des agents déployés en périphérie — sur des serveurs, des nœuds Kubernetes ou aux côtés des applications. Ils collectent la télémétrie d&#39;infrastructure (par ex. logs, métriques) ou reçoivent directement des événements d&#39;applications instrumentées avec des SDKs. Dans ce cas, l&#39;agent s&#39;exécute sur le même hôte que l&#39;application, souvent sous forme de sidecar ou de DaemonSet. Ces agents transmettent les données au collecteur OTel ClickStack central, qui agit comme une [passerelle](/fr/clickstack/ingesting-data/collector#collector-roles), généralement déployée une fois par cluster, centre de données ou région. La [passerelle](/fr/clickstack/ingesting-data/collector#collector-roles) reçoit les événements OTLP des agents ou des applications et gère l&#39;ingestion dans ClickHouse. Consultez [OTel collector](/fr/clickstack/ingesting-data/collector) pour plus de détails. Ces agents peuvent être d&#39;autres instances du collecteur OTel ou des technologies alternatives telles que [Fluentd](https://www.fluentd.org/) ou [Vector](https://vector.dev/).
+
+<Info>
+  **Compatibilité OpenTelemetry**
+
+  Bien que ClickStack propose ses propres SDKs de langage ainsi qu&#39;une version personnalisée d&#39;OpenTelemetry, avec une télémétrie enrichie et des fonctionnalités supplémentaires, vous pouvez également utiliser vos SDKs et agents OpenTelemetry existants en toute transparence.
+</Info>

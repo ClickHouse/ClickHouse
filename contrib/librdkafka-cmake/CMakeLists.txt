@@ -38,7 +38,7 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka_event.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_feature.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_fetcher.c"
-  # "${RDKAFKA_SOURCE_DIR}/rdhttp.c" #  see WITH_CURL below
+  # "${RDKAFKA_SOURCE_DIR}/rdhttp.c" #  see WITH_HTTP below
   "${RDKAFKA_SOURCE_DIR}/rdkafka_header.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_idempotence.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_interceptor.c"
@@ -101,9 +101,9 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c"
 )
 
-if(TARGET ch_contrib::curl)
-    set(WITH_CURL 1)
-endif()
+# The HTTP client (needed for OAUTHBEARER OIDC) is implemented on Poco
+# instead of libcurl; only the curl headers are used, for declarations.
+set(WITH_HTTP 1)
 
 if(TARGET ch_contrib::sasl2)
     set(WITH_SASL_CYRUS 1)
@@ -117,9 +117,11 @@ endif()
 add_definitions(-DOPENSSL_NO_ENGINE)
 list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c")
 
-if(WITH_SSL AND WITH_CURL)
+if(WITH_SSL AND WITH_HTTP)
   set(WITH_OAUTHBEARER_OIDC 1)
-  list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdhttp.c") # needed for WITH_OAUTHBEARER_OIDC
+  # Poco-based replacement of rdhttp.c, needed for WITH_OAUTHBEARER_OIDC
+  list(APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/rdhttp_poco.c")
+  list(APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/rdhttp_poco_transport.cpp")
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer_oidc.c")
 endif()
 
@@ -155,8 +157,9 @@ if(WITH_SASL_CYRUS)
     target_link_libraries(_rdkafka PRIVATE ch_contrib::sasl2)
 endif()
 
-if(WITH_CURL)
-  target_link_libraries(_rdkafka PRIVATE ch_contrib::curl)
+if(WITH_HTTP)
+  target_include_directories(_rdkafka PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(_rdkafka PRIVATE Poco::Net Poco::Net::SSL Poco::Foundation)
 endif()
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/auxdir")

@@ -1,0 +1,232 @@
+---
+position: 1
+slug: /clickhouse-operator/guides/introduction
+title: Introdução ao ClickHouse Operator
+keywords: ['kubernetes']
+description: 'Este documento apresenta uma visão geral dos principais conceitos e padrões de uso do ClickHouse Operator.'
+doc_type: 'guide'
+---
+
+Este documento apresenta uma visão geral dos principais conceitos e padrões de uso do ClickHouse Operator.
+
+<div id="what-is-the-clickhouse-operator">
+  ## O que é o ClickHouse Operator
+</div>
+
+O ClickHouse Operator é um operador do Kubernetes que automatiza a implantação e o gerenciamento de clusters do ClickHouse no Kubernetes. Desenvolvido com base no padrão de operador, ele estende a API do Kubernetes com recursos personalizados que representam clusters do ClickHouse e suas dependências.
+
+O operador é responsável por:
+
+* Gerenciamento do ciclo de vida do cluster (criação, atualizações, escalonamento, exclusão)
+* Coordenação do cluster ClickHouse Keeper
+* Geração automática de configuração
+* Sincronização do esquema do banco de dados
+* Atualizações progressivas e de versão
+* Provisionamento de armazenamento
+
+<div id="custom-resources">
+  ## Recursos personalizados
+</div>
+
+O operador fornece duas definições principais de recursos personalizados (CRDs):
+
+<div id="clickhousecluster">
+  ### ClickHouseCluster
+</div>
+
+Representa um cluster de banco de dados do ClickHouse com réplicas e shards configuráveis.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample-cluster
+spec:
+  replicas: 3
+  shards: 2
+  keeperClusterRef:
+    name: sample-keeper
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+<div id="keepercluster">
+  ### KeeperCluster
+</div>
+
+Representa um cluster do ClickHouse Keeper para coordenação distribuída (substituto do ZooKeeper).
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample-keeper
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+```
+
+<div id="coordination">
+  ## Coordenação
+</div>
+
+<div id="clickhouse-keeper-is-required">
+  ### O ClickHouse Keeper é obrigatório
+</div>
+
+Cada ClickHouseCluster exige um cluster do ClickHouse Keeper para coordenação distribuída.
+O cluster Keeper deve ser referenciado na especificação do ClickHouseCluster usando `keeperClusterRef`. Por padrão, o operador procura no espaço de nomes do ClickHouseCluster, mas você também pode definir `keeperClusterRef.namespace` para apontar para um KeeperCluster em outro espaço de nomes monitorado.
+
+<div id="one-to-one-keeper-relationship">
+  ### Relação um para um com o Keeper
+</div>
+
+Cada ClickHouseCluster deve ter seu próprio KeeperCluster dedicado. Não é possível compartilhar um único KeeperCluster entre vários ClickHouseClusters.
+
+**Por quê?** O operador gera automaticamente uma chave de authentication exclusiva para cada ClickHouseCluster acessar seu Keeper. Essa chave é armazenada em um Secret e não pode ser compartilhada.
+
+**Consequências**:
+
+* Vários ClickHouseClusters não podem apontar para o mesmo KeeperCluster
+* Recriar um ClickHouseCluster exige recriar também seu KeeperCluster
+
+<Note>
+  Volumes persistentes não são excluídos automaticamente quando os recursos ClickHouseCluster ou KeeperCluster são excluídos.
+</Note>
+
+Ao recriar um cluster:
+
+1. Exclua o recurso ClickHouseCluster
+2. Exclua o recurso KeeperCluster
+3. Aguarde até que todos os pods sejam encerrados
+4. Opcionalmente, exclua os PersistentVolumeClaims se quiser começar do zero
+5. Recrie o KeeperCluster e o ClickHouseCluster juntos
+
+Para evitar erros de authentication, exclua manualmente os volumes persistentes ou recrie ambos os clusters juntos com armazenamento novo.
+
+<div id="schema-replication">
+  ## Replicação do esquema
+</div>
+
+O ClickHouse Operator replica automaticamente as definições do banco de dados em todas as réplicas de um cluster.
+
+<div id="what-gets-replicated">
+  ### O que é replicado
+</div>
+
+O operador sincroniza:
+
+* definições de bancos de dados [Replicated](/pt-BR/reference/engines/database-engines/replicated)
+* motores de banco de dados de integração (PostgreSQL, MySQL etc.)
+
+O operador **não** sincroniza:
+
+* bancos de dados não replicados (Atomic, Ordinary etc.)
+* tabelas locais em bancos de dados não replicados
+* dados das tabelas (tratados pela replicação do ClickHouse)
+
+<div id="recommended-use-replicated-database-engine">
+  ### Recomendado: use o motor de banco de dados Replicated
+</div>
+
+<Tip>
+  **Prática recomendada**
+
+  Sempre use o motor de banco de dados [Replicated](/pt-BR/reference/engines/database-engines/replicated) em implantações de produção.
+</Tip>
+
+Benefícios:
+
+* Replicação automática do esquema em todos os nós
+* Gerenciamento simplificado de tabelas
+* O operador pode se sincronizar com novas réplicas
+* Esquema consistente em todo o cluster
+
+Crie bancos de dados com DDL distribuído:
+
+```sql
+CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
+```
+
+<div id="avoid-non-replicated-engines">
+  ### Evite motores que não sejam Replicated
+</div>
+
+Os motores de banco de dados não replicados (Atomic, Lazy, SQLite, Ordinary) exigem gerenciamento manual do esquema:
+
+* As tabelas devem ser criadas individualmente em cada réplica
+* Pode haver divergência de esquema entre os nós
+* O operador não consegue sincronizar automaticamente novas réplicas
+
+<div id="disable-schema-replication">
+  ### Desativar a replicação de esquema
+</div>
+
+Para desativar a replicação automática de esquema, defina `spec.settings.enableDatabaseSync` como `false` no recurso do ClickHouseCluster.
+
+<div id="storage-management">
+  ## Gerenciamento de armazenamento
+</div>
+
+O operador gerencia o armazenamento usando PersistentVolumeClaims (PVCs) do Kubernetes.
+
+<div id="data-volume-configuration">
+  ### Configuração do volume de dados
+</div>
+
+Especifique os requisitos de armazenamento em `dataVolumeClaimSpec`:
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 500Gi
+```
+
+<div id="storage-lifecycle">
+  ### Ciclo de vida do armazenamento
+</div>
+
+* **Criação**: PVCs são criados automaticamente com o cluster
+* **Expansão**: compatível se a StorageClass permitir a expansão de volume
+* **Retenção**: PVCs **não** são excluídos automaticamente quando o cluster é excluído
+* **Reutilização**: PVCs existentes podem ser reutilizados se o cluster for recriado com o mesmo nome
+
+Para remover completamente o armazenamento:
+
+```bash
+# Delete cluster
+kubectl delete clickhousecluster my-cluster
+
+# Wait for pods to terminate
+kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhouse
+
+# Delete PVCs
+kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
+```
+
+<div id="default-configuration-highlights">
+  ## Destaques da configuração padrão
+</div>
+
+* **Cluster pré-configurado:** cluster chamado &#39;default&#39; que contém todos os nós do ClickHouse.
+* **Macros padrão:** algumas macros úteis são predefinidas:
+  * `{cluster}`: nome do cluster (`default`)
+  * `{shard}`: número do shard
+  * `{replica}`: número da réplica
+* **Armazenamento replicado para entidades de RBAC**
+* **Armazenamento replicado para User Defined Functions (UDF)**
+
+<div id="next-steps">
+  ## Próximas etapas
+</div>
+
+* [Guia de configuração](/pt-BR/products/kubernetes-operator/guides/configuration) - Opções detalhadas de configuração
+* [Referência da API](/pt-BR/products/kubernetes-operator/reference/api-reference) - Documentação completa da API

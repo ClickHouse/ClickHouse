@@ -36,8 +36,8 @@ public:
     struct Object
     {
         /// Here addresses are absolute virtual memory addresses.
-        const void * address_begin;
-        const void * address_end;
+        const void * address_begin{};
+        const void * address_end{};
         std::string name;
         std::shared_ptr<Elf> elf;
 #if defined(OS_DARWIN)

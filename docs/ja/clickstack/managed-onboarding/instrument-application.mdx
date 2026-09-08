@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/instrument-application
+title: 'Managed ClickStack を使って 5 分でアプリケーションをインストルメントする'
+description: 'OpenTelemetry で Node.js アプリケーションをインストルメントし、そのログ、メトリクス、トレースを Managed ClickStack に送信する'
+doc_type: 'guide'
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed', 'observability', 'sdk', 'nodejs']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import InstrumentApplication from '/snippets/ja/clickstack/_instrument_application.mdx';
+
+このガイドでは、小さな Node.js アプリケーションを OpenTelemetry でインストルメントし、そのログ、メトリクス、トレースを Managed ClickStack に送信する方法を説明します。バックエンドは、アプリケーションのソースコードを変更することなくインストルメントされます。
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) は、公開中の ClickHouse デモでホストされている HackerNews データセットにクエリを実行する Node.js アプリです。すべてのチャート、テーブル、検索ボックスは実際の ClickHouse クエリを基盤としているため、あらゆる操作でトレースが生成され、そのメイン span はバックエンドから ClickHouse への HTTPS 呼び出しになります。
+
+このガイドは、[OpenTelemetry Collector のセットアップ](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) を完了しており、このアプリケーションを実行するマシンからアクセス可能な ClickStack collector が稼働していることを前提としています。**その OTLP エンドポイント** と、デプロイ時に設定した `OTLP_AUTH_TOKEN` を必ず控えておいてください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* このマシンからアクセス可能な ClickStack collector。まだデプロイしていない場合は、先に [OpenTelemetry Collector のセットアップ](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) の手順に従ってください。
+* その collector の OTLP エンドポイントと、そこに設定した `OTLP_AUTH_TOKEN`。
+* Node 18+ と npm。
+
+<InstrumentApplication />
+
+<div id="further-reading">
+  ## 関連情報
+</div>
+
+* [Kubernetes の監視](/ja/clickstack/managed-onboarding/monitoring-kubernetes): クラスターからログ、インフラメトリクス、Kubernetes イベントを収集します。
+* [AWS CloudWatch ログの監視](/ja/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry の CloudWatch receiver 経由で CloudWatch ログを転送します。
+* [Session Replay](/ja/clickstack/features/session-replay): 機能概要、SDK オプション、プライバシー制御。
+* [本番環境への移行](/ja/clickstack/managing/production): 本番環境へ移行する際の推奨事項。

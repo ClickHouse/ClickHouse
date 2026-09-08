@@ -94,7 +94,6 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -166,18 +165,27 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUnique");
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'hasOnlyTypeDefaults' not implemented for ColumnUnique");
+    }
+
     void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
     }
 
-    const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
+    std::span<const UInt64> tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(std::string_view value) const override
     {
+        /// The reserved prefix slots are not in the reverse index, so match the default value here.
+        if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == value)
+            return index;
+
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
@@ -204,7 +212,7 @@ private:
     class IncrementalHash
     {
     private:
-        UInt128 hash;
+        UInt128 hash{};
         std::atomic<size_t> num_added_rows;
 
         std::mutex mutex;
@@ -529,7 +537,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
 {
     if (is_nullable)
     {
-        UInt8 val;
+        UInt8 val = 0;
         readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
@@ -549,7 +557,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
 
     /// String
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
-    size_t string_size;
+    size_t string_size = 0;
     readBinaryLittleEndian<size_t>(string_size, in);
     if (in.available() < string_size)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
@@ -564,7 +572,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
 {
     if (is_nullable)
     {
-        UInt8 val;
+        UInt8 val = 0;
         readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
@@ -586,7 +594,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
 
     /// String
     /// For compatibility, serialized string value contains zero byte at the end, we just ignore this byte.
-    size_t string_size_with_zero_byte;
+    size_t string_size_with_zero_byte = 0;
     readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
     if (in.available() < string_size_with_zero_byte)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
@@ -595,12 +603,6 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
     in.ignore(string_size_with_zero_byte);
 
     return ret;
-}
-
-template <typename ColumnType>
-void ColumnUnique<ColumnType>::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", this->getName());
 }
 
 template <typename ColumnType>
@@ -653,7 +655,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     ReverseIndex<UInt64, ColumnType> * secondary_index,
     size_t max_dictionary_size)
 {
-    const ColumnType * src_column;
+    const ColumnType * src_column = nullptr;
     const NullMap * null_map = nullptr;
     auto & positions = positions_column->getData();
 
