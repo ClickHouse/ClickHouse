@@ -363,7 +363,13 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
+            # Three priority tiers across replicas: a specific classification
+            # (sanitizer, logical error, ...) wins outright; a generic <Fatal>
+            # fallback is preferred over "Unknown error" but must not preempt a
+            # higher-signal specific failure on another replica, so keep scanning
+            # after one; "Unknown error" is the last resort.
             definitive_result = None
+            generic_fatal_result = None
             fallback_result = None
 
             for replica_name, server_log_file, stderr_log in replica_log_pairs:
@@ -378,11 +384,15 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     if stderr_log.exists():
                         file_pair_info += f", {stderr_log.name}"
                     description = f"{file_pair_info}\n{description}"
-                    if name != FuzzerLogParser.UNKNOWN_ERROR:
+                    if name == FuzzerLogParser.UNKNOWN_ERROR:
+                        if fallback_result is None:
+                            fallback_result = (name, description, files)
+                    elif log_parser.is_generic_fatal:
+                        if generic_fatal_result is None:
+                            generic_fatal_result = (name, description, files)
+                    else:
                         definitive_result = (name, description, files)
                         break
-                    if fallback_result is None:
-                        fallback_result = (name, description, files)
                 except Exception as e:
                     print(
                         f"ERROR: Failed to parse failure logs for {replica_name} "
@@ -390,7 +400,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                         f"Server logs should still be collected."
                     )
 
-            result = definitive_result or fallback_result
+            result = definitive_result or generic_fatal_result or fallback_result
             if result:
                 name, description, files = result
                 failed_results.append(

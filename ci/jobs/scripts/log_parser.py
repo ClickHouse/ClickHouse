@@ -107,6 +107,12 @@ class FuzzerLogParser:
         self.fuzzer_log = fuzzer_log
         self.stderr_log = stderr_log
         self.stack_trace_str = stack_trace_str
+        # Set by `parse_failure` when the result came from the generic <Fatal>
+        # fallback rather than a specific pattern. It is a lower-confidence signal
+        # than a known classification: a caller scanning several logs (e.g.
+        # `stress_job.py` across replicas) should keep looking for a specific
+        # failure and only settle for a generic fatal if nothing better is found.
+        self.is_generic_fatal = False
 
     @staticmethod
     def extract_format_string(line):
@@ -204,6 +210,7 @@ class FuzzerLogParser:
         is_segfault = False
         is_memory_limit_exceeded = False
         is_oracle_mismatch = False
+        self.is_generic_fatal = False
 
         error_output = None
         matched_pattern = None
@@ -257,6 +264,7 @@ class FuzzerLogParser:
             # <Fatal> at all.
             generic_fatal = self.get_generic_fatal()
             if generic_fatal:
+                self.is_generic_fatal = True
                 fatal_lines = generic_fatal.splitlines()
                 result_name = fatal_lines[0].removesuffix(".")
                 stack_trace = self.get_stack_trace()

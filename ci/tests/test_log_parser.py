@@ -162,6 +162,9 @@ def test_generic_fatal_fallback_surfaces_message(tmp_path):
     # The "<Fatal> " prefix and the following unrelated log line are not folded in.
     assert "<Fatal>" not in result_name
     assert "Application: shutting down" not in info
+    # This is a lower-confidence result: callers scanning several logs must be able
+    # to tell it apart from a specific classification.
+    assert parser.is_generic_fatal is True
 
 
 def test_unknown_error_when_no_fatal(tmp_path):
@@ -181,6 +184,22 @@ def test_unknown_error_when_no_fatal(tmp_path):
 
     assert result_name == FuzzerLogParser.UNKNOWN_ERROR
     assert "Lost connection to server" in info
+    assert parser.is_generic_fatal is False
+
+
+def test_generic_fatal_flag_not_set_for_specific_classification(tmp_path):
+    # A specific classification (here an oracle mismatch) must not be flagged as a
+    # generic fatal, so `stress_job.py` treats it as a definitive, higher-priority
+    # result than a generic <Fatal> on another replica.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(_ORACLE_MISMATCH_LOG, encoding="utf-8")
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    parser.parse_failure()
+
+    assert parser.is_generic_fatal is False
 
 
 def test_specific_pattern_wins_over_generic_fatal(tmp_path):
