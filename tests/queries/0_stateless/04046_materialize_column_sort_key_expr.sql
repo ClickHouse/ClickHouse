@@ -85,10 +85,13 @@ DROP TABLE IF EXISTS t_mat_proj_rebuild;
 CREATE TABLE t_mat_proj_rebuild
 (
     a Int,
+    b String,
     c2 Int MATERIALIZED a * 10,
     PROJECTION p (SELECT a, c2 ORDER BY a)
-) ENGINE = MergeTree() ORDER BY a;
-INSERT INTO t_mat_proj_rebuild (a) SELECT number FROM numbers(5);
+) ENGINE = MergeTree() ORDER BY b;
+-- The table is sorted by `b` so that the projection's own `ORDER BY a` is what makes it worth
+-- reading; a projection repeating the table's sorting key is not picked.
+INSERT INTO t_mat_proj_rebuild (a, b) SELECT number, 'x' FROM numbers(5);
 ALTER TABLE t_mat_proj_rebuild MODIFY COLUMN c2 Int MATERIALIZED a * 100;
 ALTER TABLE t_mat_proj_rebuild MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
 SELECT a, c2 FROM t_mat_proj_rebuild ORDER BY a SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
@@ -406,11 +409,11 @@ DROP TABLE t_mat_ttl_index_plain_multi;
 -- columns anyway).
 DROP TABLE IF EXISTS t_mat_ttl_proj_sibling;
 CREATE TABLE t_mat_ttl_proj_sibling
-    (a UInt64, c DateTime MATERIALIZED toDateTime(2000000000),
+    (a UInt64, b String, c DateTime MATERIALIZED toDateTime(2000000000),
      y UInt64 TTL c + INTERVAL 1 SECOND,
      PROJECTION p (SELECT a, y ORDER BY a))
-    ENGINE = MergeTree() ORDER BY a SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-INSERT INTO t_mat_ttl_proj_sibling (a, y) VALUES (5, 100);
+    ENGINE = MergeTree() ORDER BY b SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_ttl_proj_sibling (a, b, y) VALUES (5, 'x', 100);
 ALTER TABLE t_mat_ttl_proj_sibling MODIFY COLUMN c DateTime MATERIALIZED toDateTime(1000000000);
 ALTER TABLE t_mat_ttl_proj_sibling MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
 SELECT a, y FROM t_mat_ttl_proj_sibling ORDER BY a SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
