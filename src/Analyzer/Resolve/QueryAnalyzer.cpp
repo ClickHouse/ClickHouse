@@ -5283,7 +5283,7 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
                 for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 
@@ -5361,7 +5361,7 @@ static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_t
             {
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
                 for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
                     result_columns.push_back(column.name);
                 break;
