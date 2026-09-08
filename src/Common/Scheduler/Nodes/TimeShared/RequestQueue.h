@@ -149,7 +149,7 @@ public:
         if (auto * ctx = request->scheduling_context)
         {
             auto & state = ctx->getResourceState(leaf);
-            double effective_weight = effectiveWeight(*ctx, state);
+            double effective_weight = updateEffectiveWeight(*ctx, state);
             // Charge the declared cost corrected toward real consumption (see
             // ResourceState::consumeCorrectedCost). Stored on the request so pop() advances
             // attained_cost by the same corrected amount. It is never negative, so vruntime only
@@ -213,55 +213,53 @@ public:
     bool empty() const override { return requests.empty(); }
 
 private:
-    /// Effective weight = base weight, lowered once by `weight_lowering_factor` as soon as the
-    /// query crosses ANY configured threshold (age, attained CPU-seconds, or attained IO-bytes).
-    /// Thresholds do not combine: the first to trip applies the full lowering.
-    ///
-    /// NOTE: this is sampled at `push()` time (when a request is keyed), so lowering applies from the
-    /// threshold-crossing forward: requests a query already had queued when it crosses the threshold
-    /// keep their full-weight `vstart` and are not re-ordered — only its subsequent requests advance
-    /// virtual runtime at the lowered weight. The lag is bounded by the query's in-flight request
-    /// count at the crossing, and lowering is a single-step heuristic bias, so this is acceptable
-    /// (unlike `las`, where staleness is corrected on `pop()`).
-    double effectiveWeight(const ResourceSchedulingContext & ctx, const ResourceSchedulingContext::ResourceState & state) const
+    /// Fair effective weight: the query's `weight`, lowered once by `weight_lowering_factor` the
+    /// first time it crosses any configured threshold (thresholds do not combine — the first to trip
+    /// applies the full lowering). Lowering is a one-way latch (`weight_lowered`): the cached
+    /// `effective_weight` is reused afterwards, so the threshold checks run only until the crossing.
+    /// Called at push(), so lowering biases the query's subsequent requests — a request already keyed
+    /// keeps its weight; the bounded lag is fine for a single-step bias (unlike `las`, which re-keys
+    /// on pop()).
+    double updateEffectiveWeight(const ResourceSchedulingContext & ctx, ResourceSchedulingContext::ResourceState & state) const
     {
-        bool lowered = false;
+        if (!state.weight_lowered)
+        {
+            if (weightLoweringThresholdCrossed(ctx, state))
+            {
+                state.weight_lowered = true;
+                double weight = ctx.weight * ctx.weight_lowering_factor;
+                state.effective_weight = weight > 0 ? weight : 1e-9; // guard against division by zero
+            }
+            else
+            {
+                state.effective_weight = ctx.weight > 0 ? ctx.weight : 1e-9;
+            }
+        }
+        return state.effective_weight;
+    }
 
-        // Real cumulative service for this query = attained_cost (charged at pop) plus the pending
-        // real-vs-estimate correction not yet folded into it (see ResourceState::consumeCorrectedCost).
-        // Peeking the pending correction here — instead of waiting for it to land in attained_cost at
-        // the next pop — lets the attained-service thresholds react on the FIRST request after a
-        // finish (no one-request lag), without mutating attained_cost (so a cancelled request that
-        // never pops leaks nothing).
-        const Int64 attained_service = state.attained_cost + state.cost_correction.load(std::memory_order_relaxed);
-
+    /// True once the query's real cumulative service crosses a `weight_lowering_*` threshold. Real
+    /// service is `attained_cost` (charged at pop) plus the pending real-vs-estimate correction,
+    /// peeked so the attained thresholds react on the first request after a finish without folding it
+    /// into `attained_cost`. For CPU, `attained_cost` is granted service and leads spent CPU by at
+    /// most one quantum.
+    bool weightLoweringThresholdCrossed(const ResourceSchedulingContext & ctx, const ResourceSchedulingContext::ResourceState & state) const
+    {
         if (ctx.weight_lowering_age_seconds > 0)
         {
             UInt64 now = clock_gettime_ns();
             double age_seconds = now > ctx.start_ns ? static_cast<double>(now - ctx.start_ns) / 1e9 : 0.0;
             if (age_seconds >= ctx.weight_lowering_age_seconds)
-                lowered = true;
+                return true;
         }
-        if (!lowered && unit == CostUnit::CPUNanosecond && ctx.weight_lowering_cpu_seconds > 0)
-        {
-            // attained_cost is the summed per-request cost, charged at grant (pop), so it measures
-            // granted CPU service rather than CPU already spent: each preemptive lease renewal
-            // charges the next quantum, so attained tracks granted CPU and leads actual consumption
-            // by at most one quantum (cpu_slot_quantum_ns) per active slot (self-reconciled by the
-            // lease's overrun term). This fair path runs for CPU only under slot preemption; without
-            // preemption a CPU leaf falls back to fifo (see WorkloadNodeTraits::schedulerFor), so
-            // this branch is not reached for CPU then.
-            if (static_cast<double>(attained_service) / 1e9 >= ctx.weight_lowering_cpu_seconds)
-                lowered = true;
-        }
-        if (!lowered && unit == CostUnit::IOByte && ctx.weight_lowering_io_bytes > 0)
-        {
-            if (static_cast<double>(attained_service) >= ctx.weight_lowering_io_bytes)
-                lowered = true;
-        }
-
-        double weight = lowered ? ctx.weight * ctx.weight_lowering_factor : ctx.weight;
-        return weight > 0 ? weight : 1e-9; // guard against division by zero
+        const Int64 attained_service = state.attained_cost + state.cost_correction.load(std::memory_order_relaxed);
+        if (unit == CostUnit::CPUNanosecond && ctx.weight_lowering_cpu_seconds > 0
+            && static_cast<double>(attained_service) / 1e9 >= ctx.weight_lowering_cpu_seconds)
+            return true;
+        if (unit == CostUnit::IOByte && ctx.weight_lowering_io_bytes > 0
+            && static_cast<double>(attained_service) >= ctx.weight_lowering_io_bytes)
+            return true;
+        return false;
     }
 
     struct ByKey

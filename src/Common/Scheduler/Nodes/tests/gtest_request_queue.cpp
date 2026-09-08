@@ -537,7 +537,7 @@ TEST(RequestQueue, WeightLoweringFactorClamped)
 TEST(RequestQueue, WeightLoweringThresholdsClampNegativeToDisabled)
 {
     // A negative lowering threshold is meaningless and is clamped to 0 (disabled), rather than
-    // stored as-is and only read as disabled by the `> 0` checks in effectiveWeight().
+    // stored as-is and only read as disabled by the `> 0` checks in the weight-lowering logic.
     ResourceSchedulingContext negative(clock_gettime_ns(), 1.0, 0.5, -1.0, -2.0, -3.0, 0);
     EXPECT_EQ(negative.weight_lowering_age_seconds, 0.0);
     EXPECT_EQ(negative.weight_lowering_cpu_seconds, 0.0);

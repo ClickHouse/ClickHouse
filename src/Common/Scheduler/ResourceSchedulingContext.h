@@ -71,6 +71,13 @@ public:
         double vruntime = 0.0; /// SFQ virtual runtime for this query in this resource (`fair`)
         UInt64 last_activity_ns = 0; /// Monotonic time of the last dequeue (introspection)
 
+        /// `fair`: cached effective weight plus a one-way "already lowered" latch. The effective
+        /// weight is recomputed at push() only while `weight_lowered` is false; once a
+        /// `weight_lowering_*` threshold trips, the lowered value is stored here and reused, so the
+        /// threshold checks stop running. `effective_weight` is 0 until the first push() sets it.
+        double effective_weight = 0.0;
+        bool weight_lowered = false;
+
         /// Accumulated `real_cost - scheduling_cost` for this query's finished requests on this
         /// resource, not yet applied to a scheduling key. `ResourceGuard::Request::finish()` adds to
         /// it from the consumer thread (hence atomic; the other fields are touched only by the leaf
