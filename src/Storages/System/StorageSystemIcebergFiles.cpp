@@ -234,7 +234,7 @@ protected:
 
             try
             {
-                auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_table->getExternalMetadata(context_copy));
+                auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table->getExternalMetadata(context_copy));
                 if (!iceberg_metadata)
                     return false;
 
@@ -359,7 +359,7 @@ private:
     {
         StoragePtr storage;
         TableLockHolder lock;
-        IcebergMetadata * iceberg_metadata = nullptr;   // non-owning; kept alive via `storage`
+        std::shared_ptr<IcebergMetadata> iceberg_metadata;   /// Owning: a concurrent update() may replace the storage's metadata mid-scan.
         Iceberg::IcebergDataSnapshotPtr data_snapshot;
         Iceberg::TableStateSnapshot table_state;
         String database_name;

@@ -82,9 +82,17 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
 
 向自定义角色添加数据权限时，ClickHouse Cloud 会在每个所选服务中创建一个对应的角色，并添加 `cloud:` 前缀。例如，名为 `readonly` 的自定义角色会在数据库中显示为 `cloud:readonly`。自定义角色的成员通过 SQL 控制台的免密码身份验证连接到服务时，将获得这些数据库权限。
 
-<Info>
-  在数据库中使用 [`sql-console-role:<email>` 命名约定](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)手动分配的角色，优先于通过控制台分配的角色。
-</Info>
+<Tip>
+  Cloud 托管的数据库角色会替代手动分配的 [`sql-console-role:<email>`](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 角色；后者与 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) 不兼容。
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### 前置条件
+</div>
+
+服务上的自定义数据库角色依赖于 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)，禁用时不会生效。在向角色添加数据权限之前，请进入相应服务，打开 `Settings`，然后在 `Security` 部分找到 `JWT authentication` 卡片。确保已启用 `SQL 控制台` 切换开关。
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="已启用 SQL 控制台 切换开关的 JWT 身份验证卡片" size="lg" force />
 
 <Steps>
   <Step title="向角色添加数据权限" id="add-data-permissions">
@@ -92,17 +100,17 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
   </Step>
 
   <Step title="选择服务" id="select-data-permissions-service">
-    选择要应用权限的服务。添加更多服务即可在多个服务中应用权限。
+    选择要应用权限的服务。添加更多服务即可在多个服务中应用相同的 `Read-only` 或 `Admin` 权限。
   </Step>
 
   <Step title="选择访问级别" id="choose-data-access-level">
-    选择 `Read-only`、`Admin` 或 `Custom` 访问级别。选择 `Custom` 时，可通过 ClickHouse [`GRANT` 语句](/zh/reference/statements/grant)定义具体的数据访问权限。
+    选择 `Read-only`、`Admin` 或 `Custom` 访问级别。选择 `Custom` 时，可通过 ClickHouse [`GRANT` 语句](/zh/reference/statements/grant)定义具体的数据访问权限。仅当权限针对单个服务时才能选择 `Custom` 访问；若要为多个服务定义自定义权限，请为每个服务单独添加一项 `Data` 权限。
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="新建角色对话框，其中的数据权限由自定义授权语句定义" size="md" />
   </Step>
 
   <Step title="创建角色" id="create-role-with-data-permissions">
-    单击 `Create role`。系统将在所选服务中创建数据库角色。
+    单击 `Create role`。系统将在所选服务中创建数据库角色。角色最多可能需要 10 分钟才能同步到服务，但被分配该角色的用户在查询服务时会立即获得其权限。
   </Step>
 </Steps>
 
@@ -110,7 +118,7 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
   ### 验证数据库角色
 </div>
 
-通过控制台管理的角色会在数据库中创建，其名称带有 `cloud:` 前缀，存储类型为 `cloud`。要列出这些角色，请查询服务中的 `system.roles` 表：
+通过控制台管理的角色会在数据库中创建，其名称带有 `cloud:` 前缀，存储类型为 `cloud`，创建后最多可能需要 10 分钟才会显示。要列出这些角色，请查询服务中的 `system.roles` 表：
 
 ```sql
 SELECT * FROM system.roles;

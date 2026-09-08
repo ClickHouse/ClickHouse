@@ -512,6 +512,15 @@ public:
         bool date_time_overflow_behavior_ignore_);
 
 private:
+    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
+    /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
+    /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.
+    bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
+    bool mayReadNullKeyValue(
+        const std::vector<int> & key_col_to_sparse_pos,
+        const Hyperrectangle & sparse_hyperrectangle,
+        const DataTypes & sparse_key_types) const;
+
     /// Information used when building a KeyCondition out of ActionsDAG.
     struct BuildInfo
     {
@@ -585,12 +594,18 @@ private:
     /// produces the single atom `flag != 0`.
     void extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
     void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const BuildInfo & info, RPN & out);
+    /// `rewritten_const_value` overrides the constant operand of the comparison, for a
+    /// predicate whose constant is not one of the function arguments as written (`LIKE
+    /// pattern ESCAPE 'c'`, where the escape character is folded into the pattern). The key
+    /// expression is then the first argument.
     void extractBinaryComparisonAtoms(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         const std::string & func_name,
         bool allow_constant_transformation,
-        RPN & out);
+        RPN & out,
+        const Field * rewritten_const_value = nullptr,
+        const DataTypePtr & rewritten_const_type = nullptr);
     /// `key <=> NULL` is "key IS NULL", so it produces the `isNull` atom, but only for a
     /// bare key column: that atom ignores the monotonic-functions chain, which would be
     /// unsound for a wrapped key.
