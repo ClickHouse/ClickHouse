@@ -1,16 +1,17 @@
 # String routines from ARM's optimized-routines (AOR), the upstream that
 # glibc's aarch64 ifunc-selected string routines derive from. Built only for
-# aarch64, where AOR measurably beats what the static binary otherwise
-# resolves - musl generic C, musl's vendored 2020 AOR asm, and llvm-libc weak
-# definitions (benchmarked on Graviton4 / Neoverse-V2, see the perf
-# comparison of PR 109239): memcpy +26-37%, memmove ~2x small sizes,
-# memcmp +50-80%, strlen 2.9x, memchr 3x.
+# aarch64, where AOR measurably beats what the binary otherwise resolves -
+# llvm-libc's weak generic definitions, or with musl its generic C and vendored
+# 2020 AOR asm (benchmarked on Graviton4 / Neoverse-V2, see the perf comparison
+# of PR 109239): memcpy +26-37%, memmove ~2x small sizes, memcmp +50-80%,
+# strlen 2.9x, memchr 3x. Against glibc the routines are the same code, minus
+# the ifunc indirection.
 #
 # This archive is linked with --whole-archive next to libllvmlibc (see
 # cmake/linux/default_libs.cmake), so the definitions win the link
 # structurally. The string asm is strong and wins over llvm-libc's weak
-# memmove/memcmp; musl's own copies in libmusl.a are ordinary archive
-# members and are simply never extracted.
+# memmove/memcmp; the libc's own copies are never extracted from its archive
+# or, with a dynamic glibc, never bound since the symbols are already defined.
 #
 # Math routines are deliberately NOT taken from AOR even though its scalar
 # exp/exp2/log/log10/atan/atan2 are 1.6-2.2x faster than llvm-libc's on
