@@ -1,12 +1,12 @@
 -- Tags: no-fasttest, no-msan
--- no-fasttest, no-msan: requires USE_EMBEDDED_COMPILER, which those builds disable; without
+-- no-fasttest, no-msan: requires `USE_EMBEDDED_COMPILER`, which those builds disable; without
 -- JIT the expression is never compiled and the test would pass vacuously.
 
 -- Regression test for issue #111485: the JIT compilability gate must reject a function whose
 -- child operand has a non-native result type (here `Nullable(Nothing)`), otherwise it raises
 -- the `Invalid cast from Nothing to native type` exception (an abort in debug/sanitizer
--- builds). The query must simply complete. query_plan_merge_filters is pinned because the
--- offending and(Nullable(Nothing), ...) node only forms when the adjacent filters are merged.
+-- builds). The query must simply complete. `query_plan_merge_filters` is pinned because the
+-- offending `and(Nullable(Nothing), ...)` node only forms when the adjacent filters are merged.
 
 SET enable_analyzer = 1;
 
