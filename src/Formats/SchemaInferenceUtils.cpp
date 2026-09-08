@@ -1017,79 +1017,151 @@ namespace
         return tryReadFloatTextExtNoExponent(value, buf, has_fractional);
     }
 
-    template <bool is_json>
-    DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    /// A memory buffer forces this parser's strict no-copy path, so the verdict does not depend on
+    /// buffer geometry or on precise_float_parsing.
+    bool preciseParserAcceptsWholeSpan(std::string_view span)
     {
-        if (buf.eof())
-            return nullptr;
+        Float64 value = 0;
+        ReadBufferFromMemory span_buf(span);
+        return tryReadFloatTextPrecise(value, span_buf) && span_buf.eof();
+    }
 
-        Float64 tmp_float = 0;
-        bool has_fractional = false;
+    /// A complete String on the JSON path, because chooseResultColumnType discards a nullptr and a
+    /// later numeric row would resurrect the unreadable Float64. The CSV, Escaped and Raw rules
+    /// complete a nullptr to String per field before rows are merged; the Quoted rule keeps nullptr
+    /// but never receives such a token, because readQuotedFieldInto tokenizes it with this parser.
+    template <bool is_json>
+    DataTypePtr rejectedNumberType()
+    {
+        if constexpr (is_json)
+            return std::make_shared<DataTypeString>();
+        return nullptr;
+    }
+
+    /// The answer for a field that held no characters at all, which a trailing delimiter in a
+    /// collection leaves behind. The integer parsers accept a token with no digits, so this is the
+    /// type inference has always reported there, and the deserializers accept the same text.
+    DataTypePtr tryInferNumberFromEmptyField(const FormatSettings & settings)
+    {
+        /// The integer parsers read no sign either, so the type is never a negative integer and is not
+        /// registered in json_info->negative_integers.
+        if (settings.try_infer_integers)
+            return std::make_shared<DataTypeInt64>();
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    /// True when the span is written like a float rather than like an integer. Only reached after the
+    /// delimiting pass accepted the span and both integer arms declined it, so testing for a '.', an
+    /// exponent marker or an inf/nan lead character is enough to tell the two apart here.
+    bool spanHasFloatSyntax(std::string_view span)
+    {
+        for (char c : span)
+        {
+            if (c == '.' || c == 'e' || c == 'E' || c == 'i' || c == 'I' || c == 'n' || c == 'N')
+                return true;
+        }
+        return false;
+    }
+
+    /// Every parser must consume the whole span; the first that does wins. Re-parsing the span rather
+    /// than reusing the delimiting pass keeps the answer independent of buffer geometry.
+    template <bool is_json>
+    DataTypePtr classifyNumberSpan(
+        std::string_view span, bool field_was_untouched, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    {
+        /// Nothing was delimited. A collection closing right after a delimiter read no characters at
+        /// all and keeps its previous answer; a failed `true`/`false`/`null` probe walked past what it
+        /// matched, and that leftover is refused.
+        if (span.empty())
+        {
+            if (field_was_untouched)
+                return tryInferNumberFromEmptyField(settings);
+            return rejectedNumberType<is_json>();
+        }
+
         if (settings.try_infer_integers)
         {
-            /// If we read from String, we can do it in a more efficient way.
-            if (auto * /*string_buf*/ _ = dynamic_cast<ReadBufferFromString *>(&buf))
-            {
-                /// Remember the pointer to the start of the number to rollback to it.
-                /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
-                char * number_start = buf.position();
-
-                /// NOTE: it may break parsing of tryReadFloat() != tryReadIntText() + parsing of '.'/'e'
-                /// But, for now it is true
-                if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional) && has_fractional)
-                    return std::make_shared<DataTypeFloat64>();
-
-                Int64 tmp_int = 0;
-                buf.position() = number_start;
-                if (tryReadIntText(tmp_int, buf))
-                {
-                    auto type = std::make_shared<DataTypeInt64>();
-                    if (json_info && tmp_int < 0)
-                        json_info->negative_integers.insert(type.get());
-                    return type;
-                }
-
-                /// In case of Int64 overflow we can try to infer UInt64.
-                UInt64 tmp_uint = 0;
-                buf.position() = number_start;
-                if (tryReadIntText(tmp_uint, buf))
-                    return std::make_shared<DataTypeUInt64>();
-
-                return nullptr;
-            }
-
-            /// We should use PeekableReadBuffer, because we need to
-            /// rollback to the start of number to parse it as integer first
-            /// and then as float.
-            PeekableReadBuffer peekable_buf(buf);
-            PeekableReadBufferCheckpoint checkpoint(peekable_buf);
-
-            if (tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional) && has_fractional)
-                return std::make_shared<DataTypeFloat64>();
-            peekable_buf.rollbackToCheckpoint(/* drop= */ false);
-
             Int64 tmp_int = 0;
-            if (tryReadIntText(tmp_int, peekable_buf))
+            ReadBufferFromMemory int_buf(span);
+            if (tryReadIntText(tmp_int, int_buf) && int_buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
                 if (json_info && tmp_int < 0)
                     json_info->negative_integers.insert(type.get());
                 return type;
             }
-            peekable_buf.rollbackToCheckpoint(/* drop= */ true);
 
             /// In case of Int64 overflow we can try to infer UInt64.
             UInt64 tmp_uint = 0;
-            if (tryReadIntText(tmp_uint, peekable_buf))
+            ReadBufferFromMemory uint_buf(span);
+            if (tryReadIntText(tmp_uint, uint_buf) && uint_buf.eof())
                 return std::make_shared<DataTypeUInt64>();
-        }
-        else if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))
-        {
-            return std::make_shared<DataTypeFloat64>();
+
+            /// Both integer types overflowed. Only a span written like a float may fall through to
+            /// Float64: a digit-only one keeps its exact digits as a String instead of rounding.
+            /// Where integers are not inferred at all there is nothing to preserve, so the check
+            /// applies here only.
+            if (!spanHasFloatSyntax(span))
+                return rejectedNumberType<is_json>();
         }
 
-        /// This is not a number.
-        return nullptr;
+        if (preciseParserAcceptsWholeSpan(span))
+            return std::make_shared<DataTypeFloat64>();
+
+        return rejectedNumberType<is_json>();
+    }
+
+    /// Extracts the number delimited between the checkpoint and the current position.
+    /// The span must come from makeContinuousMemoryFromCheckpointToPos(): a saved position()
+    /// dangles and count() carries no bytes once the working buffer refills (see 5246c56a2aae74).
+    /// Extraction cannot be undone, so the span stays consumed however it is then classified.
+    std::string_view extractDelimitedNumber(PeekableReadBuffer & buf)
+    {
+        buf.makeContinuousMemoryFromCheckpointToPos();
+        auto * end = buf.position();
+        buf.rollbackToCheckpoint();
+        std::string_view span(buf.position(), end - buf.position());
+        buf.position() = end;
+        return span;
+    }
+
+    /// field_start_count is buf.count() from before the field was probed at all, so that a number
+    /// delimited as empty can be told apart from a leftover a failed literal probe walked past.
+    template <bool is_json>
+    DataTypePtr tryInferNumber(
+        ReadBuffer & buf, size_t field_start_count, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    {
+        if (buf.eof())
+            return nullptr;
+
+        const bool field_was_untouched = buf.count() == field_start_count;
+        Float64 tmp_float = 0;
+        bool has_fractional = false;
+
+        /// If we read from String, we can do it in a more efficient way.
+        if (auto * /*string_buf*/ _ = dynamic_cast<ReadBufferFromString *>(&buf))
+        {
+            /// Remember the pointer to the start of the number to delimit the span.
+            /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
+            char * number_start = buf.position();
+            /// The verdict is discarded: what matters is the span the pass delimited. A failure may
+            /// still have consumed a partial token (a bare sign, or a partial inf/nan keyword), which
+            /// the classifier rejects, and a success may have consumed nothing at all, which leaves the
+            /// span empty so the integer arm below answers exactly as it did before this branch.
+            tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional);
+
+            return classifyNumberSpan<is_json>(
+                std::string_view(number_start, buf.position() - number_start), field_was_untouched, settings, json_info);
+        }
+
+        /// Needs a checkpoint to extract the delimited number before classifying it.
+        PeekableReadBuffer peekable_buf(buf);
+        PeekableReadBufferCheckpoint checkpoint(peekable_buf);
+
+        tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional);
+
+        return classifyNumberSpan<is_json>(
+            extractDelimitedNumber(peekable_buf), field_was_untouched, settings, json_info);
     }
 
     template <bool is_json>
@@ -1122,7 +1194,10 @@ namespace
 
         Float64 tmp = 0;
         bool has_fractional = false;
-        if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof())
+        /// The whole field is already in contiguous memory here, so validate it directly.
+        /// Keep returning nullptr on rejection: the caller falls through to String, and a String
+        /// returned from here would be registered in json_info->numbers_parsed_from_json_strings.
+        if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof() && preciseParserAcceptsWholeSpan(field))
             return std::make_shared<DataTypeFloat64>();
 
         return nullptr;
@@ -1356,6 +1431,10 @@ namespace
         if (buf.eof())
             return nullptr;
 
+        /// Remembered before any probe below can walk past characters it then fails to match, so that
+        /// number inference can tell a field that held nothing from one whose leftover was refused.
+        const size_t field_start_count = buf.count();
+
         /// Array [field1, field2, ...]
         if (*buf.position() == '[')
             return tryInferArray<is_json>(buf, settings, json_info, depth);
@@ -1402,7 +1481,7 @@ namespace
         }
 
         /// Number
-        return tryInferNumber<is_json>(buf, settings, json_info);
+        return tryInferNumber<is_json>(buf, field_start_count, settings, json_info);
     }
 }
 
