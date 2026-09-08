@@ -14,7 +14,10 @@ CREATE TABLE t_ttl_quoted (id UInt32, `create time` DateTime('UTC')) ENGINE = Me
     TTL `create time` + INTERVAL 300 DAY
     SETTINGS min_bytes_for_full_part_storage = 0;
 
-INSERT INTO t_ttl_quoted SELECT number, now('UTC') FROM numbers(1000);
+-- A fixed timestamp far in the future, so that neither the shifted nor the original bound depends on
+-- when the test runs: with `now` the assertion below straddles a calendar-day boundary whenever the
+-- server time zone (randomized in CI) shifts the local wall clock across midnight over the 400 days.
+INSERT INTO t_ttl_quoted SELECT number, toDateTime('2100-01-01 00:00:00', 'UTC') FROM numbers(1000);
 
 -- A provable constant +100 day extension with no row expired before or after, so the fast path applies:
 -- the ALTER must succeed and read no data at all. Reading every row would mean the fingerprint failed to
@@ -27,7 +30,7 @@ SELECT read_rows FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_ttl_quoted' AND event_type = 'MutatePart';
 
 -- The shifted bounds must be the ones a full recomputation would produce: 400 days from the insert time.
-SELECT dateDiff('day', now('UTC'), delete_ttl_info_max) FROM system.parts
+SELECT toTimeZone(delete_ttl_info_max, 'UTC') FROM system.parts
 WHERE database = currentDatabase() AND table = 't_ttl_quoted' AND active;
 
 DROP TABLE t_ttl_quoted;
