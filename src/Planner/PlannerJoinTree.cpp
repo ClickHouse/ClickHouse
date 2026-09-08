@@ -3303,9 +3303,28 @@ const StorageDistributed * getDistributedStorageFromTableExpression(const QueryT
     return nullptr;
 }
 
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
+{
+    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    return join_node.getLocality() == JoinLocality::Global
+        || distributed_product_mode == DistributedProductMode::GLOBAL
+        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
+}
+
 void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPtr & context)
 {
+    /** Join trees are left deep, so the join that reads the leftmost table is the deepest one, and it is
+      * the only one whose sides can be swapped without moving a join into the right table expression.
+      */
     auto * join_node = query_node.getJoinTreeNode()->as<JoinNode>();
+    while (join_node)
+    {
+        auto * deeper_join_node = join_node->getLeftTableExpressionNode()->as<JoinNode>();
+        if (!deeper_join_node)
+            break;
+        join_node = deeper_join_node;
+    }
+
     if (!join_node || join_node->getKind() != JoinKind::Right || !join_node->hasJoinExpression())
         return;
 
@@ -3319,12 +3338,7 @@ void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPt
         && strictness != JoinStrictness::Semi && strictness != JoinStrictness::Anti)
         return;
 
-    const auto & settings = context->getSettingsRef();
-    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
-    const bool is_global = join_node->getLocality() == JoinLocality::Global
-        || distributed_product_mode == DistributedProductMode::GLOBAL
-        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
-    if (!is_global)
+    if (!isGlobalJoin(*join_node, context->getSettingsRef()))
         return;
 
     /// Only the left table fans the query out across shards, so only its shard count decides whether
@@ -3413,6 +3427,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     int first_join_pos = -1;
     int last_right_join_pos = -1;
     bool is_cross_join = false;
+    bool has_global_join_preserving_broadcast_rows = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
@@ -3439,6 +3454,13 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
+
+            /// Rows of the right side are preserved by these kinds, and that side is broadcast whole to
+            /// every shard. `tryRewriteGlobalRightJoinAsLeftJoin` swaps the sides where it can, so a join
+            /// still standing here would emit those rows once per shard.
+            if ((join_kind == JoinKind::Right || join_kind == JoinKind::Full)
+                && isGlobalJoin(join_node, planner_context->getQueryContext()->getSettingsRef()))
+                has_global_join_preserving_broadcast_rows = true;
 
             // save join positions for later check
             if (first_join_pos < 0 && (join_kind == JoinKind::Left || join_kind == JoinKind::Inner || join_kind == JoinKind::Right))
@@ -3531,6 +3553,17 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             // Only wrap if it's specifically IStorageCluster, not StorageDistributed or other remote storages
             should_wrap_left_table = (dynamic_cast<const IStorageCluster *>(storage.get()) != nullptr);
+        }
+
+        /** Reading the leftmost table through a subquery keeps the join on the initiator instead of running
+          * it on every shard, which is the only way left to emit the preserved rows once. It costs the
+          * distributed execution of the join, and shard specific values such as `shardNum` stop varying,
+          * so do it only for the join trees that are wrong without it.
+          */
+        if (!should_wrap_left_table && has_global_join_preserving_broadcast_rows)
+        {
+            const auto * left_storage = getDistributedStorageFromTableExpression(left_table_expression);
+            should_wrap_left_table = left_storage && left_storage->getShardCount() > 1;
         }
     }
 
