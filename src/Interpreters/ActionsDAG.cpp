@@ -2208,7 +2208,7 @@ bool ActionsDAG::hasNonDeterministic() const
 namespace
 {
 
-bool dagHasUnsafeFunction(const ActionsDAG & dag, bool (*is_unsafe)(const IFunctionBase &))
+bool dagHasUnsafeFunction(const ActionsDAG & dag, const std::function<bool(const IFunctionBase &)> & is_unsafe)
 {
     for (const auto & node : dag.getNodes())
     {
@@ -2223,7 +2223,7 @@ bool dagHasUnsafeFunction(const ActionsDAG & dag, bool (*is_unsafe)(const IFunct
 
 /// A lambda that captures only constants is itself folded to a constant, which holds the lambda object
 /// rather than a computed value: the body still runs, and its captures can hold further lambdas.
-bool foldedLambdaHasUnsafeFunction(const IColumn & column, bool (*is_unsafe)(const IFunctionBase &))
+bool foldedLambdaHasUnsafeFunction(const IColumn & column, const std::function<bool(const IFunctionBase &)> & is_unsafe)
 {
     const auto * column_function = typeid_cast<const ColumnFunction *>(&column);
     if (!column_function)
@@ -2243,7 +2243,7 @@ bool foldedLambdaHasUnsafeFunction(const IColumn & column, bool (*is_unsafe)(con
 
 }
 
-bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, bool (*is_unsafe)(const IFunctionBase &))
+bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe)
 {
     const Node * lambda = &node;
     while (lambda->type == ActionType::ALIAS)

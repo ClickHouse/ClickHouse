@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -308,7 +309,7 @@ public:
     /// A lambda keeps its body in an inner DAG that neither `getNodes()` nor a walk over `Node::children`
     /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
     /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
-    static bool hasUnsafeHiddenLambdaBody(const Node & node, bool (*is_unsafe)(const IFunctionBase &));
+    static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 
