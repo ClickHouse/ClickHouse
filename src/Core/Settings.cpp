@@ -28,6 +28,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
+#include <array>
+#include <bit>
 #include <cstring>
 
 namespace
@@ -5627,7 +5629,9 @@ Allow to execute alters which affects not only tables metadata, but also data on
 Propagate WITH statements to UNION queries and all subqueries
 )", 0) \
     DECLARE(Bool, enable_materialized_cte, false, R"(
-Enable materialized common table expressions, it will be preferred over enable_global_with_statement
+Enable materialized common table expressions (`WITH <name> AS MATERIALIZED (<subquery>)`).
+When enabled, a CTE declared as `MATERIALIZED` that is referenced more than once is executed once, stored in a temporary table, and all references read from that table. A CTE referenced only once is inlined as an ordinary CTE to avoid the overhead.
+When disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
 )", EXPERIMENTAL) \
     DECLARE(Bool, analyzer_inline_views, false, R"(
 When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
@@ -7368,10 +7372,8 @@ When `readBigAt` populates the userspace page cache, consecutive cache misses ar
 A higher value reduces the number of HTTP requests for cold scans on object storage; a lower value reduces peak transient memory.
 )", 0) \
     \
-    DECLARE(Bool, load_marks_asynchronously, false, R"(
-Load MergeTree marks asynchronously
-
-Cloud default value: `1`.
+    DECLARE(Bool, load_marks_asynchronously, true, R"(
+Load MergeTree marks asynchronously in a background thread pool (see the server setting `load_marks_threadpool_pool_size`), so that the marks of all streams are loaded in parallel. Otherwise, marks are loaded synchronously, one stream after another, which is slow on remote disks for columns with many substreams, such as `JSON`.
 )", 0) \
     DECLARE(Bool, use_streaming_marks_compression, false, R"(
 When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
@@ -7578,6 +7580,8 @@ Maximum time to read from a pipe for receiving information from the threads when
 - **Default value:** Empty string
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
+
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
 
 ### Placeholders
 
@@ -9111,7 +9115,7 @@ Enabling it automatically adjusts settings that control features not supported b
 - `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
@@ -9128,10 +9132,10 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
 )", 0) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
 Total wall-clock time, in milliseconds, a query may spend provisioning stateless workers before execution: leasing them from the discovery service and verifying they are reachable. The query blocks up to this budget for the leased workers to become ready; when it elapses the query proceeds with the workers verified so far, or fails if none became available. Zero waits only for the initial lease-and-verify pass (no retries).
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -9155,7 +9159,7 @@ order. Only shapes where no exchange survives between the read and the sort are 
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
@@ -9272,7 +9276,20 @@ Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction 
 Memory limit in bytes per WebAssembly UDF instance.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_input_block_size, 0, R"(
-Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+Maximum number of rows passed to a WebAssembly UDF in a single call. A non-zero value caps the rows per call and applies to every ABI.
+
+Set to 0 to size the calls by their serialized input instead. That applies to `ABI BUFFERED_V1` alone, the only ABI that serializes a whole input block into guest memory: its blocks are split so that a call's input stays within `webassembly_udf_input_split_memory_ratio` of the module's linear memory. `ROW_DIRECT` passes its arguments as WebAssembly values and `ASSEMBLYSCRIPT` builds one object per row, so neither has a serialized input to size a call by, and 0 leaves their pipeline block whole.
+)", EXPERIMENTAL) \
+    DECLARE(Float, webassembly_udf_input_split_memory_ratio, 0.5, R"(
+Fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy. Must be at least 0 and at most 1; the default leaves the other half to the guest for its own working set beside the input buffer.
+
+The margin below 1 is what makes the batching safe: the guest's own data, stack and allocator share that memory and are invisible to the host. A ratio close to 1 leaves nothing for them, so a call sized against it can still fail inside the guest's allocator.
+
+Read only for `ABI BUFFERED_V1`, and it sizes the calls only while `webassembly_udf_max_input_block_size` is 0 - a non-zero block size caps the rows per call instead.
+
+A batch is never taken below a single row, so a row whose own serialized size is past the budget is passed on its own, and one too large for the module's linear memory fails inside the guest's allocator.
+
+Set to 0 to leave the input unsplit: the whole pipeline block is passed in one call.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
@@ -9461,7 +9478,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
     /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
-    std::map<String, String> changedToMap() const;
+    FlatStringMap changedToFlatMap() const;
 
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
@@ -9471,14 +9488,49 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     void set(std::string_view name, const Field & value) override;
 
-    bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
+    bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
     void markSettingsChangedByCompatibilityAsUnchanged();
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
+    /// Which settings the compatibility setting changed, as a bitmap over setting indexes. An old
+    /// `compatibility` value marks hundreds of them on every query that sets it, so a hash set of names
+    /// meant a lookup per setting and an allocated node per setting, on top of copying them all whenever
+    /// the settings are copied. The number of settings is known at compile time, so the bitmap lives in
+    /// the settings themselves and never allocates.
+    static constexpr size_t num_setting_bitmap_words
+        = (static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
+    std::array<UInt64, num_setting_bitmap_words> settings_changed_by_compatibility_setting = {};
+    size_t num_settings_changed_by_compatibility_setting = 0;
+
+    bool isChangedByCompatibility(size_t index) const
+    {
+        return (settings_changed_by_compatibility_setting[index / 64] & (1ULL << (index % 64))) != 0;
+    }
+
+    void markChangedByCompatibility(size_t index)
+    {
+        UInt64 & word = settings_changed_by_compatibility_setting[index / 64];
+        const UInt64 bit = 1ULL << (index % 64);
+        if (!(word & bit))
+        {
+            word |= bit;
+            ++num_settings_changed_by_compatibility_setting;
+        }
+    }
+
+    void unmarkChangedByCompatibility(size_t index)
+    {
+        UInt64 & word = settings_changed_by_compatibility_setting[index / 64];
+        const UInt64 bit = 1ULL << (index % 64);
+        if (word & bit)
+        {
+            word &= ~bit;
+            --num_settings_changed_by_compatibility_setting;
+        }
+    }
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -9564,18 +9616,29 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     offsets.push_back(offsets.back() + size);
 }
 
-std::map<String, String> SettingsImpl::changedToMap() const
+FlatStringMap SettingsImpl::changedToFlatMap() const
 {
-    std::map<String, String> result;
+    FlatStringMap result;
+
+    /// What makes this dump large is an old `compatibility` value, and how many settings that changed
+    /// is already known, so the buffer can be sized up front instead of growing a dozen times. A name
+    /// and its value take 38 bytes on average.
+    const size_t expected_entries = num_settings_changed_by_compatibility_setting + 32;
+    result.reserve(expected_entries, expected_entries * 48);
 
     const auto & accessor = Traits::Accessor::instance();
-    for (size_t i = 0; i < accessor.size(); ++i)
+    const size_t num_settings = accessor.size();
+    for (size_t i = 0; i < num_settings; ++i)
+    {
         if (accessor.isValueChanged(*this, i))
-            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
+            result.add(accessor.getName(i), accessor.getValueString(*this, i));
+    }
 
     for (const auto & custom : custom_settings_map)
+    {
         if (custom.second.changed)
-            result.emplace(custom.first, custom.second.toString());
+            result.add(custom.first, custom.second.toString());
+    }
 
     return result;
 }
@@ -9641,26 +9704,108 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
     /// Resolve aliases so the lookup matches the canonical names stored in the set.
-    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
-        settings_changed_by_compatibility_setting.erase(final_name);
+    else if (num_settings_changed_by_compatibility_setting != 0)
+    {
+        const auto & accessor = Traits::Accessor::instance();
+        if (size_t index = accessor.find(SettingsTraits::resolveName(name)); index != static_cast<size_t>(-1))
+            unmarkChangedByCompatibility(index);
+    }
 
     BaseSettings::set(name, value);
 }
 
 void SettingsImpl::resetSettingsChangedByCompatibility()
 {
-    for (const auto & setting_name : settings_changed_by_compatibility_setting)
-        resetToDefault(setting_name);
+    if (num_settings_changed_by_compatibility_setting == 0)
+        return;
 
-    settings_changed_by_compatibility_setting.clear();
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t word = 0; word < num_setting_bitmap_words; ++word)
+    {
+        UInt64 bits = std::exchange(settings_changed_by_compatibility_setting[word], 0);
+        while (bits)
+        {
+            accessor.resetValueToDefault(*this, word * 64 + std::countr_zero(bits));
+            bits &= bits - 1;
+        }
+    }
+
+    num_settings_changed_by_compatibility_setting = 0;
+}
+
+namespace
+{
+
+/// A change from the settings changes history with its name already resolved to a setting index.
+/// Applying a `compatibility` value walks the whole history - thousands of changes for an old value,
+/// on every query that sets it - so the names are resolved once and the obsolete settings, which the
+/// walk always skips, are left out. `previous_value` points into the history, which is immutable and
+/// lives until the process ends.
+struct ResolvedCompatibilityChange
+{
+    size_t index;
+    const Field * previous_value;
+    /// Whether `previous_value` is what the setting holds when nothing changed it.
+    bool previous_value_is_default;
+};
+
+using ResolvedCompatibilityHistory = std::vector<std::pair<ClickHouseVersion, std::vector<ResolvedCompatibilityChange>>>;
+
+const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
+{
+    static const ResolvedCompatibilityHistory resolved_history = []
+    {
+        const auto & accessor = SettingsTraits::Accessor::instance();
+        const SettingsImpl default_settings;
+        ResolvedCompatibilityHistory result;
+        for (const auto & [version, changes] : getSettingsChangesHistory())
+        {
+            std::vector<ResolvedCompatibilityChange> resolved_changes;
+            resolved_changes.reserve(changes.size());
+            for (const auto & change : changes)
+            {
+                /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
+                const size_t index = accessor.find(SettingsTraits::resolveName(change.name));
+                if (index == static_cast<size_t>(-1))
+                    BaseSettingsHelpers::throwSettingNotFound(change.name);
+
+                if (accessor.getTier(index) == SettingsTierType::OBSOLETE)
+                    continue;
+
+                /// `default_settings` holds every setting as it is with nothing changed, which is what
+                /// a setting the walk has not touched yet holds too.
+                const bool previous_value_is_default
+                    = accessor.getValue(default_settings, index) == change.previous_value;
+
+                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default});
+            }
+            result.emplace_back(version, std::move(resolved_changes));
+        }
+        return result;
+    }();
+
+    return resolved_history;
+}
+
 }
 
 void SettingsImpl::markSettingsChangedByCompatibilityAsUnchanged()
 {
-    for (const auto & setting_name : settings_changed_by_compatibility_setting)
-        markUnchanged(setting_name);
+    if (num_settings_changed_by_compatibility_setting == 0)
+        return;
 
-    settings_changed_by_compatibility_setting.clear();
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t word = 0; word < num_setting_bitmap_words; ++word)
+    {
+        UInt64 bits = std::exchange(settings_changed_by_compatibility_setting[word], 0);
+        while (bits)
+        {
+            accessor.setValueChanged(*this, word * 64 + std::countr_zero(bits), false);
+            bits &= bits - 1;
+        }
+    }
+
+    num_settings_changed_by_compatibility_setting = 0;
 }
 
 void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
@@ -9673,10 +9818,11 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         return;
 
     ClickHouseVersion version(compatibility_value);
-    const auto & settings_changes_history = getSettingsChangesHistory();
+    const auto & accessor = Traits::Accessor::instance();
+    const auto & resolved_history = getResolvedCompatibilityHistory();
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
-    for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
+    for (auto it = resolved_history.rbegin(); it != resolved_history.rend(); ++it)
     {
         if (version >= it->first)
             break;
@@ -9684,22 +9830,24 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
-            /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
-            auto final_name = SettingsTraits::resolveName(change.name);
-
-            if (getTier(final_name) == SettingsTierType::OBSOLETE)
-                continue;
+            const bool changed_by_compatibility = isChangedByCompatibility(change.index);
 
             /// If this setting was changed manually, we don't change it
-            if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
+            if (!changed_by_compatibility && accessor.isValueChanged(*this, change.index))
                 continue;
 
-            /// Don't mark as changed if the value isn't really changed
-            if (get(final_name) == change.previous_value)
+            /// Don't mark as changed if the value isn't really changed. Only a setting a newer change
+            /// already moved has to be read to know that; an untouched one still holds its default, and
+            /// whether that is the previous value is known from the history alone.
+            const bool already_has_previous_value = changed_by_compatibility
+                ? accessor.getValue(*this, change.index) == *change.previous_value
+                : change.previous_value_is_default;
+
+            if (already_has_previous_value)
                 continue;
 
-            BaseSettings::set(final_name, change.previous_value);
-            settings_changed_by_compatibility_setting.insert(final_name);
+            accessor.setValue(*this, change.index, *change.previous_value);
+            markChangedByCompatibility(change.index);
         }
     }
 }
@@ -9945,9 +10093,9 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
     impl->dumpToMapColumn(column, changed_only);
 }
 
-std::map<String, String> Settings::changedToMap() const
+FlatStringMap Settings::changedToFlatMap() const
 {
-    return impl->changedToMap();
+    return impl->changedToFlatMap();
 }
 
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)

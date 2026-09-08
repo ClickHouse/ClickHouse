@@ -1947,15 +1947,22 @@ Counters::Snapshot::Snapshot()
 {}
 
 Counters::Snapshot::Snapshot(const Snapshot & other)
-    : counters_holder(new Count[num_counters] {})
+    /// Every counter is overwritten right below, so zeroing the 12 KB first is pure waste. A query log
+    /// element carries a snapshot and is copied on every logged query.
+    : counters_holder(std::make_unique_for_overwrite<Count[]>(num_counters))
 {
     std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
 }
 
 Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
 {
-    Snapshot tmp(other);
-    counters_holder = std::move(tmp.counters_holder);
+    if (this == &other)
+        return *this;
+
+    if (!counters_holder)
+        counters_holder = std::make_unique_for_overwrite<Count[]>(num_counters);
+
+    std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
     return *this;
 }
 
