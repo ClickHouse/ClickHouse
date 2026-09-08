@@ -45,15 +45,12 @@ public:
 
     SelectivityEstimatorCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    MappedPtr get(const Key & key)
+    template <typename LoadFunc>
+    MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
-        auto result = Base::get(key);
-        if (result)
-            ProfileEvents::increment(ProfileEvents::SelectivityEstimatorCacheHits);
-        else
-            ProfileEvents::increment(ProfileEvents::SelectivityEstimatorCacheMisses);
-
-        return result;
+        auto result = Base::getOrSet(key, load);
+        ProfileEvents::increment(result.second ? ProfileEvents::SelectivityEstimatorCacheMisses : ProfileEvents::SelectivityEstimatorCacheHits);
+        return result.first;
     }
 };
 

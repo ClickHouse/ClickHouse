@@ -978,48 +978,45 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    /// `use_statistics_cache = 0` is the escape hatch that restores uncached, from-disk loading.
-    const bool use_cache = local_context->getSettingsRef()[Setting::use_statistics_cache];
-
-    SelectivityEstimatorCachePtr estimator_cache;
-    UInt128 estimator_key{};
-    if (use_cache)
+    auto build = [&](PartStatisticsCache * stats_cache)
     {
-        estimator_cache = getContext()->getSelectivityEstimatorCache();
-        estimator_key = selectivityEstimatorCacheKey(getStorageID(), parts, required_columns);
-        if (auto cached = estimator_cache->get(estimator_key))
-            return cached;
-    }
+        LOG_DEBUG(log, "Loading statistics");
+        ConditionSelectivityEstimatorBuilder estimator_builder;
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
 
-    LOG_DEBUG(log, "Loading statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder;
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
-    auto stats_cache = use_cache ? getContext()->getPartStatisticsCache() : nullptr;
+        /// `<col>.null` may appear in the required columns when `optimize_functions_to_subcolumns = 1`;
+        /// statistics of the parent column serve it, so fold the parent names into the lookup set.
+        NameSet required_columns_set(required_columns.begin(), required_columns.end());
+        for (const auto & column_name : required_columns)
+            if (column_name.ends_with(".null"))
+                required_columns_set.insert(column_name.substr(0, column_name.size() - std::string_view(".null").size()));
 
-    /// `<col>.null` may appear in the required columns when `optimize_functions_to_subcolumns = 1`;
-    /// statistics of the parent column serve it, so fold the parent names into the lookup set.
-    NameSet required_columns_set(required_columns.begin(), required_columns.end());
-    for (const auto & column_name : required_columns)
-        if (column_name.ends_with(".null"))
-            required_columns_set.insert(column_name.substr(0, column_name.size() - std::string_view(".null").size()));
-
-    for (const auto & part : parts)
-    {
-        /// No parts lock: the `DataPartPtr` keeps the part alive, and statistics files are
-        /// read without the lock elsewhere too (`getEstimates`), like any other part file.
-        auto stats = part.data_part->loadStatisticsWithCache(stats_cache.get(), required_columns_set);
-        estimator_builder.incrementRowCount(part.data_part->rows_count);
-        for (const auto & [column_name, stat] : *stats)
+        for (const auto & part : parts)
         {
-            if (required_columns_set.empty() || required_columns_set.contains(column_name))
-                estimator_builder.addStatistics(column_name, stat);
+            /// No parts lock: the `DataPartPtr` keeps the part alive, and statistics files are
+            /// read without the lock elsewhere too (`getEstimates`), like any other part file.
+            auto stats = part.data_part->loadStatisticsWithCache(stats_cache, required_columns_set);
+            estimator_builder.incrementRowCount(part.data_part->rows_count);
+            for (const auto & [column_name, stat] : *stats)
+            {
+                if (required_columns_set.empty() || required_columns_set.contains(column_name))
+                    estimator_builder.addStatistics(column_name, stat);
+            }
         }
-    }
 
-    auto estimator = estimator_builder.getEstimator();
-    if (use_cache && estimator)
-        estimator_cache->set(estimator_key, estimator);
-    return estimator;
+        return estimator_builder.getEstimator();
+    };
+
+    /// `use_statistics_cache = 0` is the escape hatch that restores uncached, from-disk loading.
+    if (!local_context->getSettingsRef()[Setting::use_statistics_cache])
+        return build(nullptr);
+
+    /// `getOrSet` publishes the estimator only if the cache was not cleared while it was being
+    /// built, so `SYSTEM DROP STATISTICS CACHE` cannot be undone by a query already in flight.
+    auto stats_cache = getContext()->getPartStatisticsCache();
+    return getContext()->getSelectivityEstimatorCache()->getOrSet(
+        selectivityEstimatorCacheKey(getStorageID(), parts, required_columns),
+        [&] { return build(stats_cache.get()); });
 }
 
 bool MergeTreeData::supportsFinal() const
