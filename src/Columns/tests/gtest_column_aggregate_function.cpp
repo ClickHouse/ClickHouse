@@ -90,7 +90,7 @@ TEST(ColumnAggregateFunction, AcceptsStateNameSpellingUnreadParameters)
     AggregateFunctionProperties properties;
     auto function = factory.get("argMin", NullsAction::EMPTY, argument_types, parameters, properties);
 
-    /// What decodeAggregateFunction() builds out of an encoding that carried the parameters.
+    /// What `decodeAggregateFunction` builds out of an encoding that carried the parameters.
     auto decoded_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters);
     auto state_type = function->getStateType();
     ASSERT_NE(decoded_type->getName(), state_type->getName());
