@@ -1,5 +1,7 @@
 #include <Processors/Sources/LazyReadFromMergeTreeSource.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
+#include <Processors/QueryPlan/UncompressedCacheUtils.h>
+#include <IO/UncompressedCache.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Interpreters/Context.h>
@@ -20,7 +22,6 @@ namespace Setting
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
-    extern const SettingsBool use_uncompressed_cache;
 }
 
 namespace ErrorCodes
@@ -222,15 +223,37 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
 Processors LazyReadFromMergeTreeSource::buildReaders()
 {
     const auto & ctx_settings = context->getSettingsRef();
-    size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
-    size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();
+    const auto & parts = lazy_materializing_rows->ranges_in_data_parts;
+    size_t sum_marks = parts.getMarksCountAllParts();
+    size_t sum_rows = parts.getRowsCountAllParts();
+
+    /// Resolve the automatic uncompressed-cache decision against the actual second-phase read set.
+    /// Deciding it earlier (in `keepOnlyRequiredColumnsAndCreateLazyReadStep`) would use the pre-limit
+    /// scan, which can exceed the cache thresholds even when the lazy phase reads only a small local
+    /// payload set. An explicit `use_uncompressed_cache` override is still honored inside the resolver.
+    /// The remote-parts bit, in contrast, must cover the whole query: `filterRangesAndFillRows` drops
+    /// parts with no surviving rows, so a mixed local + remote first phase can leave only local parts
+    /// here. Such a read stays opt-in, hence `any_source_parts_on_remote_disk` from the first phase.
+    bool use_uncompressed_cache = false;
+    if (!parts.empty())
+    {
+        const auto uncompressed_cache = context->getUncompressedCache();
+        const bool has_uncompressed_cache = uncompressed_cache && uncompressed_cache->maxSizeInBytes() > 0;
+        use_uncompressed_cache = resolveUseUncompressedCacheForMergeTreeRead(
+            parts,
+            sum_marks,
+            ctx_settings,
+            *parts.front().data_part->storage.getSettings(),
+            has_uncompressed_cache,
+            lazy_materializing_rows->any_source_parts_on_remote_disk);
+    }
 
     MergeTreeReadPoolBase::PoolSettings pool_settings{
         .threads = max_threads,
         .sum_marks = sum_marks,
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
-        .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
+        .use_uncompressed_cache = use_uncompressed_cache,
         .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
         .total_query_nodes = 1,
     };

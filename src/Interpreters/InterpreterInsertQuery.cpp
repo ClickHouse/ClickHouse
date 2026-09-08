@@ -1113,6 +1113,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is stripped below.
     auto query_to_send = query.clone();
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+    /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out into the query text too.
+    ClusterProxy::resolveAutomaticUncompressedCacheOptOutInQuery(*query_to_send, local_context->getSettingsRef());
     String query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1131,6 +1133,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     {
         Settings stripped_settings = query_context->getSettingsRef();
         ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out in here too.
+        ClusterProxy::resolveAutomaticUncompressedCacheOptOut(stripped_settings);
         query_context->setSettings(stripped_settings);
     }
 
