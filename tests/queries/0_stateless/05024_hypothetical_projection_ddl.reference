@@ -33,7 +33,7 @@ BAD_ARGUMENTS
 --- non-MergeTree is rejected ---
 NOT_IMPLEMENTED
 --- EXPLAIN WHATIF lists the projection when projections are disabled ---
-With p_norm (projection (normal), hypothetical):
+With p_norm (normal projection, hypothetical):
 status: not_applicable
 reason: Projections are disabled by `optimize_use_projections = 0`
 --- with nothing defined the report says so ---

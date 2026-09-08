@@ -127,7 +127,7 @@ echo "--- EXPLAIN WHATIF lists the projection when projections are disabled ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;
-" 2>&1 | grep -oE 'With p_norm \(projection \(normal\), hypothetical\):|status: +not_applicable|reason: +Projections are disabled.*' | awk '{$1=$1; print}'
+" 2>&1 | grep -oE 'With p_norm \(normal projection, hypothetical\):|status: +not_applicable|reason: +Projections are disabled.*' | awk '{$1=$1; print}'
 
 echo "--- with nothing defined the report says so ---"
 $CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;" 2>&1 | grep -oE 'No hypothetical indexes or projections defined.*' | head -1

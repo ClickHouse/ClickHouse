@@ -168,7 +168,7 @@ bool buildProjectionPart(
 {
     const auto & proj_key = projection.metadata->getSortingKey();
 
-    Pipe pipe = makeWholePartPipe(part, proj_key.expression->getRequiredColumns(), read_step, context);
+    Pipe pipe = makeWholePartPipe(part, projection.required_columns, read_step, context);
     QueryPipeline pipeline(std::move(pipe));
     pipeline.setProcessListElement(context->getProcessListElement());
     pipeline.setProgressCallback(context->getProgressCallback());
@@ -193,6 +193,10 @@ bool buildProjectionPart(
         /// the key expression and the sort need full columns
         for (auto & column : block)
             column.column = recursiveRemoveSparse(column.column);
+
+        /// the same measure the writer takes of the block it is about to store, before the key
+        /// expression adds columns a normal projection recomputes on read instead of storing
+        out.bytes += getBlockSizeForGranularity(block);
         proj_key.expression->execute(block);
 
         if (key_columns.empty())
@@ -212,12 +216,6 @@ bool buildProjectionPart(
     out.rows = key_columns[0]->size();
     for (size_t i = 0; i < key_columns.size(); ++i)
         out.key_block.insert({std::move(key_columns[i]), proj_key.data_types[i], proj_key.column_names[i]});
-
-    /// only used to pick the granularity
-    for (const auto & name : projection.required_columns)
-        out.bytes += part->getColumnSize(name).data_uncompressed;
-    if (out.bytes == 0)
-        out.bytes = part->getBytesUncompressedOnDisk();
 
     return true;
 }
@@ -251,7 +249,9 @@ MarkRanges pruneSyntheticProjectionPart(
         /* blocks_are_granules */ false,
         parent_part->index_granularity_info.mark_type.adaptive);
 
-    const size_t num_marks = (data.rows + granule_rows - 1) / granule_rows;
+    /// the engine grows the last granule to absorb the remainder (`adjustLastMark`) instead of
+    /// opening one more, so a row count that is not a multiple of the granule has one mark less
+    const size_t num_marks = std::max<size_t>(1, data.rows / granule_rows);
     const size_t last_mark_rows = data.rows - (num_marks - 1) * granule_rows;
     granularity_out
         = std::make_shared<MergeTreeIndexGranularityConstant>(granule_rows, last_mark_rows, num_marks, /* has_final_mark */ false);
@@ -346,17 +346,20 @@ bool tryEstimateProjection(
 
     result.estimated_marks = projection_marks;
     result.estimated_rows = projection_rows;
-    result.skip_ratio = baseline_marks > 0
-        ? (static_cast<double>(baseline_marks) - static_cast<double>(projection_marks)) / static_cast<double>(baseline_marks)
-        : 0.0;
-    if (projection_marks < baseline_marks)
-        result.verdict = "would be chosen, it reads fewer marks than the base table";
-    else if (projection_marks > baseline_marks)
-        result.verdict = "would not be chosen, it reads more marks than the base table";
-    else if (sort_order_helps)
-        result.verdict = "would be chosen, it reads the same marks as the base table and serves the ORDER BY";
+    if (projection_marks != baseline_marks)
+    {
+        result.verdict = projection_marks < baseline_marks ? "chosen" : "not chosen";
+        result.verdict_reason = fmt::format(
+            "{} marks would be read instead of {} from the base table", projection_marks, baseline_marks);
+    }
     else
-        result.verdict = "would not be chosen, it reads the same marks as the base table and does not help with sorting";
+    {
+        result.verdict = sort_order_helps ? "chosen" : "not chosen";
+        result.verdict_reason = fmt::format(
+            "the same {} marks would be read, and the projection order {} the ORDER BY",
+            projection_marks,
+            sort_order_helps ? "serves" : "does not serve");
+    }
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
     result.sampled_parts = scanned_parts;
@@ -405,7 +408,7 @@ WhatIfCandidateResult evaluateProjection(
     WhatIfCandidateResult result;
     result.kind = WhatIfCandidateResult::Projection;
     result.name = stored_projection.name;
-    result.type = stored_projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
+    result.type = stored_projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
     result.status = WhatIfCandidateResult::NotApplicable;
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();

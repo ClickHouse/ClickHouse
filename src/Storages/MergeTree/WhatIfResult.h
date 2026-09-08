@@ -32,6 +32,7 @@ struct WhatIfCandidateResult
     /// projections only, what the projection read would touch and whether the optimizer would switch to it
     std::optional<UInt64> estimated_rows;
     String verdict;
+    String verdict_reason;
 
     enum EmpiricalStatus { Ok, Unsupported, Disabled };
     EmpiricalStatus empirical_status = Disabled;
@@ -55,6 +56,7 @@ struct WhatIfResult
     /// Baseline after PK + partition + existing indexes
     UInt64 baseline_parts = 0;
     UInt64 baseline_marks = 0;
+    UInt64 baseline_rows = 0;
     UInt64 baseline_est_bytes = 0;
     String database;
     String table;

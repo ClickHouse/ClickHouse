@@ -43,7 +43,7 @@ compare()
     $CLICKHOUSE_CLIENT -q "
         CREATE HYPOTHETICAL PROJECTION ${projection_name} ON ${est} ${projection_body};
         EXPLAIN WHATIF ${query/TABLE/$est} SETTINGS ${PIN};
-    " | grep -E '^\s+(status|marks|skip_ratio|verdict|source):' | awk '{$1=$1; print}'
+    " | grep -E '^\s+(status|marks|rows|read_ratio|verdict|reason|source):' | awk '{$1=$1; print}'
     echo "real:"
     $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 ${query/TABLE/$real} SETTINGS ${PIN}, preferred_optimize_projection_name = '${projection_name}'" \
         | grep -oE 'ReadFromMergeTree \([^)]*\)|Granules: [0-9]+$'
@@ -79,6 +79,21 @@ done
 
 echo "--- the INDEX form, which the optimizer serves the read from ---"
 compare p_idx "INDEX b TYPE basic" "SELECT count() FROM TABLE WHERE b = 42"
+
+# a Compact part reports the whole part's size for every column, so the bytes must come from the scan
+echo "--- Compact parts, where a wide column the projection does not store must not inflate its marks ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;
+    CREATE TABLE t_est_c (id UInt64, b UInt64, v UInt64, payload String) ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 1000000000;
+    CREATE TABLE t_real_c AS t_est_c;
+    ALTER TABLE t_real_c ADD PROJECTION p_c (SELECT id, b, v ORDER BY b);
+    INSERT INTO t_est_c SELECT number, number % 1000, number, repeat('x', 4000) FROM numbers(50000);
+    INSERT INTO t_real_c SELECT number, number % 1000, number, repeat('x', 4000) FROM numbers(50000);
+    SELECT 'real projection part marks:', marks FROM system.projection_parts WHERE table = 't_real_c' AND active;
+"
+compare p_c "(SELECT id, b, v ORDER BY b)" "SELECT sum(v) FROM TABLE WHERE b >= 0" t_est_c t_real_c
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;"
 
 echo "--- not applicable cases ---"
 $CLICKHOUSE_CLIENT -q "

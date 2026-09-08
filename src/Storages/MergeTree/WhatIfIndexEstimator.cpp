@@ -109,7 +109,7 @@ WhatIfResult buildResultWithoutScan(
     {
         WhatIfCandidateResult r;
         r.name = projection.name;
-        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
+        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
         r.status = WhatIfCandidateResult::NotApplicable;
         r.not_applicable_reason = reason;
         refreshHypotheticalProjection(projection, data, metadata, context, r.not_applicable_reason);
@@ -436,6 +436,7 @@ WhatIfResult estimateHypotheticalIndexes(
     result.table = data.getStorageID().getTableName();
     result.baseline_parts = analysis.selected_parts;
     result.baseline_marks = analysis.selected_marks;
+    result.baseline_rows = analysis.selected_rows;
 
     /// The average row size is the parent table's, so it says nothing about rows selected from a
     /// projection. Leave it at 0 and the formatter omits the line rather than printing a wrong one
