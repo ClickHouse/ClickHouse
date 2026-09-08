@@ -119,6 +119,7 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
     "ci/jobs/scripts/print_uncovered_code.py",
+    "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
@@ -534,20 +535,21 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, and the stateless flaky check). Only the flaky check is
-    conditional: it reruns the PR's new/changed stateless tests as a drift guard,
-    so a PR that changes no stateless tests has nothing for it to do. Filter it
-    out here, at config time, so such a PR does not schedule the runner, restore
-    `CH_AMD_BINARY`, and enter the test container only to exit `SKIPPED`. This is
-    the merge-queue counterpart to the `flaky` branch of `should_skip_job`, kept
-    deliberately minimal so it cannot skip the build/style/fast-test jobs the
-    queue always needs. The skip condition matches the in-job selection in
-    `functional_tests.py` (both rely on `Targeting.get_changed_tests`), so the
-    early exit and the config-time skip never disagree. `get_changed_tests`
-    resolves data fixtures (a `.parquet`/`.tsv` under `tests/queries/0_stateless/`,
-    even one nested in a subdirectory) back to the tests that consume them, so a
-    fixture-only PR still reruns the affected test surface instead of being
-    skipped here as "no changed tests".
+    `amd_binary` build, the stateless flaky check, and the docs examples). Only
+    the flaky check is conditional: it reruns the PR's new/changed stateless
+    tests as a drift guard, so a PR that changes no stateless tests has nothing
+    for it to do. Filter it out here, at config time, so such a PR does not
+    schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
+    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
+    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
+    build/style/fast-test/docs-examples jobs the queue always needs. The skip
+    condition matches the in-job selection in `functional_tests.py` (both rely
+    on `Targeting.get_changed_tests`), so the early exit and the config-time
+    skip never disagree. `get_changed_tests` resolves data fixtures (a
+    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
+    subdirectory) back to the tests that consume them, so a fixture-only PR
+    still reruns the affected test surface instead of being skipped here as
+    "no changed tests".
     """
     global _info_cache
     if _info_cache is None:
