@@ -62,6 +62,17 @@ SETTINGS max_expanded_ast_elements = 100000000000;
 -- insert becoming visible.
 SELECT 'insert accepted';
 
+-- The fast path runs the old interpreter's alias propagation whatever the analyzer setting is, so the
+-- bound must not apply when the analyzer is on: there the visitor makes a single pass, and every other
+-- path accepts this query.
+SELECT 'analyzer is not bounded on the insert fast path';
+INSERT INTO t_with_alias_dist SETTINGS parallel_distributed_insert_select = 2, enable_analyzer = 1, max_expanded_ast_elements = 100
+WITH (SELECT count() FROM (SELECT 1)) AS e1,
+     (SELECT count() FROM (SELECT 1)) AS e2,
+     (SELECT count() FROM (SELECT 1)) AS e3
+SELECT e1 + e2 + e3;
+SELECT 'analyzer insert accepted';
+
 DROP TABLE t_with_alias_dist;
 DROP TABLE t_with_alias_repl;
 
