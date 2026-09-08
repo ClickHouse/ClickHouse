@@ -33,6 +33,7 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
                 return;
 
             state.claimed_forced_epoch = forced_epoch;
+            state.dedicated_spill_in_progress = false;
             state.memory_before_spill = getCurrentQueryMemoryUsage();
             state.spill_requested = false;
             should_spill = stats.spillable_memory_bytes > 0;
@@ -80,6 +81,7 @@ void MemorySpillScheduler::finishSpill(IProcessor * processor)
     auto state = processor_states.find(processor);
     if (state == processor_states.end()
         || state->second.claimed_forced_epoch != forced_epoch
+        || state->second.dedicated_spill_in_progress
         || state->second.completed_forced_epoch >= forced_epoch)
         return;
 
@@ -97,10 +99,26 @@ void MemorySpillScheduler::finishSpill(IProcessor * processor)
 
 void MemorySpillScheduler::registerProcessor(IProcessor * processor)
 {
+    registerProcessorImpl(processor, {}, false);
+}
+
+void MemorySpillScheduler::registerProcessor(const std::shared_ptr<IProcessor> & processor)
+{
+    registerProcessorImpl(processor.get(), processor, true);
+}
+
+void MemorySpillScheduler::registerProcessorImpl(
+    IProcessor * processor, std::weak_ptr<IProcessor> lifetime, bool lifetime_tracked)
+{
     if (!processor->isSpillable())
         return;
     std::lock_guard lock(mutex);
-    const auto [_, inserted] = processor_states.try_emplace(processor);
+    const auto [state, inserted] = processor_states.try_emplace(processor);
+    if (lifetime_tracked)
+    {
+        state->second.lifetime = std::move(lifetime);
+        state->second.lifetime_tracked = true;
+    }
     const UInt64 requested = forced_spill_request_epoch.load(std::memory_order_relaxed);
     if (inserted
         && forced_spill_active
@@ -131,6 +149,63 @@ MemorySpillScheduler::ForcedSpillRequest MemorySpillScheduler::requestForcedSpil
         forced_spill_completed_epoch.store(new_epoch, std::memory_order_release);
     }
     return {.epoch = new_epoch};
+}
+
+void MemorySpillScheduler::executeForcedSpill(UInt64 epoch)
+{
+    std::lock_guard execution_lock(forced_spill_execution_mutex);
+    while (true)
+    {
+        IProcessor * processor = nullptr;
+        std::shared_ptr<IProcessor> lifetime;
+        {
+            std::lock_guard lock(mutex);
+            if (!forced_spill_active || forced_spill_request_epoch.load(std::memory_order_relaxed) != epoch
+                || forced_spill_completed_epoch.load(std::memory_order_relaxed) >= epoch)
+                return;
+
+            for (auto & [candidate, state] : processor_states)
+            {
+                if (state.completed_forced_epoch >= epoch)
+                    continue;
+                if (state.lifetime_tracked)
+                {
+                    lifetime = state.lifetime.lock();
+                    if (!lifetime)
+                    {
+                        completeForcedSpillProcessor(epoch, state);
+                        continue;
+                    }
+                }
+                processor = candidate;
+                state.claimed_forced_epoch = epoch;
+                state.dedicated_spill_in_progress = true;
+                break;
+            }
+        }
+        if (!processor)
+            return;
+
+        const Int64 memory_before = getCurrentQueryMemoryUsage();
+        const bool spilled = processor->spillForMemoryReservation();
+        const Int64 reclaimed_bytes = std::max<Int64>(memory_before - getCurrentQueryMemoryUsage(), 0);
+
+        std::lock_guard lock(mutex);
+        if (!forced_spill_active || forced_spill_request_epoch.load(std::memory_order_relaxed) != epoch)
+            return;
+        auto state = processor_states.find(processor);
+        if (state == processor_states.end())
+            continue;
+        state->second.dedicated_spill_in_progress = false;
+        if (state->second.completed_forced_epoch >= epoch)
+            continue;
+        if (spilled || reclaimed_bytes > 0)
+        {
+            forced_spill_outcome.store(ForcedSpillOutcome::Progress, std::memory_order_relaxed);
+            forced_spill_reclaimed_bytes.fetch_add(reclaimed_bytes, std::memory_order_relaxed);
+        }
+        completeForcedSpillProcessor(epoch, state->second);
+    }
 }
 
 MemorySpillScheduler::ForcedSpillResult MemorySpillScheduler::getForcedSpillResult(UInt64 epoch) const

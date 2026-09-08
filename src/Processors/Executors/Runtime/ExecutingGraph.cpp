@@ -181,7 +181,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
 
             /// Runtime additions participate in the same spill controller as the initial pipeline.
             if (auto group = CurrentThread::getGroup())
-                group->memory_spill_scheduler->registerProcessor(new_proc.get());
+                group->memory_spill_scheduler->registerProcessor(new_proc);
         }
 
         /// Record removed processors in pending removal queue

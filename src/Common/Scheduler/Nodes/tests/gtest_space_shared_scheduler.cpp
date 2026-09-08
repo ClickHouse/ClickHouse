@@ -2043,6 +2043,7 @@ public:
 
     void work() override
     {
+        ++work_calls;
         if (spill_pending && !spill_blocked)
         {
             ++completed_spills;
@@ -2055,6 +2056,20 @@ public:
     size_t lastSpillSize() const { return last_spill_size; }
     bool hasPendingSpill() const override { return spill_pending; }
     void setSpillBlocked(bool blocked) { spill_blocked = blocked; }
+    size_t workCallCount() const { return work_calls; }
+    void runOnDedicatedSpill(std::function<void()> callback) { on_dedicated_spill = std::move(callback); }
+
+    bool spillForMemoryReservation() override
+    {
+        ++spill_calls;
+        if (on_dedicated_spill)
+            on_dedicated_spill();
+        if (!spill_succeeds || spill_blocked || spillable_bytes <= 0)
+            return false;
+        spill_pending = false;
+        ++completed_spills;
+        return true;
+    }
 
 private:
     Int64 spillable_bytes;
@@ -2064,7 +2079,95 @@ private:
     size_t completed_spills = 0;
     bool spill_pending = false;
     bool spill_blocked = false;
+    size_t work_calls = 0;
+    std::function<void()> on_dedicated_spill;
 };
+
+TEST(SchedulerSpaceShared, ForcedSpillVisitsIdleProcessorsWithoutWork)
+{
+    MemorySpillScheduler scheduler(false);
+    ManualSpillProcessor first(4096, true);
+    ManualSpillProcessor second(8192, true);
+    scheduler.registerProcessor(&first);
+    scheduler.registerProcessor(&second);
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.executeForcedSpill(request.epoch);
+    EXPECT_EQ(first.completedSpillCount(), 1u);
+    EXPECT_EQ(second.completedSpillCount(), 1u);
+    EXPECT_EQ(first.workCallCount(), 0u);
+    EXPECT_EQ(second.workCallCount(), 0u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+    scheduler.executeForcedSpill(request.epoch);
+    EXPECT_EQ(first.spillCallCount(), 1u);
+    EXPECT_EQ(second.spillCallCount(), 1u);
+}
+
+TEST(SchedulerSpaceShared, DedicatedSpillReportsNoProgress)
+{
+    MemorySpillScheduler scheduler(false);
+    ManualSpillProcessor processor(4096, false);
+    scheduler.registerProcessor(&processor);
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.executeForcedSpill(request.epoch);
+    EXPECT_EQ(processor.spillCallCount(), 1u);
+    EXPECT_EQ(processor.workCallCount(), 0u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
+}
+
+TEST(SchedulerSpaceShared, DedicatedSpillSkipsExpiredProcessors)
+{
+    MemorySpillScheduler scheduler(false);
+    auto processor = std::make_shared<ManualSpillProcessor>(4096, true);
+    scheduler.registerProcessor(processor);
+    const auto request = scheduler.requestForcedSpill();
+    processor.reset();
+    scheduler.executeForcedSpill(request.epoch);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
+}
+
+TEST(SchedulerSpaceShared, DedicatedSpillRetainsProcessorDuringRemoval)
+{
+    MemorySpillScheduler scheduler(false);
+    auto processor = std::make_shared<ManualSpillProcessor>(4096, true);
+    std::weak_ptr<IProcessor> lifetime = processor;
+    std::promise<void> started;
+    auto started_future = started.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    processor->runOnDedicatedSpill([&]
+    {
+        started.set_value();
+        release_future.get();
+    });
+    scheduler.registerProcessor(processor);
+    const auto request = scheduler.requestForcedSpill();
+    auto spill = std::async(std::launch::async, [&] { scheduler.executeForcedSpill(request.epoch); });
+    EXPECT_EQ(started_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    scheduler.remove(processor.get());
+    processor.reset();
+    EXPECT_FALSE(lifetime.expired());
+    release.set_value();
+    spill.get();
+    EXPECT_TRUE(lifetime.expired());
+}
+
+TEST(SchedulerSpaceShared, DedicatedSpillIncludesProcessorsAddedDuringPass)
+{
+    MemorySpillScheduler scheduler(false);
+    auto first = std::make_shared<ManualSpillProcessor>(4096, true);
+    auto added = std::make_shared<ManualSpillProcessor>(8192, true);
+    first->runOnDedicatedSpill([&] { scheduler.registerProcessor(added); });
+    scheduler.registerProcessor(first);
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.executeForcedSpill(request.epoch);
+    EXPECT_EQ(first->completedSpillCount(), 1u);
+    EXPECT_EQ(added->completedSpillCount(), 1u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+}
 
 
 /// Grace hash join only arms its spill in the callback. Another worker must not observe completion

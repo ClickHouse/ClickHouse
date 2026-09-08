@@ -129,6 +129,7 @@ public:
     ProcessorMemoryStats getMemoryStats() override;
     bool spillOnSize(size_t bytes) override;
     bool hasPendingSpill() const override;
+    bool spillForMemoryReservation() override;
 
 private:
     JoinPtr join;

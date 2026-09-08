@@ -149,7 +149,7 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     if (auto group = CurrentThread::getGroup())
     {
         for (const auto & processor : *processors)
-            group->memory_spill_scheduler->registerProcessor(processor.get());
+            group->memory_spill_scheduler->registerProcessor(processor);
     }
     if (process_list_element)
     {

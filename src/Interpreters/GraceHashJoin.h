@@ -122,6 +122,7 @@ public:
 
     void forceSpill() { force_spill = true; }
     bool hasPendingSpill() const;
+    bool spillForMemoryReservation();
 
 private:
     void initBuckets();
@@ -130,6 +131,8 @@ private:
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);
+    /// Rehash the current table and an optional incoming block, under `hash_join_mutex`.
+    void rehashCurrentBucket(Block current_block, size_t prev_keys_num);
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
@@ -184,6 +187,7 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+    bool build_finished = false; /// Protected by `hash_join_mutex`.
 
     GraceHashJoinStats stats;
 
