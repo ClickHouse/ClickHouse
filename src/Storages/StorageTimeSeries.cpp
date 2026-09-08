@@ -856,27 +856,12 @@ Then this table can be used with the following protocols (a port must be assigne
 
 ### Reading with `SELECT` {#reading-with-select}
 
-```sql
-SELECT * FROM my_table LIMIT 5;
-```
-
-Without `FINAL`, samples are assembled independently for each input block. The same metric and tags can
-appear in several rows, each containing a fragment of the series in `time_series`. `LIMIT` counts these
-rows; it does not select a number of distinct series or return their complete histories. This lets the
-samples read stream regardless of the `id` type and the samples table's sorting key.
-
-To collect all samples of each series into one array and deduplicate its tags, use `FINAL`:
-
-```sql
-SELECT * FROM my_table FINAL LIMIT 5;
-```
-
-`FINAL` can require substantial memory for long series or samples that are not ordered by `id`.
-The order of samples inside each array is not guaranteed; use `arraySort` if needed.
-
-Reads that also request tags or metadata join the target tables. Their join build sides are read before
-results are returned and can spill to disk according to `max_bytes_before_external_join` and
-`max_bytes_ratio_before_external_join`.
+`SELECT * FROM my_table LIMIT 5` assembles samples per input block, independently of the `id` type or sorting key.
+A series can occupy several rows; `LIMIT` counts fragments, not distinct series or complete histories.
+Use `SELECT * FROM my_table FINAL LIMIT 5` for complete arrays and deduplicated tags; this can require substantial memory.
+Sample order within arrays is unspecified; use `arraySort` if needed.
+Tag and metadata joins read their build sides before returning results and can spill according to
+`max_bytes_before_external_join` and `max_bytes_ratio_before_external_join`.
 
 ### Outer columns {#outer-columns}
 

@@ -28,10 +28,9 @@ class TimeSeriesAggregationTransform final : public IInflatingTransform
 public:
     TimeSeriesAggregationTransform(SharedHeader input_header, SharedHeader output_header, const Aggregator::Params & params_)
         : IInflatingTransform(input_header, output_header)
-        , params(params_)
-        , aggregator(*input_header, params)
-        , key_columns(params.keys_size)
-        , aggregate_columns(params.aggregates_size)
+        , aggregator(*input_header, params_)
+        , key_columns(params_.keys_size)
+        , aggregate_columns(params_.aggregates_size)
     {
     }
 
@@ -60,7 +59,6 @@ private:
         return chunk;
     }
 
-    Aggregator::Params params;
     Aggregator aggregator;
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -70,86 +68,59 @@ private:
 class TimeSeriesAggregationStep final : public ITransformingStep
 {
 public:
-    TimeSeriesAggregationStep(const SharedHeader & input_header, const AggregatingStep & aggregation)
+    explicit TimeSeriesAggregationStep(QueryPlanStepPtr aggregation_)
         : ITransformingStep(
-            input_header,
-            std::make_shared<const Block>(aggregation.getParams().getHeader(*input_header, /* final= */ true)),
+            aggregation_->getInputHeaders().front(), aggregation_->getOutputHeader(),
             {{.returns_single_stream = false, .preserves_number_of_streams = true, .preserves_sorting = false},
              {.preserves_number_of_rows = false}})
-        , params(aggregation.getParams())
-        , serialized_aggregation(aggregation.clone())
+        , aggregation(std::move(aggregation_))
     {
-        /// There is no cross-block merge, spill, or adaptive aggregation. Each transform owns one
-        /// block's states, finalizes them, and releases them before accepting the next block.
-        params.group_by_two_level_threshold = 0;
-        params.group_by_two_level_threshold_bytes = 0;
-        params.max_bytes_before_external_group_by = 0;
-        params.enable_adaptive_aggregator = false;
+        const auto & step = assert_cast<const AggregatingStep &>(*aggregation);
+        if (!step.isFinal() || step.getParams().only_merge)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "TimeSeriesAggregation requires raw samples and finalized aggregate results");
     }
 
     String getName() const override { return "TimeSeriesAggregation"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
+        /// Finalize each block without merging, spilling, or adaptive aggregation.
+        auto params = assert_cast<const AggregatingStep &>(*aggregation).getParams();
+        params.group_by_two_level_threshold = 0;
+        params.group_by_two_level_threshold_bytes = 0;
+        params.max_bytes_before_external_group_by = 0;
+        params.enable_adaptive_aggregator = false;
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<TimeSeriesAggregationTransform>(header, output_header, params);
         });
     }
 
-    QueryPlanStepPtr clone() const override
-    {
-        return std::make_unique<TimeSeriesAggregationStep>(input_headers.front(), assert_cast<const AggregatingStep &>(*serialized_aggregation));
-    }
+    QueryPlanStepPtr clone() const override { return std::make_unique<TimeSeriesAggregationStep>(aggregation->clone()); }
 
-    /// Reuse the aggregation payload and its settings so serialized plans preserve the input
-    /// types, aggregate functions, and limits without maintaining a second encoding of them.
+    /// Reuse `AggregatingStep`'s serialization of types, functions, and limits.
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override
     {
-        serialized_aggregation->serializeSettings(settings, version);
+        aggregation->serializeSettings(settings, version);
     }
 
-    void serialize(Serialization & ctx) const override { serialized_aggregation->serialize(ctx); }
+    void serialize(Serialization & ctx) const override { aggregation->serialize(ctx); }
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx)
     {
-        auto aggregation = AggregatingStep::deserialize(ctx);
-        const auto & step = assert_cast<const AggregatingStep &>(*aggregation);
-        if (!step.isFinal() || step.getParams().only_merge)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "TimeSeriesAggregation requires raw samples and finalized aggregate results");
-        return std::make_unique<TimeSeriesAggregationStep>(step.getInputHeaders().front(), step);
+        return std::make_unique<TimeSeriesAggregationStep>(AggregatingStep::deserialize(ctx));
     }
 
 private:
     void updateOutputHeader() override
     {
-        output_header = std::make_shared<const Block>(params.getHeader(*input_headers.front(), /* final= */ true));
+        aggregation->updateInputHeaders(input_headers);
+        output_header = aggregation->getOutputHeader();
     }
 
-    Aggregator::Params params;
-    QueryPlanStepPtr serialized_aggregation;
+    QueryPlanStepPtr aggregation;
 };
-
-void aggregateSamplesInBlocks(QueryPlan & plan)
-{
-    /// In the generated read query the samples subquery anchors the left side of every join.
-    /// Replace only its aggregation, before optimization can reorder joins. Stop there: target
-    /// tables can themselves be views with aggregations whose semantics must be preserved.
-    auto * node = plan.getRootNode();
-    while (node)
-    {
-        if (const auto * aggregation = typeid_cast<const AggregatingStep *>(node->step.get()))
-        {
-            chassert(aggregation->isFinal());
-            node->step = std::make_unique<TimeSeriesAggregationStep>(aggregation->getInputHeaders().front(), *aggregation);
-            return;
-        }
-        node = node->children.empty() ? nullptr : node->children.front();
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing samples aggregation in the generated TimeSeries read plan");
-}
 
 }
 
@@ -158,8 +129,23 @@ ReadFromTimeSeriesStep::ReadFromTimeSeriesStep(QueryPlanPtr query_plan_, Context
     , query_plan(std::move(query_plan_))
     , read_context(std::move(read_context_))
 {
-    if (aggregate_samples_in_blocks)
-        aggregateSamplesInBlocks(*query_plan);
+    if (!aggregate_samples_in_blocks)
+        return;
+
+    /// Samples are on the left of every generated join. Replace only their aggregation;
+    /// target views can have their own aggregations, which must remain intact.
+    auto * node = query_plan->getRootNode();
+    while (node)
+    {
+        if (typeid_cast<const AggregatingStep *>(node->step.get()))
+        {
+            node->step = std::make_unique<TimeSeriesAggregationStep>(std::move(node->step));
+            return;
+        }
+        node = node->children.empty() ? nullptr : node->children.front();
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing samples aggregation in the generated TimeSeries read plan");
 }
 
 void ReadFromTimeSeriesStep::initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &)
