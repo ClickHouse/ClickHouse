@@ -4,9 +4,15 @@
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <IO/ReadHelpers.h>
+#include <Common/ProfileEvents.h>
 
 #include <algorithm>
 #include <numeric>
+
+namespace ProfileEvents
+{
+    extern const Event TextIndexReadPostings;
+}
 
 namespace DB
 {
@@ -168,6 +174,8 @@ void TextIndexPostingsRankCursor::loadSegment(size_t segment_idx)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index: bad block offset {} at block {}", v, i);
         segment.block_offsets[i] = v;
     }
+
+    ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
 
     current_segment_idx = segment_idx;
     segment_first_rank = segment_ranks[segment_idx];
