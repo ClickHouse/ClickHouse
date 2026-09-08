@@ -65,13 +65,13 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
     while (auto task = pickTask())
     {
-        runTask(*task);
-
-        if (scheduler.queued() > 1)
+        if (scheduler.queued() > 0 || coordinator.needsPoller())
         {
             coordinator.wakeOne();
             pool.grow();
         }
+
+        runTask(*task);
 
         if (pipeline.hasReadyForRemoval())
             pipeline.removeReady();

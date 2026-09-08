@@ -103,6 +103,11 @@ void WorkersCoordinator::wakeOne()
     wakeOneLocked();
 }
 
+bool WorkersCoordinator::needsPoller() const
+{
+    return polling_count == 0 && sleeping_count > 0 && poller.pending() > 0;
+}
+
 void WorkersCoordinator::stop()
 {
     std::lock_guard lock(mutex);

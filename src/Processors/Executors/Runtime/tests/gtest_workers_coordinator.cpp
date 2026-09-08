@@ -125,6 +125,34 @@ TEST(WorkersCoordinator, OneIdleWorkerBlocksInThePollerAndTheNextOneSleeps)
 }
 #endif
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+TEST(WorkersCoordinator, NeedsAPollerWhenStatesWaitAndNobodyPolls)
+{
+    Fixture f(2, 1);
+    f.coordinator.enter(0);
+    f.coordinator.enter(1);
+
+    bool sleeping_result = false;
+    std::thread sleeping([&] { sleeping_result = f.coordinator.wait(1); });
+    while (f.coordinator.idle() < 1)
+        std::this_thread::yield();
+    EXPECT_FALSE(f.coordinator.needsPoller());
+
+    int fds[2];
+    ASSERT_EQ(0, ::pipe(fds));
+    f.scheduler.push(AsyncTask{.state = f.states.data(), .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
+    EXPECT_TRUE(f.coordinator.needsPoller());
+
+    f.coordinator.wakeOne();
+    sleeping.join();
+    EXPECT_TRUE(sleeping_result);
+    EXPECT_FALSE(f.coordinator.needsPoller());
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+#endif
+
 TEST(WorkersCoordinator, RepeatedLeaveAndRepeatedEnterAreNoOps)
 {
     Fixture f(2);

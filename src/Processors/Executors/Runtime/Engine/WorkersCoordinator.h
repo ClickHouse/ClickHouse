@@ -26,6 +26,7 @@ public:
 
     bool wait(size_t worker_id);
     void wakeOne();
+    bool needsPoller() const;
 
     void stop();
     bool stopped() const;
