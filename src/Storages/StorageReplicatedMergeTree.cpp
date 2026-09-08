@@ -1901,7 +1901,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata);
+        setProperties(old_metadata, new_metadata, /*attach=*/true, local_context);
         throw;
     }
 }
