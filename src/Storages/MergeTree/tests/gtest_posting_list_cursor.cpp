@@ -227,7 +227,7 @@ MultiBlockTestData makeMultiBlockData(
         /// A segment size large enough to hold all docs in one segment.
         SegmentedPostingListCodec codec(block_codec_type);
         codec.append(block_docs, 1 << 20);
-        codec.encode(out, info);
+        codec.serializeTo(out, info);
     }
 
     auto str = out.str();

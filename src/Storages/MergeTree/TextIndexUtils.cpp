@@ -1,6 +1,5 @@
 #include <Processors/Port.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
@@ -22,7 +21,10 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 
+#include <array>
+#include <bit>
 #include <limits>
+#include <utility>
 
 namespace ProfileEvents
 {
@@ -287,6 +289,85 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version);
 }
 
+static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_part_offsets, size_t part_index, UInt32 row_id)
+{
+    UInt64 new_offset = merged_part_offsets[part_index, row_id];
+
+    if (new_offset > std::numeric_limits<UInt32>::max())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+            new_offset, std::numeric_limits<UInt32>::max());
+    }
+
+    return static_cast<UInt32>(new_offset);
+}
+
+/// Merges the row ids of several postings cursors in the globally sorted order.
+class MergeTextIndexesTask::PostingsMergeQueue
+{
+public:
+    static constexpr size_t WINDOW_ROWS = 4096;
+
+    /// Keeps one reusable cursor per source of the merge.
+    PostingsMergeQueue(MergeTextIndexesTask & task_, size_t max_sources) : task(task_), cursors(max_sources)
+    {
+        active_cursors.reserve(max_sources);
+    }
+
+    void push(const TokenSource & source);
+    bool isValid() const { return !active_cursors.empty(); }
+
+    /// Passes the row ids of the active cursors to the sink in the globally sorted order.
+    template <typename Sink>
+    void merge(Sink && sink);
+
+private:
+    struct Window
+    {
+        /// Position of the cursor with the smallest head.
+        UInt64 min_pos;
+        /// The smallest head among the other cursors.
+        UInt64 second_head;
+        /// Window bounds.
+        UInt64 begin;
+        UInt64 end;
+
+        /// Only the smallest source has row ids in the window.
+        bool hasOneSource() const { return second_head >= end; }
+    };
+
+    /// Selects the window of the smallest head from active cursors.
+    Window selectWindow() const;
+
+    /// Passes the run of the smallest source below the second head to the sink.
+    template <typename Sink>
+    void passRun(Window window, Sink && sink);
+
+    /// Sets a bit for every row id of every cursor inside the window.
+    /// Returns the number of row ids consumed.
+    size_t fillWindow(Window window);
+
+    /// Extracts the set bits of the window in order.
+    /// There must be exactly num_consumed of them.
+    std::span<const UInt32> extractWindow(Window window, size_t num_consumed);
+
+    /// Loads the next segment of the exhausted cursor or drops it.
+    void refill(size_t pos);
+
+    MergeTextIndexesTask & task;
+    /// Reusable cursors, one per source.
+    std::vector<PostingsMergeCursor> cursors;
+    /// Cursors of the current token that still have row ids to merge.
+    std::vector<PostingsMergeCursor *> active_cursors;
+    /// Bitset of the current window.
+    std::array<UInt64, WINDOW_ROWS / 64> window_bits{};
+    /// Summary of the non-empty words in the window.
+    UInt64 window_bits_summary = 0;
+    /// Reusable buffer for the row ids extracted from a window.
+    PaddedPODArray<UInt32> buffer;
+};
+
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
@@ -304,27 +385,12 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , writer_settings(writer_settings_)
     , need_fsync(need_fsync_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
+    , postings_queue(std::make_unique<PostingsMergeQueue>(*this, segments.size()))
     , postings_serialization(createPostingsSerialization(*index_ptr))
 {
     tokens_cursors.resize(segments.size());
     inputs.resize(segments.size());
     input_streams.resize(segments.size());
-
-    SortDescription postings_sort_description;
-    postings_sort_description.emplace_back("row_id");
-
-    /// The sort cursor of every postings cursor is built once and points at the cursor's own column.
-    /// A segment refill only rewinds it (see resetToColumnStart).
-    postings_merge_cursors.resize(segments.size());
-
-    for (size_t i = 0; i < postings_merge_cursors.size(); ++i)
-    {
-        auto & cursor = postings_merge_cursors[i];
-        cursor.column = ColumnUInt32::create();
-        Block postings_header{ColumnWithTypeAndName{cursor.column->getPtr(), std::make_shared<DataTypeUInt32>(), "row_id"}};
-        cursor.impl = SortCursorImpl(postings_header, postings_sort_description, i);
-    }
-
     output_tokens = ColumnString::create();
 
     const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
@@ -406,28 +472,13 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     tokens_queue.push(tokens_cursors[source_num]);
 }
 
-UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) const
-{
-    chassert(merged_part_offsets);
-    UInt64 new_offset = (*merged_part_offsets)[part_index, row_id];
-
-    if (new_offset > std::numeric_limits<UInt32>::max())
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
-            new_offset, std::numeric_limits<UInt32>::max());
-    }
-
-    return static_cast<UInt32>(new_offset);
-}
-
 void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const
 {
     if (!merged_part_offsets)
         return;
 
     for (UInt32 & row_id : row_ids)
-        row_id = adjustPartOffset(part_index, row_id);
+        row_id = adjustPartOffset(*merged_part_offsets, part_index, row_id);
 }
 
 void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenSource & source)
@@ -445,27 +496,28 @@ void MergeTextIndexesTask::initCursor(PostingsMergeCursor & cursor, const TokenS
         return;
     }
 
-    /// Embedded postings are already in memory. Positions are addressed by posting rank and need
-    /// all row ids of the source in pre-remap order, so such a source is decoded at once as well.
-    auto & row_ids = cursor.rowIds();
-    row_ids.clear();
+    cursor.row_ids.clear();
 
+    /// Embedded postings are already in memory. Positions are addressed by posting rank and need
+    /// all row ids of the source in pre-remap order, so such a source is decoded at once as well
     if (!info.embedded_postings.empty())
     {
-        row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
+        cursor.row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
     }
     else
     {
         for (size_t i = 0; i < info.offsets.size(); ++i)
-            readPostingsSegment(source, i, row_ids);
+            readPostingsSegment(source, i, cursor.row_ids);
     }
 
     if (has_positions)
-        readAndAppendPositions(source, {row_ids.data(), row_ids.size()});
+    {
+        readAndAppendPositions(source, cursor.row_ids);
+    }
 
-    adjustPartOffsets({row_ids.data(), row_ids.size()}, segments[source.source_num].part_index);
+    adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
     cursor.next_segment = info.offsets.size();
-    cursor.resetToColumnStart();
+    cursor.pos = 0;
 }
 
 void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids)
@@ -482,85 +534,193 @@ bool MergeTextIndexesTask::advanceCursorSegment(PostingsMergeCursor & cursor)
     if (cursor.next_segment == source.info.offsets.size())
         return false;
 
-    auto & row_ids = cursor.rowIds();
-    row_ids.clear();
-    readPostingsSegment(source, cursor.next_segment, row_ids);
-    adjustPartOffsets({row_ids.data(), row_ids.size()}, segments[source.source_num].part_index);
+    cursor.row_ids.clear();
+    readPostingsSegment(source, cursor.next_segment, cursor.row_ids);
+    adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
 
     ++cursor.next_segment;
-    cursor.resetToColumnStart();
+    cursor.pos = 0;
 
-    chassert(!row_ids.empty());
-    chassert(std::is_sorted(row_ids.begin(), row_ids.end()));
+    chassert(!cursor.row_ids.empty());
+    chassert(std::is_sorted(cursor.row_ids.begin(), cursor.row_ids.end()));
     return true;
+}
+
+MergeTextIndexesTask::PostingsMergeQueue::Window MergeTextIndexesTask::PostingsMergeQueue::selectWindow() const
+{
+    size_t min_pos = 0;
+    UInt64 min_head = active_cursors[0]->current();
+    UInt64 second_head = std::numeric_limits<UInt64>::max();
+
+    for (size_t i = 1; i < active_cursors.size(); ++i)
+    {
+        UInt64 head = active_cursors[i]->current();
+
+        if (head < min_head)
+        {
+            second_head = min_head;
+            min_head = head;
+            min_pos = i;
+        }
+        else
+        {
+            second_head = std::min(second_head, head);
+        }
+    }
+
+    UInt64 begin = min_head - min_head % WINDOW_ROWS;
+    return Window{.min_pos = min_pos, .second_head = second_head, .begin = begin, .end = begin + WINDOW_ROWS};
+}
+
+template <typename Sink>
+void MergeTextIndexesTask::PostingsMergeQueue::passRun(Window window, Sink && sink)
+{
+    chassert(window.hasOneSource());
+    auto & cursor = *active_cursors[window.min_pos];
+    auto remaining = cursor.remaining();
+
+    size_t run_length = remaining.back() < window.second_head
+        ? remaining.size()
+        : std::lower_bound(remaining.begin(), remaining.end(), window.second_head) - remaining.begin();
+
+    sink(remaining.first(run_length));
+    cursor.pos += run_length;
+
+    if (!cursor.isValid())
+        refill(window.min_pos);
+}
+
+size_t MergeTextIndexesTask::PostingsMergeQueue::fillWindow(Window window)
+{
+    UInt64 num_consumed = 0;
+    UInt64 non_empty_words = 0;
+
+    for (size_t i = 0; i < active_cursors.size();)
+    {
+        auto & cursor = *active_cursors[i];
+        const auto & row_ids = cursor.row_ids;
+        size_t pos = cursor.pos;
+
+        while (pos < row_ids.size() && row_ids[pos] < window.end)
+        {
+            UInt32 bit = static_cast<UInt32>(row_ids[pos] - window.begin);
+            window_bits[bit / 64] |= 1ULL << (bit % 64);
+            non_empty_words |= 1ULL << (bit / 64);
+            ++pos;
+        }
+
+        num_consumed += pos - cursor.pos;
+        cursor.pos = pos;
+
+        /// A refilled segment may still start inside the window, so the same position is scanned again.
+        /// If the source is exhausted, another cursor takes the position and is scanned next.
+        if (cursor.isValid())
+            ++i;
+        else
+            refill(i);
+    }
+
+    window_bits_summary = non_empty_words;
+    return num_consumed;
+}
+
+std::span<const UInt32> MergeTextIndexesTask::PostingsMergeQueue::extractWindow(Window window, size_t num_consumed)
+{
+    buffer.resize(num_consumed);
+    UInt32 * out = buffer.data();
+    UInt64 non_empty_words = std::exchange(window_bits_summary, 0);
+
+    while (non_empty_words)
+    {
+        size_t word_idx = std::countr_zero(non_empty_words);
+        non_empty_words &= non_empty_words - 1;
+
+        UInt64 word = std::exchange(window_bits[word_idx], 0);
+        UInt64 word_begin = window.begin + word_idx * 64;
+
+        while (word)
+        {
+            *out++ = static_cast<UInt32>(word_begin + std::countr_zero(word));
+            word &= word - 1;
+        }
+    }
+
+    size_t num_distinct = out - buffer.data();
+
+    /// Sources own disjoint row sets, so every consumed row id must have set its own bit.
+    if (num_distinct != num_consumed)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Source posting lists have overlapping row ids: {} distinct row ids out of {} in rows [{}, {})",
+            num_distinct, num_consumed, window.begin, window.end);
+    }
+
+    return {buffer.data(), num_consumed};
+}
+
+void MergeTextIndexesTask::PostingsMergeQueue::refill(size_t pos)
+{
+    chassert(!active_cursors[pos]->isValid());
+    if (task.advanceCursorSegment(*active_cursors[pos]))
+        return;
+
+    active_cursors[pos] = active_cursors.back();
+    active_cursors.pop_back();
+}
+
+void MergeTextIndexesTask::PostingsMergeQueue::push(const TokenSource & source)
+{
+    chassert(active_cursors.size() < cursors.size());
+    auto & cursor = cursors[active_cursors.size()];
+    task.initCursor(cursor, source);
+    active_cursors.push_back(&cursor);
+}
+
+template <typename Sink>
+void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink)
+{
+    if (active_cursors.size() == 1)
+    {
+        auto & cursor = *active_cursors.front();
+
+        do
+        {
+            sink(cursor.remaining());
+        }
+        while (task.advanceCursorSegment(cursor));
+
+        active_cursors.clear();
+        return;
+    }
+
+    while (!active_cursors.empty())
+    {
+        auto window = selectWindow();
+
+        if (window.hasOneSource())
+        {
+            passRun(window, sink);
+        }
+        else
+        {
+            size_t num_consumed = fillWindow(window);
+            sink(extractWindow(window, num_consumed));
+        }
+    }
 }
 
 template <typename Sink>
 void MergeTextIndexesTask::mergePostings(Sink && sink)
 {
-    chassert(!postings_queue.isValid());
-    size_t num_cursors = 0;
+    chassert(!postings_queue->isValid());
 
     for (const auto & source : output_sources)
     {
-        if (source.info.cardinality == 0)
-            continue;
-
-        auto & cursor = postings_merge_cursors[num_cursors++];
-        initCursor(cursor, source);
+        if (source.info.cardinality != 0)
+            postings_queue->push(source);
     }
 
-    if (num_cursors == 1)
-    {
-        auto & cursor = postings_merge_cursors.front();
-
-        do
-        {
-            const auto & row_ids = cursor.rowIds();
-            sink(std::span<const UInt32>(row_ids.data(), row_ids.size()));
-        }
-        while (advanceCursorSegment(cursor));
-
-        return;
-    }
-
-    for (size_t i = 0; i < num_cursors; ++i)
-        postings_queue.push(postings_merge_cursors[i].impl);
-
-    UInt64 last_row_id_watermark = 0;
-
-    while (postings_queue.isValid())
-    {
-        auto [current_ptr, batch_size] = postings_queue.current();
-        PostingsSortCursor & current = *current_ptr;
-        auto & cursor = postings_merge_cursors[current->order];
-
-        const UInt32 * begin = cursor.rowIds().data() + current->getPos();
-
-        /// Sources must own disjoint row sets.
-        if (begin[0] < last_row_id_watermark)
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Source posting lists have overlapping row ids: got row id {} after {}",
-                begin[0], last_row_id_watermark - 1);
-        }
-
-        last_row_id_watermark = static_cast<UInt64>(begin[batch_size - 1]) + 1;
-        sink(std::span<const UInt32>(begin, batch_size));
-
-        if (!current->isLast(batch_size))
-        {
-            postings_queue.next(batch_size);
-        }
-        else
-        {
-            /// The segment is exhausted: load the source's next one or drop the cursor.
-            postings_queue.removeTop();
-
-            if (advanceCursorSegment(cursor))
-                postings_queue.push(cursor.impl);
-        }
-    }
+    postings_queue->merge(sink);
 }
 
 TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
@@ -672,7 +832,7 @@ void MergeTextIndexesTask::readAndAppendPositions(const TokenSource & source, st
     {
         size_t part_index = segments[source.source_num].part_index;
         for (auto & entry : position_entries_buffer)
-            entry = entry.withDocId(adjustPartOffset(part_index, entry.doc_id));
+            entry = entry.withDocId(adjustPartOffset(*merged_part_offsets, part_index, entry.doc_id));
     }
 
     output_positions.insert(output_positions.end(), position_entries_buffer.begin(), position_entries_buffer.end());

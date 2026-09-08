@@ -114,8 +114,6 @@ private:
     bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
-    /// Adjusts the part offset of the given row id according to merged part offsets.
-    UInt32 adjustPartOffset(size_t part_index, UInt32 row_id) const;
     /// Adjusts all row ids in place; no-op without merged part offsets.
     void adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const;
 
@@ -126,9 +124,6 @@ private:
         TokenPostingsInfo info;
     };
 
-    /// Cursor over the single UInt32 row id column with statically dispatched comparisons.
-    using PostingsSortCursor = SpecializedSingleColumnSortCursor<ColumnUInt32>;
-
     /// Streams the sorted (remapped) row ids of one source, one decoded segment at a time.
     struct PostingsMergeCursor
     {
@@ -136,20 +131,17 @@ private:
         /// Next entry of info.offsets to decode.
         size_t next_segment = 0;
         /// Decoded and remapped row ids of the current segment, or of the whole source.
-        ColumnUInt32::MutablePtr column;
-        /// Sort cursor points to the column above.
-        SortCursorImpl impl;
+        PaddedPODArray<UInt32> row_ids;
+        /// Position of the first row id of the segment that is not merged yet.
+        size_t pos = 0;
 
-        PaddedPODArray<UInt32> & rowIds() { return column->getData(); }
-        const PaddedPODArray<UInt32> & rowIds() const { return column->getData(); }
-
-        /// Rewinds the sort cursor to the start of the refilled column.
-        void resetToColumnStart()
-        {
-            impl.rows = column->size();
-            impl.getPosRef() = 0;
-        }
+        UInt32 current() const { return row_ids[pos]; }
+        bool isValid() const { return pos < row_ids.size(); }
+        std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
     };
+
+    /// Merges the row ids of several postings cursors in the globally sorted order.
+    class PostingsMergeQueue;
 
     /// Points the cursor at a source and decodes its first postings.
     /// A source with positions is decoded at once because positions are addressed by posting rank.
@@ -209,10 +201,8 @@ private:
     std::vector<TokenSource> output_sources;
     /// Reusable buffer for the merged row ids of the current token.
     PaddedPODArray<UInt32> output_postings_buffer;
-    /// Resusable cursors for merging of posting lists.
-    std::vector<PostingsMergeCursor> postings_merge_cursors;
-    /// Min-queue over the postings cursors of the current token; drained by every mergePostings call.
-    SortingQueueBatch<PostingsSortCursor> postings_queue;
+    /// Merges the postings cursors of the current token; drained by every mergePostings call.
+    std::unique_ptr<PostingsMergeQueue> postings_queue;
 
     /// Reusable buffer for position entries of one token read from a source.
     PODArray<RoaringishEntry> position_entries_buffer;
