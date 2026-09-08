@@ -377,6 +377,11 @@ String StorageObjectStorage::getName() const
     return configuration->getEngineName();
 }
 
+void StorageObjectStorage::switchToWriteCapableObjectStorage(const ContextPtr & context)
+{
+    object_storage = configuration->createObjectStorage(context, /* is_readonly */false, std::nullopt);
+}
+
 bool StorageObjectStorage::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration->format);

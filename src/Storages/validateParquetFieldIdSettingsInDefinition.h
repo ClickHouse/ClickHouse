@@ -61,4 +61,17 @@ void validateParquetFieldIdSettingsWithResolvedHeader(
     const FormatSettings & format_settings,
     bool validate_secondary_create = false);
 
+/** Whether the table definition itself supplies effective Parquet `field_id` settings and is a
+  * fresh definition, i.e. whether the two validations above can reject it at all. The engine uses
+  * this to tell apart a definition that still has to pass a deferred, header-dependent check from
+  * one that is already accepted, so that it can hold back external side effects — creating a
+  * write-capable object storage client provisions the Azure container — until the definition is
+  * known-good. Format-independent on purpose: the format may still be `auto` at that point.
+  * Always false when Parquet support is compiled out.
+  */
+bool freshDefinitionSuppliesParquetFieldIdSettings(
+    const StorageFactory::Arguments & args,
+    const FormatSettings & format_settings,
+    bool validate_secondary_create = false);
+
 }

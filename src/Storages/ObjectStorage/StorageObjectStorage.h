@@ -67,6 +67,15 @@ public:
     /// Used by the unified `URL` engine to persist the delegate's inferred format.
     String getFormatName() const { return configuration->format; }
 
+    /// Re-creates the object storage client in write-capable mode. Creating such a client can
+    /// provision external resources — the Azure backend creates the container — so an engine whose
+    /// `CREATE` still has to pass a check that depends on the resolved writer header (the Parquet
+    /// `field_id` settings) constructs the storage with a read-only client and calls this only once
+    /// the definition has been accepted, leaving nothing behind when it is rejected instead.
+    /// Called from the engine factory before the storage is published, so nothing can observe
+    /// `object_storage` concurrently.
+    void switchToWriteCapableObjectStorage(const ContextPtr & context);
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -234,7 +243,9 @@ protected:
     /// and underlying storage access.
     StorageObjectStorageConfigurationPtr configuration;
     /// `object_storage` to allow direct access to data storage.
-    const ObjectStoragePtr object_storage;
+    /// Not `const`: `switchToWriteCapableObjectStorage` may replace it once, from the engine
+    /// factory, before the storage is published — see that method.
+    ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     /// Whether this engine is a part of according Cluster engine implementation.
     /// (One of the reading replicas, not the initiator).

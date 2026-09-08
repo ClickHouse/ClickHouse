@@ -110,6 +110,15 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     const bool validate_field_ids_with_resolved_header
         = args.columns.empty() || configuration->format == "auto" || has_partition_by;
 
+    /// A write-capable object storage client is not side-effect free: on Azure it provisions the
+    /// container (`AzureBlobStorage::getContainerClient`). While the header-dependent `field_id`
+    /// checks are still pending, the `CREATE` may yet be rejected below, so resolve the schema and
+    /// run those checks through a read-only client and switch to the write-capable one only once
+    /// the definition is known-good — a rejected `CREATE` must not leave external state behind.
+    const bool defer_write_capable_object_storage = validate_field_ids_with_resolved_header
+        && args.mode == LoadingStrictnessLevel::CREATE
+        && freshDefinitionSuppliesParquetFieldIdSettings(args, *format_settings);
+
     ASTPtr partition_by;
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();
@@ -148,8 +157,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
-        // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+        // and we want to avoid it when we load the table after a server restart, or while the
+        // definition still has to pass the deferred Parquet `field_id` checks.
+        configuration->createObjectStorage(
+            context,
+            /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE || defer_write_capable_object_storage,
+            std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,
@@ -179,6 +192,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         }
         validateParquetFieldIdSettingsWithResolvedHeader(args, storage->getFormatName(), writer_header_columns, *format_settings);
     }
+
+    /// The definition passed every check, so the table may now provision what it needs to write.
+    if (defer_write_capable_object_storage)
+        storage->switchToWriteCapableObjectStorage(context);
 
     return storage;
 }
