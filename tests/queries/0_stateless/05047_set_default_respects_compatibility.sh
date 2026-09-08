@@ -16,13 +16,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `input_format_read_datetime_number_as_raw_value`: declared default false, under `26.7` true.
 # `enable_group_by_top_k_optimization`: declared default true, under `26.7` false - the polarity a
 # `MIN 1` constraint needs.
+# `merge_tree_min_bytes_per_read_stream`: a `Settings` setting despite the prefix, declared default
+# 65536, under `26.7` zero.
 P=input_format_read_datetime_number_as_raw_value
 Q=enable_group_by_top_k_optimization
+R=merge_tree_min_bytes_per_read_stream
 
 USER_MIN="u_min_05047_${CLICKHOUSE_DATABASE}"
 USER_CONST="u_const_05047_${CLICKHOUSE_DATABASE}"
+USER_STREAM="u_stream_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_MIN="p_min_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_CONST="p_const_05047_${CLICKHOUSE_DATABASE}"
+PROFILE_STREAM="p_stream_05047_${CLICKHOUSE_DATABASE}"
 
 BASE_URL="${CLICKHOUSE_URL%%\?*}"
 session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}_$$_$1"; }
@@ -30,12 +35,14 @@ user_session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}
 # `system.settings` is read at execution time, so it also reports a reset made by the same statement.
 read_setting() { ${CLICKHOUSE_CURL} -sS "$1" -d "SELECT value FROM system.settings WHERE name = '$2'"; }
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MIN} SETTINGS ${Q} = 1 MIN 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_CONST} SETTINGS compatibility = '26.7' CONST"
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_STREAM} SETTINGS ${R} MIN 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MIN} SETTINGS PROFILE '${PROFILE_MIN}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_CONST} SETTINGS PROFILE '${PROFILE_CONST}'"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_STREAM} SETTINGS PROFILE '${PROFILE_STREAM}'"
 
 echo 'the probe values differ from their declared defaults under compatibility 26.7'
 # If either 26.8 history row is ever dropped, this fails loudly instead of leaving the arms below vacuous.
@@ -87,6 +94,17 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET ${Q} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
 read_setting "$U" "${Q}"
 
+echo 'a merge_tree_-prefixed name that Settings owns is checked against its derived value too'
+# The prefix alone does not say which class owns the name, so a prefix test would read the declared
+# 65536 here instead of the derived 0 and let the reset escape the constraint. The assignment keeps
+# the setting changed, so the reset is the only route to 0. The first read arms the arm.
+U=$(user_session_url a7 "${USER_STREAM}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SELECT value != default FROM system.settings WHERE name = '${R}'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${R} = 65536"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${R} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${R}"
+
 echo 'resetting a CONST compatibility is still rejected'
 U=$(user_session_url a9 "${USER_CONST}")
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
@@ -116,5 +134,5 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = ''"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET make_distributed_plan = 0"
 read_setting "$U" compile_expressions
 
-${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}"
+${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}"

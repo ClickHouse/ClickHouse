@@ -16,6 +16,10 @@ SETTINGS name = DEFAULT in a query
 a reset that lands on a value the profile forbids is rejected
 SETTING_CONSTRAINT_VIOLATION
 1
+a merge_tree_-prefixed name that Settings owns is checked against its derived value too
+1
+SETTING_CONSTRAINT_VIOLATION
+65536
 resetting a CONST compatibility is still rejected
 SETTING_CONSTRAINT_VIOLATION
 26.7
