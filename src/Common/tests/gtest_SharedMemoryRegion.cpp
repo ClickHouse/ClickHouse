@@ -391,4 +391,46 @@ TEST(SharedMemoryRegion, SynchronizedHandoff)
     EXPECT_EQ(std::string(region.data() + 2048, response.size()), response);
 }
 
+/// The configuration check is the first thing to touch the region directory, and after an unclean
+/// shutdown it is the first thing to find it full of files nobody owns any more. It has to reclaim
+/// them itself: it probes the directory by creating a file there, so leftovers that filled the
+/// filesystem would fail the probe, the function would never load - and since creating a region is
+/// what would have swept them away, nothing else ever would either. One crash would leave the
+/// feature unusable until the directory was cleaned by hand.
+TEST(SharedMemoryRegion, ConfigurationCheckReclaimsLeftoverRegionFiles)
+{
+    /// A directory of its own, so this is the first call to reclaim in it: the sweep runs at most
+    /// once a minute per directory, and a shared one might have been swept by another test already.
+    const std::string directory
+        = regionDir() + "/clickhouse_shm_check_leftovers_" + std::to_string(::getpid()) + "_" + getRandomASCIIString(16);
+    std::filesystem::create_directories(directory);
+    SCOPE_EXIT({ std::filesystem::remove_all(directory); });
+    ASSERT_EQ(::chmod(directory.c_str(), 0700), 0);
+
+    const std::string private_directory = directory + "/" + std::string(REGION_DIRECTORY_NAME);
+    std::filesystem::create_directories(private_directory);
+    ASSERT_EQ(::chmod(private_directory.c_str(), 0700), 0);
+
+    /// Unlocked and unowned, exactly like a file left behind by a process that is gone.
+    const std::string leftover = private_directory + "/clickhouse_udf_shm_leftover";
+    {
+        int fd = ::open(leftover.c_str(), O_CREAT | O_RDWR, 0600);
+        ASSERT_NE(fd, -1);
+        ASSERT_EQ(::ftruncate(fd, 4096), 0);
+        ::close(fd);
+    }
+
+    /// And one that is still owned, which must survive being looked at.
+    const std::string locked = private_directory + "/clickhouse_udf_shm_locked";
+    int locked_fd = ::open(locked.c_str(), O_CREAT | O_RDWR, 0600);
+    ASSERT_NE(locked_fd, -1);
+    SCOPE_EXIT({ ::close(locked_fd); });
+    ASSERT_EQ(::flock(locked_fd, LOCK_EX | LOCK_NB), 0);
+
+    ASSERT_NO_THROW(SharedMemoryRegion::checkSupported(directory));
+
+    EXPECT_FALSE(std::filesystem::exists(leftover));
+    EXPECT_TRUE(std::filesystem::exists(locked));
+}
+
 #endif

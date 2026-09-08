@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <dlfcn.h>
+#include <poll.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -525,6 +526,67 @@ bool ShellCommand::tryWaitWithoutStatusCheck()
             return false;
 
         sleepForMilliseconds(std::min(poll_step_ms, remaining_ms));
+    }
+}
+
+
+bool ShellCommand::waitDrainingOutput()
+{
+    /// A child that writes past what the protocol asked of it fills the pipe and blocks in `write`.
+    /// Nothing reads that pipe any more by the time this is called, so the only way the child ever
+    /// reaches its own exit is if the bytes keep being taken off the pipe here and thrown away.
+    static constexpr UInt64 poll_step_ms = 5;
+    char discard_buffer[4096];
+
+    while (true)
+    {
+        /// The reap comes first on every turn: once the child is gone there is nothing left to
+        /// drain for, and whatever it left in the pipes is not worth waiting for.
+        auto proc_status = tryWaitImpl(/*blocking=*/ false);
+        if (proc_status.is_process_terminated)
+        {
+            handleProcessRetcode(proc_status.retcode);
+            return true;
+        }
+
+        const UInt64 remaining_ms = remainingTerminationTimeoutMs();
+        if (remaining_ms == 0)
+            return false;
+
+        pollfd pfds[2]{};
+        /// A descriptor that is already closed is -1, which `poll` ignores.
+        pfds[0].fd = out.getFD();
+        pfds[0].events = POLLIN;
+        pfds[1].fd = err.getFD();
+        pfds[1].events = POLLIN;
+
+        /// Capped so that a child which simply stops writing is still reaped promptly: a pipe that
+        /// goes quiet reports nothing until its write end is closed, so the loop must come back to
+        /// the `waitpid` above on its own.
+        const int poll_timeout_ms = static_cast<int>(std::min(remaining_ms, poll_step_ms));
+        const int num_events = ::poll(pfds, 2, poll_timeout_ms);
+        if (num_events < 0)
+        {
+            if (errno == EINTR)
+                continue;
+
+            /// The pipes cannot be drained, so this child may never exit. Fail closed rather than
+            /// spin: the destructor closes the pipes and signals it.
+            LOG_WARNING(getLogger(), "Cannot poll the pipes of shell command pid {}, error: '{}'", pid, errnoToString());
+            return false;
+        }
+
+        for (const auto & pfd : pfds)
+        {
+            if (pfd.fd < 0 || (pfd.revents & POLLIN) == 0)
+                continue;
+
+            /// One read per readiness report: `poll` promises only that a single read will not
+            /// block, and these descriptors are not necessarily non-blocking.
+            ssize_t res = ::read(pfd.fd, discard_buffer, sizeof(discard_buffer));
+            if (res < 0 && errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK)
+                LOG_WARNING(getLogger(), "Cannot drain a pipe of shell command pid {}, error: '{}'", pid, errnoToString());
+        }
     }
 }
 

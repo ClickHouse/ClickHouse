@@ -38,22 +38,24 @@ public:
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
 
-        if (!objects.empty())
+        while (true)
         {
-            dest = borrowFromObjects(lock);
-            return;
+            if (!objects.empty())
+            {
+                dest = borrowFromObjects(lock);
+                return;
+            }
+
+            if (canAllocate())
+            {
+                dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
+                return;
+            }
+
+            ++waiting_borrowers_size;
+            condition_variable.wait(lock, [this] { return canBorrowOrAllocate(); });
+            --waiting_borrowers_size;
         }
-
-        bool has_unlimited_size = (max_size == 0);
-
-        if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
-        {
-            dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
-            return;
-        }
-
-        condition_variable.wait(lock, [this] { return !objects.empty(); });
-        dest = borrowFromObjects(lock);
     }
 
     /// Same as borrowObject function, but wait with timeout.
@@ -63,26 +65,32 @@ public:
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
 
-        if (!objects.empty())
+        /// One deadline for the whole call: the wait below can be entered more than once (a slot
+        /// that frees up wakes this thread, and another thread may take it first), and restarting
+        /// the timeout each time would let the call outlast the timeout it was given.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_in_milliseconds);
+
+        while (true)
         {
-            dest = borrowFromObjects(lock);
-            return true;
+            if (!objects.empty())
+            {
+                dest = borrowFromObjects(lock);
+                return true;
+            }
+
+            if (canAllocate())
+            {
+                dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
+                return true;
+            }
+
+            ++waiting_borrowers_size;
+            const bool woken = condition_variable.wait_until(lock, deadline, [this] { return canBorrowOrAllocate(); });
+            --waiting_borrowers_size;
+
+            if (!woken)
+                return false;
         }
-
-        bool has_unlimited_size = (max_size == 0);
-
-        if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
-        {
-            dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
-            return true;
-        }
-
-        bool wait_result = condition_variable.wait_for(lock, std::chrono::milliseconds(timeout_in_milliseconds), [this] { return !objects.empty(); });
-
-        if (wait_result)
-            dest = borrowFromObjects(lock);
-
-        return wait_result;
     }
 
     /// Return object into pool. Client must return same object that was borrowed.
@@ -102,6 +110,12 @@ public:
                 /// `max_size`, and after enough of them borrowing only ever times out.
                 --allocated_objects_size;
                 --borrowed_objects_size;
+
+                /// Nothing was pushed into `objects`, so the freed slot is the only thing a waiter
+                /// can go on, and it is what waiters watch for besides a returned object. Wake one
+                /// here - the notify after this block is skipped by the unwinding - or a pool with
+                /// `max_size == 1` leaves its only waiter asleep with the pool standing empty.
+                condition_variable.notify_one();
                 throw;
             }
 
@@ -131,6 +145,18 @@ public:
         return allocated_objects_size == max_size;
     }
 
+    /// Number of threads currently blocked inside `borrowObject`/`tryBorrowObject` waiting for an
+    /// object to be returned or for a slot to free up. The counter is incremented under
+    /// `objects_mutex` before the wait, which only releases the mutex once the thread is registered
+    /// on the condition variable: another thread that acquires the mutex and sees a non-zero count
+    /// therefore knows the waiter is asleep and will observe a `notify_one`. That is what makes it
+    /// usable as a synchronization point rather than only as a statistic.
+    size_t waitingBorrowersSize() const
+    {
+        std::lock_guard lock(objects_mutex);
+        return waiting_borrowers_size;
+    }
+
     /// Borrowed objects size. If borrowedObjectsSize == allocatedObjectsSize and pool is full.
     /// Then client will wait during borrowObject function call.
     size_t borrowedObjectsSize() const
@@ -140,6 +166,22 @@ public:
     }
 
 private:
+
+    /// Both must be called under `objects_mutex`.
+
+    bool canAllocate() const
+    {
+        bool has_unlimited_size = (max_size == 0);
+        return unlikely(has_unlimited_size) || allocated_objects_size < max_size;
+    }
+
+    /// What a waiting borrower is waiting for. A returned object is the usual case, but free
+    /// capacity counts too: `returnObject` can fail to put the object back and give up its slot
+    /// instead, and then allocating a replacement is the only way forward.
+    bool canBorrowOrAllocate() const
+    {
+        return !objects.empty() || canAllocate();
+    }
 
     template <typename FactoryFunc>
     T allocateObjectForBorrowing(const std::unique_lock<std::mutex> &, FactoryFunc && func)
@@ -157,6 +199,13 @@ private:
             /// pool's slots permanently.
             --allocated_objects_size;
             --borrowed_objects_size;
+
+            /// And the slot it gives back is what the next waiter proceeds on - nothing was pushed
+            /// into `objects` here either - so one has to be woken for it, exactly as in
+            /// `returnObject`. Without this a waiter that was woken by some earlier freed slot,
+            /// only to have its own factory fail, takes the wakeup with it and leaves the waiter
+            /// behind it asleep with the pool below `max_size`.
+            condition_variable.notify_one();
             throw;
         }
     }
@@ -178,5 +227,6 @@ private:
     std::condition_variable condition_variable;
     size_t allocated_objects_size = 0;
     size_t borrowed_objects_size = 0;
+    size_t waiting_borrowers_size = 0;
     std::vector<T> objects;
 };

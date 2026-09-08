@@ -238,6 +238,10 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             command_arguments.erase(command_arguments.begin());
         }
 
+        /// Same as for `executable`: this source has no shared-memory transport, so a config that
+        /// asks for one must fail here instead of quietly falling back to the pipes.
+        checkSharedMemoryIsNotConfigured(config, settings_config_prefix, "Executable pool dictionary source");
+
         ExecutablePoolDictionarySource::Configuration configuration
         {
             .command = std::move(command_value),

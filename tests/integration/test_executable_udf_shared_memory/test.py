@@ -26,6 +26,9 @@ node = cluster.add_instance(
         "/shm_udf_error:size=1M",
         "/shm_udf_die:size=1M",
         "/shm_udf_tamper:size=128M",
+        "/shm_udf_idle_charge:size=256M",
+        "/shm_udf_pipeline_trim:size=8M",
+        "/shm_udf_pipeline_idle:size=192M",
     ],
 )
 
@@ -41,6 +44,51 @@ def copy_file_to_container(local_path, dist_path, container_id):
             local=local_path, cont_id=container_id, dist=dist_path
         )
     )
+
+
+IDLE_CHARGE_REGION_SIZE = 64 * 1048576
+# `shared_memory_pipeline` keeps two regions of this size per pooled worker.
+PIPELINE_IDLE_REGION_SIZE = 32 * 1048576
+
+
+def pooled_shared_memory_bytes():
+    # Exactly the bytes of shared-memory region that pooled workers hold while idle. This metric is
+    # added to and taken from in the same two places the server-wide memory charge is, so it is that
+    # charge, told apart from everything else the server allocates. Reading the global memory tracker
+    # instead would mean comparing deltas across a window in which anything at all may allocate or
+    # free - a measurement with a tolerance, not an assertion.
+    return int(
+        node.query(
+            "SELECT value FROM system.metrics "
+            "WHERE metric = 'ExecutableUDFSharedMemoryPooledBytes'"
+        ).strip()
+    )
+
+
+def pooled_shared_memory_baseline(path):
+    # What pooled workers of *other* functions hold, which the assertions below are measured against.
+    # It is a fixed number rather than a settling one: the metric moves only when a shared-memory
+    # UDF is borrowed, returned or discarded, the tests in this file run one at a time, and a worker
+    # an earlier test left in its pool just sits there charged. The caller has reloaded the function
+    # it is about to measure, so the one contribution that must not be in here is its own - which
+    # the absence of its region files proves.
+    assert shm_file_count(path) == 0
+    return pooled_shared_memory_bytes()
+
+
+def wait_for_pooled_shared_memory_bytes(expected, description, timeout=30):
+    # The charge is moved on paths the query does not wait for - the source's cleanup on the way out,
+    # and, for a reload, the loader dropping the old function object - so give it a moment to land.
+    # The value waited for is exact, so this either reaches it or the test has genuinely failed.
+    deadline = time.monotonic() + timeout
+    while True:
+        value = pooled_shared_memory_bytes()
+        if value == expected:
+            return value
+        assert (
+            time.monotonic() < deadline
+        ), f"{description}: expected {expected} bytes charged to the server, found {value}"
+        time.sleep(0.2)
 
 
 def profile_event_value(event):
@@ -547,6 +595,15 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
     for name, diagnostic in [
         ("test_function_shm_bad_chunk_header", "`use_shared_memory` is incompatible with `send_chunk_header`"),
         ("test_function_shm_bad_pipeline_no_shm", "`shared_memory_pipeline` requires `use_shared_memory`"),
+        # The rejection is on the key being present, not on its value: writing a shared-memory knob
+        # out at its own default says just as clearly that its author believed this function used
+        # shared memory, and the function would have run over the pipes all the same.
+        ("test_function_shm_bad_pipeline_default_no_shm", "`shared_memory_pipeline` requires `use_shared_memory`"),
+        # Every shared-memory-only key has to be rejected the same way. Without `use_shared_memory`
+        # they mean nothing, and accepting them would let a function that was explicitly configured
+        # for shared memory run over the pipes instead, with nothing said about it at load time.
+        ("test_function_shm_bad_size_no_shm", "`shared_memory_size` requires `use_shared_memory`"),
+        ("test_function_shm_bad_path_no_shm", "`shared_memory_path` requires `use_shared_memory`"),
         ("test_function_shm_bad_max_lt_size", "`shared_memory_max_size` (524288) must not be smaller"),
         ("test_function_shm_bad_empty_path", "`shared_memory_path` must not be empty"),
         ("test_function_shm_bad_relative_path", "must be an absolute path"),
@@ -653,6 +710,24 @@ def test_shared_memory_udf_command_shrinks_the_region(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
 
+def test_shared_memory_udf_command_shrinks_the_region_after_the_check(started_cluster):
+    skip_test_msan(node)
+
+    # The gap the region checks cannot close: the command truncates after the server has verified
+    # the file is whole, and then answers with an offset and size the bounds check has no reason to
+    # reject. The server therefore goes to read output the file no longer holds. Reading it through
+    # the mapping is a `SIGBUS` - not an error, a dead server, taking every unrelated query with it -
+    # which is why the response is copied out with `pread` instead. Then it is a short read, the one
+    # query that caused it fails, and the assertion below that the server is still answering is the
+    # whole point of this test.
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_shrink_after_check_python(1) FORMAT Null")
+
+    assert "ends after" in str(exc.value)
+
+    assert node.query("SELECT 1") == "1\n"
+
+
 def test_shared_memory_udf_pool_command_shrinks_the_region(started_cluster):
     skip_test_msan(node)
 
@@ -714,6 +789,257 @@ def test_shared_memory_udf_pool_rechecks_region_during_cleanup(started_cluster):
     node.exec_in_container(["rm", "-f", LATE_UNLINK_MARKER])
     assert node.query("SELECT test_function_shm_late_unlink_pool_python(1)") == "1\n"
     assert node.query("SELECT test_function_shm_late_unlink_pool_python(2)") == "2\n"
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pipeline_pool_trims_both_grown_regions(started_cluster):
+    skip_test_msan(node)
+
+    # Pooled and pipelined at once, with growth on top - the combination the other tests only cover
+    # a piece of each. `max_block_size` is small enough that the query passes several blocks, so the
+    # producer uses both regions and both have to grow past the configured 4096 bytes; both then
+    # have to be trimmed back before the worker goes idle, because nothing would ever shrink them
+    # again and their bytes are charged server-wide, where no query is blamed for them. A trim that
+    # reached only the region the last chunk happened to use would leave the other one pinned here.
+    assert shm_file_sizes("/shm_udf_pipeline_trim") == []
+
+    expected = "".join(f"{i}\n" for i in range(8000))
+    for _ in range(3):
+        assert (
+            node.query(
+                "SELECT test_function_shm_pipeline_grow_trim_pool_python(number) "
+                "FROM numbers(8000) SETTINGS max_block_size = 2000"
+            )
+            == expected
+        )
+        # Two regions, both back at the configured size: the pool holds exactly what it started with.
+        assert shm_file_sizes("/shm_udf_pipeline_trim") == [4096, 4096]
+
+
+def test_shared_memory_udf_pipeline_pool_idle_worker_is_charged_for_both_regions(started_cluster):
+    skip_test_msan(node)
+
+    # A pipelined pooled worker sits in the pool holding two regions, and the docs promise that both
+    # of them count against `max_server_memory_usage` for as long as it does. Only the exact figure
+    # separates two regions from one: a hand-over that gave back a single region's charge and
+    # dropped the other leaves the files on disk untouched, so no size assertion can see it.
+    total = 2 * PIPELINE_IDLE_REGION_SIZE
+
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_pipeline_idle_charge_python")
+    before = pooled_shared_memory_baseline("/shm_udf_pipeline_idle")
+
+    assert node.query("SELECT test_function_shm_pipeline_idle_charge_python(1)") == "Key 1\n"
+    assert shm_file_sizes("/shm_udf_pipeline_idle") == [PIPELINE_IDLE_REGION_SIZE] * 2
+
+    wait_for_pooled_shared_memory_bytes(
+        before + total,
+        "the two regions of an idle pipelined pooled worker are not both charged to the server",
+    )
+
+    # Dropping the pool has to release both of them again.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_pipeline_idle_charge_python")
+    wait_for_pooled_shared_memory_bytes(
+        before, "the charge for the two pipelined regions was not released with the pool"
+    )
+    assert shm_file_count("/shm_udf_pipeline_idle") == 0
+
+
+def test_shared_memory_udf_pool_idle_worker_is_charged_server_wide(started_cluster):
+    skip_test_msan(node)
+
+    # A pooled region stays mapped between invocations, and in between there is no query to charge
+    # for it: the borrow hands the charge over to the server, which is what makes those bytes count
+    # against `max_server_memory_usage` while the worker just sits in the pool. The region-file
+    # checks elsewhere in this suite say nothing about that hand-over - they would stay green if an
+    # idle region were accounted to nobody at all.
+
+    # Start from a pool that holds nothing: reloading the function drops any worker, and the region
+    # that goes with it, that an earlier run left behind.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_idle_charge_python")
+    before = pooled_shared_memory_baseline("/shm_udf_idle_charge")
+
+    assert node.query("SELECT test_function_shm_idle_charge_python(1)") == "Key 1\n"
+    assert shm_file_count("/shm_udf_idle_charge") == 1
+
+    # The query is over and its own charge is gone with it, but its worker went back to the pool
+    # with the region still mapped, so the region is charged to the server now - all of it, and
+    # nothing besides it.
+    wait_for_pooled_shared_memory_bytes(
+        before + IDLE_CHARGE_REGION_SIZE,
+        "the region of an idle pooled worker is not charged to the server",
+    )
+
+    # A second invocation borrows the same worker and the same region: the charge moves to that
+    # query and back again, and has to come back as exactly what it was, not as twice it.
+    assert node.query("SELECT test_function_shm_idle_charge_python(1)") == "Key 1\n"
+    wait_for_pooled_shared_memory_bytes(
+        before + IDLE_CHARGE_REGION_SIZE,
+        "re-borrowing a pooled worker did not leave its region charged exactly once",
+    )
+
+    # Dropping the pool releases the worker, its region and the charge that came with it.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_idle_charge_python")
+    wait_for_pooled_shared_memory_bytes(
+        before, "the charge for the pooled region was not released with the pool"
+    )
+    assert shm_file_count("/shm_udf_idle_charge") == 0
+
+
+def test_shared_memory_udf_pool_command_leaves_stdout_dirty(started_cluster):
+    skip_test_msan(node)
+
+    # The command answers every request correctly and then writes one byte more to its stdout. The
+    # invocation that does it notices nothing - its answer was read in full, and the result comes
+    # out of the shared-memory region - so the worker would go back to the pool with that byte
+    # sitting in the pipe, and the *next* query to borrow it would read the byte as the status of a
+    # response to its own request. The server must check that stdout is empty before it returns a
+    # worker, so every one of these queries answers correctly on a worker of its own.
+    discards_before = profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards")
+
+    for _ in range(3):
+        assert node.query("SELECT test_function_shm_chatty_pool_python(1)") == "Key 1\n"
+
+    # Discarding a worker is otherwise invisible - the query succeeds and the next one just gets a
+    # new process - so a command that quietly turns its pool into a process per call has to be
+    # visible somewhere. It is counted, and said out loud.
+    assert (
+        profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before + 3
+    )
+    assert node.contains_in_log("left unread output on its stdout after answering")
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_command_floods_stdout(started_cluster):
+    skip_test_msan(node)
+
+    # The same accident as the test above, only past the point where it traps the server. This
+    # command answers correctly and then writes megabytes past its response frame, filling the pipe
+    # and blocking in `write`. Nothing reads that pipe any more, and closing the child's stdin - all
+    # that discarding a worker does - does not release a process that is blocked writing rather than
+    # reading. Reaping it with a plain blocking `waitpid` therefore never returns: the query hangs
+    # with its result already computed, and `command_termination_timeout` does not apply to a wait
+    # that has already begun.
+    #
+    # `check_exit_code` is left at its default `true`, which is what takes that path.
+    discards_before = profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards")
+
+    # No timeout is set on these deliberately: the regression is a hang, and the test harness
+    # failing the whole run on its own timeout is exactly the signal.
+    pids = [
+        node.query("SELECT test_function_shm_flooding_stdout_pool_python(1)").strip()
+        for _ in range(3)
+    ]
+
+    assert all(pid.isdigit() for pid in pids), pids
+    assert len(set(pids)) == len(pids), f"a worker with unread stdout was reused: {pids}"
+    assert (
+        profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before + 3
+    )
+    assert node.contains_in_log("left unread output on its stdout after answering")
+
+    # And the server is still able to run anything at all afterwards - a worker left blocked in
+    # `write` would hold its pool slot and its region for as long as the server lives.
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_command_floods_stderr_under_reaction_none(started_cluster):
+    skip_test_msan(node)
+
+    # `stderr_reaction` `none` says what to do with the command's diagnostics - nothing - not that
+    # the pipe may be left unread. This command writes megabytes to stderr *before* it answers, so a
+    # server that stops polling stderr because it has no use for those bytes leaves the command
+    # blocked in `write` with its answer unwritten, and the query dies of `command_read_timeout`
+    # instead. The bytes have to be read off the pipe and dropped.
+    #
+    # A pooled worker makes the same point twice over: the leftovers would otherwise carry across
+    # borrows until some later, entirely innocent query is the one that stalls. So the same worker
+    # has to answer all of these, which its pid shows.
+    pids = [
+        node.query("SELECT test_function_shm_flooding_stderr_pool_python(1)").strip()
+        for _ in range(3)
+    ]
+
+    assert all(pid.isdigit() for pid in pids), pids
+    assert len(set(pids)) == 1, f"the worker was not reused: {pids}"
+
+
+def test_shared_memory_udf_pool_discard_survives_being_decided_twice(started_cluster):
+    skip_test_msan(node)
+
+    # Same misbehaving command as above, but with `check_exit_code` off - which is what makes the
+    # decision to discard get made twice. With it on, the discarded child is reaped, and a reaped
+    # child is recognised on sight; with it off, nothing about the worker says what was decided
+    # about it. And by then the evidence is gone: reporting the discard drained the leftover stderr,
+    # and closing the child's stdin is what discarding means. A second look would find two clean
+    # pipes and return a worker whose stdin is already closed, and the query after that would fail
+    # writing its first request - so all three of these have to succeed, on a worker each.
+    pids = [
+        node.query(
+            "SELECT DISTINCT test_function_shm_chatty_stderr_no_exit_check_pool_python(number) "
+            "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000"
+        ).strip()
+        for _ in range(3)
+    ]
+
+    assert all(pid.isdigit() for pid in pids), pids
+    assert len(set(pids)) == len(pids), f"a worker with unread stderr was reused: {pids}"
+
+
+def test_shared_memory_udf_pool_command_may_close_its_stderr(started_cluster):
+    skip_test_msan(node)
+
+    # The other side of the check above. A command is entitled to close its own stderr, and once the
+    # only writer is gone that pipe polls as a hangup for the rest of the process's life - forever
+    # ready, with nothing to read. Read as "something is pending", that would discard this worker on
+    # every borrow and turn the pool into a process per call, and every query would still succeed,
+    # so nothing would say so. The same pid throughout is what says it did not happen.
+    discards_before = profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards")
+
+    pids = [
+        node.query("SELECT test_function_shm_quiet_stderr_pool_python(1)").strip()
+        for _ in range(3)
+    ]
+
+    assert all(pid.isdigit() for pid in pids), pids
+    assert len(set(pids)) == 1, f"a worker was discarded for closing its own stderr: {pids}"
+    assert (
+        profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before
+    )
+
+
+def test_shared_memory_udf_pool_command_leaves_stderr_dirty(started_cluster):
+    skip_test_msan(node)
+
+    # The command answers correctly and then writes to stderr, after the server has already read the
+    # response. Stderr is drained together with the response, so this line reaches nobody - until the
+    # next borrow of the same worker reads it and reports it as that query's output (and fails that
+    # query outright under `stderr_reaction` `throw`). So the worker must not go back to the pool
+    # with it: each of these queries has to run on a worker of its own, which the answers - the
+    # command's pid - make visible.
+    #
+    # The row count is what holds the two ends of this apart. The command waits 2ms after answering
+    # before writing its line - long past the wake-up of the `poll` that was waiting for the
+    # response, so the line cannot be drained into the query that earned it (see the script) - and
+    # the single 500000-row block makes the server spend far longer than that parsing the answer out
+    # of the region, so the line is there by the time the worker is offered back to the pool. One
+    # block means one borrow, hence one pid per query.
+    pids = [
+        node.query(
+            "SELECT DISTINCT test_function_shm_chatty_stderr_pool_python(number) "
+            "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000"
+        ).strip()
+        for _ in range(3)
+    ]
+
+    assert all(pid.isdigit() for pid in pids), pids
+    assert len(set(pids)) == len(pids), f"a worker with unread stderr was reused: {pids}"
+
+    # And the discard is reported, with the output the command left behind: nothing else ever reads
+    # a discarded worker's pipes, so this log line is the only place that line is going to surface.
+    assert node.contains_in_log("left unread output on its stderr after answering")
+    assert node.contains_in_log("Stderr: done")
 
     assert node.query("SELECT 1") == "1\n"
 

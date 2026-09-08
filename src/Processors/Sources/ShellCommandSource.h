@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <memory>
+#include <string_view>
 
 #include <base/BorrowedObjectPool.h>
 
@@ -16,11 +18,36 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
+namespace Poco::Util
+{
+    class AbstractConfiguration;
+}
+
 namespace DB
 {
 
 class ShellCommandHolder;
 using ShellCommandHolderPtr = std::unique_ptr<ShellCommandHolder>;
+
+/// The configuration options that only the shared-memory transport understands. `use_shared_memory`
+/// comes first: it is the one that turns the transport on, and the rest only qualify it.
+inline constexpr std::array<std::string_view, 5> SHARED_MEMORY_CONFIGURATION_KEYS
+{
+    "use_shared_memory",
+    "shared_memory_size",
+    "shared_memory_max_size",
+    "shared_memory_pipeline",
+    "shared_memory_path",
+};
+
+/// Throws if any of the options above appears under `config_prefix`. For a surface that does not
+/// implement the shared-memory transport at all: without this, a command that was explicitly
+/// configured for shared memory would quietly run over the pipes instead, which is the one outcome
+/// whoever wrote those lines did not intend. `surface` names what is being configured and goes into
+/// the message. Rejects on the key being present rather than on its value - a `0` says just as
+/// clearly that its author believed this transport applied here.
+void checkSharedMemoryIsNotConfigured(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const std::string & surface);
 
 using ProcessPool = BorrowedObjectPool<ShellCommandHolderPtr>;
 

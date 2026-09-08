@@ -9,12 +9,18 @@
 #include <mutex>
 #include <optional>
 
+#include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadGroupSwitcher.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /** Single-producer / single-consumer double buffer coordinator.
   *
@@ -57,8 +63,21 @@ public:
 
     /// Launches the producer thread. `thread_group` (may be null) is inherited so that CPU and
     /// memory of the background work are accounted to the owning query; `producer` runs on it.
+    ///
+    /// One start per object. The run state this accumulates - the finish flag, a captured producer
+    /// exception, which buffers are free, whether a stop was requested - is the state of that one
+    /// run, and `stop` deliberately leaves it in place so that `rethrowIfFailed` can still be asked
+    /// about it afterwards. A second run over it would be answered out of the first one's leftovers:
+    /// `next` would return `std::nullopt` at once because the previous run had finished, and after a
+    /// `stop` the new thread would exit before its first callback. Restarting is not what any caller
+    /// wants and not what this coordinates, so it is rejected rather than made to half-work; take a
+    /// fresh object for a fresh run.
     void start(ThreadGroupPtr thread_group, ThreadName thread_name, ProducerFn producer)
     {
+        if (started)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DoubleBufferedProducer cannot be started twice");
+        started = true;
+
         producer_fn = std::move(producer);
         thread = ThreadFromGlobalPool([this, group = std::move(thread_group), thread_name]() mutable
         {
@@ -176,6 +195,8 @@ private:
     std::condition_variable consumer_cv;
 
     ProducerFn producer_fn;
+    /// Not under the mutex: `start` is called by the owner before there is anything to race with.
+    bool started = false;
     std::array<bool, 2> free_buffers{{true, true}};
     std::optional<Item> ready;
     bool finished = false;

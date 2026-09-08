@@ -141,6 +141,26 @@ public:
 
     BackingFileState backingFileState() const;
 
+    /** Copies `size` bytes at `offset` out of the backing file into `destination`, without touching
+      * the mapping.
+      *
+      * The command holds the region open for writing for as long as it runs, so it can truncate the
+      * file at any moment - including in the instant between the check that the file is still whole
+      * and the server's use of the bytes it just reported. Reading those bytes through the mapping
+      * would fault (`SIGBUS`) on pages the file no longer backs, and that fault cannot be caught:
+      * it takes the whole server down, along with every other query on it. A `pread` of the same
+      * range answers a truncated file with a short read instead - an ordinary error, which fails the
+      * one query whose command caused it.
+      *
+      * This is why the result is copied out rather than parsed where it lies. It costs one copy of
+      * the output; the input is still placed into the region without one. Note that the input side
+      * keeps the corresponding hazard, because the server writes it through the mapping - see the
+      * design note above.
+      *
+      * Throws if the file cannot be read, or if it no longer holds `size` bytes at `offset`.
+      */
+    void readBackingFile(char * destination, size_t offset, size_t size) const;
+
 private:
     std::string file_path;
     int region_fd = -1;

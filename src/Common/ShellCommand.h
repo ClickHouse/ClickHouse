@@ -131,6 +131,26 @@ public:
     /// or signalled exit is not raised as an error. Returns whether the child was waited.
     bool tryWaitWithoutStatusCheck();
 
+    /// Wait for a child that is being thrown away, discarding whatever it writes to `stdout` and
+    /// `stderr` meanwhile, bounded by the shared `command_termination_timeout` budget.
+    ///
+    /// `wait` cannot be used for this: it reaps first and closes the pipes only afterwards, so a
+    /// child that is blocked writing into an output pipe nobody drains any more never gets to
+    /// exit, and the wait never returns. Closing its stdin does not help - a process blocked in
+    /// `write` is not waiting for input - and no timeout applies to a blocking `waitpid`. Draining
+    /// lets such a child run to its own exit, which also keeps the exit status meaningful: closing
+    /// the output pipes instead would kill it with `SIGPIPE` and report our own teardown as the
+    /// command's failure.
+    ///
+    /// Only `stdout` and `stderr` are drained. `Config::read_fds` - extra descriptors the child
+    /// could also write to - has no user in the codebase; a command that acquires one and floods it
+    /// would have to be drained here as well.
+    ///
+    /// Returns whether the child was reaped. One that is still running when the budget runs out is
+    /// left to the destructor, which closes the pipes and signals it. Throws on a non-zero or
+    /// signalled exit, exactly like `wait`.
+    bool waitDrainingOutput();
+
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;

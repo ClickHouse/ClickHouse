@@ -36,6 +36,8 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_FSTAT;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int UNSUPPORTED_METHOD;
     extern const int CANNOT_STAT;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_IMPLEMENTED;
@@ -174,6 +176,20 @@ void unlinkNoThrow(const std::string & path, std::string_view operation) noexcep
             path,
             operation,
             errnoToString(unlink_errno));
+    }
+}
+
+void unmapNoThrow(void * address, size_t size, std::string_view operation) noexcept
+{
+    if (0 != ::munmap(address, size))
+    {
+        const int munmap_errno = errno;
+        LOG_WARNING(
+            getLogger("SharedMemoryRegion"),
+            "Cannot unmap shared-memory region of {} during {}: {}",
+            ReadableSize(size),
+            operation,
+            errnoToString(munmap_errno));
     }
 }
 
@@ -421,7 +437,18 @@ void SharedMemoryRegion::checkSupported(const std::string & directory)
 {
     checkSupported();
 
-    auto [fd, path] = createLinkedRegionFile(getRegionDirectory(directory));
+    const std::string region_directory = getRegionDirectory(directory);
+
+    /// Before the probe below, for the same reason the constructor sweeps before creating a region.
+    /// A server that died without running destructors left its files behind, still holding their
+    /// pages, and enough of them fill the directory - at which point the probe fails for want of
+    /// space and the function never loads. And because creating a region is what would have swept
+    /// them away, a failure here means nothing ever will: the leftovers of one crash would keep the
+    /// feature unusable until someone cleaned the directory by hand. The configuration path has to
+    /// be able to recover on its own, so it reclaims first and asks afterwards.
+    removeStaleRegions(region_directory);
+
+    auto [fd, path] = createLinkedRegionFile(region_directory);
     try
     {
         /// A minimal allocation verifies that the filesystem implements `posix_fallocate` without
@@ -480,9 +507,23 @@ SharedMemoryRegion::SharedMemoryRegion(const std::string & directory, size_t siz
     int fd = linked_file.fd;
     file_path = std::move(linked_file.path);
 
-    /// From now on the file exists on disk; make sure it is removed on any failure below.
+    /// From now on the file exists on disk; make sure it is removed on any failure below - together
+    /// with the mapping, once there is one. A constructor that throws leaves no object behind, so
+    /// its destructor never runs and a mapping left here is never unmapped; and since the name is
+    /// removed at the same time, nothing can free the `tmpfs` pages it holds any more - they stay
+    /// committed, and charged to nobody, until the server exits.
     auto unlink_on_failure = [&]() noexcept
     {
+        if (region_data)
+        {
+            unmapNoThrow(region_data, mapped_size, "region creation cleanup");
+            region_data = nullptr;
+            mapped_size = 0;
+        }
+
+        /// `fd` is closed right below; the member must not be left naming a closed descriptor.
+        region_fd = -1;
+
         unlinkNoThrow(file_path, "region creation cleanup");
         closeNoThrow(fd, "region creation cleanup");
         file_path.clear();
@@ -606,6 +647,45 @@ void SharedMemoryRegion::grow(size_t new_size)
     region_data = static_cast<char *>(buf);
     region_size = new_size;
     mapped_size = new_size;
+}
+
+void SharedMemoryRegion::readBackingFile(char * destination, size_t offset, size_t size) const
+{
+    size_t bytes_read = 0;
+    while (bytes_read < size)
+    {
+        const ssize_t res = ::pread(
+            region_fd, destination + bytes_read, size - bytes_read, static_cast<off_t>(offset + bytes_read));
+
+        if (res < 0)
+        {
+            if (errno == EINTR)
+                continue;
+
+            const int saved_errno = errno;
+            ErrnoException::throwWithErrno(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                saved_errno,
+                "SharedMemoryRegion: Cannot read {} bytes at offset {} of {}",
+                size,
+                offset,
+                file_path);
+        }
+
+        /// End of file inside the range the command told the server to read: it shortened the file
+        /// after answering. Through the mapping this would have been a `SIGBUS`.
+        if (res == 0)
+            throw Exception(
+                ErrorCodes::UNSUPPORTED_METHOD,
+                "SharedMemoryRegion: the region file {} ends after {} of the {} bytes reported at offset {}; "
+                "only the server may resize the region",
+                file_path,
+                bytes_read,
+                size,
+                offset);
+
+        bytes_read += static_cast<size_t>(res);
+    }
 }
 
 SharedMemoryRegion::BackingFileState SharedMemoryRegion::backingFileState() const

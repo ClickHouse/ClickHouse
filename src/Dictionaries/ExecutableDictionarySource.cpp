@@ -269,6 +269,11 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             command_arguments.erase(command_arguments.begin());
         }
 
+        /// Executable dictionaries run over the pipes. Reject the shared-memory options rather
+        /// than ignoring them: a dictionary configured for that transport would otherwise load and
+        /// silently use a different one.
+        checkSharedMemoryIsNotConfigured(config, settings_config_prefix, "Executable dictionary source");
+
         ExecutableDictionarySource::Configuration configuration
         {
             .command = std::move(command_value),

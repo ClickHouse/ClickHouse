@@ -1610,6 +1610,7 @@ The server successfully detected this situation and will download merged part fr
     M(ExecutableUDFSharedMemoryOutputBytes, "Total bytes of serialized output read back from the shared-memory region of executable user-defined functions (not copied through the kernel).", ValueType::Bytes) \
     M(ExecutableUDFSharedMemoryRegionGrowths, "Number of times a shared-memory region of an executable user-defined function was grown to fit a larger chunk.", ValueType::Number) \
     M(ExecutableUDFSharedMemoryAllocatedBytes, "Total bytes allocated (or added on growth) for shared-memory regions of executable user-defined functions.", ValueType::Bytes) \
+    M(ExecutableUDFSharedMemoryDirtyChannelDiscards, "Number of times a pooled process of an executable user-defined function was discarded instead of reused because it had left unread output on its stdout or stderr. Such output belongs to the invocation that produced it, and would otherwise be read by the next query to borrow the process.", ValueType::Number) \
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \

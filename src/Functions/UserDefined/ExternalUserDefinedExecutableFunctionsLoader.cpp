@@ -16,6 +16,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 
+#include <Processors/Sources/ShellCommandSource.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunction.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -297,11 +298,26 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         /// unusable configuration is rejected once instead of failing every invocation.
         SharedMemoryRegion::checkSupported(shared_memory_path);
     }
-    else if (shared_memory_pipeline)
+    else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Executable user defined function {}: `shared_memory_pipeline` requires `use_shared_memory` to be enabled",
-            name);
+        /// Every one of these knobs only means anything to the shared-memory transport, so a
+        /// configuration that spells one out without enabling that transport is a mistake: the
+        /// function silently runs over the pipes instead, which is the one outcome whoever wrote
+        /// that line did not intend. Reject on the key being present rather than on its value -
+        /// `<shared_memory_pipeline>0</shared_memory_pipeline>` says just as clearly that its
+        /// author believed this function used shared memory, and it is just as wrong.
+        for (const auto & shared_memory_key : SHARED_MEMORY_CONFIGURATION_KEYS)
+        {
+            /// `use_shared_memory` itself is what is off here, and it may legitimately be spelled
+            /// out as `0`.
+            if (shared_memory_key == "use_shared_memory")
+                continue;
+
+            if (config.has(key_in_config + "." + std::string(shared_memory_key)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Executable user defined function {}: `{}` requires `use_shared_memory` to be enabled",
+                    name, shared_memory_key);
+        }
     }
 
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
