@@ -127,20 +127,10 @@ void MemoryReservation::detachFromQueue()
 
 void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_tracker)
 {
-    syncImpl(memory_tracker, /*spilling_thread=*/ false);
-}
-
-void MemoryReservation::syncImpl(const MemoryTracker * memory_tracker, bool spilling_thread)
-{
     ResourceCost pending_increase = 0;
     ResourceCost pending_decrease = 0;
     {
         std::unique_lock lock(mutex);
-
-        // All allocations are blocked if spilling is in progress
-        // TODO: make this optional
-        if (!spilling_thread && processing_spill != 0)
-            cv.wait(lock, [this] { return processing_spill == 0 || kill_reason || fail_reason; });
 
         // Serialization: block all threads while an increase is pending.
         // Multiple query threads may call syncWithMemoryTracker concurrently
@@ -256,40 +246,50 @@ void MemoryReservation::reportReclaimable(ResourceCost total)
     queue.setReclaimable(*this, total);
 }
 
-ResourceCost MemoryReservation::takeSpillRequest()
+ResourceCost MemoryReservation::takeSpillRequest(const ISpillable * spillable, ResourceCost spillable_bytes)
 {
     std::lock_guard lock(mutex);
-    // Only one spill at a time; the other threads keep working and find the request gone.
-    if (processing_spill != 0)
+    if (enqueued_spill <= 0)
         return 0;
-    processing_spill = std::exchange(enqueued_spill, 0);
-    return processing_spill;
+
+    if (reclaimable_in_progress.contains(spillable))
+        return 0;
+
+    ResourceCost claim = std::min(spillable_bytes, enqueued_spill);
+    enqueued_spill -= claim;
+    ++spills_in_flight;
+    reclaimable_in_progress.insert(spillable);
+    return claim;
 }
 
 void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost remaining_bytes, const MemoryTracker * memory_tracker)
 {
-    SCOPE_EXIT({
-        std::lock_guard lock(mutex);
-        processing_spill = 0;
-        cv.notify_all();
-    });
-
     ResourceCost total = 0;
+    bool last_spill = false;
     {
         std::lock_guard lock(mutex);
-        chassert(processing_spill != 0);
+        chassert(spills_in_flight > 0);
+        --spills_in_flight;
+        last_spill = spills_in_flight == 0;
+
+        reclaimable_in_progress.erase(spillable);
+
         auto & entry = reclaimable[spillable];
         reclaimable_total = reclaimable_total - entry + remaining_bytes;
         entry = remaining_bytes;
-        reported_reclaimable = reclaimable_total;
         total = reclaimable_total;
         reclaimable_increment.changeTo(total);
+
+        if (last_spill)
+        {
+            enqueued_spill = 0;
+            reported_reclaimable = reclaimable_total;
+        }
     }
 
-    /// The scheduler re-evaluates the limits on the reply, so the released memory must be
-    /// decreased first. Other threads are held on `processing_spill` meanwhile.
-    syncImpl(memory_tracker, /*spilling_thread=*/ true);
-    queue.finishSpill(*this, total);
+    syncWithMemoryTracker(memory_tracker);
+    if (last_spill)
+        queue.finishSpill(*this, total);
 }
 
 void MemoryReservation::throwIfNeeded()

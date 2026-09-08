@@ -80,7 +80,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                 reservation->updateReclaimable(spillable, memory.spillable_memory_bytes);
                 if (memory.spillable_memory_bytes > 0)
                 {
-                    if (auto spill_request = reservation->takeSpillRequest())
+                    if (auto spill_request = reservation->takeSpillRequest(spillable, memory.spillable_memory_bytes))
                     {
                         auto * memory_tracker = process_list_element->getMemoryTracker();
                         const auto & logger = getLogger("Scheduler");

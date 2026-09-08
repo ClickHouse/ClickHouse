@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <base/defines.h>
 
 class MemoryTracker;
@@ -65,16 +66,11 @@ public:
     void updateReclaimable(const ISpillable * spillable, ResourceCost bytes);
     void removeReclaimable(const ISpillable * spillable);
 
-    /// Claims the pending spill request for the calling thread: 0 when there is none or another
-    /// thread is already spilling. Reservation traffic of other threads is paused until the reply.
-    [[nodiscard]] ResourceCost takeSpillRequest();
-    /// The reply: records what is left in the spilled object, issues the decrease for the released
-    /// memory before the scheduler re-evaluates the limits, and resumes reservation traffic.
+    [[nodiscard]] ResourceCost takeSpillRequest(const ISpillable * spillable, ResourceCost spillable_bytes);
     void finishSpill(const ISpillable * spillable, ResourceCost remaining_bytes, const MemoryTracker * memory_tracker);
 
 private:
     void throwIfNeeded();
-    void syncImpl(const MemoryTracker * memory_tracker, bool spilling_thread);
     void reportReclaimable(ResourceCost total);
 
     // Unlinks this allocation from the scheduler and waits until removal completes.
@@ -118,11 +114,13 @@ private:
 
     /// Scheduler requested spilling
     ResourceCost enqueued_spill = 0;
-    /// Pipeline process spilling request
-    ResourceCost processing_spill = 0;
+    /// Number of processors that do spilling in parallel
+    size_t spills_in_flight = 0;
 
     /// Reclaimable bytes per spillable object
     std::unordered_map<const ISpillable *, ResourceCost> reclaimable;
+    /// Avoid spilling same processor in parallel
+    std::unordered_set<const ISpillable *> reclaimable_in_progress;
     /// Sum of the map values
     ResourceCost reclaimable_total = 0;
     /// Last total sent to the scheduler (small updates are not sent)
