@@ -49,7 +49,7 @@ void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory
 void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Like [`quantileBFloat16`](/reference/functions/aggregate-functions/quantileBFloat16) but takes into account the weight of each sequence member.
+Like [`quantileBFloat16`](/sql-reference/aggregate-functions/reference/quantilebfloat16) but takes into account the weight of each sequence member.
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers.
 
@@ -80,7 +80,7 @@ SELECT quantileBFloat16Weighted(0.75)(a, w), quantileBFloat16Weighted(0.75)(b, w
         )",
         R"(
 ┌─quantileBFloat16Weighted(0.75)(a, w)─┬─quantileBFloat16Weighted(0.75)(b, w)─┐
-│                                    4 │                                    1 │
+│                                    3 │                                    1 │
 └──────────────────────────────────────┴──────────────────────────────────────┘
         )"
     }
@@ -92,7 +92,7 @@ SELECT quantileBFloat16Weighted(0.75)(a, w), quantileBFloat16Weighted(0.75)(b, w
     factory.registerFunction(NameQuantileBFloat16Weighted::name, {createAggregateFunctionQuantile<FuncQuantileBFloat16Weighted>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
-Like [`quantilesBFloat16`](/reference/functions/aggregate-functions/quantilesBFloat16) but takes into account the weight of each value.
+Like [`quantilesBFloat16`](/sql-reference/aggregate-functions/reference/quantilesBFloat16) but takes into account the weight of each value.
 
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers at different levels simultaneously, in a single pass.
     )";
