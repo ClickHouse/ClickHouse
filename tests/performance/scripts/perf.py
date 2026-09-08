@@ -24,7 +24,13 @@ from scipy import stats
 # strip_setting_from_query lives in a sibling module so it can be unit-tested
 # (perf.py executes its whole body on import). See
 # ci/tests/test_strip_setting_from_query.py.
-from perf_create_query_utils import (
+#
+# Every praktika job runs with `PYTHONSAFEPATH=1`, which stops Python from
+# prepending the script's own directory to `sys.path`, so the sibling module
+# has to be made importable explicitly.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from perf_create_query_utils import (  # noqa: E402
     first_keyword,
     is_ordinary_mergetree_create_query,
     is_mergetree_create_query,

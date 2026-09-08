@@ -7,10 +7,16 @@ import pytest
 # itself executes its whole body on import (argparse, scipy, a server
 # connection), so the scanner was factored into an import-safe sibling module
 # to make it testable in isolation.
-sys.path.insert(
-    0,
-    os.path.join(os.path.dirname(__file__), "..", "..", "tests", "performance", "scripts"),
+SCRIPTS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "..",
+    "tests",
+    "performance",
+    "scripts",
 )
+
+sys.path.insert(0, SCRIPTS_DIR)
 
 from perf_create_query_utils import (  # noqa: E402
     create_query_engine,
@@ -761,3 +767,35 @@ def test_strip_setting_accepts_lexer_control_whitespace(whitespace):
     query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING}{whitespace}={whitespace}0, index_granularity = 8192"
     expected = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
     assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+
+
+def test_perf_py_imports_the_sibling_module_under_pythonsafepath(tmp_path):
+    """`perf.py` must import `perf_create_query_utils` with `PYTHONSAFEPATH=1`.
+
+    Every praktika job exports `PYTHONSAFEPATH=1` (see `ci/praktika/runner.py`),
+    which stops Python from prepending the script's own directory to
+    `sys.path`. Relying on that implicit entry made every performance test die
+    with `ModuleNotFoundError: No module named 'perf_create_query_utils'`, and
+    the whole `Performance Comparison` job then failed while building its
+    report.
+    """
+    import subprocess
+
+    # `perf.py` pulls in third-party modules that need not be installed here,
+    # and `--help` exits before any of them is used.
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    (stubs / "scipy.py").write_text("stats = None\n")
+    (stubs / "clickhouse_driver.py").write_text("Client = None\n")
+
+    perf_py = os.path.join(SCRIPTS_DIR, "perf.py")
+    env = dict(os.environ, PYTHONSAFEPATH="1", PYTHONPATH=str(stubs))
+    completed = subprocess.run(
+        [sys.executable, perf_py, "--help"],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
