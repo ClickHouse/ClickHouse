@@ -793,13 +793,13 @@ public:
     void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
     {
         std::lock_guard lock(mutex);
-        auto & filter = data.filters_by_name[key];
+        auto & filter = filters_by_name[key];
         if (!filter)
         {
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
             filter.reset(runtime_filter.release()); /// Save new filter.
             /// Record the readable structural name once because the map is keyed by the opaque rendezvous key.
-            data.display_names.emplace(key, display_name);
+            display_names.emplace(key, display_name);
         }
         else
         {
@@ -811,7 +811,7 @@ public:
     void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
     {
         std::lock_guard lock(mutex);
-        auto & filter = data.filters_by_name[name];
+        auto & filter = filters_by_name[name];
         if (!filter)
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
         filter.reset(runtime_filter.release());
@@ -820,8 +820,8 @@ public:
     RuntimeFilterConstPtr find(const String & name) const override
     {
         SharedLockGuard lock(mutex);
-        auto it = data.filters_by_name.find(name);
-        if (it == data.filters_by_name.end())
+        auto it = filters_by_name.find(name);
+        if (it == filters_by_name.end())
             return nullptr;
         return it->second;
     }
@@ -829,12 +829,12 @@ public:
     void logStats() const override
     {
         SharedLockGuard lock(mutex);
-        for (const auto & [filter_key, filter] : data.filters_by_name)
+        for (const auto & [filter_key, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
             /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
-            auto name_it = data.display_names.find(filter_key);
-            const String & name = (name_it != data.display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
+            auto name_it = display_names.find(filter_key);
+            const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(
                 getLogger("RuntimeFilter"),
                 "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
@@ -848,16 +848,11 @@ public:
     }
 
 private:
-    struct Data
-    {
-        std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name;
-        /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
-        /// preserved across `replace` because the replacement keeps the original registration's name.
-        std::unordered_map<String, String> display_names;
-    };
-
     mutable SharedMutex mutex;
-    Data data TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(mutex);
+    /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
+    /// preserved across `replace` because the replacement keeps the original registration's name.
+    std::unordered_map<String, String> display_names TSA_GUARDED_BY(mutex);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
