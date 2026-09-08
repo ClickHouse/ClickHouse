@@ -1193,6 +1193,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             auto row_policy_filter_ptr = getEffectiveRowPolicyFilter(*storage, modified_context);
             if (row_policy_filter_ptr)
             {
+                /// The outer planner only sees this `Merge`, so a child's policy is recorded here or nowhere.
+                if (modified_context->hasQueryContext())
+                    for (const auto & row_policy : row_policy_filter_ptr->policies)
+                        modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
+
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
             }
