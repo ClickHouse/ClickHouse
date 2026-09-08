@@ -69,7 +69,7 @@ public:
     /// purely descriptive; it is only rendered, never applied.
     String getSignatureString() const override
     {
-        return "(Tuple | Nullable(Tuple) | Array | QBit | JSON, const index_or_name, [Any default]) -> Any";
+        return "(Tuple | Nullable(Tuple) | Array | QBit | JSON | Nullable(JSON), const index_or_name, [Any default]) -> Any";
     }
 
     /// The declarative signature above is documentation-only: the exact result type is not
