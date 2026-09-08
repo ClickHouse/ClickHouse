@@ -247,6 +247,28 @@ void MergeTreeLeaderElection::run()
             demoteBeforeTakeover();
             became_leader = tryWriteLease(/* if_match= */ "", /* if_none_match= */ "*");
         }
+        else if (result->is_size_known && result->size_bytes > MAX_LEASE_FILE_SIZE)
+        {
+            /// A lease is a few hundred bytes of JSON, and `MAX_LEASE_FILE_SIZE` is part of the
+            /// format contract: no version of this code writes a larger one, so a larger object is
+            /// corrupt by definition. It must be recognized here, from the metadata we already
+            /// have: `readSmallObjectAndGetObjectMetadata` below throws `CANNOT_READ_ALL_DATA`
+            /// before `parseLeaseContent` ever sees the payload, and the outer catch would then
+            /// demote and retry against the very same object on every heartbeat — leaving the table
+            /// read-only forever, until someone deletes the object by hand.
+            ///
+            /// Self-heal exactly like the `ParseError` branch below: claim the lease with a
+            /// conditional write against the `etag` of the object we just inspected, so a
+            /// concurrent writer (another node healing the same lease, or the legitimate leader
+            /// rewriting it) still wins the race and this node stays a follower.
+            LOG_WARNING(log,
+                "Lease at '{}' is {} bytes, larger than the maximum lease size of {} bytes: it cannot have been "
+                "written by any version of the lease protocol. Treating it as corrupted and trying to claim",
+                lease_path, result->size_bytes, MAX_LEASE_FILE_SIZE);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLeaseParseErrors);
+            demoteBeforeTakeover();
+            became_leader = tryWriteLease(/* if_match= */ result->etag, /* if_none_match= */ "");
+        }
         else
         {
             /// Lease file exists. Read its content and ETag.

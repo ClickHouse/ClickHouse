@@ -4759,3 +4759,61 @@ def test_global_leader_election_default_does_not_load_lazy_replicated(started_cl
                 node.query(f"DROP DATABASE IF EXISTS {name} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_OVERSIZED_LEASE = "12345678-abcd-abcd-abcd-12345678ab50"
+
+
+def test_oversized_lease_object_is_reclaimed(started_cluster):
+    """
+    Regression for a lease object larger than the maximum lease size, which used to wedge the
+    table in read-only mode forever. Such an object is corrupt by definition - no version of the
+    lease protocol writes one - but `readSmallObjectAndGetObjectMetadata` throws
+    `CANNOT_READ_ALL_DATA` before the payload ever reaches `parseLeaseContent`, so the
+    corrupt-lease self-healing path was never reached: the heartbeat only demoted the node and
+    retried, and every following heartbeat read the same object again. Nothing but deleting the
+    object by hand could bring the table back. The size is now checked against the object metadata
+    the heartbeat has already fetched, and an oversized lease is claimed like any other corrupt one.
+    """
+    ensure_node_up(node1)
+    table = "test_oversized_lease"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_OVERSIZED_LEASE)
+        wait_for_leader([node1], table_name=table)
+
+        lease_key = find_lease_object_key(SHARED_UUID_OVERSIZED_LEASE)
+        assert lease_key is not None, "The lease file of the table was not found"
+
+        lost_before = profile_event(node1, "MergeTreeLeaderElectionLost")
+        acquired_before = profile_event(node1, "MergeTreeLeaderElectionAcquired")
+
+        # 8 KiB, twice `MAX_LEASE_FILE_SIZE`: the payload cannot be read at all, let alone parsed.
+        oversized_lease = b"x" * 8192
+        cluster.minio_client.put_object(
+            cluster.minio_bucket, lease_key, io.BytesIO(oversized_lease), len(oversized_lease)
+        )
+
+        # The next heartbeat sees a lease that is not ours to renew and gives up leadership ...
+        deadline = time.monotonic() + 30
+        while profile_event(node1, "MergeTreeLeaderElectionLost") == lost_before:
+            assert time.monotonic() < deadline, "node1 kept serving as leader over a corrupt lease"
+            time.sleep(0.5)
+
+        # ... and, in the same heartbeat, overwrites the corrupt object with a lease of its own,
+        # which is a new leadership epoch. Without the fix this never happens and the table stays
+        # read-only until the object is removed by hand.
+        wait_for_leader([node1], table_name=table)
+        assert profile_event(node1, "MergeTreeLeaderElectionAcquired") > acquired_before, (
+            "node1 became writable again without a new leadership acquisition"
+        )
+
+        node1.query(f"INSERT INTO {table} VALUES (7)")
+        assert node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip() == "1"
+
+        # The corrupt object is gone: what is at the lease path is a lease again.
+        assert read_lease(SHARED_UUID_OVERSIZED_LEASE)["version"] == 1
+    finally:
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
