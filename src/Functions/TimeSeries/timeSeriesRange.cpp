@@ -8,9 +8,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/DecimalFunctions.h>
 #include <base/arithmeticOverflow.h>
-
 
 namespace DB
 {
@@ -306,6 +306,22 @@ public:
                 size_t num_values = (*values_offsets)[i] - values_base_offset;
                 if (num_values != num_steps)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of values ({}) doesn't match number of steps ({})", num_values, num_steps);
+
+                bool row_has_no_nulls = !null_map
+                    || memoryIsZero(null_map->data(), values_base_offset, values_base_offset + num_steps);
+
+                if (row_has_no_nulls)
+                {
+                    res_values->insertRangeFrom(*values, values_base_offset, num_steps);
+                    for (size_t j = 0; j != num_steps; ++j)
+                    {
+                        TimestampType timestamp = static_cast<TimestampType>(static_cast<Int64>(static_cast<UInt64>(start_timestamp) + j * step));
+                        res_timestamps->insert(timestamp);
+                    }
+
+                    res_offsets->insert(res_timestamps->size());
+                    continue;
+                }
             }
 
             for (size_t j = 0; j != num_steps; ++j)
@@ -357,9 +373,9 @@ Function `timeSeriesRange()` is similar to function [range](/reference/functions
 SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:00'::DateTime64(3), 30)
         )",
         R"(
-┌────────────────────────────────────result─────────────────────────────────────────┐
-│ ['2025-06-01 00:00:00.000', '2025-06-01 00:00:30.000', '2025-06-01 00:01:00.000'] │
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesRange(CAST('2025-06-01 00:00:00', 'DateTime64(3)'), CAST('2025-06-01 00:01:00', 'DateTime64(3)'), 30)─┐
+│ ['2025-06-01 00:00:00.000','2025-06-01 00:00:30.000','2025-06-01 00:01:00.000']                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -397,7 +413,7 @@ For example, for `[value1, NULL, x2]` the function returns `[(start_timestamp, x
 SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:30.000'::DateTime64(3), 30, [10, 20, NULL, 30]) AS result;
         )",
         R"(
-┌─────────────────────────────────────────────result─────────────────────────────────────────────┐
+┌─result─────────────────────────────────────────────────────────────────────────────────────────┐
 │ [('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)] │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"

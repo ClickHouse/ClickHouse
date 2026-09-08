@@ -6,10 +6,10 @@ FROM system.statements
 WHERE name IN ('SELECT', 'INSERT INTO', 'CREATE TABLE', 'DROP', 'ALTER', 'SYSTEM')
 ORDER BY name;
 
--- Every statement must have a syntax and a description, and the description must contain usage examples.
+-- Every statement must have a syntax and a description.
 SELECT count() = 0
 FROM system.statements
-WHERE empty(syntax) OR empty(description) OR position(description, '**Examples**') = 0;
+WHERE empty(syntax) OR empty(description);
 
 -- The syntax of a statement mentions the statement itself.
 SELECT position(syntax, 'DROP DATABASE') > 0

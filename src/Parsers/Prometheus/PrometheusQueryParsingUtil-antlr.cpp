@@ -351,41 +351,44 @@ namespace
         /// Extracts a metric name.
         String getMetricName(antlr4_grammars::PromQLParser::MetricNameContext * ctx) const { return ctx->getText(); }
 
-        /// Extracts a label name.
-        String getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx) const { return ctx->getText(); }
-
-        bool getSelectorIdentifier(antlr4_grammars::PromQLParser::SelectorIdentifierContext * ctx, String & identifier)
+        /// Extracts a label name, unquoting quoted names.
+        bool getLabelName(
+            antlr4_grammars::PromQLParser::LabelNameContext * ctx, String & label_name, bool require_non_empty)
         {
-            if (auto * label_name_ctx = ctx->labelName())
+            if (auto * string_ctx = ctx->STRING())
             {
-                identifier = getLabelName(label_name_ctx);
+                if (!parseStringLiteral(string_ctx, label_name))
+                    return false;
+
+                if ((require_non_empty && label_name.empty())
+                    || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
+                {
+                    error_listener.setError(
+                        require_non_empty ? "invalid label name for grouping" : "invalid selector identifier",
+                        getStartPos(string_ctx));
+                    return false;
+                }
+
                 return true;
             }
 
-            auto * string_ctx = ctx->STRING();
-            if (!string_ctx)
-                throwInconsistentSchema("SelectorIdentifier", ctx->getText());
-
-            if (!parseStringLiteral(string_ctx, identifier))
-                return false;
-
-            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(identifier.data()), identifier.size()))
-            {
-                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
-                return false;
-            }
-
+            label_name = ctx->getText();
             return true;
         }
 
         /// Extracts multiple label names separated by comma.
-        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx) const
+        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx)
         {
             Strings label_name_list;
 
             antlr4_grammars::PromQLParser::LabelNameContext * label_name_ctx = nullptr;
             for (size_t i = 0; (label_name_ctx = ctx->labelName(i)) != nullptr; ++i)
-                label_name_list.push_back(getLabelName(label_name_ctx));
+            {
+                String label_name;
+                if (!getLabelName(label_name_ctx, label_name, /* require_non_empty = */ true))
+                    return {};
+                label_name_list.push_back(std::move(label_name));
+            }
 
             return label_name_list;
         }
@@ -393,13 +396,13 @@ namespace
         /// Extracts a matcher.
         bool getMatcher(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
         {
-            auto * selector_identifier_ctx = ctx->selectorIdentifier();
+            auto * label_name_ctx = ctx->labelName();
             auto * label_value_ctx = ctx->STRING();
             auto * op_ctx = ctx->labelMatcherOperator();
-            if (!selector_identifier_ctx || !label_value_ctx || !op_ctx)
+            if (!label_name_ctx || !label_value_ctx || !op_ctx)
                 throwInconsistentSchema("LabelMatcher", ctx->getText());
 
-            if (!getSelectorIdentifier(selector_identifier_ctx, res_matcher.label_name))
+            if (!getLabelName(label_name_ctx, res_matcher.label_name, /* require_non_empty = */ false))
                 return false;
 
             MatcherType matcher_type = {};
@@ -471,7 +474,7 @@ namespace
                 for (size_t i = 0; (label_matcher_ctx = label_matcher_list_ctx->labelMatcher(i)) != nullptr; ++i)
                 {
                     Matcher matcher;
-                    bool parsed = label_matcher_ctx->selectorIdentifier()
+                    bool parsed = label_matcher_ctx->labelName()
                         ? getMatcher(label_matcher_ctx, matcher)
                         : getMatcherForQuotedMetricName(label_matcher_ctx, matcher);
                     if (!parsed)

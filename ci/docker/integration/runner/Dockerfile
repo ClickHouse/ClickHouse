@@ -77,7 +77,7 @@ RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
 RUN packages="io.delta:delta-spark_2.12:3.1.0,\
 org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.1,\
-org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.8.1,\
+org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0,\
 org.apache.hadoop:hadoop-aws:3.3.4,\
 com.amazonaws:aws-java-sdk-bundle:1.12.262,\
 org.apache.hadoop:hadoop-azure:3.3.4,\
