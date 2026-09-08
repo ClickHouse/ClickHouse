@@ -27,6 +27,7 @@
 #include <Planner/Utils.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/ProfileEvents.h>
 #include <Functions/CastOverloadResolver.h>
 
 
@@ -89,7 +90,7 @@ static std::unique_ptr<FilterStep> buildFilterStepWithIn(const ColumnWithTypeAnd
     auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{key_column}, false, SizeLimits{});
 
     auto set_column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
-    const auto * set_node = &filter_dag.addColumn(ColumnWithTypeAndName(std::move(set_column), set_type, "__set"));
+    const auto * set_node = &filter_dag.addColumn(std::move(set_column), std::move(set_type), "__set");
 
     auto in_function = FunctionFactory::instance().get("in", nullptr);
     const auto * filter_node = &filter_dag.addFunction(in_function, {key_node, set_node}, {});
@@ -269,9 +270,18 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     for (const auto & col : found_columns)
         col->insertDefault();
 
+    /// Remap `found_columns` (in `plan_header` order) into `sample_block` order so the result
+    /// matches the schema the caller expects. `sample_block` already encodes the empty-means-all
+    /// contract: when `required_columns` is empty it is the full plan header, otherwise it is the
+    /// requested subset in the requested order.
+    const auto & result_names = sample_block.getNames();
     MutableColumns result_columns;
-    for (auto && col : found_columns)
-        result_columns.push_back(IColumn::mutate(col->index(*selector, 0)));
+    result_columns.reserve(result_names.size());
+    for (const auto & column_name : result_names)
+    {
+        size_t plan_idx = plan_header->getPositionByName(column_name);
+        result_columns.push_back(IColumn::mutate(found_columns[plan_idx]->index(*selector, 0)));
+    }
 
     return Chunk(std::move(result_columns), out_offsets[out_offsets.size() - 1]);
 }

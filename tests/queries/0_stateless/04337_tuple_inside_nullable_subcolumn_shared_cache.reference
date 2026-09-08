@@ -1,0 +1,71 @@
+-- { echo }
+-- Read a `Nullable(Tuple(...))` subcolumn together with its descendant subcolumns in one
+-- query, so that the descendant's nested data is served from the substreams cache (a column
+-- shared with another subcolumn read, containing rows from multiple ranges).
+
+SET allow_experimental_nullable_tuple_type = 1;
+-- Wide part, one row per granule.
+DROP TABLE IF EXISTS t_shared_cache_wide;
+CREATE TABLE t_shared_cache_wide (x Tuple(a Nullable(Tuple(b Nullable(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+INSERT INTO t_shared_cache_wide SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
+SELECT x.a, x.a.b FROM t_shared_cache_wide;
+(0)	0
+\N	\N
+(2)	2
+\N	\N
+SELECT x.a.b, x.a FROM t_shared_cache_wide;
+0	(0)
+\N	\N
+2	(2)
+\N	\N
+SELECT x, x.a, x.a.b, isNull(x.a), isNull(x.a.b) FROM t_shared_cache_wide;
+((0))	(0)	0	0	0
+(NULL)	\N	\N	1	1
+((2))	(2)	2	0	0
+(NULL)	\N	\N	1	1
+SELECT x.a, x.a.b FROM t_shared_cache_wide SETTINGS max_block_size = 1;
+(0)	0
+\N	\N
+(2)	2
+\N	\N
+DROP TABLE t_shared_cache_wide;
+-- Compact part.
+DROP TABLE IF EXISTS t_shared_cache_compact;
+CREATE TABLE t_shared_cache_compact (x Tuple(a Nullable(Tuple(b Nullable(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000;
+INSERT INTO t_shared_cache_compact SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
+SELECT x.a, x.a.b FROM t_shared_cache_compact;
+(0)	0
+\N	\N
+(2)	2
+\N	\N
+SELECT x.a.b, x.a FROM t_shared_cache_compact;
+0	(0)
+\N	\N
+2	(2)
+\N	\N
+SELECT x, x.a, x.a.b, isNull(x.a), isNull(x.a.b) FROM t_shared_cache_compact;
+((0))	(0)	0	0	0
+(NULL)	\N	\N	1	1
+((2))	(2)	2	0	0
+(NULL)	\N	\N	1	1
+DROP TABLE t_shared_cache_compact;
+-- Both levels Nullable: the subcolumn serializations are nested parent-null-map wrappers.
+DROP TABLE IF EXISTS t_shared_cache_nested;
+CREATE TABLE t_shared_cache_nested (id UInt8, x Nullable(Tuple(a Nullable(Tuple(b Nullable(UInt32)))))) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+INSERT INTO t_shared_cache_nested VALUES (0, NULL), (1, (NULL)), (2, ((NULL))), (3, ((42)));
+SELECT id, x, x.a, x.a.b, isNull(x.a), isNull(x.a.b) FROM t_shared_cache_nested ORDER BY id;
+0	\N	\N	\N	1	1
+1	(NULL)	\N	\N	1	1
+2	((NULL))	(NULL)	\N	0	1
+3	((42))	(42)	42	0	0
+SELECT id, x.a.b, x.a FROM t_shared_cache_nested ORDER BY id;
+0	\N	\N
+1	\N	\N
+2	\N	(NULL)
+3	42	(42)
+SELECT count(x.a), count(x.a.b) FROM t_shared_cache_nested;
+2	1
+DROP TABLE t_shared_cache_nested;

@@ -6,6 +6,7 @@
 #include <Common/Elf.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
+#include <Examples/clickhouse_examples.h>
 
 [[maybe_unused]] static NO_INLINE const void * getAddress()
 {

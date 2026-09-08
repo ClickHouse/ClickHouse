@@ -58,12 +58,18 @@ void OffsetStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr OffsetStep::deserialize(Deserialization & ctx)
 {
-    UInt64 offset;
+    UInt64 offset = 0;
     readVarUInt(offset, ctx.in);
 
     return std::make_unique<OffsetStep>(ctx.input_headers.front(), offset);
 }
 
+QueryPlanStepPtr OffsetStep::clone() const
+{
+    return std::make_unique<OffsetStep>(*this);
+}
+
+void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Offset", OffsetStep::deserialize);

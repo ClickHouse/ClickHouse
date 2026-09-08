@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
+#include <config.h>
 
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -18,6 +20,8 @@
 #include <IO/VarInt.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
+
+#include <absl/container/flat_hash_set.h>
 
 #include <IO/WriteBufferFromString.h>
 
@@ -40,10 +44,7 @@ TokenPostingsInfo makeEmbeddedInfo(const std::vector<uint32_t> & doc_ids)
     TokenPostingsInfo info;
     info.cardinality = static_cast<UInt32>(doc_ids.size());
 
-    auto bitmap = std::make_shared<roaring::Roaring>();
-    for (auto id : doc_ids)
-        bitmap->add(id);
-    info.embedded_postings = bitmap;
+    info.embedded_postings.assign(doc_ids.begin(), doc_ids.end());
 
     if (!doc_ids.empty())
     {
@@ -64,10 +65,14 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
     return info;
 }
 
-/// Helper: create a PostingListCursor for an embedded posting list.
+/// Helper: create a PostingListCursor for an embedded posting list by flattening the embedded
+/// Roaring bitmap into a shared sorted array — mirroring how callers feed already-decoded postings
+/// to the shared-array cursor.
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
-    return std::make_shared<PostingListCursor>(info);
+    auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
+    std::copy(info.embedded_postings.begin(), info.embedded_postings.end(), flat->begin());
+    return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
 }
 
 /// Helper: generate a sequence of doc IDs: {start, start+step, start+2*step, ...}
@@ -114,6 +119,27 @@ std::vector<uint32_t> linearOrToDocIds(PostingListCursorPtr cursor, size_t row_o
     return result;
 }
 
+/// Helper: resolve tokens to a deduped cursor vector via `postings`.
+std::vector<PostingListCursorPtr> resolveTokenCursors(
+    const PostingListCursorMap & postings,
+    const VectorWithMemoryTracking<String> & tokens)
+{
+    std::vector<PostingListCursorPtr> cursors;
+    cursors.reserve(tokens.size());
+
+    absl::flat_hash_set<const PostingListCursor *> seen;
+    seen.reserve(tokens.size());
+
+    for (const auto & token : tokens)
+    {
+        auto it = postings.find(token);
+        if (it != postings.end() && seen.insert(it->second.get()).second)
+            cursors.push_back(it->second);
+    }
+
+    return cursors;
+}
+
 /// Helper: perform intersection using lazyIntersectPostingLists and return doc IDs.
 std::vector<uint32_t> intersectAndCollect(
     PostingListCursorMap & postings,
@@ -125,7 +151,8 @@ std::vector<uint32_t> intersectAndCollect(
 {
     float effective_threshold = brute_force ? 0.0f : density_threshold;
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
-    lazyIntersectPostingLists(*col, postings, tokens, 0, row_offset, num_rows, effective_threshold);
+    auto cursors = resolveTokenCursors(postings, tokens);
+    lazyIntersectPostingLists(*col, cursors, 0, row_offset, num_rows, effective_threshold);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -142,7 +169,8 @@ std::vector<uint32_t> unionAndCollect(
     size_t num_rows)
 {
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
-    lazyUnionPostingLists(*col, postings, tokens, 0, row_offset, num_rows);
+    auto cursors = resolveTokenCursors(postings, tokens);
+    lazyUnionPostingLists(*col, cursors, 0, row_offset, num_rows);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -163,15 +191,19 @@ struct MultiBlockTestData
     mutable std::shared_ptr<SingleDiskVolume> volume;
     mutable std::shared_ptr<DataPartStorageOnDiskFull> storage_holder;
     mutable std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> stream;
+    /// Fresh per-test segment cache (compressed cursors require one).
+    mutable std::shared_ptr<TextIndexPostingsCache> cache;
 };
 
 /// Build a multi-segment TokenPostingsInfo and data buffer for testing.
 ///
 /// @param blocks  Vector of sorted doc ID vectors, one per segment.
-///                Each segment is encoded independently using PostingListCodecBitpackingImpl.
+///                Each segment is encoded independently using SegmentedPostingListCodec.
 ///
 /// Returns a MultiBlockTestData with the binary buffer, TokenPostingsInfo, and flattened doc list.
-MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> & blocks)
+MultiBlockTestData makeMultiBlockData(
+    const std::vector<std::vector<uint32_t>> & blocks,
+    IPostingListCodec::Type block_codec_type = IPostingListCodec::Type::Bitpacking)
 {
     MultiBlockTestData result;
     auto & info = result.info;
@@ -193,7 +225,7 @@ MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> &
     for (const auto & block_docs : blocks)
     {
         /// Use a segment size large enough to hold all docs in one segment.
-        PostingListCodecBitpackingImpl codec(block_docs.size() + BLOCK_SIZE);
+        SegmentedPostingListCodec codec(block_docs.size() + BLOCK_SIZE, block_codec_type);
         for (auto doc : block_docs)
             codec.insert(doc);
         codec.encode(out, info);
@@ -248,7 +280,10 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     /// before the cursor calls advanceToMark.
     data.stream->getDataBuffer();
 
-    return std::make_shared<PostingListCursor>(*data.stream, data.info);
+    if (!data.cache)
+        data.cache = std::make_shared<TextIndexPostingsCache>("SLRU", 1ULL << 30, 0, 0.5);
+
+    return std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
 }
 
 } // anonymous namespace
@@ -302,7 +337,7 @@ TEST(PostingListCursorTest, LargeEmbeddedCursor)
 
 TEST(PostingListCursorTest, OversizedEmbeddedCursorExceedsBlockSize)
 {
-    constexpr uint32_t count = 500; // > MAX_EMBEDDED_POSTING_LIST_ROWS and > BLOCK_SIZE
+    constexpr uint32_t count = 500; // > BLOCK_SIZE, so the posting list spans multiple packed blocks
     auto docs = generateRange(1, count, 3);
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
@@ -360,7 +395,7 @@ TEST(PostingListCursorTest, EmbeddedCursorsOverSameInfoAreIndependent)
 {
     auto info = makeEmbeddedInfo({10, 20, 30, 40});
 
-    auto cursor1 = std::make_shared<PostingListCursor>(info);
+    auto cursor1 = makeEmbeddedCursor(info);
     cursor1->advance(30);
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 30U);
@@ -368,7 +403,7 @@ TEST(PostingListCursorTest, EmbeddedCursorsOverSameInfoAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 40U);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(info);
+    auto cursor2 = makeEmbeddedCursor(info);
     cursor2->advance(10);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 10U);
@@ -441,7 +476,7 @@ TEST(PostingListCursorTest, MultiBlockCursorsOverSameStreamAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 422u);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info);
+    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
     cursor2->advance(100);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 100u);
@@ -976,7 +1011,7 @@ TEST(PostingListCursorTest, BruteForceIntersectThree)
 
 TEST(PostingListCursorTest, BruteForceVsLeapfrogConsistency)
 {
-    std::mt19937 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> dist(0, 999);
 
     for (int trial = 0; trial < 10; ++trial)
@@ -1202,7 +1237,7 @@ TEST(PostingListCursorTest, UnionZeroCursors)
 
 TEST(PostingListCursorTest, StressRandomIntersectTwo)
 {
-    std::mt19937 rng(12345); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(12345); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 20; ++trial)
     {
@@ -1236,7 +1271,7 @@ TEST(PostingListCursorTest, StressRandomIntersectTwo)
 
 TEST(PostingListCursorTest, StressRandomIntersectFour)
 {
-    std::mt19937 rng(54321); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(54321); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 10; ++trial)
     {
@@ -1276,7 +1311,7 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
 
 TEST(PostingListCursorTest, StressRandomUnion)
 {
-    std::mt19937 rng(99999); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(99999); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 10; ++trial)
     {
@@ -3066,7 +3101,7 @@ TEST(PostingListCursorTest, ArithmeticMixedNonArithThenArith)
 
     /// Block 0: 128 docs with variable gaps (non-constant delta).
     uint32_t prev = 0;
-    std::mt19937 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 128; ++i)
     {
         prev += 1 + (rng() % 5);  // gap 1-5 (variable → non-constant delta)
@@ -3094,7 +3129,7 @@ TEST(PostingListCursorTest, ArithmeticSeekFromNonArithToArith)
     docs.push_back(0);
 
     uint32_t prev = 0;
-    std::mt19937 rng(123); // NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(123); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 128; ++i)
     {
         prev += 1 + (rng() % 10);
@@ -3586,22 +3621,24 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out;
-    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, out);
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V1_WithCodec,
+        sparse_index, IPostingListCodec::Type::Bitpacking, /*has_positions=*/ false, /*positions_codec=*/ 0, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
 
-    EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V1_WithCodec);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::Bitpacking);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "alpha");
-    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 42u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "alpha");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 42u);
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TextIndexHeader::Version::Initial), out);
+    writeVarUInt(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial), out);
     writeVarUInt(1u, out);
 
     auto tokens = ColumnString::create();
@@ -3615,11 +3652,71 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
 
-    EXPECT_EQ(sparse_index_data.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial));
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V0_Initial);
     EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
-    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "beta");
-    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "beta");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 7u);
+}
+
+TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
+{
+    auto tokens = ColumnString::create();
+    tokens->insert("gamma");
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(13);
+
+    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
+
+    WriteBufferFromOwnString out_initial;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V0_Initial,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_initial);
+
+    WriteBufferFromOwnString out_with_codec;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V1_WithCodec,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_with_codec);
+
+    /// The `Initial` header omits the single-byte codec type, so it is exactly one byte shorter.
+    EXPECT_EQ(out_initial.str().size() + 1, out_with_codec.str().size());
+
+    WriteBufferFromOwnString out_with_positions;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V2_WithPositions,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ true,
+        static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), out_with_positions);
+
+    /// A positional `WithPositions` header adds the positions flag and the positions codec byte.
+    EXPECT_EQ(out_with_codec.str().size() + 2, out_with_positions.str().size());
+
+    /// Without positions the codec byte is omitted, so the header costs only the flag. This keeps a
+    /// non-positional part the same size as before positions existed.
+    WriteBufferFromOwnString out_no_positions;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V2_WithPositions,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_no_positions);
+    EXPECT_EQ(out_with_codec.str().size() + 1, out_no_positions.str().size());
+
+    ReadBufferFromString in_no_positions(out_no_positions.str());
+    auto no_positions_data = TextIndexSerialization::deserializeHeader(in_no_positions);
+    EXPECT_FALSE(no_positions_data.has_positions);
+
+    ReadBufferFromString in(out_initial.str());
+    auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
+
+    EXPECT_EQ(sparse_index_data.version, MergeTreeTextIndexSerializationVersion::V0_Initial);
+    EXPECT_EQ(sparse_index_data.codec_type, IPostingListCodec::Type::None);
+    EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
+    EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "gamma");
+    EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 13u);
+
+    ReadBufferFromString in_with_positions(out_with_positions.str());
+    auto with_positions_data = TextIndexSerialization::deserializeHeader(in_with_positions);
+
+    EXPECT_EQ(with_positions_data.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
+    EXPECT_TRUE(with_positions_data.has_positions);
 }
 
 // Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and
@@ -3652,14 +3749,12 @@ TEST(PostingListCursorTest, LazyUnionRowOffsetAboveUInt32MaxThrows)
 {
     auto info_a = makeEmbeddedInfo({1, 2, 3});
     auto info_b = makeEmbeddedInfo({3, 4, 5});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
+    std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
 
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
     auto col = ColumnUInt8::create(64, UInt8(0));
     EXPECT_THROW(
-        lazyUnionPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64),
+        lazyUnionPostingLists(*col, cursors, 0, huge_offset, 64),
         Exception);
 }
 
@@ -3667,9 +3762,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
 {
     auto info_a = makeEmbeddedInfo({1, 2, 3});
     auto info_b = makeEmbeddedInfo({2, 3, 4});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
+    std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
 
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
 
@@ -3677,7 +3770,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64, /*density_threshold=*/1.0f),
+            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, /*density_threshold=*/1.0f),
             Exception);
     }
 
@@ -3685,7 +3778,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64, /*density_threshold=*/0.0f),
+            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, /*density_threshold=*/0.0f),
             Exception);
     }
 }
@@ -3735,15 +3828,13 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     /// dense-memset path and exercise `findRowRangeEnd`.
     auto info_a = makeEmbeddedInfo({m - 3, m});
     auto info_b = makeEmbeddedInfo({m - 2, m});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
 
     // Brute-force path (forced via density_threshold = 0). This is the path that goes
     // through `linearOr` + `linearAnd` and was affected by the off-by-one.
     {
+        std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/0.0f);
+        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/0.0f);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);  // m - 3: only in a
         EXPECT_EQ(data[1], 0u);  // m - 2: only in b
@@ -3754,8 +3845,9 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     // Leapfrog path (density_threshold = 1.0). Uses direct size_t arithmetic so the bug
     // didn't manifest here; included for completeness as a regression guard.
     {
+        std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/1.0f);
+        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/1.0f);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);
         EXPECT_EQ(data[1], 0u);

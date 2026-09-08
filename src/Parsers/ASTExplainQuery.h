@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -25,6 +26,8 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
+        Analyze, /// EXPLAIN ANALYZE ...
+        WhatIf, /// 'EXPLAIN WHATIF SELECT ...'
     };
 
     static String toString(ExplainKind kind)
@@ -39,6 +42,8 @@ public:
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
+            case Analyze: return "EXPLAIN ANALYZE";
+            case WhatIf: return "EXPLAIN WHATIF";
         }
     }
 
@@ -60,6 +65,10 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
+        if (str == "EXPLAIN ANALYZE")
+            return Analyze;
+        if (str == "EXPLAIN WHATIF")
+            return WhatIf;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown explain kind '{}'", str);
     }
@@ -71,9 +80,27 @@ public:
     ASTPtr clone() const override
     {
         auto res = make_intrusive<ASTExplainQuery>(*this);
+
+        /// Re-add the named children explicitly, in the same order `ParserExplainQuery`
+        /// produces them, so that the clone has the same `getTreeHash` as a freshly parsed
+        /// AST. The parser parses the EXPLAIN-level settings before the explained query
+        /// (e.g. `EXPLAIN header = 1 SELECT 1` is parsed as `children = [ast_settings, query]`),
+        /// so `ast_settings` must come before `query`.
         res->children.clear();
-        if (!children.empty())
-            res->children.push_back(children[0]->clone());
+        res->query = nullptr;
+        res->ast_settings = nullptr;
+        res->table_function = nullptr;
+        res->table_override = nullptr;
+
+        if (ast_settings)
+            res->setSettings(ast_settings->clone(), settings_text);
+        if (query)
+            res->setExplainedQuery(query->clone());
+        if (table_function)
+            res->setTableFunction(table_function->clone());
+        if (table_override)
+            res->setTableOverride(table_override->clone());
+
         cloneOutputOptions(*res);
         return res;
     }
@@ -86,10 +113,16 @@ public:
         query = std::move(query_);
     }
 
-    void setSettings(ASTPtr settings_)
+    /** `settings_text_` is the SETTINGS clause as written in the query, which only the parser knows.
+      * `ParserSubquery` rewrites `(EXPLAIN <kind> <settings> SELECT ...)` into
+      * `viewExplain('<kind>', '<settings>', (SELECT ...))`, which needs the settings as a string,
+      * and a build with no formatter has nowhere else to get one - see `astText`.
+      */
+    void setSettings(ASTPtr settings_, String settings_text_ = {})
     {
         children.emplace_back(settings_);
         ast_settings = std::move(settings_);
+        settings_text = std::move(settings_text_);
     }
 
     void setTableFunction(ASTPtr table_function_)
@@ -105,11 +138,32 @@ public:
     }
 
     const ASTPtr & getExplainedQuery() const { return query; }
+
+    /// Replace the explained query, keeping the `children` entry in sync (the explained query is
+    /// stored both in `query` and in `children`, see `setExplainedQuery`).
+    void replaceExplainedQuery(ASTPtr query_)
+    {
+        for (auto & child : children)
+        {
+            if (child == query)
+            {
+                child = query_;
+                break;
+            }
+        }
+        query = std::move(query_);
+    }
+
     const ASTPtr & getSettings() const { return ast_settings; }
+    /// Empty unless this query came from the parser - see `setSettings`.
+    const String & getSettingsText() const { return settings_text; }
     const ASTPtr & getTableFunction() const { return table_function; }
     const ASTPtr & getTableOverride() const { return table_override; }
 
     QueryKind getQueryKind() const override { return QueryKind::Explain; }
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
@@ -161,6 +215,7 @@ private:
 
     ASTPtr query;
     ASTPtr ast_settings;
+    String settings_text;
 
     /// Used by EXPLAIN TABLE OVERRIDE
     ASTPtr table_function;

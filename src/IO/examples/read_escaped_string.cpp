@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ConcatReadBuffer.h>
+#include <Examples/clickhouse_examples.h>
 
 
 using namespace DB;

@@ -16,6 +16,8 @@
 #    include <string>
 #    include <unicode/ucnv.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -234,9 +236,9 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
         "Usage example",
         "SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');",
         R"(
-┌─convertChars⋯SO-8859-1')─┐
-│ Caf�                     │
-└──────────────────────────┘
+┌─convertCharset('Café', 'UTF-8', 'ISO-8859-1')─┐
+│ Caf�                                           │
+└───────────────────────────────────────────────┘
         )"
     }
     };
@@ -246,6 +248,8 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
 
     factory.registerFunction<FunctionConvertCharset>(documentation);
 }
+
+#pragma clang diagnostic pop
 
 }
 

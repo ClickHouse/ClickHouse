@@ -35,6 +35,11 @@ class _Environment(MetaClasses.Serializable):
     USER_LOGIN: str
     FORK_NAME: str
     COMMIT_MESSAGE: str = ""
+    EVENT_ACTION: str = ""
+    # `created_at` of this workflow run, resolved once by the config job (see
+    # native_jobs._config_workflow) and inherited by every other job with this
+    # environment, so all of them agree on when the run started.
+    WORKFLOW_START_TIME: str = ""
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
@@ -44,6 +49,9 @@ class _Environment(MetaClasses.Serializable):
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    # Keys inherited from the initial job so downstream jobs can emit only
+    # their own additions in `data=` outputs.
+    JOB_KV_DATA_BASE_KEYS: List[str] = dataclasses.field(default_factory=list)
     COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
     name = "environment"
@@ -79,6 +87,7 @@ class _Environment(MetaClasses.Serializable):
         PR_LABELS = []
         LINKED_PR_NUMBER = 0
         EVENT_TIME = ""
+        EVENT_ACTION = ""
         COMMIT_MESSAGE = ""
 
         WORKFLOW_JOB_DATA = cls._load_workflow_job_data()
@@ -86,6 +95,7 @@ class _Environment(MetaClasses.Serializable):
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)
+            EVENT_ACTION = github_event.get("action", "")
             if "pull_request" in github_event:
                 FORK_NAME = github_event["pull_request"]["head"]["repo"]["full_name"]
                 EVENT_TYPE = Workflow.Event.PULL_REQUEST
@@ -162,7 +172,7 @@ class _Environment(MetaClasses.Serializable):
                         if LINKED_PR_NUMBER
                         else ""
                     )
-                except:
+                except Exception:
                     LINKED_PR_NUMBER = 0
                     CHANGE_URL = ""
 
@@ -209,6 +219,7 @@ class _Environment(MetaClasses.Serializable):
             JOB_OUTPUT_STREAM=JOB_OUTPUT_STREAM,
             SHA=SHA,
             EVENT_TYPE=EVENT_TYPE,
+            EVENT_ACTION=EVENT_ACTION,
             EVENT_TIME=EVENT_TIME,
             PR_NUMBER=PR_NUMBER,
             RUN_ID=RUN_ID,
@@ -246,7 +257,9 @@ class _Environment(MetaClasses.Serializable):
 
     @classmethod
     def from_dict(cls: Type[T], obj: Dict[str, Any]) -> T:
-        JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "")
+        # Prefer the env var (GHA sets it), but fall back to the stored path so
+        # CI engine environments serialised by `_build_ci_environment` are not wiped.
+        JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "") or obj.get("JOB_OUTPUT_STREAM", "")
         obj["JOB_OUTPUT_STREAM"] = JOB_OUTPUT_STREAM
         if "PARAMETER" in obj:
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
@@ -263,8 +276,34 @@ class _Environment(MetaClasses.Serializable):
         # Job names are normalized in the workflow status file
         normalized_job_name = Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME)
         config_job_data = workflow_status_data.get(normalized_job_name, {})
-        data_str = config_job_data.get("outputs", {}).get("data", "{}")
-        env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
+        data_str = config_job_data.get("outputs", {}).get("data", "")
+        if isinstance(data_str, str):
+            env_dict = json.loads(data_str) if data_str.strip() else None
+        else:
+            env_dict = data_str
+        if not env_dict or "SHA" not in env_dict:
+            raise RuntimeError(
+                f"Job output [data] of the [{Settings.CI_CONFIG_JOB_NAME}] job is empty or missing. "
+                "The runner likely suppressed it because it matched a secret pattern."
+            )
+
+        kv_data = env_dict.get("JOB_KV_DATA")
+        if isinstance(kv_data, str):
+            env_dict["JOB_KV_DATA"] = (
+                json.loads(Utils.from_base64(kv_data)) if kv_data else {}
+            )
+
+        event_file_path = os.getenv("GITHUB_EVENT_PATH", "")
+        if event_file_path and Path(event_file_path).is_file():
+            with open(event_file_path, "r", encoding="utf-8") as f:
+                github_event = json.load(f)
+            if "pull_request" in github_event:
+                env_dict["PR_BODY"] = github_event["pull_request"]["body"] or ""
+                env_dict["PR_TITLE"] = github_event["pull_request"]["title"] or ""
+            elif github_event.get("head_commit"):
+                env_dict["COMMIT_MESSAGE"] = (
+                    github_event["head_commit"]["message"] or ""
+                )
 
         # Reread instance metadata from the host
         env_dict["INSTANCE_TYPE"] = (
@@ -299,7 +338,7 @@ class _Environment(MetaClasses.Serializable):
         Messages are collected during job execution and later written to both
         the job and workflow ``Result.ext`` as ``{"message": str, "from": str}``
         entries.  Grouping of duplicate messages is done at the rendering level
-        in ``json.html``.
+        in ``praktika.html``.
         Prefer the typed wrappers ``add_workflow_warning/error/note``.
         """
         self.REPORT_MESSAGES.append(
@@ -325,7 +364,7 @@ class _Environment(MetaClasses.Serializable):
                 env = cls.from_workflow_data()
                 env.dump()
                 return env
-            except FileNotFoundError as e:
+            except FileNotFoundError:
                 # For workflows without Config job
                 print(
                     f"NOTE: Workflow context file [{Settings.WORKFLOW_STATUS_FILE}] does not exist - read context from GH event"
@@ -370,20 +409,26 @@ class _Environment(MetaClasses.Serializable):
             raise RuntimeError()
 
     def get_s3_prefix(self, latest=False):
-        return self.get_s3_prefix_static(self.PR_NUMBER, self.BRANCH, self.SHA, latest)
+        return self.get_s3_prefix_static(
+            self.PR_NUMBER, self.BRANCH, self.SHA, self.WORKFLOW_NAME, latest
+        )
 
     @classmethod
-    def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
+    def get_s3_prefix_static(cls, pr_number, branch, sha, workflow_name, latest=False):
+        from .utils import Utils
+
         assert pr_number > 0 or branch
+        assert workflow_name
         if pr_number:
             prefix = f"PRs/{pr_number}"
         else:
             prefix = f"REFs/{branch}"
         assert sha or latest
         if latest:
-            prefix += f"/latest"
+            prefix += "/latest"
         elif sha:
             prefix += f"/{sha}"
+        prefix += f"/{Utils.normalize_string(workflow_name)}"
         return prefix
 
     def is_local_run(self):

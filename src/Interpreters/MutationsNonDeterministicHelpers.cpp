@@ -147,19 +147,22 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
     {
         case MutationCommand::UPDATE:
         {
-            auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
+            auto alter = command.ast();
+            auto update_assignments_ast = alter->update_assignments->clone();
             FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
 
             if (finder_data.result.nondeterministic_function_name)
                 return finder_data.result;
 
-            /// Currently UPDATE and DELETE both always have predicates so we can use fallthrough
-            [[fallthrough]];
+            ASTPtr predicate_ast(alter->predicate);
+            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
+            return finder_data.result;
         }
 
         case MutationCommand::DELETE:
         {
-            auto predicate_ast = command.predicate->clone();
+            auto alter = command.ast();
+            ASTPtr predicate_ast(alter->predicate);
             FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
             return finder_data.result;
         }

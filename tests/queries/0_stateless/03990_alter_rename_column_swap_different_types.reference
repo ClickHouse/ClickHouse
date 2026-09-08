@@ -1,0 +1,39 @@
+--- compact part: swap ip <-> ip_v6 (UInt32 <-> IPv6) ---
+id	UInt32					
+ip_v4	UInt32					
+ip	IPv6					
+0	3628718300	::ffff:216.73.216.220
+1	0	::
+1	0	::
+--- wide part: same swap ---
+id	UInt32					
+ip_v4	UInt32					
+ip	IPv6					
+0	3628718300	::ffff:216.73.216.220
+1	0	::
+1	0	::
+--- wide part: swap where the added column was never materialized ---
+id	UInt32					
+ip_v4	UInt32					
+ip	IPv6					
+0	3628718300	::
+1	0	::
+--- compact part: same unmaterialized swap (must keep working) ---
+id	UInt32					
+ip_v4	UInt32					
+ip	IPv6					
+0	3628718300	::
+1	0	::
+--- wide part: unmaterialized swap with a part rewrite forced in the same ALTER ---
+id	UInt32					
+ip_v4	UInt32					
+ip	IPv6					
+payload	String					
+0	3628718300	::	b
+1	3628718300	::	b
+--- DROP a + RENAME b TO a, different types (must keep working) ---
+id	UInt32					
+a	IPv6					
+0	::ffff:1.2.3.4
+1	::ffff:1.2.3.4
+2	::ffff:1.2.3.4

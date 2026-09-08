@@ -47,6 +47,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NETWORK_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int UNKNOWN_SETTING;
@@ -232,6 +233,11 @@ namespace
 
         if (params->num_rows() > 1)
             return arrow::Status::NotImplemented("Multiple parameter sets are not supported (got ", params->num_rows(), " rows)");
+
+        /// The parameter batch comes straight from the client (DoPut).  Fully validate its buffers
+        /// before GetScalar reads them: a malformed array (for example a string whose offsets point
+        /// past the data buffer) would otherwise be read out of bounds inside arrow::Array::GetScalar.
+        ARROW_RETURN_NOT_OK(params->ValidateFull());
 
         if (static_cast<size_t>(params->num_columns()) != num_params)
             return arrow::Status::Invalid(
@@ -433,7 +439,9 @@ void ArrowFlightServer::start()
     auto init_status = Init(options);
     if (!init_status.ok())
     {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed init Arrow Flight Server: {}", init_status.ToString());
+        throw Exception(
+            init_status.IsIOError() ? ErrorCodes::NETWORK_ERROR : ErrorCodes::UNKNOWN_EXCEPTION,
+            "Failed init Arrow Flight Server: {}", init_status.ToString());
     }
 
     initialized = true;
@@ -1386,6 +1394,7 @@ arrow::Status ArrowFlightServer::DoAction(
                     if (std::holds_alternative<std::monostate>(value))
                     {
                         /// std::monostate means "reset to default" (SET setting = DEFAULT).
+                        query_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
                         session_context->resetSettingsToDefaultValue({setting});
                     }
                     else

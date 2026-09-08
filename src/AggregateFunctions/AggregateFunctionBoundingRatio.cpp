@@ -34,8 +34,8 @@ struct AggregateFunctionBoundingRatioData
     };
 
     bool empty = true;
-    Point left;
-    Point right;
+    Point left{};
+    Point right{};
 
     void add(Float64 x, Float64 y)
     {
@@ -163,7 +163,7 @@ public:
         data(place).add(x, y);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
@@ -200,6 +200,7 @@ AggregateFunctionPtr createAggregateFunctionRate(const std::string & name, const
 
 }
 
+void registerAggregateFunctionRate(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRate(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -1,0 +1,31 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/intro
+title: 'Migração do Elastic para o ClickStack'
+sidebarTitle: 'Visão geral'
+description: 'Visão geral da migração do Elastic para a stack de observabilidade do ClickHouse'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+<div id="migrating-to-clickstack-from-elastic">
+  ## Migração do Elastic para o ClickStack
+</div>
+
+Este guia é destinado a usuários que estão migrando do Elastic Stack — especificamente aqueles que usam o Kibana para monitorar logs, traces e métricas coletados via Elastic Agent e armazenados no Elasticsearch. Ele descreve conceitos e tipos de dados equivalentes no ClickStack, explica como traduzir consultas do Kibana baseadas em Lucene para a sintaxe do HyperDX e fornece orientações sobre a migração de dados e agentes para uma transição tranquila.
+
+Antes de iniciar uma migração, é importante entender os trade-offs entre o ClickStack e o Elastic Stack.
+
+Você deve considerar migrar para o ClickStack se:
+
+* Faz ingestão de grandes volumes de dados de observabilidade e considera o Elastic caro demais devido à compressão ineficiente e ao baixo aproveitamento de recursos. O ClickStack pode reduzir significativamente os custos de armazenamento e computação — oferecendo pelo menos 10x de compressão em dados brutos.
+* Enfrenta baixo desempenho de busca em escala ou gargalos de ingestão.
+* Quer correlacionar sinais de observabilidade com dados de negócios usando SQL, unificando fluxos de trabalho de observabilidade e analytics.
+* Está comprometido com OpenTelemetry e quer evitar dependência de fornecedor.
+* Quer aproveitar a separação entre armazenamento e computação no ClickHouse Cloud, permitindo uma escala virtualmente ilimitada — pagando apenas pela computação de ingestão e pelo armazenamento de objetos durante períodos de inatividade.
+
+No entanto, o ClickStack pode não ser adequado se:
+
+* Você usa dados de observabilidade principalmente para casos de uso de segurança e precisa de um produto focado em SIEM.
+* Profiling universal é uma parte crítica do seu fluxo de trabalho.
+* Você precisa de uma plataforma de dashboards de inteligência de negócios (BI). O ClickStack intencionalmente oferece fluxos de trabalho visuais mais guiados para SREs e desenvolvedores e não foi projetado como uma ferramenta de Business Intelligence (BI). Para recursos equivalentes, recomendamos usar o [Grafana com o plugin do ClickHouse](/pt-BR/integrations/connectors/data-visualization/grafana/index) ou o [Superset](/pt-BR/integrations/connectors/data-visualization/superset-and-clickhouse).

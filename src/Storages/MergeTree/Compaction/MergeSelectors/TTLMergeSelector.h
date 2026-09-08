@@ -39,7 +39,7 @@ private:
     {
         RangesIterator range;
         PartsIterator center;
-        time_t ttl;
+        time_t ttl{};
     };
 
     bool needToPostponePartition(const std::string & partition_id) const;

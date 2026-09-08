@@ -1,4 +1,5 @@
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -9,6 +10,8 @@
 
 namespace DB
 {
+
+UUID ServerUUID::server_uuid = UUIDHelpers::Nil;
 
 namespace ErrorCodes
 {

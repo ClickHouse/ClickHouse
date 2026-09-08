@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
@@ -44,11 +45,13 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
         {
+
+            ColumnPtr col = DataTypeString().createColumnConst(arguments[0].column->size(), getReturnTypeName(arguments[0].type));
             ColumnsWithTypeAndName cast_args
             {
                 arguments[0],
                 {
-                    DataTypeString().createColumnConst(arguments[0].column->size(), getReturnTypeName(arguments[0].type)),
+                    col,
                     std::make_shared<DataTypeString>(),
                     ""
                 }
@@ -84,6 +87,8 @@ SELECT
 FORMAT Vertical
         )",
         R"(
+Row 1:
+──────
 toBool(toUInt8(1)):      true
 toBool(toInt8(-1)):      true
 toBool(toFloat32(1.01)): true

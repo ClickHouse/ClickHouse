@@ -1,5 +1,6 @@
 #include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadPipeline.h>
@@ -140,7 +141,7 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-void asyncCopy(
+static void asyncCopy(
     IDisk & from_disk,
     String from_path,
     IDisk & to_disk,
@@ -263,6 +264,7 @@ try
         auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
         file->write(payload.data(), payload.size());
         file->finalize();
+        file->sync();
     }
 
     /// read

@@ -1,0 +1,123 @@
+---
+slug: /cloud/reference/shared-merge-tree
+sidebarTitle: 'SharedMergeTree'
+title: 'Moteur de table SharedMergeTree'
+keywords: ['SharedMergeTree']
+description: 'Description du moteur de table SharedMergeTree'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La famille de moteurs de table SharedMergeTree est un remplacement cloud-native des moteurs ReplicatedMergeTree, optimisé pour fonctionner sur un stockage partagé (par ex. Amazon S3, Google Cloud Storage, MinIO, Azure Blob Storage). Il existe un équivalent SharedMergeTree pour chaque type de moteur MergeTree spécifique, c’est-à-dire que SharedReplacingMergeTree remplace ReplicatedReplacingMergeTree.
+
+La famille de moteurs de table SharedMergeTree est au cœur de ClickHouse Cloud. Pour l’utilisateur final, aucune modification n’est nécessaire pour commencer à utiliser la famille de moteurs SharedMergeTree à la place des moteurs basés sur ReplicatedMergeTree. Elle offre les avantages supplémentaires suivants :
+
+* Débit d’insertion plus élevé
+* Débit amélioré des fusions en arrière-plan
+* Débit amélioré des mutations
+* Opérations de scale-up et de scale-down plus rapides
+* Cohérence forte allégée pour les requêtes SELECT
+
+Une amélioration majeure apportée par SharedMergeTree est qu’il permet une séparation plus poussée du compute et du storage par rapport à ReplicatedMergeTree. Vous pouvez voir ci-dessous comment ReplicatedMergeTree sépare le compute et le storage :
+
+<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="Diagramme ReplicatedMergeTree" size="md" />
+
+Comme vous pouvez le voir, même si les données stockées dans ReplicatedMergeTree se trouvent dans un stockage objet, les métadonnées résident toujours sur chacun des clickhouse-servers. Cela signifie que pour chaque opération répliquée, les métadonnées doivent également être répliquées sur tous les réplicas.
+
+<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="Diagramme ReplicatedMergeTree avec métadonnées" size="md" />
+
+Contrairement à ReplicatedMergeTree, SharedMergeTree n&#39;exige pas que les réplicas communiquent entre eux. À la place, toute la communication passe par le stockage partagé et ClickHouse Keeper. SharedMergeTree implémente une réplication asynchrone sans leader et utilise ClickHouse Keeper pour la coordination et le stockage des métadonnées. Cela signifie que les métadonnées n&#39;ont pas besoin d&#39;être répliquées à mesure que votre service effectue un scale-up ou un scale-down. Il en résulte des opérations de réplication, de mutation, de fusion et de scale-up plus rapides. SharedMergeTree prend en charge des centaines de réplicas pour chaque table, ce qui permet une mise à l’échelle dynamique sans shards. Une approche d’exécution distribuée des requêtes est utilisée dans ClickHouse Cloud afin de mobiliser davantage de ressources de compute pour une requête.
+
+<div id="introspection">
+  ## Introspection
+</div>
+
+La plupart des tables système utilisées pour l’introspection de ReplicatedMergeTree existent aussi pour SharedMergeTree, à l’exception de `system.replication_queue` et `system.replicated_fetches`, puisqu’aucune réplication des données ni des métadonnées n’a lieu. SharedMergeTree propose toutefois des alternatives correspondantes pour ces deux tables.
+
+**system.virtual&#95;parts**
+
+Cette table sert d’alternative à `system.replication_queue` pour SharedMergeTree. Elle stocke des informations sur l’ensemble le plus récent des parts actuelles, ainsi que sur les futures parts en cours de traitement, comme les fusions, les mutations et les partitions supprimées.
+
+**system.shared&#95;merge&#95;tree&#95;fetches**
+
+Cette table est l’alternative à `system.replicated_fetches` pour SharedMergeTree. Elle contient des informations sur les opérations en cours qui chargent en mémoire les clés primaires et les checksums.
+
+<div id="enabling-sharedmergetree">
+  ## Activation de SharedMergeTree
+</div>
+
+`SharedMergeTree` est activé par défaut.
+
+Pour les services compatibles avec le moteur de table SharedMergeTree, vous n’avez rien à activer manuellement. Vous pouvez créer des tables comme auparavant, et le moteur de table basé sur SharedMergeTree correspondant au moteur spécifié dans votre requête CREATE TABLE sera utilisé automatiquement.
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ENGINE = MergeTree
+ORDER BY key
+```
+
+Cela créera la table `my_table` à l’aide du moteur de table SharedMergeTree.
+
+Vous n’avez pas besoin de spécifier `ENGINE=MergeTree`, car `default_table_engine=MergeTree` dans ClickHouse Cloud. La requête suivante est identique à celle ci-dessus.
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ORDER BY key
+```
+
+Si vous utilisez Replacing, Collapsing, Aggregating, Summing, VersionedCollapsing ou des tables Graphite MergeTree, la conversion vers le moteur de table correspondant basé sur SharedMergeTree se fera automatiquement.
+
+```sql
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+```
+
+Pour une table donnée, vous pouvez vérifier quel moteur de table a été défini dans l’instruction `CREATE TABLE` à l’aide de `SHOW CREATE TABLE` :
+
+```sql
+SHOW CREATE TABLE myFirstReplacingMT;
+```
+
+```sql
+CREATE TABLE default.myFirstReplacingMT
+( `key` Int64, `someCol` String, `eventTime` DateTime )
+ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY key
+```
+
+<div id="settings">
+  ## Paramètres
+</div>
+
+Le comportement de certains paramètres change de manière significative :
+
+* `insert_quorum` -- toutes les insertions dans SharedMergeTree sont des insertions avec quorum (écrites dans le stockage partagé), ce paramètre n&#39;est donc pas nécessaire lors de l&#39;utilisation du moteur de table SharedMergeTree.
+* `insert_quorum_parallel` -- toutes les insertions dans SharedMergeTree sont des insertions avec quorum (écrites dans le stockage partagé), ce paramètre n&#39;est donc pas nécessaire lors de l&#39;utilisation du moteur de table SharedMergeTree.
+* `select_sequential_consistency` -- ne nécessite pas d&#39;insertions avec quorum, mais entraînera une charge supplémentaire sur ClickHouse Keeper pour les requêtes `SELECT`
+
+<div id="consistency">
+  ## Cohérence
+</div>
+
+SharedMergeTree offre une meilleure cohérence légère que ReplicatedMergeTree. Lors d&#39;une insertion dans SharedMergeTree, vous n&#39;avez pas besoin de fournir de paramètres tels que `insert_quorum` ou `insert_quorum_parallel`. Les insertions sont des insertions avec quorum, ce qui signifie que les métadonnées sont stockées dans ClickHouse-Keeper et répliquées sur au moins un quorum de nœuds ClickHouse Keeper. Chaque réplique de votre cluster récupérera de manière asynchrone les nouvelles informations depuis ClickHouse-Keeper.
+
+La plupart du temps, vous ne devriez pas utiliser `select_sequential_consistency` ni `SYSTEM SYNC REPLICA LIGHTWEIGHT`. La réplication asynchrone devrait couvrir la plupart des scénarios et présente une très faible latence. Dans les rares cas où vous devez absolument éviter des lectures obsolètes, suivez ces recommandations par ordre de préférence :
+
+1. Si vous exécutez vos requêtes dans la même session ou sur le même nœud pour les lectures et les écritures, il n&#39;est pas nécessaire d&#39;utiliser `select_sequential_consistency`, car votre réplique disposera déjà des métadonnées les plus récentes.
+
+2. Si vous écrivez sur une réplique et lisez depuis une autre, vous pouvez utiliser `SYSTEM SYNC REPLICA LIGHTWEIGHT` pour forcer la réplique à récupérer les métadonnées depuis ClickHouse-Keeper.
+
+3. Utilisez `select_sequential_consistency` comme paramètre dans votre requête.

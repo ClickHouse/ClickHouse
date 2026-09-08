@@ -7,7 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --no-secure -q "SELECT 0;"
+# A plain run already passes `--no-secure` (see `clickhouse-test`), and the option cannot be given
+# twice, so drop that one to keep this line about the option itself.
+${CLICKHOUSE_CLIENT/ --no-secure/} --no-secure -q "SELECT 0;"
 
 # Use $CLICKHOUSE_CLIENT_SECURE, but replace `--secure` by `-s` to test it
 CLICKHOUSE_CLIENT_S=${CLICKHOUSE_CLIENT_SECURE/ --secure / -s }

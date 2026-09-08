@@ -56,6 +56,17 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         }
         else if (auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {
+            /// `arrayJoin` in an `ExpressionStep` above the source changes row cardinality.
+            /// Propagating the outer `LIMIT` past such a step is unsound: the source would
+            /// be told to generate at most N rows, and `arrayJoin` would then expand only
+            /// those (possibly producing fewer than N output rows when arrays are empty,
+            /// or wrong rows when arrays expand). Composing filters through `arrayJoin`
+            /// expressions is unsound for the same reason. Stop walking here and skip both
+            /// filter composition and limit propagation. See issue #82279 and the sibling
+            /// guards in `liftUpFunctions`, `optimizeLazyMaterialization`, `optimizeTopK`,
+            /// `topKThroughJoin`, and `pushLimitByIntoSort`.
+            if (expression_step->getExpression().hasArrayJoin())
+                break;
             expression_dags.push_back(&expression_step->getExpression());
             continue;
         }

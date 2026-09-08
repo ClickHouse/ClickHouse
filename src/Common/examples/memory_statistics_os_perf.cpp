@@ -1,3 +1,5 @@
+#include <Examples/clickhouse_examples.h>
+
 #if defined(OS_LINUX)
 #include <Common/MemoryStatisticsOS.h>
 #include <iostream>

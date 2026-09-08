@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorHash.h>
+#include <Common/checkStackSize.h>
 
 #include <Common/SipHash.h>
 
@@ -80,6 +81,7 @@ void FieldVisitorHash::operator() (const String & x) const
 
 void FieldVisitorHash::operator() (const Tuple & x) const
 {
+    checkStackSize();
     UInt8 type = Field::Types::Tuple;
     hash.update(type);
     hash.update(x.size());
@@ -90,6 +92,7 @@ void FieldVisitorHash::operator() (const Tuple & x) const
 
 void FieldVisitorHash::operator() (const Map & x) const
 {
+    checkStackSize();
     UInt8 type = Field::Types::Map;
     hash.update(type);
     hash.update(x.size());
@@ -100,6 +103,7 @@ void FieldVisitorHash::operator() (const Map & x) const
 
 void FieldVisitorHash::operator() (const Array & x) const
 {
+    checkStackSize();
     UInt8 type = Field::Types::Array;
     hash.update(type);
     hash.update(x.size());
@@ -110,6 +114,7 @@ void FieldVisitorHash::operator() (const Array & x) const
 
 void FieldVisitorHash::operator() (const Object & x) const
 {
+    checkStackSize();
     UInt8 type = Field::Types::Object;
     hash.update(type);
     hash.update(x.size());
