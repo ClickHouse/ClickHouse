@@ -195,8 +195,8 @@ DROP TABLE t_plan_cache2;
 
 -- Test 12: `query_plan_optimize_prewhere` changes the cache key
 SYSTEM DROP QUERY PLAN CACHE;
-SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS query_plan_optimize_prewhere = 0, log_comment = 'plan_cache_test14' FORMAT Null;
-SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS query_plan_optimize_prewhere = 1, log_comment = 'plan_cache_test14' FORMAT Null;
+SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS query_plan_optimize_prewhere = 0, log_comment = 'plan_cache_test12' FORMAT Null;
+SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS query_plan_optimize_prewhere = 1, log_comment = 'plan_cache_test12' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
 SELECT 'Test 12: query_plan_optimize_prewhere sensitivity';
 SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
@@ -205,48 +205,48 @@ WHERE event_date >= yesterday()
   AND event_time >= (SELECT ts FROM test_start)
   AND type = 'QueryFinish'
   AND current_database = currentDatabase()
-  AND log_comment = 'plan_cache_test14'
+  AND log_comment = 'plan_cache_test12'
 ORDER BY event_time_microseconds;
 
--- Test 14: `log_comment` does not affect the cache key
+-- Test 13: `log_comment` does not affect the cache key
 SYSTEM DROP QUERY PLAN CACHE;
-SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS log_comment = 'plan_cache_test15a' FORMAT Null;
-SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS log_comment = 'plan_cache_test15b' FORMAT Null;
+SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS log_comment = 'plan_cache_test13a' FORMAT Null;
+SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS log_comment = 'plan_cache_test13b' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 14: log_comment ignored in cache key';
+SELECT 'Test 13: log_comment ignored in cache key';
 SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND event_time >= (SELECT ts FROM test_start)
   AND type = 'QueryFinish'
   AND current_database = currentDatabase()
-  AND log_comment IN ('plan_cache_test15a', 'plan_cache_test15b')
+  AND log_comment IN ('plan_cache_test13a', 'plan_cache_test13b')
 ORDER BY event_time_microseconds;
 
--- Test 15: Views are not eligible for the query plan cache
+-- Test 14: Views are not eligible for the query plan cache
 SYSTEM DROP QUERY PLAN CACHE;
 DROP VIEW IF EXISTS v_plan_cache;
 CREATE VIEW v_plan_cache AS SELECT a FROM t_plan_cache;
-SELECT a FROM v_plan_cache SETTINGS log_comment = 'plan_cache_test16' FORMAT Null;
-SELECT a FROM v_plan_cache SETTINGS log_comment = 'plan_cache_test16' FORMAT Null;
+SELECT a FROM v_plan_cache SETTINGS log_comment = 'plan_cache_test14' FORMAT Null;
+SELECT a FROM v_plan_cache SETTINGS log_comment = 'plan_cache_test14' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 15: View exclusion';
+SELECT 'Test 14: View exclusion';
 SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND event_time >= (SELECT ts FROM test_start)
   AND type = 'QueryFinish'
   AND current_database = currentDatabase()
-  AND log_comment = 'plan_cache_test16'
+  AND log_comment = 'plan_cache_test14'
 ORDER BY event_time_microseconds;
 DROP VIEW v_plan_cache;
 
--- Test 16: `max_rows_to_sort` is part of the cache key (baked into `SortingStep`)
+-- Test 15: `max_rows_to_sort` is part of the cache key (baked into `SortingStep`)
 SYSTEM DROP QUERY PLAN CACHE;
 SELECT a FROM t_plan_cache ORDER BY a SETTINGS max_rows_to_sort = 1000, log_comment = 'plan_cache_test_sort1' FORMAT Null;
 SELECT a FROM t_plan_cache ORDER BY a SETTINGS max_rows_to_sort = 2000, log_comment = 'plan_cache_test_sort2' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 16: max_rows_to_sort sensitivity';
+SELECT 'Test 15: max_rows_to_sort sensitivity';
 SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
 FROM system.query_log
 WHERE event_date >= yesterday()
@@ -256,7 +256,7 @@ WHERE event_date >= yesterday()
   AND log_comment IN ('plan_cache_test_sort1', 'plan_cache_test_sort2')
 ORDER BY event_time_microseconds;
 
--- Test 17: `IN table` and `GLOBAL IN table` build prepared sets from another table.
+-- Test 16: `IN table` and `GLOBAL IN table` build prepared sets from another table.
 -- The query plan cache dependency fingerprint tracks only the main `FROM` table,
 -- so these queries must bypass the cache before lookup.
 SYSTEM DROP QUERY PLAN CACHE;
@@ -268,7 +268,7 @@ SELECT a FROM t_plan_cache WHERE a IN t_plan_cache_ids SETTINGS log_comment = 'p
 SELECT a FROM t_plan_cache WHERE a GLOBAL IN t_plan_cache_ids SETTINGS log_comment = 'plan_cache_test_global_in_table' FORMAT Null;
 SELECT a FROM t_plan_cache WHERE a GLOBAL IN t_plan_cache_ids SETTINGS log_comment = 'plan_cache_test_global_in_table' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 17: IN table exclusion';
+SELECT 'Test 16: IN table exclusion';
 SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
 FROM system.query_log
 WHERE event_date >= yesterday()

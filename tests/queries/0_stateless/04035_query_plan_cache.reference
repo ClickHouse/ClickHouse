@@ -35,16 +35,16 @@ Test 11: Subquery exclusion
 Test 12: query_plan_optimize_prewhere sensitivity
 0	1
 0	1
-Test 14: log_comment ignored in cache key
+Test 13: log_comment ignored in cache key
 0	1
 1	0
-Test 15: View exclusion
+Test 14: View exclusion
 0	0
 0	0
-Test 16: max_rows_to_sort sensitivity
+Test 15: max_rows_to_sort sensitivity
 0	1
 0	1
-Test 17: IN table exclusion
+Test 16: IN table exclusion
 0	0
 0	0
 0	0
