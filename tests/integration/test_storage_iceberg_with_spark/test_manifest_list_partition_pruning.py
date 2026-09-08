@@ -11,6 +11,18 @@ ROWS_PER_PARTITION = 3
 SELECTED_TAG = 3
 
 
+def profile_event(instance, query_id, event):
+    return int(
+        instance.query(
+            f"""
+            SELECT sum(ProfileEvents['{event}'])
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+            """
+        )
+    )
+
+
 def count_opened_manifest_files(instance, query_id):
     return int(
         instance.query(
@@ -97,8 +109,35 @@ def test_manifest_list_partition_pruning(started_cluster_iceberg_with_spark, sto
         settings=settings,
     ).strip() == str(sum(SELECTED_TAG * 100 + i for i in range(ROWS_PER_PARTITION)))
 
+    # Pruning is a part of partition pruning and follows its setting, so disabling that setting has
+    # to bring every manifest back.
+    query_id_disabled = f"{TABLE_NAME}-one-partition-pruning-disabled"
+    assert instance.query(
+        f"SELECT sum(number) FROM {creation_expression} WHERE tag = {SELECTED_TAG}",
+        query_id=query_id_disabled,
+        settings={**settings, "use_iceberg_partition_pruning": 0},
+    ).strip() == str(sum(SELECTED_TAG * 100 + i for i in range(ROWS_PER_PARTITION)))
+
     instance.query("SYSTEM FLUSH LOGS")
 
     assert count_opened_manifest_files(instance, query_id_all) == NUM_PARTITIONS
 
     assert count_opened_manifest_files(instance, query_id_one) == 1
+
+    assert count_opened_manifest_files(instance, query_id_disabled) == NUM_PARTITIONS
+
+    # Every manifest here holds the single data file of its partition, so skipping the manifest skips
+    # that file too and both counters have to say so.
+    assert (
+        profile_event(instance, query_id_one, "IcebergPartitionPrunedManifestFiles")
+        == NUM_PARTITIONS - 1
+    )
+    assert (
+        profile_event(instance, query_id_one, "IcebergPartitionPrunedFiles")
+        == NUM_PARTITIONS - 1
+    )
+
+    for query_id in (query_id_all, query_id_disabled):
+        assert (
+            profile_event(instance, query_id, "IcebergPartitionPrunedManifestFiles") == 0
+        )

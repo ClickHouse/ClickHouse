@@ -68,6 +68,7 @@ extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
+extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergPartitionPrunedManifestFiles;
 };
 
@@ -358,6 +359,7 @@ IcebergIterator::IcebergIterator(
         = getIcebergMetadataLogLevel(local_context) >= DB::IcebergMetadataLogLevel::ManifestFileEntry;
     const bool manifest_list_pruning_enabled = manifest_filter_dag && data_snapshot && table_state_snapshot
         && data_snapshot->partition_specs && !per_entry_trace_requested
+        && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning]
         && local_context->getSettingsRef()[Setting::use_iceberg_manifest_list_partition_pruning];
 
     data_files_stream = std::make_unique<Iceberg::DataFileEntriesStream>(
@@ -387,6 +389,10 @@ IcebergIterator::IcebergIterator(
                 || !manifest_list_pruner->canBePruned(manifest_list_entry.partition_spec_id, manifest_list_entry.partition_summaries))
                 return false;
             ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedManifestFiles);
+            /// The data files of a skipped manifest are skipped by partition pruning just as the ones
+            /// rejected entry by entry, so they are counted the same way; without this the counter
+            /// silently drops to zero exactly when pruning got better.
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, manifest_list_entry.live_files_count);
             return true;
         });
 }
