@@ -51,7 +51,12 @@ ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec COMMENT 'retained'
 ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec DEFAULT 0;
 ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec SETTINGS (max_compress_block_size = 65536);
 
--- An explicitly supplied root codec still uses the current session policy.
+-- Restating the same normalized root codec is also allowed without reapplying
+-- the current session's admission policy.
+ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec CODEC(Delta);
+
+-- A genuine root codec change uses the current session's admission policy.
+ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec CODEC(ZSTD);
 ALTER TABLE tuple_element_codec_gate MODIFY COLUMN root_codec CODEC(Delta); -- { serverError BAD_ARGUMENTS }
 
 -- Admission checks for a changed tuple declaration do not spill over to a retained
