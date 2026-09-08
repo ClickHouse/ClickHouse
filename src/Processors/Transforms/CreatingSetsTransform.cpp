@@ -24,6 +24,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+void CreatingSetsTransform::onPartialResult() noexcept
+{
+    std::lock_guard lock(cache_publication_mutex);
+    partial_result = true;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -260,7 +266,8 @@ Chunk CreatingSetsTransform::generate()
         ProfileEvents::increment(ProfileEvents::SetsBuiltFromSubquery);
         if (promise_to_build)
         {
-            promise_to_build->set_value(set_and_key->set);
+            std::lock_guard lock(cache_publication_mutex);
+            promise_to_build->set_value(partial_result ? nullptr : set_and_key->set);
             promise_to_build.reset();
         }
     }

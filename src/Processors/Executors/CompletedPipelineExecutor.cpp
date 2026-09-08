@@ -58,10 +58,22 @@ CompletedPipelineExecutor::CompletedPipelineExecutor(QueryPipeline & pipeline_) 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CompletedPipelineExecutor must be completed");
 }
 
-void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_)
+void CompletedPipelineExecutor::checkCancelCallback()
+{
+    if (is_cancelled_callback && is_cancelled_callback())
+    {
+        if (cancel_callback_mode == CancelCallbackMode::PartialResult)
+            data->executor->cancelReading();
+        else
+            data->executor->cancel();
+    }
+}
+
+void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_, CancelCallbackMode mode)
 {
     is_cancelled_callback = is_cancelled;
     interactive_timeout_ms = interactive_timeout_ms_;
+    cancel_callback_mode = mode;
 }
 
 void CompletedPipelineExecutor::initialize()
@@ -77,6 +89,7 @@ void CompletedPipelineExecutor::initialize()
 void CompletedPipelineExecutor::execute()
 {
     initialize();
+    checkCancelCallback();
 
     if (interactive_timeout_ms)
     {
@@ -98,8 +111,7 @@ void CompletedPipelineExecutor::execute()
             if (data->finish_event.tryWait(interactive_timeout_ms))
                 break;
 
-            if (is_cancelled_callback())
-                data->executor->cancel();
+            checkCancelCallback();
         }
 
         if (data->has_exception)

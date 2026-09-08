@@ -62,10 +62,10 @@ wait $client_pid
 if grep -q -F "Not-ready Set" "$CLIENT_ERR"; then
     echo "FAIL: an unbuilt set reached the filter"
     cat "$CLIENT_ERR"
-elif grep -q -F "cancelled while building a set for subquery" "$CLIENT_ERR"; then
-    echo "the cancellation is reported"
+elif [ ! -s "$CLIENT_ERR" ]; then
+    echo "the partial set build completed"
 else
-    echo "FAIL: neither the cancellation nor the unbuilt set was reported"
+    echo "FAIL: the partial set build failed"
     cat "$CLIENT_ERR"
 fi
 
@@ -115,10 +115,10 @@ wait $client_pid
 if grep -q -F "Not-ready Set" "$CLIENT_ERR"; then
     echo "FAIL: an unbuilt ordered set reached the filter"
     cat "$CLIENT_ERR"
-elif grep -q -F "cancelled while building an ordered set for subquery" "$CLIENT_ERR"; then
-    echo "the ordered-set cancellation is reported"
+elif [ ! -s "$CLIENT_ERR" ]; then
+    echo "the partial ordered-set build completed"
 else
-    echo "FAIL: the ordered-set build did not report the cancellation"
+    echo "FAIL: the partial ordered-set build failed"
     cat "$CLIENT_ERR"
 fi
 
