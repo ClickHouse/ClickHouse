@@ -913,13 +913,19 @@ Minimal amount of data parts which merge selector can pick to merge at once
     DECLARE(UInt64, merge_selector_small_parts_threshold, 10 * 1024 * 1024, R"(
 Size threshold in bytes: a merge range is considered "all small parts" when every part
 is below this size. Used together with `merge_selector_small_parts_min_count`.
-Works for Simple and StochasticSimple merge selectors.
+Works for Simple and StochasticSimple merge selectors, and only for background merge
+selection: aggressive selection (`OPTIMIZE` without `FINAL`) ignores the `small_parts_*`
+settings.
 )", 0) \
     DECLARE(UInt64, merge_selector_small_parts_min_count, 0, R"(
 When all parts in a merge range are small (below `merge_selector_small_parts_threshold`)
 and fresh (below `merge_selector_small_parts_max_age`), require at least this many parts
 to allow the merge. Reduces the number of merge operations under rapid small-part insertion.
 0 means disabled. Works for Simple and StochasticSimple merge selectors.
+
+The gate applies to background merge selection only. Aggressive selection - `OPTIMIZE`
+without `FINAL` - is an explicit user request that ignores part novelty, so it ignores this
+setting and merges small fresh parts regardless of their count.
 
 The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, nor
 candidates reaching further back than `merge_selector_window_size` parts, so configuring
@@ -934,7 +940,9 @@ lowered cap.)
 Age limit in seconds for the small-parts restriction: as soon as any part in a range
 exceeds this age, the restriction from `merge_selector_small_parts_min_count` is lifted,
 so backlogs of stale small parts can still merge even if the range is shorter than
-`merge_selector_small_parts_min_count`. Works for Simple and StochasticSimple merge selectors.
+`merge_selector_small_parts_min_count`. Works for Simple and StochasticSimple merge selectors,
+and only for background merge selection: aggressive selection (`OPTIMIZE` without `FINAL`)
+ignores the `small_parts_*` settings.
 )", 0) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges

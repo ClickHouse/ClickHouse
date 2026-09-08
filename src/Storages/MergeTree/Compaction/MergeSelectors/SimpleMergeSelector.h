@@ -171,6 +171,10 @@ public:
           * part in the range ages past the limit, the restriction is lifted so backlogs of
           * stale small parts can still merge. Zero small_parts_min_count = disabled.
           *
+          * The gate is a background anti-churn heuristic: `fillSimpleSettings` zeroes
+          * small_parts_min_count for aggressive selection (`OPTIMIZE` without `FINAL`),
+          * which is an explicit user request that ignores part novelty.
+          *
           * The gate normally only removes candidate ranges. It is not a "defer only"
           * guarantee at the level of a single selection round: `Estimator` keeps one global
           * best candidate per partition, so rejecting the top-scoring small batch can hand
