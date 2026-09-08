@@ -35,6 +35,21 @@ SHOW CHANGED TABLE SETTINGS FROM mt NOT LIKE 'min_bytes%';
 SELECT '-- IN is accepted in place of FROM';
 SHOW CHANGED TABLE SETTINGS IN mt LIKE 'min_bytes%';
 
+SELECT '-- a setting is findable by a name it answers to, not only the one it is declared under';
+-- `system.table_settings` carries a row per alias so a lookup by the name you know finds the
+-- setting. The statement has to match the pattern against those names too, or it hands whoever
+-- knows only the old spelling the empty result the alias rows exist to prevent. The row printed is
+-- the canonical one either way, and asking by the declared name must not print it twice.
+DROP TABLE IF EXISTS aliased;
+CREATE TABLE aliased (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS enable_block_number_column = 1;
+SHOW TABLE SETTINGS FROM aliased LIKE 'allow_experimental_block_number_column';
+SHOW TABLE SETTINGS FROM aliased LIKE 'enable_block_number_column';
+SHOW TABLE SETTINGS FROM aliased ILIKE 'ALLOW_EXPERIMENTAL_BLOCK%';
+
+SELECT '-- and NOT drops it whichever of its names the pattern gives';
+SHOW CHANGED TABLE SETTINGS FROM aliased NOT LIKE 'allow_experimental_block_number_column';
+DROP TABLE aliased;
+
 SELECT '-- a database-qualified name parses and resolves';
 -- `system.one` has no settings, so this returns nothing; what it checks is that the qualified form
 -- reaches the right table rather than being read as a bare name.

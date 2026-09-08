@@ -32,11 +32,33 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery()
         rewritten += " AND changed";
 
     if (query.has_like)
-        rewritten += fmt::format(
-            " AND name {}{} {}",
-            query.not_like ? "NOT " : "",
-            query.case_insensitive_like ? "ILIKE" : "LIKE",
-            quoteString(query.like));
+    {
+        const std::string_view op = query.case_insensitive_like ? "ILIKE" : "LIKE";
+        const String pattern = quoteString(query.like);
+
+        /// The pattern is matched against the names a setting answers to, not only the one it is
+        /// declared under, and the row printed is still the canonical one. `system.table_settings`
+        /// carries a row per alias so that a lookup by the name you happen to know finds the
+        /// setting; filtering on the canonical name alone would throw that away here and leave
+        /// whoever knows only the old spelling with the empty result the alias rows exist to
+        /// prevent.
+        const String matches = fmt::format(
+            "(name {0}{1} {2} OR name IN ("
+            "SELECT alias_for FROM system.table_settings "
+            "WHERE database = {3} AND table = {4} AND alias_for != '' AND name {1} {2}))",
+            query.not_like ? "NOT " : "", op, pattern,
+            quoteString(database), quoteString(query.table));
+
+        /// `NOT LIKE` excludes a setting whichever of its names the pattern names, so the alias
+        /// lookup is not negated with it - a setting is dropped when any name it answers to matches.
+        rewritten += query.not_like
+            ? fmt::format(
+                " AND name NOT {0} {1} AND name NOT IN ("
+                "SELECT alias_for FROM system.table_settings "
+                "WHERE database = {2} AND table = {3} AND alias_for != '' AND name {0} {1})",
+                op, pattern, quoteString(database), quoteString(query.table))
+            : " AND " + matches;
+    }
 
     rewritten += " ORDER BY name";
     return rewritten;

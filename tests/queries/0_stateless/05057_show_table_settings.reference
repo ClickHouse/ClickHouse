@@ -17,6 +17,12 @@ min_bytes_to_keep	4096	1	definition
 max_bytes_to_keep	8192	1	definition
 -- IN is accepted in place of FROM
 min_bytes_to_keep	4096	1	definition
+-- a setting is findable by a name it answers to, not only the one it is declared under
+enable_block_number_column	1	1	definition
+enable_block_number_column	1	1	definition
+enable_block_number_column	1	1	definition
+-- and NOT drops it whichever of its names the pattern gives
+index_granularity	8192	1	definition
 -- a database-qualified name parses and resolves
 -- the statements sharing its prefix still parse as themselves
 mt
