@@ -518,10 +518,6 @@ protected:
         {
             UNUSED(self, event_queue_);
             settings = new_settings;
-            // The leaf node stays; `updateQueue` updates the queue limit and, for time-shared leaves,
-            // swaps the scheduling algorithm in place if the `scheduler` setting changed (migrating
-            // pending requests, no hierarchy rebuild). So a `CREATE OR REPLACE WORKLOAD` never
-            // invalidates the `ResourceLink` cached by classifiers.
             if (queue)
                 Traits::updateQueue(queue, settings, unit);
         }

@@ -473,10 +473,6 @@ bool WorkloadEntityStorageBase::storeEntity(
             // Check the settings values and throw if something is wrong
             WorkloadSettings validator;
             validator.initFromChanges(workload->changes);
-
-            // `scheduler = ... FOR <resource>` may only target a CPU/IO resource; reject it here for
-            // the SQL path (the referenced resource is created first, so it is already in `entities`;
-            // the config/Keeper load path is validated in setLocalEntities).
             validateSchedulerResourceTargets(*workload, entities);
         }
 
