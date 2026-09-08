@@ -93,6 +93,7 @@
 #include <Core/SettingsQuirks.h>
 #include <Core/UUID.h>
 #include <Access/AccessControl.h>
+#include <Access/resolveSetting.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
@@ -3687,8 +3688,14 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     std::lock_guard lock(mutex);
-    for (const String & name: names)
+    for (const String & name : names)
+    {
         settings->setDefaultValue(name);
+        /// `Settings` stores a `merge_tree_`-prefixed name as a custom setting, under the exact name that
+        /// wrote it. Resetting one name of a setting therefore has to clear what its other names wrote.
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+            settings->setDefaultValue(equivalent_name);
+    }
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -5513,9 +5520,9 @@ void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
 
-    /// Each cache is null-checked because some `Context` users (e.g. the
-    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
-    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
+    /// Each cache is null-checked because some `Context` users intentionally do
+    /// not initialize the full set of caches; matches the single-cache
+    /// `clear<X>Cache` methods.
 
     if (shared->uncompressed_cache)
         shared->uncompressed_cache->clear();
@@ -8426,8 +8433,8 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 
 bool Context::isServerCompletelyStarted() const
 {
+    /// Only the server ever sets the flag, so every other application reads it as "not started yet".
     SharedLockGuard lock(shared->mutex);
-    chassert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
 
@@ -8819,7 +8826,7 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
-    /// Below 4 KiB the executor would serve near-empty windows / stall on tiny source reads.
+    /// Below this the executor would serve near-empty windows / stall on tiny source reads.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
     if (res.reader_executor.window_size < min_reader_executor_size)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",
