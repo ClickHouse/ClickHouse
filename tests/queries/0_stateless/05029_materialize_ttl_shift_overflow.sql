@@ -2,8 +2,10 @@
 -- and the new one, then applies it to the part's stored TTL bounds. With an absurdly large interval
 -- in the new TTL the proven shift itself fits in `time_t` but applying it to the bounds overflows -
 -- undefined behavior, found by UBSan in a stress run - and the wrapped result made the fast path
--- treat the part as fully expired and replace it with an empty part. Such a shift must be rejected:
--- the regular rewrite evaluates the new expression as is (it saturates), and the row survives.
+-- treat the part as fully expired and replace it with an empty part. Such a shift must be rejected,
+-- so that the part takes the regular rewrite: evaluating an interval that large overflows the TTL
+-- expression's own `DateTime64` result, which fails the mutation loudly instead of quietly dropping
+-- every row. Without the rejection the `ALTER` reports success and the row is gone.
 
 SET alter_sync = 2;
 
@@ -17,6 +19,6 @@ SELECT count() FROM t_ttl_shift_overflow;
 
 -- Both TTLs shift `d` by literal seconds, so the delta proof succeeds with a delta of
 -- 9223372036854775799 - but adding it to the part's stored bound overflows `time_t`.
-ALTER TABLE t_ttl_shift_overflow MODIFY TTL d + INTERVAL 9223372036854775800 SECOND;
+ALTER TABLE t_ttl_shift_overflow MODIFY TTL d + INTERVAL 9223372036854775800 SECOND; -- { serverError UNFINISHED }
 SELECT d FROM t_ttl_shift_overflow;
 DROP TABLE t_ttl_shift_overflow;
