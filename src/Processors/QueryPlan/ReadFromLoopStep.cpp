@@ -98,14 +98,14 @@ public:
             const SelectQueryInfo & query_info_,
             const StorageSnapshotPtr & storage_snapshot_,
             ContextPtr & context_,
-            StoragePtr inner_storage_,
+            const StorageID & inner_table_id_,
             ASTPtr inner_table_function_ast_)
             : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
             , column_names(column_names_)
             , query_info(query_info_)
             , storage_snapshot(storage_snapshot_)
             , context(context_)
-            , inner_storage(std::move(inner_storage_))
+            , inner_table_id(inner_table_id_)
             , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
     }
@@ -128,10 +128,9 @@ public:
         }
         else
         {
-            const auto & storage_id = inner_storage->getStorageID();
             buildSelectQueryPlan(
                 plan, column_names, query_info, inner_context,
-                storage_id.database_name, storage_id.table_name);
+                inner_table_id.database_name, inner_table_id.table_name);
         }
 
         if (plan.isInitialized())
@@ -206,10 +205,10 @@ private:
     SelectQueryInfo query_info;
     const StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
-    StoragePtr inner_storage;
+    StorageID inner_table_id;
     ASTPtr inner_table_function_ast;
     ContextPtr inner_context;
-    // add retries. If inner_storage failed to pull X times in a row we'd better to fail here not to hang
+    // add retries. If the source failed to pull X times in a row we'd better to fail here not to hang
     size_t retries_count = 0;
     size_t max_retries_count = 3;
     size_t rows_read = 0;
@@ -230,7 +229,7 @@ ReadFromLoopStep::ReadFromLoopStep(
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        StoragePtr inner_storage_,
+        const StorageID & inner_table_id_,
         ASTPtr inner_table_function_ast_)
         : SourceStepWithFilter(
         std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)),
@@ -239,7 +238,7 @@ ReadFromLoopStep::ReadFromLoopStep(
         storage_snapshot_,
         disableParallelReplicas(context_))
         , column_names(column_names_)
-        , inner_storage(std::move(inner_storage_))
+        , inner_table_id(inner_table_id_)
         , inner_table_function_ast(std::move(inner_table_function_ast_))
 {
 }
@@ -247,7 +246,7 @@ ReadFromLoopStep::ReadFromLoopStep(
 Pipe ReadFromLoopStep::makePipe()
 {
     return Pipe(std::make_shared<LoopSource>(
-            column_names, query_info, storage_snapshot, context, inner_storage, inner_table_function_ast));
+            column_names, query_info, storage_snapshot, context, inner_table_id, inner_table_function_ast));
 }
 
 void ReadFromLoopStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

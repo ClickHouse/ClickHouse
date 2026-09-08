@@ -11,6 +11,7 @@ namespace DB
     public:
         StorageLoop(
                 const StorageID & table_id,
+                const StorageID & inner_table_id_,
                 const StoragePtr & inner_storage_,
                 ASTPtr inner_table_function_ast_ = nullptr);
 

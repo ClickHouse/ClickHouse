@@ -10,17 +10,13 @@ namespace DB
 {
     StorageLoop::StorageLoop(
             const StorageID & table_id_,
+            const StorageID & inner_table_id_,
             const StoragePtr & inner_storage_,
             ASTPtr inner_table_function_ast_)
             : IStorage(table_id_)
-            , inner_table_id(inner_storage_->getStorageID())
+            , inner_table_id(inner_table_id_)
             , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
-        /// The source is followed by name and resolved per read: holding its `StoragePtr` would keep
-        /// the storage object alive after the source is dropped, and a pinned UUID would not survive
-        /// dropping and recreating it.
-        inner_table_id.uuid = UUIDHelpers::Nil;
-
         auto metadata_snapshot = inner_storage_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         setInMemoryMetadata(*metadata_snapshot);
     }
@@ -49,12 +45,17 @@ namespace DB
     {
         query_info.optimize_trivial_count = false;
 
-        StoragePtr inner_storage;
         if (!inner_table_function_ast)
-            inner_storage = DatabaseCatalog::instance().getTable(inner_table_id, context);
+        {
+            /// Resolved on every read and not retained: a source dropped since this table was created
+            /// must fail here rather than be read through a handle that outlived it. The resolved
+            /// storage only has to survive this query, so the plan owns it.
+            auto inner_storage = DatabaseCatalog::instance().getTable(inner_table_id, context);
+            query_plan.addStorageHolder(std::move(inner_storage));
+        }
 
         query_plan.addStep(std::make_unique<ReadFromLoopStep>(
-                column_names, query_info, storage_snapshot, context, std::move(inner_storage),
+                column_names, query_info, storage_snapshot, context, inner_table_id,
                 inner_table_function_ast
         ));
     }
@@ -65,7 +66,7 @@ namespace DB
         factory.registerStorage("Loop", [](const StorageFactory::Arguments & args)
         {
             StoragePtr inner_storage;
-            return std::make_shared<StorageLoop>(args.table_id, inner_storage);
+            return std::make_shared<StorageLoop>(args.table_id, StorageID::createEmpty(), inner_storage);
         },
         {},
         Documentation{

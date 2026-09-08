@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/QueryProcessingStage.h>
+#include <Interpreters/StorageID.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
@@ -16,7 +17,7 @@ namespace DB
                 const SelectQueryInfo & query_info_,
                 const StorageSnapshotPtr & storage_snapshot_,
                 const ContextPtr & context_,
-                StoragePtr inner_storage_,
+                const StorageID & inner_table_id_,
                 ASTPtr inner_table_function_ast_);
 
         String getName() const override { return "ReadFromLoop"; }
@@ -28,7 +29,7 @@ namespace DB
         Pipe makePipe();
 
         const Names column_names;
-        StoragePtr inner_storage;
+        StorageID inner_table_id;
         ASTPtr inner_table_function_ast;
     };
 }
