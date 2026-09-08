@@ -33,13 +33,20 @@ SELECT bytes_allocated / element_count >= 24
 FROM system.dictionaries
 WHERE database = currentDatabase() AND name = 'dict_05136';
 
--- The difference between the nullable and the non-nullable dictionary is the null mask. It is
--- bit-packed, so it must cost about `element_count / 8` bytes; counting it in elements made it
--- `element_count` bytes (1,000,000 instead of 131,072 for this data).
-SELECT
-    (SELECT bytes_allocated FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_05136_nullable')
-  - (SELECT bytes_allocated FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_05136')
-  < (SELECT element_count / 2 FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_05136');
+-- The difference between the nullable and the non-nullable dictionary is the null mask, and nothing
+-- else: both hold one `UInt64` attribute array of the same size. The mask is bit-packed, so it must
+-- cost about `element_count / 8` bytes.
+--
+-- Bound it on both sides. The upper bound fails on the original accounting, which added the flag
+-- count and made this term `element_count` (1,000,000 instead of 131,072 for this data). The lower
+-- bound fails if the term is ever dropped or undercounted, which a one-sided check would accept.
+-- `std::vector<bool>` allocates at least `size` bits and the accounting uses `capacity()`, which is
+-- never below `size`, so a correct implementation cannot report less than `element_count / 8`.
+WITH
+    (SELECT bytes_allocated FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_05136_nullable') AS nullable_bytes,
+    (SELECT bytes_allocated FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_05136') AS plain_bytes,
+    (SELECT element_count FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_05136') AS elements
+SELECT (nullable_bytes - plain_bytes) BETWEEN (elements / 8) AND (elements / 2);
 
 DROP DICTIONARY dict_05136;
 DROP DICTIONARY dict_05136_nullable;
