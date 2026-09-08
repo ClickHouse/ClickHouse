@@ -7068,14 +7068,38 @@ void StorageReplicatedMergeTree::alter(
         for (auto & index : future_metadata.secondary_indices)
             index.escape_filenames = committed_metadata->escape_index_filenames;
 
+        try
         {
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(future_metadata);
+            {
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(future_metadata);
+            }
+
+            fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
+            });
+
+            /// Safe because the early max_query_size check already passed.
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Same reasoning as in the pure settings branch above: the durable metadata was not
+            /// written, so the in-memory settings must not stay ahead of it. Otherwise a failed
+            /// `ALTER ... MODIFY SETTING persist_mutation_author = 1, MODIFY COMMENT ...` would leave
+            /// this replica writing `/mutations` entries the other replicas cannot read.
+            changeSettings(metadata_snapshot->settings_changes, table_lock_holder, /*run_sanity_checks=*/false);
+
+            {
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                setInMemoryMetadata(*metadata_snapshot);
+            }
+
+            throw;
         }
 
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         return;
     }
 

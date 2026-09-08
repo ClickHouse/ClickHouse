@@ -409,6 +409,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_STRING_SIZE;
     extern const int INVALID_PARTITION_VALUE;
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
@@ -13456,7 +13457,10 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     return data_settings;
 }
 
-/// The author is only informational, so a very long user name is truncated rather than rejected.
+/// The author is stored inside the mutation entry, which lives in a ClickHouse Keeper node for
+/// `ReplicatedMergeTree`, so its size is bounded. A longer user name is rejected instead of being
+/// truncated: two users whose names share the first bytes would otherwise be recorded as the same
+/// author, which silently defeats the attribution the column exists for.
 static constexpr size_t MAX_MUTATION_AUTHOR_SIZE = 256;
 
 String MergeTreeData::getMutationAuthor(const ContextPtr & query_context) const
@@ -13471,7 +13475,12 @@ String MergeTreeData::getMutationAuthor(const ContextPtr & query_context) const
     String author = client_info.initial_user.empty() ? client_info.current_user : client_info.initial_user;
 
     if (author.size() > MAX_MUTATION_AUTHOR_SIZE)
-        author.resize(MAX_MUTATION_AUTHOR_SIZE);
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Cannot record the mutation author: the user name is {} bytes long, while at most {} bytes are supported. "
+            "Use a shorter user name or disable the `persist_mutation_author` setting of the table",
+            author.size(),
+            MAX_MUTATION_AUTHOR_SIZE);
 
     return author;
 }
