@@ -63,6 +63,7 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
+        "contrib/abpfor",
         "contrib/sql-console",
     ]
 

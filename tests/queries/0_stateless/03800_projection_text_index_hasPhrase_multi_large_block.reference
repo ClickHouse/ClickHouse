@@ -1,0 +1,16 @@
+-- all rows match alpha beta
+2000
+-- gamma delta rows (every 7th: 0,7,14,...,1995 = 286 rows)
+286
+-- three-token phrase crossing large block boundary
+286
+-- verify specific rows in last large block
+1995
+-- verify hasToken still works (sanity)
+2000
+-- after merge: all 2000 rows match foo bar
+2000
+-- after merge: three-token phrase
+2000
+-- after merge: specific row from second part
+1500

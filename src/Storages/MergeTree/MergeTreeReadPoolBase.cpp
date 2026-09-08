@@ -229,7 +229,12 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         .withSubcolumns();
 
     /// The single part handle stored on the task: an owned part wrapped in the reader abstraction.
-    auto data_part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(data_part, read_task_info.alter_conversions);
+    auto data_part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        data_part,
+        read_task_info.alter_conversions,
+        read_task_info.merged_part_offsets.get(),
+        read_task_info.part_index_in_query,
+        read_task_info.part_starting_offset_in_query);
     read_task_info.data_part_info = data_part_info;
     const auto & part_info = *data_part_info;
     bool has_lightweight_delete = data_part->hasLightweightDelete() || read_task_info.alter_conversions->hasLightweightDelete();
