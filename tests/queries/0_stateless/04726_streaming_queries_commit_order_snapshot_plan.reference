@@ -28,7 +28,37 @@ Sorting (Sorting for ORDER BY)
           Search Algorithm: generic exclusion search
         Ranges: 2
 
--- cursor over blocks [4, 8]: merged parts read via the projection, level-0 parts via the main table
+-- cursor over blocks [4, 8]: all parts read via the projection, because commit-order projections are also built at insert
+Output: a, _partition_id, _block_number, _block_offset
+
+Sorting (Sorting for ORDER BY)
+│  Prefix sort description: _block_number ASC, _block_offset ASC
+│  Result sort description: _block_number ASC, _block_offset ASC
+└──ReadFromMergeTree (commit_order)
+      Read type: InOrder
+      Parts: 3 | Granules: 80
+      Output: _partition_id, _block_number, _block_offset, a
+      Prewhere filter
+      Prewhere filter column:  _partition_id = \'all\' AND _block_number <= 8 AND (_block_number > 3 OR _block_number = 3 AND _block_offset > 15)
+      Indexes:
+        Min-Max
+          Keys:
+            _block_number
+            _block_offset
+          Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
+          Parts: 3/3
+          Granules: 80/80
+        PrimaryKey
+          Keys:
+            _block_number
+            _block_offset
+          Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
+          Parts: 3/3
+          Granules: 80/80
+          Search Algorithm: generic exclusion search
+        Ranges: 3
+
+-- cursor over blocks [4, 9]: parts having the projection are read via it, the part inserted with materialize_projections_on_insert = 0 via the main table
 Output: a, _partition_id, _block_number, _block_offset
 
 Sorting (Sorting for ORDER BY)
@@ -39,70 +69,70 @@ Sorting (Sorting for ORDER BY)
    │  │  Sort description: _block_number ASC, _block_offset ASC
    │  └──ReadFromMergeTree (default.t_commit_order_snapshot)
    │        Read type: Default
-   │        Parts: 3 | Granules: 80
+   │        Parts: 4 | Granules: 96
    │        Output: _partition_id, _block_number, _block_offset, a
    │        Prewhere filter
-   │        Prewhere filter column:  (_block_number > 3 OR _block_number = 3 AND _block_offset > 15) AND _block_number <= 8 AND _partition_id = \'all\'
+   │        Prewhere filter column:  (_block_number > 3 OR _block_number = 3 AND _block_offset > 15) AND _block_number <= 9 AND _partition_id = \'all\'
    │        Indexes:
    │          Min-Max
    │            Keys:
    │              _block_number
    │              _block_offset
-   │            Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
-   │            Parts: 3/5
-   │            Granules: 80/128
+   │            Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 9]))
+   │            Parts: 4/6
+   │            Granules: 96/144
    │          PrimaryKey
    │            Condition: true
-   │            Parts: 3/3
-   │            Granules: 80/80
+   │            Parts: 4/4
+   │            Granules: 96/96
    │          Skip
    │            Name: auto_minmax_index__block_number
    │            Description: minmax GRANULARITY 1
-   │            Condition: and(or((_block_number in [3, 3]), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
-   │            Parts: 3/3
-   │            Granules: 80/80
+   │            Condition: and(or((_block_number in [3, 3]), (_block_number in [4, +Inf))), (_block_number in (-Inf, 9]))
+   │            Parts: 4/4
+   │            Granules: 96/96
    │          Skip
    │            Name: auto_minmax_index__block_offset
    │            Description: minmax GRANULARITY 1
    │            Condition: true
-   │            Parts: 3/3
-   │            Granules: 80/80
+   │            Parts: 4/4
+   │            Granules: 96/96
    │          Skip
    │            Name: <Combined skip indexes>
    │            Description: Final set of granules after AND/OR processing
-   │            Parts: 3/3
-   │            Granules: 80/80
+   │            Parts: 4/4
+   │            Granules: 96/96
    │          Ranges: 1
    │        Projections:
    │          Name: commit_order
-   │            Description: Projection commit_order is selected as the best with 80 marks to read, while the original table requires scanning 80 marks
-   │            Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
+   │            Description: Projection commit_order is selected as the best with 96 marks to read, while the original table requires scanning 96 marks
+   │            Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 9]))
    │            Search Algorithm: generic exclusion search
-   │            Parts: 2
-   │            Marks: 64
-   │            Ranges: 2
-   │            Rows: 64
+   │            Parts: 3
+   │            Marks: 80
+   │            Ranges: 3
+   │            Rows: 80
    │            Filtered Parts: 0
    └──ReadFromMergeTree (commit_order)
          Read type: InOrder
-         Parts: 2 | Granules: 64
+         Parts: 3 | Granules: 80
          Output: _partition_id, _block_number, _block_offset, a
          Prewhere filter
-         Prewhere filter column:  _partition_id = \'all\' AND _block_number <= 8 AND (_block_number > 3 OR _block_number = 3 AND _block_offset > 15)
+         Prewhere filter column:  _partition_id = \'all\' AND _block_number <= 9 AND (_block_number > 3 OR _block_number = 3 AND _block_offset > 15)
          Indexes:
            Min-Max
              Keys:
                _block_number
                _block_offset
-             Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
-             Parts: 2/2
-             Granules: 64/64
+             Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 9]))
+             Parts: 3/3
+             Granules: 80/80
            PrimaryKey
              Keys:
                _block_number
                _block_offset
-             Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
-             Parts: 2/2
-             Granules: 64/64
+             Condition: and(or(and((_block_offset in [16, +Inf)), (_block_number in [3, 3])), (_block_number in [4, +Inf))), (_block_number in (-Inf, 9]))
+             Parts: 3/3
+             Granules: 80/80
              Search Algorithm: generic exclusion search
-           Ranges: 2
+           Ranges: 3

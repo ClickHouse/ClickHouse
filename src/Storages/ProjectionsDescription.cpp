@@ -4,6 +4,7 @@
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
+#include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -691,6 +692,17 @@ Block ProjectionDescription::calculateByQuery(
     /// from 0 input rows, violating the ProjectionDataSink row count invariant.
     if (block.rows() == 0)
         return sample_block.cloneEmpty();
+
+    /// `_block_number`/`_block_offset` must be present in the input block when the projection references them.
+    /// This is checked unconditionally (not with `chassert`), so that a missing virtual column is reported
+    /// clearly instead of failing later somewhere inside the projection query.
+    for (const auto & [required, column_name] : {std::pair{with_block_number, BlockNumberColumn::name}, std::pair{with_block_offset, BlockOffsetColumn::name}})
+    {
+        if (required && !block.has(column_name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Virtual column {} is required by projection {}, but it is missing in the block",
+                backQuote(column_name), backQuote(name));
+    }
 
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
