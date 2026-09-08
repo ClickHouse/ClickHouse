@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -303,6 +304,123 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 }
 
 
+/// Deployments created before the generated publication and default replication-slot names became
+/// schema-aware own the legacy, schema-blind objects on the PostgreSQL side. On attach such a
+/// deployment must keep its legacy identity: looking for the schema-aware slot instead would miss the
+/// existing slot, run an initial sync and reload a snapshot into the already-existing nested tables,
+/// duplicating data. So, on attach, when the schema-aware objects do not exist but the legacy ones do,
+/// switch to the legacy names. The legacy names are schema-blind and therefore shared with a
+/// same-database deployment over the default schema (or another schema targeting the same bare table),
+/// so the existence of the legacy slot alone does not prove the legacy objects belong to this engine —
+/// only the legacy publication's table list carries the schema. The legacy identity is therefore only
+/// adopted when the legacy publication exists and every table it publishes belongs to this engine's
+/// schema. If the legacy publication is missing, empty, or publishes a table from another schema, the
+/// legacy slot is ambiguous or foreign, and adopting it (or returning to proceed under the schema-aware
+/// identity) would either hijack another engine's slot or, since the schema-aware slot is gone, run an
+/// initial sync and reload a snapshot into the already-existing nested tables (duplicating data on disk).
+/// In that case the attach fails closed with an exception instead of silently re-snapshotting a populated
+/// replica or hijacking another engine's replication slot.
+void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::nontransaction & tx)
+{
+    if (!is_attach)
+        return;
+
+    /// The generated names differ from the legacy ones only for a non-default schema (and, for the slot,
+    /// only when it is neither user-managed nor a unique replication consumer identifier). This also
+    /// makes the adoption idempotent: once adopted, the names compare equal.
+    if (replication_slot == legacy_replication_slot && publication_name == legacy_publication_name)
+        return;
+
+    auto slot_exists = [&](const String & name)
+    {
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_replication_slots WHERE slot_name = '{}'", name))};
+        return !result.empty();
+    };
+    auto publication_exists = [&](const String & name)
+    {
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = {}", quoteStringPostgreSQL(name)))};
+        return !result.empty();
+    };
+
+    if (replication_slot != legacy_replication_slot)
+    {
+        /// The slot is the object whose loss triggers a destructive re-sync, so it carries the evidence:
+        /// adopt only if the schema-aware slot does not exist while the legacy one does.
+        if (slot_exists(replication_slot) || !slot_exists(legacy_replication_slot))
+            return;
+    }
+    else
+    {
+        /// The slot name does not depend on the schema, so the publication is the only renamed object
+        /// and carries the evidence instead.
+        if (publication_exists(publication_name) || !publication_exists(legacy_publication_name))
+            return;
+    }
+
+    /// The legacy slot and publication names are schema-blind, so the mere existence of the legacy slot
+    /// (Branch A above) does not prove the legacy objects belong to this engine — a same-database
+    /// deployment over the default schema (or another schema targeting the same bare table) owns
+    /// identically-named objects. The only schema-carrying evidence is the legacy publication's table list,
+    /// so the legacy identity is adopted only when the legacy publication exists and every table it
+    /// publishes belongs to this engine's schema. If it is missing, empty, or publishes a table from another
+    /// schema, ownership cannot be proven: the legacy slot is ambiguous or foreign and must be left
+    /// untouched. And since the schema-aware slot is gone, returning here to proceed under the schema-aware
+    /// identity would run an initial sync and reload a snapshot into the already-existing nested tables
+    /// (createNestedIfNeeded is a no-op once they exist), silently duplicating data on disk; while adopting
+    /// the legacy slot regardless would hijack another engine's slot. Fail closed instead: surface the
+    /// identity conflict and let an operator resolve it (createNestedIfNeeded, the initial sync, and any
+    /// re-snapshot never run).
+    String ownership_conflict;
+    if (!publication_exists(legacy_publication_name))
+        ownership_conflict = fmt::format(
+            "the legacy publication {} does not exist, so the schema-blind legacy replication slot cannot be "
+            "proven to belong to this engine's schema '{}'",
+            doubleQuoteString(legacy_publication_name), postgres_schema);
+    else
+    {
+        pqxx::result result{tx.exec(fmt::format(
+            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(legacy_publication_name)))};
+        if (result.empty())
+            ownership_conflict = fmt::format(
+                "the legacy publication {} publishes no tables, so the schema-blind legacy replication slot "
+                "cannot be proven to belong to this engine's schema '{}'",
+                doubleQuoteString(legacy_publication_name), postgres_schema);
+        for (const auto & row : result)
+        {
+            if (row[0].as<std::string>() != postgres_schema)
+            {
+                ownership_conflict = fmt::format(
+                    "the legacy publication {} publishes a table from schema '{}', not this engine's schema "
+                    "'{}', so it belongs to another engine",
+                    doubleQuoteString(legacy_publication_name), row[0].as<std::string>(), postgres_schema);
+                break;
+            }
+        }
+    }
+
+    if (!ownership_conflict.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication on attach: {}, so the legacy replication identity "
+            "cannot be adopted. Proceeding would either reload the initial snapshot into the existing nested "
+            "tables and duplicate data, or consume another engine's replication slot and publication, so "
+            "replication is refused. Resolve the replication-slot/publication conflict on the PostgreSQL side "
+            "(or recreate this table): startup keeps retrying and replication starts automatically once the "
+            "conflict is resolved, without a server restart or a manual re-attach.",
+            ownership_conflict);
+
+    LOG_INFO(
+        log,
+        "Adopting the legacy replication identity of a deployment created before the generated names became "
+        "schema-aware: replication slot {} (instead of {}) and publication {} (instead of {})",
+        legacy_replication_slot, replication_slot, doubleQuoteString(legacy_publication_name), doubleQuoteString(publication_name));
+
+    replication_slot = legacy_replication_slot;
+    tmp_replication_slot = replication_slot + "_tmp";
+    publication_name = legacy_publication_name;
+}
+
+
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     postgres::Connection replication_connection(connection_info, /* replication */true);
@@ -451,7 +569,9 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 {
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
 
-    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
+    /// Not always PostgreSQL's own snapshot id from `CREATE_REPLICATION_SLOT`: with a user-managed
+    /// slot it is `materialized_postgresql_snapshot` verbatim, so it has to be sent as data.
+    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT {}", quoteStringPostgreSQL(snapshot_name));
     tx->exec(query_str);
 
     PostgreSQLTableStructurePtr table_structure;
@@ -595,7 +715,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
 
 bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
+    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = {})", quoteStringPostgreSQL(publication_name));
     pqxx::result result{tx.exec(query_str)};
     assert(!result.empty());
     return result[0][0].as<std::string>() == "t";
@@ -1048,7 +1168,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 
 std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
-    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
+    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name));
     std::set<String> tables;
 
     for (const auto & [schema, table] : tx.stream<std::string, std::string>(query))
