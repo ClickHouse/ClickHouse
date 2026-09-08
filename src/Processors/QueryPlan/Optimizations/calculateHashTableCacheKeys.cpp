@@ -1,4 +1,5 @@
 #include <unordered_map>
+#include <unordered_set>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Analyzer/TableFunctionNode.h>
@@ -63,6 +64,33 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     return hash.get64();
 }
 
+/// Two headers have the same byte layout when they carry the same column types in the same order.
+/// Names are intentionally ignored: a pure rename (e.g. `__table1.a` -> `a`) does not change the
+/// number of output bytes, so a rename-only step stays transparent and the single-replica and
+/// parallel-replicas plan builds still match. Only a change in the set/types of output columns
+/// changes `output_bytes`.
+static bool sameByteLayout(const Block & lhs, const Block & rhs)
+{
+    if (lhs.columns() != rhs.columns())
+        return false;
+    for (size_t i = 0; i < lhs.columns(); ++i)
+        if (lhs.getByPosition(i).type->getName() != rhs.getByPosition(i).type->getName())
+            return false;
+    return true;
+}
+
+/// A step is transparent for the cache key - it contributes nothing - when it changes neither the row
+/// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
+/// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
+/// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
+/// `isPassThroughExpression` below.
+static bool isByteTransparentTransform(const ITransformingStep & transform)
+{
+    return transform.getTransformTraits().preserves_number_of_rows
+        && !transform.getInputHeaders().empty()
+        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front());
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
@@ -71,7 +99,7 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// or widens columns DOES change the output bytes - a plain read and a wide projection must not
     /// share a key and reuse the wrong output-byte estimate. Such a step gets a distinct key from its
     /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
-    if (DB::QueryPlanOptimizations::isByteTransparentTransform(transform))
+    if (isByteTransparentTransform(transform))
         return 0;
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
@@ -105,33 +133,21 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-/// Two headers have the same byte layout when they carry the same column types in the same order.
-/// Names are intentionally ignored: a pure rename (e.g. `__table1.a` -> `a`) does not change the
-/// number of output bytes, so a rename-only step stays transparent and the single-replica and
-/// parallel-replicas plan builds still match. Only a change in the set/types of output columns
-/// changes `output_bytes`.
-static bool sameByteLayout(const Block & lhs, const Block & rhs)
-{
-    if (lhs.columns() != rhs.columns())
-        return false;
-    for (size_t i = 0; i < lhs.columns(); ++i)
-        if (lhs.getByPosition(i).type->getName() != rhs.getByPosition(i).type->getName())
-            return false;
-    return true;
-}
-
-/// Does this expression only pass its inputs along, possibly renamed, reordered or dropped? Every output
-/// must trace back to an `INPUT` through `ALIAS` links alone. A `FUNCTION` or a constant `COLUMN` means
-/// the step puts something in the column that was not read, so what comes out is not what went in.
+/// Does this expression hand every one of its inputs onward, renamed or reordered but otherwise
+/// untouched? Each output must trace back to an `INPUT` through `ALIAS` links alone, and no two outputs
+/// may land on the same one. Together with the equal column count that `sameByteLayout` demands, that
+/// makes the outputs a permutation of the inputs.
 ///
-/// The header comparison alone cannot see this. `SELECT concat(s, s) AS s` keeps the arity, the position
-/// and the type name, and preserves the row count, yet doubles the bytes; so does any first-stage
-/// `Projection`, which is the arbitrary DAG built from the query's projection list (`Planner.cpp`,
-/// `PlannerExpressionAnalysis::analyzeProjection`). Treating that as transparent lets the boundary search
-/// peel it and instrument its child, and Auto-PR then costs the query on a fraction of the bytes the
-/// replicas actually send.
-static bool actionsOnlyForwardInputs(const ActionsDAG & actions)
+/// Both halves matter. A `FUNCTION` or a constant `COLUMN` means the step puts something in the column
+/// that was never read: `SELECT concat(s, s) AS s` keeps the arity, the position and the type name, and
+/// preserves the row count, yet doubles the bytes, and so does any first-stage `Projection` - the
+/// arbitrary DAG built from the query's projection list (`Planner.cpp`,
+/// `PlannerExpressionAnalysis::analyzeProjection`). And forwarding one input twice is no better:
+/// `SELECT a AS x, a AS y` over `(a, b)` keeps two `String` columns in the header while what leaves the
+/// step is `a + a`, not `a + b`.
+static bool expressionPermutesInputs(const ActionsDAG & actions)
 {
+    std::unordered_set<const ActionsDAG::Node *> forwarded;
     for (const auto * output : actions.getOutputs())
     {
         const auto * node = output;
@@ -142,26 +158,21 @@ static bool actionsOnlyForwardInputs(const ActionsDAG & actions)
         }
         if (node->type != ActionsDAG::ActionType::INPUT)
             return false;
+        if (!forwarded.insert(node).second)
+            return false;
     }
     return true;
 }
 
-/// The header comparison is on column types, not on actual byte sizes, so on its own it is only
-/// best-effort. For an `ExpressionStep` the DAG settles what the header cannot; for the other
-/// transforming steps, which have no expression to inspect, a preserved row count and an unchanged
-/// layout is all there is to go on.
-bool isByteTransparentTransform(const ITransformingStep & transform)
+/// Is this a wrapper that can be skipped over - looked through when locating the boundary the replicas
+/// ship from, and collapsed onto its child when keying it? Only an expression that permutes its inputs
+/// qualifies. Deliberately not every step that contributes nothing to a key: a full `SortingStep` does
+/// (it preserves rows and layout) and must still be a boundary of its own, which is what
+/// `Do not look through `Limit` and `Sorting` when picking the node to instrument` settled.
+bool isPassThroughExpression(const IQueryPlanStep & step)
 {
-    if (!transform.getTransformTraits().preserves_number_of_rows || transform.getInputHeaders().empty())
-        return false;
-
-    if (!sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
-        return false;
-
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&transform))
-        return actionsOnlyForwardInputs(expression->getExpression());
-
-    return true;
+    const auto * expression = typeid_cast<const ExpressionStep *>(&step);
+    return expression && isByteTransparentTransform(*expression) && expressionPermutesInputs(expression->getExpression());
 }
 
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
@@ -368,7 +379,6 @@ void calculateHashTableCacheKeys(
                 frame.hash.update(cache_keys[child]);
         }
 
-        bool contributes_nothing = false;
         if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*source));
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
@@ -378,8 +388,6 @@ void calculateHashTableCacheKeys(
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
-            else
-                contributes_nothing = true;
         }
 
         /// A step that contributes nothing must not contribute a hashing round either. Hashing its
@@ -397,7 +405,7 @@ void calculateHashTableCacheKeys(
         ///
         /// A transforming step always has exactly one child, so the join branches above never reach
         /// this; the guard is for safety, not for a shape that occurs.
-        if (contributes_nothing && node.children.size() == 1)
+        if (isPassThroughExpression(*node.step) && node.children.size() == 1)
         {
             raw_hashes[&node] = raw_hashes[node.children.front()];
             cache_keys[&node] = cache_keys[node.children.front()];

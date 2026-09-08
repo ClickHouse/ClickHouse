@@ -65,8 +65,8 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
 /// `DelayedCreatingSetsStep` and `CreatingSetsStep` pass their rows through by construction.
 bool isPassThroughWrapper(const IQueryPlanStep & step)
 {
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-        return isByteTransparentTransform(*expression);
+    if (typeid_cast<const ExpressionStep *>(&step))
+        return isPassThroughExpression(step);
 
     return typeid_cast<const DelayedCreatingSetsStep *>(&step)
         || typeid_cast<const CreatingSetsStep *>(&step);
