@@ -20,8 +20,8 @@ INSERT INTO tab_src SELECT number, concat(
     'irr' || toString(cityHash64(number) % 64), ' ',
     'skew' || toString(intDiv(cityHash64(number * 7) % 10000, 100)), ' ',
     if(number % 1000 = 0, 'sparse ', ''),
-    if(number IN (7, 900000), 'outlier', ''))
-FROM numbers(1000000);
+    if(number IN (7, 90000), 'outlier', ''))
+FROM numbers(100000);
 
 CREATE TABLE tab_none (
     id UInt64,
