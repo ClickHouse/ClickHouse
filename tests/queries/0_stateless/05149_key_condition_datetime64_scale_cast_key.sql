@@ -44,3 +44,20 @@ SELECT count() FROM t_scale_cast_key WHERE d = toDateTime64(1675262799, 3, 'UTC'
 SELECT count() FROM t_scale_cast_key WHERE d = toDateTime64(1675252800, 6, 'UTC');
 
 DROP TABLE t_scale_cast_key;
+
+-- A set with one element the key type cannot represent must not drag the representable ones into the
+-- constant's own value space.
+
+CREATE TABLE t_scale_cast_key (d DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY d::String;
+INSERT INTO t_scale_cast_key VALUES (toDateTime64(1675252800, 3, 'UTC'));
+
+SELECT count() FROM t_scale_cast_key
+WHERE d IN (toDateTime64(1675252800, 6, 'UTC'), toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'));
+
+SELECT count() FROM t_scale_cast_key
+WHERE d NOT IN (toDateTime64(1675252800, 6, 'UTC'), toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'));
+
+SELECT count() FROM t_scale_cast_key
+WHERE has([toDateTime64(1675252800, 6, 'UTC'), toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC')], d);
+
+DROP TABLE t_scale_cast_key;

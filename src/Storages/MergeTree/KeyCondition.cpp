@@ -2177,6 +2177,15 @@ static bool applyDeterministicDagToColumn(
         return true;
     };
 
+    /// Whether the cast below can be probed against this target at all: it needs a target that
+    /// `castColumnAccurateOrNull` accepts, so a failure against a target it does not accept says
+    /// nothing about the values.
+    auto canProbeAccurateCastTo = [](const DataTypePtr & target_type)
+    {
+        const DataTypePtr probe_type = removeLowCardinality(target_type);
+        return (probe_type->isNullable() || probe_type->canBeInsideNullable()) && canBeAccurateCastOrNullTarget(probe_type);
+    };
+
     /// Cast column to target_type and fail if the cast introduces NULLs.
     auto cast_without_nulls = [&](ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type) -> bool
     {
@@ -2288,8 +2297,14 @@ static bool applyDeterministicDagToColumn(
         if (!cast_without_nulls(input_column, input_type, dag.input_type))
         {
             /// The round trip is not always possible - `String` -> `Dynamic` -> `String` - and the cast
-            /// above refuses such a target. Apply the `CAST` of the DAG directly then.
-            if (try_apply_direct_cast_fast_path())
+            /// above refuses such a target outright. Apply the `CAST` of the DAG directly then.
+            ///
+            /// When the target *can* be probed and the cast still failed, the constant simply is not
+            /// representable in the key column's type. Rendering it from its own type instead would put
+            /// it in a different value space - and this helper also transforms whole set columns, where
+            /// one such element would drag the representable ones along - so decline: the caller then
+            /// reads more instead of pruning by a value the key space does not hold.
+            if (!canProbeAccurateCastTo(dag.input_type) && try_apply_direct_cast_fast_path())
                 return true;
 
             return false;
