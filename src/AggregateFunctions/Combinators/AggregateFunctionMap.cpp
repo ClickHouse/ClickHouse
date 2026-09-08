@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadHelpersArena.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -27,6 +28,8 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -100,7 +103,14 @@ struct AggregateFunctionMapCombinatorData<String>
     }
     static void readKey(String & key, ReadBuffer & buf)
     {
-        readStringBinary(key, buf);
+        size_t size = 0;
+        readVarUInt(size, buf);
+
+        if (size > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+        key.clear();
+        readStringGrowing(key, size, buf);
     }
 };
 
@@ -213,19 +223,31 @@ public:
             key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[position];
         }
 
-        AggregateDataPtr nested_place = nullptr;
-        auto it = this->data(place).merged_maps.find(key);
-        if (it == this->data(place).merged_maps.end())
+        auto & merged_maps = this->data(place).merged_maps;
+        auto it = merged_maps.find(key);
+        if (it == merged_maps.end())
         {
-            // create a new place for each key
-            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-            nested_func->create(nested_place);
-            this->data(place).merged_maps.emplace(key, nested_place);
-        }
-        else
-            nested_place = it->second;
+            /// Take the slot before creating the state. `emplace` allocates a node, and a copy
+            /// of the key when it is a `String`, so it can throw and strand the fresh state:
+            /// nothing would reference it and `destroyImpl` walks only `merged_maps`.
+            it = merged_maps.emplace(key, nullptr).first;
 
-        nested_func->add(nested_place, value_column, position, arena);
+            try
+            {
+                // create a new place for each key
+                AggregateDataPtr new_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                nested_func->create(new_place);
+                it->second = new_place;
+            }
+            catch (...)
+            {
+                /// The slot still holds a null state, which `destroyImpl` would dereference.
+                merged_maps.erase(it);
+                throw;
+            }
+        }
+
+        nested_func->add(it->second, value_column, position, arena);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -272,24 +294,30 @@ public:
 
         for (const auto & elem : rhs_maps)
         {
-            const auto & it = merged_maps.find(elem.first);
+            auto it = merged_maps.find(elem.first);
 
-            AggregateDataPtr nested_place = nullptr;
             if (it == merged_maps.end())
             {
-                // elem.second cannot be copied since this it will be destroyed after merging,
-                // and lead to use-after-free.
-                nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-                nested_func->create(nested_place);
-                merged_maps.emplace(elem.first, nested_place);
-            }
-            else
-            {
-                nested_place = it->second;
+                /// Take the slot before creating the state, for the same reason as in `add`.
+                it = merged_maps.emplace(elem.first, nullptr).first;
+
+                try
+                {
+                    // elem.second cannot be copied since this it will be destroyed after merging,
+                    // and lead to use-after-free.
+                    AggregateDataPtr new_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                    nested_func->create(new_place);
+                    it->second = new_place;
+                }
+                catch (...)
+                {
+                    merged_maps.erase(it);
+                    throw;
+                }
             }
 
             if (!zero_size_nested)
-                nested_func->merge(nested_place, elem.second, arena);
+                nested_func->merge(it->second, elem.second, arena);
         }
     }
 
@@ -345,13 +373,32 @@ public:
         for (UInt64 i = 0; i < size; ++i)
         {
             KeyType key{};
-            AggregateDataPtr nested_place = nullptr;
 
             this->data(place).readKey(key, buf);
-            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-            nested_func->create(nested_place);
-            merged_maps.emplace(key, nested_place);
-            nested_func->deserialize(nested_place, buf, std::nullopt, arena);
+
+            /// Take the slot before creating the state. `emplace` on a key that is already present
+            /// does not insert, so creating first would abandon the fresh state: nothing would
+            /// reference it and `destroyImpl` walks only `merged_maps`. `serialize` writes each key
+            /// once, so a repeated key means the state is malformed.
+            auto [it, inserted] = merged_maps.try_emplace(key, nullptr);
+            if (!inserted)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Duplicate key in the serialized state of aggregate function {}", getName());
+
+            try
+            {
+                AggregateDataPtr nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+                nested_func->create(nested_place);
+                it->second = nested_place;
+            }
+            catch (...)
+            {
+                /// The slot still holds a null state, which `destroyImpl` would dereference.
+                merged_maps.erase(it);
+                throw;
+            }
+
+            nested_func->deserialize(it->second, buf, std::nullopt, arena);
         }
     }
 
@@ -424,14 +471,12 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
-        const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
+        /// A single `Map(K, V)` argument is the map-input mode: the nested aggregate is applied to
+        /// the map values. With more arguments the last one is the key, so a `Map` may legitimately
+        /// be a regular argument of the nested aggregate, e.g. `groupArrayMap(map('a', 1), key)`.
+        const auto * map_type = arguments.size() == 1 ? checkAndGetDataType<DataTypeMap>(arguments[0].get()) : nullptr;
         if (map_type)
-        {
-            if (arguments.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} combinator takes only one map argument", getName());
-
             return DataTypes({map_type->getValueType()});
-        }
 
 
         // we need this part just to pass to redirection for mapped arrays
@@ -501,7 +546,8 @@ public:
 
         }
 
-        const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
+        /// See `transformArguments`: only a lone `Map(K, V)` argument selects the map-input mode.
+        const auto * map_type = arguments.size() == 1 ? checkAndGetDataType<DataTypeMap>(arguments[0].get()) : nullptr;
 
         if (map_type)
         {
@@ -546,8 +592,10 @@ void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory &
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>(), Documentation{
-        .description = "Applied as a suffix to an aggregate function name (e.g. `sumMap`), it aggregates `Map` values key-wise.",
-        .syntax = "<aggregate_function>Map",
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumMap`), it aggregates values key-wise. "
+                       "The key comes either from a single `Map` argument, or, when the nested aggregate function is given "
+                       "its own arguments, from an additional last argument, e.g. `sumMap(value, key)` or `argMaxMap(arg, val, key)`.",
+        .syntax = "<aggregate_function>Map(map) or <aggregate_function>Map(arg[, arg...], key)",
         .related = {"Array"}});
 }
 
