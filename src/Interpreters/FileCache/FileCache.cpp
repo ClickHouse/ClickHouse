@@ -1458,6 +1458,28 @@ bool FileCache::doTryReserve(
     }
 
     bool main_size_incremented = false;
+    bool added_new_query_entry = false;
+    bool query_size_incremented = false;
+
+    /// Undo this reservation's effect on the query context, so a failed reservation leaves it
+    /// exactly as it found it: a record this reservation inserted is dropped, while a record that
+    /// predates it (it belongs to another `FileSegment` of the same query) only gives back the size
+    /// this reservation added.
+    auto rollbackQueryEntry = [&]
+    {
+        if (added_new_query_entry)
+        {
+            auto query_lock = query_limit->lock();
+            if (query_context->tryGet(file_segment.key(), file_segment.offset(), query_lock))
+                query_context->remove(file_segment.key(), file_segment.offset(), query_lock);
+        }
+        else if (query_size_incremented)
+        {
+            /// A record that predates this reservation: only the size this reservation added to it
+            /// is taken back.
+            query_priority_iterator->decrementSize(size);
+        }
+    };
 
     try
     {
@@ -1471,7 +1493,15 @@ bool FileCache::doTryReserve(
             auto query_lock = query_limit->lock();
             query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), query_lock);
             if (!query_priority_iterator)
+            {
                 query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, query_lock);
+                /// `add` returns nothing, so read the entry back under the same lock. Without this the
+                /// freshly-inserted record stays unreachable here: it would never be sized below, and
+                /// neither rollback path could drop it, leaving a zero-sized per-query record behind
+                /// for a reservation that failed.
+                query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), query_lock);
+                added_new_query_entry = true;
+            }
         }
 
         /// Blocking, unlike the timed `tryLockFor` taken before eviction: eviction has already
@@ -1486,7 +1516,10 @@ bool FileCache::doTryReserve(
         main_size_incremented = true;
 
         if (query_priority_iterator)
+        {
             query_priority_iterator->incrementSize(size, lock);
+            query_size_incremented = true;
+        }
     }
     catch (...)
     {
@@ -1505,6 +1538,8 @@ bool FileCache::doTryReserve(
             /// Roll it back so `main_priority` stays consistent with `FileSegment::reserved_size`.
             main_priority_iterator->decrementSize(size);
         }
+
+        rollbackQueryEntry();
 
         throw;
     }
@@ -1525,9 +1560,11 @@ bool FileCache::doTryReserve(
         {
             if (main_priority_iterator)
                 main_priority_iterator->invalidate();
-            if (query_priority_iterator)
-                query_priority_iterator->invalidate();
         }
+        /// The per-query record is dropped outright rather than invalidated: the query context keeps
+        /// its records in a map keyed by key and offset, so an invalidated entry left there would be
+        /// handed back by the next `tryGet` for the same segment.
+        rollbackQueryEntry();
         return false;
     }
 

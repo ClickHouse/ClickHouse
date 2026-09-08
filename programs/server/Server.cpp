@@ -339,10 +339,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
-    extern const ServerSettingsUInt64 max_remote_read_connections;
-    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_1_pct;
-    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_2_pct;
-    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_3_pct;
     extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
@@ -2904,10 +2900,10 @@ try
             /// reloaded config disagrees with that boot value, warn once per state change (not
             /// every reload tick) instead of silently ignoring the operator's config change.
 #if USE_SILK
-            /// Builds without Silk skip this entirely: there the effective value is a
-            /// hard-wired false, so the mismatch check would fire spuriously on the first
-            /// reload tick of every boot with the setting configured - and those builds
-            /// already emit their own one-shot boot warning ("the build has no Silk support").
+            /// Builds without Silk skip the mismatch check: there the effective value is a
+            /// hard-wired false, so it would fire spuriously on the first reload tick of every
+            /// boot with the setting configured. They warn about the setting having no effect
+            /// in the `#else` below instead.
             {
                 static std::atomic<bool> silk_disk_sockets_reload_mismatch{false};
                 const bool silk_disk_sockets_configured = new_server_settings[ServerSetting::disk_connections_use_silk];
@@ -2926,6 +2922,26 @@ try
                                 silk_disk_sockets_configured));
                 }
                 else if (silk_disk_sockets_reload_mismatch.exchange(false))
+                    global_context->addOrUpdateWarningMessage(Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD, std::nullopt);
+            }
+#else
+            /// A build without Silk cannot honour the setting at all, and its one-shot boot warning
+            /// only fires when the setting was already on at startup. Turning it on by a reload would
+            /// otherwise be silent: `system.server_settings` would show the new value while nothing
+            /// changed, so warn here too (and withdraw the warning once it is turned back off).
+            {
+                static std::atomic<bool> silk_unsupported_warned{false};
+                const bool silk_disk_sockets_configured = new_server_settings[ServerSetting::disk_connections_use_silk];
+                if (silk_disk_sockets_configured)
+                {
+                    if (!silk_unsupported_warned.exchange(true))
+                        global_context->addOrUpdateWarningMessage(
+                            Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD,
+                            PreformattedMessage::create(
+                                "disk_connections_use_silk is set, but this build has no Silk support, so it has "
+                                "no effect"));
+                }
+                else if (silk_unsupported_warned.exchange(false))
                     global_context->addOrUpdateWarningMessage(Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD, std::nullopt);
             }
 #endif

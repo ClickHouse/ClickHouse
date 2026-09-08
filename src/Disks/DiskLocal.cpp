@@ -436,6 +436,19 @@ void DiskLocal::prepareRead(
         settings,
         read_hint);
 
+    /// Mirror the remote path (`DiskObjectStorage::prepareRead`): attach the prefetch pool
+    /// only when the local read method is the asynchronous one AND prefetch is requested, so
+    /// `local_filesystem_read_prefetch = 1` keeps driving read-ahead on the executor path
+    /// instead of silently becoming a no-op (`PipelineReadBuffer::prefetch` reaches
+    /// `ReaderExecutor::prefetch`, which needs a pool to schedule on), while a synchronous
+    /// method still reads synchronously.
+    if (settings.local_fs_settings.method == LocalFSReadMethod::pread_threadpool
+        && settings.local_fs_settings.prefetch)
+    {
+        if (auto global_context = Context::getGlobalContextInstance())
+            pipeline.needPrefetchPool(global_context->getPrefetchThreadPool());
+    }
+
     /// Page cache is incompatible with several local read methods:
     ///   - async methods (io_uring, pread_fake_async, pread_threadpool): the
     ///     async wrapper drives the inner reader incompatibly with page-cache

@@ -349,7 +349,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     {
         LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
             source->objects.size(), local_src->path);
-        source_reader = std::make_shared<LocalSourceReader>(settings);
+        source_reader = std::make_shared<LocalSourceReader>(settings, local_src->read_hint);
         min_bytes_for_seek = 0; /// Local seeks are free.
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
@@ -429,7 +429,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// `caches[0]` first, so reversing gives the legacy outer-first order
     /// (a no-op for the single-cache common case). `local_throttler` is
     /// forwarded so cache-hit reads honour `max_local_read_bandwidth`.
-    for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
+    /// An unknown-size object is read by streaming until EOF, so there is no file length to
+    /// bound cache segments with - `StoredObject::UnknownSize` would be taken for a real size and
+    /// leave synthetic segments past the real end. Such a read skips the disk cache entirely, the
+    /// same way it already skips the page cache above, and goes straight to the source.
+    for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend() && !any_unknown_size; ++it)
     {
         const auto & dc = *it;
         if (dc.cache)
