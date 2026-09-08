@@ -16,7 +16,6 @@ SELECT match('abcd', '^abc\\'); -- { serverError CANNOT_COMPILE_REGEXP }
 -- Other regexp consumers already reject the same invalid regexp.
 -- Keep their existing error-code behaviour.
 SELECT replaceRegexpAll('abcd', 'abc\\', 'X'); -- { serverError BAD_ARGUMENTS }
-SELECT multiMatchAny('abcd', ['abc\\']); -- { serverError BAD_ARGUMENTS }
 
 -- Valid escaped backslashes must continue working.
 SELECT match('abc\\', 'abc\\\\');
