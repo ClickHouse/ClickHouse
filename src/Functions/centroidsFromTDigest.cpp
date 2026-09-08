@@ -129,7 +129,7 @@ of centroid means and weights. Parallel arrays are used because a TDigest can co
 multiple centroids with the same mean.
 )",
         .syntax = "centroidsFromTDigest(serialized_sketch)",
-        .examples{{"centroidsFromTDigest", "SELECT centroidsFromTDigest(serializedTDigest(value)) FROM table", ""}},
+        .examples{{"centroidsFromTDigest", "SELECT centroidsFromTDigest(serializedTDigest(number)) FROM numbers(10)", ""}},
         .introduced_in = {26, 1},
         .category = FunctionDocumentation::Category::Other
     });

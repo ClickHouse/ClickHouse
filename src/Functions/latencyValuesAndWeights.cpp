@@ -130,7 +130,7 @@ of retained values and their weights. Parallel arrays are used because a Quantil
 can retain the same value multiple times.
 )",
         .syntax = "latencyValuesAndWeights(serialized_sketch)",
-        .examples{{"latencyValuesAndWeights", "SELECT latencyValuesAndWeights(serializedQuantiles(latency_ms)) FROM table", ""}},
+        .examples{{"latencyValuesAndWeights", "SELECT latencyValuesAndWeights(serializedQuantiles(number)) FROM numbers(10)", ""}},
         .introduced_in = {26, 1},
         .category = FunctionDocumentation::Category::Other
     });

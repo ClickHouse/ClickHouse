@@ -122,14 +122,14 @@ Returns 0 for empty input; throws an exception for input that is not a valid ser
     };
     FunctionDocumentation::Examples examples = {
         {
-            "Basic usage",
+            "Basic usage (the result is an approximation)",
             R"(
 SELECT cardinalityFromHLL(serializedHLL(number)) AS cardinality
 FROM numbers(1000)
             )",
             R"(
 ┌─cardinality─┐
-│        1000 │
+│        1031 │
 └─────────────┘
             )"
         }
