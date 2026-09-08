@@ -423,10 +423,13 @@ TEST(Base58, GenericTopWordDigits)
 
 /// The callback fires on accumulated inner-loop work, and the accounting scales with the pass width, so
 /// widening a pass keeps a comparable interval rather than checking less often. The count is an integer
-/// function of the body length, so it is asserted exactly.
+/// function of the exact input, so it is asserted exactly.
 TEST(Base58, GenericCancellationInterval)
 {
-    constexpr size_t expected_calls = 63;
+    /// Encode and decode accumulate their work over different inputs, so the two counts are separate
+    /// functions and are not required to agree; they coincide at this input, and at others they do not.
+    constexpr size_t expected_encode_calls = 63;
+    constexpr size_t expected_decode_calls = 63;
 
     const std::string body = bodyOfLength(10000, 0);
 
@@ -444,8 +447,8 @@ TEST(Base58, GenericCancellationInterval)
     ASSERT_TRUE(decoded_size.has_value());
     ASSERT_EQ(std::string(reinterpret_cast<const char *>(decoded.data()), *decoded_size), body);
 
-    EXPECT_EQ(encode_calls, expected_calls);
-    EXPECT_EQ(decode_calls, expected_calls);
+    EXPECT_EQ(encode_calls, expected_encode_calls);
+    EXPECT_EQ(decode_calls, expected_decode_calls);
 
     /// The callback is expected to throw once the query is cancelled or out of time, which is only
     /// useful if the throw leaves the conversion.
