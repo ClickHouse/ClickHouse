@@ -260,7 +260,7 @@ def test_reattached_part_with_replaced_content_is_reloaded():
     assert tbl_name == src_name
 
     _query_retry(ch1, "DETACH TABLE swap_tbl")
-    ch1.exec_in_container(["bash", "-c", f"rm -rf {tbl_path} && cp -r {src_path} {tbl_path}"])
+    ch1.exec_in_container(["bash", "-c", 'rm -rf -- "$1" && cp -r -- "$2" "$1"', "bash", tbl_path, src_path])
     _query_retry(ch1, "ATTACH TABLE swap_tbl")
 
     assert _estimated_max("swap_tbl", "swap-after") == src_max
