@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_experimental_pulsar_storage_engine", false, false, "New setting to gate the new experimental `Pulsar` table engine."},
+            {"pulsar_max_wait_ms", 5000, 5000, "New setting for the Pulsar storage engine: the wait time for reading from Pulsar before retry."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"query_plan_optimize_join_order_use_cd_a_conflict_detector", false, false, "New setting to use the CD-A conflict detector for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_cd_c_conflict_detector", false, false, "New setting to use the CD-C (correct and complete) conflict detector for join reordering validity in the DPsub join order algorithm."},
