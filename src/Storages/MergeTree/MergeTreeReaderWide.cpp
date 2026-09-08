@@ -103,6 +103,19 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
     if (all_mark_ranges.getNumberOfMarks() == 0)
         return;
 
+    /// `readRows` serves a whole range that is in the columns cache from the cached columns,
+    /// block by block, and never touches the streams of that range - so prefetching them here
+    /// would spend the IO, and on remote storage the object-storage requests, that the cache
+    /// exists to avoid. This runs before the task is handed to a reading thread, which is why
+    /// the decision has to be probed here rather than read off the reader's state.
+    /// The entries can be evicted between this probe and the read, in which case the range is
+    /// read from disk without a prefetch: correct, and no worse than a cache miss.
+    if (canServeFirstRangeFromCache())
+    {
+        LOG_TEST(log, "Not prefetching the beginning of the range: it can be served from the columns cache");
+        return;
+    }
+
     try
     {
         /// Start prefetches for all columns. But don't deserialize prefixes, because it can be a heavy operation
@@ -372,7 +385,8 @@ void MergeTreeReaderWide::resetColumnsCacheState()
     cache_serving_columns.clear();
 }
 
-bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, size_t num_columns)
+std::optional<MergeTreeReaderWide::ColumnsCacheRangeHit>
+MergeTreeReaderWide::findColumnsCacheEntriesForRange(size_t row_begin, size_t row_end, size_t num_columns)
 {
     LOG_TEST(log, "Checking cache: row_begin={}, row_end={}", row_begin, row_end);
 
@@ -408,7 +422,7 @@ bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, s
         {
             LOG_TEST(log, "No suitable cached block for column {}: intersecting.size()={}, need full containment of [{}, {})",
                 column_name, intersecting.size(), row_begin, row_end);
-            return false;
+            return {};
         }
 
         const auto & key = intersecting[0].first;
@@ -422,7 +436,7 @@ bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, s
         {
             LOG_TEST(log, "Inconsistent cached block range for column {}: expected=[{}, {}), got=[{}, {})",
                 column_name, cached_range->first, cached_range->second, key.row_begin, key.row_end);
-            return false;
+            return {};
         }
 
         /// Validate the cached column has enough rows before anything is served.
@@ -434,7 +448,7 @@ bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, s
                 "need {} rows starting at offset {} but cached column has {} rows, "
                 "falling back to disk read",
                 column_name, row_end - row_begin, row_begin - key.row_begin, cached_column->size());
-            return false;
+            return {};
         }
 
         LOG_TEST(log, "Found cached block for column {}: cached=[{}, {}), requested=[{}, {})",
@@ -445,16 +459,55 @@ bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, s
 
     /// If all columns are dropped, there's nothing to serve from cache.
     if (!cached_range)
+        return {};
+
+    LOG_TEST(log, "Range [{}, {}) can be served from cache: all columns have consistent cached blocks", row_begin, row_end);
+    return ColumnsCacheRangeHit{std::move(cached_columns), cached_range->first};
+}
+
+bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, size_t num_columns)
+{
+    auto hit = findColumnsCacheEntriesForRange(row_begin, row_end, num_columns);
+    if (!hit)
         return false;
 
     cache_serving = true;
-    cache_serving_columns = std::move(cached_columns);
-    cache_serving_cached_row_begin = cached_range->first;
+    cache_serving_columns = std::move(hit->columns);
+    cache_serving_cached_row_begin = hit->cached_row_begin;
     cache_serving_row = row_begin;
     cache_serving_row_end = row_end;
 
-    LOG_TEST(log, "Serving range [{}, {}) from cache: all columns have consistent cached blocks", row_begin, row_end);
     return true;
+}
+
+bool MergeTreeReaderWide::canServeFirstRangeFromCache()
+{
+    /// Mirror the eligibility of `readRows`: `cache_possible` there, plus the read side of the
+    /// cache being on. `columns_cache` is already null when the cache is disabled or sized zero
+    /// (see `getColumnsCacheIfEnabled`), so no probe runs in that case.
+    if (!columns_cache || !settings.enable_columns_cache_reads)
+        return false;
+    if (data_part_info_for_read->getTableUUID() == UUIDHelpers::Nil
+        || data_part_info_for_read->isProjectionPart())
+        return false;
+    if (all_mark_ranges.getNumberOfMarks() == 0)
+        return false;
+
+    /// Only the first mark range matters: that is the only one this prefetch covers. Entries
+    /// never span the gaps between the ranges of a task, so `readRows` decides range by range,
+    /// and the ranges after the first one are prefetched by `readRows` itself when it reads them
+    /// from disk.
+    const auto & mark_range = all_mark_ranges.front();
+    const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+    const size_t row_begin = index_granularity.getMarkStartingRow(mark_range.begin);
+    const size_t row_end = (mark_range.end < index_granularity.getMarksCount())
+        ? index_granularity.getMarkStartingRow(mark_range.end)
+        : data_part_info_for_read->getRowCount();
+
+    /// The very function `readRows` will use to decide, so the two cannot disagree: a range this
+    /// returns entries for is served from them from its first block to its last, without the
+    /// streams of the range being touched at all.
+    return findColumnsCacheEntriesForRange(row_begin, row_end, columns_to_read.size()).has_value();
 }
 
 size_t MergeTreeReaderWide::serveRowsFromColumnsCache(MutableColumns & res_columns, size_t max_rows_to_read)

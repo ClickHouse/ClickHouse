@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
@@ -173,9 +174,28 @@ private:
     /// Forget the state of the range being read: called when a new range begins.
     void resetColumnsCacheState();
 
+    /// The cached columns of a range that can be served from the cache as a whole, and the row
+    /// the entries they came from start at.
+    struct ColumnsCacheRangeHit
+    {
+        Columns columns;
+        size_t cached_row_begin = 0;
+    };
+
+    /// Look the whole range [row_begin, row_end) up in the cache for every column that is read.
+    /// Returns the cached columns when every one of them is covered by a single entry containing
+    /// the range, nothing otherwise. Changes no state, so it can be asked before the task is
+    /// handed to a reading thread; `lookupColumnsCache` and `canServeFirstRangeFromCache` are the
+    /// two callers, which is what keeps the read decision and the prefetch decision identical.
+    std::optional<ColumnsCacheRangeHit> findColumnsCacheEntriesForRange(size_t row_begin, size_t row_end, size_t num_columns);
+
     /// Look the whole range [row_begin, row_end) up in the cache for every column. On success,
     /// arms `cache_serving` for the range and returns true.
     bool lookupColumnsCache(size_t row_begin, size_t row_end, size_t num_columns);
+
+    /// Whether the first mark range of this reader can be served from the cache as a whole, and
+    /// so its streams need not be prefetched. See `prefetchBeginOfRange`.
+    bool canServeFirstRangeFromCache();
 
     /// Serve the next rows of the range from the columns held by `lookupColumnsCache`.
     size_t serveRowsFromColumnsCache(MutableColumns & res_columns, size_t max_rows_to_read);
