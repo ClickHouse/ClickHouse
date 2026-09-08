@@ -242,6 +242,8 @@ bool hasLimitShuffleWithDisabledSetting(const ASTPtr & ast, bool allow_experimen
     }
 
     return false;
+}
+
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
 /// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
 /// their constructors, before the outer object itself is attached. The whole group must be
