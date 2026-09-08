@@ -1,0 +1,48 @@
+--- create, introspect, drop ---
+p_agg	Aggregate	['b']
+p_norm	Normal	['b']
+after drop:	1
+--- DROP ALL is per kind, indexes are untouched ---
+projections:	0
+indexes:	1
+--- and the mirror direction: dropping all indexes keeps projections ---
+projections:	1
+indexes:	0
+--- an entry whose table was dropped is hidden ---
+0
+--- IF NOT EXISTS / IF EXISTS ---
+still one:	1
+--- the INDEX form of a projection declaration is accepted ---
+p_idx	Normal	1	p_idx INDEX b TYPE basic
+--- WITH SETTINGS survives into the system table ---
+p_set	{'index_granularity':'64'}
+--- a projection invalidated by ALTER reports schema drift ---
+reason: Hypothetical projection can no longer be added to this table
+--- commit_order needs the same gates as a real projection ---
+BAD_ARGUMENTS
+accepted with gates on:	1
+--- disabling those gates later makes it not_applicable ---
+reason: Hypothetical projection can no longer be added to this table
+--- a runtime ALTER guard does not reject a valid definition ---
+created: 1
+reason: EXPLAIN WHATIF does not estimate hypothetical projections yet
+--- a name taken by a real projection is rejected ---
+ILLEGAL_PROJECTION
+--- duplicate without IF NOT EXISTS is rejected ---
+BAD_ARGUMENTS
+--- non-MergeTree is rejected ---
+NOT_IMPLEMENTED
+--- EXPLAIN WHATIF lists the projection as not estimated yet ---
+With p_norm (projection (normal), hypothetical):
+status: not_applicable
+reason: EXPLAIN WHATIF does not estimate hypothetical projections yet
+--- with nothing defined the report says so ---
+No hypothetical indexes or projections defined for this table. Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.
+--- creating needs the same privilege as a real ADD PROJECTION ---
+ACCESS_DENIED
+ACCESS_DENIED
+--- dropping needs it too, so the drop cannot probe the table either ---
+ACCESS_DENIED
+ACCESS_DENIED
+granted user can create
+granted user can drop

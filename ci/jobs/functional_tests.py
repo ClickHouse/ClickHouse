@@ -262,9 +262,11 @@ def filter_selected_tests_by_flavor(tests, keep_sequential):
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
 
-    A plain (non-sanitizer) binary job runs the whole suite, where every worker
-    picks a different test and most tests are light, so oversubscribing the
-    runner shortens the job without making any single test noticeably slower.
+    A plain (non-sanitizer) binary or release job runs the whole suite, where every
+    worker picks a different test and most tests are light, so oversubscribing the
+    runner shortens the job without making any single test noticeably slower. The
+    `release` full suite may be batched (`amd_release, parallel, 1/2`), which adds a
+    third `N/M` option, so allow up to three options for these lanes.
 
     A flaky/targeted check is the opposite case: every worker runs the *same*
     changed test, so `--jobs N` multiplies that one test's resource use by `N`.
@@ -277,7 +279,7 @@ def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_ch
     """
     if is_flaky_check or is_targeted_check:
         return False
-    return "binary" in options and len(test_options) < 3
+    return ("binary" in options or "release" in options) and len(test_options) <= 3
 
 
 def invert_bugfix_validation_status(test_result: Result) -> bool:
@@ -914,6 +916,7 @@ def main():
         is_db_replicated=is_database_replicated,
         is_shared_catalog=is_shared_catalog,
         is_per_test_coverage=is_per_test_coverage,
+        is_llvm_coverage=is_llvm_coverage,
     )
     # `run_tests` runs `clickhouse-test` without changing directory, so clients
     # it spawns inherit the repository root and dump their cores there.
