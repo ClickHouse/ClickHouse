@@ -180,6 +180,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -3020,7 +3022,13 @@ static BlockIO executeQueryImpl(
             /// TODO: To support parallel replicas, `materializePlan` must restore plan nodes that the
             /// parallel replicas optimizer can recognize (e.g. by re-creating `ReadFromMergeTree` or by
             /// teaching the optimizer to work with `ReadFromTableStep`).
-            && settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
+            && settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0
+            /// Setting-driven filters are attached by the planner, not present in the query AST, and
+            /// they may pull in set subplans that read other tables. Those side tables are outside
+            /// the single-table cache contract, so their dependencies and access rights are not
+            /// revalidated on a cache hit.
+            && settings[Setting::additional_table_filters].value.empty()
+            && settings[Setting::additional_result_filter].value.empty();
 
         /// Precompute the semantic settings hash instead of copying the entire Settings object.
         /// This avoids an expensive full Settings copy for queries that are later filtered out
