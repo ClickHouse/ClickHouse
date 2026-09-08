@@ -20,10 +20,11 @@ public:
     {
         Direct,
         MaterializedView,
-        /// Rows that are neither a write into the immediate destination table of an INSERT pipeline
-        /// nor a push from a materialized view into its target table: rows entering a window view, or
-        /// rows of a background streaming push (`no_destination`) that skips the destination table and
-        /// only feeds the attached views. Counted only in the generic InsertedRows/InsertedBytes events.
+        /// Rows that are neither a write into the immediate destination of an INSERT pipeline nor a push
+        /// from a materialized view into its target table: rows of a background streaming push
+        /// (`no_destination`) that skips the destination table and only feeds the attached views, or rows
+        /// pushed into a view whose type is not MATERIALIZED. Counted only in the generic
+        /// InsertedRows/InsertedBytes events.
         Other,
     };
 

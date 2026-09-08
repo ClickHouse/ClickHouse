@@ -1664,8 +1664,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
     }
 
 
-    /// This path is shared with window views: count only pushes from materialized views into their target tables
-    /// as MaterializedViewInsertedRows/MaterializedViewInsertedBytes.
+    /// This path is generic over QueryViewsLogElement::ViewType: count only pushes from materialized views
+    /// into their target tables as MaterializedViewInsertedRows/MaterializedViewInsertedBytes.
     auto insert_source = view_types.at(view_id) == QueryViewsLogElement::ViewType::MATERIALIZED
         ? CountingTransform::InsertSource::MaterializedView
         : CountingTransform::InsertSource::Other;
