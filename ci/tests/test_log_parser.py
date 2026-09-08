@@ -90,6 +90,31 @@ def test_oracle_kind_extraction(tmp_path, oracle_line, expected_kind):
     assert result_name == f"AST Fuzzer oracle mismatch: {expected_kind}"
 
 
+def test_sanitizer_wins_over_oracle_mismatch(tmp_path):
+    # When both a server-side oracle mismatch and a sanitizer report are present,
+    # the higher-signal sanitizer failure must be reported, not the oracle
+    # mismatch. `parse_failure` stops at the first matching pattern, so Sanitizer
+    # must stay ahead of the oracle pattern in ERROR_PATTERNS.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    stderr_log = tmp_path / "stderr.log"
+    server_log.write_text(_ORACLE_MISMATCH_LOG, encoding="utf-8")
+    stderr_log.write_text(
+        "==1234==ERROR: AddressSanitizer: heap-use-after-free on address 0x1\n"
+        "    #0 0x55b9b8db9bc7 in DB::Foo::bar() src/Foo.cpp:10:5\n"
+        "SUMMARY: AddressSanitizer: heap-use-after-free src/Foo.cpp:10:5\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log=str(stderr_log), fuzzer_log=""
+    )
+    result_name, info, _ = parser.parse_failure()
+
+    assert result_name.startswith("AddressSanitizer")
+    assert "oracle mismatch" not in result_name
+    assert "heap-use-after-free" in info
+
+
 def test_parse_ast_fuzzer_oracle_mismatch_unknown_kind(tmp_path):
     # If no "<kind> oracle mismatch!" line is present, the name stays generic but
     # still classified (not "Unknown error").

@@ -28,14 +28,19 @@ class FuzzerLogParser:
     # of any kind, so keep every failure-carrying pattern listed here.
     ERROR_PATTERNS = [
         (
-            "AST Fuzzer oracle mismatch",
-            "is_oracle_mismatch",
-            r"AST Fuzzer oracle mismatch detected.*",
-        ),
-        (
             "Sanitizer",
             "is_sanitizer_error",
             SANITIZER_ERROR_PATTERN,
+        ),
+        # After Sanitizer: a sanitizer report (memory safety, highest signal) must
+        # win over an oracle mismatch when both are present, since `parse_failure`
+        # stops at the first matching class. Kept ahead of the generic server-log
+        # patterns below so an unrelated `Logical error` from another test in the
+        # same run's aggregated server log does not steal the oracle classification.
+        (
+            "AST Fuzzer oracle mismatch",
+            "is_oracle_mismatch",
+            r"AST Fuzzer oracle mismatch detected.*",
         ),
         ("Logical error", "is_logical_error", r"Logical error.*"),
         (
