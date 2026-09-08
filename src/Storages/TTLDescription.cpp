@@ -1576,10 +1576,16 @@ std::optional<time_t> tryComputeConstantTTLDelta(
     /// to a column of the table at all (the old expression may name one that has been dropped since the
     /// part was written), it cannot equal the new expression's source column and is rejected right here,
     /// without the old expression ever being resolved or evaluated.
-    if (new_ttl.expression_columns.size() != 1 || new_ttl.expression_columns.front().name != new_shift->column_name)
+    /// `expression_source_columns` and not `expression_columns`: the latter describes the *built*
+    /// expression's inputs, whose type is the one the built actions read the column as, which is not
+    /// necessarily the type the table declares (`DateTime + INTERVAL DAY` reads its argument as
+    /// `DateTime64`). What has to be reasoned about here - and what the part must physically store - is
+    /// the column as the table declares it.
+    if (new_ttl.expression_source_columns.size() != 1
+        || new_ttl.expression_source_columns.front().name != new_shift->column_name)
         return {};
 
-    const auto & column_type = new_ttl.expression_columns.front().type;
+    const auto & column_type = new_ttl.expression_source_columns.front().type;
 
     WhichDataType which(column_type);
     if (which.isDate() || which.isDate32())
@@ -1640,9 +1646,9 @@ String getRowsTTLExpressionFingerprint(const TTLDescription & rows_ttl)
 
 String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl, const DateLUTImpl & date_lut)
 {
-    if (rows_ttl.expression_columns.size() == 1)
+    if (rows_ttl.expression_source_columns.size() == 1)
     {
-        const auto & type = rows_ttl.expression_columns.front().type;
+        const auto & type = rows_ttl.expression_source_columns.front().type;
         WhichDataType which(type);
         if (which.isDateTime())
             return assert_cast<const DataTypeDateTime &>(*type).getTimeZone().getTimeZone();

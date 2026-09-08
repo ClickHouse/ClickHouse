@@ -4099,7 +4099,7 @@ bool MutateTask::prepare()
             /// them by a delta proven under the new semantics would expire the wrong rows.
             if (delta)
             {
-                const auto & ttl_column = rows_ttl.expression_columns.front();
+                const auto & ttl_column = rows_ttl.expression_source_columns.front();
                 auto part_column = ctx->source_part->tryGetColumn(ttl_column.name);
                 if (!part_column || !part_column->type->equals(*ttl_column.type))
                     delta.reset();
