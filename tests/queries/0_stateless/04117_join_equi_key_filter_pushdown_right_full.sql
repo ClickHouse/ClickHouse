@@ -199,15 +199,19 @@ DROP TABLE mt_i32;
 DROP TABLE IF EXISTS inner_d32;
 DROP TABLE IF EXISTS inner_d;
 DROP TABLE IF EXISTS inner_d32_key;
+DROP TABLE IF EXISTS inner_d_key;
 CREATE TABLE inner_d32     (a Date32) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE inner_d       (b Date)   ENGINE = MergeTree ORDER BY b
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE inner_d32_key (a Date32) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE inner_d_key   (a Date)   ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO inner_d32     SELECT toDate32('2020-01-01') + number FROM numbers(40000);
 INSERT INTO inner_d       SELECT toDate('2020-01-01')   + number FROM numbers(40000);
 INSERT INTO inner_d32_key SELECT toDate32('2020-01-01') + number FROM numbers(40000);
+INSERT INTO inner_d_key   SELECT toDate('2020-01-01')   + number FROM numbers(40000);
 
 SELECT 'INNER JOIN ON, cross-type equi-key, predicate on the wider key: right MergeTree prunes granules';
 SELECT count() > 0 FROM (
@@ -227,6 +231,24 @@ SELECT 'INNER JOIN ON, matched types: right MergeTree prunes granules';
 SELECT count() > 0 FROM (
     EXPLAIN PLAN indexes = 1
     SELECT count() FROM inner_d32 AS l INNER JOIN inner_d32_key AS r ON l.a = r.a
+    WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
+
+-- `USING` and `<=>` carry an equi-key just as `ON ... =` does, and the substitution is keyed by the key's
+-- own name on each side. A `USING` key holds the same name on both sides, which the `ON l.a = r.b` arms
+-- above cannot exercise, so each carrier is asserted on the same shape.
+
+SELECT 'INNER JOIN USING, cross-type equi-key: right MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d_key AS r USING (a)
+    WHERE a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
+
+SELECT 'INNER JOIN ON <=>, cross-type equi-key: right MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a <=> r.b
     WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 ) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
 
@@ -337,6 +359,7 @@ WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03') ORDER BY 1;
 DROP TABLE inner_d32;
 DROP TABLE inner_d;
 DROP TABLE inner_d32_key;
+DROP TABLE inner_d_key;
 
 -- A key that is not stable within the query is not substitutable: the pushed-down filter computes it and
 -- the JOIN computes it again, so the two comparisons would see different values and matching rows would
