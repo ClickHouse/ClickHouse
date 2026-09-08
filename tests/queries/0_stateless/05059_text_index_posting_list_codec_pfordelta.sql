@@ -157,14 +157,16 @@ DROP TABLE IF EXISTS tab_setting;
 CREATE TABLE tab_setting (
     id UInt64,
     str String,
-    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'pfordelta')
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS text_index_posting_list_codec = 'pfordelta';
 
 INSERT INTO tab_setting SELECT id, if(id % 7 = 0, 'seven', 'other') FROM tab_src;
 OPTIMIZE TABLE tab_setting FINAL;
 
+SELECT has_compressed_postings FROM mergeTreeTextIndex(currentDatabase(), tab_setting, idx) WHERE token = 'seven';
 SELECT count() FROM tab_setting WHERE hasToken(str, 'seven');
 SELECT count() FROM tab_setting WHERE hasToken(str, 'other');
 
