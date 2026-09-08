@@ -754,7 +754,8 @@ void HTTPHandler::processQuery(
                 DBMS_DEFAULT_BUFFER_SIZE,
                 nullptr,
                 0,
-                false);
+                false,
+                settings[Setting::max_generic_compression_threads]);
             used_output.out_maybe_compressed = used_output.generic_compression_holder;
             used_output.out = used_output.generic_compression_holder;
         }
