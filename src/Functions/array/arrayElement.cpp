@@ -26,7 +26,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <base/TypeList.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
