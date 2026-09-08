@@ -5629,7 +5629,9 @@ Allow to execute alters which affects not only tables metadata, but also data on
 Propagate WITH statements to UNION queries and all subqueries
 )", 0) \
     DECLARE(Bool, enable_materialized_cte, false, R"(
-Enable materialized common table expressions, it will be preferred over enable_global_with_statement
+Enable materialized common table expressions (`WITH <name> AS MATERIALIZED (<subquery>)`).
+When enabled, a CTE declared as `MATERIALIZED` that is referenced more than once is executed once, stored in a temporary table, and all references read from that table. A CTE referenced only once is inlined as an ordinary CTE to avoid the overhead.
+When disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
 )", EXPERIMENTAL) \
     DECLARE(Bool, analyzer_inline_views, false, R"(
 When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
@@ -7370,10 +7372,8 @@ When `readBigAt` populates the userspace page cache, consecutive cache misses ar
 A higher value reduces the number of HTTP requests for cold scans on object storage; a lower value reduces peak transient memory.
 )", 0) \
     \
-    DECLARE(Bool, load_marks_asynchronously, false, R"(
-Load MergeTree marks asynchronously
-
-Cloud default value: `1`.
+    DECLARE(Bool, load_marks_asynchronously, true, R"(
+Load MergeTree marks asynchronously in a background thread pool (see the server setting `load_marks_threadpool_pool_size`), so that the marks of all streams are loaded in parallel. Otherwise, marks are loaded synchronously, one stream after another, which is slow on remote disks for columns with many substreams, such as `JSON`.
 )", 0) \
     DECLARE(Bool, use_streaming_marks_compression, false, R"(
 When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
@@ -7580,6 +7580,8 @@ Maximum time to read from a pipe for receiving information from the threads when
 - **Default value:** Empty string
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
+
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
 
 ### Placeholders
 
@@ -9113,7 +9115,7 @@ Enabling it automatically adjusts settings that control features not supported b
 - `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
@@ -9130,10 +9132,10 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
 )", 0) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
 Total wall-clock time, in milliseconds, a query may spend provisioning stateless workers before execution: leasing them from the discovery service and verifying they are reachable. The query blocks up to this budget for the leased workers to become ready; when it elapses the query proceeds with the workers verified so far, or fails if none became available. Zero waits only for the initial lease-and-verify pass (no retries).
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -9157,7 +9159,7 @@ order. Only shapes where no exchange survives between the read and the sort are 
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
@@ -9274,7 +9276,20 @@ Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction 
 Memory limit in bytes per WebAssembly UDF instance.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_input_block_size, 0, R"(
-Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+Maximum number of rows passed to a WebAssembly UDF in a single call. A non-zero value caps the rows per call and applies to every ABI.
+
+Set to 0 to size the calls by their serialized input instead. That applies to `ABI BUFFERED_V1` alone, the only ABI that serializes a whole input block into guest memory: its blocks are split so that a call's input stays within `webassembly_udf_input_split_memory_ratio` of the module's linear memory. `ROW_DIRECT` passes its arguments as WebAssembly values and `ASSEMBLYSCRIPT` builds one object per row, so neither has a serialized input to size a call by, and 0 leaves their pipeline block whole.
+)", EXPERIMENTAL) \
+    DECLARE(Float, webassembly_udf_input_split_memory_ratio, 0.5, R"(
+Fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy. Must be at least 0 and at most 1; the default leaves the other half to the guest for its own working set beside the input buffer.
+
+The margin below 1 is what makes the batching safe: the guest's own data, stack and allocator share that memory and are invisible to the host. A ratio close to 1 leaves nothing for them, so a call sized against it can still fail inside the guest's allocator.
+
+Read only for `ABI BUFFERED_V1`, and it sizes the calls only while `webassembly_udf_max_input_block_size` is 0 - a non-zero block size caps the rows per call instead.
+
+A batch is never taken below a single row, so a row whose own serialized size is past the budget is passed on its own, and one too large for the module's linear memory fails inside the guest's allocator.
+
+Set to 0 to leave the input unsplit: the whole pipeline block is passed in one call.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
