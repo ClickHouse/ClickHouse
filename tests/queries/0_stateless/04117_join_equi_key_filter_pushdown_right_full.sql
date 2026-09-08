@@ -426,3 +426,46 @@ SELECT l.a FROM inner_ic_wide AS l INNER JOIN (SELECT toInt32(0) AS b) AS r ON l
 WHERE arrayExists(y -> isConstant(if(y, l.a, l.a)) = 0, [1]) ORDER BY 1;
 
 DROP TABLE inner_ic_wide;
+
+-- The predicate inferred for the opposite key travels on past the `JOIN`, so it also reaches a
+-- `MergeTree` read that sits below an `Aggregating` step whose grouping keys carry the filter column.
+-- `LowCardinality(String)` against `String` is a cross-type pair whose least supertype is `String`, and
+-- an `INNER JOIN` widens neither key in its output, so `join_use_nulls` leaves the substitution
+-- admissible. The target rows sort after every other key value, so the granules the rest of the grouped
+-- input contributes are the ones the assertion sees dropped.
+
+DROP TABLE IF EXISTS inner_lc_grouped;
+DROP TABLE IF EXISTS inner_str_probe;
+CREATE TABLE inner_lc_grouped (org LowCardinality(String), sub String, ts UInt64) ENGINE = MergeTree ORDER BY (org, sub)
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE inner_str_probe (org String, sub String, rev Float64) ENGINE = MergeTree ORDER BY (org, sub)
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO inner_lc_grouped SELECT toString(number % 400), toString(number), number FROM numbers(40000);
+INSERT INTO inner_lc_grouped SELECT 'TARGET', toString(number), number FROM numbers(20);
+INSERT INTO inner_str_probe SELECT 'TARGET', toString(number), 1 FROM numbers(20);
+
+SET join_use_nulls = 1;
+
+SELECT 'INNER JOIN ON, cross-type LowCardinality equi-key above a grouped input, join_use_nulls: grouped MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT sum(t.rev) FROM (
+        SELECT f.org AS org, f.rev AS rev FROM inner_str_probe AS f
+        INNER JOIN (SELECT org, sub, max(ts) AS m FROM inner_lc_grouped GROUP BY org, sub) AS c
+            ON c.org = f.org AND c.sub = f.sub
+    ) AS t
+    WHERE t.org = 'TARGET'
+) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
+
+SELECT 'INNER JOIN ON, cross-type LowCardinality equi-key above a grouped input, join_use_nulls: result';
+SELECT sum(t.rev) FROM (
+    SELECT f.org AS org, f.rev AS rev FROM inner_str_probe AS f
+    INNER JOIN (SELECT org, sub, max(ts) AS m FROM inner_lc_grouped GROUP BY org, sub) AS c
+        ON c.org = f.org AND c.sub = f.sub
+) AS t
+WHERE t.org = 'TARGET';
+
+SET join_use_nulls = 0;
+
+DROP TABLE inner_lc_grouped;
+DROP TABLE inner_str_probe;

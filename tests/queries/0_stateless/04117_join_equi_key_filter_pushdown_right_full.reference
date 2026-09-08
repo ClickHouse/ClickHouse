@@ -88,3 +88,7 @@ INNER JOIN ON, cross-type equi-key under a predicate reading constness: result
 0
 INNER JOIN ON, equi-key under a predicate reading constness inside a lambda body: result
 0
+INNER JOIN ON, cross-type LowCardinality equi-key above a grouped input, join_use_nulls: grouped MergeTree prunes granules
+1
+INNER JOIN ON, cross-type LowCardinality equi-key above a grouped input, join_use_nulls: result
+20
