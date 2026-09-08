@@ -1,17 +1,12 @@
--- Regression test for issue #118733.
--- Decorrelating a correlated scalar subquery puts a CommonSubplanStep on the outer plan's root and
--- gives the decorrelated subquery a CommonSubplanReferenceStep holding a raw pointer to that node.
--- Both become inputs of one JoinStepLogical, and the `query_plan_convert_join_to_in` rewrite
--- installed new steps at the input node addresses and spliced the right input into the IN set's own
--- plan, so the reference no longer resolved to a CommonSubplanStep:
---   Logical error: Expected CommonSubplanReferenceStep to reference CommonSubplanStep, but got Expression
--- thrown from useMemoryBufferForCommonSubplanResult with the in-memory buffer enabled, and from
--- materializeQueryPlanReferences with it disabled.
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/118733.
+-- A CommonSubplanReferenceStep holds a raw pointer to the node that must still hold the
+-- CommonSubplanStep when the second pass resolves it; the two arms cover the two consumers that do.
 
 SET enable_analyzer = 1;                             -- correlated subqueries need the analyzer
 SET allow_experimental_correlated_subqueries = 1;    -- gates decorrelation
 SET query_plan_convert_join_to_in = 1;               -- the trigger, default 0
 SET query_plan_convert_outer_join_to_inner_join = 1; -- supplies the INNER kind the rewrite requires, and the test runner randomizes it off in 5% of runs
+SET join_algorithm = 'hash';                         -- convertJoinToIn only runs for hash/parallel_hash, and the buffer=0 arm keeps the session's list
 
 DROP TABLE IF EXISTS t_05137;
 
