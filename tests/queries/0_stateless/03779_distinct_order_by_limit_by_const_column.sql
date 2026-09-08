@@ -74,21 +74,23 @@ WHERE current_database = currentDatabase()
 
 SET enable_analyzer = 1;
 
+-- Keep the constant as a ColumnConst, but prevent the analyzer from folding the
+-- ORDER BY key away, so this checks the final sorted-stream LIMIT BY transform.
 SELECT count() > 0
 FROM (EXPLAIN PIPELINE
-      SELECT number, 1 AS k
-      FROM numbers_mt(100000)
+      SELECT number, identity(1) AS k
+      FROM numbers(100000)
       ORDER BY k
       LIMIT 2 BY k
-      SETTINGS max_threads = 4, max_block_size = 10)
+      SETTINGS max_threads = 1, max_block_size = 10)
 WHERE explain LIKE '%LimitBySortedStreamTransform%';
 
-SELECT number, 1 AS k
-FROM numbers_mt(100000)
+SELECT number, identity(1) AS k
+FROM numbers(100000)
 ORDER BY k
 LIMIT 2 BY k
 FORMAT Null
-SETTINGS max_threads = 4, max_block_size = 10, log_comment = '03779_limit_by_const_early_stop_sorted';
+SETTINGS max_threads = 1, max_block_size = 10, log_comment = '03779_limit_by_const_early_stop_sorted';
 
 SYSTEM FLUSH LOGS query_log;
 
