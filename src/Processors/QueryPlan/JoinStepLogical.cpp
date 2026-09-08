@@ -855,6 +855,43 @@ static void predicateOperandsToCommonType(
     }
 }
 
+/// Under `join_use_nulls`, a right column selected from a LEFT or FULL JOIN is output through `toNullable(x)`
+/// (see `addToNullableIfNeeded`). When that column is also a join key, joining on the `Nullable` node makes
+/// it the single right column that is both the key and the output, which the join restores from the left
+/// key; joining on the plain input would make the join store a `Nullable` copy of the key next to it.
+static void preferNullableRightKey(
+    JoinActionRef & right_node,
+    const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
+{
+    /// The `Join` engine and a dictionary are looked up by the key they declare.
+    if (planning_context.is_storage_join || planning_context.is_prebuilt_hash_join)
+        return;
+
+    const auto * input = right_node.getNode();
+    if (input->type != ActionsDAG::ActionType::INPUT)
+        return;
+
+    auto it = planning_context.actions_after_join_map.find(input->result_name);
+    if (it == planning_context.actions_after_join_map.end())
+        return;
+
+    const auto * to_nullable = it->second;
+    if (to_nullable->type != ActionsDAG::ActionType::FUNCTION || to_nullable->children.size() != 1
+        || to_nullable->children.front() != input || to_nullable->function_base->getName() != "toNullable")
+        return;
+
+    /// The build-side key name is the rendezvous with the shared runtime filter descriptors, as in
+    /// `predicateOperandsToCommonType`.
+    String name_before = right_node.getColumnName();
+    right_node = JoinActionRef::transform({right_node}, [to_nullable](auto &, auto &&) { return to_nullable; });
+    for (auto & descriptor : shared_runtime_filter_descriptors)
+    {
+        if (descriptor.second == name_before)
+            descriptor.second = right_node.getColumnName();
+    }
+}
+
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
     std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
@@ -878,6 +915,8 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         predicateOperandsToCommonType(
             lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors,
             /* allow_conversion_to_subtype= */ !null_safe_comparison);
+        if (!null_safe_comparison)
+            preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
             /**
@@ -1633,69 +1672,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const bool right_nullable_from_prepared_storage
         = prepared_join_storage && !(prepared_join_storage.storage_key_value && build_mixed_join_expression);
 
-    /// A right join key selected under `join_use_nulls` arrives as `x (Alias) -> toNullable(x) -> x (Input)`.
-    /// Evaluating `toNullable(x)` on the right input would make the hash join store a full `Nullable` copy
-    /// of the key next to the key itself. The hash join can instead restore the key from the matched left
-    /// key, with NULL for an unmatched left row (see `TableJoin::getRequiredRightKeys`), so the alias is
-    /// kept as the join output and only the plain key is handed to the right side. `HashJoin` and
-    /// `MergeJoin` restore keys this way; the full sorting merge join emits a stored key as is.
-    const bool can_restore_right_keys = !prepared_join_storage && !ie_join_description && !is_disjunctive_condition
-        && table_join_clauses.size() == 1
-        && join_operator.strictness != JoinStrictness::Asof
-        && isLeftOrFull(join_operator.kind)
-        && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE)
-        && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
-
-    /// Inputs the post-join actions read as they are, bypassing the output aliases: a restored key would
-    /// clash with them, as the same name would then denote both the plain and the `Nullable` column.
-    std::unordered_set<const ActionsDAG::Node *> inputs_read_after_join;
-    if (can_restore_right_keys)
-    {
-        std::unordered_set<const ActionsDAG::Node *> output_aliases(actions_after_join.begin(), actions_after_join.end());
-        auto collect_inputs = [&](const JoinActionRef & condition)
-        {
-            if (!condition)
-                return;
-            std::stack<const ActionsDAG::Node *> stack;
-            stack.push(condition.getNode());
-            while (!stack.empty())
-            {
-                const auto * node = stack.top();
-                stack.pop();
-                if (output_aliases.contains(node))
-                    continue;
-                if (node->type == ActionsDAG::ActionType::INPUT)
-                    inputs_read_after_join.insert(node);
-                for (const auto * child : node->children)
-                    stack.push(child);
-            }
-        };
-        if (!build_mixed_join_expression)
-            collect_inputs(on_clause_condition);
-        collect_inputs(residual_filter_condition);
-    }
-
-    auto restorable_right_key = [&](const ActionsDAG::Node * alias) -> const ActionsDAG::Node *
-    {
-        if (!can_restore_right_keys)
-            return nullptr;
-        const auto * to_nullable = alias->children.at(0);
-        if (to_nullable->type != ActionsDAG::ActionType::FUNCTION || to_nullable->children.size() != 1
-            || to_nullable->function_base->getName() != "toNullable")
-            return nullptr;
-        const auto * input = to_nullable->children.front();
-        if (input->type != ActionsDAG::ActionType::INPUT || input->result_name != alias->result_name
-            || inputs_read_after_join.contains(input) || !JoinActionRef(input, expression_actions).fromRight())
-            return nullptr;
-        const auto & clause = table_join_clauses.front();
-        for (size_t i = 0; i < clause.key_names_right.size(); ++i)
-            if (clause.key_names_right[i] == input->result_name && !clause.nullsafe_compare_key_indexes.contains(i))
-                return input;
-        return nullptr;
-    };
-
-    NameSet nullable_right_keys;
-    std::unordered_set<const ActionsDAG::Node *> restored_key_aliases;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
     for (const auto * action : actions_after_join)
     {
@@ -1704,11 +1680,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
             if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// StorageJoin should convert to nullable by itself.
-            }
-            else if (const auto * key_input = restorable_right_key(action))
-            {
-                nullable_right_keys.insert(key_input->result_name);
-                restored_key_aliases.insert(action);
             }
             else
             {
@@ -1774,8 +1745,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
-            if ((right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
-                || restored_key_aliases.contains(action))
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
@@ -1799,6 +1769,34 @@ static QueryPlanNode buildPhysicalJoinImpl(
     for (const auto * node : dag_inputs)
         name_to_nodes[node->result_name].push_back(node);
 
+    /// An input that only feeds a used expression, such as the `toNullable(x)` key under `join_use_nulls`
+    /// or a key cast to a common type, is not passed to the join as a column of its own: the join would
+    /// store it as payload for nothing.
+    std::unordered_set<const ActionsDAG::Node *> consumed_inputs;
+    {
+        std::unordered_set<const ActionsDAG::Node *> used_nodes;
+        for (const auto & expression : used_expressions)
+            used_nodes.insert(expression.getNode());
+
+        std::stack<const ActionsDAG::Node *> stack;
+        for (const auto * node : used_nodes)
+            for (const auto * child : node->children)
+                stack.push(child);
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                if (!used_nodes.contains(node))
+                    consumed_inputs.insert(node);
+                continue;
+            }
+            for (const auto * child : node->children)
+                stack.push(child);
+        }
+    }
+
     for (const auto * child : children)
     {
         for (const auto & column : *child->step->getOutputHeader())
@@ -1812,8 +1810,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
                     expression_actions.getActionsDAG()->dumpDAG());
 
-            used_expressions.emplace_back(input_it->second.front(), expression_actions);
+            const auto * input = input_it->second.front();
             input_it->second.pop_front();
+            if (!consumed_inputs.contains(input))
+                used_expressions.emplace_back(input, expression_actions);
         }
     }
 
@@ -1884,7 +1884,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
         table_join->setUsedColumns(used_columns);
     }
     table_join->setJoinOperator(join_operator);
-    table_join->setNullableRightKeys(std::move(nullable_right_keys));
 
     if (logical_lookup && prepared_join_storage.storage_join)
     {

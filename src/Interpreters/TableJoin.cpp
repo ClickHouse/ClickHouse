@@ -525,13 +525,6 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
         {
             auto right_key = right_table_keys.getByName(right_key_name);
 
-            if (nullable_right_keys.contains(right_key_name)
-                && !isNullableOrLowCardinalityNullable(right_key.type) && JoinCommon::canBecomeNullable(right_key.type))
-            {
-                right_key.type = JoinCommon::convertTypeToNullable(right_key.type);
-                right_key.column = nullptr;
-            }
-
             /// A promoted key must be Nullable so an unmatched-left row fills NULL rather than the
             /// storage default, which `firstNonDefault` would then prefer over the left NULL.
             /// A matched row cannot have a NULL left key here, so matched values are unchanged.

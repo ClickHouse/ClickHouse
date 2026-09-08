@@ -1,10 +1,10 @@
--- right side of the plan carries only the key
+-- right side of the plan carries only the Nullable key
 Header: __table2.k Nullable(String)
 Header: __table2.k Nullable(String)
 __table2.k Nullable(String)
-__table2.k Nullable(String)
+toNullable(__table2.k) Nullable(String)
 Expression (Right Pre Join Actions)
-Header: __table2.k String
+Header: toNullable(__table2.k) Nullable(String)
 Header: __table2.k String
 -- LEFT
 a	a	10
@@ -43,6 +43,13 @@ c	c	31
 -- LEFT with residual ON condition
 a	\N	\N
 b	\N	\N
+c	c	31
+c	c	31
+-- LEFT with a residual ON condition on the right key itself
+a	\N	\N
+b	\N	\N
+c	c	30
+c	c	30
 c	c	31
 c	c	31
 -- LEFT with WHERE on the right key
@@ -97,9 +104,9 @@ c	c	31
 Header: __table2.k Nullable(String)
 Header: __table2.k Nullable(String)
 __table2.k Nullable(String)
-__table2.k Nullable(String)
+toNullable(__table2.k) Nullable(String)
 Expression (Right Pre Join Actions)
-Header: __table2.k String
+Header: toNullable(__table2.k) Nullable(String)
 Header: __table2.k String
 a	a	10
 b	\N	\N
@@ -129,9 +136,9 @@ LowCardinality(Nullable(String))
 Header: __table2.k Nullable(String)
 Header: __table2.k Nullable(String)
 __table2.k Nullable(String)
-__table2.k Nullable(String)
+toNullable(__table2.k) Nullable(String)
 Expression (Right Pre Join Actions)
-Header: __table2.k String
+Header: toNullable(__table2.k) Nullable(String)
 Header: __table2.k String
 a	a	10
 b	\N	\N
@@ -152,7 +159,15 @@ c	c
 c	c
 c	c
 c	c
--- full_sorting_merge stores the key
+-- full_sorting_merge
+Header: __table2.k Nullable(String)
+Header: __table2.k Nullable(String)
+__table2.k Nullable(String)
+toNullable(__table2.k) Nullable(String)
+Header: toNullable(__table2.k) Nullable(String)
+Expression (Right Pre Join Actions)
+Header: toNullable(__table2.k) Nullable(String)
+Header: __table2.k String
 a	a	10
 b	\N	\N
 c	c	30

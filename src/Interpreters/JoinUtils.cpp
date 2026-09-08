@@ -601,14 +601,7 @@ void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_j
         if (const auto * left_col = left_totals.findByName(col.name))
             col = *left_col;
         else if (const auto * right_col = right_totals.findByName(col.name))
-        {
-            /// A right key the join restores from the left key is `Nullable` in the result, while the
-            /// right totals carry it as stored (see `TableJoin::getRequiredRightKeys`).
-            const bool add_nullable = isNullableOrLowCardinalityNullable(col.type) && !isNullableOrLowCardinalityNullable(right_col->type);
             col = *right_col;
-            if (add_nullable)
-                JoinCommon::convertColumnToNullable(col);
-        }
         else
             col.column = col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
 
