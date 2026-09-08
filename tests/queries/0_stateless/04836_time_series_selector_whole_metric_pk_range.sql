@@ -35,7 +35,7 @@ SELECT '-- whole-metric selector: same rows as a filtered read, and the WHERE ca
 
 SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000) ORDER BY value, timestamp;
 
-SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
+SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan NOT LIKE '%IN subquery%' AS inline_ids
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000)));
 
 SELECT '-- whole-metric-by-data selector (a matcher every series passes): the range is still emitted';

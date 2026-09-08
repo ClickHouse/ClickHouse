@@ -24,9 +24,6 @@ using TableNodePtr = std::shared_ptr<TableNode>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
-struct TemporaryTableHolder;
-using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
-
 struct MaterializedCTE;
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
 
@@ -49,8 +46,8 @@ public:
         QueryTreeNodePtr materialized_cte_subquery_,
         const ContextPtr & context_);
 
-    /// Replace the placeholder storage with the real StorageMemory from the temporary table holder.
-    void finalizeMaterializedCTE(TemporaryTableHolder temporary_table_holder_, const ContextPtr & context_);
+    /// Replace the placeholder storage with the shared `Memory` table for the resolved columns.
+    void finalizeMaterializedCTE(const NamesAndTypesList & columns, const ContextPtr & context);
 
     /// Adopt another (canonical) MaterializedCTE for this node, replacing its own.
     /// Used to merge duplicate materialized CTEs created for cloned WITH definitions

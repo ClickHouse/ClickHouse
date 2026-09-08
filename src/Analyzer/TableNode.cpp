@@ -104,13 +104,10 @@ TableNode::TableNode(
     setTemporaryTableName(materialized_cte->temporary_table_name);
 }
 
-void TableNode::finalizeMaterializedCTE(TemporaryTableHolder temporary_table_holder_, const ContextPtr & context_)
+void TableNode::finalizeMaterializedCTE(const NamesAndTypesList & columns, const ContextPtr & context)
 {
-    auto real_storage = temporary_table_holder_.getTable();
-    materialized_cte->storage = real_storage;
-    materialized_cte->table_holder = std::move(temporary_table_holder_);
-    typeid_cast<StorageMemory *>(real_storage.get())->setMaterializedCTE(materialized_cte);
-    updateStorage(std::move(real_storage), context_);
+    materialized_cte->initializeStorage(columns, context);
+    updateStorage(materialized_cte->storage, context);
 }
 
 void TableNode::adoptMaterializedCTE(MaterializedCTEPtr materialized_cte_, const ContextPtr & context_)
