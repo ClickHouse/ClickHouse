@@ -768,12 +768,16 @@ The envelope is a packet-type `VarUInt` of `19`, an empty `table_name` binary st
 |---|------|------|-------------|
 | 1 | `host_name` | `String` | Host that collected the sample, preserved when forwarded. |
 | 2 | `query_id` | `String` | Query that produced the sample, including remote query IDs. |
-| 3 | `trace_type` | `String` | One of `CPU`, `Real`, `Memory`, `MemorySample`, or `MemoryPeak`. Other trace types are excluded. |
+| 3 | `trace_type` | `String` | Sample kind: `CPU`, `Real`, `Memory`, `MemorySample`, or `MemoryPeak`; delivery status: `Dropped` or `Incomplete`. |
 | 4 | `thread_id` | `UInt64` | OS thread ID on the originating host. |
 | 5 | `event_time_microseconds` | `UInt64` | Sample timestamp in microseconds since the Unix epoch. |
 | 6 | `trace` | `Array(UInt64)` | Normalized instruction addresses, ordered from the leaf frame outward. |
 | 7 | `symbols` | `Array(String)` | Symbol corresponding to each address; an empty string denotes an unresolved frame. |
-| 8 | `size` | `Int64` | Allocation or deallocation size for memory samples; zero for time samples. |
+| 8 | `size` | `Int64` | Allocation or deallocation size for memory samples; zero for time samples; positive loss delta for `Dropped`. |
+
+Delivery status rows use empty `trace` and `symbols` arrays and zero `thread_id` and `event_time_microseconds`. `Dropped` reports a positive delta in the number of samples discarded by bounded queues or by a collector flush timeout. Add these deltas across the response; each delta saturates at `9223372036854775807`, which denotes a lower bound. `Incomplete` has `size = 0` and reports that a collector flush timed out, so additional losses cannot be quantified. Status rows count towards the 1024-row batch limit and can be sent without any samples.
+
+A coordinator consumes remote loss deltas and includes them once in its own status rows, even when its sample queue is full. For status rows, `host_name` and `query_id` identify the reporting coordinator; they do not attribute losses to a particular sampled host. The count covers reported queue losses across the response's distributed query subtree. It excludes losses in the signal-safe pipe before the collector and any metadata discarded by intermediaries that do not recognize these status kinds. An absent `Incomplete` row does not certify a lossless profile. Clients must handle status rows separately from samples and ignore unrecognized kinds.
 
 Packets may be interleaved with query results and INSERT metadata. The server drains accepted samples before `EndOfStream`, and before a query exception when the connection is still usable. The final drain waits at most ten seconds for the collector. If that deadline expires, remaining samples are discarded and a server warning is logged; the original query result or exception is preserved. Clients must continue receiving until the terminal packet; a `ProfileTraces` block is never a result block or a completion marker. Delivery uses bounded queues, so samples may be dropped when a consumer cannot keep up. Disabling delivery discards queued samples without waiting for the collector. Excluded trace types, including `ProfileEvent` and `JemallocSample`, can still be collected in `system.trace_log` under their own settings.
 

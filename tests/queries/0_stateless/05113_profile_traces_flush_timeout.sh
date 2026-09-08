@@ -76,10 +76,22 @@ def command(transport, query, query_id, enabled=1):
     return curl + ["-sS", base_url + "&" + urlencode(options), "--data-binary", query]
 
 
-def check_response(transport, result, exception=None):
+def check_metadata(traces, incomplete):
+    if not incomplete:
+        assert not traces, "disabled delivery sent profile trace metadata"
+        return
+    assert sum(row["trace_type"] == "Incomplete" for row in traces) == 1, traces
+    for row in traces:
+        assert row["trace_type"] in {"Dropped", "Incomplete"}, "undrained samples were sent after the flush was discarded"
+        assert not row["trace"] and not row["symbols"], row
+        assert int(row["thread_id"]) == int(row["event_time_microseconds"]) == 0, row
+        assert int(row["size"]) > 0 if row["trace_type"] == "Dropped" else int(row["size"]) == 0, row
+
+
+def check_response(transport, result, exception=None, incomplete=False):
     if transport == "native":
-        traces = [line for line in result.stderr.splitlines() if line.startswith('{"host_name":')]
-        assert not traces, "undrained native traces were sent after the flush was discarded"
+        traces = [json.loads(line) for line in result.stderr.splitlines() if line.startswith('{"host_name":')]
+        check_metadata(traces, incomplete)
         if exception:
             assert result.returncode != 0 and exception in result.stderr, result.stderr
         else:
@@ -87,7 +99,8 @@ def check_response(transport, result, exception=None):
         return
     assert result.returncode == 0, result.stderr
     packets = [json.loads(line) for line in result.stdout.splitlines() if line]
-    assert packets and not any(packet["packet"] == "profile_traces" for packet in packets), packets
+    assert packets, packets
+    check_metadata([row for packet in packets if packet["packet"] == "profile_traces" for row in packet["profile_traces"]], incomplete)
     if exception:
         assert packets[-1]["packet"] == "exception" and exception in packets[-1]["exception"], packets[-1:]
     else:
@@ -100,7 +113,7 @@ def complete(transport, query, exception=None, enabled=1, wait_for_ack=False):
     start = time.monotonic()
     result = run(command(transport, query, query_id, enabled))
     elapsed = time.monotonic() - start
-    check_response(transport, result, exception)
+    check_response(transport, result, exception, incomplete=bool(enabled))
     if wait_for_ack:
         assert 9 <= elapsed < 18, f"flush did not respect its single 10-second deadline: {elapsed:.2f}s"
     else:
