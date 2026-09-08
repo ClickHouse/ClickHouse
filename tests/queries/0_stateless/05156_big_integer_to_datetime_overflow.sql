@@ -11,6 +11,10 @@ SELECT toInt64(toDateTime64(toInt128(-99999999999999), 0)), toInt64(toDateTime64
 SELECT toInt64(toTime64(toUInt128(99999999999999), 0)), toInt64(toTime64(toUInt64(99999999999999), 0));
 SELECT toInt64(toTime64(toInt128(-99999999999999), 0)), toInt64(toTime64(toInt64(-99999999999999), 0));
 
+-- An unsigned width narrower than 64 bits can also exceed the `Time64` maximum.
+SELECT toInt64(toTime64(toUInt32(4000000), 0)), toInt64(toTime64(toUInt64(4000000), 0));
+SELECT toInt64(toDateTime64(toUInt32(4000000), 0)), toInt64(toDateTime64(toUInt64(4000000), 0));
+
 -- In-range values are unaffected.
 SELECT toDateTime(toUInt128(1000000)), toDateTime64(toInt256(1000000), 3), toTime64(toUInt128(3600), 0);
 

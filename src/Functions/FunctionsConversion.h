@@ -2248,8 +2248,12 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
         }
+        /// `UInt32` is listed for the same reason as the wide integers: a value above the `Time64`
+        /// maximum has to clamp instead of being stored raw, and every `UInt32` is in range for
+        /// `DateTime64`, so there the transform answers exactly what the generic path answered.
         else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeUInt64>
+                std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>
                 || std::is_same_v<FromDataType, DataTypeUInt128>
                 || std::is_same_v<FromDataType, DataTypeUInt256>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
