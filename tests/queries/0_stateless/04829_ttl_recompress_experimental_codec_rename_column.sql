@@ -1,18 +1,18 @@
 -- `RENAME COLUMN` rewrites the stored TTL AST (renaming the columns it references) without touching
 -- the recompression codec, so a table whose `TTL ... RECOMPRESS` uses an experimental codec (created
--- under `allow_experimental_codecs = 1`) must allow renaming a column the TTL references in sessions
+-- under `enable_zxc_codec = 1`) must allow renaming a column the TTL references in sessions
 -- without the opt-in: the exemption from the experimental-codec gate is keyed off the codec itself,
 -- not off the whole TTL AST staying byte-identical.
 
 DROP TABLE IF EXISTS t_ttl_zxc_rename;
 
-SET allow_experimental_codecs = 1;
+SET enable_zxc_codec = 1;
 
 CREATE TABLE t_ttl_zxc_rename (d Date, x UInt64)
 ENGINE = MergeTree ORDER BY tuple()
 TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(ZXC);
 
-SET allow_experimental_codecs = 0;
+SET enable_zxc_codec = 0;
 
 -- Renaming the column the TTL references rewrites the TTL AST but keeps the codec: not gated.
 ALTER TABLE t_ttl_zxc_rename RENAME COLUMN d TO event_date;
