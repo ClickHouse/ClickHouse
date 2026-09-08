@@ -1020,7 +1020,10 @@ using FoldCache = std::unordered_map<const ActionsDAG::Node *, std::optional<Fol
 const std::unordered_set<std::string> & foldablePredicateFunctions()
 {
     static const std::unordered_set<std::string> functions{
-        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or", "not"};
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or", "not",
+        /// `isNull` / `isNotNull` only look at the null map of their argument, so a `ColumnConst`
+        /// and the materialized column it wraps give the same answer
+        "isNull", "isNotNull"};
     return functions;
 }
 

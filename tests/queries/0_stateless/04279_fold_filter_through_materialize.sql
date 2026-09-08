@@ -189,3 +189,28 @@ FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE NOT and(ma
 SELECT count() FROM numbers(100) WHERE NOT and(materialize(1), materialize(0));
 -- `not` of NULL is NULL, which is not decisive and filters everything out
 SELECT count() FROM numbers(100) WHERE NOT materialize(CAST(NULL AS Nullable(UInt8)));
+
+-- `isNull` / `isNotNull` read only the null map of their argument, which a `ColumnConst` and the
+-- column it wraps share, so they fold through `materialize` as well. The analyzer cannot fold them
+-- on its own here: `getConstantResultForNonConstArguments` gives up as soon as the argument type
+-- can contain NULL.
+SELECT 'isNull folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(NULL AS Nullable(UInt8)))));
+SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(NULL AS Nullable(UInt8))));
+SELECT 'isNull folded to false', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(1 AS Nullable(UInt8)))));
+SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(1 AS Nullable(UInt8))));
+SELECT 'isNotNull folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNotNull(materialize(CAST(1 AS Nullable(UInt8)))));
+SELECT count() FROM numbers(100) WHERE isNotNull(materialize(CAST(1 AS Nullable(UInt8))));
+-- the `IS NULL` operator spelling goes through the same function
+SELECT 'is null operator folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE materialize(CAST(NULL AS Nullable(UInt8))) IS NULL);
+SELECT count() FROM numbers(100) WHERE materialize(CAST(NULL AS Nullable(UInt8))) IS NULL;
+-- combined with a logical operator the whole predicate still collapses
+SELECT 'isNull under and folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(NULL AS Nullable(UInt8)))) AND materialize(1) = 1);
+-- a column-dependent argument is not constant, so nothing folds
+SELECT 'isNull over a column not folded', countIf(explain LIKE '%Filter column: materialize(CAST(number AS Nullable(UInt64))) IS NULL%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(number AS Nullable(UInt64)))));
+SELECT count() FROM numbers(100) WHERE isNull(materialize(CAST(number AS Nullable(UInt64))));

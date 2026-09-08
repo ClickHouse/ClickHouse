@@ -45,3 +45,14 @@ not folded	1
 not over all-const and folded	1
 100
 0
+isNull folded	1
+100
+isNull folded to false	1
+0
+isNotNull folded	1
+100
+is null operator folded	1
+100
+isNull under and folded	1
+isNull over a column not folded	1
+0
