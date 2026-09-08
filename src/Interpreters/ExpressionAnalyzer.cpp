@@ -942,7 +942,7 @@ ArrayJoin ExpressionAnalyzer::addMultipleArrayJoinAction(ActionsDAG & actions, b
         result_columns.push_back(result_source.first);
     }
 
-    return {std::move(result_columns), array_join_is_left};
+    return {std::move(result_columns), array_join_is_left, {}};
 }
 
 std::optional<ArrayJoin> SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types)

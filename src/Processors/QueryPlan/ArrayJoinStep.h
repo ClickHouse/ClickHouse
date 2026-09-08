@@ -36,6 +36,11 @@ public:
 
     const Names & getColumns() const { return array_join.columns; }
     bool isLeft() const { return array_join.is_left; }
+    String getSourceColumnName(const String & column_name) const
+    {
+        auto it = array_join.source_columns.find(column_name);
+        return it == array_join.source_columns.end() ? column_name : it->second;
+    }
 
     /// Attach an element-space filter (the fuse-filter pass sets this); the DAG references only joined columns
     void setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column);

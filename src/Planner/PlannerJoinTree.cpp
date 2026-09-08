@@ -3213,13 +3213,15 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
     Names array_join_column_names;
     array_join_column_names.reserve(array_join_node.getJoinExpressions().getNodes().size());
+    NameToNameMap array_join_source_columns;
     for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
     {
         const auto & array_join_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(array_join_expression);
         array_join_column_names.push_back(array_join_column_identifier);
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
-        auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
+        const auto & array_join_source_expression = array_join_expression_column.getExpressionOrThrow();
+        auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(array_join_action_dag, array_join_source_expression);
         correlated_subtrees.assertEmpty("in ARRAY JOIN");
 
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
@@ -3227,6 +3229,8 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
             const auto * array_join_column_node = &array_join_action_dag.addAlias(*expression_dag_index_node, array_join_column_identifier);
             array_join_action_dag.getOutputs().push_back(array_join_column_node);
             array_join_expressions_output_nodes.insert(array_join_column_node->result_name);
+
+            array_join_source_columns.emplace(array_join_column_identifier, expression_dag_index_node->result_name);
         }
     }
 
@@ -3269,7 +3273,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     auto array_join_step = std::make_unique<ArrayJoinStep>(
         plan.getCurrentHeader(),
-        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft()},
+        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft(), std::move(array_join_source_columns)},
         settings[Setting::enable_unaligned_array_join],
         settings[Setting::max_block_size],
         settings[Setting::enable_lazy_columns_replication]

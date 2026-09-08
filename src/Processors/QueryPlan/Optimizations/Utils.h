@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -10,6 +11,7 @@ namespace DB
 {
 
 class ActionsDAG;
+class ArrayJoinStep;
 
 struct IDescriptionHolder
 {
@@ -90,6 +92,42 @@ enum class FilterResult
     ActionsDAG pre_actions_dag,
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
+
+/// Walk down a chain of `ExpressionStep`s below a sort, rewriting `description` so that its
+/// column names refer to the input level of the deepest step reached. `node` is advanced past
+/// every peeled step.
+///
+/// For each sort column we look up the output node by name and walk through any `ALIAS` chain -
+/// if it ends at an `INPUT` node, the column is a pure pass-through and we replace its name with
+/// the input's name. Anything else (FUNCTION, COLUMN, ARRAY_JOIN, ...) means the sort key was
+/// computed in this step rather than carried over, so pushing the sort below it would be unsound
+/// and we return `false`. An `arrayJoin` anywhere in the expression also returns `false`, because
+/// it changes the number of rows per input row (see `#82279`).
+///
+/// `max_peel` bounds the walk. A cap of 4 is generous: in current plans the only steps between
+/// `Sorting` and a row-multiplying step after `mergeExpressions` are `Before ORDER BY +
+/// Projection` and `Post Join Actions`, occasionally with one more wrapper.
+///
+/// Returns `false` when the caller must abandon the rewrite; `node` and `description` may then
+/// have been partially advanced and must not be used.
+[[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
+
+/// Add a filter that removes rows for which all columns expanded by an inner `ARRAY JOIN` are empty.
+/// The condition is `length(c1) > 0 OR ... OR length(cn) > 0`, so rows with unequal non-zero array
+/// sizes still reach an aligned `ARRAY JOIN` and raise `SIZES_OF_ARRAYS_DONT_MATCH`.
+/// Column names are taken from `array_join`; source names are resolved via `ArrayJoinStep::getSourceColumnName`.
+/// The lookup also tries the joined column names themselves, so the filter can be built both immediately
+/// below the step (where the header uses analyzer aliases) and further down the input (where original
+/// column names remain). The step input header is used to recover constant ARRAY JOIN expressions that
+/// do not need to be read from `input_node`.
+///
+/// `input_node` is updated to point to the inserted filter. If the condition is constant, no node
+/// is added because limiting the input cannot change whether a constant `ARRAY JOIN` emits rows.
+/// Returns false only if the condition cannot be constructed.
+[[nodiscard]] bool addArrayJoinEmptinessFilter(
+    ArrayJoinStep & array_join,
+    QueryPlan::Node *& input_node,
+    QueryPlan::Nodes & nodes);
 
 struct NoOp
 {

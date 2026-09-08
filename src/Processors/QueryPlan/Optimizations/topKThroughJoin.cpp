@@ -1,15 +1,14 @@
 #include <Core/Joins.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/TableJoin.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -234,52 +233,16 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         return 0;
 
     /// Peel a chain of ExpressionSteps between Sort and Join, translating the sort
-    /// description to the input level of each step. For each sort column we look up
-    /// the output node by name and walk through any `ALIAS` chain - if it ends at an
-    /// `INPUT` node, the column is a pure pass-through and we replace its name with
-    /// the input's name. Anything else (FUNCTION, COLUMN, ARRAY_JOIN, ...) means the
-    /// sort key was computed in this step rather than carried over, and pushing the
-    /// sort below the join would be unsound.
-    ///
-    /// The cap of 4 is generous: in current plans the only steps between Sort and
-    /// Join after `mergeExpressions` are `Before ORDER BY + Projection` and
-    /// `Post Join Actions`, occasionally with one more wrapper.
+    /// description to the input level of each step. An `arrayJoin` in such a step changes
+    /// the number of output rows per input row: the soundness sketch assumes "every
+    /// preserved-side row produces at least one output row" and that the top-n of the sort
+    /// output corresponds to the top-n of the preserved side - both invariants break when an
+    /// `arrayJoin` above the join expands rows, because the n rows we keep on the preserved
+    /// side may expand into fewer (or zero) final rows. See `#82279`.
     SortDescription description = sort_step->getSortDescription();
     QueryPlan::Node * join_node = sort_node->children.front();
-    for (size_t peeled = 0; peeled < 4; ++peeled)
-    {
-        auto * expression_step = typeid_cast<ExpressionStep *>(join_node->step.get());
-        if (!expression_step)
-            break;
-        if (join_node->children.size() != 1)
-            return 0;
-
-        const ActionsDAG & dag = expression_step->getExpression();
-        /// `arrayJoin` between `Sort` and `Join` changes the number of output rows
-        /// per input row. The soundness sketch assumes "every preserved-side row
-        /// produces at least one output row" and that the top-n of the sort output
-        /// corresponds to the top-n of the preserved side - both invariants break
-        /// when an `arrayJoin` above the join expands rows, because the n rows we
-        /// keep on the preserved side may expand into fewer (or zero) final rows.
-        /// See `#82279`.
-        if (dag.hasArrayJoin())
-            return 0;
-        for (auto & sort_col : description)
-        {
-            const auto * out_node = dag.tryFindInOutputs(sort_col.column_name);
-            if (!out_node)
-                return 0;
-
-            while (out_node->type == ActionsDAG::ActionType::ALIAS)
-                out_node = out_node->children.front();
-
-            if (out_node->type != ActionsDAG::ActionType::INPUT)
-                return 0;
-
-            sort_col.column_name = out_node->result_name;
-        }
-        join_node = join_node->children.front();
-    }
+    if (!peelPassThroughExpressions(join_node, description))
+        return 0;
 
     auto join_semantics_opt = getJoinSemanticsFromStep(join_node->step.get());
     if (!join_semantics_opt)
