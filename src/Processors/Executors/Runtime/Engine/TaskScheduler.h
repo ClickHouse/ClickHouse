@@ -36,13 +36,15 @@ public:
     size_t poll(size_t worker_id, int timeout_ms);
     void drain(size_t worker_id);
 
-    size_t size() const;
+    size_t queued() const;
+    size_t total() const;
 
 private:
     Poller & poller;
     std::vector<GuardedQueue> local;
     GuardedQueue global;
-    std::atomic<size_t> total = 0;
+    std::atomic<size_t> queued_count = 0;
+    std::atomic<size_t> total_count = 0;
 };
 
 }

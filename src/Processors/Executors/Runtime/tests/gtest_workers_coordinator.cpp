@@ -106,7 +106,8 @@ TEST(WorkersCoordinator, OneIdleWorkerBlocksInThePollerAndTheNextOneSleeps)
     polling.join();
     EXPECT_TRUE(polling_result);
     EXPECT_EQ(1u, f.coordinator.idle());
-    EXPECT_EQ(1u, f.scheduler.size());
+    EXPECT_EQ(1u, f.scheduler.queued());
+    EXPECT_EQ(1u, f.scheduler.total());
 
     auto popped = f.scheduler.tryPop(0);
     ASSERT_TRUE(popped);

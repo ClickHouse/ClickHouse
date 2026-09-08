@@ -34,7 +34,8 @@ std::optional<Task> TaskScheduler::takeFromLocal(GuardedQueue & own)
     if (own.queue.empty())
         return std::nullopt;
 
-    --total;
+    --queued_count;
+    --total_count;
     return own.queue.popFront();
 }
 
@@ -44,7 +45,8 @@ std::optional<Task> TaskScheduler::keepAndPopFirst(GuardedQueue & own, WorkSteal
         return std::nullopt;
 
     Task first = taken.popFront();
-    --total;
+    --queued_count;
+    --total_count;
 
     std::lock_guard lock(own.mutex);
     own.queue.takeAll(taken);
@@ -84,18 +86,21 @@ void TaskScheduler::push(Task task, size_t worker_id)
 {
     std::lock_guard lock(local[worker_id].mutex);
     local[worker_id].queue.pushBack(task);
-    ++total;
+    ++queued_count;
+    ++total_count;
 }
 
 void TaskScheduler::push(Task task)
 {
     std::lock_guard lock(global.mutex);
     global.queue.pushBack(task);
-    ++total;
+    ++queued_count;
+    ++total_count;
 }
 
 void TaskScheduler::push(AsyncTask task)
 {
+    ++total_count;
     poller.add(*task.state, task.fd, task.events, task.timeout_ms);
 }
 
@@ -129,7 +134,7 @@ size_t TaskScheduler::poll(size_t worker_id, int timeout_ms)
     for (auto * state : fired | std::views::reverse)
         local[worker_id].queue.pushFront(Task{.state = state, .kind = Task::Kind::AsyncReady});
 
-    total += fired.size();
+    queued_count += fired.size();
     return fired.size();
 }
 
@@ -145,9 +150,14 @@ void TaskScheduler::drain(size_t worker_id)
     global.queue.takeAll(taken);
 }
 
-size_t TaskScheduler::size() const
+size_t TaskScheduler::queued() const
 {
-    return total.load();
+    return queued_count.load();
+}
+
+size_t TaskScheduler::total() const
+{
+    return total_count.load();
 }
 
 }

@@ -44,7 +44,7 @@ TEST(TaskScheduler, OwnQueueIsPoppedInPushOrder)
     Fixture f(2);
     f.scheduler.push(f.task(0), 0);
     f.scheduler.push(f.task(1, Task::Kind::Work), 0);
-    EXPECT_EQ(2u, f.scheduler.size());
+    EXPECT_EQ(2u, f.scheduler.queued());
 
     auto first = f.scheduler.tryPop(0);
     ASSERT_TRUE(first);
@@ -52,7 +52,7 @@ TEST(TaskScheduler, OwnQueueIsPoppedInPushOrder)
     EXPECT_EQ(Task::Kind::Prepare, first->kind);
 
     EXPECT_EQ(1u, f.popIndex(0));
-    EXPECT_EQ(0u, f.scheduler.size());
+    EXPECT_EQ(0u, f.scheduler.queued());
     EXPECT_FALSE(f.scheduler.tryPop(0));
 }
 
@@ -63,7 +63,7 @@ TEST(TaskScheduler, GlobalQueueIsTakenFromTheFront)
         f.scheduler.push(f.task(i));
 
     EXPECT_EQ(0u, f.popIndex(1));
-    EXPECT_EQ(5u, f.scheduler.size());
+    EXPECT_EQ(5u, f.scheduler.queued());
     EXPECT_EQ(1u, f.popIndex(1));
     EXPECT_EQ(2u, f.popIndex(1));
     EXPECT_EQ(3u, f.popIndex(0));
@@ -81,7 +81,7 @@ TEST(TaskScheduler, StealTakesTheNewestHalfOfAnotherWorker)
     EXPECT_EQ(1u, f.popIndex(0));
     EXPECT_EQ(2u, f.popIndex(0));
     EXPECT_EQ(5u, f.popIndex(0));
-    EXPECT_EQ(0u, f.scheduler.size());
+    EXPECT_EQ(0u, f.scheduler.queued());
 }
 
 TEST(TaskScheduler, DrainHandsTheQueueToTheGlobalQueue)
@@ -91,7 +91,7 @@ TEST(TaskScheduler, DrainHandsTheQueueToTheGlobalQueue)
     f.scheduler.push(f.task(1), 0);
 
     f.scheduler.drain(0);
-    EXPECT_EQ(2u, f.scheduler.size());
+    EXPECT_EQ(2u, f.scheduler.queued());
     EXPECT_EQ(0u, f.popIndex(1));
     EXPECT_EQ(1u, f.popIndex(1));
 }
@@ -105,15 +105,19 @@ TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFront)
     ASSERT_EQ(0, ::pipe(fds));
     f.scheduler.push(AsyncTask{.state = f.states.data(), .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
     EXPECT_EQ(1u, f.poller.pending());
+    EXPECT_EQ(0u, f.scheduler.queued());
+    EXPECT_EQ(1u, f.scheduler.total());
     EXPECT_FALSE(f.scheduler.tryPop(0));
 
     f.scheduler.push(f.task(1), 0);
+    EXPECT_EQ(2u, f.scheduler.total());
 
     char byte = 0;
     ASSERT_EQ(1, ::write(fds[1], &byte, 1));
     EXPECT_EQ(1u, f.scheduler.poll(0, 0));
     EXPECT_EQ(0u, f.poller.pending());
-    EXPECT_EQ(2u, f.scheduler.size());
+    EXPECT_EQ(2u, f.scheduler.queued());
+    EXPECT_EQ(2u, f.scheduler.total());
 
     auto first = f.scheduler.tryPop(0);
     ASSERT_TRUE(first);
@@ -122,6 +126,7 @@ TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFront)
 
     EXPECT_EQ(1u, f.popIndex(0));
     EXPECT_FALSE(f.scheduler.tryPop(0));
+    EXPECT_EQ(0u, f.scheduler.total());
 
     ::close(fds[0]);
     ::close(fds[1]);
@@ -143,7 +148,7 @@ TEST(TaskScheduler, TryPopPollsWhenTheQueuesAreEmpty)
     auto popped = f.scheduler.tryPop(0);
     ASSERT_TRUE(popped);
     EXPECT_EQ(Task::Kind::AsyncReady, popped->kind);
-    EXPECT_EQ(0u, f.scheduler.size());
+    EXPECT_EQ(0u, f.scheduler.queued());
     EXPECT_EQ(0u, f.poller.pending());
 
     ::close(fds[0]);
@@ -191,7 +196,7 @@ TEST(TaskScheduler, EveryTaskIsPoppedExactlyOnceAcrossThreads)
     for (auto & thread : threads)
         thread.join();
 
-    EXPECT_EQ(0u, f.scheduler.size());
+    EXPECT_EQ(0u, f.scheduler.queued());
     for (const auto & count : popped)
         EXPECT_EQ(1u, count.load());
 }

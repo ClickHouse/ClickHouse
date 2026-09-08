@@ -10,9 +10,14 @@ WorkersCoordinator::WorkersCoordinator(TaskScheduler & scheduler_, Poller & poll
 {
 }
 
-bool WorkersCoordinator::allIdle(size_t sleeping_workers) const
+size_t WorkersCoordinator::idleLocked() const
 {
-    return sleeping_workers == registered_workers && scheduler.size() == 0 && poller.pending() == 0;
+    return sleeping_count + polling_count;
+}
+
+bool WorkersCoordinator::allIdle(size_t idle_workers) const
+{
+    return idle_workers == registered_workers && scheduler.total() == 0;
 }
 
 void WorkersCoordinator::wakeOneLocked()
@@ -52,7 +57,7 @@ void WorkersCoordinator::leave(size_t worker_id)
     --registered_workers;
     scheduler.drain(worker_id);
 
-    if (allIdle(sleeping_count))
+    if (allIdle(idleLocked()))
         stopLocked();
     else
         wakeOneLocked();
@@ -65,10 +70,10 @@ bool WorkersCoordinator::wait(size_t worker_id)
     if (is_stopped)
         return false;
 
-    if (scheduler.size() > 0)
+    if (scheduler.queued() > 0)
         return true;
 
-    if (allIdle(sleeping_count + 1))
+    if (allIdle(idleLocked() + 1))
     {
         stopLocked();
         return false;

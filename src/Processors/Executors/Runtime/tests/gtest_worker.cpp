@@ -311,7 +311,7 @@ TEST(Worker, RunsAPipelineToTheEnd)
     EXPECT_TRUE(run.pipeline.allFinished());
     EXPECT_TRUE(run.coordinator.stopped());
     EXPECT_FALSE(run.pipeline.cancelled());
-    EXPECT_EQ(0u, run.scheduler.size());
+    EXPECT_EQ(0u, run.scheduler.queued());
 }
 
 TEST(Worker, WorkRunsBeforeTheRoundsAndIsCounted)

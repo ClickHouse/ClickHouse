@@ -65,7 +65,7 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
     {
         runTask(*task);
 
-        if (scheduler.size() > 1)
+        if (scheduler.queued() > 1)
             coordinator.wakeOne();
 
         if (pipeline.hasReadyForRemoval())
