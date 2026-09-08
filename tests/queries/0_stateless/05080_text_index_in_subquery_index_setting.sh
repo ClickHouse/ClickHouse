@@ -1,16 +1,5 @@
 #!/usr/bin/env bash
 
-# `use_index_for_in_with_subqueries = 0` forbids using an index for a set on the right of `IN`.
-# `FutureSetFromSubquery::buildOrderedSetInplace` enforces that by refusing to build, which is what
-# the map-key and JSON-path helpers used to rely on. Refusing to build is not the same as refusing to
-# use, though: `ReadFromMergeTree::applyFilters` builds PREWHERE sets unordered precisely when the
-# ordered build declines, so a read step analyzed after that finds the set ready. It takes a second
-# read step to see it - the first memoizes its indexes before the sets are built - which lazy FINAL
-# provides by cloning the reading step.
-#
-# The analyzer is requested explicitly, as every lazy FINAL test does: without it `optimizeLazyFinal`
-# does not run and there is no second read step to analyze.
-
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
