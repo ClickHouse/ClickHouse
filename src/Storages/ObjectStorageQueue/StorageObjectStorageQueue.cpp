@@ -2150,10 +2150,12 @@ TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_conte
         if (mode == settings.end())
             break;
 
-        const bool hive = mode->value == "hive";
-        setting.value = hive ? "1" : "0";
-        /// It comes from wherever `partitioning_mode` came from: they are one setting now.
-        setting.origin = setting.value == setting.default_value ? setting.origin : mode->origin;
+        setting.value = mode->value == "hive" ? "1" : "0";
+        /// Unconditionally from `partitioning_mode`, including when the derived value is the
+        /// default. They are one setting after the fold, so whatever acted on that one acted on
+        /// this one, and `source` answers who set a setting rather than whether the result differs
+        /// from the default - `SETTINGS partitioning_mode = 'none'` is a choice, not an absence.
+        setting.origin = mode->origin;
         break;
     }
 
