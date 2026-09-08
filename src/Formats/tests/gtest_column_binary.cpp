@@ -222,9 +222,12 @@ TEST(ColumnBinary, ConstColumnRoundTrip)
         auto chunk = input.read();
         ASSERT_EQ(chunk.getNumColumns(), 1u);
         ASSERT_EQ(chunk.getNumRows(), 5u);
-        const auto & decoded = typeid_cast<const ColumnConst &>(*chunk.getColumns()[0]);
-        const auto & decoded_inner = typeid_cast<const ColumnInt32 &>(decoded.getDataColumn());
-        EXPECT_EQ(decoded_inner.getData()[0], 42);
+        // The reader materializes a `COL_IS_CONST` column: const is a wire-level encoding of a
+        // repeated value, not part of the chunk's data model, and the chunk has to match the
+        // header structurally. So the value must appear once per row.
+        const auto & decoded = typeid_cast<const ColumnInt32 &>(*chunk.getColumns()[0]);
+        for (size_t i = 0; i < 5; ++i)
+            EXPECT_EQ(decoded.getData()[i], 42);
     }
 }
 
@@ -442,9 +445,9 @@ TEST(ColumnBinary, ConstMultiColumnRoundTrip)
         auto chunk = input.read();
         ASSERT_EQ(chunk.getNumColumns(), 2u);
         ASSERT_EQ(chunk.getNumRows(), 3u);
-        const auto & col0 = typeid_cast<const ColumnConst &>(*chunk.getColumns()[0]);
-        const auto & inner = typeid_cast<const ColumnInt64 &>(col0.getDataColumn());
-        EXPECT_EQ(inner.getData()[0], 999);
+        const auto & col0 = typeid_cast<const ColumnInt64 &>(*chunk.getColumns()[0]);
+        for (size_t i = 0; i < 3; ++i)
+            EXPECT_EQ(col0.getData()[i], 999);
         const auto & col1 = typeid_cast<const ColumnString &>(*chunk.getColumns()[1]);
         EXPECT_EQ(getStringAt(col1, 0), "a");
         EXPECT_EQ(getStringAt(col1, 1), "b");
@@ -657,9 +660,9 @@ TEST(ColumnBinary, ConstStringRoundTrip)
         auto chunk = input.read();
         ASSERT_EQ(chunk.getNumColumns(), 1u);
         ASSERT_EQ(chunk.getNumRows(), 4u);
-        const auto & decoded = typeid_cast<const ColumnConst &>(*chunk.getColumns()[0]);
-        const auto & inner_decoded = typeid_cast<const ColumnString &>(decoded.getDataColumn());
-        EXPECT_EQ(getStringAt(inner_decoded, 0), "constant");
+        const auto & decoded = typeid_cast<const ColumnString &>(*chunk.getColumns()[0]);
+        for (size_t i = 0; i < 4; ++i)
+            EXPECT_EQ(getStringAt(decoded, i), "constant");
     }
 }
 
@@ -690,10 +693,13 @@ TEST(ColumnBinary, ConstNullableRoundTrip)
         auto chunk = input.read();
         ASSERT_EQ(chunk.getNumColumns(), 1u);
         ASSERT_EQ(chunk.getNumRows(), 3u);
-        const auto & decoded = typeid_cast<const ColumnConst &>(*chunk.getColumns()[0]);
-        const auto & decoded_nullable = typeid_cast<const ColumnNullable &>(decoded.getDataColumn());
+        const auto & decoded_nullable = typeid_cast<const ColumnNullable &>(*chunk.getColumns()[0]);
         const auto & inner = typeid_cast<const ColumnInt32 &>(decoded_nullable.getNestedColumn());
-        EXPECT_EQ(inner.getData()[0], 42);
+        for (size_t i = 0; i < 3; ++i)
+        {
+            EXPECT_FALSE(decoded_nullable.isNullAt(i));
+            EXPECT_EQ(inner.getData()[i], 42);
+        }
     }
 }
 
@@ -808,14 +814,15 @@ TEST(ColumnBinary, ConstArrayRoundTrip)
         auto chunk = input.read();
         ASSERT_EQ(chunk.getNumColumns(), 1u);
         ASSERT_EQ(chunk.getNumRows(), 2u);
-        const auto & decoded = typeid_cast<const ColumnConst &>(*chunk.getColumns()[0]);
-        const auto & inner_decoded = typeid_cast<const ColumnArray &>(decoded.getDataColumn());
-        const auto & data = typeid_cast<const ColumnUInt64 &>(inner_decoded.getData());
-        const auto & offsets = inner_decoded.getOffsets();
-        EXPECT_EQ(offsets[0], 3);
-        EXPECT_EQ(data.getData()[0], 1);
-        EXPECT_EQ(data.getData()[1], 2);
-        EXPECT_EQ(data.getData()[2], 3);
+        const auto & decoded = typeid_cast<const ColumnArray &>(*chunk.getColumns()[0]);
+        const auto & data = typeid_cast<const ColumnUInt64 &>(decoded.getData());
+        const auto & offsets = decoded.getOffsets();
+        // Both rows carry the same array, materialized once per row.
+        ASSERT_EQ(offsets[0], 3);
+        ASSERT_EQ(offsets[1], 6);
+        for (size_t row = 0; row < 2; ++row)
+            for (size_t i = 0; i < 3; ++i)
+                EXPECT_EQ(data.getData()[row * 3 + i], i + 1);
     }
 }
 
