@@ -32,8 +32,12 @@ SET query_plan_optimize_join_order_randomize = 0;
 -- propagated through it; disable automatic spilling to keep the in-order plan under test.
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 -- The test runner randomizes the read-in-order switches, but every assertion below is about the
--- PK-selectivity guard on an in-order read through the join, so pin them.
-SET optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, join_algorithm = 'hash';
+-- PK-selectivity guard on an in-order read through the join, so pin them. `read_in_order_use_virtual_row`
+-- is one of them: an `INNER JOIN` keeps read-in-order only with the virtual row optimization, so
+-- without it the exempted case would sort as well. `max_threads` is pinned above `1` because the
+-- guard only fires when the parallel read has more than one stream to recover.
+SET optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1, join_algorithm = 'hash',
+    read_in_order_use_virtual_row = 1, max_threads = 4;
 
 -- The filter on `path` makes the projection win index analysis below the JOIN, and the retained
 -- runtime filter exempts the read from the guard: the projection read stays in order, no full sort.
