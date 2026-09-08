@@ -25,10 +25,11 @@ SET enable_analyzer = 1;
 -- apply to the outer query, so they reach the aggregation under test.
 -- ---------------------------------------------------------------------------
 
--- Date + INTERVAL MONTH collapses the 29th, 30th and 31st of a month into one key
+-- Date + INTERVAL MONTH collapses the 29th, 30th and 31st of a month into one key. 2001 and
+-- 2002 are not leap years, so all three days of each map to February 28.
 DROP TABLE IF EXISTS t_month;
 CREATE TABLE t_month (d Date, x UInt32) ENGINE = MergeTree ORDER BY d PARTITION BY d;
-INSERT INTO t_month SELECT toDate(concat(toString(2001 + intDiv(number, 300)), '-01-', toString(29 + (intDiv(number, 100) % 3)))) AS d, number FROM numbers_mt(5100) WHERE toYear(d) NOT IN (2004, 2008, 2012, 2016, 2020);
+INSERT INTO t_month SELECT toDate(concat(toString(2001 + intDiv(number, 30)), '-01-', toString(29 + (intDiv(number, 10) % 3)))) AS d, number FROM numbers(60);
 SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM t_month GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
 SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM t_month GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
 SELECT count() FROM (SELECT DISTINCT d + INTERVAL 1 MONTH AS k FROM t_month) SETTINGS force_distinct_partitions_independently = 1;
@@ -40,7 +41,7 @@ DROP TABLE t_month;
 -- the minus direction collapses the same way, going back into a shorter month
 DROP TABLE IF EXISTS t_month_minus;
 CREATE TABLE t_month_minus (d Date, x UInt32) ENGINE = MergeTree ORDER BY d PARTITION BY d;
-INSERT INTO t_month_minus SELECT toDate(concat(toString(2001 + intDiv(number, 300)), '-03-', toString(29 + (intDiv(number, 100) % 3)))) AS d, number FROM numbers_mt(5100) WHERE toYear(d) NOT IN (2004, 2008, 2012, 2016, 2020);
+INSERT INTO t_month_minus SELECT toDate(concat(toString(2001 + intDiv(number, 30)), '-03-', toString(29 + (intDiv(number, 10) % 3)))) AS d, number FROM numbers(60);
 SELECT count() FROM (SELECT d - INTERVAL 1 MONTH AS k, count() FROM t_month_minus GROUP BY k) SETTINGS force_aggregate_partitions_independently = 1;
 SELECT count() FROM (SELECT d - INTERVAL 1 MONTH AS k, count() FROM t_month_minus GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
 DROP TABLE t_month_minus;

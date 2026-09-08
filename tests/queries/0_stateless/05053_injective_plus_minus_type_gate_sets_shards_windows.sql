@@ -23,10 +23,11 @@ SET enable_analyzer = 1;
 -- per-partition set building reads the same predicate. The set fill deduplicates across
 -- partitions anyway, so the merged answer stays correct and only the plan shape shows the
 -- decline; the bare-key arm is the control that the fixture reaches the optimization.
+-- 2001 and 2002 are not leap years, so all three days of each map to February 28.
 DROP TABLE IF EXISTS t_set_month;
 CREATE TABLE t_set_month (d Date, x UInt32) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 SYSTEM STOP MERGES t_set_month;
-INSERT INTO t_set_month SELECT toDate(concat(toString(2001 + intDiv(number, 300)), '-01-', toString(29 + (intDiv(number, 100) % 3)))) AS d, number FROM numbers_mt(5100) WHERE toYear(d) NOT IN (2004, 2008, 2012, 2016, 2020);
+INSERT INTO t_set_month SELECT toDate(concat(toString(2001 + intDiv(number, 30)), '-01-', toString(29 + (intDiv(number, 10) % 3)))) AS d, number FROM numbers(60);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() FROM numbers(100) WHERE toDate('2001-02-28') + number IN (SELECT d + INTERVAL 1 MONTH FROM t_set_month) SETTINGS allow_creating_set_partitions_independently = 1) WHERE explain LIKE '%Pre-distinct%' OR explain LIKE '%Read each partition through separate port%';
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() FROM numbers(100) WHERE toDate('2001-02-28') + number IN (SELECT d FROM t_set_month) SETTINGS allow_creating_set_partitions_independently = 1) WHERE explain LIKE '%Pre-distinct%' OR explain LIKE '%Read each partition through separate port%';
 DROP TABLE t_set_month;
@@ -73,7 +74,7 @@ SELECT (SELECT count() FROM (SELECT x + 1 AS k, count() FROM remote('127.{1,2}',
 
 DROP TABLE IF EXISTS t_win_month;
 CREATE TABLE t_win_month (d Date) ENGINE = MergeTree ORDER BY d PARTITION BY d;
-INSERT INTO t_win_month SELECT toDate(concat(toString(2001 + intDiv(number, 300)), '-01-', toString(29 + (intDiv(number, 100) % 3)))) AS d FROM numbers_mt(5100) WHERE toYear(d) NOT IN (2004, 2008, 2012, 2016, 2020);
+INSERT INTO t_win_month SELECT toDate(concat(toString(2001 + intDiv(number, 30)), '-01-', toString(29 + (intDiv(number, 10) % 3)))) AS d FROM numbers(60);
 -- the collapse the arms below depend on: more table partitions than window keys
 SELECT uniqExact(_partition_id), uniqExact(d + INTERVAL 1 MONTH) FROM t_win_month;
 SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY d + INTERVAL 1 MONTH) AS c FROM t_win_month) ORDER BY c SETTINGS force_window_partitions_independently = 1;
