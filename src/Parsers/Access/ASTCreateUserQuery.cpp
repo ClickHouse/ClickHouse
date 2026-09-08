@@ -220,7 +220,6 @@ ASTPtr ASTCreateUserQuery::clone() const
 }
 
 
-
 /// `settings` and `alter_settings` are held outside `children`.
 bool ASTCreateUserQuery::hasSecretParts() const
 {
