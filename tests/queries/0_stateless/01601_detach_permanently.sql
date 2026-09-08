@@ -2,6 +2,9 @@
 
 SET send_logs_level = 'fatal';
 
+-- The multi-line CREATE statements below are shown in Vertical format; keep raw line breaks for a stable reference.
+SET output_format_vertical_display_control_characters = 0;
+
 SELECT 'database atomic tests';
 
 DROP DATABASE IF EXISTS test1601_detach_permanently_atomic;
