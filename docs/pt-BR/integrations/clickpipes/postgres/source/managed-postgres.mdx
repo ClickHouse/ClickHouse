@@ -1,0 +1,100 @@
+---
+sidebarTitle: 'ClickHouse Managed Postgres'
+description: 'Configure o ClickHouse Managed Postgres como fonte para o ClickPipes'
+slug: /integrations/clickpipes/postgres/source/managed-postgres
+title: 'Guia de configuração da fonte ClickHouse Managed Postgres'
+doc_type: 'guide'
+keywords: ['clickpipes', 'clickhouse managed postgres', 'postgresql', 'cdc', 'data ingestion', 'real-time sync']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+O [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview) é um serviço Postgres totalmente gerenciado no ClickHouse Cloud. É a fonte Postgres mais rápida de conectar ao ClickPipes: a replicação lógica já vem habilitada em todas as instâncias, os endereços IP do ClickPipes são liberados por padrão e os detalhes de conexão ficam no mesmo console do seu serviço ClickHouse.
+
+Há duas maneiras de começar a replicar a partir de uma instância do ClickHouse Managed Postgres. Ambas criam um ClickPipe do Postgres comum, portanto tudo o que consta na [documentação do ClickPipe do Postgres](/pt-BR/integrations/clickpipes/postgres/index) se aplica assim que o pipe estiver em execução.
+
+## Opção 1: sincronizar com o ClickHouse a partir do serviço Postgres {#sync-to-clickhouse}
+
+Abra seu ClickHouse Managed serviço Postgres no ClickHouse Cloud console e clique em **Sync to ClickHouse** na barra lateral. O assistente já preenche a source connection e permite escolher o serviço ClickHouse de destino, o método de replicação e as tabelas a serem replicadas. Não é necessário configurar usuário, publication ou rede.
+
+Siga o guia [Sync to ClickHouse](/pt-BR/products/managed-postgres/clickhouse-integration) para um passo a passo detalhado.
+
+## Opção 2: selecionar o ClickHouse Managed Postgres como fonte no ClickPipes {#clickpipes-source}
+
+Se preferir começar pelo lado do destino, abra seu serviço ClickHouse, acesse **Data Sources** e escolha **ClickHouse Managed Postgres** na lista de fontes. Em seguida, informe os detalhes de conexão da sua instância Postgres, assim como faria com qualquer outra fonte Postgres.
+
+### Detalhes de conexão {#connection-details}
+
+Abra seu serviço ClickHouse Managed Postgres e clique em **Connect** para ver o host, a porta, o banco de dados, o usuário e a senha. Use a conexão direta com o Postgres, e não o botão **via PgBouncer**: o ClickPipes não oferece suporte a replicação por meio do PgBouncer nem de qualquer outro pooler de conexões. Consulte [Connection](/pt-BR/products/managed-postgres/connection) para mais detalhes.
+
+### Criando um usuário com permissões {#creating-a-user-with-permissions}
+
+Você pode se conectar com o usuário padrão `postgres`. Em produção, recomendamos um usuário de replicação dedicado e somente leitura, exatamente como faria com qualquer outra fonte Postgres. Conecte-se à sua instância com `psql` e execute:
+
+1. Crie um usuário dedicado para o ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Conceda ao usuário acesso somente leitura em nível de schema. O exemplo a seguir mostra as permissões para o schema `public`. Repita esses comandos para cada schema que contenha tabelas que você deseja replicar:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Conceda privilégios de replicação ao usuário:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Crie uma [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) com as tabelas que você deseja replicar. Recomendamos fortemente incluir na publication apenas as tabelas necessárias, para evitar sobrecarga de desempenho.
+
+<Warning>
+  Qualquer tabela incluída na publication deve ter uma **primary key** definida *ou* ter sua **replica identity** configurada como `FULL`. Consulte as [FAQs do Postgres](/pt-BR/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) para orientações sobre como definir o escopo.
+</Warning>
+
+* Para criar uma publication para tabelas específicas:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * Para criar uma publication para todas as tabelas de um schema específico:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+### Replicação lógica {#logical-replication}
+
+A replicação lógica já vem habilitada em toda instância do ClickHouse Managed Postgres. Não há configuração `wal_level` nem parameter group a ser alterado. Você pode confirmar com:
+
+```sql
+SHOW wal_level; -- should be logical
+```
+
+### Acesso de rede {#network-access}
+
+O ClickHouse Managed Postgres aceita conexões do ClickPipes por padrão. Se você configurou [filtros de IP](/pt-BR/products/managed-postgres/security#ip-whitelisting) no seu serviço Postgres, adicione os [endereços IP estáticos do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips) da região do seu **serviço ClickHouse** à lista de permissões.
+
+### TLS {#tls}
+
+As instâncias do ClickHouse Managed Postgres apresentam um certificado assinado por uma CA exclusiva da instância e sem confiança pública. O ClickPipes ativa a verificação de certificados por padrão, portanto a verificação da conexão falha até que você faça uma das seguintes ações:
+
+* Baixe o pacote de certificados da CA na aba **Settings** do seu serviço Postgres e forneça-o em **Upload CA** nas configurações de conexão do ClickPipe. Esta é a opção recomendada. Consulte [Conexão TLS verificada](/pt-BR/products/managed-postgres/connection#verified-tls) para saber onde encontrar o pacote.
+* Ative **Skip certificate verification** nas configurações de conexão do ClickPipe. A conexão permanece criptografada, mas a identidade do servidor não é verificada.
+
+Se você criar o pipe com `clickhousectl`, baixe o pacote e passe-o com `--ca-certificate`:
+
+```bash
+clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+```
+
+## Próximos passos {#whats-next}
+
+Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/postgres/index) e iniciar a ingestão de dados da sua instância do ClickHouse Managed Postgres para o ClickHouse Cloud. O CDC nativo do ClickHouse Managed Postgres para o ClickHouse está incluído sem custo adicional; consulte [Preços](/pt-BR/products/managed-postgres/pricing) para mais detalhes.

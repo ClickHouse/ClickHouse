@@ -23,7 +23,7 @@ import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.
 
 <Visibility for="humans">
   <View title="Cloud UI">
-    ClickPipes를 사용하면 소스 Postgres 데이터베이스의 데이터를 ClickHouse Cloud로 수집할 수 있습니다. 소스 Postgres 데이터베이스는 온프레미스에 호스팅하거나 Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase 등의 클라우드에 호스팅할 수 있습니다.
+    ClickPipes를 사용하면 소스 Postgres 데이터베이스의 데이터를 ClickHouse Cloud로 수집할 수 있습니다. 소스 Postgres 데이터베이스는 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview)일 수도 있고, 온프레미스에 호스팅하거나 Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase 등의 클라우드에 호스팅할 수도 있습니다.
 
     Postgres ClickPipes는 ClickPipes UI를 통해 수동으로 배포하고 관리할 수 있을 뿐만 아니라, [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi)와 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 사용해 프로그래밍 방식으로도 배포하고 관리할 수 있습니다.
 
@@ -31,23 +31,25 @@ import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.
 
     시작하기 전에 먼저 Postgres 데이터베이스가 올바르게 설정되어 있는지 확인해야 합니다. 소스 Postgres 인스턴스에 따라 다음 가이드 중 하나를 따르십시오.
 
-    1. [Amazon RDS Postgres](/ko/integrations/clickpipes/postgres/source/rds)
+    1. [ClickHouse Managed Postgres](/ko/integrations/clickpipes/postgres/source/managed-postgres): 논리적 복제가 활성화되어 있고 ClickPipes 액세스가 기본적으로 허용되어 있습니다.
 
-    2. [Amazon Aurora Postgres](/ko/integrations/clickpipes/postgres/source/aurora)
+    2. [Amazon RDS Postgres](/ko/integrations/clickpipes/postgres/source/rds)
 
-    3. [Supabase Postgres](/ko/integrations/clickpipes/postgres/source/supabase)
+    3. [Amazon Aurora Postgres](/ko/integrations/clickpipes/postgres/source/aurora)
 
-    4. [Google Cloud SQL Postgres](/ko/integrations/clickpipes/postgres/source/google-cloudsql)
+    4. [Supabase Postgres](/ko/integrations/clickpipes/postgres/source/supabase)
 
-    5. [Azure Flexible Server for Postgres](/ko/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+    5. [Google Cloud SQL Postgres](/ko/integrations/clickpipes/postgres/source/google-cloudsql)
 
-    6. [Neon Postgres](/ko/integrations/clickpipes/postgres/source/neon-postgres)
+    6. [Azure Flexible Server for Postgres](/ko/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-    7. [Crunchy Bridge Postgres](/ko/integrations/clickpipes/postgres/source/crunchy-postgres)
+    7. [Neon Postgres](/ko/integrations/clickpipes/postgres/source/neon-postgres)
 
-    8. [일반 Postgres 소스](/ko/integrations/clickpipes/postgres/source/generic): 다른 Postgres 제공업체를 사용하거나 자체 호스팅 인스턴스를 사용하는 경우
+    8. [Crunchy Bridge Postgres](/ko/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-    9. [TimescaleDB](/ko/integrations/clickpipes/postgres/source/timescale): 관리형 서비스 또는 자체 호스팅 인스턴스에서 TimescaleDB 확장 기능을 사용하는 경우
+    9. [일반 Postgres 소스](/ko/integrations/clickpipes/postgres/source/generic): 다른 Postgres 제공업체를 사용하거나 자체 호스팅 인스턴스를 사용하는 경우
+
+    10. [TimescaleDB](/ko/integrations/clickpipes/postgres/source/timescale): 관리형 서비스 또는 자체 호스팅 인스턴스에서 TimescaleDB 확장 기능을 사용하는 경우
 
     <Warning>
       PgBouncer, RDS Proxy, Supabase Pooler 등의 Postgres 프록시는 CDC 기반 복제에서 지원되지 않습니다. ClickPipes 설정 시 이러한 프록시를 사용하지 말고, 대신 실제 Postgres 데이터베이스의 연결 정보를 추가하십시오.

@@ -23,7 +23,7 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
 <Visibility for="humans">
   <View title="Cloud UI">
-    ClickPipes を使用すると、ソース Postgres データベースから ClickHouse Cloud にデータを取り込むことができます。ソース Postgres データベースは、オンプレミスでホストすることも、Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase などのクラウド上でホストすることもできます。
+    ClickPipes を使用すると、ソース Postgres データベースから ClickHouse Cloud にデータを取り込むことができます。ソース Postgres データベースは、[ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) にすることも、オンプレミスでホストすることも、Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase などのクラウド上でホストすることもできます。
 
     Postgres ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムから操作することもできます。
 
@@ -31,23 +31,25 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     開始するには、まず Postgres データベースが正しく設定されていることを確認する必要があります。使用するソース Postgres インスタンスに応じて、以下のいずれかのガイドに従ってください。
 
-    1. [Amazon RDS Postgres](/ja/integrations/clickpipes/postgres/source/rds)
+    1. [ClickHouse Managed Postgres](/ja/integrations/clickpipes/postgres/source/managed-postgres): logical replication が有効化されており、ClickPipes からのアクセスも標準で許可されています。
 
-    2. [Amazon Aurora Postgres](/ja/integrations/clickpipes/postgres/source/aurora)
+    2. [Amazon RDS Postgres](/ja/integrations/clickpipes/postgres/source/rds)
 
-    3. [Supabase Postgres](/ja/integrations/clickpipes/postgres/source/supabase)
+    3. [Amazon Aurora Postgres](/ja/integrations/clickpipes/postgres/source/aurora)
 
-    4. [Google Cloud SQL Postgres](/ja/integrations/clickpipes/postgres/source/google-cloudsql)
+    4. [Supabase Postgres](/ja/integrations/clickpipes/postgres/source/supabase)
 
-    5. [Azure Flexible Server for Postgres](/ja/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+    5. [Google Cloud SQL Postgres](/ja/integrations/clickpipes/postgres/source/google-cloudsql)
 
-    6. [Neon Postgres](/ja/integrations/clickpipes/postgres/source/neon-postgres)
+    6. [Azure Flexible Server for Postgres](/ja/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-    7. [Crunchy Bridge Postgres](/ja/integrations/clickpipes/postgres/source/crunchy-postgres)
+    7. [Neon Postgres](/ja/integrations/clickpipes/postgres/source/neon-postgres)
 
-    8. [Generic Postgres Source](/ja/integrations/clickpipes/postgres/source/generic): 他の Postgres プロバイダーを使用している場合、またはセルフホストのインスタンスを使用している場合。
+    8. [Crunchy Bridge Postgres](/ja/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-    9. [TimescaleDB](/ja/integrations/clickpipes/postgres/source/timescale): マネージドサービスまたはセルフホストのインスタンスで TimescaleDB 拡張機能を使用している場合。
+    9. [Generic Postgres Source](/ja/integrations/clickpipes/postgres/source/generic): 他の Postgres プロバイダーを使用している場合、またはセルフホストのインスタンスを使用している場合。
+
+    10. [TimescaleDB](/ja/integrations/clickpipes/postgres/source/timescale): マネージドサービスまたはセルフホストのインスタンスで TimescaleDB 拡張機能を使用している場合。
 
     <Warning>
       PgBouncer、RDS Proxy、Supabase Pooler などの Postgres プロキシは、CDC (変更データキャプチャ)  ベースのレプリケーションではサポートされていません。ClickPipes のセットアップではこれらを使用せず、代わりに実際の Postgres データベースの接続情報を指定してください。
@@ -65,7 +67,7 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes サービス" size="lg" border />
 
-    2. 左側のメニューで `Data Sources` ボタンを選択し、「Set up a ClickPipe」をクリックします
+    2. 左側のメニューで `Data Sources` ボタンを選択し、&quot;Set up a ClickPipe&quot;をクリックします
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
 
@@ -84,16 +86,16 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="接続情報を入力" size="lg" border />
 
-    #### &#x20;(任意) AWS プライベートリンクのセットアップ {#optional-setting-up-aws-private-link}
+    #### (任意) AWS プライベートリンクのセットアップ {#optional-setting-up-aws-private-link}
 
     ソース Postgres データベースが AWS 上でホストされている場合は、AWS Private Link を使用して接続できます。これは、データ転送をプライベートに保ちたい場合に便利です。
     [接続を設定するためのセットアップガイド](/ja/integrations/clickpipes/networking/aws-privatelink)に従ってください。
 
-    #### &#x20;(任意) TLS 設定の変更 {#optional-changing-tls-settings}
+    #### (任意) TLS 設定の変更 {#optional-changing-tls-settings}
 
     <ChangingTLSSettings />
 
-    #### &#x20;(任意) SSH トンネリングの設定 {#optional-setting-up-ssh-tunneling}
+    #### (任意) SSH トンネリングの設定 {#optional-setting-up-ssh-tunneling}
 
     ソース Postgres データベースがパブリックにアクセスできない場合は、SSH トンネリングの詳細を指定できます。
 

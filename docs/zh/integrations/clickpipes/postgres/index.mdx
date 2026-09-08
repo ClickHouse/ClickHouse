@@ -23,7 +23,7 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
 <Visibility for="humans">
   <View title="Cloud UI">
-    你可以使用 ClickPipes 将数据从源 Postgres 数据库摄取到 ClickHouse Cloud。源 Postgres 数据库可以部署在本地，也可以托管在云端，包括 Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase 等。
+    你可以使用 ClickPipes 将数据从源 Postgres 数据库摄取到 ClickHouse Cloud。源 Postgres 数据库可以是 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview)，也可以部署在本地或托管在云端，包括 Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase 等。
 
     Postgres ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以借助 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
 
@@ -31,23 +31,25 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     开始之前，你需要先确保 Postgres 数据库已正确配置。根据你的源 Postgres 实例，可以参考以下任一指南：
 
-    1. [Amazon RDS Postgres](/zh/integrations/clickpipes/postgres/source/rds)
+    1. [ClickHouse Managed Postgres](/zh/integrations/clickpipes/postgres/source/managed-postgres)，开箱即用地启用了 logical replication 并允许 ClickPipes 访问。
 
-    2. [Amazon Aurora Postgres](/zh/integrations/clickpipes/postgres/source/aurora)
+    2. [Amazon RDS Postgres](/zh/integrations/clickpipes/postgres/source/rds)
 
-    3. [Supabase Postgres](/zh/integrations/clickpipes/postgres/source/supabase)
+    3. [Amazon Aurora Postgres](/zh/integrations/clickpipes/postgres/source/aurora)
 
-    4. [Google Cloud SQL Postgres](/zh/integrations/clickpipes/postgres/source/google-cloudsql)
+    4. [Supabase Postgres](/zh/integrations/clickpipes/postgres/source/supabase)
 
-    5. [Azure PostgreSQL 灵活服务器](/zh/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+    5. [Google Cloud SQL Postgres](/zh/integrations/clickpipes/postgres/source/google-cloudsql)
 
-    6. [Neon Postgres](/zh/integrations/clickpipes/postgres/source/neon-postgres)
+    6. [Azure PostgreSQL 灵活服务器](/zh/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-    7. [Crunchy Bridge Postgres](/zh/integrations/clickpipes/postgres/source/crunchy-postgres)
+    7. [Neon Postgres](/zh/integrations/clickpipes/postgres/source/neon-postgres)
 
-    8. [通用 Postgres 源](/zh/integrations/clickpipes/postgres/source/generic)，如果你使用的是其他 Postgres 提供商，或自托管实例。
+    8. [Crunchy Bridge Postgres](/zh/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-    9. [TimescaleDB](/zh/integrations/clickpipes/postgres/source/timescale)，如果你在托管服务或自托管实例上使用 TimescaleDB 扩展。
+    9. [通用 Postgres 源](/zh/integrations/clickpipes/postgres/source/generic)，如果你使用的是其他 Postgres 提供商，或自托管实例。
+
+    10. [TimescaleDB](/zh/integrations/clickpipes/postgres/source/timescale)，如果你在托管服务或自托管实例上使用 TimescaleDB 扩展。
 
     <Warning>
       PgBouncer、RDS Proxy、Supabase Pooler 等 Postgres 代理不支持基于 CDC 的复制。请务必不要在 ClickPipes 设置中使用它们，而应填写实际 Postgres 数据库的连接信息。
@@ -89,11 +91,11 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
     如果你的源 Postgres 数据库托管在 AWS 上，可以使用 AWS Private Link 连接该数据库。如果你希望数据传输保持私密，这会很有用。
     你可以参考[设置指南建立该连接](/zh/integrations/clickpipes/networking/aws-privatelink)。
 
-    #### &#x20;(可选) 修改 TLS 设置 {#optional-changing-tls-settings}
+    #### (可选) 修改 TLS 设置 {#optional-changing-tls-settings}
 
     <ChangingTLSSettings />
 
-    #### &#x20;(可选) 设置 SSH tunneling {#optional-setting-up-ssh-tunneling}
+    #### (可选) 设置 SSH tunneling {#optional-setting-up-ssh-tunneling}
 
     如果你的源 Postgres 数据库无法通过公网访问，可以填写 SSH 隧道的相关信息。
 

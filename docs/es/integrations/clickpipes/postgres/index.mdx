@@ -23,7 +23,7 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
 
 <Visibility for="humans">
   <View title="UI de Cloud">
-    Puedes usar ClickPipes para ingestar datos desde tu base de datos de Postgres de origen en ClickHouse Cloud. La base de datos de Postgres de origen puede estar alojada on-premise o en la nube, incluidos Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase y otros.
+    Puedes usar ClickPipes para ingestar datos desde tu base de datos de Postgres de origen en ClickHouse Cloud. La base de datos de Postgres de origen puede ser [ClickHouse Managed Postgres](/es/products/managed-postgres/overview), o estar alojada on-premise o en la nube, incluidos Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase y otros.
 
     Los ClickPipes de Postgres se pueden desplegar y administrar manualmente desde la ClickPipes UI, así como de forma programática mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
@@ -31,23 +31,25 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
 
     Para empezar, primero debes asegurarte de que tu base de datos de Postgres esté configurada correctamente. Según tu instancia de Postgres de origen, puedes seguir cualquiera de las siguientes guías:
 
-    1. [Amazon RDS Postgres](/es/integrations/clickpipes/postgres/source/rds)
+    1. [ClickHouse Managed Postgres](/es/integrations/clickpipes/postgres/source/managed-postgres), que viene con la replicación lógica habilitada y el acceso de ClickPipes permitido de forma predeterminada.
 
-    2. [Amazon Aurora Postgres](/es/integrations/clickpipes/postgres/source/aurora)
+    2. [Amazon RDS Postgres](/es/integrations/clickpipes/postgres/source/rds)
 
-    3. [Supabase Postgres](/es/integrations/clickpipes/postgres/source/supabase)
+    3. [Amazon Aurora Postgres](/es/integrations/clickpipes/postgres/source/aurora)
 
-    4. [Google Cloud SQL Postgres](/es/integrations/clickpipes/postgres/source/google-cloudsql)
+    4. [Supabase Postgres](/es/integrations/clickpipes/postgres/source/supabase)
 
-    5. [Azure Flexible Server for Postgres](/es/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+    5. [Google Cloud SQL Postgres](/es/integrations/clickpipes/postgres/source/google-cloudsql)
 
-    6. [Neon Postgres](/es/integrations/clickpipes/postgres/source/neon-postgres)
+    6. [Azure Flexible Server for Postgres](/es/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-    7. [Crunchy Bridge Postgres](/es/integrations/clickpipes/postgres/source/crunchy-postgres)
+    7. [Neon Postgres](/es/integrations/clickpipes/postgres/source/neon-postgres)
 
-    8. [Fuente genérica de Postgres](/es/integrations/clickpipes/postgres/source/generic), si utilizas cualquier otro proveedor de Postgres o una instancia autohospedada.
+    8. [Crunchy Bridge Postgres](/es/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-    9. [TimescaleDB](/es/integrations/clickpipes/postgres/source/timescale), si utilizas la extensión TimescaleDB en un servicio administrado o en una instancia autohospedada.
+    9. [Fuente genérica de Postgres](/es/integrations/clickpipes/postgres/source/generic), si utilizas cualquier otro proveedor de Postgres o una instancia autohospedada.
+
+    10. [TimescaleDB](/es/integrations/clickpipes/postgres/source/timescale), si utilizas la extensión TimescaleDB en un servicio administrado o en una instancia autohospedada.
 
     <Warning>
       Los proxies de Postgres, como PgBouncer, RDS Proxy y Supabase Pooler, no son compatibles con la replicación basada en CDC. Asegúrate de NO usarlos para la configuración de ClickPipes y, en su lugar, añade los detalles de conexión de la base de datos de Postgres real.

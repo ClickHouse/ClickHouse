@@ -23,7 +23,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 <Visibility for="humans">
   <View title="Cloud UI">
-    يمكنك استخدام ClickPipes لاستيعاب البيانات من قاعدة بيانات Postgres المصدر إلى ClickHouse Cloud. ويمكن استضافة قاعدة بيانات Postgres المصدر محليًا أو في السحابة، بما في ذلك Amazon RDS وGoogle Cloud SQL وAzure Database for Postgres وSupabase وغيرها.
+    يمكنك استخدام ClickPipes لاستيعاب البيانات من قاعدة بيانات Postgres المصدر إلى ClickHouse Cloud. ويمكن أن تكون قاعدة بيانات Postgres المصدر [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview)، أو مستضافة محليًا أو في السحابة، بما في ذلك Amazon RDS وGoogle Cloud SQL وAzure Database for Postgres وSupabase وغيرها.
 
     يمكن نشر Postgres ClickPipes وإدارتها يدويًا عبر واجهة ClickPipes، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
@@ -31,23 +31,25 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     للبدء، عليك أولاً التأكد من أن قاعدة بيانات Postgres لديك مُعدّة بشكل صحيح. وبناءً على مثيل Postgres المصدر الذي تستخدمه، يمكنك اتباع أيٍّ من الأدلة التالية:
 
-    1. [Amazon RDS Postgres](/ar/integrations/clickpipes/postgres/source/rds)
+    1. [ClickHouse Managed Postgres](/ar/integrations/clickpipes/postgres/source/managed-postgres)، الذي يأتي جاهزًا مع تفعيل النسخ المتماثل المنطقي والسماح بوصول ClickPipes.
 
-    2. [Amazon Aurora Postgres](/ar/integrations/clickpipes/postgres/source/aurora)
+    2. [Amazon RDS Postgres](/ar/integrations/clickpipes/postgres/source/rds)
 
-    3. [Supabase Postgres](/ar/integrations/clickpipes/postgres/source/supabase)
+    3. [Amazon Aurora Postgres](/ar/integrations/clickpipes/postgres/source/aurora)
 
-    4. [Google Cloud SQL Postgres](/ar/integrations/clickpipes/postgres/source/google-cloudsql)
+    4. [Supabase Postgres](/ar/integrations/clickpipes/postgres/source/supabase)
 
-    5. [Azure Flexible Server for Postgres](/ar/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+    5. [Google Cloud SQL Postgres](/ar/integrations/clickpipes/postgres/source/google-cloudsql)
 
-    6. [Neon Postgres](/ar/integrations/clickpipes/postgres/source/neon-postgres)
+    6. [Azure Flexible Server for Postgres](/ar/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-    7. [Crunchy Bridge Postgres](/ar/integrations/clickpipes/postgres/source/crunchy-postgres)
+    7. [Neon Postgres](/ar/integrations/clickpipes/postgres/source/neon-postgres)
 
-    8. [مصدر Postgres عام](/ar/integrations/clickpipes/postgres/source/generic)، إذا كنت تستخدم أي موفّر Postgres آخر أو مثيلاً ذاتي الاستضافة.
+    8. [Crunchy Bridge Postgres](/ar/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-    9. [TimescaleDB](/ar/integrations/clickpipes/postgres/source/timescale)، إذا كنت تستخدم امتداد TimescaleDB على خدمة مُدارة أو مثيلاً ذاتي الاستضافة.
+    9. [مصدر Postgres عام](/ar/integrations/clickpipes/postgres/source/generic)، إذا كنت تستخدم أي موفّر Postgres آخر أو مثيلاً ذاتي الاستضافة.
+
+    10. [TimescaleDB](/ar/integrations/clickpipes/postgres/source/timescale)، إذا كنت تستخدم امتداد TimescaleDB على خدمة مُدارة أو مثيلاً ذاتي الاستضافة.
 
     <Warning>
       وكلاء Postgres مثل PgBouncer وRDS Proxy وSupabase Pooler وغيرها غير مدعومين في النسخ المتماثل المعتمد على CDC. يُرجى التأكد من عدم استخدامها عند إعداد ClickPipes، واستخدام تفاصيل الاتصال الخاصة بقاعدة بيانات Postgres الفعلية بدلاً منها.

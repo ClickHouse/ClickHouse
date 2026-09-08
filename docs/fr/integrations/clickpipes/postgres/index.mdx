@@ -23,7 +23,7 @@ import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.
 
 <Visibility for="humans">
   <View title="UI Cloud">
-    Vous pouvez utiliser ClickPipes pour ingérer les données de votre base de données Postgres source dans ClickHouse Cloud. La base de données Postgres source peut être hébergée on-premise ou dans le cloud, notamment sur Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase et d’autres.
+    Vous pouvez utiliser ClickPipes pour ingérer les données de votre base de données Postgres source dans ClickHouse Cloud. La base de données Postgres source peut être [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview), ou être hébergée on-premise ou dans le cloud, notamment sur Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase et d’autres.
 
     Les Postgres ClickPipes peuvent être déployés et gérés manuellement depuis l’UI ClickPipes, mais aussi de manière programmatique via [OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
 
@@ -31,23 +31,25 @@ import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.
 
     Pour commencer, assurez-vous d’abord que votre base de données Postgres est correctement configurée. Selon votre instance Postgres source, vous pouvez suivre l’un des guides suivants :
 
-    1. [Amazon RDS Postgres](/fr/integrations/clickpipes/postgres/source/rds)
+    1. [ClickHouse Managed Postgres](/fr/integrations/clickpipes/postgres/source/managed-postgres), pour lequel la logical replication est activée et l’accès ClickPipes autorisé d’emblée.
 
-    2. [Amazon Aurora Postgres](/fr/integrations/clickpipes/postgres/source/aurora)
+    2. [Amazon RDS Postgres](/fr/integrations/clickpipes/postgres/source/rds)
 
-    3. [Supabase Postgres](/fr/integrations/clickpipes/postgres/source/supabase)
+    3. [Amazon Aurora Postgres](/fr/integrations/clickpipes/postgres/source/aurora)
 
-    4. [Google Cloud SQL Postgres](/fr/integrations/clickpipes/postgres/source/google-cloudsql)
+    4. [Supabase Postgres](/fr/integrations/clickpipes/postgres/source/supabase)
 
-    5. [Azure Flexible Server for Postgres](/fr/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+    5. [Google Cloud SQL Postgres](/fr/integrations/clickpipes/postgres/source/google-cloudsql)
 
-    6. [Neon Postgres](/fr/integrations/clickpipes/postgres/source/neon-postgres)
+    6. [Azure Flexible Server for Postgres](/fr/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-    7. [Crunchy Bridge Postgres](/fr/integrations/clickpipes/postgres/source/crunchy-postgres)
+    7. [Neon Postgres](/fr/integrations/clickpipes/postgres/source/neon-postgres)
 
-    8. [Source Postgres générique](/fr/integrations/clickpipes/postgres/source/generic), si vous utilisez un autre fournisseur Postgres ou une instance autohébergée.
+    8. [Crunchy Bridge Postgres](/fr/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-    9. [TimescaleDB](/fr/integrations/clickpipes/postgres/source/timescale), si vous utilisez l’extension TimescaleDB sur un service managé ou une instance autohébergée.
+    9. [Source Postgres générique](/fr/integrations/clickpipes/postgres/source/generic), si vous utilisez un autre fournisseur Postgres ou une instance autohébergée.
+
+    10. [TimescaleDB](/fr/integrations/clickpipes/postgres/source/timescale), si vous utilisez l’extension TimescaleDB sur un service managé ou une instance autohébergée.
 
     <Warning>
       Les proxys Postgres comme PgBouncer, RDS Proxy, Supabase Pooler, etc. ne sont pas pris en charge pour la réplication basée sur CDC. Veillez à NE PAS les utiliser pour la configuration de ClickPipes et ajoutez plutôt les informations de connexion de la base de données Postgres elle-même.
@@ -65,7 +67,7 @@ import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Service ClickPipes" size="lg" border />
 
-    2. Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur « Set up a ClickPipe »
+    2. Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur &quot;Set up a ClickPipe&quot;
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Sélectionner les importations" size="lg" border />
 
@@ -94,19 +96,19 @@ import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.
 
     <ChangingTLSSettings />
 
-    #### (Optionnel) Configuration du SSH tunneling {#optional-setting-up-ssh-tunneling}
+    #### (Facultatif) Configuration du tunneling SSH {#optional-setting-up-ssh-tunneling}
 
     Vous pouvez renseigner les informations de tunneling SSH si votre base de données Postgres source n&#39;est pas accessible publiquement.
 
-    1. Activez le toggle « Use SSH Tunnelling ».
+    1. Activez le toggle &quot;Use SSH Tunnelling&quot;.
 
     2. Renseignez les informations de connexion SSH.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border />
 
-    3. Pour utiliser l’authentification par clé, cliquez sur « Revoke and generate key pair » afin de générer une nouvelle paire de clés, puis copiez la clé publique générée sur votre serveur SSH dans `~/.ssh/authorized_keys`.
+    3. Pour utiliser l’authentification par clé, cliquez sur &quot;Revoke and generate key pair&quot; afin de générer une nouvelle paire de clés, puis copiez la clé publique générée sur votre serveur SSH dans `~/.ssh/authorized_keys`.
 
-    4. Cliquez sur « Verify Connection » pour vérifier la connexion.
+    4. Cliquez sur &quot;Verify Connection&quot; pour vérifier la connexion.
 
     <Note>
       Veillez à autoriser les [adresses IP ClickPipes](/fr/integrations/clickpipes/networking/static-ips) dans les règles de firewall de l’hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
