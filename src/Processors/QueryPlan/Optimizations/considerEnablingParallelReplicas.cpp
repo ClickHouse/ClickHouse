@@ -51,14 +51,24 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
 /// `SELECT ... WHERE ...` it is the only node above the read, so peeling it would leave nothing to
 /// instrument but the reading step itself.
 ///
-/// Only steps that pass their rows through unchanged belong here.
-/// E.g. `DelayedCreatingSetsStep`. Technically, `ExpressionStep` doesn't qualify,
-/// but it is safe most of the time, and not skipping it would harm more queries by
-/// not applying the optimization rather than save from a few false positives.
+/// An `ExpressionStep` qualifies only when it is byte-transparent, i.e. a rename. Not every expression
+/// below the `Union` is one: the first-stage planner deliberately puts real computation there for
+/// queries that finish on the initiator - `Before WINDOW` for a window function, `Projection` and
+/// `Before ORDER BY` otherwise (see `Planner::buildQueryPlanIfNeeded`, and
+/// `PlannerExpressionAnalysis` where `before_window_actions` materializes the window arguments,
+/// partition keys and order keys). Those columns are part of what the replicas send, so peeling such a
+/// step lands on a node below the real boundary and undercounts the output. `Expression (Before WINDOW)`
+/// over a bare read normally hides this - expression merging folds it into the rename below it, and the
+/// read guard in the loop then stops on the merged step - but with `query_plan_merge_expressions = 0`
+/// the two stay separate and the partition key drops out of the estimate.
+///
+/// `DelayedCreatingSetsStep` and `CreatingSetsStep` pass their rows through by construction.
 bool isPassThroughWrapper(const IQueryPlanStep & step)
 {
-    return typeid_cast<const ExpressionStep *>(&step)
-        || typeid_cast<const DelayedCreatingSetsStep *>(&step)
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        return isByteTransparentTransform(*expression);
+
+    return typeid_cast<const DelayedCreatingSetsStep *>(&step)
         || typeid_cast<const CreatingSetsStep *>(&step);
 }
 

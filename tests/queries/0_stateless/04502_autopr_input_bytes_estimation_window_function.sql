@@ -20,17 +20,33 @@ SET automatic_parallel_replicas_min_bytes_per_replica=0;
 
 INSERT INTO t SELECT number, number * 2 FROM numbers(1e6);
 
--- A window function over a bare table scan: with parallel replicas the replicas execute only the reading
--- step, since the window itself is computed on the initiator. The reading step records input bytes only,
--- so `findTopNodeOfReplicasPlan` stops one step above it rather than peeling all the way down, and the
--- wrapper it stops on does record output bytes - the pre-window rows the replicas would ship. Statistics
--- are therefore collected for this query, and the cost model gets to decide on real numbers instead of
--- being skipped: the wrapper passes its rows through, so output comes out roughly equal to input, the
--- replicas cost more than reading locally, and the optimization is not applied. Before the boundary was
--- moved above the read this shape failed close, matching the reading step and collecting nothing.
+-- A window function over a bare table scan. The window itself is computed on the initiator, so what the
+-- replicas send is the output of `Before WINDOW`, which materializes the partition key alongside the
+-- columns read. Expression merging folds that step together with the rename above the read, so the
+-- boundary search stops on the merged step sitting directly on the reading step. The reading step
+-- records input bytes only; the step above it records both, so statistics are collected and the cost
+-- model decides on real numbers instead of being skipped - here output barely exceeds input (one `UInt8`
+-- partition key next to two `UInt64`s), replicas cost more than reading locally, and the optimization is
+-- not applied. Before the boundary was moved above the read this shape failed close, matching the
+-- reading step and collecting nothing.
 SELECT key, sum(value) OVER (PARTITION BY key % 10 ORDER BY key) AS s
 FROM t
 FORMAT Null SETTINGS log_comment='04502_autopr_window_function_query';
+
+-- The same shape with expression merging off, which is what pins down *which* step the search stops on.
+-- Unmerged, the replica-side branch is `Expression (Before WINDOW)` over `Expression (Change column
+-- names to column identifiers)` over the read, and only the lower one is byte-transparent. Peeling both
+-- - which treating every `ExpressionStep` as a pass-through wrapper does - lands on the rename and drops
+-- the partition key out of the estimate. The partition key here is a wide `String` so that it dominates
+-- the two `UInt64`s that were read: stopping on `Before WINDOW` records several times the input bytes,
+-- stopping on the rename records about one times, and the check below tells the two apart.
+SET query_plan_merge_expressions = 0;
+
+SELECT key, sum(value) OVER (PARTITION BY repeat(toString(key), 20) ORDER BY key) AS s
+FROM t
+FORMAT Null SETTINGS log_comment='04502_autopr_window_unmerged_query';
+
+SET query_plan_merge_expressions = 1;
 
 -- Regression guard for the output side. The window is computed on the coordinator, so the columns it
 -- appends are never sent to the initiator and must never be recorded as replica output. Here the real
@@ -77,6 +93,18 @@ SELECT log_comment,
         AS output_measured_above_read
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '04502_autopr_window_function_query') AND (type = 'QueryFinish')
+ORDER BY log_comment
+FORMAT TSVWithNames;
+
+-- With the two expressions left unmerged the boundary must still be `Before WINDOW`, not the rename
+-- below it. Its wide `String` partition key is several times the size of the two `UInt64` columns read,
+-- so the recorded output has to exceed the input by a wide margin; landing on the rename instead would
+-- put the ratio back at about one.
+SELECT log_comment,
+    ProfileEvents['RuntimeDataflowStatisticsOutputBytes']
+        > (2 * ProfileEvents['RuntimeDataflowStatisticsInputBytes']) AS partition_key_counted_as_output
+FROM system.query_log
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '04502_autopr_window_unmerged_query') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 

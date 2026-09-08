@@ -12,6 +12,7 @@ namespace DB
 {
 
 class JoinStepLogical;
+class ITransformingStep;
 
 class FutureSetFromSubquery;
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
@@ -322,6 +323,17 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
+
+/// Does this step leave both the number of rows and the byte layout of its input alone? A rename does;
+/// an expression that materializes a column - a window partition key, a sort key, a projection - does
+/// not, and what comes out of it is not what went in.
+///
+/// This is the one notion of "transparent" the Auto-PR machinery has, and both of its users must agree
+/// on it: `calculateHashTableCacheKeys` lets such a step adopt its child's key, and
+/// `considerEnablingParallelReplicas` looks through such a step when locating the boundary the replicas
+/// would ship from. A step that is invisible to one and visible to the other would be instrumented in
+/// one plan and matched in the other.
+bool isByteTransparentTransform(const ITransformingStep & transform);
 
 /// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the

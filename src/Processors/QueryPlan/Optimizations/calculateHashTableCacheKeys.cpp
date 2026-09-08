@@ -62,38 +62,15 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     return hash.get64();
 }
 
-/// Two headers have the same byte layout when they carry the same column types in the same order.
-/// Names are intentionally ignored: a pure rename (e.g. `__table1.a` -> `a`) does not change the
-/// number of output bytes, so a rename-only step stays transparent and the single-replica and
-/// parallel-replicas plan builds still match. Only a change in the set/types of output columns
-/// changes `output_bytes`.
-bool sameByteLayout(const Block & lhs, const Block & rhs)
-{
-    if (lhs.columns() != rhs.columns())
-        return false;
-    for (size_t i = 0; i < lhs.columns(); ++i)
-        if (lhs.getByPosition(i).type->getName() != rhs.getByPosition(i).type->getName())
-            return false;
-    return true;
-}
-
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
-    /// leaves the output byte layout unchanged. The cache stores `output_bytes`, not just cardinality,
-    /// so a row-preserving `ExpressionStep` that adds, removes, or widens columns DOES change the
-    /// output bytes - a plain read and a wide projection must not share a key and reuse the wrong
-    /// output-byte estimate. Such a step gets a distinct key from its serialized form below; a
-    /// rename-only step keeps the same byte layout and stays transparent.
-    ///
-    /// `sameByteLayout` compares column types, not actual byte sizes, so this is best-effort (see the
-    /// note on `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under
-    /// the same output name - e.g. replacing `s` with `concat(s, s)` (still one `String`) - keeps the
-    /// same layout and stays transparent, so it can share its child's key even though `output_bytes`
-    /// differs. We accept that: a precise byte-size key isn't available at planning time, and the only
-    /// consequence is a slightly-off estimate, never a wrong result.
-    if (transform.getTransformTraits().preserves_number_of_rows
-        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
+    /// leaves the output byte layout unchanged - see `isByteTransparentTransform`. The cache stores
+    /// `output_bytes`, not just cardinality, so a row-preserving `ExpressionStep` that adds, removes,
+    /// or widens columns DOES change the output bytes - a plain read and a wide projection must not
+    /// share a key and reuse the wrong output-byte estimate. Such a step gets a distinct key from its
+    /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
+    if (DB::QueryPlanOptimizations::isByteTransparentTransform(transform))
         return 0;
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
@@ -126,6 +103,36 @@ namespace DB
 
 namespace QueryPlanOptimizations
 {
+
+/// Two headers have the same byte layout when they carry the same column types in the same order.
+/// Names are intentionally ignored: a pure rename (e.g. `__table1.a` -> `a`) does not change the
+/// number of output bytes, so a rename-only step stays transparent and the single-replica and
+/// parallel-replicas plan builds still match. Only a change in the set/types of output columns
+/// changes `output_bytes`.
+static bool sameByteLayout(const Block & lhs, const Block & rhs)
+{
+    if (lhs.columns() != rhs.columns())
+        return false;
+    for (size_t i = 0; i < lhs.columns(); ++i)
+        if (lhs.getByPosition(i).type->getName() != rhs.getByPosition(i).type->getName())
+            return false;
+    return true;
+}
+
+/// This compares column types, not actual byte sizes, so it is best-effort (see the note on
+/// `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under the same
+/// output name - e.g. replacing `s` with `concat(s, s)`, still one `String` - keeps the same layout and
+/// is reported transparent even though its output bytes differ. We accept that: a precise byte-size
+/// answer isn't available at planning time, and the only consequence is a slightly-off estimate, never
+/// a wrong result. What it does catch is a step that materializes a column, which is the case that
+/// matters - a window partition key or a sort key is exactly what the replicas would ship on top of
+/// what they read.
+bool isByteTransparentTransform(const ITransformingStep & transform)
+{
+    return transform.getTransformTraits().preserves_number_of_rows
+        && !transform.getInputHeaders().empty()
+        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front());
+}
 
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
 {
