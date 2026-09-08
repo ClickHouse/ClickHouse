@@ -4,7 +4,6 @@
 -- The combined subcolumn json.@`a` is not NULL when the path `a` has only sub-paths (`a.b`),
 -- so the presence of the path `a` itself in JSONAllPaths is not an equivalent condition
 -- and cannot be used for granule skipping.
-SET explain_query_plan_default = 'legacy';
 
 -- =============================================================================
 -- Section 1: bloom_filter index, path with a sub-object
