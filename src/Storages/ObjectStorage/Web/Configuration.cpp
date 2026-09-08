@@ -139,7 +139,7 @@ void StorageWebConfiguration::check(ContextPtr context)
         for (const auto & url_option : url_shard)
             context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
     }
-    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
+    headers_from_ast = context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(std::move(headers_from_ast));
 }
 
 ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context, bool, CredentialsConfigurationCallback) /// NOLINT

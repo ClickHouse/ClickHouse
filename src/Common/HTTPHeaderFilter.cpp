@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const
+HTTPHeaderEntries HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries entries) const
 {
     std::lock_guard guard(mutex);
 
@@ -68,6 +68,8 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                         "see <http_forbid_headers>", reported_name);
     }
+
+    return entries;
 }
 
 void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)

@@ -29,7 +29,7 @@ bool isForbidden(const HTTPHeaderFilter & filter, const std::string & name)
     HTTPHeaderEntries entries{{name, "value"}};
     try
     {
-        filter.checkAndNormalizeHeaders(entries);
+        (void)filter.checkAndNormalizeHeaders(entries);
     }
     catch (const Exception &)
     {
@@ -206,7 +206,7 @@ TEST(HTTPHeaderFilter, RejectsCarriageReturnAndNewline)
     auto rejects = [&](const std::string & name, const std::string & value)
     {
         HTTPHeaderEntries entries{{name, value}};
-        try { filter.checkAndNormalizeHeaders(entries); }
+        try { (void)filter.checkAndNormalizeHeaders(entries); }
         catch (const Exception &) { return true; }
         return false;
     };
