@@ -594,6 +594,28 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'demo_memory_usage_bytes'
 )");
 
+    EXPECT_EQ(parse("limit_ratio(0.5, demo_memory_usage_bytes)"), R"(
+limit_ratio(0.5, demo_memory_usage_bytes)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(limit_ratio)
+        Scalar(0.5)
+        InstantSelector:
+            __name__ EQ 'demo_memory_usage_bytes'
+)");
+
+    EXPECT_EQ(parse("limit_ratio by(instance) (-0.2, demo_memory_usage_bytes)"), R"(
+limit_ratio by (instance) (-0.2, demo_memory_usage_bytes)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(limit_ratio)
+        by instance
+        UnaryOperator(-)
+            Scalar(0.2)
+        InstantSelector:
+            __name__ EQ 'demo_memory_usage_bytes'
+)");
+
     EXPECT_EQ(parse("avg(max by(type) (demo_memory_usage_bytes))"), R"(
 avg(max by (type) (demo_memory_usage_bytes))
 
