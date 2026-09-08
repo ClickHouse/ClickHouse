@@ -1390,8 +1390,8 @@ TEST(PromQLParser, OctalTimestampOverflow)
 
 TEST(PromQLParser, TimeSeriesNumberFormatsRemainDecimal)
 {
-    EXPECT_EQ(parseTimeSeriesTimestamp("0755", 3).value, 755000);
-    EXPECT_EQ(parseTimeSeriesDuration("0755", 3).value, 755000);
+    EXPECT_EQ(parseTimeSeriesTimestamp(String{"0755"}, 3).value, 755000);
+    EXPECT_EQ(parseTimeSeriesDuration(String{"0755"}, 3).value, 755000);
 }
 
 
