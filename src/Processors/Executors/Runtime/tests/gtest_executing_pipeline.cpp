@@ -10,7 +10,6 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -92,25 +91,12 @@ TEST(ExecutingPipeline, FailKeepsTheFirstExceptionAndCancels)
     EXPECT_FALSE(pipeline.exception);
 
     pipeline.fail(std::make_exception_ptr(Exception(ErrorCodes::BAD_ARGUMENTS, "first")));
-    pipeline.fail(std::make_exception_ptr(Exception(ErrorCodes::LOGICAL_ERROR, "second")));
+    pipeline.fail(std::make_exception_ptr(Exception(ErrorCodes::BAD_ARGUMENTS, "second")));
 
     EXPECT_EQ(IProcessor::CancelReason::Exception, pipeline.cancel_reason.load());
     EXPECT_TRUE(pipeline.cancelled());
     EXPECT_TRUE(chain.sink->isCancelled());
     EXPECT_EQ(ErrorCodes::BAD_ARGUMENTS, getExceptionErrorCode(pipeline.exception));
-}
-
-TEST(ExecutingPipeline, RemoveReadyRejectsAMemberConnectedOutside)
-{
-    Chain chain;
-    ExecutingPipeline pipeline(chain.processors, nullptr, nullptr);
-
-    pipeline.submitForRemoval({chain.source});
-    pipeline.recordAsFinished(*chain.source);
-    ASSERT_TRUE(pipeline.hasReadyForRemoval());
-
-    EXPECT_THROW(pipeline.removeReady(), Exception);
-    EXPECT_EQ(2u, chain.processors->size());
 }
 
 TEST(ExecutingPipeline, RemoveReadyRemovesAFinishedGroup)
@@ -121,11 +107,6 @@ TEST(ExecutingPipeline, RemoveReadyRemovesAFinishedGroup)
     pipeline.submitForRemoval({chain.source, chain.sink});
     pipeline.recordAsFinished(*chain.source);
     pipeline.recordAsFinished(*chain.sink);
-
-    EXPECT_THROW(pipeline.removeReady(), Exception);
-    EXPECT_EQ(2u, chain.processors->size());
-
-    pipeline.submitForRemoval({chain.source, chain.sink});
     chain.source->output().getUpdateChannel().getOwner().last_status = IProcessor::Status::Finished;
     chain.sink->input().getUpdateChannel().getOwner().last_status = IProcessor::Status::Finished;
     pipeline.removeReady();

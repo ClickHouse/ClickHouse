@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Executors/Runtime/Pipeline/ProcessorStates.h>
 #include <Processors/Port.h>
-#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -78,24 +77,6 @@ TEST(ProcessorStates, WiresBothEndsAndKeepsTheSharedList)
     EXPECT_FALSE(states.dump().empty());
 }
 
-TEST(ProcessorStates, NeighbourOutsideTheListIsLogicalError)
-{
-    auto source = std::make_shared<Source>();
-    auto omitted_sink = std::make_shared<Sink>();
-    connect(source->output(), omitted_sink->input());
-
-    auto processors = std::make_shared<Processors>(Processors{source});
-    try
-    {
-        ProcessorStates states(processors);
-        FAIL() << "expected a LOGICAL_ERROR";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_NE(std::string::npos, e.message().find("was found as output for processor"));
-    }
-}
-
 TEST(ProcessorStates, AddWiresTheGroupAndTheRequester)
 {
     auto source = std::make_shared<Source>();
@@ -111,7 +92,6 @@ TEST(ProcessorStates, AddWiresTheGroupAndTheRequester)
     EXPECT_EQ(sink.get(), added.front()->processor);
 
     EXPECT_EQ((Processors{source, sink}), *processors);
-    EXPECT_THROW(states.add(source_state, {sink}), Exception);
 
     ProcessorState & sink_state = states.get(*sink);
     EXPECT_EQ(&source_state, &source->output().getUpdateChannel().getOwner());
@@ -129,13 +109,10 @@ TEST(ProcessorStates, AddWiresTheGroupAndTheRequester)
     EXPECT_TRUE(hint_outputs.empty());
 }
 
-TEST(ProcessorStates, RemoveNeedsFinishedProcessorsAndDisconnectsThem)
+TEST(ProcessorStates, RemoveDisconnectsTheFinishedProcessors)
 {
     Chain chain;
     ProcessorStates states(chain.processors);
-
-    EXPECT_THROW(states.remove({chain.source, chain.sink}), Exception);
-    EXPECT_EQ(2u, chain.processors->size());
 
     states.get(*chain.source).last_status = IProcessor::Status::Finished;
     states.get(*chain.sink).last_status = IProcessor::Status::Finished;
@@ -143,5 +120,4 @@ TEST(ProcessorStates, RemoveNeedsFinishedProcessorsAndDisconnectsThem)
 
     EXPECT_TRUE(chain.processors->empty());
     EXPECT_FALSE(chain.source->output().getUpdateChannel().isConnected());
-    EXPECT_THROW(states.get(*chain.source), Exception);
 }

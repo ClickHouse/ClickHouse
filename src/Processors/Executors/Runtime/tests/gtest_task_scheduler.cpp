@@ -48,7 +48,7 @@ TEST(TaskScheduler, OwnQueueIsPoppedInPushOrder)
 
     auto first = f.scheduler.tryPop(0);
     ASSERT_TRUE(first);
-    EXPECT_EQ(&f.states[0], first->state);
+    EXPECT_EQ(f.states.data(), first->state);
     EXPECT_EQ(Task::Kind::Prepare, first->kind);
 
     EXPECT_EQ(1u, f.popIndex(0));
@@ -103,7 +103,7 @@ TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFrontAndWorkAtTheBack)
 
     int fds[2];
     ASSERT_EQ(0, ::pipe(fds));
-    f.scheduler.push(AsyncTask{.state = &f.states[0], .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
+    f.scheduler.push(AsyncTask{.state = f.states.data(), .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
     EXPECT_EQ(1u, f.poller.pending());
     EXPECT_FALSE(f.scheduler.tryPop(0));
 
@@ -117,14 +117,14 @@ TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFrontAndWorkAtTheBack)
 
     auto first = f.scheduler.tryPop(0);
     ASSERT_TRUE(first);
-    EXPECT_EQ(&f.states[0], first->state);
+    EXPECT_EQ(f.states.data(), first->state);
     EXPECT_EQ(Task::Kind::AsyncReady, first->kind);
 
     EXPECT_EQ(1u, f.popIndex(0));
 
     auto last = f.scheduler.tryPop(0);
     ASSERT_TRUE(last);
-    EXPECT_EQ(&f.states[0], last->state);
+    EXPECT_EQ(f.states.data(), last->state);
     EXPECT_EQ(Task::Kind::Work, last->kind);
     EXPECT_FALSE(f.scheduler.tryPop(0));
 
@@ -140,7 +140,7 @@ TEST(TaskScheduler, TryPopPollsWhenTheQueuesAreEmpty)
 
     int fds[2];
     ASSERT_EQ(0, ::pipe(fds));
-    f.scheduler.push(AsyncTask{.state = &f.states[0], .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
+    f.scheduler.push(AsyncTask{.state = f.states.data(), .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
 
     char byte = 0;
     ASSERT_EQ(1, ::write(fds[1], &byte, 1));

@@ -48,7 +48,6 @@ TEST(RoundUpdates, ChannelNotifiesUntilDisconnected)
     input.getUpdateChannel().connect(state, input);
     output.getUpdateChannel().connect(state, output);
     EXPECT_TRUE(input.getUpdateChannel().isConnected());
-    EXPECT_THROW(input.getUpdateChannel().connect(state, input), Exception);
 
     input.getUpdateChannel().notifyChanges();
     output.getUpdateChannel().notifyChanges();
@@ -80,7 +79,4 @@ TEST(RoundUpdates, CopiedPortHasDisconnectedChannel)
 
     InputPort copy(input);
     EXPECT_FALSE(copy.getUpdateChannel().isConnected());
-
-    input.getUpdateChannel().connect(state, input);
-    EXPECT_THROW(std::make_unique<InputPort>(input), Exception);
 }

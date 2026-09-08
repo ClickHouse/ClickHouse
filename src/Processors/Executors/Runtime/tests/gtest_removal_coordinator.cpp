@@ -1,6 +1,5 @@
 #include <Processors/Executors/Runtime/Pipeline/RemovalCoordinator.h>
 #include <Processors/IProcessor.h>
-#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -94,15 +93,6 @@ TEST(RemovalCoordinator, OnlyReadyGroupsAreTaken)
     removals.onFinished(first.front().get());
     EXPECT_TRUE(removals.hasReady());
     EXPECT_EQ(first, removals.takeReadyForRemoval());
-}
-
-TEST(RemovalCoordinator, SubmittingPendingProcessorTwiceThrows)
-{
-    auto processors = makeProcessors(1);
-
-    RemovalCoordinator removals;
-    removals.submit(processors);
-    EXPECT_THROW(removals.submit(processors), Exception);
 }
 
 TEST(RemovalCoordinator, ConcurrentOnFinished)

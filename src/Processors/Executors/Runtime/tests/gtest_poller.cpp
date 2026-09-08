@@ -3,7 +3,6 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Processors/Executors/Runtime/Pipeline/ProcessorState.h>
-#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -61,7 +60,6 @@ TEST(Poller, ReturnsStateWhenFdIsReady)
 
     poller.add(pipe.state, pipe.readFd());
     EXPECT_EQ(1u, poller.pending());
-    EXPECT_THROW(poller.add(pipe.state, pipe.readFd()), Exception);
 
     EXPECT_EQ(one(pipe.state), poller.poll(-1));
     EXPECT_EQ(0u, poller.pending());

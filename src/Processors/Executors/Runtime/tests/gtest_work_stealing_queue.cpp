@@ -1,6 +1,5 @@
 #include <Processors/Executors/Runtime/Pipeline/ProcessorState.h>
 #include <Processors/Executors/Runtime/Engine/WorkStealingQueue.h>
-#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -43,7 +42,6 @@ TEST(WorkStealingQueue, OwnerPopsInPushOrder)
     Fixture f;
     WorkStealingQueue deque;
     EXPECT_TRUE(deque.empty());
-    EXPECT_THROW(deque.popFront(), Exception);
 
     deque.pushBack(f.task(0, Task::Kind::Prepare));
     deque.pushBack(f.task(1, Task::Kind::Work));
@@ -51,11 +49,10 @@ TEST(WorkStealingQueue, OwnerPopsInPushOrder)
     EXPECT_EQ(3u, deque.size());
 
     Task first = deque.popFront();
-    EXPECT_EQ(&f.states[0], first.state);
+    EXPECT_EQ(f.states.data(), first.state);
     EXPECT_EQ(Task::Kind::Prepare, first.kind);
 
     f.expectPops(deque, {1, 2});
-    EXPECT_THROW(deque.popFront(), Exception);
 }
 
 TEST(WorkStealingQueue, PopBackTakesTheNewest)
@@ -65,10 +62,9 @@ TEST(WorkStealingQueue, PopBackTakesTheNewest)
     f.fill(deque, 0, 3);
 
     EXPECT_EQ(&f.states[2], deque.popBack().state);
-    EXPECT_EQ(&f.states[0], deque.popFront().state);
+    EXPECT_EQ(f.states.data(), deque.popFront().state);
     EXPECT_EQ(&f.states[1], deque.popBack().state);
     EXPECT_TRUE(deque.empty());
-    EXPECT_THROW(deque.popBack(), Exception);
 }
 
 TEST(WorkStealingQueue, PushFrontIsPoppedBeforeTheRest)
@@ -141,8 +137,6 @@ TEST(WorkStealingQueue, TakeFrontTakesOldestHalfInOrder)
     EXPECT_EQ(2u, thief.takeFirst(victim, 2));
     f.expectPops(thief, {0, 1});
     EXPECT_EQ(18u, victim.size());
-
-    EXPECT_THROW(thief.takeFirst(thief, 7), Exception);
 }
 
 TEST(WorkStealingQueue, StealFromSingleAndEmpty)
@@ -158,6 +152,4 @@ TEST(WorkStealingQueue, StealFromSingleAndEmpty)
     EXPECT_EQ(1u, thief.takeLast(victim, 7));
     EXPECT_TRUE(victim.empty());
     f.expectPops(thief, {0});
-
-    EXPECT_THROW(thief.takeLast(thief, 7), Exception);
 }

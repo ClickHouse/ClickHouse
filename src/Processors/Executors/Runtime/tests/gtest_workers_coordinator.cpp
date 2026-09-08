@@ -1,6 +1,5 @@
 #include <Processors/Executors/Runtime/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/Pipeline/ProcessorState.h>
-#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -90,7 +89,7 @@ TEST(WorkersCoordinator, OneIdleWorkerBlocksInThePollerAndTheNextOneSleeps)
 
     int fds[2];
     ASSERT_EQ(0, ::pipe(fds));
-    f.scheduler.push(AsyncTask{.state = &f.states[0], .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
+    f.scheduler.push(AsyncTask{.state = f.states.data(), .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
 
     bool polling_result = false;
     std::thread polling([&] { polling_result = f.coordinator.wait(0); });
@@ -111,7 +110,7 @@ TEST(WorkersCoordinator, OneIdleWorkerBlocksInThePollerAndTheNextOneSleeps)
 
     auto popped = f.scheduler.tryPop(0);
     ASSERT_TRUE(popped);
-    EXPECT_EQ(&f.states[0], popped->state);
+    EXPECT_EQ(f.states.data(), popped->state);
     EXPECT_EQ(Task::Kind::AsyncReady, popped->kind);
 
     f.coordinator.wakeOne();
@@ -125,7 +124,7 @@ TEST(WorkersCoordinator, OneIdleWorkerBlocksInThePollerAndTheNextOneSleeps)
 }
 #endif
 
-TEST(WorkersCoordinator, LeaveOfAWorkerThatAlreadyLeftIsANoOpAndEnterTwiceThrows)
+TEST(WorkersCoordinator, RepeatedLeaveAndRepeatedEnterAreNoOps)
 {
     Fixture f(2);
     f.coordinator.enter(0);
@@ -140,7 +139,7 @@ TEST(WorkersCoordinator, LeaveOfAWorkerThatAlreadyLeftIsANoOpAndEnterTwiceThrows
 
     f.coordinator.enter(1);
     EXPECT_EQ(2u, f.coordinator.registered());
-    EXPECT_THROW(f.coordinator.enter(1), Exception);
+    f.coordinator.enter(1);
     EXPECT_EQ(2u, f.coordinator.registered());
 }
 

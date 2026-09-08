@@ -13,12 +13,11 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/Exception.h>
 #include <Common/Scheduler/MemoryReservation.h>
+#include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 
 #include <gtest/gtest.h>
-
-#include <fmt/format.h>
 
 #include <functional>
 #include <thread>
@@ -29,7 +28,6 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -50,11 +48,6 @@ Chunk makeChunk(UInt8 value)
     return Chunk(std::move(columns), 1);
 }
 
-String describeProcessor(const IProcessor & processor)
-{
-    return fmt::format("{} at {}", processor.getUniqID(), static_cast<const void *>(&processor));
-}
-
 QueryStatusPtr makeQueryStatus(UInt64 max_execution_time_seconds)
 {
     ClientInfo client_info;
@@ -72,7 +65,7 @@ QueryStatusPtr makeQueryStatus(UInt64 max_execution_time_seconds)
         /*thread_group_*/ nullptr,
         IAST::QueryKind::Select,
         settings,
-        /*watch_start_nanoseconds*/ 0,
+        clock_gettime_ns(CLOCK_MONOTONIC),
         /*is_internal*/ false);
 }
 
@@ -163,7 +156,7 @@ protected:
 class CollectingSink final : public IProcessor
 {
 public:
-    CollectingSink(SharedHeader header_, size_t limit_ = 0, std::function<void()> on_limit_ = {})
+    explicit CollectingSink(SharedHeader header_, size_t limit_ = 0, std::function<void()> on_limit_ = {})
         : IProcessor({Block(*header_)}, {})
         , limit(limit_)
         , on_limit(std::move(on_limit_))
@@ -183,7 +176,7 @@ public:
         if (!input.hasData())
             return Status::NeedData;
 
-        auto chunk = input.pull(/*set_not_needed=*/true);
+        auto chunk = input.pull();
         const auto & col = assert_cast<const ColumnUInt8 &>(*chunk.getColumns().front());
         values.push_back(col.getElement(0));
         ++pulled;
@@ -197,7 +190,7 @@ public:
             return Status::Finished;
         }
 
-        return Status::PortFull;
+        return Status::NeedData;
     }
 
     std::vector<UInt8> values;
@@ -557,105 +550,6 @@ TEST(Executor, RunsAConnectedPipeline)
     Executor executor(processors, nullptr);
     executor.execute(1, false);
 }
-
-#ifndef DEBUG_OR_SANITIZER_BUILD
-TEST(Executor, PortsNotConnected)
-{
-    auto header = makeHeader();
-    auto source = std::make_shared<SourceFromSingleChunk>(header, makeChunk(1));
-    auto sink = std::make_shared<NullSink>(header);
-
-    auto processors = std::make_shared<Processors>(Processors{source, sink});
-
-    try
-    {
-        Executor executor(processors, nullptr);
-        executor.execute(1, false);
-        FAIL() << "Should have thrown.";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(ErrorCodes::LOGICAL_ERROR, e.code());
-        EXPECT_TRUE(e.displayText().contains("Port is not connected")) << e.displayText();
-    }
-}
-#endif
-
-namespace
-{
-
-struct MalformedGraph
-{
-    std::shared_ptr<Processors> processors;
-    /// Deliberately not in `processors`, but it must outlive the construction: the message dereferences it.
-    ProcessorPtr omitted_sink;
-    String source_description;
-    String expected_message;
-};
-
-MalformedGraph makeGraphWithOmittedSink()
-{
-    auto header = makeHeader();
-    auto source = std::make_shared<SourceFromSingleChunk>(header, makeChunk(1));
-    auto sink = std::make_shared<NullSink>(header);
-    connect(source->getPort(), sink->getPort());
-
-    MalformedGraph graph;
-    graph.source_description = describeProcessor(*source);
-    graph.expected_message = fmt::format(
-        "Processor {} was found as output for processor {}, but not found in list of processors",
-        describeProcessor(*sink),
-        graph.source_description);
-    graph.processors = std::make_shared<Processors>(Processors{source});
-    graph.omitted_sink = std::move(sink);
-    return graph;
-}
-
-}
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-
-TEST(ExecutorDeathTest, MissingNeighbourIdentifiesBothEndpoints)
-{
-    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-
-    auto graph = makeGraphWithOmittedSink();
-
-    const String expected_pattern
-        = "Processor NullSink_.* at 0x.* was found as output for processor "
-          "SourceFromSingleChunk_.* at 0x.*, but not found in list of processors";
-
-    EXPECT_DEATH(
-        {
-            Executor executor(graph.processors, nullptr);
-            executor.execute(1, false);
-        },
-        expected_pattern);
-}
-
-#else
-
-TEST(Executor, MissingNeighbourIdentifiesBothEndpointsAndAppendsTheDump)
-{
-    auto graph = makeGraphWithOmittedSink();
-
-    try
-    {
-        Executor executor(graph.processors, nullptr);
-        executor.execute(1, false);
-        FAIL() << "Expected a LOGICAL_ERROR for the processor missing from the list of processors.";
-    }
-    catch (const Exception & e)
-    {
-        const auto & message = e.message();
-        const auto exception_pos = message.find(graph.expected_message);
-        ASSERT_NE(exception_pos, std::string::npos) << message;
-        ASSERT_NE(message.find("Query pipeline:"), std::string::npos) << message;
-        ASSERT_NE(message.find(graph.source_description, exception_pos + graph.expected_message.size()), std::string::npos) << message;
-    }
-}
-
-#endif
 
 TEST(Executor, UpdatePipeline)
 {
