@@ -117,6 +117,16 @@ for transport in ("native", "HTTP"):
             for attempt in range(4):
                 query_id = "profile_trace_types_" + uuid.uuid4().hex
                 samples = execute(transport, query + " FORMAT Null", query_id, sample_settings)
+                for sample in samples:
+                    if sample["trace_type"] in {"Dropped", "Incomplete"}:
+                        assert sample["query_id"] and sample["host_name"], sample
+                        assert not sample["trace"] and not sample["symbols"], sample
+                        assert int(sample["thread_id"]) == int(sample["event_time_microseconds"]) == 0, sample
+                        if sample["trace_type"] == "Dropped":
+                            assert int(sample["size"]) > 0, sample
+                        else:
+                            assert int(sample["size"]) == 0, sample
+                samples = [sample for sample in samples if sample["trace_type"] not in {"Dropped", "Incomplete"}]
                 unsupported = {sample["trace_type"] for sample in samples} - allowed_types
                 assert not unsupported, sorted(unsupported)
                 assert all(sample["query_id"] for sample in samples), samples
