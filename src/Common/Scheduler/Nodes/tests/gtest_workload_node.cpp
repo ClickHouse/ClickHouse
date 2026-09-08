@@ -754,3 +754,21 @@ TEST(SchedulerTimeSharedWorkloadNode, UpdateThrottlerMaxBurst)
     t.process(start + std::chrono::seconds(100500));
     t.consumed("all", 3);
 }
+
+TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreDeactivateBelowInflight)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    // Child with a cost semaphore (max_bytes_inflight => SemaphoreConstraint max_cost).
+    auto a = t.createUnifiedNode("A", all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 100});
+
+    // Keep 20 bytes in-flight (dequeued, not finished) and one request still queued so the node stays active.
+    t.enqueue(a, {10, 10, 10});
+    t.dequeue(2);
+    t.consumed("A", 20);
+
+    // Lower the semaphore limit below the in-flight amount: active() goes true -> false while the child
+    // queue is still active, taking the deactivation branch of SemaphoreConstraint::updateConstraints.
+    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 10});
+}
