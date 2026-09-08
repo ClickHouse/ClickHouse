@@ -1261,7 +1261,7 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
             /// The payload is deliberately left unread: nothing consumes it here (the connection
-            /// closes with no reply), and in interserver mode the cluster secret is not verified
+            /// closes with no reply), and in interserver mode the connection is not authenticated
             /// until the Query packet, so reading it would deserialize a peer-chosen type.
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
 

@@ -6,10 +6,10 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
-# Regression tests for pre-authentication interserver packet handling: in interserver mode
-# the cluster `<secret>` is only verified while the `Query` packet is processed, so a packet
-# that the server rejects before then must disclose nothing, and a rejected `Data` packet
-# must not have its payload deserialized. Three rejection paths are covered:
+# Regression tests for pre-authentication interserver packet handling: in interserver mode the
+# connection is not authenticated until the `Query` packet is processed, so a packet that the
+# server rejects before then must disclose nothing, and a rejected `Data` packet must not have
+# its payload deserialized. Three rejection paths are covered:
 #
 #  * `TablesStatusRequest`, old protocol (no hash) + `interserver_tables_status_require_auth`;
 #  * `TablesStatusRequest`, new protocol signed with the wrong cluster secret;
