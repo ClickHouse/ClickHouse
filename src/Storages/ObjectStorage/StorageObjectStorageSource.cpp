@@ -2521,6 +2521,26 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
     IArchiveReader::FileInfo current_file_info{};
     while (true)
     {
+        if (ignore_archive_globs)
+        {
+            archive_object = archives_iterator->next(processor);
+            if (!archive_object)
+                return {};
+
+            if (!archive_object->getObjectMetadata())
+                archive_object->setObjectMetadata(
+                    object_storage->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+
+            archive_reader = createArchiveReader(archive_object);
+            auto first_file = archive_reader->firstFile();
+            if (!first_file)
+                continue;
+
+            path_in_archive = first_file->getFileName();
+            current_file_info = first_file->getFileInfo();
+            break;
+        }
+
         if (filter)
         {
             if (!file_enumerator)
@@ -2540,7 +2560,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 if (!file_enumerator)
                     continue;
             }
-            else if (!file_enumerator->nextFile() || ignore_archive_globs)
+            else if (!file_enumerator->nextFile())
             {
                 file_enumerator.reset();
                 continue;
