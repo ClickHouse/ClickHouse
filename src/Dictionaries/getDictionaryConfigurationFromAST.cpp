@@ -702,7 +702,7 @@ void buildSourceConfiguration(
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToSettingValueString(value)));
             setting_change_element->appendChild(setting_value);
         }
     }

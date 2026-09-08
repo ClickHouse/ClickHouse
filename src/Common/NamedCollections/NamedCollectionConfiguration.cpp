@@ -164,7 +164,7 @@ ConfigurationPtr createConfiguration(
     auto config = Configuration::createEmptyConfiguration(root_name);
     for (const auto & [name, value, _] : settings)
     {
-        Configuration::setConfigValue<String>(*config, name, convertFieldToString(value));
+        Configuration::setConfigValue<String>(*config, name, convertFieldToSettingValueString(value));
         auto ovalue = overridability.find(name);
         if (ovalue != overridability.end())
             Configuration::setOverridable(*config, name, ovalue->second);
