@@ -15,6 +15,11 @@ UUID=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 # -m1 because the error message may contain the error code name multiple times.
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE t_proj_attach_full UUID '${UUID}' (x UInt64, PROJECTION p (SELECT x ORDER BY x) WITH SETTINGS (marks_compression_codec = 'LZ4')) ENGINE = MergeTree ORDER BY x;" 2>&1 | grep -m 1 -o -F 'BAD_ARGUMENTS'
 
+# The same holds for a codec that is also unsafe for untyped data (`T64` requires the column type):
+# the metadata-load sanitization must not run first and strip the setting, which would let the
+# ATTACH through silently, so that the outcome does not depend on which codec is named.
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE t_proj_attach_full UUID '${UUID}' (x UInt64, PROJECTION p (SELECT x ORDER BY x) WITH SETTINGS (marks_compression_codec = 'T64')) ENGINE = MergeTree ORDER BY x;" 2>&1 | grep -m 1 -o -F 'BAD_ARGUMENTS'
+
 # A projection setting from the allow-list works on a full-definition ATTACH.
 # `send_logs_level=fatal` suppresses the "full table definition is not recommended" warning.
 $CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level fatal -q "ATTACH TABLE t_proj_attach_full UUID '${UUID}' (x UInt64, PROJECTION p (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 555)) ENGINE = MergeTree ORDER BY x;"

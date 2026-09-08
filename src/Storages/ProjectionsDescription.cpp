@@ -279,17 +279,17 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     /// The pre-override settings, kept as the baseline the sanitization below restores from.
+    const bool is_metadata_load = !isFreshTableDefinition(mode, attach_short_syntax);
     std::shared_ptr<const MergeTreeSettings> baseline_settings;
-    if (mode > LoadingStrictnessLevel::CREATE)
+    if (is_metadata_load)
         baseline_settings = std::make_shared<MergeTreeSettings>(*merge_tree_settings);
     if (projection_definition->with_settings)
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
 
-    if (mode > LoadingStrictnessLevel::CREATE)
+    if (is_metadata_load)
     {
-        /// On the metadata-load path (short-syntax ATTACH / SECONDARY_CREATE / RESTORE — callers pass
-        /// CREATE for a full-definition ATTACH, which is fresh user input) the projection settings
-        /// allow-list and `sanityCheck` below are skipped, so a projection can carry untyped
+        /// On the metadata-load path (short-syntax ATTACH / SECONDARY_CREATE / RESTORE) the projection
+        /// settings allow-list and `sanityCheck` below are skipped, so a projection can carry untyped
         /// compression-codec settings (e.g. `WITH SETTINGS (marks_compression_codec = 'PCO')`) that
         /// CREATE would reject. Left untouched they would only fail later, when the first projection
         /// materialization or merge re-resolves the stored codec string without a column type. Reset
