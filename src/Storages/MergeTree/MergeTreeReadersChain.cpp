@@ -21,6 +21,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+LoggerPtr getMergeTreeReadersChainLogger()
+{
+    static LoggerPtr log = getLogger("MergeTreeReadersChain");
+    return log;
+}
+
 static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers);
 
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)

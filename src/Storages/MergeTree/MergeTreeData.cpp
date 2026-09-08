@@ -177,7 +177,6 @@
 #include <unordered_set>
 #include <filesystem>
 
-#include <absl/container/inlined_vector.h>
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
 #include <Poco/Net/NetException.h>
@@ -11266,43 +11265,9 @@ namespace
 
 /// NULL and NaN sort above every ordinary value in a key while min/max skip them, so a bound
 /// holding one at any depth does not answer the aggregate.
-/// Iterative because Fields nest inside Fields and a recursive walk overflows the native stack.
 bool containsOrderInconsistentValue(const Field & field)
 {
-    absl::InlinedVector<const Field *, 16> pending{&field};
-
-    while (!pending.empty())
-    {
-        const Field * current = pending.back();
-        pending.pop_back();
-
-        if (current->isNull() || isNaNField(*current))
-            return true;
-
-        switch (current->getType())
-        {
-            case Field::Types::Array:
-                for (const Field & element : current->safeGet<Array>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Tuple:
-                for (const Field & element : current->safeGet<Tuple>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Map:
-                for (const Field & element : current->safeGet<Map>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Object:
-                for (const auto & [_, element] : current->safeGet<Object>())
-                    pending.push_back(&element);
-                break;
-            default:
-                break;
-        }
-    }
-
-    return false;
+    return anyFieldSatisfies(field, [](const Field & f) { return f.isNull() || isNaNField(f); });
 }
 
 /// Both ends the same degenerate value means the part holds no ordinary comparable value, which only

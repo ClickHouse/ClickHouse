@@ -235,6 +235,11 @@ parser.add_argument(
     help="Test no more than this number of queries, chosen at random.",
 )
 parser.add_argument(
+    "--soft-max-queries",
+    action="store_true",
+    help='Let tests marked <test run_all_queries="1"> ignore --max-queries.',
+)
+parser.add_argument(
     "--queries-to-run",
     nargs="*",
     type=int,
@@ -625,6 +630,9 @@ if "max_ignored_relative_change" in root.attrib:
     ignored_relative_change = float(root.attrib["max_ignored_relative_change"])
     print(f"report-threshold\t{ignored_relative_change}")
 
+# Opt-in per test: run every query. Honored only with --soft-max-queries.
+run_all_queries = root.attrib.get("run_all_queries", "0") not in ("0", "false", "")
+
 reportStageEnd("before-connect")
 
 # Open connections
@@ -848,7 +856,7 @@ reportStageEnd("sync")
 # By default, test all queries.
 queries_to_run = range(0, len(test_queries))
 
-if args.max_queries:
+if args.max_queries and not (args.soft_max_queries and run_all_queries):
     # If specified, test a limited number of queries chosen at random.
     queries_to_run = random.sample(
         range(0, len(test_queries)), min(len(test_queries), args.max_queries)

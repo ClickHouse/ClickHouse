@@ -11,6 +11,7 @@
 
 #include <Compression/CompressionFactory.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/NestedUtils.h>
 #include <Core/Settings.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -806,6 +807,35 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             "UNIQUE KEY column `{}` must be a physical (stored) column; "
                             "ALIAS and EPHEMERAL columns are not allowed",
                             name);
+                    /// A subcolumn (`c.null`, `c.size0`, `c.1`, ...) is absent from the stored block
+                    /// yet resolvable by `getKeyFromAST`, and lives in an index `has` does not search.
+                    /// `!has(name)` comes before `hasSubcolumn`: a stored column may be named after
+                    /// another column's subcolumn, and a flattened `Nested` member is itself a stored
+                    /// column. Gated on fresh definitions so an already-created table stays
+                    /// attachable, hence droppable.
+                    if (is_fresh_definition && !metadata.columns.has(name)
+                        && metadata.columns.hasSubcolumn(GetColumnsOptions::All, name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY column `{}` is a subcolumn; UNIQUE KEY must name whole "
+                            "stored columns",
+                            name);
+                    /// A virtual column's subcolumn (`_partition_value.1`) is in neither index above:
+                    /// the virtual lookup is exact-name, and the subcolumn index holds only subcolumns
+                    /// of `metadata.columns`. `getKeyFromAST` sees virtuals, so it does resolve one.
+                    /// Every dot position is tried: the subcolumn can itself have one.
+                    if (is_fresh_definition && !metadata.columns.has(name))
+                    {
+                        for (const auto & [parent, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name))
+                        {
+                            auto virtual_parent = metadata.virtuals.tryGet(
+                                String(parent), VirtualsKind::All, VirtualsMaterializationPlace::All);
+                            if (virtual_parent && virtual_parent->type->tryGetSubcolumnType(subcolumn))
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "UNIQUE KEY columns must be real stored columns; "
+                                    "virtual columns such as `{}` are not allowed",
+                                    parent);
+                        }
+                    }
                 };
 
                 const auto * as_function = uk_ast->as<ASTFunction>();
@@ -1782,7 +1812,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
 |--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
 | [equals (=, ==)](/reference/functions/regular-functions/comparison-functions#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
+| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [like](/reference/functions/regular-functions/string-search-functions#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [notLike](/reference/functions/regular-functions/string-search-functions#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [match](/reference/functions/regular-functions/string-search-functions#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
@@ -1792,7 +1822,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
+| [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [less (`<`)](/reference/functions/regular-functions/comparison-functions#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
 | [greater (`>`)](/reference/functions/regular-functions/comparison-functions#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
 | [lessOrEquals (`<=`)](/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |

@@ -707,8 +707,8 @@ constexpr bool isInnerOrCross(JoinKind kind)
 static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & algorithms = optimization_settings.query_plan_optimize_join_order_algorithm;
-    return (optimization_settings.query_plan_optimize_join_order_use_cd_a_conflict_detector
-            || optimization_settings.query_plan_optimize_join_order_use_cd_c_conflict_detector)
+    return (optimization_settings.query_plan_optimize_join_order_use_conflict_detector_a
+            || optimization_settings.query_plan_optimize_join_order_use_conflict_detector_c)
         && algorithms.size() == 1
         && algorithms.front() == JoinOrderAlgorithm::DPSUB;
 }
@@ -1047,9 +1047,18 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         query_graph.type_changes[total_inputs - 1] = std::move(right_changes_types);
 
     BitSet join_expression_sources;
-    /// Relations on which the whole ON clause rejects nulls, for the CD-A conflict detector. The ON
+    /// Relations on which the whole ON clause rejects nulls, for the conflict detectors. The ON
     /// clause is the conjunction of the `join_expression` conjuncts, so a relation is rejecting for
     /// the operator as soon as any conjunct rejects on it -- hence the union.
+    ///
+    /// Null-rejection is only meaningful when an unmatched outer-join row is padded with a real SQL
+    /// NULL, i.e. under `join_use_nulls = 1`. With `join_use_nulls = 0` (the default) the padded value
+    /// is a type default (`0`/`''`), so a "null-rejecting" predicate like `t2.id = t3.id` still
+    /// matches the padded `0`; trusting null-rejection then unlocks unsound assoc/asscom reorderings
+    /// -- e.g. `(t1 LEFT JOIN t2) LEFT JOIN t3` becoming `t1 LEFT JOIN (t2 LEFT JOIN t3)`, which
+    /// changes the result. So we claim no null-rejection unless `join_use_nulls` is on, which makes
+    /// the detectors fall back to the conservative (correct) outer-join reordering in that case.
+    const bool trust_null_rejection = query_graph.context->optimization_settings.join_use_nulls;
     BitSet cda_nr_rels;
     for (const auto * old_node : join_expression)
     {
@@ -1059,7 +1068,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
         /// Collect all sources from join expressions
         join_expression_sources |= edge.getSourceRelations();
-        cda_nr_rels |= predicateNullRejectingRelations(new_node, query_graph.expression_actions);
+        if (trust_null_rejection)
+            cda_nr_rels |= predicateNullRejectingRelations(new_node, query_graph.expression_actions);
 
         /// ON-clause predicates of an outer join must be applied exactly at the step
         /// that joins the null-supplying relation, in its ON clause.
@@ -1294,6 +1304,19 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         input_node_map[input] = input_idx;
     }
 
+    /// Decide once whether this graph's per-entry strictnesses are authoritative. `buildPhysicalPlan`
+    /// leaves every DP entry `All` except a semi/anti join that a conflict detector (CD-A/CD-C)
+    /// admitted while reordering, which carries its own strictness. If any entry carries a specific
+    /// (non-`All`) strictness the graph is mixed -- inner joins around a reordered semi/anti join,
+    /// which may be nested anywhere, even under an inner top join -- and each entry's own strictness
+    /// must be kept. Otherwise the graph is uniform and its single `join_strictness` must be stamped
+    /// onto the reconstructed joins (e.g. an ANY/SEMI/ANTI join that was only swapped, or the whole
+    /// graph under the default greedy algorithm, which never populates per-entry strictness).
+    bool graph_has_mixed_strictness = false;
+    for (const auto * seq_entry : sequence)
+        if (!seq_entry->isLeaf() && seq_entry->join_operator.strictness != JoinStrictness::All)
+            graph_has_mixed_strictness = true;
+
     for (size_t entry_idx = 0; entry_idx < sequence.size(); ++entry_idx)
     {
         auto * entry = sequence[entry_idx];
@@ -1314,13 +1337,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             nodeStack.pop();
 
             auto join_operator = std::move(entry->join_operator);
-            /// Normally the whole reordered graph carries a single strictness (non-All graphs are
-            /// capped to one join), so we re-stamp it uniformly. With a conflict detector (CD-A/CD-C)
-            /// the graph may mix strictnesses (e.g. inner joins around a reordered semi/anti join),
-            /// and each entry already carries its own strictness from `buildPhysicalPlan` -- do not
-            /// overwrite it.
-            if (!optimization_settings.query_plan_optimize_join_order_use_cd_a_conflict_detector
-                && !optimization_settings.query_plan_optimize_join_order_use_cd_c_conflict_detector)
+            /// See `graph_has_mixed_strictness` above: keep each entry's own strictness in a mixed
+            /// graph, otherwise stamp the graph's single strictness.
+            if (!graph_has_mixed_strictness)
                 join_operator.strictness = join_strictness;
 
             /// The optimizer reconstructs an unconnected Inner pair (e.g. `INNER JOIN ... ON 1`,

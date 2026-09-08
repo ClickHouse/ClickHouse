@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_series_aggregate_functions;
+    extern const SettingsBool enable_time_series_aggregate_functions;
 }
 namespace
 {
@@ -81,10 +81,10 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
 
 AggregateFunctionPtr createAggregateFunctionLast2Samples(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0)
+    if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0)
         throw Exception(
             ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
+            "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
             name);
 
     assertBinary(name, argument_types);
@@ -124,7 +124,7 @@ Aggregate function that takes time series data as pairs of timestamps and values
 The aggregated table stores only last 2 values for each aligned timestamp. This allows to calculate PromQL-like `irate` and `idelta` by reading much less data then is stored in the raw table.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesLastTwoSamples = R"(
@@ -139,7 +139,7 @@ timeSeriesLastTwoSamples(timestamp, value)
     {
         "Example table for raw data, and a table for storing re-sampled data",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
 DROP TABLE IF EXISTS t_raw_timeseries;
 
@@ -216,7 +216,7 @@ ORDER BY metric_id, timestamp;
     {
         "Query the last 2 sample for timestamps '2024-12-12 12:00:15' and '2024-12-12 12:00:30'",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
 DROP TABLE IF EXISTS t_raw_timeseries;
 
@@ -274,7 +274,7 @@ ORDER BY metric_id, grid_timestamp;
     {
         "Calculate idelta and irate from the raw data",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
 DROP TABLE IF EXISTS t_raw_timeseries;
 
@@ -313,7 +313,7 @@ GROUP BY metric_id;
     {
         "Calculate idelta and irate from the re-sampled data",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
 DROP TABLE IF EXISTS t_raw_timeseries;
 

@@ -1509,6 +1509,13 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
         query_node->getLimit() = {};
     if (query_node->hasOffset())
         query_node->getOffset() = {};
+    /// The `LIMIT AFTER`/`UNTIL` boundaries select rows relative to that ORDER BY as well, and may refer
+    /// to columns of the removed joined table.
+    query_node->setIsLimitAfterAll(false);
+    if (query_node->hasLimitAfter())
+        query_node->getLimitAfter() = {};
+    if (query_node->hasLimitUntil())
+        query_node->getLimitUntil() = {};
 
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();

@@ -102,8 +102,8 @@ mkdir -p $DEST_CLIENT_PATH
 # Patching configs which are symbolic links can affect source files,
 # need to delete links created by previous script versions
 # Also this is generally good (least astonishment principle) not to retain any old configs
-# `system_logs_export.yaml` is the exception: it is not a config of the test suite. A
-# `system.*_sender` `Distributed` table stays in the server metadata, and restoring a queued
+# `system_logs_export.yaml` is the exception: it is not a config of the test suite. The
+# `Distributed` tables of the log export stay in the server metadata, and restoring a queued
 # insert of one resolves the cluster, so a start without the definition aborts (`Code: 701`).
 LOG_EXPORT_CONFIG=system_logs_export.yaml
 if [ -f "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG" ]; then

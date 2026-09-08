@@ -1621,10 +1621,16 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 return;
             }
         }
+        else if (as_create.is_time_series_table)
+        {
+            /// Only the engine is inherited here: the settings and the inner tables are copied by normalizeTimeSeriesDefinition.
+            storage_def = make_intrusive<ASTStorage>();
+            storage_def->set(storage_def->engine, as_create.storage->engine->clone());
+            create.is_time_series_table = true;
+        }
         else if (as_create.storage)
         {
             storage_def = boost::static_pointer_cast<ASTStorage>(as_create.storage->ptr());
-            create.is_time_series_table = as_create.is_time_series_table;
         }
         else
         {
@@ -3578,8 +3584,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
     /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
-    /// A query with an AS clause is left alone: the hosts take the settings, including the version, from the other table.
-    if (create.is_time_series_table && create.as_table.empty() && !hasExplicitTimeSeriesSettingVersion(create))
+    if (create.is_time_series_table && !hasExplicitTimeSeriesSettingVersion(create))
         setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.

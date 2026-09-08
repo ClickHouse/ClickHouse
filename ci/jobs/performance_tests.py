@@ -1238,7 +1238,7 @@ class CHServer:
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
                 --binary {perf_left}/clickhouse {perf_right}/clickhouse \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
-                {runs_arg} --max-queries {max_queries} \
+                {runs_arg} --max-queries {max_queries} --soft-max-queries \
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
                 {test_file}",
@@ -1315,10 +1315,81 @@ def find_master_build(commits, build_type):
     return None
 
 
-def find_prev_build(info, build_type):
-    return find_master_build(
-        info.get_kv_data("master_track_commits_sha") or [], build_type
+def local_master_track_commits(local_master_commits_to_check_for_build):
+    """Master shas below the merge base for a local run, which has no `master_track_commits_sha` kv data."""
+    # Prefer an explicit upstream master ref, then fall back to origin.
+    master_ref = next(
+        (
+            ref
+            for ref in ("upstream/master", "upstream/main", "origin/master", "origin/main")
+            if Shell.check(f"git rev-parse --verify --quiet {ref} > /dev/null")
+        ),
+        None,
     )
+    if master_ref is None:
+        print(
+            "WARNING: no upstream/origin master ref found; "
+            "skipping local master-track commits"
+        )
+        return []
+    # Resolve merge-base first so failures cannot make git log walk HEAD.
+    merge_base = Shell.get_output(f"git merge-base HEAD {master_ref}").strip()
+    if not merge_base:
+        print(
+            "WARNING: could not resolve merge-base with upstream master; "
+            "skipping local master-track commits"
+        )
+        return []
+    # Anchor on the newest master first-parent commit reachable from the merge-base.
+    # `above` is the oldest newer commit; its first parent is the anchor.
+    above = Shell.get_output(
+        f"git rev-list --first-parent {master_ref} ^{merge_base} | tail -1"
+    ).strip()
+    anchor = Shell.get_output(f"git rev-parse {above}^").strip() if above else merge_base
+    if not anchor:
+        print(
+            "WARNING: no master-side ancestor below the merge-base; "
+            "skipping local master-track commits"
+        )
+        return []
+    commits = Shell.get_output(
+        f"git log --first-parent --format=%H -n {local_master_commits_to_check_for_build} "
+        f"{anchor}"
+    ).split()
+    # Drop HEAD to avoid comparing a build with itself.
+    head = Shell.get_output("git rev-parse HEAD").strip()
+    if commits and commits[0] == head:
+        commits.pop(0)
+    return commits
+
+
+LATEST_MASTER_BUILD_PREFIX = (
+    "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/"
+)
+LOCAL_REFERENCE_FALLBACK_WARNING = (
+    "No ancestor baseline build found. Comparing against the latest available master build. "
+    "Results may include changes merged into master since this branch diverged."
+)
+
+
+def find_prev_build(info, build_type):
+    commits = info.get_kv_data("master_track_commits_sha") or []
+    if not commits and info.is_local_run:
+        # for a local run let's check 50 commits
+        commits = local_master_track_commits(50)
+    link = find_master_build(commits, build_type)
+    if link or not info.is_local_run:
+        return link
+
+    # `build_master_head_hook` publishes these release binaries even when the
+    # master tip has no build yet. No local history or GitHub credentials are needed.
+    arch = {"build_arm_release": "aarch64", "build_amd_release": "amd64"}[build_type]
+    link = f"{LATEST_MASTER_BUILD_PREFIX}{arch}/clickhouse"
+    if Shell.check(f"curl --connect-timeout 5 --max-time 15 -sfI {link} > /dev/null"):
+        print(f"WARNING: {LOCAL_REFERENCE_FALLBACK_WARNING} Reference: {link}")
+        return link
+    print(f"WARNING: latest master reference build is also unavailable: {link}")
+    return None
 
 
 def find_base_release_build(info, build_type):
@@ -1813,6 +1884,12 @@ def main():
     else:
         Utils.raise_with_error("Unknown processor architecture")
 
+    reference_warning = (
+        LOCAL_REFERENCE_FALLBACK_WARNING
+        if info.is_local_run and link_for_ref_ch.startswith(LATEST_MASTER_BUILD_PREFIX)
+        else ""
+    )
+
     if compare_against_release:
         print("It's a comparison against latest release baseline")
         print(
@@ -1859,6 +1936,14 @@ def main():
 
     res = True
     results = []
+    if reference_warning:
+        results.append(
+            Result(
+                name="Reference baseline",
+                status=Result.Status.OK,
+                info=f"{reference_warning} Reference: {link_for_ref_ch}",
+            )
+        )
 
     # Fix the check start time once, for the whole job: the system log export,
     # `compare.sh` and the report uploads must all stamp the same run identity,
@@ -1913,10 +1998,19 @@ def main():
     reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
-        if not Path(f"{perf_left}/.done").is_file():
+        reference_source = Path(f"{perf_left}/reference-source.txt")
+        # The latest-master URL is mutable: refresh it when entering the install
+        # stage. Also invalidate a cached binary when the selected baseline changes.
+        if (
+            reference_warning
+            or not Path(f"{perf_left}/.done").is_file()
+            or not reference_source.is_file()
+            or reference_source.read_text() != link_for_ref_ch
+        ):
             commands = [
                 f"mkdir -p {perf_left_config}",
-                f"wget -nv -P {perf_left}/ {link_for_ref_ch}",
+                f"wget -nv -O {perf_left}/clickhouse.download {link_for_ref_ch}",
+                f"mv {perf_left}/clickhouse.download {perf_left}/clickhouse",
                 f"chmod +x {perf_left}/clickhouse",
                 f"cp -r ./tests/performance {perf_left}/",
                 f"ln -sf {perf_left}/clickhouse {perf_left}/clickhouse-local",
@@ -1929,11 +2023,14 @@ def main():
                     name="Install Reference ClickHouse", command=commands
                 )
             )
+            res = results[-1].is_ok()
+            if res:
+                reference_source.write_text(link_for_ref_ch)
+                Shell.check(f"touch {perf_left}/.done")
+        if res:
             reference_sha = Shell.get_output(
                 f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
-            res = results[-1].is_ok()
-            Shell.check(f"touch {perf_left}/.done")
 
     if res and not info.is_local_run:
 
@@ -2148,13 +2245,10 @@ def main():
                         entry.unlink()
 
         def run_tests():
-            # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
             for test in test_files:
-                max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=max_queries,
+                    max_queries=10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
@@ -2191,6 +2285,15 @@ def main():
         )
 
         Shell.check(f"{perf_left}/clickhouse --version  > {perf_wd}/left-commit.txt")
+        if reference_warning:
+            # Read the actual binary's identity, including when resuming at `report`.
+            reference_sha = Shell.get_output(
+                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+            )
+            with open(f"{perf_wd}/left-commit.txt", "a", encoding="utf-8") as reference:
+                reference.write(
+                    f"\nWARNING: {reference_warning}\nReference commit: {reference_sha}\n"
+                )
         Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
             Utils.normalize_string(info.job_name)

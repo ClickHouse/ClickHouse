@@ -115,8 +115,8 @@ struct QueryGraph
     /// (see conflictDetector.h) over `conflict_ops` instead of the per-relation `join_kinds`
     /// restrictions. CD-C takes precedence over CD-A when both are set. Set from settings in
     /// `optimizeJoinOrder`; affects only the DPsub algorithm.
-    bool use_cd_a_conflict_detector = false;
-    bool use_cd_c_conflict_detector = false;
+    bool use_conflict_detector_a = false;
+    bool use_conflict_detector_c = false;
 
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).

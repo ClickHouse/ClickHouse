@@ -50,7 +50,7 @@ SELECT '--- PromQL works on tables of every supported version ---';
 SELECT count() FROM prometheusQuery(ts_version_0, 'up', 1000);
 SELECT count() FROM prometheusQuery(ts_version_1, 'up', 1000);
 
-SELECT '--- CREATE AS copies the version ---';
+SELECT '--- CREATE AS does not copy the version: a new table gets the latest one ---';
 CREATE TABLE ts_version_0_copy AS ts_version_0;
 CREATE TABLE ts_version_1_copy AS ts_version_1;
 SELECT name, extract(create_table_query, 'version = (\d+)')

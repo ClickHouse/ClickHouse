@@ -39,7 +39,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_table;
 }
 
 namespace TimeSeriesSetting
@@ -123,11 +123,11 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     const ContextPtr & local_context,
     LoadingStrictnessLevel mode)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
+    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::enable_time_series_table])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Experimental TimeSeries table engine "
-                        "is not enabled (the setting 'allow_experimental_time_series_table')");
+                        "TimeSeries table engine "
+                        "is not enabled (the setting 'enable_time_series_table')");
     }
 
     auto targets = findTargets(create_query);
@@ -803,12 +803,12 @@ void registerStorageTimeSeries(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # TimeSeries table engine
 
-<ExperimentalBadge/>
+<PrivatePreviewBadge/>
 <CloudNotSupportedBadge/>
 
 A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels):
@@ -819,10 +819,10 @@ metric_name2[...] = ...
 ```
 
 :::info
-This is an experimental feature that may change in backwards-incompatible ways in the future releases.
+This is a private preview feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
-with [allow_experimental_time_series_table](/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) setting.
-Input the command `set allow_experimental_time_series_table = 1`.
+with the `enable_time_series_table` setting.
+Input the command `set enable_time_series_table = 1`.
 :::
 
 ## Syntax {#syntax}
@@ -1103,14 +1103,26 @@ SETTINGS index_granularity = 8192
 
 ## Creating a table AS existing table {#create-as}
 
-Statement `CREATE TABLE new_table AS existing_table` copies from the `existing_table`:
+Statement `CREATE TABLE new_table AS existing_table` creates a `TimeSeries` table configured like `existing_table`,
+which must be a `TimeSeries` table. The external targets of `existing_table` are not copied: the statement must declare
+those targets itself.
 
-- `SETTINGS`
-- `INNER COLUMNS` for each kind
-- `INNER ENGINE` for each kind
+The statement copies from `existing_table`:
 
-The statement is not allowed if the `existing_table` has external targets.
+- the `SETTINGS` clause, except `version`: the new table always gets the latest version. Settings written in the statement
+  itself are merged with the copied ones by name, so a written setting wins over the copied one, and `name = DEFAULT`
+  resets a copied setting to its default value;
+- the `INNER COLUMNS` and `INNER ENGINE` clauses of each inner table. Customized columns (e.g. extra columns, columns
+  with a codec or a DEFAULT expression) and customized engine parts (e.g. an engine with arguments, a custom sorting key
+  or engine setting) are kept, the other columns and engine parts are adjusted to the settings of the new table, so that
+  e.g. `tags_to_columns`, `aggregate_min_time_and_max_time` or `tags_index_granularity` written in the statement take effect.
+
+The types of the `id`, timestamp and value columns and the replication type of the inner engines (`MergeTree`,
+`ReplicatedMergeTree` or `SharedMergeTree`) are taken from `existing_table` too, unless the statement declares them itself.
 The outer column list is regenerated and not copied.
+
+A table created by an older version of ClickHouse can be used as `existing_table`: the new table gets the current
+structure, e.g. the current `id` type and default identifier expression.
 
 ## Adjusting types of columns {#adjusting-column-types}
 
@@ -1287,7 +1299,7 @@ To make such changes detectable, every `TimeSeries` table stores its version in 
 The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 1) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
-An explicit `version` is accepted if the server supports that version; for example, `CREATE TABLE ... AS other_table` copies the version of another table.
+An explicit `version` is accepted if the server supports that version. `CREATE TABLE ... AS other_table` doesn't copy the version of the other table, see [Creating a table AS existing table](#create-as).
 
 A server supports a range of versions, and the minimum version can differ for reading with `SELECT`, for writing with `INSERT`
 or the Prometheus remote-write protocol, and for evaluating PromQL (the [prometheusQuery](/reference/functions/table-functions/prometheusQuery),
