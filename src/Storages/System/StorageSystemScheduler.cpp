@@ -64,15 +64,15 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
 
         // RequestQueue and AllocationQueue
         {"queue_length", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "For `fifo` and `request_queue` nodes. Current number of resource requests residing in the queue."
+            "For `request_queue` and `allocation_queue` nodes. Current number of resource requests residing in the queue."
         },
         {"queue_cost", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `fifo` and `request_queue` nodes. Sum of costs (e.g. size in bytes) of all requests residing in the queue."
+            "For `request_queue` and `allocation_queue` nodes. Sum of costs (e.g. size in bytes) of all requests residing in the queue."
         },
 
         // RequestQueue
         {"budget", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `fifo` and `request_queue` nodes. The number of available 'cost units' for new resource requests. "
+            "For `request_queue` nodes. The number of available 'cost units' for new resource requests. "
             "Can appear in case of discrepancy of estimated and real costs of resource requests (e.g. after read/write failure)"
         },
 
