@@ -7,8 +7,8 @@ doc_type: 'guide'
 keywords: ['pci', 'соответствие требованиям', 'безопасность платежей', 'защита данных', 'безопасность']
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
@@ -18,10 +18,12 @@ ClickHouse предлагает сервисы, соответствующие �
 
 Дополнительные сведения о программе соответствия ClickHouse и доступности отчета стороннего аудита см. в нашем [обзоре соответствия требованиям](/ru/products/cloud/reference/security/compliance-overview). Чтобы получить копию нашего документа о разделении ответственности PCI, посетите наш [Trust Center](https://trust.clickhouse.com). Кроме того, клиентам следует ознакомиться с нашей страницей [возможностей безопасности](/ru/products/cloud/features/security), чтобы выбрать и внедрить подходящие меры защиты для своих рабочих нагрузок.
 
-На этой странице описано, как включить развертывание сервисов, соответствующих требованиям PCI, в ClickHouse Cloud.
+На этой странице описано, как включить развертывание сервисов, соответствующих PCI, в ClickHouse Cloud.
 
 <Steps>
-  <Step title="Подключите сервисы Enterprise" id="sign-up-for-enterprise">
+  <Step>
+    ### Подключите сервисы Enterprise
+
     1. Выберите имя своей организации в левом нижнем углу консоли.
     2. Нажмите **Billing**.
     3. Проверьте свой **Plan** в левом верхнем углу.
@@ -29,7 +31,9 @@ ClickHouse предлагает сервисы, соответствующие �
     5. Выберите **Switch to Enterprise**.
   </Step>
 
-  <Step title="Включите PCI для своей организации" id="enable-hipaa">
+  <Step>
+    ### Включите PCI для своей организации
+
     1. Выберите имя своей организации в левом нижнем углу консоли.
     2. Нажмите **Organization details**.
     3. Включите переключатель **Enable PCI**.
@@ -49,7 +53,9 @@ ClickHouse предлагает сервисы, соответствующие �
     <br />
   </Step>
 
-  <Step title="Разверните сервисы в регионах, соответствующих требованиям PCI" id="deploy-pci-regions">
+  <Step>
+    ### Разверните сервисы в регионах, соответствующих PCI
+
     1. Выберите **New service** в левом верхнем углу главного экрана консоли
     2. Измените **Region type** на **HIPAA compliant**
 
@@ -61,7 +67,7 @@ ClickHouse предлагает сервисы, соответствующие �
 
     3. Введите имя сервиса и заполните остальные поля
 
-    Полный список облачных провайдеров и сервисов, соответствующих требованиям PCI, см. на странице [Supported cloud regions](/ru/products/cloud/reference/supported-regions).
+    Полный список облачных провайдеров и сервисов, соответствующих PCI, см. на странице [Supported cloud regions](/ru/products/cloud/reference/supported-regions).
   </Step>
 </Steps>
 

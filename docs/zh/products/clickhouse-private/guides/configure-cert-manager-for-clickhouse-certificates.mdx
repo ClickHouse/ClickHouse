@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "为 ClickHouse 证书配置 cert-manager"
+sidebarTitle: "配置 cert-manager"
+description: "使用 cert-manager 为 ClickHouse Server 和 Keeper 生成 TLS 证书。"
+---
+
+使用 cert-manager 为 ClickHouse Server 和 Keeper 生成 TLS 证书。
+
+> 如需了解本指南涉及的相关概念——各证书的用途、验证模式的工作原理以及轮换机制——请参阅 [ClickHouse Private 中的 PKI 和 mTLS](/zh/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 已在集群中安装 [cert-manager](https://cert-manager.io/)
+* 已选定集群名称 (本指南以 `default-xx-01` 为例)
+
+<div id="steps">
+  ## 步骤
+</div>
+
+<Steps>
+  <Step>
+    ### 1. 创建证书签发方
+
+    创建一个自签名 `Issuer` 作为证书颁发机构：
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Issuer
+    metadata:
+      name: selfsigned-issuer
+      namespace: ns-default-xx-01
+    spec:
+      selfSigned: {}
+    ```
+
+    > **注意：** `Issuer` 是命名空间级资源，必须与引用它的 `Certificate` 资源位于同一命名空间。自签名签发方适合用于测试。对于生产环境，请查看[签发方选项列表](https://cert-manager.io/docs/configuration/issuers/)。
+  </Step>
+
+  <Step>
+    ### 2. 创建证书资源
+
+    为 ClickHouse Server 创建一个 `Certificate` 资源：
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server-tls
+      namespace: ns-default-xx-01
+    spec:
+      secretName: default-xx-01-server-cert-secret
+      dnsNames:
+        - "*.c-default-xx-01-server-headless.ns-default-xx-01.svc.cluster.local"
+      issuerRef:
+        name: selfsigned-issuer
+        kind: Issuer
+    ```
+
+    这会创建一个名为 `default-xx-01-server-cert-secret` 的 Kubernetes Secret，其中包含 `ca.crt`、`tls.crt` 和 `tls.key` 这些键。
+
+    如有需要，也请为 Keeper 使用相应的 `dnsNames` 和 `secretName` 重复此操作。
+  </Step>
+
+  <Step>
+    ### 3. 配置 Helm 配置值以使用 cert-manager Secret 键名
+
+    默认情况下，`onprem-clickhouse-cluster` Helm 图表期望 Secret 中的键名为 `ca.crt`、`server.crt` 和 `server.key`。cert-manager 生成的则是 `ca.crt`、`tls.crt` 和 `tls.key`。请在 Helm 配置值中覆盖这些键名：
+
+    ```yaml
+    server:
+      openSSL:
+        enabled: true
+        secret:
+          caKey: ca.crt
+          certKey: tls.crt
+          keyKey: tls.key
+    ```
+
+    这些证书会分别挂载到 Server 的 `/etc/clickhouse-server/certs/` 和 Keeper 的 `/etc/clickhouse-keeper/certs/`。Helm 图表会自动生成正确的 OpenSSL 配置。
+  </Step>
+</Steps>
+
+<div id="notes-on-cacrt-availability">
+  ## 关于 `ca.crt` 可用性的说明
+</div>
+
+只有当签发方提供 `ca.crt` 时，系统才会将该键添加到 secret 中。例如，ACME 签发方不会包含 `ca.crt`。在这种情况下，请手动将公共根 CA 添加到 `ca.crt` 键中，或者使用 [trust-manager](https://cert-manager.io/docs/trust/trust-manager/) 生成 CA bundle，并将目标 secret 指定为正确的 secret。

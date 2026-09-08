@@ -34,7 +34,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | **الأنسب لـ**                | مراقبة شاملة للبنية التحتية والخدمات                                          | المراقبة والتكامل على مستوى الخدمة                                                   |
 | **كيفية التكامل**            | هيّئ federation في Prometheus الخارجي لاستيعاب مقاييس العنقود                 | أضف نقاط نهاية مقاييس ClickHouse مباشرةً إلى تهيئة Prometheus                        |
 
-**التوصية**: بالنسبة إلى معظم حالات الاستخدام، نوصي بالتكامل مع حزمة Prometheus المضمّنة، لأنها توفّر مقاييس شاملة من جميع المكوّنات في نشر BYOC لديك (خدمات ClickHouse، وعنقود Kubernetes، والخدمات الداعمة)، بدلًا من الاكتفاء بمقاييس خادم ClickHouse فقط.
+**التوصية**: بالنسبة إلى معظم حالات الاستخدام، نوصي بالتكامل مع حزمة Prometheus المضمّنة، لأنها توفّر مقاييس شاملة من جميع المكوّنات في نشر BYOC لديك (خدمات ClickHouse، وعنقود Kubernetes، والخدمات الداعمة)، بدلًا من الاكتفاء بمقاييس خادم ClickHouse فقط. 
 
 <div id="builtin-prometheus-stack">
   ## حزمة Prometheus المدمجة في BYOC
@@ -47,26 +47,24 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * عُقد البنية التحتية الأساسية
 
 <div id="accessing-prometheus-stack">
-  ### الوصول إلى Prometheus Stack
+  ### الوصول إلى حزمة Prometheus
 </div>
 
-للاتصال بحزمة Prometheus المضمّنة:
+للاتصال بحزمة Prometheus المدمجة:
 
-1. **فعِّل موازن التحميل الخاص** لبنية BYOC التحتية لديك في ClickHouse Cloud console (راجع [موازنات التحميل](/ar/products/bring-your-own-cloud/configuration/configurations#load-balancers)).
-2. **اطلب URL لنقطة نهاية Prometheus** من ClickHouse Support.
-3. **تحقّق من توفر اتصال عبر شبكة خاصة** بنقطة نهاية Prometheus، عادةً عبر ربط VPC/VNet أو إعداد اتصال خاص آخر.
+1. **تواصل مع ClickHouse Support** لتمكين موازن التحميل الخاص لبيئة BYOC لديك.
+2. **اطلب عنوان URL لنقطة نهاية Prometheus** من ClickHouse Support.
+3. **تحقّق من توفر الاتصال عبر الشبكة الخاصة** مع نقطة نهاية Prometheus—عادةً من خلال VPC peering أو أي إعداد آخر للشبكة الخاصة.
 
-تختلف صيغ نقاط النهاية بحسب نوع الاتصال:
+تختلف تنسيقات نقاط النهاية حسب نوع الاتصال:
 
-| الاتصال         | صيغة نقطة النهاية                                                              |
-| --------------- | ------------------------------------------------------------------------------ |
-| ربط VPC/VNet    | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| نقطة نهاية خاصة | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`  |
-
-`<cloud>` هو `aws` أو `gcp` أو `azure`. بالنسبة إلى نقاط النهاية الخاصة، يكون `<label>` خاصًا بالمزوّد السحابي: `vpce` على AWS، و`p` على GCP، و`privatelink` على Azure.
+| الاتصال           | تنسيق نقطة النهاية                                                             |
+| ----------------- | ------------------------------------------------------------------------------ |
+| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
 
 <Note>
-  لا يمكن الوصول إلى URL الخاصة بحزمة Prometheus إلا عبر اتصالات الشبكة الخاصة، ولا تتطلب المصادقة. يقتصر الوصول على الشبكات التي يمكنها الوصول إلى VPC/VNet الخاص بـ BYOC لديك عبر الربط أو خيارات الاتصال الخاصة الأخرى.
+  لا يمكن الوصول إلى عنوان URL الخاص بحزمة Prometheus إلا عبر اتصالات الشبكة الخاصة، ولا يتطلب مصادقة. ويقتصر الوصول على الشبكات التي يمكنها الوصول إلى VPC الخاصة ببيئة BYOC لديك عبر VPC peering أو خيارات الاتصال الخاصة الأخرى.
 </Note>
 
 <div id="prometheus-stack-integration">
@@ -121,7 +119,7 @@ scrape_configs:
 تتوفّر نقطة نهاية المقاييس على المسار `/metrics_all` في نقطة نهاية خدمة ClickHouse الخاصة بك:
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **استجابة نموذجية:**
@@ -184,7 +182,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -195,7 +193,7 @@ scrape_configs:
 
 استبدل:
 
-* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` بنقطة نهاية الخدمة الفعلية لديك
+* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` بنقطة نهاية الخدمة الفعلية لديك
 * `<username>` و `<password>` ببيانات اعتماد مستخدم scraping الخاص بك
 
 <div id="clickhouse-mixin">

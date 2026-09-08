@@ -1,0 +1,189 @@
+---
+noindex: true
+title: "Changelog"
+---
+
+------------------------------------------------------------------------
+
+## airgap-2026-06-09
+
+### Component Versions
+
+| Component                      | Version        |
+|--------------------------------|----------------|
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.311        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+### New Features
+
+- feat(airgap): expose plainRewritableDiskForSystemTables flag (#35033)
+- feat(operator): add arm64 builds (#34389)
+- feat(preflight): add cache ratio check \[AIR-127\] (#34709)
+- feat(airgap): add Shared Catalog migration preflight check (#34708)
+- feat(onprem): Add ResourceQuota to enforce single ClickHouseCluster per namespace (#34615)
+
+### Bug Fixes
+
+- fix(airgap): wait for CRD to be established before cluster install (#34834)
+- fix(onprem): allow 0 keeper replicas for Hydra children (#34693)
+- fix(operator): pushed fips builds missing correct build args (#34600)
+- fix(onprem-clickhouse-cluster): pin deprecated feature flags to operator-expected defaults (#34417)
+
+------------------------------------------------------------------------
+
+## airgap-2026-05-28
+
+### Component Versions
+
+| Component                      | Version        |
+|--------------------------------|----------------|
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+------------------------------------------------------------------------
+
+## airgap-2026-05-27
+
+### Component Versions
+
+| Component                      | Version        |
+|--------------------------------|----------------|
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.302        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+### New Features
+
+### New Features
+
+- feat(airgap): Add Git SHA to private docs (#34183)
+- feat(airgap): Support BackupConfiguration in Helm Chart (#33746)
+- feat(airgap): Add deprecated feature flags to preflight check (#33545)
+
+### Bug Fixes
+
+- fix(docs): airgap single page doc rendering (#34288)
+- fix(airgap): Fix anchor links in private documentation (#34122)
+
+------------------------------------------------------------------------
+
+## airgap-2026-05-21
+
+### Component Versions
+
+| Component                      | Version        |
+|--------------------------------|----------------|
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+### New Features
+
+- feat(clickhouse-operator): FIPS compliance build flags and runtime support (#29677)
+- feat(onprem-clickhouse-cluster): add support to the gcp base config in the onprem helm chart (#33501)
+
+### Bug Fixes
+
+- fix(onprem-clickhouse-cluster): disable enableDynamicSSDCacheConfiguration (#33700)
+- fix(onprem-clickhouse-cluster): remove unused `openssl.fips` settings (#33881))
+- fix(onprem-clickhouse-cluster): drop cloud.port from extraConfig when TLS required (#33548)
+- fix(clickhouse-operator): mark SsdCacheConfiguration.IsOnEmptyDir as optional (#33570)
+
+------------------------------------------------------------------------
+
+## airgap-2026-04-23
+
+### Component Versions
+
+| Component                      | Version        |
+|--------------------------------|----------------|
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18231.1 |
+| helm/clickhouse-operator-helm  | 1.18231.1      |
+| helm/onprem-clickhouse-cluster | 1.1.260        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+### Bug Fixes
+
+- fix(onprem-helm-chart): allow storageClass parameters and allowedTopologies (#32776)
+
+------------------------------------------------------------------------
+
+## airgap-2026-04-15
+
+### Component Versions
+
+| Component                      | Version        |
+|--------------------------------|----------------|
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.245        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+### New Features
+
+- feat(airgap): enable Shared Catalog and Stateless Servers by default (#32481) — see [Breaking Changes](/products/clickhouse-private/reference/breaking-changes) and [Migrate to Shared Catalog](/products/clickhouse-private/guides/migrate-to-shared-catalog)
+
+### Bug Fixes
+
+- fix(airgap-management): use source cluster S3 connection for backup restore (#32612)
+
+------------------------------------------------------------------------
+
+## airgap-2026-04-14
+
+### Component Versions
+
+| Component                      | Version        |
+|--------------------------------|----------------|
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.234        |
+| airgap-management              | 1.83.1         |
+| helm/airgap-management         | 1.83.1         |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+### New Features
+
+- feat(airgap): Support Shared Catalog in onprem-clickhouse-cluster Helm Chart (#31779)
+- feat(airgap): Add stateless server support onprem-clickhouse-cluster Helm Chart (#32202)
+- feat(airgap): add support-bundle helm chart (#32271)
+- feat(airgap): bring airgap api into FIPS compliance (#31811)
