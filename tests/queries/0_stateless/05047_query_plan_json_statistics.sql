@@ -17,27 +17,46 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     'io',
     count(),
-    -- The source produced exactly the rows asked of it, and the root passed them through.
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'IO', 'OutputRows')),
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Statistics', 'IO', 'InputRows')),
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Statistics', 'IO', 'OutputRows')),
+    -- The source produced exactly the rows asked of it, and the root passed them through. The
+    -- nodes are addressed by type rather than by position: a flat array has no guaranteed order,
+    -- and that is also the shape the column exists for -- every step reachable without knowing
+    -- how deep it sits.
+    anyLast(JSONExtractUInt(source, 'Statistics', 'IO', 'OutputRows')),
+    anyLast(JSONExtractUInt(root, 'Statistics', 'IO', 'InputRows')),
+    anyLast(JSONExtractUInt(root, 'Statistics', 'IO', 'OutputRows')),
     -- 12345 UInt64 values.
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'IO', 'OutputBytes'))
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats';
+    anyLast(JSONExtractUInt(source, 'Statistics', 'IO', 'OutputBytes')),
+    -- Two steps, and the root names the one below it.
+    anyLast(length(nodes)),
+    anyLast(JSONExtractString(arrayElement(JSONExtractArrayRaw(root, 'Children'), 1))) = anyLast(JSONExtractString(source, 'Node Id'))
+FROM
+(
+    SELECT
+        JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes') AS nodes,
+        arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers', nodes)[1] AS source,
+        arrayFilter(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(toJSONString(query_plan), 'Root'), nodes)[1] AS root
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats'
+);
 
 -- The timings are not deterministic, so assert the invariants that must hold of any measurement
 -- rather than the values: a step that ran took a positive amount of wall clock, it cannot have
 -- taken more than the query did, and the per-processor distribution has to be ordered.
 SELECT
     'timings',
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'Stages', 1, 'WallClockTimeNs')) > 0,
-    anyLast(JSONExtractFloat(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'Stages', 1, 'ShareOfQueryTime')) > 0,
-    anyLast(JSONExtractFloat(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'Stages', 1, 'ShareOfQueryTime')) <= 100,
-    anyLast(JSONExtractFloat(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'Stages', 1, 'Parallelism')) > 0,
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'Stages', 1, 'Processors')) > 0,
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'Stages', 1, 'ProcessorTimeNs', 'Min'))
-        <= anyLast(JSONExtractUInt(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'Stages', 1, 'ProcessorTimeNs', 'Max')),
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Plans', 1, 'Statistics', 'Stages', 1, 'ProcessorTimeNs', 'Sum')) > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats';
+    anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) > 0,
+    anyLast(JSONExtractFloat(stage, 'ShareOfQueryTime')) > 0,
+    anyLast(JSONExtractFloat(stage, 'ShareOfQueryTime')) <= 100,
+    anyLast(JSONExtractFloat(stage, 'Parallelism')) > 0,
+    anyLast(JSONExtractUInt(stage, 'Processors')) > 0,
+    anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Min')) <= anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Max')),
+    anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Sum')) > 0
+FROM
+(
+    SELECT
+        arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers',
+                    JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes'))[1] AS source,
+        JSONExtractArrayRaw(source, 'Statistics', 'Stages')[1] AS stage
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats'
+);

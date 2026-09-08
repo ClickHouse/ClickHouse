@@ -24,7 +24,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
-#include <Processors/QueryPlan/StepStatsJSONPrinter.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -293,69 +292,14 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     return last_pipeline;
 }
 
-/// The structured form, describeActions(JSONBuilder::JSONMap &), is not an option here: it rebuilds
-/// its output from the step's ActionsDAG, and buildQueryPipeline has moved that out of every
-/// ExpressionStep by the time this runs.
-static void addStepDetails(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const PrettyNames * plan_pretty_names)
-{
-    PrettyNames empty_pretty_names;
-    WriteBufferFromOwnString out;
-
-    IQueryPlanStep::FormatSettings settings{
-        .out = out,
-        .header_prefix = "",
-        .detail_prefix = "",
-        .compact = true,
-        .pretty = true,
-        .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
-        .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names};
-
-    step.describeActions(settings);
-
-    auto details = std::make_unique<JSONBuilder::JSONArray>();
-
-    const auto & text = out.str();
-    size_t line_begin = 0;
-    while (line_begin < text.size())
-    {
-        size_t line_end = text.find('\n', line_begin);
-        if (line_end == String::npos)
-            line_end = text.size();
-
-        if (line_end > line_begin)
-            details->add(text.substr(line_begin, line_end - line_begin));
-
-        line_begin = line_end + 1;
-    }
-
-    map.add("Details", std::move(details));
-}
-
-static void explainStep(
-    const IQueryPlanStep & step,
-    JSONBuilder::JSONMap & map,
-    const ExplainPlanOptions & options,
-    size_t max_description_length,
-    StepStatsStorage * steps_to_stats,
-    const PrettyNames * plan_pretty_names)
+static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());
     map.add("Node Id", step.getUniqID());
 
     if (options.description)
     {
-        std::string_view description = step.getStepDescription();
-
-        String pretty_description;
-        if (options.pretty)
-        {
-            pretty_description = QueryPlanFormat::trimColumnIdentifier(description);
-            description = pretty_description;
-        }
-
-        if (max_description_length)
-            description = description.substr(0, max_description_length);
-
+        const auto & description = step.getStepDescription();
         if (!description.empty())
             map.add("Description", description);
     }
@@ -397,38 +341,18 @@ static void explainStep(
     }
 
     if (options.actions)
-    {
-        /// Statistics mean this renders after execution, where only the text form survives.
-        if (steps_to_stats)
-            addStepDetails(step, map, plan_pretty_names);
-        else
-            step.describeActions(map);
-    }
+        step.describeActions(map);
 
     if (options.indexes)
         step.describeIndexes(map);
 
     if (options.projections)
         step.describeProjections(map);
-    if (steps_to_stats)
-        map.add("Statistics", StepStatsJSONPrinter::toJSON(steps_to_stats->analyzeStep(&step)));
 }
 
-JSONBuilder::ItemPtr QueryPlan::explainPlan(
-    const ExplainPlanOptions & options,
-    size_t max_description_length,
-    StepStatsStorage * steps_to_stats,
-    const PrettyNamesPerPlan * precomputed_pretty_names,
-    bool is_child_plan) const
+JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
 {
     checkInitialized();
-
-    const PrettyNames * plan_pretty_names = nullptr;
-    if (precomputed_pretty_names)
-    {
-        if (auto it = precomputed_pretty_names->names.find(this); it != precomputed_pretty_names->names.end())
-            plan_pretty_names = &it->second;
-    }
 
     struct Frame
     {
@@ -453,7 +377,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(
                 frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
 
             frame.node_map = std::make_unique<JSONBuilder::JSONMap>();
-            explainStep(*frame.node->step, *frame.node_map, options, max_description_length, steps_to_stats, plan_pretty_names);
+            explainStep(*frame.node->step, *frame.node_map, options);
         }
 
         if (frame.next_child < frame.node->children.size())
@@ -469,8 +393,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(
                 frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
 
             for (const auto & child_plan : child_plans)
-                frame.children_array->add(child_plan->explainPlan(
-                    options, max_description_length, steps_to_stats, precomputed_pretty_names, /*is_child_plan=*/ true));
+                frame.children_array->add(child_plan->explainPlan(options));
 
             if (frame.children_array)
                 frame.node_map->add("Plans", std::move(frame.children_array));
@@ -481,23 +404,6 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(
             if (!stack.empty())
                 stack.top().children_array->add(std::move(tree));
         }
-    }
-
-    if (options.pretty && !is_child_plan && tree)
-    {
-        auto output_array = std::make_unique<JSONBuilder::JSONArray>();
-
-        if (root->step->hasOutputHeader() && root->step->getOutputHeader())
-        {
-            /// Named, not a temporary: the reference below outlives a PrettyNames{} bound inline.
-            PrettyNames empty_pretty_names;
-            const auto & names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names;
-
-            for (const auto & column : *root->step->getOutputHeader())
-                output_array->add(QueryPlanFormat::formatColumnPretty(column.name, names));
-        }
-
-        tree->add("Output", std::move(output_array));
     }
 
     return tree;

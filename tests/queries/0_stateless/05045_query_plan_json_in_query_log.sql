@@ -10,6 +10,9 @@
 -- inspected: that keeps the assertions independent of how JSON subcolumns are addressed, and the
 -- keys inherited from EXPLAIN json=1 (`Node Type`, `Node Id`) contain spaces, which a JSON path
 -- would have to quote.
+--
+-- The plan is stored as a flat array: `{"Root": <id>, "Output": [...], "Nodes": [...]}`, with each
+-- node naming its children by id.
 
 SET log_query_plans = 0;
 SELECT count() FROM numbers(1000) WHERE number > 900 AND '05045_off' != '' FORMAT Null;
@@ -44,9 +47,10 @@ SELECT
     'finish',
     count(),
     anyLast(isValidJSON(toJSONString(query_plan))),
-    anyLast(JSONExtractString(toJSONString(query_plan), 'Node Type')) != '',
-    anyLast(JSONHas(toJSONString(query_plan), 'Plans')),
-    anyLast(JSONHas(toJSONString(query_plan), 'Statistics')),
+    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Version')),
+    anyLast(JSONExtractString(toJSONString(query_plan), 'Root')) != '',
+    anyLast(JSONHas(toJSONString(query_plan), 'Nodes')),
+    anyLast(position(toJSONString(query_plan), '"Statistics"')) > 0,
     anyLast(position(toJSONString(query_plan), 'ReadFromSystemNumbers')) > 0,
     anyLast(position(toJSONString(query_plan), '"WallClockTimeNs"')) > 0,
     anyLast(position(toJSONString(query_plan), 'Filter column: number MOD 7 = 0')) > 0,
@@ -60,8 +64,8 @@ SELECT
     'exception',
     count(),
     anyLast(isValidJSON(toJSONString(query_plan))),
-    anyLast(JSONExtractString(toJSONString(query_plan), 'Node Type')) != '',
-    anyLast(JSONHas(toJSONString(query_plan), 'Statistics'))
+    anyLast(JSONExtractString(toJSONString(query_plan), 'Root')) != '',
+    anyLast(position(toJSONString(query_plan), '"Statistics"')) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
   AND position(query, '05045_throw') > 0;

@@ -9,6 +9,7 @@
 #include <Formats/FormatSettings.h>
 #include <Common/JSONBuilder.h>
 #include <Processors/QueryPlan/StepStatsStorage.h>
+#include <Processors/QueryPlan/QueryPlanToJSON.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -105,7 +106,8 @@ void QueryPlanProfiler::render(const QueryPipeline * pipeline)
             .pretty = true,
         };
 
-        plan_json = toJSONString(query_plan->explainPlan(
+        plan_json = toJSONString(queryPlanToJSON(
+            *query_plan,
             explain_options,
             max_description_length,
             stats ? &*stats : nullptr,
