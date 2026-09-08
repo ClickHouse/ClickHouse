@@ -112,11 +112,11 @@ Tant que toutes les données de tous les fichiers n’ont pas été traitées, c
 Go to ①. 
 ```
 
-Le nombre de ces threads d’insertion parallèles peut être configuré avec le paramètre [`max_insert_threads`](/fr/reference/settings/session-settings/max-insert#max_insert_threads). La valeur par défaut est de `1` pour ClickHouse open-source et de 4 pour [ClickHouse Cloud](https://clickhouse.com/cloud).
+Le nombre de ces threads d’insertion parallèles peut être configuré avec le paramètre [`max_insert_threads`](/fr/reference/settings/session-settings/max-insert#max_insert_threads). Pour ClickHouse open-source, la valeur par défaut depuis la version 26.8 est `0` (auto : le nombre de cœurs CPU, réduit sous pression mémoire). Pour [ClickHouse Cloud](https://clickhouse.com/cloud), la valeur par défaut est de `1` pour les nœuds disposant de 8 GiB de mémoire, de `2` pour les nœuds disposant de 16 GiB et de `4` pour les nœuds plus grands.
 
 Avec un grand nombre de fichiers, le traitement en parallèle par plusieurs threads d’insertion fonctionne bien. Il peut saturer complètement à la fois les cœurs CPU disponibles et la bande passante réseau (pour les téléchargements parallèles de fichiers). Dans les scénarios où seules quelques gros fichiers sont chargés dans une table, ClickHouse met automatiquement en place un niveau élevé de parallélisme pour le traitement des données et optimise l’utilisation de la bande passante réseau en lançant des threads de lecture supplémentaires par thread d’insertion afin de lire (télécharger) davantage de plages distinctes au sein des gros fichiers en parallèle.
 
-Pour la fonction et la table s3, le téléchargement en parallèle d’un fichier individuel est déterminé par les valeurs [max&#95;download&#95;threads](/fr/reference/settings/session-settings/max-download#max_download_threads) et [max&#95;download&#95;buffer&#95;size](/fr/reference/settings/session-settings/max-download#max_download_buffer_size). Les fichiers ne sont téléchargés en parallèle que si leur taille est supérieure à `2 * max_download_buffer_size`. Par défaut, `max_download_buffer_size` est défini sur 10MiB. Dans certains cas, vous pouvez sans risque augmenter cette taille de tampon à 50 MB (`max_download_buffer_size=52428800`) afin de garantir que chaque fichier soit téléchargé par un seul thread. Cela peut réduire le temps que chaque thread consacre aux appels S3 et donc aussi diminuer le temps d’attente sur S3. En outre, pour les fichiers trop petits pour une lecture en parallèle, afin d’augmenter le débit, ClickHouse précharge automatiquement les données en lisant ces fichiers à l’avance de manière asynchrone.
+Pour la fonction `s3` et le moteur de table `S3`, le téléchargement en parallèle d’un fichier individuel est déterminé par les valeurs [max&#95;download&#95;threads](/fr/reference/settings/session-settings/max-download#max_download_threads) et [max&#95;download&#95;buffer&#95;size](/fr/reference/settings/session-settings/max-download#max_download_buffer_size). Les fichiers ne sont téléchargés en parallèle que si leur taille est supérieure à `2 * max_download_buffer_size`. Par défaut, `max_download_buffer_size` est défini sur 10MiB. Dans certains cas, vous pouvez sans risque augmenter cette taille de tampon à 50 MB (`max_download_buffer_size=52428800`) afin de garantir que chaque fichier soit téléchargé par un seul thread. Cela peut réduire le temps que chaque thread consacre aux appels S3 et donc aussi diminuer le temps d’attente sur S3. En outre, pour les fichiers trop petits pour une lecture en parallèle, afin d’augmenter le débit, ClickHouse précharge automatiquement les données en lisant ces fichiers à l’avance de manière asynchrone.
 
 <div id="measuring-performance">
   ## Mesurer les performances
@@ -173,7 +173,7 @@ Sans aucun réglage, nous montrons les performances de l&#39;insertion de ce jeu
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -196,7 +196,7 @@ Peak memory usage: 603.64 MiB.
 ```sql
 -- Load into posts table
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -228,7 +228,7 @@ Reprenons notre requête précédente : doubler `max_threads` à `16` (la valeu
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -274,9 +274,9 @@ Peak memory usage: 639.99 MiB.
 Pour obtenir des performances d’ingestion maximales, vous devez choisir (1) une taille du bloc d’insertion et (2) un niveau approprié de parallélisme des insertions en fonction de (3) la quantité de cœurs CPU et de RAM disponibles. En résumé :
 
 * Plus [la taille du bloc d’insertion configurée](#insert-block-size) est grande, moins ClickHouse doit créer de parts, et moins il faut d’[E/S de fichiers disque](https://en.wikipedia.org/wiki/Category:Disk_file_systems) et de [fusions en arrière-plan](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges).
-* Plus le [nombre de threads d’insert parallèles](#insert-parallelism) configuré est élevé, plus les données seront traitées rapidement.
+* Plus le [nombre de threads d’insertion parallèles](#insert-parallelism) configuré est élevé, plus les données seront traitées rapidement.
 
-Il existe un compromis entre ces deux facteurs de performance (ainsi qu’avec la fusion des parts en arrière-plan). La quantité de mémoire vive disponible sur les serveurs ClickHouse est limitée. Des blocs plus volumineux utilisent davantage de mémoire vive, ce qui limite le nombre de threads d’insert parallèles que nous pouvons exploiter. À l’inverse, un plus grand nombre de threads d’insert parallèles exige plus de mémoire vive, car le nombre de threads d’insert détermine le nombre de blocs d’insert créés simultanément en mémoire. Cela limite donc la taille possible des blocs d’insert. De plus, il peut y avoir une contention des ressources entre les threads d’insert et les threads de fusion en arrière-plan. Un nombre élevé de threads d’insert configurés (1) crée davantage de parts à fusionner et (2) retire des cœurs CPU et de la mémoire aux threads de fusion en arrière-plan.
+Il existe un compromis entre ces deux facteurs de performance (ainsi qu’avec la fusion des parts en arrière-plan). La quantité de mémoire vive disponible sur les serveurs ClickHouse est limitée. Des blocs plus volumineux utilisent davantage de mémoire vive, ce qui limite le nombre de threads d’insertion parallèles que nous pouvons exploiter. À l’inverse, un plus grand nombre de threads d’insertion parallèles exige plus de mémoire vive, car le nombre de threads d’insertion détermine le nombre de blocs d’insertion créés simultanément en mémoire. Cela limite donc la taille possible des blocs d’insertion. De plus, il peut y avoir une contention des ressources entre les threads d’insertion et les threads de fusion en arrière-plan. Un nombre élevé de threads d’insertion configurés (1) crée davantage de parts à fusionner et (2) retire des cœurs CPU et de la mémoire aux threads de fusion en arrière-plan.
 
 Pour une description détaillée de la façon dont le comportement de ces paramètres affecte les performances et les ressources, nous vous recommandons de [lire cet article de blog](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2). Comme cet article l’explique, le réglage peut nécessiter un équilibre minutieux entre les deux paramètres. Ces tests exhaustifs sont souvent peu pratiques ; en résumé, nous recommandons donc :
 
@@ -299,14 +299,14 @@ Voici comment utiliser cette formule avec notre exemple précédent de Stack Ove
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
 0 rows in set. Elapsed: 128.566 sec. Processed 59.82 million rows, 24.03 GB (465.28 thousand rows/s., 186.92 MB/s.)
 ```
 
-Comme on le voit, l’ajustement de ces paramètres a amélioré les performances d’`insert` de plus de `33%`. Nous laissons au lecteur le soin de voir s’il peut encore améliorer les performances sur un seul nœud.
+Comme on le voit, l’ajustement de ces paramètres a amélioré les performances d’insertion de plus de `33%`. Nous laissons au lecteur le soin de voir s’il peut encore améliorer les performances sur un seul nœud.
 
 <div id="scaling-with-resources-and-nodes">
   ## Mise à l’échelle par les ressources et les nœuds
@@ -322,7 +322,7 @@ Tous les réglages et toutes les requêtes précédents n’ont utilisé qu’un
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -333,7 +333,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -369,7 +369,7 @@ Comme indiqué dans [Utilisation des clusters](/fr/integrations/connectors/data-
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -394,7 +394,7 @@ De même, notre requête d’insertion peut être distribuée, en utilisant les 
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -408,7 +408,7 @@ Le paramétrer sur `parallel_distributed_insert_select=2` garantit que les opér
 ```sql
 INSERT INTO posts
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
@@ -435,7 +435,7 @@ Bien que ce comportement, qui ajoute une surcharge aux insertions, soit pertinen
 INSERT INTO posts
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 ```
 
@@ -454,7 +454,7 @@ La désactivation de ce paramètre (`optimize_on_insert = 0`) évite la fusion p
 
 ```sql
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
 ```
 
