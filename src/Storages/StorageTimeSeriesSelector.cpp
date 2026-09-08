@@ -830,11 +830,14 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// Authorized here rather than where this storage is created, so that a persistent table built over this
+    /// table function is authorized on every read, with the reader's own grants. Before the table is
+    /// resolved, so that an unauthorized reader learns nothing about it.
+    checkAccessToTimeSeriesTable(config.time_series_storage_id, context, AccessType::SELECT);
+
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
 
-    /// Authorized here rather than where this storage is created, so that a persistent table built over this
-    /// table function is authorized on every read, with the reader's own grants. The resolved storage names
-    /// itself, which is the table the rows below are read from even if the configured name has since changed.
+    /// The resolved storage names itself, and that is the table the rows below are read from.
     checkAccessToTimeSeriesTable(time_series_storage->getStorageID(), context, AccessType::SELECT);
 
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);

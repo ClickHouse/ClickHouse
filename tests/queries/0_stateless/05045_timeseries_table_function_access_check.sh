@@ -75,12 +75,17 @@ SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DEN
 INSERT INTO FUNCTION timeSeriesSamples($db.ts) SELECT toUInt64(2), toDateTime64('2026-01-01 00:00:02.000', 3), toFloat64(7); -- { serverError ACCESS_DENIED }
 
 -- Reading the engine of the named table and the name of its target is refused too, so the argument a
--- caller may not describe cannot be told apart from one holding a different engine.
+-- caller may not describe cannot be told apart from one holding a different engine. Each function
+-- resolves its argument in its own code, so each is checked here.
 SELECT * FROM timeSeriesSamples($db.ts_samples) FORMAT Null; -- { serverError ACCESS_DENIED }
+DESCRIBE timeSeriesSelector($db.ts_samples, 'up', 0, 9999999999) FORMAT Null; -- { serverError ACCESS_DENIED }
+DESCRIBE prometheusQuery($db.ts_samples, '1 + 2', 1000) FORMAT Null; -- { serverError ACCESS_DENIED }
 EOF
 
 ${CLIENT_TS} <<EOF
 SELECT * FROM timeSeriesSamples($db.ts_samples) FORMAT Null; -- { serverError UNEXPECTED_TABLE_ENGINE }
+DESCRIBE timeSeriesSelector($db.ts_samples, 'up', 0, 9999999999) FORMAT Null; -- { serverError UNEXPECTED_TABLE_ENGINE }
+DESCRIBE prometheusQuery($db.ts_samples, '1 + 2', 1000) FORMAT Null; -- { serverError UNEXPECTED_TABLE_ENGINE }
 
 -- Granting the target tables is not enough: the TimeSeries table named in the call is checked as well.
 GRANT SELECT, INSERT, SHOW COLUMNS ON $db.ts_samples TO $user;
@@ -227,6 +232,41 @@ EOF
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON $db.samples_gone TO $user"
 ${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts_gone) FORMAT Null; -- { serverError UNKNOWN_TABLE }"
 
+# A persistent table over these functions authorizes its TimeSeries table on each read, and whether that
+# table is still the one the persistent table was built over is covered by the grant on it too: the reader
+# granted on the persistent table alone is refused the same way once the TimeSeries table is dropped, or
+# renamed so that only its stored id resolves. Both storages keep that order in their own read path.
+${CLIENT_TS} <<EOF
+CREATE TABLE $db.ts_src_gone ENGINE = TimeSeries
+    DATA $db.ts_samples TAGS $db.ts_tags METRICS $db.ts_metrics;
+CREATE TABLE $db.ts_src_ren ENGINE = TimeSeries
+    DATA $db.ts_samples TAGS $db.ts_tags METRICS $db.ts_metrics;
+CREATE TABLE $db.sel_src_gone AS timeSeriesSelector($db.ts_src_gone, 'up', 0, 9999999999);
+CREATE TABLE $db.pq_src_gone AS prometheusQuery($db.ts_src_gone, '1 + 2', 1000);
+CREATE TABLE $db.sel_src_ren AS timeSeriesSelector($db.ts_src_ren, 'up', 0, 9999999999);
+GRANT SELECT ON $db.sel_src_gone TO $user;
+GRANT SELECT ON $db.pq_src_gone TO $user;
+GRANT SELECT ON $db.sel_src_ren TO $user;
+EOF
+${CLIENT_USER} <<EOF
+SELECT * FROM $db.sel_src_gone FORMAT Null; -- { serverError ACCESS_DENIED }
+SELECT * FROM $db.pq_src_gone FORMAT Null; -- { serverError ACCESS_DENIED }
+EOF
+${CLICKHOUSE_CLIENT} <<EOF
+DROP TABLE $db.ts_src_gone;
+RENAME TABLE $db.ts_src_ren TO $db.ts_src_ren_new;
+EOF
+${CLIENT_USER} <<EOF
+SELECT * FROM $db.sel_src_gone FORMAT Null; -- { serverError ACCESS_DENIED }
+SELECT * FROM $db.pq_src_gone FORMAT Null; -- { serverError ACCESS_DENIED }
+EOF
+# Separately, so that a regression here is reported as its own failure rather than skipped behind one above.
+${CLIENT_USER} -q "SELECT * FROM $db.sel_src_ren FORMAT Null; -- { serverError ACCESS_DENIED }"
+# and a reader entitled to it is told what became of it instead.
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON $db.ts_src_gone TO $user"
+${CLIENT_USER} -q "SELECT * FROM $db.sel_src_gone FORMAT Null; -- { serverError UNKNOWN_TABLE }"
+${CLICKHOUSE_CLIENT} -q "REVOKE SELECT ON $db.ts_src_gone FROM $user"
+
 # timeSeriesSelector() reads one column of the tags target, its id, so a grant on that column is enough
 # for it: what the generated query reads is authorized by that query, per column, which the last arm here
 # pins by revoking a single column the query needs. No SHOW COLUMNS is granted on the tags target below;
@@ -255,6 +295,24 @@ SELECT count() FROM timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORMAT Null;
 DESCRIBE timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORMAT TSV;
 EOF
 ${CLICKHOUSE_CLIENT} -q "DROP USER $user_tags_cols"
+
+# The functions that hand the target table back whole check it whole, so a column-scoped grant on it is
+# not enough for them, however many columns it names: it reads that column directly and gets no further.
+user_target_col="user05045t_${CLICKHOUSE_DATABASE}_$RANDOM"
+${CLICKHOUSE_CLIENT} <<EOF
+DROP USER IF EXISTS $user_target_col;
+CREATE USER $user_target_col;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $user_target_col;
+GRANT SELECT, SHOW COLUMNS ON $db.ts TO $user_target_col;
+GRANT SELECT(id, timestamp, value) ON $db.ts_samples TO $user_target_col;
+EOF
+echo 'ids read directly with a column-scoped grant on the samples target'
+${CLICKHOUSE_CLIENT} --user "$user_target_col" <<EOF
+SELECT id FROM $db.ts_samples ORDER BY id FORMAT TSV;
+DESCRIBE timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }
+SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }
+EOF
+${CLICKHOUSE_CLIENT} -q "DROP USER $user_target_col"
 
 # An `Alias` tags target carries that same column through to the table it points at. Nothing grants on
 # tags_hidden until the last arm here, while the alias itself is granted throughout.

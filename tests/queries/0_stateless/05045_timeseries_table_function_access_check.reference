@@ -26,6 +26,9 @@ and again with one of those columns revoked
 id	UInt64					
 timestamp	DateTime64(3)					
 value	Float64					
+ids read directly with a column-scoped grant on the samples target
+1
+2
 selector over an Alias tags target, granted the id column on the alias and on its target
 id,timestamp,value
 selector over an inner tags target, granted its id column
