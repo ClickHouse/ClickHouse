@@ -193,7 +193,7 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 
 ResourceSchedulingContext * ThreadStatus::getResourceSchedulingContext() const
 {
-    return thread_group ? thread_group->scheduling.context.get() : nullptr;
+    return thread_group ? thread_group->scheduling_context.get() : nullptr;
 }
 
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept

@@ -399,7 +399,7 @@ class PriorityAlgorithm final : public ISchedulingAlgorithm
 public:
     void push(ResourceRequest * request) override
     {
-        UInt64 priority = request->scheduling.context ? request->scheduling.context->priority : 0;
+        UInt64 priority = request->scheduling.context->priority;
         // Map the `UInt64` `priority` query setting onto the Int64 `Priority` key (lower value =
         // higher precedence). `priority == 0` = "no priority" → the max key so it sorts strictly
         // last. Explicit priorities are clamped into `[1, max-1]` so (a) they always sort ahead of
