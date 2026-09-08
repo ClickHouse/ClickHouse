@@ -84,7 +84,22 @@ struct ColumnsCacheWeightFunction
 
     size_t operator()(const ColumnsCacheEntry & entry) const
     {
-        return entry.column->byteSize() + COLUMNS_CACHE_OVERHEAD;
+        /// The memory the entry retains, not the logical size of the rows in it. A cached column
+        /// is built by reserving and appending, and `PODArray` rounds a reservation up to a power
+        /// of two elements and doubles on growth, so the capacity it holds can exceed `byteSize`
+        /// by a large factor - for `String`, `Array` and `Map` columns, whose element storage
+        /// grows by doubling, up to twice. `columns_cache_size` is documented as a bound on the
+        /// memory the cache keeps, so the bound has to be enforced - and reported by
+        /// `system.columns_cache`, `CurrentMetrics::ColumnsCacheBytes` and
+        /// `ProfileEvents::ColumnsCacheEvictedBytes` - on the memory that is actually held.
+        /// `allocatedBytes` descends into the nested columns of `Array`, `Tuple`, `Nullable` and
+        /// `Map`, so composite shapes are covered too, and unlike `byteSize` it also counts the
+        /// dictionary of a `LowCardinality` column when that dictionary is shared. The entry
+        /// keeps the dictionary alive - once the part is gone the cache can be its only holder -
+        /// so it has to be charged; several entries of the same column do share one dictionary
+        /// object, and each of them is charged for it, which makes the accounting conservative
+        /// (the cache holds less than its limit) rather than unbounded.
+        return entry.column->allocatedBytes() + COLUMNS_CACHE_OVERHEAD;
     }
 };
 

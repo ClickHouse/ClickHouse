@@ -422,8 +422,11 @@ ColumnsCache::getAllEntriesMetadata()
     result.reserve(snapshot.size());
     for (const auto & entry : snapshot)
     {
+        /// `bytes` reports the memory the entry retains, the same quantity the cache is bounded
+        /// by, so that the sum over `system.columns_cache` can be compared with
+        /// `columns_cache_size`. See `ColumnsCacheWeightFunction`.
         if (entry.mapped)
-            result.push_back(EntryMetadata{entry.key, entry.mapped->rows, entry.mapped->column->byteSize()});
+            result.push_back(EntryMetadata{entry.key, entry.mapped->rows, ColumnsCacheWeightFunction{}(*entry.mapped)});
     }
     return result;
 }

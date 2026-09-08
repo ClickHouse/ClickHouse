@@ -39,7 +39,7 @@ be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/sys
 - `row_begin` ([UInt64](/reference/data-types/int-uint)) — Starting row index of the cached range (inclusive).
 - `row_end` ([UInt64](/reference/data-types/int-uint)) — Ending row index of the cached range (exclusive).
 - `rows` ([UInt64](/reference/data-types/int-uint)) — Number of rows in the cached range (`row_end - row_begin`).
-- `bytes` ([UInt64](/reference/data-types/int-uint)) — In-memory size of the cached column data in bytes.
+- `bytes` ([UInt64](/reference/data-types/int-uint)) — Memory the entry retains, in bytes: the allocated size of the cached column plus a small per-entry overhead. This is the quantity the cache is bounded by, so the sum of this column over all entries stays within `columns_cache_size`. It can be larger than the logical size of the rows, because a column keeps the capacity it was allocated with.
 
 ## Example {#example}
 

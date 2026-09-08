@@ -208,7 +208,7 @@ StorageSystemColumnsCache::StorageSystemColumnsCache(const StorageID & table_id_
         {"row_begin", std::make_shared<DataTypeUInt64>(), "Starting row index (inclusive)"},
         {"row_end", std::make_shared<DataTypeUInt64>(), "Ending row index (exclusive)"},
         {"rows", std::make_shared<DataTypeUInt64>(), "Number of rows in cached block"},
-        {"bytes", std::make_shared<DataTypeUInt64>(), "Size of cached column data in bytes"}
+        {"bytes", std::make_shared<DataTypeUInt64>(), "Memory the cached column retains in bytes, capacity included"}
     };
 
     storage_metadata.setColumns(columns);

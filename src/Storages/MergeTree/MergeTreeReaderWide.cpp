@@ -666,6 +666,14 @@ void MergeTreeReaderWide::writeToColumnsCacheIfRangeComplete()
             column_row_end,
             settings.columns_cache_schema_identity};
 
+        /// Give back the capacity the accumulation reserved beyond the rows it ended up holding.
+        /// The reservation is bounded by the size of the range, and `PODArray` rounds it up to a
+        /// power of two elements and doubles the element storage of `String` and `Array` columns
+        /// on growth, so without this an entry would occupy - and, since the cache is bounded by
+        /// the memory an entry retains, be charged for - up to twice the memory of its rows for
+        /// the whole time it stays cached.
+        column->shrinkToFit();
+
         /// The accumulated column is an independent copy of the rows read; hand it over to the cache.
         auto entry = std::make_shared<ColumnsCacheEntry>(ColumnsCacheEntry{std::move(column), rows_to_cache});
 

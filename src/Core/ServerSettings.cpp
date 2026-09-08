@@ -700,6 +700,10 @@ Maximum size (in bytes) for the columns cache, which stores deserialized columns
 The columns cache eliminates repeated decompression and deserialization for frequently accessed columns.
 The cache is used if the query-level option `use_columns_cache` is enabled.
 
+The limit applies to the memory the cache retains: an entry is charged the allocated size of its column,
+which can exceed the logical size of the rows in it, plus a small per-entry overhead. `system.columns_cache`
+reports the same quantity per entry, and `CurrentMetrics.ColumnsCacheBytes` its total.
+
 :::note
 A value of `0` means disabled.
 
