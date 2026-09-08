@@ -3012,7 +3012,7 @@ Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(UInt64, http_max_fields, 1000, R"(
-Maximum number of fields in HTTP request headers, query parameters, and form data. The URL query string is parsed before authentication, because the name of the user is one of its parameters, so it is bounded by the server default value of this setting; it is re-validated against the authenticated user's value before the request is processed.
+Maximum number of fields in HTTP request headers, query parameters, and form data. The query parameters and the form fields of the request body share this limit, so it cannot be exceeded by splitting the fields between the two. The URL query string is parsed before authentication, because the name of the user is one of its parameters, so it is bounded by the server default value of this setting; it is re-validated against the authenticated user's value before the request is processed.
 )", 0) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of a field name in HTTP request headers, query parameters, and form data. As for `http_max_fields`, the URL query string is bounded by the server default value while it is parsed before authentication, and is re-validated against the authenticated user's value afterwards.

@@ -46,22 +46,25 @@ USER_NAME="test_multipart_fields_limit_user_${CLICKHOUSE_DATABASE}"
 
 URL="${CLICKHOUSE_URL}&user=${USER_NAME}&query=SELECT+1"
 
-# 'http_max_fields' bounds the URL query parameters of the request as well, and the URL of a
-# stateless test carries a variable number of them, so derive the limit from the request URL. The
-# multipart body has its own field counter, so a limit equal to the number of URL parameters lets
-# every one of them through and still bounds the body at the same number of form fields.
-FIELDS_LIMIT=$(( $(printf '%s' "${URL#*\?}" | tr -cd '&' | wc -c) + 1 ))
+# 'http_max_fields' bounds the fields of the request as a whole: the URL query parameters and the
+# multipart form fields share one counter. The URL of a stateless test carries a variable number of
+# parameters, so the limit is derived from the request URL. The parameters that are consumed before
+# the authenticated user's settings are known are exempt and do not count towards it.
+EXEMPT_NAMES='^(user|password|quota_key|stacktrace|close_session|session_id|session_timeout|session_check)$'
+URL_FIELDS=$(printf '%s' "${URL#*\?}" | tr '&' '\n' | sed 's/=.*//' | grep -cvE "${EXEMPT_NAMES}")
+BODY_FIELDS=3
+FIELDS_LIMIT=$(( URL_FIELDS + BODY_FIELDS ))
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${USER_NAME}"
 $CLICKHOUSE_CLIENT -q "CREATE USER ${USER_NAME} IDENTIFIED WITH no_password SETTINGS http_max_fields = ${FIELDS_LIMIT}"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.* TO ${USER_NAME}"
 
 FIELDS=()
-for i in $(seq 1 ${FIELDS_LIMIT}); do
+for i in $(seq 1 ${BODY_FIELDS}); do
     FIELDS+=(-F "param_p${i}=v")
 done
 
-# Exactly 'http_max_fields' multipart form fields are accepted.
+# The body fields that bring the total of the request to exactly 'http_max_fields' are accepted.
 ${CLICKHOUSE_CURL} -sS "${FIELDS[@]}" "${URL}"
 
 # One field more is rejected.
