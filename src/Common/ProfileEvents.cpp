@@ -155,6 +155,9 @@
     M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
     M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
     M(TextIndexTemporarySegmentsWritten, "Number of temporary segments written while building text indexes.", ValueType::Number) \
+    M(TextScoreStatsBuilt, "Number of BM25 collection-statistics were built.", ValueType::Number) \
+    M(TextScoreStatsBuildMicroseconds, "Total time spent building the global BM25 statistics (collection statistics and token weights) over all parts of a query.", ValueType::Microseconds) \
+    M(TextScoreRowsScored, "Number of rows that received a non-zero BM25 score contribution.", ValueType::Number) \
     M(TextIndexLazyPackedBlocksDecoded, "Number of packed blocks decoded in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyAdvanceCount, "Number of advance operations performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazySegmentsPrepared, "Number of segments prepared (read from disk or cached) in lazy posting list mode.", ValueType::Number) \

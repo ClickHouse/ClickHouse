@@ -725,6 +725,10 @@ Can be overridden by explicit `posting_list_codec` index argument.
 Allow creating text indexes with the experimental `support_phrase_search` argument
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_text_index_scoring, false, R"(
+Allow creating text indexes with the experimental `enable_scoring` argument
+which stores term frequencies and document lengths to support BM25 relevance scoring.
+)", EXPERIMENTAL) \
     DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
 The preferred on-disk serialization format version for writing text indexes.
 
@@ -740,6 +744,7 @@ Possible values:
 - `v0_initial` — The original format. Does not persist the posting list codec type.
 - `v1_with_codec` — Persists the posting list codec type in the text index header.
 - `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
+- `v3_with_scoring` — Persists term frequencies and document lengths for indexes with `enable_scoring`.
 )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no

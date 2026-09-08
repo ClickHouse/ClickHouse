@@ -72,7 +72,7 @@ PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
     auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
     std::copy(info.embedded_postings.begin(), info.embedded_postings.end(), flat->begin());
-    return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
+    return std::make_shared<PostingListCursor>(PaddedPODArrayPtr(std::move(flat)));
 }
 
 /// Helper: generate a sequence of doc IDs: {start, start+step, start+2*step, ...}
@@ -221,14 +221,23 @@ MultiBlockTestData makeMultiBlockData(
 
     /// Encode each segment using the production codec.
     /// Each block becomes one segment in the .pst stream.
+    /// A segment size large enough to hold all docs in one segment.
+    const auto codec_for_context = PostingListCodecFactory::createPostingListCodec(block_codec_type);
+    const PostingListBuildContext context
+    {
+        *codec_for_context,
+        1 << 20,
+        /*enable_positions=*/false,
+        /*enable_scoring=*/false,
+        nullptr,
+    };
+
     WriteBufferFromOwnString out;
     for (const auto & block_docs : blocks)
     {
-        /// Use a segment size large enough to hold all docs in one segment.
-        SegmentedPostingListCodec codec(block_docs.size() + BLOCK_SIZE, block_codec_type);
-        for (auto doc : block_docs)
-            codec.insert(doc);
-        codec.encode(out, info);
+        SegmentedPostingListCodec codec(block_codec_type);
+        codec.append(block_docs, /*tf_minus_one=*/{}, context);
+        codec.serializeTo(out, info);
     }
 
     auto str = out.str();
@@ -3618,12 +3627,13 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     auto offsets = ColumnUInt64::create();
     offsets->insertValue(42);
 
-    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
+    TextIndexHeader header;
+    header.version = MergeTreeTextIndexSerializationVersion::V1_WithCodec;
+    header.codec_type = IPostingListCodec::Type::Bitpacking;
+    header.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out;
-    TextIndexSerialization::serializeHeader(
-        MergeTreeTextIndexSerializationVersion::V1_WithCodec,
-        sparse_index, IPostingListCodec::Type::Bitpacking, /*has_positions=*/ false, /*positions_codec=*/ 0, out);
+    TextIndexSerialization::serializeHeader(header, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
@@ -3667,36 +3677,47 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     auto offsets = ColumnUInt64::create();
     offsets->insertValue(13);
 
-    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
+    TextIndexHeader header_initial;
+    header_initial.version = MergeTreeTextIndexSerializationVersion::V0_Initial;
+    header_initial.codec_type = IPostingListCodec::Type::None;
+    header_initial.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out_initial;
-    TextIndexSerialization::serializeHeader(
-        MergeTreeTextIndexSerializationVersion::V0_Initial,
-        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_initial);
+    TextIndexSerialization::serializeHeader(header_initial, out_initial);
+
+    TextIndexHeader header_with_codec;
+    header_with_codec.version = MergeTreeTextIndexSerializationVersion::V1_WithCodec;
+    header_with_codec.codec_type = IPostingListCodec::Type::None;
+    header_with_codec.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out_with_codec;
-    TextIndexSerialization::serializeHeader(
-        MergeTreeTextIndexSerializationVersion::V1_WithCodec,
-        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_with_codec);
+    TextIndexSerialization::serializeHeader(header_with_codec, out_with_codec);
 
     /// The `Initial` header omits the single-byte codec type, so it is exactly one byte shorter.
     EXPECT_EQ(out_initial.str().size() + 1, out_with_codec.str().size());
 
-    WriteBufferFromOwnString out_with_positions;
-    TextIndexSerialization::serializeHeader(
-        MergeTreeTextIndexSerializationVersion::V2_WithPositions,
-        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ true,
-        static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), out_with_positions);
+    TextIndexHeader header_with_positions;
+    header_with_positions.version = MergeTreeTextIndexSerializationVersion::V2_WithPositions;
+    header_with_positions.codec_type = IPostingListCodec::Type::None;
+    header_with_positions.has_positions = true;
+    header_with_positions.positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
+    header_with_positions.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
 
-    /// A positional `WithPositions` header adds the positions flag and the positions codec byte.
+    WriteBufferFromOwnString out_with_positions;
+    TextIndexSerialization::serializeHeader(header_with_positions, out_with_positions);
+
+    /// A positional `V2_WithPositions` header adds the positions flag and the positions codec byte on top of the codec type.
     EXPECT_EQ(out_with_codec.str().size() + 2, out_with_positions.str().size());
 
     /// Without positions the codec byte is omitted, so the header costs only the flag. This keeps a
     /// non-positional part the same size as before positions existed.
+    TextIndexHeader header_no_positions;
+    header_no_positions.version = MergeTreeTextIndexSerializationVersion::V2_WithPositions;
+    header_no_positions.codec_type = IPostingListCodec::Type::None;
+    header_no_positions.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
+
     WriteBufferFromOwnString out_no_positions;
-    TextIndexSerialization::serializeHeader(
-        MergeTreeTextIndexSerializationVersion::V2_WithPositions,
-        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_no_positions);
+    TextIndexSerialization::serializeHeader(header_no_positions, out_no_positions);
     EXPECT_EQ(out_with_codec.str().size() + 1, out_no_positions.str().size());
 
     ReadBufferFromString in_no_positions(out_no_positions.str());
@@ -3717,6 +3738,61 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
 
     EXPECT_EQ(with_positions_data.version, MergeTreeTextIndexSerializationVersion::V2_WithPositions);
     EXPECT_TRUE(with_positions_data.has_positions);
+    EXPECT_EQ(with_positions_data.positions_codec, static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor));
+}
+
+TEST(PostingListCursorTest, TextIndexHeaderPersistsScoringFlag)
+{
+    auto tokens = ColumnString::create();
+    tokens->insert("delta");
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(5);
+
+    /// `DictionarySparseIndex` is not copyable, so build a fresh header for every case under test.
+    auto make_header = [&](bool has_scoring)
+    {
+        TextIndexHeader header;
+        header.version = MergeTreeTextIndexSerializationVersion::V3_WithScoring;
+        header.has_scoring = has_scoring;
+        header.sparse_index = DictionarySparseIndex(tokens->getPtr(), offsets->getPtr());
+        header.scoring_stats.num_docs = 100;
+        header.scoring_stats.sum_doc_length = 4000;
+        header.scoring_stats.doc_lengths_segment_size = ScoringStats::DOC_LENGTHS_SEGMENT_SIZE;
+        header.scoring_stats.doc_lengths_segment_offsets = {10, 200, 3000};
+        return header;
+    };
+
+    WriteBufferFromOwnString out_scoring;
+    TextIndexSerialization::serializeHeader(make_header(/*has_scoring=*/true), out_scoring);
+
+    ReadBufferFromString in_scoring(out_scoring.str());
+    auto scoring_data = TextIndexSerialization::deserializeHeader(in_scoring);
+
+    EXPECT_EQ(scoring_data.version, MergeTreeTextIndexSerializationVersion::V3_WithScoring);
+    EXPECT_TRUE(scoring_data.has_scoring);
+    EXPECT_EQ(scoring_data.scoring_stats.num_docs, 100u);
+    EXPECT_EQ(scoring_data.scoring_stats.sum_doc_length, 4000u);
+    EXPECT_EQ(scoring_data.scoring_stats.doc_lengths_segment_size, ScoringStats::DOC_LENGTHS_SEGMENT_SIZE);
+    EXPECT_EQ(scoring_data.scoring_stats.doc_lengths_segment_offsets, (VectorWithMemoryTracking<UInt64>{10, 200, 3000}));
+    EXPECT_EQ(scoring_data.sparse_index.getToken(0), "delta");
+
+    /// Without the flag the scoring payload is not written at all, so it reads back at its defaults.
+    WriteBufferFromOwnString out_no_scoring;
+    TextIndexSerialization::serializeHeader(make_header(/*has_scoring=*/false), out_no_scoring);
+
+    EXPECT_LT(out_no_scoring.str().size(), out_scoring.str().size());
+
+    ReadBufferFromString in_no_scoring(out_no_scoring.str());
+    auto no_scoring_data = TextIndexSerialization::deserializeHeader(in_no_scoring);
+
+    EXPECT_EQ(no_scoring_data.version, MergeTreeTextIndexSerializationVersion::V3_WithScoring);
+    EXPECT_FALSE(no_scoring_data.has_scoring);
+    EXPECT_EQ(no_scoring_data.scoring_stats.num_docs, 0u);
+    EXPECT_EQ(no_scoring_data.scoring_stats.sum_doc_length, 0u);
+    EXPECT_EQ(no_scoring_data.scoring_stats.doc_lengths_segment_size, 0u);
+    EXPECT_TRUE(no_scoring_data.scoring_stats.doc_lengths_segment_offsets.empty());
+    EXPECT_EQ(no_scoring_data.sparse_index.getToken(0), "delta");
 }
 
 // Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and

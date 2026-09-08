@@ -97,7 +97,8 @@ public:
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
-        bool has_positions_);
+        bool has_positions_,
+        bool scoring_enabled_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -120,6 +121,11 @@ public:
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
+
+    /// Tokens contributing to the `_bm25_score` virtual column: the sorted,
+    /// deduplicated union of the tokens of the hasToken / hasAnyTokens / hasAllTokens conditions.
+    std::vector<String> getScoringTokens() const;
+    bool isScoringEnabled() const { return scoring_enabled; }
 
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
@@ -228,6 +234,8 @@ private:
     bool has_postprocessor;
     /// Whether the index has position data for phrase queries.
     bool has_positions = false;
+    /// Whether the query computes `_bm25_score` with this index.
+    bool scoring_enabled = false;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index

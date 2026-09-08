@@ -32,17 +32,18 @@ namespace
     class BitpackingPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
-        size_t encodeBlock(std::span<uint32_t> deltas, std::string & out) override
+        size_t encodeBlock(std::span<const uint32_t> values, std::string & out) override
         {
-            auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(deltas);
+            auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(values);
             size_t needed_bytes_with_header = needed_bytes_without_header + 1;
 
+            /// `resize` grows the buffer geometrically, so no manual reservation is needed here.
             /// Block Layout: [1byte(max_bits)][payload]
             size_t offset = out.size();
             out.resize(out.size() + needed_bytes_with_header);
             std::span<char> out_span(out.data() + offset, needed_bytes_with_header);
             writeByte(static_cast<uint8_t>(max_bits), out_span);
-            auto used_memory = BitpackingBlockCodec::encode(deltas, max_bits, out_span);
+            auto used_memory = BitpackingBlockCodec::encode(values, max_bits, out_span);
 
             if (used_memory != needed_bytes_without_header || !out_span.empty())
             {
@@ -51,7 +52,7 @@ namespace
                     "but actually used {} bytes with {} bytes remaining in buffer",
                     needed_bytes_without_header,
                     max_bits,
-                    deltas.size(),
+                    values.size(),
                     used_memory,
                     out_span.size());
             }
@@ -83,6 +84,34 @@ namespace
 
             /// Total bytes consumed from `in`: the bits byte plus the bit-packed payload.
             return 1 + consumed_size;
+        }
+
+        size_t encodeZeros(size_t /*count*/, std::string & out) override
+        {
+            /// A zero-width block: the bits byte alone, with no payload after it. Identical to what
+            /// `encodeBlock` emits for all-zero input, and independent of `count`.
+            out.push_back(0);
+            return 1;
+        }
+
+        size_t skipBlock(std::span<const std::byte> & in, size_t count) override
+        {
+            if (in.empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
+
+            uint8_t bits = readByte(in);
+            if (bits > 32)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
+
+            /// `bits == 0` means every value in the block is 0 and no payload was written.
+            size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
+            if (in.size() < required_size)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
+
+            in = in.subspan(required_size);
+
+            /// Total bytes skipped in `in`: the bits byte plus the bit-packed payload.
+            return 1 + required_size;
         }
 
         /// `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment slack).

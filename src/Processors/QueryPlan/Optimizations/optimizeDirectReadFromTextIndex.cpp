@@ -41,14 +41,24 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Core/Settings.h>
 #include <base/defines.h>
+#include <absl/container/flat_hash_set.h>
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool allow_experimental_bm25_score_column;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -452,12 +462,13 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 class TextIndexDAGReplacer
 {
 public:
-    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, bool is_filter_dag_, bool require_index_analyzed_predicate_ = false)
+    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, bool is_filter_dag_, bool require_index_analyzed_predicate_ = false, NameSet * scoring_predicate_indexes_ = nullptr)
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
         , is_filter_dag(is_filter_dag_)
         , require_index_analyzed_predicate(require_index_analyzed_predicate_)
+        , scoring_predicate_indexes(scoring_predicate_indexes_)
     {
     }
 
@@ -499,12 +510,32 @@ public:
                 virtual_column_to_node.emplace(input->result_name, input);
         }
 
+        /// Nodes participating in the filter condition, for collecting scoring predicates: a text
+        /// function this DAG computes only for the SELECT list does not filter rows and must not count.
+        absl::flat_hash_set<const ActionsDAG::Node *> filter_condition_nodes;
+        if (scoring_predicate_indexes && filter_node)
+        {
+            std::vector<const ActionsDAG::Node *> to_visit{filter_node};
+            while (!to_visit.empty())
+            {
+                const auto * visited = to_visit.back();
+                to_visit.pop_back();
+
+                if (!filter_condition_nodes.insert(visited).second)
+                    continue;
+
+                for (const auto * child : visited->children)
+                    to_visit.push_back(child);
+            }
+        }
+
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
         auto nodes_ptrs = actions_dag.getNodesPointers();
 
         for (const auto * node : nodes_ptrs)
         {
-            auto replaced = processFunctionNode(*node, virtual_column_to_node, context);
+            const bool collect_scoring_predicates = scoring_predicate_indexes && (!filter_node || filter_condition_nodes.contains(node));
+            auto replaced = processFunctionNode(*node, virtual_column_to_node, context, collect_scoring_predicates);
 
             if (replaced.node != node)
                 replacements[node] = replaced.node;
@@ -564,6 +595,9 @@ private:
     bool is_filter_dag = false;
     /// True while rewriting a DAG excluded from index analysis (a PREWHERE deferred after FINAL).
     bool require_index_analyzed_predicate = false;
+    /// When set, collects the names of scoring-enabled text indexes that have a scoring-eligible
+    /// text-search predicate (`hasToken` / `hasAnyTokens` / `hasAllTokens`) in this filter DAG.
+    NameSet * scoring_predicate_indexes = nullptr;
     /// Per-index cache of the node names in the index-analysis filter DAG.
     std::unordered_map<String, NameSet> index_analyzed_predicate_names;
 
@@ -672,10 +706,32 @@ private:
         return selected_conditions;
     }
 
+    /// Records the scoring-enabled text indexes whose scoring-eligible predicates participate in the
+    /// filter condition, regardless of whether the predicate is rewritten for the direct read.
+    void collectScoringPredicateIndexes(const std::vector<SelectedCondition> & selected_conditions) const
+    {
+        for (const auto & condition : selected_conditions)
+        {
+            const auto & function_name = condition.search_query->getFunctionName();
+            if (function_name != "hasToken" && function_name != "hasAnyTokens" && function_name != "hasAllTokens")
+                continue;
+
+            if (condition.search_query->getTokens().empty())
+                continue;
+
+            const IMergeTreeIndex * index_ptr = condition.info->index ? condition.info->index->index.get() : condition.info->index_helper.get();
+            const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index_ptr);
+
+            if (text_index && text_index->getParams().enable_scoring)
+                scoring_predicate_indexes->insert(condition.index_name);
+        }
+    }
+
     NodeReplacement processFunctionNode(
         const ActionsDAG::Node & function_node,
         std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
-        const ContextPtr & context)
+        const ContextPtr & context,
+        bool collect_scoring_predicates)
     {
         NodeReplacement replacement;
         replacement.node = &function_node;
@@ -691,12 +747,15 @@ private:
         bool need_transform_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name);
 
         /// Early exit if there is nothing to process.
-        if (!need_transform_function && !direct_read_from_text_index)
+        if (!need_transform_function && !direct_read_from_text_index && !collect_scoring_predicates)
             return replacement;
 
         auto selected_conditions = selectConditions(function_node, context);
         if (selected_conditions.empty())
             return replacement;
+
+        if (collect_scoring_predicates)
+            collectScoringPredicateIndexes(selected_conditions);
 
         /// Sort conditions to produce stable output for EXPLAIN query.
         std::ranges::sort(selected_conditions, [](const auto & lhs, const auto & rhs)
@@ -1044,9 +1103,10 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     const TextIndexReadInfos & text_index_read_infos,
     const String & filter_column_name,
     bool direct_read_from_text_index,
-    bool require_index_analyzed_predicate = false)
+    bool require_index_analyzed_predicate = false,
+    NameSet * scoring_predicate_indexes = nullptr)
 {
-    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index, /*is_filter_dag=*/ true, require_index_analyzed_predicate);
+    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index, /*is_filter_dag=*/ true, require_index_analyzed_predicate, scoring_predicate_indexes);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
 
     /// Even when no virtual columns are added (added_columns is empty),
@@ -1100,13 +1160,17 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
 
 /// Applies the tokenizer/preprocessor/postprocessor rewrite to text-search functions in an arbitrary DAG,
 /// without any direct read from the text index. Returns true if the DAG was modified.
+/// `filter_column_name` (with `scoring_predicate_indexes`) is passed for the DAG of a filter step,
+/// so scoring predicates that stay row-wise in filters above the scan are still accounted for.
 static bool applyTextIndexInject(
     ReadFromMergeTree & read_from_merge_tree_step,
     ActionsDAG & dag,
-    const TextIndexReadInfos & text_index_infos)
+    const TextIndexReadInfos & text_index_infos,
+    NameSet * scoring_predicate_indexes,
+    const String & filter_column_name)
 {
-    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false, /*is_filter_dag=*/ false);
-    auto result = replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{});
+    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false, /*is_filter_dag=*/ false, /*require_index_analyzed_predicate=*/ false, scoring_predicate_indexes);
+    auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
     return result.is_dag_rewritten;
 }
 
@@ -1115,11 +1179,12 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
     const PrewhereInfoPtr & prewhere_info,
     const TextIndexReadInfos & text_index_read_infos,
     bool direct_read_from_text_index,
-    bool require_index_analyzed_predicate)
+    bool require_index_analyzed_predicate,
+    NameSet * scoring_predicate_indexes)
 {
     read_from_merge_tree_step.updatePrewhereInfo({});
     auto cloned_prewhere_info = prewhere_info->clone();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, direct_read_from_text_index, require_index_analyzed_predicate);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, direct_read_from_text_index, require_index_analyzed_predicate, scoring_predicate_indexes);
 
     if (!result_filter_node)
     {
@@ -1131,6 +1196,107 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
     auto modified_prewhere_info = std::make_shared<PrewhereInfo>(std::move(cloned_prewhere_info));
     read_from_merge_tree_step.updatePrewhereInfo(modified_prewhere_info);
     return true;
+}
+
+/// Attaches the `_bm25_score` virtual column to the read task of the scoring text index when the query reads it.
+/// The column requires exactly one text index with `enable_scoring = 1` among the indexes with read tasks,
+/// and at least one `hasToken` / `hasAnyTokens` / `hasAllTokens` condition on it.
+static void attachScoreColumnIfRequested(
+    ReadFromMergeTree & read_from_merge_tree_step,
+    bool direct_read_from_text_index,
+    const NameSet & scoring_predicate_indexes)
+{
+    const auto & all_column_names = read_from_merge_tree_step.getAllColumnNames();
+    if (std::ranges::find(all_column_names, BM25ScoreColumn::name) == all_column_names.end())
+        return;
+
+    if (read_from_merge_tree_step.getStorageMetadata()->getColumns().has(BM25ScoreColumn::name))
+        return;
+
+    if (!read_from_merge_tree_step.getIndexes())
+        return;
+
+    const auto & settings = read_from_merge_tree_step.getContext()->getSettingsRef();
+    if (!settings[Setting::allow_experimental_bm25_score_column])
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The '{}' virtual column is experimental. Enable it with the setting `allow_experimental_bm25_score_column = 1`",
+            BM25ScoreColumn::name);
+    }
+
+    if (!direct_read_from_text_index)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The '{}' virtual column requires the direct read from the text index (the setting `query_plan_direct_read_from_text_index`)",
+            BM25ScoreColumn::name);
+    }
+
+    struct ScoringCandidate
+    {
+        String index_name;
+        std::vector<String> tokens;
+        TextSearchMode global_search_mode;
+    };
+
+    std::vector<ScoringCandidate> candidates;
+
+    for (const auto & [index_name, index_task] : read_from_merge_tree_step.getIndexReadTasks())
+    {
+        /// The pass can visit the same step more than once. The column is attached exactly once.
+        if (index_task.columns.contains(BM25ScoreColumn::name))
+            return;
+
+        const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index_task.index.index.get());
+        if (!text_index || !text_index->getParams().enable_scoring)
+            continue;
+
+        const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*index_task.index.condition_template->generateUnsubstituted());
+        auto tokens = condition_text.getScoringTokens();
+
+        if (tokens.empty())
+            continue;
+
+        candidates.push_back(ScoringCandidate{index_name, std::move(tokens), condition_text.getGlobalSearchMode()});
+    }
+
+    if (scoring_predicate_indexes.size() > 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The '{}' virtual column with predicates on multiple scoring text indexes is not supported",
+            BM25ScoreColumn::name);
+    }
+
+    if (candidates.empty())
+    {
+        if (!scoring_predicate_indexes.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The '{}' virtual column requires the text-search predicate on the scoring text index '{}' "
+                "to be evaluated by the direct read from the text index, but it is evaluated row-wise in this query",
+                BM25ScoreColumn::name, *scoring_predicate_indexes.begin());
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The '{}' virtual column requires a `hasToken`, `hasAnyTokens` or `hasAllTokens` predicate "
+            "on a column with a text index created with `enable_scoring = 1`",
+            BM25ScoreColumn::name);
+    }
+
+    if (candidates.size() > 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The '{}' virtual column with predicates on multiple scoring text indexes is not supported",
+            BM25ScoreColumn::name);
+    }
+
+    auto & candidate = candidates.front();
+
+    LOG_TRACE(getLogger("optimizeDirectReadFromTextIndex"),
+        "BM25 score: index '{}', tokens: {}, scorer: {}",
+        candidate.index_name, candidate.tokens.size(),
+        candidate.global_search_mode == TextSearchMode::All ? "conjunction" : "generic");
+
+    read_from_merge_tree_step.attachTextIndexScoreColumn(candidate.index_name);
 }
 
 /// Steps that keep the indexed column intact (WindowStep only appends columns), so the injection walk can
@@ -1190,6 +1356,9 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     /// register any read column.
     bool already_has_direct_read = !read_from_merge_tree_step->getIndexReadTasks().empty();
 
+    /// Scoring text indexes with a scoring-eligible predicate in any of the query's filters,
+    NameSet scoring_predicate_indexes;
+
     /// --- PREWHERE ---
     bool prewhere_optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
@@ -1197,7 +1366,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         /// A PREWHERE deferred after FINAL never runs during reading and is excluded from index analysis, so it gets neither the direct read nor a sibling predicate's preprocessor.
         bool is_deferred_after_final = read_from_merge_tree_step->isPrewhereDeferredAfterFinal();
         bool direct_read_allowed = direct_read_from_text_index && !already_has_direct_read && !is_deferred_after_final;
-        prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
+        prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final, &scoring_predicate_indexes);
     }
 
     /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the filter, e.g. the
@@ -1239,7 +1408,8 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
             ActionsDAG & filter_dag = filter_step->getExpression();
             bool direct_read_allowed = direct_read_from_text_index && !prewhere_optimized && !already_has_direct_read;
             const auto * result_filter_node = processAndOptimizeTextIndexDAG(
-                *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed);
+                *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed,
+                /*require_index_analyzed_predicate=*/ false, &scoring_predicate_indexes);
 
             if (!result_filter_node)
                 continue;
@@ -1252,7 +1422,12 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
         /// Inject-only rewrite: a merged postprocessor DAG reads only the indexed column, so inputs and output names are unchanged -- reuse the step's input header.
         ActionsDAG & dag = filter_step ? filter_step->getExpression() : expression_step->getExpression();
-        if (!applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos))
+
+        bool injected = filter_step
+            ? applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos, &scoring_predicate_indexes, filter_step->getFilterColumnName())
+            : applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos, nullptr, {});
+
+        if (!injected)
             continue;
 
         const SharedHeader & input_header = step->getInputHeaders().front();
@@ -1261,6 +1436,8 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         else
             node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
     }
+
+    attachScoreColumnIfRequested(*read_from_merge_tree_step, direct_read_from_text_index, scoring_predicate_indexes);
 }
 
 }

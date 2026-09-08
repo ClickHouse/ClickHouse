@@ -36,7 +36,7 @@ PostingList decodePostings(const String & encoded)
     ReadBufferFromString in(encoded);
     PostingList postings;
     PaddedPODArray<char> buffer;
-    codec.decode(in, postings, buffer);
+    codec.decode(in, postings, /*enabled_scoring=*/false, buffer);
     return postings;
 }
 
