@@ -2,6 +2,7 @@
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} FORMAT Null;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/clickhouse/05137_text_index_replicated_database_alter/{database}', 'shard1', 'replica1') FORMAT Null;
+SET database_replicated_allow_explicit_uuid = 1;
 
 -- The initiating replica validates a new definition as `CREATE`; a follower only replays a
 -- definition after it has been committed by the initiator.
