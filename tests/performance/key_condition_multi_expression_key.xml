@@ -1,0 +1,22 @@
+<test>
+    <create_query>
+        CREATE TABLE test_kc_multi_expr
+        (
+            ts DateTime('UTC')
+        )
+        ENGINE = MergeTree() ORDER BY (toYYYYMM(ts), toDate(ts), ts)
+    </create_query>
+
+    <!-- Insert in chunks to get multiple parts: index analysis runs per part per query. -->
+    <fill_query>INSERT INTO test_kc_multi_expr SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(2000000)</fill_query>
+    <fill_query>INSERT INTO test_kc_multi_expr SELECT toDateTime('2024-02-01 00:00:00', 'UTC') + number FROM numbers(2000000)</fill_query>
+    <fill_query>INSERT INTO test_kc_multi_expr SELECT toDateTime('2024-03-01 00:00:00', 'UTC') + number FROM numbers(2000000)</fill_query>
+    <fill_query>INSERT INTO test_kc_multi_expr SELECT toDateTime('2024-04-01 00:00:00', 'UTC') + number FROM numbers(2000000)</fill_query>
+    <fill_query>INSERT INTO test_kc_multi_expr SELECT toDateTime('2024-05-01 00:00:00', 'UTC') + number FROM numbers(2000000)</fill_query>
+
+    <!-- Every predicate on ts expands to atoms for all three key columns. -->
+    <query>SELECT count() FROM test_kc_multi_expr WHERE ts = toDateTime('2024-02-15 12:00:00', 'UTC')</query>
+    <query>SELECT count() FROM test_kc_multi_expr WHERE ts >= toDateTime('2024-02-15 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-02-16 00:00:00', 'UTC')</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_kc_multi_expr</drop_query>
+</test>

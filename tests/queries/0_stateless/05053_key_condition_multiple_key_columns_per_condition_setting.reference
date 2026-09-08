@@ -1,0 +1,24 @@
+comparison, setting on
+Condition: and((toDate(ts) in [20463, 20463]), and((toYYYYMM(ts) in [202601, 202601]), (ts in [1768003200, 1768003200])))
+Granules: 2/960
+1
+comparison, setting off
+Condition: (ts in [1768003200, 1768003200])
+Granules: 40/960
+1
+in, setting off
+Condition: (ts in 2-element set)
+Granules: 41/960
+2
+in, setting on
+Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
+Granules: 6/960
+2
+deterministic, setting on
+Condition: and((concat(s, \'_x\') in [\'b_x\', \'b_x\']), (s in [\'b\', \'b\']))
+Granules: 5/100
+4
+deterministic, setting off
+Condition: (s in [\'b\', \'b\'])
+Granules: 28/100
+4

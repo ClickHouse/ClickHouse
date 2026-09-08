@@ -1,6 +1,6 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
--- BAD_GET exception triggered by various randomized optimize_* settings in canSetValuesBeWrappedByDeterministicFunctions
+-- BAD_GET exception triggered by various randomized optimize_* settings in canSetValuesBeWrappedByDeterministicKeyFunctions
 -- add_minmax_index_for_numeric_columns=0: Changes the plan
 SET explain_query_plan_default = 'legacy';
 

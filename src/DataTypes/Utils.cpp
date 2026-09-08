@@ -132,6 +132,8 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
                 return canBeSafelyCast(from_type_nullable.getNestedType(), to_type_unwrapped);
             }
 
+            /// A NULL value has no representation in a non-nullable type, `String` included:
+            /// `SELECT accurateCast(NULL, 'String')` throws `CANNOT_CONVERT_TYPE`.
             return false;
         }
         case TypeIndex::LowCardinality:

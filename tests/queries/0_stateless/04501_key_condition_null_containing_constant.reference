@@ -1,0 +1,29 @@
+-- { echo }
+
+-- A constant that cannot be represented in the key column type (for example, a Map
+-- literal containing NULL values compared against a `Map(String, String)` key) must not
+-- fail index analysis when the constant is pushed through key-side transforms; the
+-- transform just produces no atom. See `canBeSafelyCast`: a cast from `Nullable` into a
+-- non-nullable type is never safe.
+
+DROP TABLE IF EXISTS test_null_const_plain;
+CREATE TABLE test_null_const_plain (a Map(String, String)) ENGINE = MergeTree ORDER BY a;
+INSERT INTO test_null_const_plain VALUES (map('a', 'b'));
+SELECT count() FROM test_null_const_plain WHERE a = map('name', NULL, '', NULL);
+0
+SELECT count() FROM test_null_const_plain WHERE a = map('a', 'b', 'c', NULL);
+0
+SELECT count() FROM test_null_const_plain WHERE a != map('a', NULL);
+1
+SELECT count() FROM test_null_const_plain WHERE a IN (map('a', NULL), map('a', 'b'));
+1
+DROP TABLE test_null_const_plain;
+-- The same through a non-identity deterministic key transform.
+DROP TABLE IF EXISTS test_null_const_wrapped;
+CREATE TABLE test_null_const_wrapped (a Map(String, String)) ENGINE = MergeTree ORDER BY (mapKeys(a), a);
+INSERT INTO test_null_const_wrapped VALUES (map('a', 'b'));
+SELECT count() FROM test_null_const_wrapped WHERE a = map('name', NULL);
+0
+SELECT count() FROM test_null_const_wrapped WHERE a = map('a', 'b');
+1
+DROP TABLE test_null_const_wrapped;

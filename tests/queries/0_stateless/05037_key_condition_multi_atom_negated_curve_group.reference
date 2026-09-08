@@ -1,0 +1,13 @@
+8
+8
+48
+-- { echo }
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE NOT x) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%/%';
+Condition: not((argument 0 of mortonEncode(x, y) not in [0, 0]))
+Granules: 16/16
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE x = 0) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%/%';
+Condition: and((plus(x, 1) in [1, 1]), (mortonEncode(x, y) has args in [0, 0] × (-Inf, +Inf)))
+Granules: 7/16
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE NOT has([3, 5], x) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%/%';
+Condition: (plus(x, 1) notIn 2-element set)
+Granules: 16/16
