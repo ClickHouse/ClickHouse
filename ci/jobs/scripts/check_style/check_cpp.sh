@@ -85,6 +85,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::PagedExperimentStorage
     ProfileEvents::end
     ProfileEvents::increment
+    ProfileEvents::nonAllocatingEvent
     ProfileEvents::incrementNoTrace
     ProfileEvents::incrementSignalSafe
     ProfileEvents::incrementForLogMessage

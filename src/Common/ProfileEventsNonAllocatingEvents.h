@@ -5,7 +5,7 @@
 
 namespace ProfileEvents
 {
-#define M(NAME) extern const Event NAME;
+#define M(NAME) extern const Event NAME; /// NOLINT: used by the generated trait specializations below.
 APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M)
 #undef M
 
