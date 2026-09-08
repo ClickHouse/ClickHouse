@@ -137,6 +137,17 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 
 Cloud default value: `1`.
 
+## cascades_aggregation_pushdown {#cascades_aggregation_pushdown}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."}]}]}/>
+
+Consider pushing partial aggregation below a join (eager aggregation) as a cost-based alternative in the Cascades optimizer.
+Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
+
 ## checksum_on_read {#checksum_on_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -157,10 +168,24 @@ This is an HTTP-interface response-shaping setting: it is consumed before the qu
 
 The wait time in milliseconds for a connection when the connection pool is full.
 
+The wait applies per replica, because there is one connection pool per replica. When it expires the
+attempt fails with `NO_FREE_CONNECTION`. On the failover path used by distributed `SELECT`s that is
+treated like any other unusable replica: the query tries the remaining replicas, and only fails with
+`ALL_CONNECTION_TRIES_FAILED` once every one of them has been tried. So this setting does not bound the
+whole query; with `N` replicas and `T` tries each, the total wait can reach
+`connection_pool_max_wait_ms` times `N` times `T`, where `T` is
+[connections_with_failover_max_tries](/reference/settings/session-settings/other#connections_with_failover_max_tries) but never less than one,
+because a replica is always tried once before it is written off. Use
+[max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
+the query itself.
+
 Possible values:
 
 - Positive integer.
-- 0 — Infinite timeout.
+- 0 — Infinite timeout. The wait is still interrupted by `KILL QUERY`, and by `max_execution_time` at
+  the default [timeout_overflow_mode](/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) `throw`.
+  Under `break` the time limit does not cancel the query, so the wait continues until a connection is
+  released; `KILL QUERY` still interrupts it.
 
 ## connections_with_failover_max_tries {#connections_with_failover_max_tries}
 
@@ -1561,7 +1586,7 @@ Possible values:
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "New setting to bound the cost of estimating the selectivity of `IN` with a large set: above the limit the estimator uses the size of the set and its bounding range instead of the exact ranges. Before 26.8 the estimation was uncapped, so the previous value is 0 (no limit) and `compatibility` with an earlier version restores the exact ranges for sets of any size."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "10000"},{"label": "New setting to bound the cost of estimating the selectivity of `IN` with a large set: above the limit the estimator uses the size of the set and its bounding range instead of the exact ranges. The previous value is deliberately equal to the new one, so that `compatibility` with an earlier version keeps the bound instead of restoring the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "10000"},{"label": "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."}]}, {"id": "row-4","items": [{"label": "26.6"},{"label": "10000"},{"label": "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."}]}]}/>
 
 The maximum size of the set in the right-hand side of the `IN` operator for which the selectivity estimator derives the exact ranges covered by the set. Deriving them costs a `Field` per element, a sort, and one statistics probe per element, which for a large set dominates query planning. Above this limit the estimator instead derives the selectivity from the size of the set and its bounding range, which is a single linear pass over the set without the sort or the per-element statistics probes. Zero means no limit.
 
