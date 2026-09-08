@@ -19,6 +19,7 @@ public:
     enum ExplainKind
     {
         ParsedAST, /// 'EXPLAIN AST SELECT ...'
+        FormattedQuery, /// 'EXPLAIN TEXT SELECT ...'
         AnalyzedSyntax, /// 'EXPLAIN SYNTAX SELECT ...'
         QueryTree, /// 'EXPLAIN QUERY TREE SELECT ...'
         QueryPlan, /// 'EXPLAIN SELECT ...'
@@ -35,6 +36,7 @@ public:
         switch (kind)
         {
             case ParsedAST: return "EXPLAIN AST";
+            case FormattedQuery: return "EXPLAIN TEXT";
             case AnalyzedSyntax: return "EXPLAIN SYNTAX";
             case QueryTree: return "EXPLAIN QUERY TREE";
             case QueryPlan: return "EXPLAIN";
@@ -51,6 +53,8 @@ public:
     {
         if (str == "EXPLAIN AST")
             return ParsedAST;
+        if (str == "EXPLAIN TEXT")
+            return FormattedQuery;
         if (str == "EXPLAIN SYNTAX")
             return AnalyzedSyntax;
         if (str == "EXPLAIN QUERY TREE")
@@ -89,6 +93,7 @@ public:
         res->children.clear();
         res->query = nullptr;
         res->ast_settings = nullptr;
+        res->actions = nullptr;
         res->table_function = nullptr;
         res->table_override = nullptr;
 
@@ -96,6 +101,8 @@ public:
             res->setSettings(ast_settings->clone(), settings_text);
         if (query)
             res->setExplainedQuery(query->clone());
+        if (actions)
+            res->setActions(actions->clone());
         if (table_function)
             res->setTableFunction(table_function->clone());
         if (table_override)
@@ -111,6 +118,17 @@ public:
     {
         children.emplace_back(query_);
         query = std::move(query_);
+    }
+
+    void setActions(ASTPtr actions_)
+    {
+        children.emplace_back(actions_);
+        actions = std::move(actions_);
+    }
+
+    const ASTPtr & getActions() const
+    {
+        return actions;
     }
 
     /** `settings_text_` is the SETTINGS clause as written in the query, which only the parser knows.
@@ -198,6 +216,11 @@ protected:
             if (need_parens)
                 ostr << ")";
         }
+        if (actions)
+        {
+            ostr << settings.nl_or_ws;
+            actions->format(ostr, settings, state, frame);
+        }
         if (table_function)
         {
             ostr << settings.nl_or_ws;
@@ -214,6 +237,7 @@ private:
     ExplainKind kind;
 
     ASTPtr query;
+    ASTPtr actions;
     ASTPtr ast_settings;
     String settings_text;
 

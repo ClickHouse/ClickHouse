@@ -30,6 +30,7 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTExplainTextAction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
@@ -137,6 +138,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"ProjectionSelectQuery", [] { return make_intrusive<ASTProjectionSelectQuery>(); }},
         {"SetQuery", [] { return make_intrusive<ASTSetQuery>(); }},
         {"ExplainQuery", [] { return make_intrusive<ASTExplainQuery>(ASTExplainQuery::ParsedAST); }},
+        {"ExplainTextAction", [] { return make_intrusive<ASTExplainTextAction>(ASTExplainTextAction::Kind::Oneline); }},
         {"WithElement", [] { return make_intrusive<ASTWithElement>(); }},
 
         /// Table/Join types

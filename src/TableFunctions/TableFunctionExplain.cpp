@@ -103,6 +103,9 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             getName(), kind_arg->formatForErrorMessage());
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
+    if (kind == ASTExplainQuery::FormattedQuery)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "EXPLAIN TEXT is not supported by the viewExplain table function");
     auto explain_query = make_intrusive<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();

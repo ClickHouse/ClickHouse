@@ -899,6 +899,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
     switch (ast.getKind())
     {
+        case ASTExplainQuery::FormattedQuery:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "EXPLAIN TEXT execution is not yet implemented");
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
