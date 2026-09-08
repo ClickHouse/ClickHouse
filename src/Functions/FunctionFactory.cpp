@@ -4,7 +4,6 @@
 #include <Functions/DateTimeTransforms.h>
 
 #include <Access/AccessControl.h>
-#include <Access/Common/AccessType.h>
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -156,12 +155,7 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     /// Default: the config list is empty, this is a single relaxed atomic load.
     /// Unlisted functions never take the Context lock. Listed functions pay
     /// `checkAccess` once at resolve time, not per row.
-    if (AccessControl::hasFunctionsRequiringGrant())
-    {
-        const String & canonical_name = getCanonicalNameIfAny(name);
-        if (AccessControl::functionRequiresGrant(canonical_name) && context)
-            context->checkAccess(AccessType::FUNCTION, canonical_name);
-    }
+    AccessControl::checkFunctionGrant(context, getCanonicalNameIfAny(name));
 
     if (CurrentThread::isInitialized())
     {

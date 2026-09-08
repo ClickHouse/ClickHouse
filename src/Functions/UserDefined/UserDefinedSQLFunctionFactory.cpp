@@ -1,4 +1,5 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Access/AccessControl.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -258,9 +259,17 @@ static void recordSQLUserDefinedFunctionUse(const ASTPtr & ast, const String & f
         query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
 }
 
+static void checkSQLUserDefinedFunctionGrant(const String & function_name)
+{
+    if (!AccessControl::hasFunctionsRequiringGrant() || !CurrentThread::isInitialized())
+        return;
+    AccessControl::checkFunctionGrant(CurrentThread::get().tryGetQueryContext(), function_name);
+}
+
 ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 {
     ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().get(function_name);
+    checkSQLUserDefinedFunctionGrant(function_name);
     recordSQLUserDefinedFunctionUse(ast, function_name);
     return ast;
 }
@@ -268,6 +277,8 @@ ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) const
 {
     ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().tryGet(function_name);
+    if (ast)
+        checkSQLUserDefinedFunctionGrant(function_name);
     recordSQLUserDefinedFunctionUse(ast, function_name);
     return ast;
 }

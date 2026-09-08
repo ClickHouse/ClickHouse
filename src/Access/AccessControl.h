@@ -6,6 +6,7 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 
@@ -216,6 +217,8 @@ public:
     /// when the list is empty, so the function-resolution path pays nothing in the default case.
     static bool hasFunctionsRequiringGrant() noexcept;
     static bool functionRequiresGrant(std::string_view function_name);
+    /// No-op when the list is empty or `context` is null. Call only after the function was found.
+    static void checkFunctionGrant(const ContextPtr & context, std::string_view function_name);
     void setFunctionsRequiringGrant(const Strings & function_names);
     void setFunctionsRequiringGrantFromConfig(const Poco::Util::AbstractConfiguration & config);
 

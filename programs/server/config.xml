@@ -904,8 +904,8 @@
 
         <!-- By default any user can call any SQL function. To require an explicit
              GRANT FUNCTION ON <name> for selected functions, list their names here
-             (canonical names from system.functions). Empty by default for backward compatibility.
-             GRANT ALL includes FUNCTION ON *. Example:
+             (canonical names from system.functions, or user-defined function names).
+             Empty by default for backward compatibility. GRANT ALL includes FUNCTION ON *. Example:
              <functions_requiring_grant>
                  <function>decrypt</function>
                  <function>tryDecrypt</function>

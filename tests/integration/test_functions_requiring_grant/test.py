@@ -27,6 +27,7 @@ def cleanup_after_test():
     finally:
         instance.query("DROP USER IF EXISTS A, B")
         instance.query("DROP FUNCTION IF EXISTS wrap_hex")
+        instance.query("DROP FUNCTION IF EXISTS listed_udf")
 
 
 def test_unlisted_function_does_not_need_grant():
@@ -90,6 +91,24 @@ def test_udf_body_is_checked():
 
     instance.query("GRANT FUNCTION ON hex TO A")
     assert instance.query("SELECT wrap_hex('a')", user="A") == "61\n"
+
+
+def test_listed_sql_udf_requires_grant():
+    instance.query("CREATE USER A")
+    instance.query("CREATE FUNCTION listed_udf AS (x) -> plus(x, 1)")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "SELECT listed_udf(1)", user="A"
+    )
+    assert instance.query("SELECT plus(1, 1)", user="A") == "2\n"
+
+    instance.query("GRANT FUNCTION ON listed_udf TO A")
+    assert instance.query("SELECT listed_udf(1)", user="A") == "2\n"
+
+    instance.query("REVOKE FUNCTION ON listed_udf FROM A")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "SELECT listed_udf(1)", user="A"
+    )
 
 
 def test_decrypt_requires_grant():

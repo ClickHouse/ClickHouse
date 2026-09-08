@@ -1012,11 +1012,12 @@ For example, for the AzureBlobStorage table engine, following grant may be requi
 
 ### FUNCTION {#function}
 
-Allows executing a specified SQL function. Applies only to ordinary functions listed in the
+Allows executing a specified SQL function. Applies to ordinary functions and user-defined functions
+(SQL, executable, and WebAssembly) listed in the
 [`functions_requiring_grant`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)
 server setting (not table functions). By default the list is empty and any user can call any function.
-The check runs when the function is resolved, so a SQL user-defined function that calls a listed function
-requires the same grant.
+The check runs when the function is resolved. A SQL user-defined function that calls a listed function
+also requires a grant for that inner function.
 
 Aliases: `EXECUTE FUNCTION`, `USE FUNCTION`.
 

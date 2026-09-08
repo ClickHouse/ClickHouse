@@ -18,9 +18,11 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
 #include <Access/resolveSetting.h>
+#include <Access/Common/AccessType.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
@@ -896,6 +898,14 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         functions_requiring_grant_names = std::move(names);
     }
     functions_requiring_grant_enabled.store(enabled, std::memory_order_release);
+}
+
+void AccessControl::checkFunctionGrant(const ContextPtr & context, std::string_view function_name)
+{
+    if (!hasFunctionsRequiringGrant() || !context)
+        return;
+    if (functionRequiresGrant(function_name))
+        context->checkAccess(AccessType::FUNCTION, function_name);
 }
 
 bool AccessControl::functionRequiresGrant(std::string_view function_name)

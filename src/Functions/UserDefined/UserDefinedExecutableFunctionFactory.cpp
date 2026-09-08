@@ -1,5 +1,6 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
+#include <Access/AccessControl.h>
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Common/scope_guard_safe.h>
@@ -417,6 +418,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(loader.load(function_name));
+    AccessControl::checkFunctionGrant(context, function_name);
     auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
 
     if (CurrentThread::isInitialized())
@@ -437,6 +439,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
     if (load_result.object)
     {
         auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
+        AccessControl::checkFunctionGrant(context, function_name);
         auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
 
         if (CurrentThread::isInitialized())
