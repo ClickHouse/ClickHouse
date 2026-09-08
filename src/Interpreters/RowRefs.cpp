@@ -6,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Core/Joins.h>
@@ -23,7 +24,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
+    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char stored_columns_index_throw_on_add[];
 }
 
 namespace
@@ -287,6 +294,21 @@ UInt32 StoredColumnsIndex::add(const StoredBlock * block)
     std::lock_guard guard(mutex);
     if (blocks.size() > RowRef::BLOCK_NO_MASK)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many stored blocks in HashJoin: {}", blocks.size());
+    fiu_do_on(FailPoints::stored_columns_index_throw_on_add,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while registering a stored block");
+    });
+    /// `blocks` and `row_stores` are indexed by the same block number, so grow both before either is
+    /// appended to: both appends are then non-allocating and cannot leave the two different lengths.
+    /// The target doubles the shared size, so growth is amortised constant per block, and a reserve
+    /// that threw after growing only one vector is retried at the same target.
+    chassert(blocks.size() == row_stores.size());
+    if (blocks.size() == blocks.capacity() || row_stores.size() == row_stores.capacity())
+    {
+        const size_t new_capacity = 2 * blocks.size() + 1;
+        blocks.reserve(new_capacity);
+        row_stores.reserve(new_capacity);
+    }
     blocks.push_back(block);
     row_stores.push_back(block->row_store.get());
     ++blocks_generation; /// Invalidate any previously built emit table (StorageJoin can insert between joins).
