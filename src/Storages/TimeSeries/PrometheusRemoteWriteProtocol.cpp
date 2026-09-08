@@ -325,9 +325,13 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
         context_->setSetting("skip_unavailable_shards", false);
         /// A shard that is this server itself is always written in-process, as the shard-target check assumes.
         context_->setSetting("prefer_localhost_replica", true);
-        /// Each shard's insert refuses the table it resolves unless it is still a TimeSeries table: the check in
-        /// write() runs first, on the initiator, so a table swapped in under the name after it is not taken.
+        /// Each shard's insert refuses the table it resolves unless it is still a TimeSeries table of this type: the
+        /// check in write() runs first, on the initiator, so a table swapped in under the name after it is not taken.
         context_->setSetting("insert_expected_table_engine", String("TimeSeries"));
+        const auto metadata = time_series_storage->getInMemoryMetadataPtr(context_, false);
+        const auto & time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type;
+        context_->setSetting(
+            "insert_expected_column_types", Field{Map{Tuple{String(TimeSeriesColumnNames::TimeSeries), time_series_type->getName()}}});
     }
     else
         /// A shard-local table's version is checked by its own write on the shard.

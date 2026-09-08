@@ -60,6 +60,7 @@ SHARD_LOCAL_LEAK = [
     "ts_local",
     "DateTime64",
     "TYPE_MISMATCH",
+    "INCOMPATIBLE_SCHEMA",
     "UNEXPECTED_TABLE_ENGINE",
 ]
 

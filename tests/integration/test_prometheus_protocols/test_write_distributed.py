@@ -18,16 +18,26 @@ node = cluster.add_instance(
     main_configs=[
         "configs/prometheus_dist.xml",
         "configs/config.d/two_shards_dist.xml",
+        "configs/config.d/two_shards_restricted_dist.xml",
     ],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
 )
 
 START_TIME = 1724112000
+# A timestamp carrying milliseconds: a shard declaring whole seconds would round it away.
+SUB_SECOND_TIME = START_TIME + 0.25
+SUB_SECOND_MS = int(round(SUB_SECOND_TIME * 1000))
 # Pauses a remote write between its shard-target check and its INSERT.
 BEFORE_INSERT = "prometheus_remote_write_before_insert"
 # Eight fixed hosts: the sharding hash is stable, so the split across the two shards is the same
 # on every run, and with eight distinct keys both shards receive rows.
 HOSTS = [f"h{i}" for i in range(8)]
+
+# The user of the `two_shards_restricted` cluster entry: it may select and insert the two shard
+# databases, which is all the generated shard read and the shard INSERT ask of it.
+CLUSTER_SHARD_USER = "prom_cluster_shard_user"
+# What the probe used to select from over that connection, and now does without.
+HIDDEN_SYSTEM_TABLES = ["tables", "columns"]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -66,6 +76,32 @@ def start_cluster():
             "CREATE TABLE prom_dist_keyless AS shard_0.ts_local "
             "ENGINE = Distributed(two_shards_dist, '', ts_local)"
         )
+        # A TimeSeries table of another `time_series` type, to swap in under a shard-local name:
+        # its engine says nothing about the samples the sink would round into it.
+        node.query(
+            "CREATE TABLE shard_0.ts_coarse (time_series Array(Tuple(DateTime64(0), Float64))) "
+            "ENGINE = TimeSeries"
+        )
+
+        # The cluster entry names this user, so it exists before the wrapper is first used. Its
+        # grants are the databases': the selector and the sink of a TimeSeries table read and write
+        # its inner tables by name, on the caller's own context.
+        node.query(f"CREATE USER {CLUSTER_SHARD_USER} IDENTIFIED WITH no_password")
+        node.query(f"GRANT SELECT, INSERT ON shard_0.* TO {CLUSTER_SHARD_USER}")
+        node.query(f"GRANT SELECT, INSERT ON shard_1.* TO {CLUSTER_SHARD_USER}")
+        node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {CLUSTER_SHARD_USER}")
+        # Its own shard tables, so the exact counts of the other tests are untouched.
+        node.query("CREATE TABLE shard_0.ts_restricted ENGINE=TimeSeries")
+        node.query("CREATE TABLE shard_1.ts_restricted ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE prom_restricted AS shard_0.ts_restricted "
+            "ENGINE = Distributed(two_shards_restricted, '', ts_restricted, cityHash64(tags['host']))"
+        )
+        # The same credentials over a shard target the probe must still refuse.
+        node.query(
+            "CREATE TABLE prom_restricted_bad AS shard_0.ts_restricted "
+            "ENGINE = Distributed(two_shards_restricted, '', mt_bad, cityHash64(tags['host']))"
+        )
         yield cluster
     finally:
         cluster.shutdown()
@@ -82,13 +118,25 @@ def write(path, metric_name, hosts=("h0",)):
     )
 
 
-def count_on_the_shards(wrapper, metric_name, flush=True):
+def write_one(path, metric_name, host, timestamp):
+    """One sample, at a timestamp a shard of a coarser `time_series` type could not hold."""
+    return get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        path,
+        convert_time_series_to_protobuf(
+            [({"__name__": metric_name, "host": host}, {timestamp: 1.0})]
+        ),
+    )
+
+
+def count_on_the_shards(wrapper, metric_name, flush=True, table="ts_local"):
     if flush:
         node.query(f"SYSTEM FLUSH DISTRIBUTED {wrapper}")
     return int(
         node.query(
-            f"SELECT (SELECT count() FROM timeSeriesTags(shard_0.ts_local) WHERE metric_name = '{metric_name}')"
-            f" + (SELECT count() FROM timeSeriesTags(shard_1.ts_local) WHERE metric_name = '{metric_name}')"
+            f"SELECT (SELECT count() FROM timeSeriesTags(shard_0.{table}) WHERE metric_name = '{metric_name}')"
+            f" + (SELECT count() FROM timeSeriesTags(shard_1.{table}) WHERE metric_name = '{metric_name}')"
         )
     )
 
@@ -111,7 +159,7 @@ def test_remote_write_rejects_non_timeseries_shards():
 def test_remote_write_rejects_a_mismatching_time_series_type():
     response = write("/coarse/write", "coarse_metric")
     assert response.status_code >= 400
-    assert "TYPE_MISMATCH" in response.text
+    assert "INCOMPATIBLE_SCHEMA" in response.text
     # The refusal names both types, and nothing was written to either shard.
     assert "Array(Tuple(DateTime64(0), Float64))" in response.text
     assert "Array(Tuple(DateTime64(3), Float64))" in response.text
@@ -245,3 +293,119 @@ def test_remote_write_refuses_a_shard_target_swapped_after_the_check():
     assert count_on_the_shards("prom_dist", "swapped_metric") == 0
     assert write("/dist/write", "swapped_metric", ("h3",)).status_code == 204
     assert count_on_the_shards("prom_dist", "swapped_metric") == 1
+
+
+def test_remote_write_refuses_another_time_series_type_swapped_after_the_check():
+    """A TimeSeries table of another `time_series` type swapped in under a shard-local name is refused
+    too: its engine passes, and the sink would round every sample into it and answer 204.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    swapped = False
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        # `h3` hashes to shard_0: the whole batch goes to the shard whose target is swapped meanwhile.
+        pending = pool.submit(
+            write_one, "/dist/write", "coarse_swapped_metric", "h3", SUB_SECOND_TIME
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_INSERT} PAUSE", timeout=60)
+        node.query("EXCHANGE TABLES shard_0.ts_local AND shard_0.ts_coarse")
+        swapped = True
+        node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
+        response = pending.result(timeout=60)
+        # A 4xx would have Prometheus drop the batch; this refusal is the retryable kind.
+        assert response.status_code >= 500, response.text
+        assert "INCOMPATIBLE_SCHEMA" in response.text
+        # The shard names the type it declares under the name and the one the INSERT expects.
+        assert "Array(Tuple(DateTime64(0), Float64))" in response.text
+        assert "Array(Tuple(DateTime64(3), Float64))" in response.text
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+        pool.shutdown(wait=True)
+        if swapped:
+            node.query("EXCHANGE TABLES shard_0.ts_local AND shard_0.ts_coarse")
+
+    # The decoy took no rounded sample under the TimeSeries name, nothing reached a shard of the
+    # wrapper's own type, and the retry keeps the milliseconds the decoy would have dropped.
+    assert (
+        node.query(
+            "SELECT (SELECT count() FROM timeSeriesData(shard_0.ts_coarse))"
+            " + (SELECT count() FROM timeSeriesTags(shard_0.ts_coarse))"
+        ).strip()
+        == "0"
+    )
+    assert count_on_the_shards("prom_dist", "coarse_swapped_metric") == 0
+    assert (
+        write_one(
+            "/dist/write", "coarse_swapped_metric", "h3", SUB_SECOND_TIME
+        ).status_code
+        == 204
+    )
+    assert count_on_the_shards("prom_dist", "coarse_swapped_metric") == 1
+    assert (
+        node.query(
+            "SELECT count() FROM timeSeriesData(shard_0.ts_local) "
+            f"WHERE toUnixTimestamp64Milli(timestamp) = {SUB_SECOND_MS}"
+        ).strip()
+        == "1"
+    )
+
+
+def test_the_probe_asks_the_cluster_user_no_more_than_the_shards_do():
+    """The shard-target check runs over the cluster's own connection, so it may ask that user for
+    nothing the generated shard read and the shard INSERT do: here it may not read `system` at all.
+    """
+    try:
+        for system_table in HIDDEN_SYSTEM_TABLES:
+            # Permissive for everyone else first, so only this user's view of the table is emptied.
+            node.query(
+                f"CREATE ROW POLICY p_rest_{system_table} ON system.{system_table} "
+                f"USING 1 TO ALL EXCEPT {CLUSTER_SHARD_USER}"
+            )
+            node.query(
+                f"CREATE ROW POLICY p_hide_{system_table} ON system.{system_table} "
+                f"USING 0 TO {CLUSTER_SHARD_USER}"
+            )
+        # The premise: as the cluster user the real shard read and the real shard INSERT both run...
+        node.query(
+            f"SELECT count() FROM timeSeriesSelector(shard_0.ts_restricted, 'premise_metric', 0, {START_TIME})",
+            user=CLUSTER_SHARD_USER,
+        )
+        node.query(
+            "INSERT INTO shard_0.ts_restricted (metric_name, tags, time_series) VALUES "
+            f"('premise_metric', map('host', 'h3'), [(toDateTime64({START_TIME}, 3), 1)])",
+            user=CLUSTER_SHARD_USER,
+        )
+        # ...while the tables the probe used to select from hold no row it may see.
+        for system_table in HIDDEN_SYSTEM_TABLES:
+            hidden = node.query(
+                f"SELECT count() FROM system.{system_table}", user=CLUSTER_SHARD_USER
+            )
+            assert hidden.strip() == "0", hidden
+
+        # A remote write through the wrapper is acknowledged, and every sample is on the shards.
+        response = write("/restricted/write", "restricted_metric", HOSTS)
+        assert response.status_code == 204, response.text
+        assert count_on_the_shards(
+            "prom_restricted", "restricted_metric", table="ts_restricted"
+        ) == len(HOSTS)
+
+        # And a PromQL read over the same connection answers from the shards it just wrote.
+        evaluation_time = START_TIME + len(HOSTS)
+        sql_result = node.query(
+            f"SELECT count() FROM prometheusQuery(prom_restricted, 'restricted_metric', {evaluation_time})"
+        )
+        assert int(sql_result) == len(HOSTS)
+
+        # Not vacuous: over the very same credentials the probe still refuses a shard target it must.
+        engine_error = node.query_and_get_error(
+            f"SELECT count() FROM prometheusQuery(prom_restricted_bad, 'restricted_metric', {evaluation_time})"
+        )
+        assert "are not TimeSeries tables" in engine_error, engine_error
+    finally:
+        for system_table in HIDDEN_SYSTEM_TABLES:
+            node.query(
+                f"DROP ROW POLICY IF EXISTS p_hide_{system_table} ON system.{system_table}"
+            )
+            node.query(
+                f"DROP ROW POLICY IF EXISTS p_rest_{system_table} ON system.{system_table}"
+            )
