@@ -360,7 +360,7 @@ public:
     bool hasStatistics() const override;
     void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 
-    void validateState() const;
+    void validateState(bool allow_logical_error = true) const;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
