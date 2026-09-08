@@ -42,7 +42,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsNewline)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer token\nX-Injected: malicious"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW((void)filter.checkAndNormalizeHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturn)
@@ -50,7 +50,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturn)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer token\r\nX-Injected: malicious"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW((void)filter.checkAndNormalizeHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationAcceptsValidToken)
@@ -58,7 +58,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsValidToken)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer ya29.valid-gcs-token_1234"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+    EXPECT_NO_THROW((void)filter.checkAndNormalizeHeaders(headers));
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsColonInName)
@@ -68,7 +68,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsColonInName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Cookie:j=\"x", "y\";session=abc"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW((void)filter.checkAndNormalizeHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturnInName)
@@ -76,7 +76,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturnInName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-Foo\rX-Injected", "value"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW((void)filter.checkAndNormalizeHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsLineFeedInName)
@@ -84,7 +84,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsLineFeedInName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-Foo\nX-Injected", "value"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW((void)filter.checkAndNormalizeHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
@@ -93,20 +93,22 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Host", "example.com:8080"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+    EXPECT_NO_THROW((void)filter.checkAndNormalizeHeaders(headers));
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationNormalizesWhitespaceInName)
 {
     /// Whitespace/control in a name is still stripped rather than rejected, preserving the
     /// historical behaviour for stored objects that are re-validated on ATTACH. Assert the
-    /// in-place normalized name, so a change that stopped normalizing would be caught here.
+    /// normalized name on the returned entries (callers send what is returned), so a change that
+    /// stopped normalizing would be caught here.
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-A B", "value"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
-    ASSERT_EQ(headers.size(), 1u);
-    EXPECT_EQ(headers[0].name, "X-AB");
+    DB::HTTPHeaderEntries normalized;
+    EXPECT_NO_THROW(normalized = filter.checkAndNormalizeHeaders(headers));
+    ASSERT_EQ(normalized.size(), 1u);
+    EXPECT_EQ(normalized[0].name, "X-AB");
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationAcceptsNameEmptyAfterNormalization)
@@ -117,9 +119,10 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsNameEmptyAfterNormalization)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({" \t ", "value"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
-    ASSERT_EQ(headers.size(), 1u);
-    EXPECT_EQ(headers[0].name, "");
+    DB::HTTPHeaderEntries normalized;
+    EXPECT_NO_THROW(normalized = filter.checkAndNormalizeHeaders(headers));
+    ASSERT_EQ(normalized.size(), 1u);
+    EXPECT_EQ(normalized[0].name, "");
 }
 
 }
