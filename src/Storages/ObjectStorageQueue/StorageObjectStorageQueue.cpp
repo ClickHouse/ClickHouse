@@ -2130,7 +2130,32 @@ TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_conte
             ? TableSettingOrigin::Default
             : TableSettingOrigin::Other;
 
-    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    /// The definition may spell a setting the way this engine used to accept it - with the
+    /// `s3queue_` prefix, or as `enable_logging_to_s3queue_log` - because `loadFromQuery` rewrites
+    /// those rather than declaring them as aliases. Attribution has to read them the same way, or a
+    /// table created with a legacy spelling reports its settings as coming from nowhere.
+    settings = attributeSettingsStatedInDefinition(
+        std::move(settings), query_context, ObjectStorageQueueSettings::adjustSettingName);
+
+    /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built,
+    /// so the rebuilt settings object always carries its default. Report what the table actually
+    /// does, which is what `partitioning_mode` now says.
+    for (auto & setting : settings)
+    {
+        if (setting.name != "use_hive_partitioning")
+            continue;
+
+        const auto mode = std::find_if(settings.begin(), settings.end(),
+            [](const TableSetting & s) { return s.name == "partitioning_mode"; });
+        if (mode == settings.end())
+            break;
+
+        const bool hive = mode->value == "hive";
+        setting.value = hive ? "1" : "0";
+        /// It comes from wherever `partitioning_mode` came from: they are one setting now.
+        setting.origin = setting.value == setting.default_value ? setting.origin : mode->origin;
+        break;
+    }
 
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this
