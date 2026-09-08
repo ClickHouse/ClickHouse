@@ -10,6 +10,7 @@
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/SipHashingWriteBuffer.h>
 #include <Common/typeid_cast.h>
@@ -119,19 +120,48 @@ static bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
-/// This compares column types, not actual byte sizes, so it is best-effort (see the note on
-/// `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under the same
-/// output name - e.g. replacing `s` with `concat(s, s)`, still one `String` - keeps the same layout and
-/// is reported transparent even though its output bytes differ. We accept that: a precise byte-size
-/// answer isn't available at planning time, and the only consequence is a slightly-off estimate, never
-/// a wrong result. What it does catch is a step that materializes a column, which is the case that
-/// matters - a window partition key or a sort key is exactly what the replicas would ship on top of
-/// what they read.
+/// Does this expression only pass its inputs along, possibly renamed, reordered or dropped? Every output
+/// must trace back to an `INPUT` through `ALIAS` links alone. A `FUNCTION` or a constant `COLUMN` means
+/// the step puts something in the column that was not read, so what comes out is not what went in.
+///
+/// The header comparison alone cannot see this. `SELECT concat(s, s) AS s` keeps the arity, the position
+/// and the type name, and preserves the row count, yet doubles the bytes; so does any first-stage
+/// `Projection`, which is the arbitrary DAG built from the query's projection list (`Planner.cpp`,
+/// `PlannerExpressionAnalysis::analyzeProjection`). Treating that as transparent lets the boundary search
+/// peel it and instrument its child, and Auto-PR then costs the query on a fraction of the bytes the
+/// replicas actually send.
+static bool actionsOnlyForwardInputs(const ActionsDAG & actions)
+{
+    for (const auto * output : actions.getOutputs())
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+    }
+    return true;
+}
+
+/// The header comparison is on column types, not on actual byte sizes, so on its own it is only
+/// best-effort. For an `ExpressionStep` the DAG settles what the header cannot; for the other
+/// transforming steps, which have no expression to inspect, a preserved row count and an unchanged
+/// layout is all there is to go on.
 bool isByteTransparentTransform(const ITransformingStep & transform)
 {
-    return transform.getTransformTraits().preserves_number_of_rows
-        && !transform.getInputHeaders().empty()
-        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front());
+    if (!transform.getTransformTraits().preserves_number_of_rows || transform.getInputHeaders().empty())
+        return false;
+
+    if (!sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
+        return false;
+
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&transform))
+        return actionsOnlyForwardInputs(expression->getExpression());
+
+    return true;
 }
 
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
