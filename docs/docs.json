@@ -212,6 +212,9 @@
       "src": "/_site/customizations/navbar-cta.js"
     },
     {
+      "src": "/_site/customizations/cloud-sidebar-ad.js"
+    },
+    {
       "src": "/_site/customizations/tab-nav.js"
     },
     {
