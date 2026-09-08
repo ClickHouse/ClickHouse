@@ -1,0 +1,3 @@
+insert: indexed results match full scan
+merge: indexed results match full scan
+materialize: indexed results match full scan
