@@ -5535,12 +5535,6 @@ void Context::clearCaches() const
     if (shared->primary_index_cache)
         shared->primary_index_cache->clear();
 
-    if (shared->part_statistics_cache)
-        shared->part_statistics_cache->clear();
-
-    if (shared->selectivity_estimator_cache)
-        shared->selectivity_estimator_cache->clear();
-
     if (shared->index_uncompressed_cache)
         shared->index_uncompressed_cache->clear();
 
