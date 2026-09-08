@@ -32,16 +32,29 @@ void ApplyWithAliasVisitor::visit(ASTPtr & ast, const Data & data)
             for (const auto & with_alias : data.exprs)
             {
                 if (!current_names.contains(with_alias.first))
+                {
+                    /// Check the alias before cloning it: an alias that already grew past the limit at an
+                    /// outer level must not be materialised again here.
+                    if (data.max_expanded_ast_elements)
+                        with_alias.second->checkSize(data.max_expanded_ast_elements);
                     with->children.push_back(with_alias.second->clone());
+                }
             }
         }
         else if (!data.exprs.empty())
         {
             auto with_expression_list = make_intrusive<ASTExpressionList>();
             for (const auto & with_alias : data.exprs)
+            {
+                if (data.max_expanded_ast_elements)
+                    with_alias.second->checkSize(data.max_expanded_ast_elements);
                 with_expression_list->children.push_back(with_alias.second->clone());
+            }
             node_select->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list));
         }
+
+        if (data.max_expanded_ast_elements)
+            node_select->checkSize(data.max_expanded_ast_elements);
         for (auto & child : node_select->children)
         {
             if (child != node_select->with())
