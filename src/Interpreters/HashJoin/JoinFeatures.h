@@ -38,9 +38,6 @@ struct JoinFeatures
     static constexpr bool need_flags = MapGetter<KIND, STRICTNESS, mapsKindOf<Map>()>::flagged;
 
     static constexpr bool is_maps_all = std::is_same_v<std::decay_t<Map>, HashJoin::MapsAll>;
-
-    /// Whether the map stores no right row at all, so nothing of the right side can be read from it.
-    static constexpr bool is_maps_set = std::is_same_v<std::decay_t<Map>, HashJoin::MapsSet>;
 };
 
 }
