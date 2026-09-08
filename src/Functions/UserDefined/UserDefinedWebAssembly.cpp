@@ -625,11 +625,21 @@ public:
         serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
     }
 
-    /// Bytes a serialized block carries besides its rows: `BuffersWriter` prefixes the payloads
-    /// with a `UInt64` column count, a `UInt64` row count and one `UInt64` size per column.
+    /// Bytes a serialized block carries besides its rows, for the formats that frame a whole
+    /// block rather than a row: `BuffersWriter` prefixes the payloads with a `UInt64` column
+    /// count, a `UInt64` row count and one `UInt64` size per column, and `ColumnBinary` writes
+    /// a frame header followed by one fixed-size descriptor per column. Both amounts depend on
+    /// the column count alone, so a call pays them once however many rows it carries.
+    ///
+    /// A row-framing format has none: `RowBinary` and the text formats write only what a row
+    /// costs, so the whole stream is already accounted for by the per-row measurement.
     size_t blockFramingBytes(size_t num_columns) const
     {
-        return serialization_format == "Buffers" ? sizeof(UInt64) * (2 + num_columns) : 0;
+        if (serialization_format == "Buffers")
+            return sizeof(UInt64) * (2 + num_columns);
+        if (serialization_format == "ColumnBinary")
+            return ColumnBinaryWire::FRAME_HEADER_BYTES + num_columns * ColumnBinaryWire::COL_DESC_BYTES;
+        return 0;
     }
 
     String getName() const override { return function_name; }
