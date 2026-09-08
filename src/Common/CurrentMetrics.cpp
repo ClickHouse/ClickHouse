@@ -631,3 +631,5 @@ namespace CurrentMetrics
 }
 
 #undef APPLY_FOR_METRICS
+
+// perfect-sync CI test: intentional private-only divergence from public, do not merge
