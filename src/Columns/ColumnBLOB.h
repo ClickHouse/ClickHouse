@@ -164,6 +164,7 @@ public:
     std::string_view getDataAt(size_t) const override { throwInapplicable(); }
     bool supportsGetDataAt() const override { return false; }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
+    bool hasOnlyTypeDefaults() const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
     bool tryInsert(const Field &) override { throwInapplicable(); }
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -177,7 +178,6 @@ public:
     std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
     char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwInapplicable(); }
-    void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
