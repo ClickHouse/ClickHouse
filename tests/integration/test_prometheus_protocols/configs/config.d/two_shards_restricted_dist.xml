@@ -1,0 +1,27 @@
+<clickhouse>
+    <remote_servers>
+        <!-- The same two shard databases as `two_shards_dist`, over credentials of their own: a user that
+             may select and insert the shard databases and nothing else. Both replicas declare a
+             <default_database>, so neither is local and every check goes over the connection. -->
+        <two_shards_restricted>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_0</default_database>
+                    <user>prom_cluster_shard_user</user>
+                    <password></password>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_1</default_database>
+                    <user>prom_cluster_shard_user</user>
+                    <password></password>
+                </replica>
+            </shard>
+        </two_shards_restricted>
+    </remote_servers>
+</clickhouse>

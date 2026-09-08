@@ -85,6 +85,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"statistics_max_set_size_for_exact_selectivity_estimation", 10000, 10000, "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."},
             {"type_json_skip_null_typed_paths", false, false, "New setting to treat NULL values in typed JSON paths as absent"},
             {"insert_expected_table_engine", "", "", "New setting: an INSERT is refused unless the table it names has this engine; a Distributed table forwards it to its shards. Remote write over a Distributed table sets it to TimeSeries."},
+            {"insert_expected_column_types", "", "", "New setting: an INSERT is refused unless the table it names declares these columns with exactly these types; a Distributed table forwards it to its shards. Remote write over a Distributed table sets it to the time_series type the table declares."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {

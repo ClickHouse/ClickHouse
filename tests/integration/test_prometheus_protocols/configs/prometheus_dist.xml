@@ -51,6 +51,14 @@
                     <table>default.prom_dist_keyless</table>
                 </handler>
             </keyless_write>
+            <!-- The same shard shape over a cluster entry whose user holds only the shard databases. -->
+            <restricted_write>
+                <url>/restricted/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_restricted</table>
+                </handler>
+            </restricted_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>

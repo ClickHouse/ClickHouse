@@ -6,17 +6,17 @@
 #include <Client/ConnectionPool.h>
 #include <Columns/ColumnBLOB.h>
 #include <Common/Exception.h>
-#include <Common/NetException.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Parsers/parseQuery.h>
@@ -58,9 +58,12 @@ namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCOMPATIBLE_SCHEMA;
     extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_TABLE_ENGINE;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
 }
 
 std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(const IStorage & storage)
@@ -129,6 +132,18 @@ namespace
         return !(tryGetLiteralBool(ast.get(), value) && value);
     }
 
+    /// The engine a replica's own DDL names, empty when it names none.
+    String engineOfCreateQuery(const String & create_query, const ContextPtr & context)
+    {
+        const auto & settings = context->getSettingsRef();
+        ParserCreateQuery parser;
+        const auto ast = parseQuery(
+            parser, create_query.data(), create_query.data() + create_query.size(), "SHOW CREATE TABLE",
+            settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        const auto * create = ast->as<ASTCreateQuery>();
+        return create && create->storage && create->storage->engine ? create->storage->engine->name : "";
+    }
+
     /// Asks every replica itself, not one per shard as cluster() would, and afresh on every request: a verdict kept
     /// for later would let a same-schema table swapped in under the name meanwhile take a write unchecked.
     void checkShardTargets(
@@ -136,49 +151,63 @@ namespace
         const PrometheusQueryDistributedTarget & target,
         const ContextPtr & context,
         const ClusterPtr & cluster,
-        bool refuse_unavailable)
+        bool for_write)
     {
         const auto & remote_id = target.remote_time_series_storage_id;
         const auto metadata = storage.getInMemoryMetadataPtr(context, false);
         const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
-        /// An undeclared database is each replica's own default.
-        const String database_predicate = remote_id.database_name.empty() ? "currentDatabase()" : quoteString(remote_id.database_name);
-        const String table_predicate = quoteString(remote_id.table_name);
-        const String probe_query = "SELECT (SELECT engine FROM system.tables WHERE database = " + database_predicate
-            + " AND name = " + table_predicate + ") AS engine, (SELECT type FROM system.columns WHERE database = " + database_predicate
-            + " AND table = " + table_predicate + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries) + ") AS ts_type";
-        const auto nullable_string = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-        const auto probe_header = std::make_shared<const Block>(Block{{nullable_string, "engine"}, {nullable_string, "ts_type"}});
+        /// An undeclared database is each replica's own default, as it is for the read and the write themselves.
+        const String qualified_name = remote_id.database_name.empty()
+            ? backQuoteIfNeed(remote_id.table_name)
+            : backQuoteIfNeed(remote_id.database_name) + "." + backQuoteIfNeed(remote_id.table_name);
+        const auto string_type = std::make_shared<DataTypeString>();
+        const auto create_header = std::make_shared<const Block>(Block{{string_type, "statement"}});
+        const auto describe_header = std::make_shared<const Block>(Block{{string_type, "name"}, {string_type, "type"}});
 
         /// On the server's own context, and only ever after the caller's own grants are checked: a read
         /// requires READ ON REMOTE above, so the probe reports nothing the caller's own cluster() could not.
         auto probe_context = Context::createCopy(context->getGlobalContext());
         probe_context->makeQueryContext();
         probe_context->setCurrentQueryId("");
-        /// An unreachable replica then answers nothing rather than failing the probe; judged below.
+        /// An unreachable replica then answers nothing rather than failing the probe; a missing table is still
+        /// an exception, which the caller of a shard cannot be left to discover for itself.
         probe_context->setSetting("skip_unavailable_shards", true);
+        probe_context->setSetting("skip_unavailable_shards_mode", String("unavailable"));
+        /// The type must come back as the column declares it, and only the table's own columns.
+        probe_context->setSetting("describe_include_subcolumns", false);
+        probe_context->setSetting("describe_include_virtual_columns", false);
+        probe_context->setSetting("print_pretty_type_names", false);
 
         UInt64 wrong_engine_replicas = 0;
         UInt64 wrong_type_replicas = 0;
         std::set<String> wrong_types;
         /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
         Strings unavailable_replicas;
-        auto judge = [&](const String & replica, const Field & engine, const Field & ts_type)
+        auto judge = [&](const String & replica, const String & engine, const String & ts_type, const String & unavailable)
         {
-            if (engine.isNull())
-                unavailable_replicas.push_back(fmt::format("{} (no table {})", replica, backQuoteIfNeed(remote_id.table_name)));
-            else if (engine.safeGet<String>() != "TimeSeries")
+            if (!unavailable.empty())
+                unavailable_replicas.push_back(fmt::format("{} ({})", replica, unavailable));
+            /// A replica that answered but names no engine of its own holds a view or a dictionary.
+            else if (engine != "TimeSeries")
                 ++wrong_engine_replicas;
             /// Not exposed to the probe, or not there at all: the type went unchecked either way.
-            else if (ts_type.isNull())
+            else if (ts_type.empty())
                 unavailable_replicas.push_back(fmt::format(
                     "{} (no `{}` column on {})", replica, TimeSeriesColumnNames::TimeSeries, backQuoteIfNeed(remote_id.table_name)));
-            else if (ts_type.safeGet<String>() != time_series_type)
+            else if (ts_type != time_series_type)
             {
                 ++wrong_type_replicas;
-                wrong_types.insert(ts_type.safeGet<String>());
+                wrong_types.insert(ts_type);
             }
+        };
+
+        /// One service query on the replica's own connection, block by block.
+        auto ask = [&](const auto & pool, const String & query, const auto & header, auto && on_block)
+        {
+            RemoteQueryExecutor probe(pool, query, header, probe_context);
+            for (Block block = probe.readBlock(); !block.empty(); block = probe.readBlock())
+                on_block(convertBLOBColumns(block));
         };
 
         for (const auto [shard_info, shard_addresses] : std::views::zip(cluster->getShardsInfo(), cluster->getShardsAddresses()))
@@ -188,8 +217,9 @@ namespace
                 /// prefer_localhost_replica on, the read parallel replicas off), so its table is resolved here, as they will.
                 if (address.is_local)
                 {
-                    Field engine;
-                    Field ts_type;
+                    String engine;
+                    String ts_type;
+                    String unavailable;
                     if (const auto table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(remote_id), context))
                     {
                         engine = table->getName();
@@ -197,28 +227,47 @@ namespace
                         if (const auto * column = local_metadata->columns.tryGet(TimeSeriesColumnNames::TimeSeries))
                             ts_type = column->type->getName();
                     }
-                    judge(pool->getAddress(), engine, ts_type);
+                    else
+                        unavailable = fmt::format("no table {}", backQuoteIfNeed(remote_id.table_name));
+                    judge(pool->getAddress(), engine, ts_type, unavailable);
                     continue;
                 }
 
-                RemoteQueryExecutor probe(pool, probe_query, probe_header, probe_context);
+                /// SHOW CREATE TABLE and DESC TABLE ask the replica for SHOW COLUMNS on that table alone, which any
+                /// grant on it implies: the probe asks for nothing the read and the write on that replica do not.
+                String engine;
+                String ts_type;
+                String unavailable;
                 bool answered = false;
                 try
                 {
-                    for (Block block = probe.readBlock(); !block.empty(); block = probe.readBlock())
+                    ask(pool, "SHOW CREATE TABLE " + qualified_name, create_header, [&](const Block & block)
                     {
-                        block = convertBLOBColumns(block);
                         answered = true;
-                        judge(pool->getAddress(), (*block.getByPosition(0).column)[0], (*block.getByPosition(1).column)[0]);
-                    }
+                        engine = engineOfCreateQuery((*block.getByPosition(0).column)[0].safeGet<String>(), context);
+                    });
+                    /// The DDL of a table attached from an older version can still name the outer columns it had then.
+                    if (engine == "TimeSeries")
+                        ask(pool, "DESC TABLE " + qualified_name, describe_header, [&](const Block & block)
+                        {
+                            const auto & names = *block.getByPosition(0).column;
+                            const auto & types = *block.getByPosition(1).column;
+                            for (size_t row = 0; row != names.size(); ++row)
+                                if (names[row].safeGet<String>() == TimeSeriesColumnNames::TimeSeries)
+                                    ts_type = types[row].safeGet<String>();
+                        });
                 }
-                catch (const NetException &)
+                catch (const Exception & e)
                 {
-                    /// A pooled connection to a replica that went away unnoticed fails on first use, not when handed out.
-                    answered = false;
+                    /// Anything the replica could not answer leaves its target unverified, as an unreachable one is.
+                    unavailable = e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE
+                        ? fmt::format("no table {}", backQuoteIfNeed(remote_id.table_name))
+                        : "unreachable";
                 }
-                if (!answered)
-                    unavailable_replicas.push_back(fmt::format("{} (unreachable)", pool->getAddress()));
+                /// A connection the pool could not open is skipped rather than raised, so it answers nothing.
+                if (unavailable.empty() && !answered)
+                    unavailable = "unreachable";
+                judge(pool->getAddress(), engine, ts_type, unavailable);
             }
 
         if (wrong_engine_replicas)
@@ -229,14 +278,15 @@ namespace
 
         if (wrong_type_replicas)
             throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
+                /// A write must be refused with a retryable status, or Prometheus drops the batch it could resend.
+                for_write ? ErrorCodes::INCOMPATIBLE_SCHEMA : ErrorCodes::TYPE_MISMATCH,
                 "This operation is not supported over table {}: {} shard-local target(s) named {} declare `{}` as {} "
                 "while the table declares {}",
                 storage.getStorageID().getNameForLogs(), wrong_type_replicas, backQuoteIfNeed(remote_id.table_name),
                 TimeSeriesColumnNames::TimeSeries, fmt::join(wrong_types, ", "), time_series_type);
 
         /// A replica the check could not see would take the samples unchecked.
-        if (refuse_unavailable && !unavailable_replicas.empty())
+        if (for_write && !unavailable_replicas.empty())
             throw Exception(
                 ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                 "Remote write over table {} is refused while it has no verified target on {}: retry once it has one",
@@ -302,7 +352,7 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     }
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
-    checkShardTargets(storage, *target, context, cluster, /* refuse_unavailable = */ false);
+    checkShardTargets(storage, *target, context, cluster, /* for_write = */ false);
 }
 
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context)
@@ -336,7 +386,7 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
         }
     }
 
-    checkShardTargets(storage, *target, context, cluster, /* refuse_unavailable = */ true);
+    checkShardTargets(storage, *target, context, cluster, /* for_write = */ true);
 }
 
 }
