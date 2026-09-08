@@ -20,7 +20,8 @@ public:
         const SharedHeader & input_header_,
         SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+        PreparedSetsCachePtr prepared_sets_cache_,
+        bool speculative_build_ = false);
 
     String getName() const override { return "CreatingSet"; }
 
@@ -45,6 +46,11 @@ private:
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
     bool preliminary_distinct = false;
+
+    /// The set is filled during analysis (`FutureSetFromSubquery::buildSetInplace` /
+    /// `::buildOrderedSetInplace`), so a build that stops without creating it can still be redone by the
+    /// runtime build. A runtime build has no such second chance.
+    bool speculative_build = false;
 };
 
 class CreatingSetsStep : public IQueryPlanStep

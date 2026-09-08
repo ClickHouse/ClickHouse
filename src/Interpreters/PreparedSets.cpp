@@ -415,7 +415,8 @@ bool FutureSetFromSubquery::hasExternalTable() const
 
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
-std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(
+    const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache, bool speculative_build)
 {
     if (set_and_key->set->isCreated())
         return nullptr;
@@ -436,7 +437,8 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
         plan->getCurrentHeader(),
         set_and_key,
         network_transfer_limits,
-        prepared_sets_cache);
+        prepared_sets_cache,
+        speculative_build);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
@@ -478,7 +480,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
         prepared_sets_cache = nullptr;
     }
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
+    auto plan = build(network_transfer_limits, prepared_sets_cache, /*speculative_build=*/true);
 
     if (!plan)
         return;
@@ -652,7 +654,8 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
             plan_to_complete.getCurrentHeader(),
             tmp_set_and_key,
             network_transfer_limits,
-            cache);
+            cache,
+            /*speculative_build_=*/true);
         creating_set->setStepDescription("Create set for subquery");
         plan_to_complete.addStep(std::move(creating_set));
 
@@ -671,7 +674,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// `CreatingSetStep` to the canonical `set_and_key` (as this code always did). On a silent failure
         /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
         /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
-        plan = build(network_transfer_limits, prepared_sets_cache);
+        plan = build(network_transfer_limits, prepared_sets_cache, /*speculative_build=*/true);
         if (!plan)
             return nullptr;
 
