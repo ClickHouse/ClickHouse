@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, shard
+# Tags: no-parallel, no-fasttest, shard
 # Tag no-parallel: the failpoints are server-global and this test *waits* on them, so a concurrent
 #   instance could satisfy this instance's `SYSTEM WAIT FAILPOINT ... PAUSE` from its own executor.
 #   `PAUSEABLE_ONCE` bounds parks per arming, not across concurrent instances.
+# Tag no-fasttest: Fast test allows 60 s per test and abandons the run at 126 s; this test synchronises
+#   four failpoints, so a rig where the fixture cannot form spends its bounded diagnostics instead. The
+#   regular stateless jobs allow 600 s, which is where it belongs.
 # Tag shard: uses a two-shards Distributed table.
 
 # Regression test for `RemoteQueryExecutor::cancel` waiting for `finish`'s packet drain. `finish`
@@ -145,6 +148,9 @@ if [ "$armed" -eq 1 ]; then
         if ! wait_pause "$fp"; then
             failed=1
             sync_ok=0
+            # The fixture is already broken and `wait_pause` has already named the failpoint; a second
+            # 30 s wait cannot add information, and the runner's budget is finite.
+            break
         fi
     done
 fi
@@ -209,6 +215,9 @@ if [ "$armed" -eq 1 ]; then
         if ! wait_pause "$fp"; then
             failed=1
             sync_ok=0
+            # The fixture is already broken and `wait_pause` has already named the failpoint; a second
+            # 30 s wait cannot add information, and the runner's budget is finite.
+            break
         fi
     done
 fi
