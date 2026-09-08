@@ -7,6 +7,7 @@ FAIL="\tFAIL\t\\N\t"
 
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
+START_SERVER_READY_TIMEOUT=120
 
 function escaped()
 {
@@ -112,6 +113,12 @@ function configure()
     #
     /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk "$@"
 
+    # These jobs mix config drop-ins and binaries of different versions (the upgrade
+    # check boots the previous release with the current repo's configs) - an unknown
+    # config option is expected here and must not prevent the server from starting.
+    echo "<clickhouse><skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings></clickhouse>" \
+        > /etc/clickhouse-server/config.d/skip_check_for_incorrect_settings.xml
+
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
       | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" \
@@ -175,7 +182,12 @@ EOL
     # Similar to docker/test/fuzzer/query-fuzzer-tweaks-users.xml
     echo "Setting max_memory_usage_for_user=$max_users_mem and max_memory_usage for queries to 10G"
     # The heredoc delimiter is unquoted so that ${max_users_mem} expands. That also means backticks
-    # and $(...) would be evaluated, so keep them out of the XML comments below.
+    # and $(...) would be evaluated, and its XML comments cannot hold a double hyphen, so the
+    # rationale for the `allow_experimental_window_view` constraint below lives here: the upgrade
+    # check replays the previous release's test suite under its own binary, which still creates
+    # window views, and `clickhouse-test --upgrade-check` passes `--fake-drop`, so they stay in the
+    # metadata for the new binary to fail on. Keep it readonly, rather than set to `false`, until
+    # that suite stops creating them: assigning an obsolete setting makes the new binary warn.
     cat > /etc/clickhouse-server/users.d/stress_test_tweaks-users.xml <<EOL
 <clickhouse>
     <profiles>
@@ -220,19 +232,6 @@ EOL
                     <readonly/>
                 </max_ast_depth>
 
-                <!--
-                 `WINDOW VIEW` is removed, and the setting is an obsolete no-op here, but the upgrade
-                 check runs the *previous release's* test suite under the *previous release's* binary,
-                 which still accepts `CREATE WINDOW VIEW`. `clickhouse-test --upgrade-check` runs the
-                 client with `--fake-drop`, so those tests' `DROP TABLE` is ignored and the window view
-                 is left in the metadata, which the new binary then cannot load on the post-upgrade
-                 restart. Keep the setting unchangeable until the previous release no longer contains
-                 tests that create window views. The constraint alone is enough: it rejects any change
-                 with `SETTING_CONSTRAINT_VIOLATION`, and both binaries default the setting to `false`.
-                 Assigning the value in the profile instead would mark an obsolete setting as changed on
-                 the new binary, which adds an `Obsolete setting` entry to `system.warnings` that
-                 `01945_system_warnings` asserts is absent.
-                -->
                 <allow_experimental_window_view>
                     <readonly/>
                 </allow_experimental_window_view>
@@ -351,6 +350,16 @@ function wait_server_ports_free()
     done
 }
 
+function report_start_failure()
+{
+    echo "Cannot start clickhouse-server"
+    rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
+    echo -e "Cannot start clickhouse-server$FAIL$1$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
+    cat /var/log/clickhouse-server/stdout.log
+    tail -n100 /var/log/clickhouse-server/stderr.log
+    tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
+}
+
 function start_server()
 {
     # After safeExit (forceful shutdown), the kernel may still be cleaning up sockets,
@@ -359,27 +368,33 @@ function start_server()
 
     counter=0
     max_attempt=${1:-6}
-    until clickhouse-client --receive_timeout 30 --query "SELECT 1"
+    local ready_timeout=${2:-$START_SERVER_READY_TIMEOUT}
+    # The client port opens only after the databases are loaded, so a running server is bounded
+    # by time and only a server that exited is bounded by the number of starts.
+    local wait_start=$SECONDS
+    until clickhouse-client --handshake_timeout_ms=30000 --receive_timeout 30 --query "SELECT 1"
     do
-        if [ "$counter" -gt "$max_attempt" ]
-        then
-            echo "Cannot start clickhouse-server"
-            rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
-            echo -e "Cannot start clickhouse-server$FAIL$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
-            cat /var/log/clickhouse-server/stdout.log
-            tail -n100 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
-            return 1
-        fi
         # Only wait for ports and restart if the previous daemon actually exited.
         # If the process is still alive, the ports are bound by a healthy but
         # slow-starting server — just retry the readiness check.
-        if [ "$counter" -eq 0 ] || ! pgrep -x clickhouse-serv > /dev/null 2>&1; then
+        if [ "$counter" -eq 0 ] || ! pgrep -x clickhouse-serv > /dev/null 2>&1
+        then
+            if [ "$counter" -gt "$max_attempt" ]
+            then
+                report_start_failure "server process is not running after $counter start attempts"
+                return 1
+            fi
             [ "$counter" -gt 0 ] && wait_server_ports_free
             clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
+            counter=$((counter + 1))
+            # The deadline covers one daemon instance, so each start re-anchors it.
+            wait_start=$SECONDS
+        elif [ "$SECONDS" -ge "$((wait_start + ready_timeout))" ]
+        then
+            report_start_failure "a clickhouse-server process is running but did not become ready in $((SECONDS - wait_start))s after start attempt $counter completed"
+            return 1
         fi
         sleep 10
-        counter=$((counter + 1))
     done
 }
 

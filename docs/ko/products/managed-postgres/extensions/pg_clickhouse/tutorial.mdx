@@ -14,6 +14,11 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhou
 이 튜토리얼은 [ClickHouse 튜토리얼]을 따르되, 모든 쿼리는
 pg&#95;clickhouse를 통해 실행합니다.
 
+`pg_clickhouse`를 구성하는 방법을 선택하십시오.
+
+* ClickHouse Managed Postgres를 사용하는 경우 [Console에서](#from-console)를 선택하십시오.
+* 확장 기능을 직접 설치하고 구성하는 경우 [PSQL에서](#from-psql)를 선택하십시오.
+
 <div id="start-clickhouse">
   ## ClickHouse 시작하기
 </div>
@@ -163,6 +168,43 @@ SELECT * FROM s3(
 SELECT count() FROM taxi.trips;
 quit
 ```
+
+<div id="from-console">
+  ## 콘솔에서
+</div>
+
+ClickHouse Managed Postgres를 사용하는 경우 ClickHouse Cloud
+콘솔에서 `pg_clickhouse`를 구성하고 ClickHouse 서비스에 연결할 수
+있습니다. Managed Postgres 서비스를 열고 **설정**을 선택한 다음
+**ClickHouse 통합** 섹션을 찾습니다. **pg&#95;clickhouse 활성화**를 클릭합니다.
+
+설정 양식에서 외부 서버 이름을 입력합니다. 연결에 사용할 ClickHouse
+서비스, 데이터베이스 및 사용자를 선택합니다. ClickHouse
+비밀번호를 입력한 후 ClickHouse 테이블을 가져올 Postgres 데이터베이스와 대상 스키마를
+선택합니다. **연결**을 클릭하여 외부 서버를 생성하고 스키마를 가져옵니다.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="ClickHouse Cloud 콘솔의 taxi 데이터베이스용 pg_clickhouse 설정 양식" size="lg" border />
+
+설정이 완료되면 콘솔에 확인 메시지가 표시되고 서버 목록에 외부
+서버가 나타납니다.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="ClickHouse Cloud 콘솔에서 완료된 taxi 데이터베이스용 pg_clickhouse 설정" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="taxi pg_clickhouse 연결을 보여주는 외부 서버 목록" size="lg" border />
+
+이제 Postgres **SQL 콘솔**을 열고 가져온 테이블을 쿼리할 수
+있습니다:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+이 튜토리얼의 택시 예시를 따라 하려면 `taxi` ClickHouse
+데이터베이스를 선택하고 `taxi` 대상 스키마로 가져오세요.
+
+<div id="from-psql">
+  ## PSQL에서
+</div>
 
 <div id="install-pg_clickhouse">
   ### pg_clickhouse 설치
