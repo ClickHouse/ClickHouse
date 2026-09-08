@@ -29,7 +29,11 @@ CREATE TABLE constant_column_after_filter_projection_write
     message String
 )
 ENGINE = MergeTree
-ORDER BY time
+-- Order the base table by a different column than the projection: since
+-- https://github.com/ClickHouse/ClickHouse/pull/116854 `read-in-order` on the base table runs
+-- before projection selection, so a base table sorted by `time` would serve `ORDER BY time` itself
+-- and the projection would never be picked.
+ORDER BY message
 SETTINGS min_bytes_for_wide_part = 1000000000;
 
 ALTER TABLE constant_column_after_filter_projection_write ADD PROJECTION pageview_projection
