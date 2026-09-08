@@ -24,17 +24,31 @@ public:
     /// Drop table or database.
     BlockIO execute() override;
 
+    /// Runs `kind` on a table owned by another table, such as an inner table of a materialized view.
+    ///
+    /// A `Replicated` database has one ZooKeeper transaction per query and it can be consumed only once. Set
+    /// `propagate_metadata_transaction` to false when one query touches several owned tables: `TRUNCATE` of a `TimeSeries`
+    /// table truncates four inner tables, and the second one would fail. `DDLWorker` commits the transaction after the
+    /// query instead.
     static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
-                                 const StorageID & target_table_id, bool sync, bool ignore_sync_setting = false, bool need_ddl_guard = false);
+                                 const StorageID & target_table_id, bool sync, bool ignore_sync_setting = false, bool need_ddl_guard = false,
+                                 bool propagate_metadata_transaction = true);
 
     bool supportsTransactions() const override;
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
+    void setInternal(bool internal_)
+    {
+        internal = internal_;
+    }
+
 private:
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
     ASTPtr current_query_ptr;
+    /// Is this a step of another statement rather than a DROP the user issued.
+    bool internal = false;
 
     BlockIO executeSingleDropQuery(const ASTPtr & drop_query_ptr);
     BlockIO executeToDatabase(const ASTDropQuery & query);

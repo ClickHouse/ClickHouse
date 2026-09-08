@@ -6,7 +6,7 @@ tags: ['الأمان والمصادقة', 'الأخطاء والاستثناءا
 keywords: ['خطأ', 'شهادة SSL', '210']
 ---
 
-<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+<div id="resolving-ssl-certificate-verify-error-in-clickhouse">
   ## حل خطأ التحقق من شهادة SSL ذي الرمز 210 في ClickHouse
 </div>
 
@@ -20,7 +20,7 @@ keywords: ['خطأ', 'شهادة SSL', '210']
 
 يحدث هذا الخطأ أثناء محاولة الاتصال بخادم ClickHouse باستخدام `clickhouse-client`. ويكون سبب الخطأ أحد الأمرين التاليين:
 
-* أن ملف التهيئة `config.xml` يفتقد إلى الشهادة الجذرية في مخزن شهادات CA الافتراضي على الجهاز، أو
+* أن ملف التهيئة `config.xml` يفتقد إلى شهادة الجذر في مخزن شهادات CA الافتراضي على الجهاز، أو
 * وجود شهادة CA موقعة ذاتيًا أو شهادة صادرة عن CA داخلية غير مُهيأة
 
 <div id="solution">
@@ -46,8 +46,39 @@ keywords: ['خطأ', 'شهادة SSL', '210']
 </openSSL>
 ```
 
+<div id="python-clients-on-macos">
+  ## عملاء بايثون على macOS
+</div>
+
+يُظهر عملاء بايثون هذا الخطأ بصيغة مختلفة، وعادةً ما تكون كالتالي:
+
+`ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`
+
+على macOS، يتحقق إصدار بايثون من python.org من الشهادات عبر المسارات الافتراضية لـ OpenSSL بدلًا من سلسلة مفاتيح النظام. في التثبيت الجديد، لا تشير هذه المسارات إلى أي حزمة شهادات الجذر: يرفق المثبّت [certifi](https://pypi.org/project/certifi/)، لكنه لا يربطه بالموقع الافتراضي لـ OpenSSL إلا بعد تشغيل البرنامج النصي المرفق `Install Certificates.command`. وحتى ذلك الحين، لا يتمكن العميل من التحقق من صحة شهادة الخادم الخاصة بـ ClickHouse Cloud، رغم أن هذه الشهادة صالحة. وينطبق ذلك عمومًا على إصدارات python.org المخصّصة لـ macOS (بايثون 3.6 والإصدارات الأحدث)، وليس على بايثون 3.11 فقط.
+
+شغّل `Install Certificates.command` لربط certifi بمسار الشهادات الافتراضي في OpenSSL. وعدّل رقم الإصدار في المسار ليتوافق مع التثبيت لديك:
+
+```bash
+open "/Applications/Python 3.11/Install Certificates.command"
+```
+
+بدلاً من ذلك، وجّه العميل إلى حزمة certifi مباشرةً. لا يلجأ [ClickHouse Connect](/ar/integrations/language-clients/python/index) إلى certifi تلقائيًا، لذا مرّر الحزمة عبر المعامل `ca_cert`:
+
+```python
+import certifi
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host='HOSTNAME.clickhouse.cloud',
+    port=8443,
+    username='default',
+    password='YOUR_SECRET_PASSWORD',
+    ca_cert=certifi.where(),
+)
+```
+
 <div id="additional-resources">
   ## موارد إضافية
 </div>
 
-اطّلع على [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/ar/concepts/features/interfaces/cli#custom-config-files)
+راجع [وثائق تهيئة `clickhouse-client`](/ar/concepts/features/interfaces/client#configuration_files).

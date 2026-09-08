@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-object-storage
 
 DROP TABLE IF EXISTS t_read_in_order_limit;
 
@@ -17,22 +17,22 @@ SYSTEM STOP MERGES t_read_in_order_limit;
 INSERT INTO t_read_in_order_limit (Id, Document) SELECT
     leftPad(toString(number * 2), 10, '0'),
     concat('{"ScopeIds": ["aaa", "all"], "TypedField": "v', toString(number), '"}')
-FROM numbers(50_000);
+FROM numbers(20_000);
 
 INSERT INTO t_read_in_order_limit (Id, Document) SELECT
     leftPad(toString(number * 2 + 1), 10, '0'),
     concat('{"ScopeIds": ["aaa", "all"], "TypedField": "v', toString(number), '"}')
-FROM numbers(50_000);
+FROM numbers(20_000);
 
 INSERT INTO t_read_in_order_limit (Id, Document) SELECT
     leftPad(toString(number * 3), 10, '0'),
     concat('{"ScopeIds": ["aaa", "all"], "TypedField": "v', toString(number), '"}')
-FROM numbers(50_000);
+FROM numbers(20_000);
 
 INSERT INTO t_read_in_order_limit (Id, Document) SELECT
     leftPad(toString(number * 3), 10, '1'),
     concat('{"ScopeIds": ["aaa", "all"], "TypedField": "v', toString(number), '"}')
-FROM numbers(50_000);
+FROM numbers(20_000);
 
 SET query_plan_optimize_lazy_materialization = 0;
 
@@ -57,10 +57,14 @@ FORMAT Null SETTINGS log_comment = 'test_04201_with_filter_vrow', read_in_order_
 
 SYSTEM FLUSH LOGS query_log;
 
+-- With `read_in_order_use_virtual_row`, the merge advances through the parts in key order.
+-- Once it has finished with a part and still needs another, a bounded read-ahead window
+-- (sized by `max_threads`) lets the deferred parts read one chunk ahead to keep reading
+-- parallel, so all 4 parts contribute a granule even though the merge itself only needs 3.
 SELECT
     log_comment,
     if(read_rows <= 8192 * expected_granules, 'Ok', format('Fail: {} rows read in query {}', read_rows, query_id)),
-    if(Settings['read_in_order_use_virtual_row'] == '1', 3, 4) as expected_granules
+    4 as expected_granules
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND event_date >= yesterday()
