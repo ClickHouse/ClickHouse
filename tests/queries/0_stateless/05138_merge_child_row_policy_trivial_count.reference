@@ -1,0 +1,4 @@
+rows visible through Merge	[1,4,5,6]
+count, trivial count disabled	4
+count, trivial count enabled	4
+count, sparsity filter enabled	4
