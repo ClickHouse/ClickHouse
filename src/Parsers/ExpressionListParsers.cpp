@@ -209,12 +209,16 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     auto aggregate_function = makeASTFunction(aggregate_function_name, make_intrusive<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
 
-    /// `x op ALL (empty set)` must be TRUE (vacuous truth), but the aggregate functions used for the rewrite
-    /// cannot express it: `singleValueOrNull` returns NULL for an empty set, so `x IN (NULL)` is FALSE, and
-    /// `min` / `max` return the default value of the type. So for ALL we also need to know whether the
-    /// right-hand side is empty. To avoid evaluating the right-hand side twice - which is observable with
-    /// non-deterministic subqueries - `count` and the aggregate are computed in a single SELECT, and the two
-    /// values are taken apart with `tupleElement` afterwards.
+    /// `x op ALL (empty set)` must be TRUE (vacuous truth). This is what the aggregate-based rewrites below
+    /// (`= ALL`, `< ALL`, `<= ALL`, `> ALL`, `>= ALL`) get wrong without extra care: `singleValueOrNull`
+    /// returns NULL for an empty set, so `x IN (NULL)` is FALSE, and `min` / `max` return the default value
+    /// of the type. So for ALL we also need to know whether the right-hand side is empty. To avoid evaluating
+    /// the right-hand side twice - which is observable with non-deterministic subqueries - `count` and the
+    /// aggregate are computed in a single SELECT, and the two values are taken apart with `tupleElement`
+    /// afterwards.
+    /// `!= ALL` is not handled here: it returns early above as a plain `notIn`, which already yields TRUE on
+    /// an empty right-hand side for a non-NULL left-hand side. `NULL != ALL (empty set)` keeps returning NULL,
+    /// following the NULL semantics of `notIn` (and mirroring `NULL = ANY (empty set)`), instead of TRUE.
     const bool vacuous_truth = type == SubqueryFunctionType::ALL;
 
     ASTPtr projection = aggregate_function;
