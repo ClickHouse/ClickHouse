@@ -391,6 +391,9 @@ String StorageObjectStorage::getName() const
 void StorageObjectStorage::switchToWriteCapableObjectStorage(const ContextPtr & context)
 {
     object_storage = configuration->createObjectStorage(context, /* is_readonly */false, std::nullopt);
+    /// The client this replaces had the server configuration applied to it during construction;
+    /// re-run the same step so the replacement is not left with a plainer set of settings.
+    configuration->update(object_storage, context);
 }
 
 bool StorageObjectStorage::prefersLargeBlocks() const
