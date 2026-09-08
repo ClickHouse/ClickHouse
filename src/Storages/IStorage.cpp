@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <Storages/maskEngineSettingValue.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTSetQuery.h>
@@ -341,6 +342,15 @@ TableSettings IStorage::getTableSettings(ContextPtr context) const
         described.name = change.name;
         described.value = convertFieldToString(change.value);
         described.origin = TableSettingOrigin::Definition;
+
+        /// Through the same helper the settings-struct path uses, and for the same reason: whether a
+        /// value is redacted must not depend on which of the two built the row. A definition can
+        /// state `url_base`, `s3_base` or `format_avro_schema_registry_url` with a credential in it,
+        /// and `SHOW CREATE TABLE` hides those - so this has to as well.
+        String masked = described.value;
+        if (maskEngineSettingValue(described.name, change.value, masked))
+            described.masked_value = std::move(masked);
+
         result.push_back(std::move(described));
     }
     return result;
