@@ -109,7 +109,16 @@ public:
     /// that a user whose profile lowers these limits does not have the server act on parameters
     /// that exceed them. Names and values are checked after percent-decoding, i.e. as the server
     /// holds them. A zero `http_max_fields` disables the check of the number of fields.
-    void checkFieldLimits(const Settings & settings) const;
+    /// Returns the number of fields that were checked.
+    size_t checkFieldLimits(const Settings & settings) const;
+
+    /// Sets the number of fields that have already been counted against `http_max_fields` outside of
+    /// this form (the non-exempt parameters of the URL query string, see `checkFieldLimits`), so that
+    /// the body parsers continue counting from it instead of restarting from zero. `http_max_fields`
+    /// bounds the number of fields of the whole request, so it must not be possible to send the limit
+    /// in the query string and the limit again in the body. `load`, which reads the whole form itself,
+    /// resets it.
+    void carryOverFieldCount(size_t count) { fields_carried_over = count; }
 
     static const std::string ENCODING_URL; /// "application/x-www-form-urlencoded"
     static const std::string ENCODING_MULTIPART; /// "multipart/form-data"
@@ -136,6 +145,8 @@ private:
     /// See applyBodyLimits. These limits are initialized from the constructor's settings and
     /// reapplied from the authenticated user's settings before the request body is parsed.
     size_t max_fields_number = 0;
+    /// See carryOverFieldCount.
+    size_t fields_carried_over = 0;
     size_t max_field_name_size = 0;
     size_t max_field_value_size = 0;
     size_t max_multipart_form_data_size = 0;

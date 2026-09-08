@@ -67,7 +67,7 @@ void HTMLForm::applyBodyLimits(const Settings & settings)
 }
 
 
-void HTMLForm::checkFieldLimits(const Settings & settings) const
+size_t HTMLForm::checkFieldLimits(const Settings & settings) const
 {
     const size_t max_fields = settings[Setting::http_max_fields];
     const size_t max_name_size = settings[Setting::http_max_field_name_size];
@@ -86,6 +86,8 @@ void HTMLForm::checkFieldLimits(const Settings & settings) const
             throw Poco::Net::HTMLFormException("Field value too long");
         ++fields;
     }
+
+    return fields;
 }
 
 
@@ -122,6 +124,8 @@ HTMLForm::HTMLForm(const Settings & settings, const Poco::URI & uri) : HTMLForm(
 void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler)
 {
     clear();
+    /// The whole form, the query string included, is read here, so nothing is carried over from a previous read.
+    fields_carried_over = 0;
 
     Poco::URI uri(request.getURI());
     const std::string & query = uri.getRawQuery();
@@ -174,7 +178,12 @@ void HTMLForm::read(ReadBuffer & in)
 
 void HTMLForm::readQuery(ReadBuffer & in)
 {
-    size_t fields = 0;
+    /// An empty input carries no field at all - in particular, a body-less request must not
+    /// consume a slot of the total field limit shared with the query string.
+    if (in.eof())
+        return;
+
+    size_t fields = fields_carried_over;
     char ch = 0;  // silence "uninitialized" warning from gcc-*
     bool is_first = true;
 
@@ -233,7 +242,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
     /// Assume there is always a boundary provided.
     chassert(!boundary.empty());
 
-    size_t fields = 0;
+    size_t fields = fields_carried_over;
     MultipartReadBuffer in(in_, boundary, max_multipart_form_data_size, max_request_header_size);
 
     if (!in.skipToNextBoundary())

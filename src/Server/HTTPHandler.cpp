@@ -319,7 +319,12 @@ void HTTPHandler::processQuery(
         if (!parameters_used_before_revalidation.contains(name))
             parameters_to_revalidate.add(name, value);
     }
-    parameters_to_revalidate.checkFieldLimits(session->sessionContext()->getSettingsRef());
+    const size_t revalidated_parameters = parameters_to_revalidate.checkFieldLimits(session->sessionContext()->getSettingsRef());
+    /// `http_max_fields` bounds the number of fields of the request as a whole, so the parsers of the
+    /// request body have to continue counting from the parameters of the query string instead of
+    /// restarting from zero - otherwise the limit could be exceeded by splitting the fields between
+    /// the two carriers.
+    params.carryOverFieldCount(revalidated_parameters);
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
