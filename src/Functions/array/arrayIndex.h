@@ -19,6 +19,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Core/AccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
@@ -132,6 +133,12 @@ private:
 
     static bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
+        if (isNaN(left[i]))
+            return true;
+
+        if (isNaN(right))
+            return false;
+
         return accurate::greaterOrEqualsOp(left[i], right);
     }
 
