@@ -120,11 +120,16 @@ function assert_stop_propagated()
     SETTINGS max_rows_to_read = 0"
 }
 
-run_arm "${CLICKHOUSE_TEST_UNIQUE_NAME}_local" 1
-assert_stop_propagated "local exchanges" "${CLICKHOUSE_TEST_UNIQUE_NAME}_local"
+# The log lookups match by query id over a full day of rows, so the id has to be unique per run.
+# `CLICKHOUSE_TEST_UNIQUE_NAME` only varies with the database, and a run can be given a fixed
+# database for a whole pass over the suite, which would let an earlier run of this test answer them.
+RUN_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_$(random_str 8)"
 
-run_arm "${CLICKHOUSE_TEST_UNIQUE_NAME}_remote" 0
-assert_stop_propagated "remote exchanges" "${CLICKHOUSE_TEST_UNIQUE_NAME}_remote"
+run_arm "${RUN_ID}_local" 1
+assert_stop_propagated "local exchanges" "${RUN_ID}_local"
+
+run_arm "${RUN_ID}_remote" 0
+assert_stop_propagated "remote exchanges" "${RUN_ID}_remote"
 
 $CLICKHOUSE_CLIENT --query "
 DROP TABLE t_dp_limit_stop;

@@ -71,7 +71,10 @@ CREATE TABLE t_dp_idle_sink_dim (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_dp_idle_sink_dim SELECT number FROM numbers(1000);
 "
 
-QUERY_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_idle_sink"
+# The log lookups match by query id over a full day of rows, so the id has to be unique per run.
+# `CLICKHOUSE_TEST_UNIQUE_NAME` only varies with the database, and a run can be given a fixed
+# database for a whole pass over the suite, which would let an earlier run of this test answer them.
+QUERY_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_idle_sink_$(random_str 8)"
 
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" --query "
 SELECT count() FROM
