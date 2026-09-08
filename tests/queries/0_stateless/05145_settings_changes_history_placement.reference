@@ -6,6 +6,9 @@ not yet in 26.7
 distributed_cache_min_inflight_bytes_to_discard_connection_on_seek	0
 distributed_plan_workers_provisioning_timeout_ms	0
 query_plan_optimize_lazy_materialization_for_object_storage	0
+also shipped in 26.8
+1
+0
 enabled in 26.1
 1
 0

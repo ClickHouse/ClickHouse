@@ -22,6 +22,12 @@ WHERE name IN ('query_plan_optimize_lazy_materialization_for_object_storage',
                'distributed_plan_workers_provisioning_timeout_ms')
 ORDER BY name;
 
+SELECT 'also shipped in 26.8';
+SET compatibility = '26.8';
+SELECT value FROM system.settings WHERE name = 'query_plan_aggregation_bucket_top_k';
+SET compatibility = '26.7';
+SELECT value FROM system.settings WHERE name = 'query_plan_aggregation_bucket_top_k';
+
 SELECT 'enabled in 26.1';
 SET compatibility = '26.1';
 SELECT value FROM system.settings WHERE name = 'use_skip_indexes_on_data_read';
