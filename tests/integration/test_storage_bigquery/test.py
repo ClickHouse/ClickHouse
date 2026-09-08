@@ -1603,3 +1603,35 @@ def test_errors():
     unknown_arg = bq("test_paging", creds="unknown_arg = 'x'")
     error = node.query_and_get_error(f"SELECT * FROM {unknown_arg}")
     assert "Unknown BigQuery argument" in error
+
+
+def test_sync_remote_read_fans_out_to_max_distributed_connections():
+    # `BigQuery` is a remote storage that reads through the generic `IStorage::read`, which bounds the
+    # post-read resize by the number of threads that will consume its output. For a synchronous remote
+    # read (`async_socket_for_remote = 0`) a thread blocks on the socket instead of running, so
+    # `InterpreterSelectQuery` / `PlannerJoinTree` raise that budget from `max_threads` to
+    # `max_distributed_connections`; the resize must follow it there instead of stopping at `max_threads`.
+    # `EXPLAIN PIPELINE` builds the plan without reading any rows.
+    plan = node.query(
+        f"EXPLAIN PIPELINE SELECT * FROM {bq('test_types')}",
+        settings={
+            "async_socket_for_remote": 0,
+            "max_distributed_connections": 16,
+            "max_threads": 2,
+            "max_threads_min_free_memory_per_thread": 0,
+        },
+    )
+    assert "Resize 1 → 16" in plan, plan
+
+    # An asynchronous remote read does not block a thread on the socket, so its budget is `max_threads`
+    # and an absurd `max_streams_to_max_threads_ratio` must not widen the output past it.
+    plan = node.query(
+        f"EXPLAIN PIPELINE SELECT * FROM {bq('test_types')}",
+        settings={
+            "async_socket_for_remote": 1,
+            "max_threads": 2,
+            "max_streams_to_max_threads_ratio": 1000000,
+            "max_threads_min_free_memory_per_thread": 0,
+        },
+    )
+    assert "Resize 1 → 2" in plan, plan
