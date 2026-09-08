@@ -142,7 +142,6 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 destination_disk->getObjectStorage()->getAzureBlobStorageClient(),
                 connection_params.getContainer(),
                 fs::path(blob_path) / path_in_backup,
-                0,
                 file_size,
                 /* dest_container */ dst_blob_path[1],
                 /* dest_path */ dst_blob_path[0],
@@ -210,21 +209,36 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
         /// In this case we can't use the native copy.
         if (auto src_blob_path = src_disk->getBlobPath(src_path); src_blob_path.size() == 2)
         {
-            LOG_TRACE(log, "Copying file {} from disk {} to AzureBlobStorage", src_path, src_disk->getName());
-            copyAzureBlobStorageFile(
-                src_disk->getObjectStorage()->getAzureBlobStorageClient(),
-                client,
-                /* src_container */ src_blob_path[1],
-                /* src_path */ src_blob_path[0],
-                start_pos,
-                length,
-                connection_params.getContainer(),
-                fs::path(blob_path) / path_in_backup,
-                settings,
-                read_settings,
-                std::optional<ObjectAttributes>(),
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
-            return; /// copied!
+            /// The Azure-to-Azure copy transfers the whole source blob, so it can be used only when the
+            /// request covers the entire source. `start_pos != 0` is not a sound test, because a prefix
+            /// [0, length) of a bigger file is a range too. `length` counts the bytes actually copied,
+            /// so an encrypted source must be measured with its encrypted size.
+            const size_t source_size
+                = copy_encrypted ? src_disk->getEncryptedFileSize(src_path) : src_disk->getFileSize(src_path);
+
+            if ((start_pos == 0) && (length == source_size))
+            {
+                LOG_TRACE(log, "Copying file {} from disk {} to AzureBlobStorage", src_path, src_disk->getName());
+                copyAzureBlobStorageFile(
+                    src_disk->getObjectStorage()->getAzureBlobStorageClient(),
+                    client,
+                    /* src_container */ src_blob_path[1],
+                    /* src_path */ src_blob_path[0],
+                    length,
+                    connection_params.getContainer(),
+                    fs::path(blob_path) / path_in_backup,
+                    settings,
+                    read_settings,
+                    std::optional<ObjectAttributes>(),
+                    threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
+                return; /// copied!
+            }
+
+            LOG_TRACE(
+                log,
+                "Copying the range [{}, {}) of file {} of size {} from disk {} through buffers: "
+                "an Azure-to-Azure copy cannot copy a part of a blob",
+                start_pos, start_pos + length, src_path, source_size, src_disk->getName());
         }
     }
 
@@ -240,7 +254,6 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        client,
        connection_params.getContainer(),
        fs::path(blob_path)/ source,
-       0,
        size,
        /* dest_container */ connection_params.getContainer(),
        /* dest_path */ fs::path(blob_path) / destination,
