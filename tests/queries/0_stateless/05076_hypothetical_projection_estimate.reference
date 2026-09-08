@@ -134,11 +134,11 @@ hypothetical:
 marks: 19
 rows: 50000
 status: applicable
-marks: 7
+marks: 6
 rows: 50000
-read_ratio: 0.37x
+read_ratio: 0.32x
 verdict: chosen
-reason: 7 marks would be read instead of 19 from the base table
+reason: 6 marks would be read instead of 19 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_c)
