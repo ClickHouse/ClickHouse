@@ -29,6 +29,9 @@ SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 
 SELECT 'single node';
+-- Say so explicitly: the `ParallelReplicas` CI flavour turns `enable_parallel_replicas` on in the
+-- default profile, and this section is the baseline the parallel-replicas ones are read against.
+SET enable_parallel_replicas = 0;
 SET optimize_read_in_order = 1, optimize_aggregation_in_order = 0;
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT ts FROM v_pr_read_mode WHERE tenant = 42 ORDER BY ts LIMIT 5)
