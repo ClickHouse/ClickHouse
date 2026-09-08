@@ -43,10 +43,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"query_plan_optimize_join_order_use_cd_a_conflict_detector", false, false, "New setting to use the CD-A conflict detector for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_cd_c_conflict_detector", false, false, "New setting to use the CD-C (correct and complete) conflict detector for join reordering validity in the DPsub join order algorithm."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
             {"optimize_read_in_reverse_order_final", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."},
+            {"load_marks_asynchronously", false, true, "Load marks of all streams in parallel by default. On remote disks, synchronous loading of marks of columns with many substreams (such as `JSON`) took one network round trip per stream."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"create_token_default_ttl_seconds", 1800, 1800, "New setting giving a lifetime to a token created by `CREATE TOKEN` without an explicit `VALID UNTIL` or `VALID FOR` clause. The statement is new, so there is no earlier behavior to restore and the previous value is the default itself: a `compatibility` with an older version must not turn tokens into never-expiring ones."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
