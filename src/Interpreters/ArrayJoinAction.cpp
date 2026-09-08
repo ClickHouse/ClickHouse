@@ -28,11 +28,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-static ColumnPtr cutArrayJoinColumn(const IColumn & column, size_t start, size_t length)
-{
-    return start == 0 && length == column.size() ? column.getPtr() : column.cut(start, length);
-}
-
 std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
@@ -250,7 +245,7 @@ Block ArrayJoinResultIterator::next()
     const auto & columns = array_join->columns;
     bool is_unaligned = array_join->is_unaligned;
     bool is_left = array_join->is_left;
-    auto cut_any_col = cutArrayJoinColumn(*any_array, current_row, next_row - current_row);
+    auto cut_any_col = any_array->cut(current_row, next_row - current_row);
     const auto * cut_any_array = typeid_cast<const ColumnArray *>(cut_any_col.get());
     ColumnPtr indexes_for_lazy_replication;
 
@@ -265,7 +260,7 @@ Block ArrayJoinResultIterator::next()
             current.type = getArrayJoinDataType(current.type);
         }
         else
-            current.column = cutArrayJoinColumn(*current.column, current_row, next_row - current_row);
+            current.column = current.column->cut(current_row, next_row - current_row);
 
         if (columns.contains(current.name))
         {
@@ -274,7 +269,7 @@ Block ArrayJoinResultIterator::next()
                 ColumnPtr array_ptr;
                 if (typeid_cast<const DataTypeArray *>(current.type.get()))
                 {
-                    array_ptr = (is_left && !is_unaligned) ? cutArrayJoinColumn(*non_empty_array_columns[current.name], current_row, next_row - current_row)
+                    array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : current.column;
                     array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
                 }
@@ -282,7 +277,7 @@ Block ArrayJoinResultIterator::next()
                 {
                     ColumnPtr map_ptr = current.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
                     const ColumnMap & map = typeid_cast<const ColumnMap &>(*map_ptr);
-                    array_ptr = (is_left && !is_unaligned) ? cutArrayJoinColumn(*non_empty_array_columns[current.name], current_row, next_row - current_row)
+                    array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : map.getNestedColumnPtr();
                 }
 
@@ -336,7 +331,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             ++next_row;
 
         const size_t window_rows = next_row - current_row;
-        auto cut_any_col = cutArrayJoinColumn(*any_array, current_row, window_rows);
+        auto cut_any_col = any_array->cut(current_row, window_rows);
         const auto * cut_any_array = typeid_cast<const ColumnArray *>(cut_any_col.get());
         const auto & win_offsets = cut_any_array->getOffsets();
         size_t num_elements = cut_any_array->getData().size();
@@ -357,7 +352,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             }
             else
             {
-                column = cutArrayJoinColumn(*src.column, current_row, window_rows);
+                column = src.column->cut(current_row, window_rows);
                 branch_type = src.type;
             }
 
@@ -368,14 +363,14 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             ColumnPtr array_ptr;
             if (typeid_cast<const DataTypeArray *>(branch_type.get()))
             {
-                array_ptr = (is_left && !is_unaligned) ? cutArrayJoinColumn(*non_empty_array_columns[name], current_row, window_rows) : column;
+                array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[name]->cut(current_row, window_rows) : column;
                 array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
             }
             else
             {
                 ColumnPtr map_ptr = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
                 const ColumnMap & map = typeid_cast<const ColumnMap &>(*map_ptr);
-                array_ptr = (is_left && !is_unaligned) ? cutArrayJoinColumn(*non_empty_array_columns[name], current_row, window_rows) : map.getNestedColumnPtr();
+                array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[name]->cut(current_row, window_rows) : map.getNestedColumnPtr();
             }
 
             const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
@@ -459,7 +454,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             }
             else
             {
-                auto cut_col = cutArrayJoinColumn(*current.column, current_row, window_rows);
+                auto cut_col = current.column->cut(current_row, window_rows);
                 if (enable_lazy_columns_replication && isLazyReplicationUseful(cut_col))
                 {
                     if (!indexes)

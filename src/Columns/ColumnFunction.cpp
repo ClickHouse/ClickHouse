@@ -101,6 +101,8 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
 
 ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
 {
+    if (start == 0 && length == size())
+        return getPtr();
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
         column.column = column.column->cut(start, length);
