@@ -204,3 +204,38 @@ SELECT
 SELECT id, tupleElement(materialize(n), 'a'), tupleElement(materialize(n), 'arr'), tupleElement(materialize(n), 'm') FROM file(currentDatabase() || '_04401_hidden.arrow', 'Arrow', 'id UInt8, n Nullable(Tuple(a Tuple(x UInt32), arr Array(UInt32), m Map(String, String)))') ORDER BY id;
 1	(10)	[1]	{'k1':'v1'}
 2	(0)	[]	{}
+-- Case-insensitive column matching folds a struct's field names, so a struct holding two fields
+-- whose names differ only by case has two candidates for one request. The field spelled exactly like
+-- the request wins, for the flattened read, for its sibling and for the whole column alike, in every
+-- reader that resolves a name against a struct.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_cicase.orc', 'ORC')
+SELECT id, c0 FROM values('id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))', (1, tuple(tuple(11), tuple(21))), (2, tuple(NULL, tuple(22))), (3, tuple(tuple(13), tuple(23))));
+SELECT id, `c0.a` FROM file(currentDatabase() || '_04401_cicase.orc', 'ORC', 'id UInt32, `c0.a` Tuple(b UInt32)') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+1	(21)
+2	(22)
+3	(23)
+SELECT id, `c0.A` FROM file(currentDatabase() || '_04401_cicase.orc', 'ORC', 'id UInt32, `c0.A` Tuple(b UInt32)') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+1	(11)
+2	(0)
+3	(13)
+SELECT id, c0 FROM file(currentDatabase() || '_04401_cicase.orc', 'ORC', 'id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+1	((11),(21))
+2	(NULL,(22))
+3	((13),(23))
+SELECT id, `c0.a` FROM file(currentDatabase() || '_04401_cicase.orc', 'ORC', 'id UInt32, `c0.a` Tuple(b UInt32)') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 0;
+1	(21)
+2	(22)
+3	(23)
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_cicase.arrow', 'Arrow')
+SELECT id, c0 FROM values('id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))', (1, tuple(tuple(11), tuple(21))), (2, tuple(NULL, tuple(22))), (3, tuple(tuple(13), tuple(23))));
+SELECT id, `c0.a` FROM file(currentDatabase() || '_04401_cicase.arrow', 'Arrow', 'id UInt32, `c0.a` Tuple(b UInt32)') ORDER BY id SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+1	(21)
+2	(22)
+3	(23)
+-- A request that matches no field exactly is still resolved case-insensitively, which is what the
+-- setting is for.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_cifold.orc', 'ORC') SELECT CAST(tuple(tuple(70)), 'Tuple(UP Tuple(B UInt32))') AS c0;
+SELECT `c0.up` FROM file(currentDatabase() || '_04401_cifold.orc', 'ORC', '`c0.up` Tuple(b UInt32)') SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+(70)
+SELECT c0 FROM file(currentDatabase() || '_04401_cifold.orc', 'ORC', 'c0 Tuple(up Tuple(b UInt32))') SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+((70))

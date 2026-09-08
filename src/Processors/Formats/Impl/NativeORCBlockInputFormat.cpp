@@ -1052,22 +1052,33 @@ traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type
 
     auto search_struct_field = [&](const std::string & target_, const orc::Type * type_) -> std::pair<std::string, const orc::Type *>
     {
-        auto target_copy = target_;
-        if (ignore_case)
-            boost::to_lower(target_copy);
-
-        for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
+        auto search_pass = [&](bool fold) -> std::pair<std::string, const orc::Type *>
         {
-            auto field_name = type_->getFieldName(i);
-            if (ignore_case)
-                boost::to_lower(field_name);
+            auto target_copy = target_;
+            if (fold)
+                boost::to_lower(target_copy);
 
-            if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
+            for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
             {
-                return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                auto field_name = type_->getFieldName(i);
+                if (fold)
+                    boost::to_lower(field_name);
+
+                if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
+                {
+                    return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                }
             }
-        }
-        return {"", nullptr};
+            return {"", nullptr};
+        };
+
+        /// A field spelled exactly like the request always wins: a struct may hold several fields
+        /// whose names differ only by case, and case-folding first binds the request to whichever
+        /// of them the file lists first.
+        auto exact_match = search_pass(/*fold=*/false);
+        if (exact_match.second || !ignore_case)
+            return exact_match;
+        return search_pass(/*fold=*/true);
     };
 
     if (orc::STRUCT == orc_type->getKind())
@@ -1104,6 +1115,23 @@ traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type
 static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive);
 static bool orcUnionBranchPrefersType(const orc::Type * orc_branch_type, const DataTypePtr & target_type);
 static DataTypes computeOrcUnionBranchHints(const orc::Type * orc_type, const DataTypePtr & type_hint, bool case_insensitive_matching);
+
+/// Binds a name to a field of an ORC struct type. A field spelled exactly like the name always
+/// wins over one that only matches case-folded, so a struct holding several fields whose names
+/// differ only by case resolves the name to the same field everywhere.
+static std::optional<size_t> findORCStructFieldByName(const orc::Type * orc_type, const String & name, bool ignore_case)
+{
+    for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
+        if (name == orc_type->getFieldName(i))
+            return i;
+
+    if (ignore_case)
+        for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
+            if (boost::iequals(name, orc_type->getFieldName(i)))
+                return i;
+
+    return std::nullopt;
+}
 
 static void
 updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
@@ -1149,32 +1177,12 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
             {
                 if (tuple_type->hasExplicitNames())
                 {
-                    std::unordered_map<String, size_t> orc_field_name_to_index;
-                    orc_field_name_to_index.reserve(orc_type->getSubtypeCount());
-                    for (size_t struct_i = 0; struct_i < orc_type->getSubtypeCount(); ++struct_i)
-                    {
-                        String field_name = orc_type->getFieldName(struct_i);
-                        if (ignore_case)
-                            boost::to_lower(field_name);
-
-                        orc_field_name_to_index[field_name] = struct_i;
-                    }
-
                     const auto & element_names = tuple_type->getElementNames();
                     for (size_t tuple_i = 0; tuple_i < element_names.size(); ++tuple_i)
                     {
-                        String element_name = element_names[tuple_i];
-                        if (ignore_case)
-                            boost::to_lower(element_name);
-
-                        if (orc_field_name_to_index.contains(element_name))
-                        {
+                        if (auto field_i = findORCStructFieldByName(orc_type, element_names[tuple_i], ignore_case))
                             updateIncludeTypeIds(
-                                tuple_type->getElement(tuple_i),
-                                orc_type->getSubtype(orc_field_name_to_index[element_name]),
-                                ignore_case,
-                                include_typeids);
-                        }
+                                tuple_type->getElement(tuple_i), orc_type->getSubtype(*field_i), ignore_case, include_typeids);
                     }
                 }
                 else
@@ -2924,7 +2932,12 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 {
                     if (tuple_type_hint->hasExplicitNames())
                     {
-                        auto pos = tuple_type_hint->tryGetPositionByName(field_name, case_insensitive_matching);
+                        /// An element spelled exactly like the field wins over one that only matches
+                        /// case-folded, so two fields whose names differ only by case cannot both
+                        /// claim the same element and leave the other one unread.
+                        auto pos = tuple_type_hint->tryGetPositionByName(field_name, /*case_insensitive=*/false);
+                        if (!pos && case_insensitive_matching)
+                            pos = tuple_type_hint->tryGetPositionByName(field_name, /*case_insensitive=*/true);
                         if (pos)
                         {
                             nested_type_hint = tuple_type_hint->getElement(*pos);
