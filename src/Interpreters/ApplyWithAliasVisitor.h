@@ -14,10 +14,12 @@ public:
     struct Data
     {
         std::map<String, ASTPtr> exprs;
-        /// Propagation clones every visible alias into every descendant subquery, so a query with `k`
-        /// aliases nested `d` levels deep expands to `k ^ d` nodes - `WITH (SELECT … FROM (EXPLAIN …))`
-        /// repeated three times is already enough to exhaust the server's memory. Bound the expansion the
-        /// way `QueryNormalizer` bounds alias substitution, so such a query fails with `TOO_BIG_AST`.
+        /// Propagation is meant to run once, on a query that is not itself a subquery. An alias whose
+        /// subquery is interpreted as a fresh query - `view()`, or an `EXPLAIN` kind that interprets its
+        /// argument - is analysed by a new non-subquery interpreter, which applies the propagation again
+        /// to an AST that already carries the injected aliases. `k` such aliases therefore compound to
+        /// `k ^ d` nodes over `d` levels. Bound the expansion the way `QueryNormalizer` bounds alias
+        /// substitution, so such a query fails with `TOO_BIG_AST` instead of exhausting memory.
         size_t max_expanded_ast_elements = 0;
     };
 
