@@ -1,15 +1,126 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/ExternalLimitByTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <IO/Operators.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/JSONBuilder.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <limits>
+
+namespace ProfileEvents
+{
+    extern const Event ExternalLimitByCompressedBytes;
+    extern const Event ExternalLimitByUncompressedBytes;
+    extern const Event ExternalLimitByWritePart;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForLimitBy;
+}
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_bytes_before_external_limit_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_limit_by;
+    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+}
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_limit_by;
+    extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_limit_by;
+    extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
+}
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+/// The share of the available memory that a `LIMIT BY` may hold before it spills, in bytes. This is
+/// what makes the spilling automatic: it applies without anyone setting an absolute threshold.
+static size_t getMaxBytesInQueryBeforeExternalLimitBy(double max_bytes_ratio_before_external_limit_by)
+{
+    if (max_bytes_ratio_before_external_limit_by == 0.)
+        return 0;
+
+    const double ratio = max_bytes_ratio_before_external_limit_by;
+    if (ratio < 0 || ratio >= 1.)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_limit_by should be >= 0 and < 1 ({:.3f})", ratio);
+
+    auto available_system_memory = getMostStrictAvailableSystemMemory();
+    if (!available_system_memory.has_value())
+    {
+        LOG_TRACE(getLogger("LimitByStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_limit_by");
+        return 0;
+    }
+
+    const size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
+
+    LOG_TRACE(
+        getLogger("LimitByStep"),
+        "Adjusting memory limit before external LIMIT BY with {} (ratio: {:.3f}, available system memory: {})",
+        formatReadableSizeWithBinarySuffix(ratio_in_bytes),
+        ratio,
+        formatReadableSizeWithBinarySuffix(*available_system_memory));
+
+    return ratio_in_bytes;
+}
+
+LimitByStep::ExternalSettings::ExternalSettings(const Settings & settings)
+    : max_bytes_in_state_before_external_limit_by(settings[Setting::max_bytes_before_external_limit_by])
+    , max_bytes_in_query_before_external_limit_by(
+          getMaxBytesInQueryBeforeExternalLimitBy(settings[Setting::max_bytes_ratio_before_external_limit_by]))
+    , max_bytes_ratio_before_external_limit_by(settings[Setting::max_bytes_ratio_before_external_limit_by])
+    , max_block_size(settings[Setting::max_block_size])
+    , min_free_disk_space(settings[Setting::min_free_disk_space_for_temporary_data])
+    , temporary_files_codec(settings[Setting::temporary_files_codec])
+    , temporary_files_buffer_size(settings[Setting::temporary_files_buffer_size])
+{
+}
+
+LimitByStep::ExternalSettings::ExternalSettings(const QueryPlanSerializationSettings & settings)
+    : max_bytes_in_state_before_external_limit_by(settings[QueryPlanSerializationSetting::max_bytes_before_external_limit_by])
+    , max_bytes_in_query_before_external_limit_by(getMaxBytesInQueryBeforeExternalLimitBy(
+          settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_limit_by]))
+    , max_bytes_ratio_before_external_limit_by(settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_limit_by])
+    , max_block_size(settings[QueryPlanSerializationSetting::max_block_size])
+    , min_free_disk_space(settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data])
+    , temporary_files_codec(settings[QueryPlanSerializationSetting::temporary_files_codec])
+    , temporary_files_buffer_size(settings[QueryPlanSerializationSetting::temporary_files_buffer_size])
+{
+}
+
+void LimitByStep::ExternalSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
+    settings[QueryPlanSerializationSetting::max_bytes_before_external_limit_by] = max_bytes_in_state_before_external_limit_by;
+    settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_limit_by] = max_bytes_ratio_before_external_limit_by;
+    settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
+    settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
+}
 
 static ITransformingStep::Traits getTraits()
 {
@@ -28,12 +139,46 @@ static ITransformingStep::Traits getTraits()
 
 LimitByStep::LimitByStep(
     const SharedHeader & input_header_,
-    size_t group_length_, size_t group_offset_, Names columns_)
+    size_t group_length_, size_t group_offset_, Names columns_,
+    ExternalSettings external_settings_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , group_length(group_length_)
     , group_offset(group_offset_)
     , columns(std::move(columns_))
+    , external_settings(std::move(external_settings_))
 {
+}
+
+ProcessorPtr LimitByStep::makeHashTransform(const SharedHeader & header, size_t length, size_t offset, bool can_spill) const
+{
+    if (!can_spill)
+        return std::make_shared<LimitByTransform>(header, length, offset, columns);
+
+    TemporaryDataOnDiskScopePtr tmp_data_on_disk;
+    if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
+        tmp_data_on_disk = data->childScope(
+            {.current_metric = CurrentMetrics::TemporaryFilesForLimitBy,
+             .bytes_compressed = ProfileEvents::ExternalLimitByCompressedBytes,
+             .bytes_uncompressed = ProfileEvents::ExternalLimitByUncompressedBytes,
+             .num_files = ProfileEvents::ExternalLimitByWritePart},
+            external_settings.temporary_files_buffer_size,
+            external_settings.temporary_files_codec);
+
+    /// Without temporary storage there is nothing to spill into, so keep everything in memory rather
+    /// than failing a query that the in-memory implementation can still answer.
+    if (!tmp_data_on_disk)
+        return std::make_shared<LimitByTransform>(header, length, offset, columns);
+
+    return std::make_shared<ExternalLimitByTransform>(
+        header,
+        length,
+        offset,
+        columns,
+        external_settings.max_bytes_in_state_before_external_limit_by,
+        external_settings.max_bytes_in_query_before_external_limit_by,
+        external_settings.max_block_size,
+        std::move(tmp_data_on_disk),
+        external_settings.min_free_disk_space);
 }
 
 
@@ -48,6 +193,12 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     ///
     /// Importantly, if there is an upstream ORDER BY, then `pipeline.getNumStreams() == 1` for sure. Otherwise,
     /// we can output keys in any order.
+
+    /// A spill emits the rows it did not get to before the spill in grouping key order rather than in
+    /// input order, so it is only usable where the output order is free anyway. More than one stream
+    /// here means no upstream `ORDER BY` established an order, which is exactly that case. This is read
+    /// before the `resize(1)` calls below, which would otherwise hide it.
+    const bool can_spill = external_settings.isEnabled() && pipeline.getNumStreams() > 1;
 
     /// Per-partition reading: each partition is a disjoint, already-sorted stream. No merge needed and we can
     /// run the optimized `LimitBySortedStreamTransform` per stream. Again, in this case, it does not matter if `pipeline.getNumStreams()` is 1 or more.
@@ -97,7 +248,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
+                return makeHashTransform(header, group_length, group_offset, can_spill);
             });
         return;
     }
@@ -127,7 +278,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             if (!sorted_columns_descr.empty())
                 return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, sorted_columns_descr);
 
-            return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
+            return makeHashTransform(header, group_length, group_offset, can_spill);
         });
 }
 
@@ -172,6 +323,11 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Skip stream merging", true);
 }
 
+void LimitByStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+{
+    external_settings.updatePlanSettings(settings);
+}
+
 void LimitByStep::serialize(Serialization & ctx) const
 {
     writeVarUInt(group_length, ctx.out);
@@ -197,7 +353,8 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
     for (auto & column : columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
+    return std::make_unique<LimitByStep>(
+        ctx.input_headers.front(), group_length, group_offset, std::move(columns), LimitByStep::ExternalSettings(ctx.settings));
 }
 
 void LimitByStep::applyOrder(const SortDescription & sort_description)
