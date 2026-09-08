@@ -102,6 +102,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingsSecrets.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -551,7 +552,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
-        elem.formatted_query = query_ast->formatWithSecretsOneLine();
+        elem.formatted_query = query_ast->formatForLogging();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
@@ -592,16 +593,15 @@ QueryLogElement logQueryStart(
         else if (interpreter)
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
 
-        if (settings[Setting::log_query_settings])
-            elem.query_settings = context->getSettingsRef().changedToMap();
-
         elem.log_comment = settings[Setting::log_comment];
         if (elem.log_comment.size() > settings[Setting::max_query_size])
             elem.log_comment.resize(settings[Setting::max_query_size]);
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
+            if (settings[Setting::log_query_settings])
+                elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+            else if (settings[Setting::log_query_settings].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
@@ -810,6 +810,11 @@ static void logQueryFinishImpl(
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
+            /// Unset unless the QUERY_START row was logged and built them already. Settings cannot change
+            /// while the query runs, so building them here gives the same values.
+            if (settings[Setting::log_query_settings] && !elem.query_settings)
+                elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+
             if (auto query_log = context->getQueryLog())
                 query_log->add([&](QueryLogElement & e) { e = elem; });
         }
@@ -839,7 +844,9 @@ static void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+                String value = convertFieldToString(change.value);
+                CoreSettings::maskSettingValue(change.name, change.value, value);
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), value);
             }
         }
         query_span->finish(time);
@@ -947,6 +954,9 @@ void logQueryException(
     if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
         && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
     {
+        if (settings[Setting::log_query_settings] && !elem.query_settings)
+            elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+
         if (auto query_log = context->getQueryLog())
             query_log->add([&](QueryLogElement & e) { e = elem; });
     }
@@ -1000,7 +1010,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = ast->formatWithSecretsOneLine();
+            elem.formatted_query = ast->formatForLogging();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1025,7 +1035,7 @@ void logExceptionBeforeStart(
         elem.tid = txn->tid;
 
     if (settings[Setting::log_query_settings])
-        elem.query_settings = settings.changedToMap();
+        elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
     if (settings[Setting::calculate_text_stack_trace])
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
@@ -3501,12 +3511,20 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ContextMutablePtr fuzz_session_context;
         ContextMutablePtr fuzz_context;
 
-        auto reset_transactions = [&]()
+        /// Everything this iteration owes once the query is over, on either outcome: the fuzzer state
+        /// it has to report the result to, and the transactions it has to release.
+        auto finish_iteration = [&](bool succeeded)
         {
             if (fuzz_context)
                 fuzz_context->setCurrentTransaction(NO_TRANSACTION_PTR);
             if (fuzz_session_context)
                 fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+            if (!succeeded)
+            {
+                auto [fuzzer, lock] = getGlobalASTFuzzer();
+                fuzzer->notifyQueryFailed(fuzzed_ast);
+            }
         };
 
         try
@@ -3650,17 +3668,15 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                 }
             }
 
-            reset_transactions();
+            finish_iteration(/*succeeded=*/true);
             base_ast = fuzzed_ast;
         }
         catch (const Exception & e)
         {
-            reset_transactions();
+            finish_iteration(/*succeeded=*/false);
             if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                 throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
-            auto [fuzzer, lock] = getGlobalASTFuzzer();
-            fuzzer->notifyQueryFailed(fuzzed_ast);
         }
     }
 }
