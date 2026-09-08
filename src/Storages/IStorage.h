@@ -402,6 +402,14 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
+    virtual Pipe watch(
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum & /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/);
+
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
@@ -447,10 +455,6 @@ private:
     virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
-    /// Returns an upper bound on the number of sources created for a read request.
-    /// The default is conservative: a storage may create one source per requested stream.
-    virtual size_t getMaxReadStreams(size_t num_streams, ContextPtr) { return num_streams; }
-
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     /// Can be called after `shutdown`, but not after `drop`.

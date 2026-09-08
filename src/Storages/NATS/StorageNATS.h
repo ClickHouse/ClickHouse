@@ -140,10 +140,7 @@ private:
     void createConsumers();
 
     bool subscribeConsumers();
-    /// Replaces the subscription of every consumer that stopped consuming, without losing what it
-    /// has already buffered locally: a consumer that still holds messages is left to a later cycle,
-    /// and whatever it does turn out to hold is handed back to the broker rather than destroyed.
-    void resubscribeStaleConsumers();
+    bool consumersNeedResubscribe();
     void unsubscribeConsumers();
 
     void stopEventLoop();

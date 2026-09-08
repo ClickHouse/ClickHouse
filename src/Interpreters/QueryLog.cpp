@@ -288,16 +288,13 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
         auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
-        if (query_settings)
+        for (const auto & [name, value] : query_settings)
         {
-            query_settings->forEach([&](std::string_view name, std::string_view value)
-            {
-                key_column.insertData(name.data(), name.size());
-                value_column.insertData(value.data(), value.size());
-            });
+            key_column.insertData(name.data(), name.size());
+            value_column.insertData(value.data(), value.size());
         }
 
-        offsets.push_back(offsets.back() + (query_settings ? query_settings->size() : 0));
+        offsets.push_back(offsets.back() + query_settings.size());
     }
 
     {
