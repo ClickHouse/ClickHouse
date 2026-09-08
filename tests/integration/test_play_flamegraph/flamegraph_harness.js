@@ -45,7 +45,7 @@ async function main()
     };
     const api = vm.runInNewContext(extract('const MAX_FLAME_NODES', 'async function getServerStatus')
         + extract('function makeEventStreamHandler(', '/// Parse one SSE event block')
-        + '\n({freshFlameGraphState, accumulateProfileTraces, renderFlameGraph, makeEventStreamHandler, MAX_FLAME_NODES, MAX_FLAME_LABEL_CHARS, MAX_FLAME_DOM_FRAMES})',
+        + '\n({freshFlameGraphState, accumulateProfileTraces, selectFlameTree, updateFlameHostSelector, flameGraphStatus, renderFlameGraph, makeEventStreamHandler, MAX_FLAME_NODES, MAX_FLAME_LABEL_CHARS, MAX_FLAME_HOSTS, MAX_FLAME_DOM_FRAMES, MAX_FLAME_SERVER_DROPS})',
         { document, _logHash: () => 0 });
     const sample = (symbols, trace_type = 'CPU', size = '0', trace = symbols.map((_, i) => String(i + 1)), host_name = 'host') =>
         ({ host_name, query_id: 'query', thread_id: '1', event_time_microseconds: '1788690000000000', symbols, trace, trace_type, size });
@@ -54,7 +54,7 @@ async function main()
     handle('profile_traces', [JSON.stringify([sample(['leaf;with separator', 'root']), sample(['leaf;with separator', 'root'])])]);
     const cpu = state.types.get('CPU');
     assert.equal(cpu.root.value, 2);
-    assert.equal(cpu.root.children.get('root').children.get('leaf;with separator').value, 2);
+    assert.equal(cpu.root.children.get('sroot').children.get('sleaf;with separator').value, 2);
     handle('profile_traces', [JSON.stringify([sample(['other', 'root']), sample(['real'], 'Real'), sample(['alloc'], 'MemorySample', '128'), sample(['alloc'], 'MemorySample', '-128')])]);
     assert.equal(cpu.root.value, 3);
     assert.equal(state.types.get('Real').root.value, 1);
@@ -65,8 +65,57 @@ async function main()
     const addresses = api.freshFlameGraphState();
     api.accumulateProfileTraces(addresses, [sample([''], 'CPU', '0', ['18446744073709551614']), sample([''], 'CPU', '0', ['18446744073709551615']), sample([''], 'CPU', '0', ['18446744073709551615'], 'other-host')]);
     assert.equal(addresses.types.get('CPU').root.children.size, 3);
-    assert.ok(addresses.types.get('CPU').root.children.has('host: 18446744073709551615'));
-    console.log('PASS UInt64 addresses stay distinct and unresolved addresses are host-scoped');
+    assert.ok([...addresses.types.get('CPU').root.children.values()].some(node => node.name === 'host: 18446744073709551615'));
+    api.accumulateProfileTraces(addresses, [sample(['host: 18446744073709551615'])]);
+    assert.equal(addresses.types.get('CPU').root.children.size, 4);
+    console.log('PASS UInt64 addresses stay distinct, are host-scoped, and cannot collide with symbol labels');
+
+    const hosts = api.freshFlameGraphState();
+    api.accumulateProfileTraces(hosts, [sample(['shared', 'root'], 'CPU', '0', ['1', '2'], 'node-b'),
+        sample(['shared', 'root'], 'CPU', '0', ['1', '2'], 'node-a'),
+        sample(['other', 'root'], 'CPU', '0', ['3', '2'], 'node-a'),
+        sample(['allocation'], 'MemorySample', '128', ['4'], 'node-a'),
+        sample(['allocation'], 'MemorySample', '256', ['4'], 'node-b')]);
+    const hostA = api.selectFlameTree(hosts, 'CPU', 'node-a');
+    const hostB = api.selectFlameTree(hosts, 'CPU', 'node-b');
+    assert.equal(api.selectFlameTree(hosts, 'CPU').root.value, 3);
+    assert.equal(hostA.root.value, 2);
+    assert.equal(hostB.root.value, 1);
+    assert.equal(api.selectFlameTree(hosts, 'MemorySample').root.value, 384);
+    assert.equal(api.selectFlameTree(hosts, 'MemorySample', 'node-b').root.value, 256);
+    const selector = new Element();
+    api.updateFlameHostSelector(selector, hosts);
+    assert.deepEqual(selector.children.map(option => option.textContent), ['All nodes', 'node-a', 'node-b']);
+    selector.value = ':node-a';
+    const originalOptions = selector.children;
+    api.updateFlameHostSelector(selector, hosts);
+    assert.equal(selector.children, originalOptions);
+    api.accumulateProfileTraces(hosts, [sample(['unknown'], 'Real', '0', ['5'], ''),
+        sample(['hostile'], 'Real', '0', ['6'], '<img src=x onerror=alert(1)>')]);
+    api.updateFlameHostSelector(selector, hosts);
+    assert.equal(selector.value, ':node-a');
+    assert.ok(selector.children.some(option => option.value === ':' && option.textContent === '(unknown node)'));
+    assert.ok(selector.children.some(option => option.textContent === '<img src=x onerror=alert(1)>'));
+    console.log('PASS all-node and per-node trees agree; selector preserves selection and treats host names as text');
+
+    const losses = api.freshFlameGraphState();
+    const lossHandler = api.makeEventStreamHandler({ appendProfileTraces: batch => api.accumulateProfileTraces(losses, batch) });
+    lossHandler('profile_traces', [JSON.stringify([sample([], 'Dropped', '9007199254740993', [], 'reporter'),
+        sample([], 'Dropped', '2', [], 'reporter'), sample([], 'Incomplete', '0', [], 'reporter')])]);
+    assert.equal(losses.serverDropped, 9007199254740995n);
+    assert.equal(losses.incomplete, true);
+    assert.equal(losses.hosts.size, 0);
+    assert.equal(losses.types.size, 0);
+    api.accumulateProfileTraces(losses, [sample(['cpu'], 'CPU', '0', ['1'], 'node-a'), sample(Array(257).fill('deep'))]);
+    const lossStatus = api.flameGraphStatus(losses, 'CPU', 'node-a', true);
+    assert.ok(lossStatus.includes('9,007,199,254,740,995 samples lost in server queues (all nodes)'));
+    assert.ok(lossStatus.includes('additional losses are unknown'));
+    assert.ok(lossStatus.includes('1 samples omitted at the browser memory limit'));
+    api.accumulateProfileTraces(losses, [sample([], 'Dropped', '9223372036854775807', [], 'another-reporter')]);
+    assert.equal(losses.serverDropped, api.MAX_FLAME_SERVER_DROPS);
+    assert.ok(api.flameGraphStatus(losses, 'Real', null, true).includes('At least 9,223,372,036,854,775,807'));
+    assert.equal(losses.hosts.size, 1);
+    console.log('PASS loss markers retain exact bounded global counts and completeness separately from browser omissions');
 
     const graph = new Element();
     api.renderFlameGraph(graph, cpu, 'samples');
@@ -83,17 +132,51 @@ async function main()
     assert.ok(graph.children.some(frame => frame.textContent === '<img src=x onerror=alert(1)>'));
     console.log('PASS rendering preserves zoom across batches and treats symbols as text');
 
+    api.renderFlameGraph(graph, hostA, 'samples');
+    graph.children.find(frame => frame.textContent === 'shared').listeners.click();
+    const hostZoom = hostA.zoom;
+    api.renderFlameGraph(graph, hostB, 'samples');
+    assert.equal(hostB.zoom, hostB.root);
+    api.accumulateProfileTraces(hosts, [sample(['shared', 'root'], 'CPU', '0', ['1', '2'], 'node-a')]);
+    api.renderFlameGraph(graph, hostA, 'samples');
+    assert.equal(hostA.zoom, hostZoom);
+    assert.equal(hostZoom.value, 2);
+    assert.equal(graph.children.find(frame => frame.textContent === 'shared').style.width, '100%');
+    console.log('PASS each node retains independent zoom across switching and new batches');
+
     const bounded = api.freshFlameGraphState();
     api.accumulateProfileTraces(bounded, Array.from({ length: api.MAX_FLAME_NODES + 5 }, (_, i) => sample(['frame-' + i])));
     assert.equal(bounded.nodes, api.MAX_FLAME_NODES);
-    assert.equal(bounded.dropped, 5);
+    assert.equal(bounded.dropped, api.MAX_FLAME_NODES + 5 - bounded.types.get('CPU').samples);
+    assert.equal(api.selectFlameTree(bounded, 'CPU', 'host').root.value, bounded.types.get('CPU').root.value);
+    const beforeRejectedHost = bounded.types.get('CPU').root.value;
+    api.accumulateProfileTraces(bounded, [sample(['frame-0'], 'CPU', '0', ['1'], 'late-host')]);
+    assert.equal(bounded.types.get('CPU').root.value, beforeRejectedHost);
+    assert.equal(bounded.hosts.has('late-host'), false);
     api.accumulateProfileTraces(bounded, [sample(['frame-0'])]);
-    assert.equal(bounded.types.get('CPU').root.children.get('frame-0').value, 2);
+    assert.equal(bounded.types.get('CPU').root.children.get('sframe-0').value, 2);
     const labels = api.freshFlameGraphState();
     api.accumulateProfileTraces(labels, [sample(['x'.repeat(api.MAX_FLAME_LABEL_CHARS + 1)]), sample(Array(257).fill('deep'))]);
     assert.equal(labels.nodes, 0);
+    assert.equal(labels.hosts.size, 0);
+    assert.equal(labels.types.size, 0);
     assert.equal(labels.dropped, 2);
-    console.log('PASS node, symbol, and depth budgets reject whole stacks while existing stacks keep accumulating');
+    console.log('PASS shared node, symbol, and depth budgets reject both representations atomically');
+
+    const manyHosts = api.freshFlameGraphState();
+    api.accumulateProfileTraces(manyHosts, Array.from({ length: api.MAX_FLAME_HOSTS + 3 }, (_, i) =>
+        sample(['shared'], 'CPU', '0', ['1'], 'node-' + i)));
+    assert.equal(manyHosts.hosts.size, api.MAX_FLAME_HOSTS);
+    assert.equal(manyHosts.types.get('CPU').samples, api.MAX_FLAME_HOSTS);
+    assert.equal(manyHosts.dropped, 3);
+    api.accumulateProfileTraces(manyHosts, [sample(['shared'], 'CPU', '0', ['1'], 'node-0')]);
+    assert.equal(api.selectFlameTree(manyHosts, 'CPU', 'node-0').samples, 2);
+    const hugeHost = api.freshFlameGraphState();
+    api.accumulateProfileTraces(hugeHost, [sample(['shared'], 'CPU', '0', ['1'], 'h'.repeat(api.MAX_FLAME_LABEL_CHARS))]);
+    assert.equal(hugeHost.hosts.size, 0);
+    assert.equal(hugeHost.types.size, 0);
+    assert.equal(hugeHost.dropped, 1);
+    console.log('PASS host count and host text share bounded storage without dropping established hosts');
 
     const large = api.freshFlameGraphState();
     api.accumulateProfileTraces(large, Array.from({ length: 500 }, (_, i) => sample(['leaf', 'c', 'b', 'a', 'root-' + i])));
@@ -105,23 +188,37 @@ async function main()
 
     const Result = vm.runInNewContext('(class {'
         + extract("    clear()\n    {\n        /// This result's rows", '    /// Select a cell and move keyboard focus to it.')
-        + '})', { hideImagePreviewOwnedBy() {}, clearTimeout() {}, freshFlameGraphState: api.freshFlameGraphState });
+        + extract('    _showFlameGraph()\n', '    /// Queue a server log entry')
+        + '})', { ...api, hideImagePreviewOwnedBy() {}, clearTimeout() {}, profilerPeriodNs() { return ''; } });
     const result = new Result();
     for (const field of ['_dataTable', '_graph', '_chart', '_dataUnparsed', '_error', '_dataDiv', '_pager', '_logsContent',
-        '_flameGraph', '_flameStatus', '_metricsTable', '_metricsBody', '_resultGroup', '_logsDiv', '_metricsDiv',
+        '_flameGraph', '_flameStatus', '_flameHost', '_flameType', '_flamePeriod', '_metricsTable', '_metricsBody', '_resultGroup', '_logsDiv', '_metricsDiv',
         '_flameDiv', '_viewToggle', '_btnLogs', '_btnResult'])
         result[field] = new Element();
     result._clearElement = element => element.replaceChildren();
     result._clearImage = () => {};
     result._view = 'flame';
     result._flameDiv.style.display = 'block';
-    result._flame_data = state;
+    result._flame_data = hosts;
+    result._flameType.value = 'CPU';
+    result._showFlameGraph();
+    result._flameHost.value = ':node-b';
+    result._showFlameGraph();
+    assert.equal(result._flameStatus.textContent, '1 samples received.');
+    result._flameType.value = 'MemorySample';
+    result._showFlameGraph();
+    assert.ok(result._flameGraph.children.some(frame => frame.title.startsWith('allocation\n256 B')));
     result.clear();
     assert.equal(result._view, 'result');
     assert.equal(result._resultGroup.style.display, '');
     assert.equal(result._flameDiv.style.display, 'none');
     assert.equal(result._flame_data.types.size, 0);
-    console.log('PASS clearing a flame view restores only the result view and discards profiler samples');
+    assert.equal(result._flame_data.hosts.size, 0);
+    assert.equal(result._flame_data.serverDropped, 0n);
+    assert.equal(result._flame_data.incomplete, false);
+    assert.equal(result._flameHost.value, '');
+    assert.equal(result._flameHost.children.length, 1);
+    console.log('PASS result controls select node/type and clearing resets samples, losses, selection, and zoom');
     console.log('All scenarios passed');
 }
 

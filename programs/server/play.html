@@ -4018,6 +4018,8 @@ class QueryResultElement extends HTMLElement
                     font-size: 90%;
                 }
 
+                #flame-host { max-width: min(20rem, 50vw); }
+
                 #flame-graph
                 {
                     position: relative;
@@ -4135,6 +4137,7 @@ class QueryResultElement extends HTMLElement
             <div id="metrics_div"><table id="metrics-table" class="monospace"><tbody id="metrics-body"></tbody></table></div>
             <div id="flame_div">
                 <div id="flame-controls">
+                    <label>Node <select id="flame-host"><option value="">All nodes</option></select></label>
                     <label>Trace <select id="flame-type">
                         <option value="CPU">CPU</option>
                         <option value="Real">Real time</option>
@@ -4162,6 +4165,7 @@ class QueryResultElement extends HTMLElement
         this._metricsTable = this.shadowRoot.getElementById('metrics-table');
         this._metricsBody = this.shadowRoot.getElementById('metrics-body');
         this._flameDiv = this.shadowRoot.getElementById('flame_div');
+        this._flameHost = this.shadowRoot.getElementById('flame-host');
         this._flameType = this.shadowRoot.getElementById('flame-type');
         this._flamePeriod = this.shadowRoot.getElementById('flame-period');
         this._flameStatus = this.shadowRoot.getElementById('flame-status');
@@ -4170,6 +4174,7 @@ class QueryResultElement extends HTMLElement
         this._flame_timer = null;
         this._flame_requested = false;
         this._flamePeriod.addEventListener('change', () => selectProfilerPeriod(this, this._flamePeriod.value));
+        this._flameHost.addEventListener('change', () => this._showFlameGraph());
         this._flameType.addEventListener('change', () => this._showFlameGraph());
         /// The extended profile-event metrics model (the Metrics view). Each metric name maps to
         /// its per-host aggregation; `_metrics_final` switches the rate column from the recent rate
@@ -4417,6 +4422,7 @@ class QueryResultElement extends HTMLElement
         this._flameGraph.style.height = '';
         this._flameStatus.textContent = '';
         this._flame_data = freshFlameGraphState();
+        updateFlameHostSelector(this._flameHost, this._flame_data);
         this._flame_requested = false;
         clearTimeout(this._flame_timer);
         this._flame_timer = null;
@@ -6705,12 +6711,10 @@ class QueryResultElement extends HTMLElement
     {
         const trace_type = this._flameType.value;
         this._flamePeriod.value = profilerPeriodNs(this._ownerTab);
-        const tree = this._flame_data.types.get(trace_type);
-        this._flameStatus.textContent = tree?.root.value ? `${tree.samples.toLocaleString('en-US')} samples received.`
-            : this._flame_requested ? flameGraphEmptyHint(trace_type)
-            : 'Check Flame graph next to Run to collect samples on the next query.';
-        if (this._flame_data.dropped)
-            this._flameStatus.textContent += ` ${this._flame_data.dropped.toLocaleString('en-US')} samples omitted at the browser memory limit.`;
+        updateFlameHostSelector(this._flameHost, this._flame_data);
+        const host = this._flameHost.value === '' ? null : this._flameHost.value.slice(1);
+        const tree = selectFlameTree(this._flame_data, trace_type, host);
+        this._flameStatus.textContent = flameGraphStatus(this._flame_data, trace_type, host, this._flame_requested);
         if (!tree || tree.root.value === 0)
         {
             this._flameGraph.replaceChildren();
@@ -8220,48 +8224,120 @@ function selectProfilerPeriod(result_el, value)
 
 const MAX_FLAME_NODES = 20000;
 const MAX_FLAME_LABEL_CHARS = 2 * 1024 * 1024;
+const MAX_FLAME_HOSTS = 256;
 const MAX_FLAME_DEPTH = 256;
 const MAX_FLAME_DOM_FRAMES = 2000;
+const MAX_FLAME_SERVER_DROPS = 9223372036854775807n;
 
 function freshFlameGraphState()
 {
-    return { types: new Map(), nodes: 0, labelChars: 0, dropped: 0 };
+    return { types: new Map(), hosts: new Map(), nodes: 0, labelChars: 0, dropped: 0, serverDropped: 0n, incomplete: false };
+}
+
+function freshFlameTree()
+{
+    const root = { name: 'all', value: 0, children: new Map(), parent: null, depth: 0 };
+    return { root, zoom: root, maxDepth: 0, samples: 0 };
+}
+
+function selectFlameTree(state, type, host = null)
+{
+    return (host === null ? state.types : state.hosts.get(host)?.types)?.get(type);
+}
+
+function updateFlameHostSelector(select, state)
+{
+    if (select._flameState === state && select._flameHostCount === state.hosts.size) return;
+    const previous = select._flameState === state ? select.value : '';
+    select.replaceChildren();
+    const option = (value, label) =>
+    {
+        const item = document.createElement('option');
+        item.value = value;
+        item.textContent = label;
+        select.appendChild(item);
+    };
+    option('', 'All nodes');
+    for (const host of [...state.hosts.keys()].sort())
+        option(':' + host, host || '(unknown node)');
+    select.value = previous && state.hosts.has(previous.slice(1)) ? previous : '';
+    select._flameState = state;
+    select._flameHostCount = state.hosts.size;
+}
+
+function flameStackCost(tree, frames)
+{
+    let node = tree?.root;
+    let nodes = 0;
+    let chars = 0;
+    for (const frame of frames)
+    {
+        node = node?.children.get(frame.key);
+        if (!node) { ++nodes; chars += frame.key.length + frame.name.length; }
+    }
+    return { nodes, chars };
+}
+
+function appendFlameStack(tree, frames, weight)
+{
+    let node = tree.root;
+    node.value += weight;
+    for (const frame of frames)
+    {
+        let child = node.children.get(frame.key);
+        if (!child)
+        {
+            child = { name: frame.name, value: 0, children: new Map(), parent: node, depth: node.depth + 1 };
+            node.children.set(frame.key, child);
+        }
+        child.value += weight;
+        node = child;
+    }
+    tree.maxDepth = Math.max(tree.maxDepth, node.depth);
+    ++tree.samples;
 }
 
 /// Fold leaf-first samples directly into stable trees, so zoom references survive new batches.
-/// Bound both node count and symbol text across all trace types. Reject an entire new stack when
-/// it would exceed the budget; existing stacks can still accumulate without allocating more nodes.
+/// Account for both the all-node and per-node trees before inserting either representation.
+/// Existing stacks can still accumulate after the shared memory budget is exhausted.
 function accumulateProfileTraces(state, traces)
 {
     for (const sample of traces)
     {
         const type = sample.trace_type;
+        if (type === 'Incomplete') { state.incomplete = true; continue; }
+        if (type === 'Dropped')
+        {
+            const value = sample.size;
+            const count = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? String(value) : value;
+            if (typeof count !== 'string' || !/^[0-9]{1,19}$/.test(count)) { state.incomplete = true; continue; }
+            const delta = BigInt(count);
+            state.serverDropped = state.serverDropped + delta < MAX_FLAME_SERVER_DROPS
+                ? state.serverDropped + delta : MAX_FLAME_SERVER_DROPS;
+            continue;
+        }
         if (type !== 'CPU' && type !== 'Real' && type !== 'MemorySample') continue;
         const weight = type === 'MemorySample' ? Number(sample.size) : 1;
         if (!Number.isFinite(weight) || weight <= 0 || !Array.isArray(sample.trace) || sample.trace.length === 0) continue;
         if (sample.trace.length > MAX_FLAME_DEPTH) { ++state.dropped; continue; }
-        let tree = state.types.get(type);
-        if (!tree)
-        {
-            const root = { name: 'all', value: 0, children: new Map(), parent: null, depth: 0 };
-            tree = { root, zoom: root, maxDepth: 0, samples: 0 };
-            state.types.set(type, tree);
-        }
-        const names = [];
+        const host = typeof sample.host_name === 'string' ? sample.host_name : '';
+        let hostState = state.hosts.get(host);
+        if (!hostState && state.hosts.size >= MAX_FLAME_HOSTS) { ++state.dropped; continue; }
+        const frames = [];
         for (let i = sample.trace.length - 1; i >= 0; --i)
         {
             /// Addresses arrive as decimal strings: converting them to `Number` would merge distinct
-            /// unresolved frames above 2^53. Host names separate unsymbolized addresses across hosts.
-            names.push(sample.symbols?.[i] || `${sample.host_name}: ${sample.trace[i]}`);
+            /// unresolved frames above 2^53. Typed keys also separate symbols from address labels.
+            const symbol = sample.symbols?.[i];
+            const address = String(sample.trace[i]);
+            frames.push(typeof symbol === 'string' && symbol.length
+                ? { key: 's' + symbol, name: symbol }
+                : { key: 'a' + JSON.stringify([host, address]), name: `${host || '(unknown node)'}: ${address}` });
         }
-        let node = tree.root;
-        let new_nodes = 0;
-        let new_chars = 0;
-        for (const name of names)
-        {
-            node = node?.children.get(name);
-            if (!node) { ++new_nodes; new_chars += name.length; }
-        }
+        const allCost = flameStackCost(state.types.get(type), frames);
+        const hostCost = flameStackCost(hostState?.types.get(type), frames);
+        const new_nodes = allCost.nodes + hostCost.nodes;
+        const new_chars = allCost.chars + hostCost.chars + (hostState ? 0 : host.length);
         if (state.nodes + new_nodes > MAX_FLAME_NODES || state.labelChars + new_chars > MAX_FLAME_LABEL_CHARS)
         {
             ++state.dropped;
@@ -8269,22 +8345,32 @@ function accumulateProfileTraces(state, traces)
         }
         state.nodes += new_nodes;
         state.labelChars += new_chars;
-        node = tree.root;
-        node.value += weight;
-        for (const name of names)
+        if (!hostState)
         {
-            let child = node.children.get(name);
-            if (!child)
-            {
-                child = { name, value: 0, children: new Map(), parent: node, depth: node.depth + 1 };
-                node.children.set(name, child);
-            }
-            child.value += weight;
-            node = child;
+            hostState = { types: new Map() };
+            state.hosts.set(host, hostState);
         }
-        tree.maxDepth = Math.max(tree.maxDepth, node.depth);
-        ++tree.samples;
+        for (const types of [state.types, hostState.types])
+        {
+            if (!types.has(type)) types.set(type, freshFlameTree());
+            appendFlameStack(types.get(type), frames, weight);
+        }
     }
+}
+
+function flameGraphStatus(state, type, host, requested)
+{
+    const tree = selectFlameTree(state, type, host);
+    let text = tree?.root.value ? `${tree.samples.toLocaleString('en-US')} samples received.`
+        : requested ? flameGraphEmptyHint(type)
+        : 'Check Flame graph next to Run to collect samples on the next query.';
+    if (state.serverDropped)
+        text += ` ${state.serverDropped === MAX_FLAME_SERVER_DROPS ? 'At least ' : ''}${state.serverDropped.toLocaleString('en-US')} samples lost in server queues (all nodes).`;
+    if (state.incomplete)
+        text += ' Server sample collection is incomplete; additional losses are unknown.';
+    if (state.dropped)
+        text += ` ${state.dropped.toLocaleString('en-US')} samples omitted at the browser memory limit.`;
+    return text;
 }
 
 function flameGraphEmptyHint(trace_type)
