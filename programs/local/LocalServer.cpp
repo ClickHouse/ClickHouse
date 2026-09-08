@@ -1153,6 +1153,7 @@ void LocalServer::setupUsers()
     access_control.setSelectFromInformationSchemaRequiresGrant(config.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     access_control.setSettingsConstraintsReplacePrevious(config.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     access_control.setTableEnginesRequireGrant(config.getBool("access_control_improvements.table_engines_require_grant", true));
+    access_control.setFunctionsRequiringGrantFromConfig(config);
     access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));

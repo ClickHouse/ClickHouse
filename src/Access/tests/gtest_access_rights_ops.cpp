@@ -1272,3 +1272,24 @@ TEST(AccessRightsElementsSerialization, PreciseAvoidsBackwardCompatibleWidening)
     ASSERT_EQ(deny_all.toStringPrecise(), "USAGE ON *.*");
     ASSERT_NE(deny_all.toStringPrecise(), read_file.toStringPrecise());
 }
+
+TEST(AccessRights, FunctionParameter)
+{
+    AccessRights root;
+    root.grant(AccessType::FUNCTION, "decrypt");
+    ASSERT_TRUE(root.isGranted(AccessType::FUNCTION, "decrypt"));
+    ASSERT_FALSE(root.isGranted(AccessType::FUNCTION, "encrypt"));
+    ASSERT_EQ(root.toString(), "GRANT FUNCTION ON decrypt");
+
+    root.grant(AccessType::FUNCTION);
+    ASSERT_TRUE(root.isGranted(AccessType::FUNCTION, "encrypt"));
+    ASSERT_EQ(root.toString(), "GRANT FUNCTION ON *");
+
+    root = {};
+    root.grant(AccessType::ALL);
+    ASSERT_TRUE(root.isGranted(AccessType::FUNCTION, "decrypt"));
+
+    root.revoke(AccessType::FUNCTION, "decrypt");
+    ASSERT_FALSE(root.isGranted(AccessType::FUNCTION, "decrypt"));
+    ASSERT_TRUE(root.isGranted(AccessType::FUNCTION, "encrypt"));
+}
