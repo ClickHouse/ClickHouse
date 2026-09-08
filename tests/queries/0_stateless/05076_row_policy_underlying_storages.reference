@@ -1,21 +1,9 @@
-Target policy through MaterializedView, old analyzer	[1,2]
-Target policy through MaterializedView, analyzer	[1,2]
-Target policy through Buffer, old analyzer	[1,2,5]
-Target policy through Buffer, analyzer	[1,2,5]
-Target policy through Merge over Buffer, old analyzer	[1,2,5]
-Target policy through Merge over Buffer, analyzer	[1,2,5]
-Target policy through MaterializedView over Buffer, old analyzer	[1,2,5]
-Target policy through MaterializedView over Buffer, analyzer	[1,2,5]
-Count through MaterializedView, trivial count disabled	2
-Count through MaterializedView, trivial count enabled	2
-Count through Buffer, trivial count disabled	3
-Count through Buffer, trivial count enabled	3
-Combined policies through MaterializedView, old analyzer	[1]
-Combined policies through MaterializedView, analyzer	[1]
-Combined policies through Buffer, old analyzer	[1,5]
-Combined policies through Buffer, analyzer	[1,5]
-Combined policies through MaterializedView over Buffer, analyzer	[1,5]
-MaterializedView policy only, old analyzer	[1,3]
-MaterializedView policy only, analyzer	[1,3]
-Buffer policy only, old analyzer	[1,3,5,6]
-Buffer policy only, analyzer	[1,3,5,6]
+Target policy through Alias, old analyzer	[1,2]
+Target policy through Alias, analyzer	[1,2]
+Target policy through Merge over Alias	[1,2]
+Count through Alias, trivial count disabled	2
+Count through Alias, trivial count enabled	2
+Combined policies, old analyzer	[1]
+Combined policies, analyzer	[1]
+Alias policy only	[1,3]
+Target policy through a lazily loaded Alias	[1,3]

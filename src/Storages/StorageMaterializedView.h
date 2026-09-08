@@ -26,12 +26,6 @@ public:
 
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
-    std::vector<StoragePtr> getUnderlyingStorages() const override
-    {
-        if (auto target = tryGetTargetTable())
-            return {target};
-        return {};
-    }
     bool isRemote() const override;
 
     bool hasInnerTable() const { return has_inner_table; }

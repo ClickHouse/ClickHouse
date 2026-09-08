@@ -89,12 +89,6 @@ public:
         size_t num_streams) override;
     bool isRemote() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
-    std::vector<StoragePtr> getUnderlyingStorages() const override
-    {
-        if (auto target = getDestinationTable())
-            return {target};
-        return {};
-    }
 
     bool supportsParallelInsert() const override { return true; }
 
