@@ -10,6 +10,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1376,8 +1377,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
+            ASTPtr default_expression = column.default_desc.expression->clone();
+
+            /// An ALIAS column is computed on read and never stored, so a reference to one cannot
+            /// survive into the expression this stage evaluates: it has to be replaced by what the
+            /// alias stands for, cast to the alias's declared type. Resolving the name alone would
+            /// leave the stage demanding a column no part holds (`UNKNOWN_IDENTIFIER`), and dropping
+            /// the cast would recompute a value differing from the one `INSERT` stored for a
+            /// narrowing alias. Same normalization as `MaterializedColumnDependencies::findNode`,
+            /// which the dependency analysis above is keyed on, and before the subcolumn rewrite, so
+            /// that an alias to a subcolumn is normalized too.
+            replaceAliasColumnsInQuery(default_expression, columns_desc, {}, context);
+
             ASTPtr materialized_column = makeASTFunction(
-                "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
+                "_CAST", default_expression, make_intrusive<ASTLiteral>(column.type->getName()));
 
             /// We need to replace all subcolumns used in the materialized expression with the
             /// getSubcolumn function, because otherwise the subcolumn is registered as a separate
@@ -1455,8 +1468,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                             && dependent_column.default_desc.expression
                             && layer_set.contains(dependent_column.name))
                         {
+                            ASTPtr dependent_default = dependent_column.default_desc.expression->clone();
+
+                            /// ALIAS references are expanded here for the same reason as in the
+                            /// stage of the materialized column itself above.
+                            replaceAliasColumnsInQuery(dependent_default, columns_desc, {}, context);
+
                             ASTPtr dependent_expr = makeASTFunction("_CAST",
-                                dependent_column.default_desc.expression->clone(),
+                                dependent_default,
                                 make_intrusive<ASTLiteral>(dependent_column.type->getName()));
 
                             /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
