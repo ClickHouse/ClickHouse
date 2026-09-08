@@ -172,6 +172,89 @@ void UncommittedState::recordCreatedFile(const std::string & path, const std::st
     }
 
     tx_snapshot->recordFile(path, std::move(info));
+
+    /// A blob outside of the default location cannot be found by listing the prefix of the directory, so the commit
+    /// switches the directory to the explicit file list. Without recording that here, the next blob of this directory
+    /// would be placed at the default location again - which is exactly the blob that the file this one was
+    /// hard-linked from is keeping alive.
+    if (new_blob_key != getDefaultBlobKey(directory->remote_path, file_name))
+        tx_snapshot->markDirectoryExplicit(normalized_path.parent_path());
+}
+
+void UncommittedState::recordHardLink(const std::string & path_from, const std::string & path_to)
+{
+    const auto normalized_path_from = normalizePath(path_from);
+    const auto normalized_path_to = normalizePath(path_to);
+
+    /// The target directory gains a file whose blob is stored under the prefix of another directory.
+    markDirectoryExplicit(normalized_path_to.parent_path());
+
+    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(normalized_path_from.parent_path());
+    if (!directory_from)
+        return;
+
+    const auto file_name_from = normalized_path_from.filename().string();
+    const auto file_from = directory_from->files.find(file_name_from);
+    if (file_from == directory_from->files.end())
+        return;
+
+    auto info = file_from->second;
+    info.blob_key = getBlobKey(*directory_from, file_name_from, file_from->second);
+    tx_snapshot->addBlobLink(info.blob_key);
+
+    /// A hard link over something that already exists is rejected by the commit, which is where the error belongs.
+    if (!tx_snapshot->getDirectoryRemoteInfo(normalized_path_to.parent_path())
+        || tx_snapshot->existsFile(path_to)
+        || tx_snapshot->existsDirectory(path_to))
+        return;
+
+    tx_snapshot->recordFile(path_to, std::move(info));
+}
+
+void UncommittedState::recordMovedFile(const std::string & path_from, const std::string & path_to, bool keeps_blob)
+{
+    const auto normalized_path_from = normalizePath(path_from);
+    const auto normalized_path_to = normalizePath(path_to);
+    if (normalized_path_from == normalized_path_to)
+        return;
+
+    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(normalized_path_from.parent_path());
+    const auto directory_to = tx_snapshot->getDirectoryRemoteInfo(normalized_path_to.parent_path());
+    if (!directory_from || !directory_to)
+        return;
+
+    const auto file_name_from = normalized_path_from.filename().string();
+    const auto file_name_to = normalized_path_to.filename().string();
+
+    const auto file_from = directory_from->files.find(file_name_from);
+    if (file_from == directory_from->files.end())
+        return;
+
+    /// A move over a directory is rejected by the commit, which is where the error belongs.
+    if (tx_snapshot->existsDirectory(path_to))
+        return;
+
+    auto info = file_from->second;
+    /// A metadata-only move leaves the blob where it is; otherwise the blob is copied to the default location
+    /// in the target directory.
+    info.blob_key = keeps_blob
+        ? getBlobKey(*directory_from, file_name_from, file_from->second)
+        : getDefaultBlobKey(directory_to->remote_path, file_name_to);
+
+    /// The replaced file stops referencing its blob. The blob itself survives only when it is shared:
+    /// a move that is not metadata-only overwrites it.
+    if (const auto file_to = directory_to->files.find(file_name_to); file_to != directory_to->files.end())
+    {
+        const auto replaced_blob_key = getBlobKey(*directory_to, file_name_to, file_to->second);
+        /// The count is tracked only for the blobs that have more than one link, so the last link is not subtracted.
+        if (tx_snapshot->getBlobLinkCount(replaced_blob_key) > 1)
+            tx_snapshot->removeBlobLink(replaced_blob_key);
+
+        tx_snapshot->removeFile(path_to);
+    }
+
+    tx_snapshot->removeFile(path_from);
+    tx_snapshot->recordFile(path_to, std::move(info));
 }
 
 void UncommittedState::markDirectoryExplicit(const std::string & path)
@@ -180,11 +263,6 @@ void UncommittedState::markDirectoryExplicit(const std::string & path)
         return;
 
     tx_snapshot->markDirectoryExplicit(path);
-}
-
-void UncommittedState::addBlobLink(const std::string & blob_key)
-{
-    tx_snapshot->addBlobLink(blob_key);
 }
 
 std::optional<DirectoryRemoteInfo> UncommittedState::getDirectoryRemoteInfo(const std::string & path) const

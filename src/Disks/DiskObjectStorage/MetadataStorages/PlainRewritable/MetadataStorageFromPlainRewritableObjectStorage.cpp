@@ -642,9 +642,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
     }
 
     /// The target directory switches to the explicit file list and the blob becomes shared.
-    if (const auto blob_key = getBlobKeyIfExists(uncommitted_state.getSnapshot(), normalized_path_from))
-        uncommitted_state.addBlobLink(*blob_key);
-    uncommitted_state.markDirectoryExplicit(normalized_path_to.parent_path());
+    uncommitted_state.recordHardLink(path_from, path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageHardLinkOperation>(
         path_from,
@@ -667,11 +665,16 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(co
     if (!directory_from || !directory_to || !blob_key_from)
         return;
 
-    if (isMetadataOnlyMove(snapshot, *directory_from, *directory_to, *blob_key_from, getBlobKeyIfExists(snapshot, path_to)))
+    const bool metadata_only = isMetadataOnlyMove(snapshot, *directory_from, *directory_to, *blob_key_from, getBlobKeyIfExists(snapshot, path_to));
+    if (metadata_only)
     {
         uncommitted_state.markDirectoryExplicit(path_from.parent_path());
         uncommitted_state.markDirectoryExplicit(path_to.parent_path());
     }
+
+    /// The moved file has to be visible at its new path: a hard link to it makes its blob shared, and then rewriting it
+    /// has to pick a new blob instead of clobbering the shared one.
+    uncommitted_state.recordMovedFile(path_from, path_to, /*keeps_blob=*/metadata_only);
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)

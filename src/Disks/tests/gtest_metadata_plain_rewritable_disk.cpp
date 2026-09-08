@@ -2695,6 +2695,146 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkAndRewriteInSameTransactio
     EXPECT_EQ(listAllBlobs(test).size(), 4u);  /// two prefix.path and two blobs
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkAndRewriteTwiceInSameTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string test = "CreateHardLinkAndRewriteTwiceInSameTransaction";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "old");
+        tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto shared_key = metadata->getStorageObjects("A/f1").front().remote_path;
+
+    /// The file is hard-linked and then rewritten twice by the same transaction. The first rewrite goes to a blob with
+    /// a random name, which switches `A` to the explicit file list, so the second rewrite must not fall back to the
+    /// default location of `A/f1` - that is the blob `B/f1` is keeping alive.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("A/f1", "B/f1");
+
+        const auto first_key = tx->generateObjectKeyForPath("A/f1").serialize();
+        EXPECT_NE(first_key, shared_key);
+        size_t first_size = writeObject(object_storage, first_key, "first");
+        tx->createMetadataFile("A/f1", {StoredObject(first_key, "A/f1", first_size)});
+
+        const auto second_key = tx->generateObjectKeyForPath("A/f1").serialize();
+        EXPECT_NE(second_key, shared_key);
+        EXPECT_NE(second_key, first_key);
+        size_t second_size = writeObject(object_storage, second_key, "second");
+        tx->createMetadataFile("A/f1", {StoredObject(second_key, "A/f1", second_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getStorageObjects("B/f1").front().remote_path, shared_key);
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f1").front().remote_path), "second");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "old");
+    EXPECT_EQ(metadata->getHardlinkCount("A/f1"), 0);
+    EXPECT_EQ(metadata->getHardlinkCount("B/f1"), 0);
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f1").front().remote_path), "second");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "old");
+    /// The blob of the first rewrite is gone: two `prefix.path` objects and the two blobs are left.
+    EXPECT_EQ(listAllBlobs(test).size(), 4u);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveFileThenHardLinkAndRewriteInSameTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string test = "MoveFileThenHardLinkAndRewriteInSameTransaction";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->createDirectory("C");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "moved");
+        tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The file is moved into a directory with the implicit file list, so its blob is copied to the default location
+    /// there, then it is hard-linked from the new path and rewritten - all by one transaction. The transaction has to
+    /// see the moved file, otherwise the rewrite reuses the default location and clobbers what the link preserves.
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveFile("A/f1", "B/f1");
+        tx->createHardLink("B/f1", "C/f1");
+
+        const auto new_key = tx->generateObjectKeyForPath("B/f1").serialize();
+        size_t new_size = writeObject(object_storage, new_key, "rewritten");
+        tx->createMetadataFile("B/f1", {StoredObject(new_key, "B/f1", new_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsFile("A/f1"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "rewritten");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/f1").front().remote_path), "moved");
+    EXPECT_EQ(metadata->getHardlinkCount("B/f1"), 0);
+    EXPECT_EQ(metadata->getHardlinkCount("C/f1"), 0);
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_FALSE(metadata->existsFile("A/f1"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "rewritten");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/f1").front().remote_path), "moved");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReplaceFileThenHardLinkAndRewriteInSameTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string test = "ReplaceFileThenHardLinkAndRewriteInSameTransaction";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->createDirectory("C");
+        size_t size_from = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "replacing");
+        tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size_from)});
+        size_t size_to = writeObject(object_storage, tx->generateObjectKeyForPath("B/f1").serialize(), "replaced");
+        tx->createMetadataFile("B/f1", {StoredObject("f1", "f1", size_to)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The same, for a replace over an existing file.
+    {
+        auto tx = metadata->createTransaction();
+        tx->replaceFile("A/f1", "B/f1");
+        tx->createHardLink("B/f1", "C/f1");
+
+        const auto new_key = tx->generateObjectKeyForPath("B/f1").serialize();
+        size_t new_size = writeObject(object_storage, new_key, "rewritten");
+        tx->createMetadataFile("B/f1", {StoredObject(new_key, "B/f1", new_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsFile("A/f1"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "rewritten");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/f1").front().remote_path), "replacing");
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "rewritten");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/f1").front().remote_path), "replacing");
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, EmptyDirectoryMetadataIsNotLoadedAsRoot)
 {
     thread_local_rng.seed(42);
