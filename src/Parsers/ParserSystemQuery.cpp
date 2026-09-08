@@ -413,6 +413,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DISABLE_ALL_FAILPOINTS:
+        {
+            /// Takes no name. Listed explicitly rather than left to the `default` below,
+            /// which would accept `ON CLUSTER` - fail points are node-local state, and none
+            /// of the other `SYSTEM ... FAILPOINT` statements accept it either.
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
