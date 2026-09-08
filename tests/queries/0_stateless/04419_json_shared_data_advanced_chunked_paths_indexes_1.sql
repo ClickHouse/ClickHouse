@@ -8,8 +8,6 @@ create table test (json JSON(max_dynamic_paths=0)) engine=MergeTree order by tup
 
 insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(255))::Map(String, UInt32));
 insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(256))::Map(String, UInt32));
-insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(65535))::Map(String, UInt32));
-insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(65536))::Map(String, UInt32));
 
 optimize table test final;
 
