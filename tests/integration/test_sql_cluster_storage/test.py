@@ -8,11 +8,19 @@ from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 METADATA_CONFIG_CONTAINER_PATH = "/etc/clickhouse-server/config.d/cluster_metadata.xml"
-LOCAL_METADATA_PATH = "/var/lib/clickhouse/sql_clusters_metadata"
-KEEPER_METADATA_PATH = "/clickhouse/sql_cluster_metadata"
 SQL_CLUSTER_NAME = "sql_managed_cluster"
 ON_CLUSTER = "test_cluster"
 NODES = ("clickhouse1", "clickhouse2", "clickhouse3", "clickhouse4")
+
+LOCAL_METADATA_PATHS = {
+    "cluster_metadata_local.xml": "/var/lib/clickhouse/sql_clusters_metadata_local",
+    "cluster_metadata_local_encrypted.xml": "/var/lib/clickhouse/sql_clusters_metadata_local_encrypted",
+}
+
+KEEPER_METADATA_PATHS = {
+    "cluster_metadata_keeper.xml": "/clickhouse/sql_cluster_metadata_keeper",
+    "cluster_metadata_keeper_encrypted.xml": "/clickhouse/sql_cluster_metadata_keeper_encrypted",
+}
 
 CREATE_CLUSTER_QUERY = f"""
 CREATE CLUSTER {SQL_CLUSTER_NAME} ON CLUSTER '{ON_CLUSTER}' (
@@ -79,12 +87,30 @@ def cluster():
         cluster.shutdown()
 
 
-def install_metadata_storage(cluster, config_file):
+def cleanup_local_metadata(nodes, metadata_path):
+    for node in nodes:
+        node.exec_in_container(["bash", "-c", f"rm -rf '{metadata_path}'"])
+
+
+def cleanup_keeper_metadata(zk, keeper_path):
+    if zk.exists(keeper_path):
+        for child in zk.get_children(keeper_path):
+            zk.delete(f"{keeper_path}/{child}")
+
+
+def install_metadata_storage(cluster, config_file, *, local_metadata_path=None, keeper_metadata_path=None):
+    nodes = list(cluster.instances.values())
+
+    if local_metadata_path is not None:
+        cleanup_local_metadata(nodes, local_metadata_path)
+    if keeper_metadata_path is not None:
+        cleanup_keeper_metadata(cluster.get_kazoo_client("zoo1"), keeper_metadata_path)
+
     host_config_path = os.path.join(SCRIPT_DIR, "configs/config.d", config_file)
     with open(host_config_path, "r", encoding="utf-8") as config:
         config_contents = config.read()
 
-    for node in cluster.instances.values():
+    for node in nodes:
         node.exec_in_container(
             [
                 "bash",
@@ -115,30 +141,31 @@ def assert_cluster_state(nodes, expected):
         assert expected == node.query(clusters_query()).strip()
 
 
-def read_local_metadata_file(node):
-    file_path = os.path.join(node.path, "sql_clusters_metadata", f"{SQL_CLUSTER_NAME}.sql")
+def read_local_metadata_file(node, metadata_path):
+    metadata_dir = metadata_path.removeprefix("/var/lib/clickhouse/")
+    file_path = os.path.join(node.path, "database", metadata_dir, f"{SQL_CLUSTER_NAME}.sql")
     with open(file_path, "rb") as metadata_file:
         return metadata_file.read()
 
 
-def check_local_metadata(nodes, encrypted):
+def check_local_metadata(nodes, metadata_path, encrypted):
     for node in nodes:
-        content = read_local_metadata_file(node)
+        content = read_local_metadata_file(node, metadata_path)
         if encrypted:
-            assert content[:3] == "ENC"
+            assert content[:3] == b"ENC"
             assert b"secret" not in content
             assert b"clickhouse1" not in content
         else:
-            assert content[:3] != "ENC"
+            assert content[:3] != b"ENC"
             assert b"clickhouse1" in content
             assert b"secret" in content
 
 
-def check_keeper_metadata(zk, encrypted):
-    zk.sync(KEEPER_METADATA_PATH)
-    children = zk.get_children(KEEPER_METADATA_PATH)
+def check_keeper_metadata(zk, keeper_path, encrypted):
+    zk.sync(keeper_path)
+    children = zk.get_children(keeper_path)
     assert f"{SQL_CLUSTER_NAME}.sql" in children
-    content = zk.get(f"{KEEPER_METADATA_PATH}/{SQL_CLUSTER_NAME}.sql")[0]
+    content = zk.get(f"{keeper_path}/{SQL_CLUSTER_NAME}.sql")[0]
     if encrypted:
         assert content[:3] == b"ENC"
         assert b"secret" not in content
@@ -150,7 +177,15 @@ def check_keeper_metadata(zk, encrypted):
 
 
 def run_storage_scenario(cluster, *, config_file, use_on_cluster, encrypted, keeper):
-    install_metadata_storage(cluster, config_file)
+    local_metadata_path = LOCAL_METADATA_PATHS.get(config_file)
+    keeper_metadata_path = KEEPER_METADATA_PATHS.get(config_file)
+
+    install_metadata_storage(
+        cluster,
+        config_file,
+        local_metadata_path=local_metadata_path,
+        keeper_metadata_path=keeper_metadata_path,
+    )
 
     nodes = [cluster.instances[name] for name in NODES]
     leader = nodes[0]
@@ -166,9 +201,9 @@ def run_storage_scenario(cluster, *, config_file, use_on_cluster, encrypted, kee
 
     assert_cluster_state(nodes, EXPECTED_INITIAL)
     if keeper:
-        check_keeper_metadata(zk, encrypted)
+        check_keeper_metadata(zk, keeper_metadata_path, encrypted)
     else:
-        check_local_metadata(nodes, encrypted)
+        check_local_metadata(nodes, local_metadata_path, encrypted)
 
     for node in nodes:
         node.restart_clickhouse()
@@ -184,9 +219,9 @@ def run_storage_scenario(cluster, *, config_file, use_on_cluster, encrypted, kee
 
     assert_cluster_state(nodes, EXPECTED_ALTERED)
     if keeper:
-        check_keeper_metadata(zk, encrypted)
+        check_keeper_metadata(zk, keeper_metadata_path, encrypted)
     else:
-        check_local_metadata(nodes, encrypted)
+        check_local_metadata(nodes, local_metadata_path, encrypted)
 
     if use_on_cluster:
         nodes[2].query(f"DROP CLUSTER {SQL_CLUSTER_NAME} ON CLUSTER '{ON_CLUSTER}'")
@@ -202,8 +237,8 @@ def run_storage_scenario(cluster, *, config_file, use_on_cluster, encrypted, kee
         ).strip()
 
     if keeper:
-        zk.sync(KEEPER_METADATA_PATH)
-        assert SQL_CLUSTER_NAME + ".sql" not in zk.get_children(KEEPER_METADATA_PATH)
+        zk.sync(keeper_metadata_path)
+        assert SQL_CLUSTER_NAME + ".sql" not in zk.get_children(keeper_metadata_path)
 
 
 def test_local_storage_on_cluster(cluster):

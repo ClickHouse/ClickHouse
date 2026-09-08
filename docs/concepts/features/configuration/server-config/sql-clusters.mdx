@@ -45,11 +45,39 @@ Each `SHARD` block describes one shard. A shard can contain:
 - one or more `REPLICA (...)` blocks, or
 - replica connection properties (`host`, `port`, and so on) directly inside the `SHARD` block for a single-replica shard.
 
-Cluster-level properties (`user`, `password`, `secret`, `allow_distributed_ddl_queries`) apply to all shards and replicas unless overridden at the shard or replica level.
+Cluster-level properties in the server configuration (`secret`, `allow_distributed_ddl_queries`) apply to the whole cluster. In SQL syntax, `user` and `password` can also be written at the cluster level as default credentials for all shards and replicas.
 
 Supported replica properties: `host`, `port`, `user`, `password`, `secure`, `compression`, `priority`, `bind_host`, `default_database`.
 
 Supported shard properties: `weight`, `internal_replication`.
+
+### `user` and `password` inheritance {#user-and-password-inheritance}
+
+`user` and `password` can be specified at the cluster, shard, or replica level. For each replica (or single-replica `SHARD` without `REPLICA` blocks), the value closest to that replica is used:
+
+1. If the replica defines `user` or `password`, that value is used.
+2. Otherwise, if the parent `SHARD` defines it, the shard value is used.
+3. Otherwise, if the cluster definition defines it, the cluster value is used.
+4. If it is not defined at any level, the same defaults as in [`<remote_servers>`](/reference/engines/table-engines/special/distributed#distributed-clusters) apply: `user = 'default'`, `password = ''` (empty string).
+
+`user` and `password` are optional at every level. You do not need to repeat them on each replica when a cluster- or shard-level default is sufficient.
+
+Example:
+
+```sql
+CREATE CLUSTER my_cluster (
+    user = 'cluster_user',
+    password = 'cluster_password',
+    SHARD (
+        user = 'shard_user',  -- overrides cluster defaults for replicas in this shard
+        REPLICA (host = 'host1', port = 9000),  -- uses shard_user, cluster_password
+        REPLICA (host = 'host2', port = 9000, password = 'replica_password')  -- uses shard_user, replica_password
+    ),
+    SHARD (
+        REPLICA (host = 'host3', port = 9000)  -- uses cluster_user, cluster_password
+    )
+);
+```
 
 See also:
 

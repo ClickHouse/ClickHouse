@@ -27,6 +27,78 @@ namespace
 
 using Properties = SettingsChanges;
 
+const std::unordered_set<String> & clusterPropertyKeys()
+{
+    static const std::unordered_set<String> keys = {"secret", "allow_distributed_ddl_queries"};
+    return keys;
+}
+
+const std::unordered_set<String> & shardOnlyPropertyKeys()
+{
+    static const std::unordered_set<String> keys = {"weight", "internal_replication"};
+    return keys;
+}
+
+const std::unordered_set<String> & replicaPropertyKeys()
+{
+    static const std::unordered_set<String> keys = {
+        "host", "port", "user", "password", "secure", "compression", "priority", "bind_host", "default_database"};
+    return keys;
+}
+
+bool isCredentialProperty(std::string_view name)
+{
+    return name == "user" || name == "password";
+}
+
+void validateClusterLevelProperties(const Properties & properties)
+{
+    for (const auto & change : properties)
+    {
+        if (!clusterPropertyKeys().contains(change.name) && !isCredentialProperty(change.name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed at cluster level", change.name);
+    }
+}
+
+void validateShardProperties(const Properties & properties, bool has_replicas)
+{
+    for (const auto & change : properties)
+    {
+        if (has_replicas)
+        {
+            if (!shardOnlyPropertyKeys().contains(change.name) && !isCredentialProperty(change.name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in SHARD with REPLICA blocks", change.name);
+        }
+        else if (!replicaPropertyKeys().contains(change.name) && !shardOnlyPropertyKeys().contains(change.name))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in SHARD", change.name);
+        }
+    }
+}
+
+void validateReplicaProperties(const Properties & properties)
+{
+    for (const auto & change : properties)
+    {
+        if (!replicaPropertyKeys().contains(change.name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in REPLICA", change.name);
+    }
+}
+
+void validateSQLClusterDefinition(const ASTSQLClusterDefinition & definition)
+{
+    validateClusterLevelProperties(definition.cluster_properties);
+
+    for (const auto & shard_ast : definition.shards)
+    {
+        const auto & shard = shard_ast->as<const ASTSQLClusterShard &>();
+        validateShardProperties(shard.properties, !shard.replicas.empty());
+
+        for (const auto & replica_ast : shard.replicas)
+            validateReplicaProperties(replica_ast->as<const ASTSQLClusterReplica &>().properties);
+    }
+}
+
 void setConfigValue(Poco::Util::MapConfiguration & config, const String & key, const Field & value)
 {
     if (value.getType() == Field::Types::String)
@@ -39,13 +111,10 @@ void setConfigValue(Poco::Util::MapConfiguration & config, const String & key, c
 
 void applyReplicaProperties(Poco::Util::MapConfiguration & config, const String & prefix, const Properties & properties)
 {
-    static const std::unordered_set<String> replica_keys = {
-        "host", "port", "user", "password", "secure", "compression", "priority", "bind_host", "default_database"};
-
     for (const auto & change : properties)
     {
-        if (!replica_keys.contains(change.name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown replica property `{}`", change.name);
+        if (!replicaPropertyKeys().contains(change.name))
+            continue;
         setConfigValue(config, prefix + "." + change.name, change.value);
     }
 }
@@ -111,8 +180,9 @@ ClusterPtr SQLClusterFactory::materializeCluster(
             for (const auto & replica_ast : shard.replicas)
             {
                 ++replica_num;
+                const auto & replica = replica_ast->as<const ASTSQLClusterReplica &>();
                 Properties replica_properties = shard_properties;
-                replica_properties.setSettings(replica_ast->as<const ASTSQLClusterReplica &>().properties);
+                replica_properties.setSettings(replica.properties);
                 applyReplicaProperties(*config, shard_prefix + ".replica" + std::to_string(replica_num), replica_properties);
             }
         }
@@ -213,10 +283,23 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
         throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "SQL cluster `{}` already exists", query.cluster_name);
     }
 
+    auto context = Context::getGlobalContextInstance()->getGlobalContext();
+    if (auto existing = context->tryGetCluster(query.cluster_name))
+    {
+        if (existing->getSourceId() == Cluster::SourceId::SQL)
+            throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "SQL cluster `{}` already exists", query.cluster_name);
+
+        if (existing->getSourceId() == Cluster::SourceId::CONFIG)
+            throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cluster `{}` already exists in server configuration", query.cluster_name);
+
+        throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cluster `{}` already exists (cluster discovery)", query.cluster_name);
+    }
+
+    validateSQLClusterDefinition(query.definition->as<const ASTSQLClusterDefinition &>());
+
     auto create_statement = query.formatWithSecretsOneLine();
     metadata_storage->writeCreateQuery(query.cluster_name, create_statement, false);
 
-    auto context = Context::getGlobalContextInstance()->getGlobalContext();
     context->setCluster(query.cluster_name, materializeCluster(query, context, create_statement));
     stored_cluster_names.insert(query.cluster_name);
 }
@@ -236,6 +319,8 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
     ASTCreateSQLClusterQuery create_query;
     create_query.cluster_name = query.cluster_name;
     create_query.definition = query.definition->clone();
+
+    validateSQLClusterDefinition(create_query.definition->as<const ASTSQLClusterDefinition &>());
 
     auto create_statement = create_query.formatWithSecretsOneLine();
     metadata_storage->writeCreateQuery(query.cluster_name, create_statement, true);

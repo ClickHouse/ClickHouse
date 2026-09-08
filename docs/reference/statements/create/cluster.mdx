@@ -35,22 +35,25 @@ Cluster names must not contain dots.
 
 | Property | Description |
 |----------|-------------|
-| `user` | Default user for replicas in the cluster |
-| `password` | Default password for replicas in the cluster |
+| `user` | Default user for replicas. Can be overridden at the shard or replica level. If omitted everywhere, defaults to `'default'`. See [inheritance rules](/concepts/features/configuration/server-config/sql-clusters#user-and-password-inheritance). |
+| `password` | Default password for replicas. Can be overridden at the shard or replica level. If omitted everywhere, defaults to an empty string. See [inheritance rules](/concepts/features/configuration/server-config/sql-clusters#user-and-password-inheritance). |
 | `secret` | Inter-server secret for authenticated distributed queries |
 | `allow_distributed_ddl_queries` | Whether `ON CLUSTER` DDL is allowed for this cluster. Default: `true` |
 
 ### Shard properties {#shard-properties}
 
-Shard properties inherit cluster-level `user` and `password` unless overridden.
+In a `SHARD` with `REPLICA` blocks, `user` and `password` set shard-level defaults that override cluster defaults for all replicas in that shard.
 
 | Property | Description |
 |----------|-------------|
 | `weight` | Relative weight of the shard when writing through a `Distributed` table. Default: `1` |
 | `internal_replication` | Whether the shard replicates data internally. Default: `false` |
+| `user`, `password` | Default credentials for replicas in this shard when the shard contains `REPLICA` blocks |
 | `host`, `port`, ... | When the shard has no `REPLICA` blocks, these define a single-replica shard |
 
 ### Replica properties {#replica-properties}
+
+Replica-level `user` and `password` override shard- and cluster-level defaults for that replica.
 
 | Property | Description |
 |----------|-------------|

@@ -2146,6 +2146,8 @@ private:
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
 
+    void notifyDDLWorkerAfterClustersChange() const;
+
     WasmModuleManager * initWasmModuleManager();
 
     std::unordered_set<String> allowed_disks;

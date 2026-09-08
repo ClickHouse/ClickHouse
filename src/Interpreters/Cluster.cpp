@@ -404,7 +404,13 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         for (const auto & key : deleted_keys)
         {
             if (!automatic_clusters.contains(key))
+            {
+                auto it = impl.find(key);
+                if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+                    continue;
+
                 impl.erase(key);
+            }
         }
     }
     else
@@ -412,7 +418,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         if (!automatic_clusters.empty())
             std::erase_if(impl, [this](const auto & e) { return automatic_clusters.contains(e.first); });
         else
-            impl.clear();
+            std::erase_if(impl, [](const auto & e) { return e.second->getSourceId() != Cluster::SourceId::SQL; });
     }
 
 
@@ -430,7 +436,13 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
+        {
+            auto it = impl.find(key);
+            if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+                continue;
+
             impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+        }
     }
 }
 
