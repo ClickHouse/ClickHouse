@@ -210,24 +210,24 @@ The `weight` and `priority` workload settings schedule resources *between* workl
 CREATE WORKLOAD all SETTINGS scheduler = 'fair'
 ```
 
-- **`fifo`** (default) — first-come-first-served, preserving the historical behaviour.
+- **`fifo`** (default) — first-come-first-served, preserving the historical behaviour. It is starvation-free, but provides no fairness and ignores `weight` and the related per-query settings.
 - **`fair`** — weighted fair queueing: each query gets a share of the resource proportional to its `weight` (a query setting, default `1`), and no query is starved.
 - **`las`** — least-attained-service: the query that has consumed the least of this resource so far is served first (bucketed into levels, so a query drops a level each time its consumption doubles). This minimises latency for short queries under mixed workloads, but a long-running query can be starved by a continuous stream of short ones — prefer `fair` when a no-starvation guarantee is required.
-- **`priority`** — strict priority by the query's [`priority`](/operations/settings/settings#priority) setting (`1` = highest, larger values = lower, `0` = no priority = lowest). Queries are served in priority order, FIFO within the same priority. This reuses the existing `priority` query setting, so a value set for the query's admission priority also orders it inside the workload. Like any strict-priority scheme it can starve low-priority queries.
+- **`priority`** — strict priority by the query's [`priority`](/operations/settings/settings#priority) setting (lower value means higher priority). Queries are served in priority order, FIFO within the same priority. This reuses the existing `priority` query setting, so a value set for the query's admission priority also orders it inside the workload. Like any strict-priority scheme it can starve low-priority queries.
 
-The `scheduler` is time-shared only (CPU and IO) and can be set per resource with the `FOR <resource>` clause; targeting it at a non-CPU/IO resource (a `QUERY` or `MEMORY RESERVATION` resource) is rejected at DDL time rather than silently ignored. Changing it on an existing workload swaps the algorithm in place, without interrupting other resources.
+The `scheduler` is time-shared only (CPU and IO) and can be set per resource with the `FOR <resource>` clause. Changing it on an existing workload swaps the algorithm in place, without interrupting other resources.
 
-For CPU resources, the `scheduler` and the per-query settings below require CPU slot preemption (`cpu_slot_preemption = 1`, the default). With preemption disabled, CPU slots are non-preemptive (a fixed cost is charged once per acquired slot), which carries no meaningful per-query CPU signal, so the CPU leaf runs `fifo` and these settings are ignored. IO scheduling is unaffected.
+For CPU resources, the `scheduler` and the per-query settings below require CPU slot preemption (`cpu_slot_preemption = 1`, the default).
 
 Under the `fair` scheduler, a query's effective weight can be **lowered as it runs**, so shorter or newer queries get a larger share. This is controlled by per-query settings (all default to disabled):
 
 | Query setting | Effect |
 |---|---|
-| `weight` | Base fair-scheduling weight of the query (default `1.0`; a non-positive value is treated as `1.0`). |
-| `weight_lowering_age_seconds` | Once the query's wall-clock age exceeds this, its weight is lowered. `0` or a negative value disables it. |
-| `weight_lowering_cpu_seconds` | Once the query has attained this many CPU-seconds, its weight is lowered (CPU resources). Attained CPU is granted scheduler service (charged at grant, not as CPU is spent), leading actual consumption by at most one quantum (`cpu_slot_quantum_ns`) per active slot. Requires `cpu_slot_preemption = 1` (the default); with preemption off, CPU scheduling falls back to `fifo` and this setting has no effect. |
-| `weight_lowering_io_bytes` | Once the query has attained this many IO bytes, its weight is lowered (IO resources). `0` or a negative value disables it. |
-| `weight_lowering_factor` | The factor the weight is multiplied by when a threshold is crossed (e.g. `0.25`). The first threshold to trip applies the full lowering; thresholds do not combine. `1.0` disables lowering. Clamped to `[0, 1]`, so it can only lower a query's weight, never raise it. |
+| `weight` | Base fair-scheduling weight of the query (default `1.0`). |
+| `weight_lowering_age_seconds` | Once the query's wall-clock age exceeds this, its weight is lowered. `0` disables it. |
+| `weight_lowering_cpu_seconds` | Once the query has attained this many CPU-seconds, its weight is lowered (CPU resources). `0` disables it. |
+| `weight_lowering_io_bytes` | Once the query has attained this many IO bytes, its weight is lowered (IO resources). `0` disables it. |
+| `weight_lowering_factor` | The factor the weight is multiplied by when a threshold is crossed (e.g. `0.25`). The first threshold to trip applies the full lowering; thresholds do not combine. `1.0` disables lowering. Clamped to `[0, 1]`. |
 
 ```sql
 -- Enable fair scheduling for the workload (once):
