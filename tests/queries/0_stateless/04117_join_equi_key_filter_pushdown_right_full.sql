@@ -281,6 +281,34 @@ SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
       AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 );
 
+-- Stability within the query is two properties and a function can fail only the second:
+-- `timeSeriesStoreTags` returns its first argument unchanged while declaring itself stateful, so it
+-- separates statefulness from the non-determinism `rand` carries above. Its value is the same on every
+-- evaluation, so only the plan tells these keys apart from a substitutable one.
+
+SELECT 'INNER JOIN ON, cross-type equi-key holding per-query state: the key does not reach the right input';
+SELECT countIf(explain ILIKE '%Filter column%timeSeriesStoreTags%') = 0 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = timeSeriesStoreTags(r.b, map('n', 'v'))
+    WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
+SELECT 'INNER JOIN ON, cross-type equi-key whose lambda body holds per-query state: the key does not either';
+SELECT countIf(explain ILIKE '%Filter column%arrayMax%') = 0 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r
+        ON l.a = arrayMax(arrayMap(z -> timeSeriesStoreTags(z, map('n', 'v')), [r.b]))
+    WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
+SELECT 'INNER JOIN ON, conjunct whose lambda body holds per-query state beside the equi-key: the conjunct is not pushed';
+SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE arrayExists(y -> timeSeriesStoreTags(y, map('n', 'v')) % 1 = 0, materialize([1])) = (l.a > toDate32('1900-01-01'))
+      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
 SELECT 'INNER JOIN ON, cross-type equi-key: result';
 SELECT r.b FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
 WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03') ORDER BY 1;

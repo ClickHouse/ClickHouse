@@ -64,6 +64,12 @@ INNER JOIN ON, conjunct with a deterministic lambda body beside the equi-key: th
 1
 INNER JOIN ON, conjunct with an unstable lambda body beside the equi-key: the conjunct is not pushed
 1
+INNER JOIN ON, cross-type equi-key holding per-query state: the key does not reach the right input
+1
+INNER JOIN ON, cross-type equi-key whose lambda body holds per-query state: the key does not either
+1
+INNER JOIN ON, conjunct whose lambda body holds per-query state beside the equi-key: the conjunct is not pushed
+1
 INNER JOIN ON, cross-type equi-key: result
 2020-06-01
 2020-06-02
