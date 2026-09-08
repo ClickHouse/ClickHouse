@@ -1,6 +1,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Executors/Runtime/Engine/Worker.h>
+#include <Processors/Executors/Runtime/Engine/WorkerPool.h>
 #include <Processors/Port.h>
 #include <Common/Exception.h>
 
@@ -266,13 +267,19 @@ struct Harness
     Poller poller;
     TaskScheduler scheduler;
     WorkersCoordinator coordinator;
+    SlotAllocationPtr cpu_slots;
+    WorkerPool pool;
+    WorkerSlot slot;
     Worker worker;
 
     explicit Harness(Processors processors_)
         : processors(std::make_shared<Processors>(std::move(processors_)))
         , pipeline(processors, nullptr, nullptr)
         , scheduler(poller, 1)
-        , coordinator(scheduler, poller)
+        , coordinator(scheduler, poller, 1)
+        , cpu_slots(std::make_shared<GrantedAllocation>(1))
+        , pool(scheduler, coordinator, pipeline, 1, false)
+        , slot(cpu_slots->acquire(), pool, nullptr, nullptr)
         , worker(0, scheduler, coordinator, pipeline)
     {
         for (auto * sink : pipeline.sinks())
@@ -285,7 +292,7 @@ struct Harness
 
     void execute(std::atomic_bool * yield_flag = nullptr)
     {
-        worker.run([] { return true; }, yield_flag);
+        worker.run(slot, yield_flag);
     }
 };
 
@@ -343,21 +350,27 @@ TEST(Worker, AsyncStatusWaitsForTheEventThenWorks)
 }
 #endif
 
-TEST(Worker, ThrowingWorkFailsThePipelineAndStops)
+TEST(Worker, ThrowingWorkLeavesTheLoopWithTheException)
 {
     auto source = std::make_shared<WorkingSource>(/*throw_in_work=*/true);
     auto sink = std::make_shared<RecordingSink>();
     connect(source->getOutputs().front(), sink->getInputs().front());
 
     Harness run({source, sink});
-    run.execute();
+    try
+    {
+        run.execute();
+        FAIL() << "run must throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(ErrorCodes::BAD_ARGUMENTS, e.code());
+        EXPECT_TRUE(e.message().contains("While executing WorkingSource")) << e.message();
+    }
 
-    ASSERT_TRUE(run.pipeline.exception);
-    EXPECT_EQ(ErrorCodes::BAD_ARGUMENTS, getExceptionErrorCode(run.pipeline.exception));
-    EXPECT_TRUE(run.pipeline.cancelled());
-    EXPECT_TRUE(run.coordinator.stopped());
-    EXPECT_TRUE(sink->isCancelled());
-    EXPECT_FALSE(run.pipeline.allFinished());
+    EXPECT_FALSE(run.pipeline.exception);
+    EXPECT_FALSE(run.pipeline.cancelled());
+    EXPECT_FALSE(run.coordinator.stopped());
 }
 
 TEST(Worker, UpdatePipelineAddsWiresAndSchedulesTheNewProcessors)

@@ -1,5 +1,6 @@
 #include <Processors/Executors/Runtime/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/Pipeline/ProcessorState.h>
+#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -23,7 +24,7 @@ struct Fixture
     explicit Fixture(size_t workers, size_t states_count = 16)
         : states(states_count)
         , scheduler(poller, workers)
-        , coordinator(scheduler, poller)
+        , coordinator(scheduler, poller, workers)
     {
     }
 
@@ -123,6 +124,25 @@ TEST(WorkersCoordinator, OneIdleWorkerBlocksInThePollerAndTheNextOneSleeps)
     ::close(fds[1]);
 }
 #endif
+
+TEST(WorkersCoordinator, LeaveOfAWorkerThatAlreadyLeftIsANoOpAndEnterTwiceThrows)
+{
+    Fixture f(2);
+    f.coordinator.enter(0);
+    f.coordinator.enter(1);
+    f.scheduler.push(f.task(0), 1);
+
+    f.coordinator.leave(1);
+    EXPECT_EQ(1u, f.coordinator.registered());
+    f.coordinator.leave(1);
+    EXPECT_EQ(1u, f.coordinator.registered());
+    EXPECT_FALSE(f.coordinator.stopped());
+
+    f.coordinator.enter(1);
+    EXPECT_EQ(2u, f.coordinator.registered());
+    EXPECT_THROW(f.coordinator.enter(1), Exception);
+    EXPECT_EQ(2u, f.coordinator.registered());
+}
 
 TEST(WorkersCoordinator, WakeOneWakesAnIdleWorkerThatThenSteals)
 {
