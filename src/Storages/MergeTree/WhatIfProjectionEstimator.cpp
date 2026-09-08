@@ -249,9 +249,9 @@ MarkRanges pruneSyntheticProjectionPart(
         /* blocks_are_granules */ false,
         parent_part->index_granularity_info.mark_type.adaptive);
 
-    /// the engine grows the last granule to absorb the remainder (`adjustLastMark`) instead of
-    /// opening one more, so a row count that is not a multiple of the granule has one mark less
-    const size_t num_marks = std::max<size_t>(1, data.rows / granule_rows);
+    /// the writer appends a mark per granule and only then trims the last one (`fillIndexGranularityImpl`
+    /// plus `adjustLastMark`), so a remainder opens a granule of its own
+    const size_t num_marks = (data.rows + granule_rows - 1) / granule_rows;
     const size_t last_mark_rows = data.rows - (num_marks - 1) * granule_rows;
     granularity_out
         = std::make_shared<MergeTreeIndexGranularityConstant>(granule_rows, last_mark_rows, num_marks, /* has_final_mark */ false);

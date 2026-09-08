@@ -80,7 +80,23 @@ done
 echo "--- the INDEX form, which the optimizer serves the read from ---"
 compare p_idx "INDEX b TYPE basic" "SELECT count() FROM TABLE WHERE b = 42"
 
-# a Compact part reports the whole part's size for every column, so the bytes must come from the scan
+# a remainder opens a granule of its own, as in the writer
+echo "--- a row count that is not a multiple of the granule ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_r; DROP TABLE IF EXISTS t_real_r;
+    CREATE TABLE t_est_r (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    CREATE TABLE t_real_r AS t_est_r;
+    ALTER TABLE t_real_r ADD PROJECTION p_r (SELECT a, b, v ORDER BY b);
+    INSERT INTO t_est_r SELECT number, number % 25, number FROM numbers(250);
+    INSERT INTO t_real_r SELECT number, number % 25, number FROM numbers(250);
+    SELECT 'real projection part marks:', marks FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_real_r' AND active;
+"
+compare p_r "(SELECT a, b, v ORDER BY b)" "SELECT a, b, v FROM TABLE WHERE b = 7" t_est_r t_real_r
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_r; DROP TABLE IF EXISTS t_real_r;"
+
+# a Compact part reports the whole part's size for every column, so the bytes must come from the scan;
+# such a part carries an adaptive granularity, which the constant model can miss by a granule
 echo "--- Compact parts, where a wide column the projection does not store must not inflate its marks ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;

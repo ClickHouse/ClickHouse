@@ -113,17 +113,32 @@ source: empirical
 real:
 ReadFromMergeTree (p_idx)
 Granules: 4
+--- a row count that is not a multiple of the granule ---
+real projection part marks:	3
+hypothetical:
+marks: 3
+rows: 250
+status: applicable
+marks: 1
+rows: 100
+read_ratio: 0.33x
+verdict: chosen
+reason: 1 mark would be read instead of 3 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_r)
+Granules: 1
 --- Compact parts, where a wide column the projection does not store must not inflate its marks ---
 real projection part marks:	7
 hypothetical:
 marks: 19
 rows: 50000
 status: applicable
-marks: 6
+marks: 7
 rows: 50000
-read_ratio: 0.32x
+read_ratio: 0.37x
 verdict: chosen
-reason: 6 marks would be read instead of 19 from the base table
+reason: 7 marks would be read instead of 19 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_c)
