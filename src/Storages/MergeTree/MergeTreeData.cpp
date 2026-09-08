@@ -49,6 +49,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -57,6 +58,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -792,15 +794,8 @@ MergeTreeData::MergeTreeData(
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
     {
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_private_preview,
-            allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
 
@@ -1119,12 +1114,15 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
-        Names used_columns = syntax->requiredSourceColumns();
-
         NamesAndTypesList deleted_columns;
         NamesAndTypesList added_columns;
         old_columns_for_analysis.getDifference(new_columns_for_analysis, deleted_columns, added_columns);
+
+        /// Only the columns added by this ALTER are accepted right below, so only they may be suggested for a typo.
+        auto syntax = TreeRewriter(getContext())
+                          .setHintColumns(added_columns.getNames())
+                          .analyze(added_key_column_expr_list, new_columns_for_analysis);
+        Names used_columns = syntax->requiredSourceColumns();
 
         for (const String & col : used_columns)
         {
@@ -3861,8 +3859,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
     return true;
 }
 
-
-size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     size_t cleared_count = 0;
 
@@ -3870,14 +3867,15 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
     if (allowRemoveStaleMovingParts())
     {
+        static constexpr std::array<std::string_view, 1> moving_prefixes = {""};
         /// Clear _all_ parts from the `moving` directory
-        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, {""});
+        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, moving_prefixes);
     }
 
     return cleared_count;
 }
 
-size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -3904,7 +3902,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
             bool start_with_valid_prefix = false;
             for (const auto & prefix : valid_prefixes)
             {
-                if (startsWith(basename, prefix))
+                if (std::string_view(basename).starts_with(prefix))
                 {
                     start_with_valid_prefix = true;
                     break;
@@ -4765,7 +4763,7 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     resetColumnSizes();
     unregisterFromMergeSelection(settings_ptr);
@@ -5032,6 +5030,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
     }
 
+    checkAlterEligibility(commands, local_context);
+}
+
+void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
+{
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
@@ -5290,6 +5293,71 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context, share_nested_offsets);
+
+    /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
+    /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
+    /// directions: every reader of a regular data part's order takes them from the current metadata. A direction change in
+    /// place would therefore make the metadata describe an order the data does not have, and primary key index
+    /// analysis compares boundary tuples in the claimed order, so it would prune the wrong mark ranges and silently
+    /// return wrong results.
+    {
+        /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
+        /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
+        /// that version did not have, or the DDL queue stalls on an entry it cannot skip.
+        bool is_initial_alter = true;
+        if (auto txn = local_context->getZooKeeperMetadataTransaction())
+            is_initial_alter = txn->isInitialQuery();
+
+        bool changes_order_by = false;
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::MODIFY_ORDER_BY)
+            {
+                changes_order_by = true;
+                break;
+            }
+        }
+
+        if (is_initial_alter && changes_order_by)
+        {
+            const KeyDescription & old_sorting_key = old_metadata.getSortingKey();
+            const KeyDescription & new_sorting_key = new_metadata.getSortingKey();
+
+            /// Positions beyond the stored flags are ascending, and an empty vector means the whole key is ascending
+            /// (the `KeyOrder` convention).
+            auto is_reversed = [](const std::vector<bool> & flags, size_t column)
+            {
+                return column < flags.size() && flags[column];
+            };
+
+            const Names & old_key_columns = old_sorting_key.column_names;
+            const Names & new_key_columns = new_sorting_key.column_names;
+
+            /// Walk the two keys with the same correspondence rule `checkProperties` uses for added key columns: the
+            /// old index advances only on a name match, so extending the key with new trailing columns is not flagged.
+            for (size_t new_i = 0, old_i = 0; new_i < new_key_columns.size() && old_i < old_key_columns.size(); ++new_i)
+            {
+                if (new_key_columns[new_i] != old_key_columns[old_i])
+                    continue;
+
+                const bool was_reversed = is_reversed(old_sorting_key.reverse_flags, old_i);
+                const bool is_now_reversed = is_reversed(new_sorting_key.reverse_flags, new_i);
+
+                if (was_reversed != is_now_reversed)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Sort direction of the sorting key column {} would change from {} to {}. The existing parts are "
+                        "physically sorted in the old direction, so the table would return wrong results. Changing the "
+                        "sort direction of an existing sorting key column is not supported; create a new table with the "
+                        "desired ORDER BY and copy the data with INSERT ... SELECT into it.",
+                        backQuoteIfNeed(old_key_columns[old_i]),
+                        was_reversed ? "DESC" : "ASC",
+                        is_now_reversed ? "DESC" : "ASC");
+
+                ++old_i;
+            }
+        }
+    }
 
     /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
     /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
@@ -5959,6 +6027,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
     }
+
+    /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
+    /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
+    /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
+    /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
+    /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
+    /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
+    const auto txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
+
+    /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
+    /// an override simply gone from the new list.
+    if (!is_replay_on_another_replica)
+        local_context->checkMergeTreeSettingsConstraints(
+            *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -5975,8 +6059,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
-
-        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -6298,6 +6380,76 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
 }
 
+void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
+{
+    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+
+    if (!disk->existsFileOrDirectory(format_version_path))
+        return;
+
+    if (!disk->existsFile(format_version_path))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+    auto buf = disk->readFileIfExists(format_version_path, getReadSettings());
+    if (buf)
+    {
+        UInt32 current_format_version{0};
+        if (!tryReadIntText(current_format_version, *buf) || !buf->eof())
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+        if (current_format_version != format_version.toUnderType())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Version file on {} contains version {} expected version is {}.",
+                fullPath(disk, format_version_path),
+                current_format_version,
+                format_version.toUnderType());
+
+        return;
+    }
+
+    throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+}
+
+bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
+{
+    if (!disk->existsDirectory(relative_data_path))
+        return false;
+
+    /// A newly added disk may have only explicitly safe entries.
+    /// Anything else would become owned by the table path after the policy change.
+    validateFormatVersion(disk);
+
+    for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+    {
+        const auto name = it->name();
+
+        /// `format_version.txt` is validated above and has no table rows or mutable table state.
+        if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
+            continue;
+
+        const auto entry_path = fs::path(relative_data_path) / name;
+        if (name == DETACHED_DIR_NAME)
+        {
+            /// `detached/` is removed recursively on `DROP TABLE`, so accept it only when empty.
+            if (!disk->existsDirectory(entry_path))
+                return true;
+
+            if (!disk->isDirectoryEmpty(entry_path))
+                return true;
+
+            continue;
+        }
+
+        /// Recovery-only entries like `tmp_`, `delete_tmp_`, `tmp-fetch_`, `tmp_mutation_`,
+        /// and `moving/` are not cleaned before `changeSettings` publishes the new policy.
+        /// They can conflict with later writes, merges, mutations, or moves. See #109823.
+        return true;
+    }
+
+    return false;
+}
+
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
@@ -6336,8 +6488,11 @@ void MergeTreeData::changeSettings(
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
-                        if (disk->existsDirectory(relative_data_path))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
+
+                        if (containsTableDataOnNewDisk(disk))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
                     for (const String & disk_name : all_diff_disk_names)
@@ -6346,7 +6501,10 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(relative_data_path);
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
-                    /// FIXME how would that be done while reloading configuration???
+                    /// FIXME: current update in config reload is done asynchronously, so we can't guarantee that it will
+                    /// initialize new disks before they are actually used
+                    /// so we can't use disks reliably without some kind of authoritative initialization model
+                    /// but this issue is relatively rare
 
                     has_storage_policy_changed = true;
                 }
@@ -6358,15 +6516,8 @@ void MergeTreeData::changeSettings(
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
-            const auto & ac = getContext()->getAccessControl();
-            bool allow_experimental = ac.getAllowExperimentalTierSettings();
-            bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-            bool allow_beta = ac.getAllowBetaTierSettings();
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-                allow_experimental,
-                allow_private_preview,
-                allow_beta,
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
@@ -9357,7 +9508,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     /// Re-parse partition key fields using the information about expected field types.
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    /// Existing parts hold partition values produced with the adjusted partition key (`modulo` becomes
+    /// `moduloLegacy`, which can differ in signedness), so a value parsed here must use the same types.
+    const auto adjusted_partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot, local_context);
+    const Block & key_sample_block = adjusted_partition_key.sample_block;
     size_t fields_count = key_sample_block.columns();
     if (partition_ast_fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
@@ -9452,10 +9606,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             existing_part_in_partition = getAnyPartInPartition(partition_id, readLockParts());
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
-            auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
-                            "doesn't match partition value for an existing part with the same partition ID: {}",
-                            partition_str, existing_part_in_partition->name);
+            auto part_metadata_snapshot = existing_part_in_partition->getMetadataSnapshot();
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value {} does not match partition value {} "
+                            "of the existing part {} with the same partition ID",
+                            partition.serializeToString(part_metadata_snapshot),
+                            existing_part_in_partition->partition.serializeToString(part_metadata_snapshot),
+                            existing_part_in_partition->name);
         }
     }
 
@@ -12123,6 +12279,13 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
         if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.mark_type.adaptive)
             return false;
     }
+
+    /// A non-adaptive part records no per-mark row counts on disk, so its granularity is rebuilt from
+    /// the mark count and this table's `index_granularity`. Under a different value every mark maps to
+    /// the wrong row range.
+    if (!src_part->index_granularity_info.mark_type.adaptive
+        && src_part->index_granularity_info.fixed_index_granularity != (*settings)[MergeTreeSetting::index_granularity])
+        return false;
 
     return true;
 }
