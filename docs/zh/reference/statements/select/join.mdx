@@ -32,7 +32,7 @@ FROM <left_table>
 | `LEFT OUTER JOIN`  | 除返回匹配的行外，还返回左表中不匹配的行。                                                                                                           |
 | `RIGHT OUTER JOIN` | 除返回匹配的行外，还返回右表中不匹配的行。                                                                                                           |
 | `FULL OUTER JOIN`  | 除返回匹配的行外，还返回两个表中不匹配的行。                                                                                                          |
-| `CROSS JOIN`       | 生成整个表的笛卡儿积，不指定“连接键”。                                                                                                            |
+| `CROSS JOIN`       | 生成整个表的笛卡尔积，不指定“连接键”。                                                                                                            |
 | `NATURAL JOIN`     | 自动基于两个表中所有同名列进行连接；每个公共列在结果中只出现一次。支持 `INNER` (默认) 、`LEFT`、`RIGHT` 和 `FULL` 变体。等价于 `JOIN ... USING (col1, col2, ...)`，其中列列表会自动推导。 |
 
 * 未指定类型的 `JOIN` 默认为 `INNER`。
@@ -44,32 +44,32 @@ ClickHouse 还支持以下额外的 JOIN 类型：
 
 | Type                                                | Description                                                                |
 | --------------------------------------------------- | -------------------------------------------------------------------------- |
-| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | 针对“连接键”的允许列表，不会生成笛卡儿积。                                                     |
-| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | 针对“连接键”的拒绝列表，不会生成笛卡儿积。                                                     |
-| `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | 对标准 `JOIN` 类型，部分 (对 `LEFT` 和 `RIGHT` 的对侧) 或完全 (对 `INNER` 和 `FULL`) 禁用笛卡儿积。 |
+| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | 针对“连接键”的允许列表，不会生成笛卡尔积。                                                     |
+| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | 针对“连接键”的拒绝列表，不会生成笛卡尔积。                                                     |
+| `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | 对标准 `JOIN` 类型，部分 (对 `LEFT` 和 `RIGHT` 的对侧) 或完全 (对 `INNER` 和 `FULL`) 禁用笛卡尔积。 |
 | `ASOF JOIN`, `LEFT ASOF JOIN`                       | 对序列执行非精确匹配连接。下文将介绍 `ASOF JOIN` 的用法。                                        |
 | `PASTE JOIN`                                        | 对两个表执行横向拼接。                                                                |
 
 <Note>
-  当 [join&#95;algorithm](/zh/reference/settings/session-settings/join#join_algorithm) 设置为 `partial_merge` 时，`RIGHT JOIN` 和 `FULL JOIN` 仅支持 `ALL` strictness (不支持 `SEMI`、`ANTI`、`ANY` 和 `ASOF`) 。
+  当 [join&#95;algorithm](/zh/reference/settings/session-settings#join_algorithm) 设置为 `partial_merge` 时，`RIGHT JOIN` 和 `FULL JOIN` 仅支持 `ALL` 严格性 (不支持 `SEMI`、`ANTI`、`ANY` 和 `ASOF`) 。
 </Note>
 
 <div id="settings">
   ## 设置
 </div>
 
-默认的 join 类型可通过 [`join_default_strictness`](/zh/reference/settings/session-settings/join#join_default_strictness) 设置进行覆盖。
+默认的 join 类型可通过 [`join_default_strictness`](/zh/reference/settings/session-settings#join_default_strictness) 设置进行覆盖。
 
-ClickHouse server 对 `ANY JOIN` 操作的处理方式取决于 [`any_join_distinct_right_table_keys`](/zh/reference/settings/session-settings/other#any_join_distinct_right_table_keys) 设置。
+ClickHouse server 对 `ANY JOIN` 操作的处理方式取决于 [`any_join_distinct_right_table_keys`](/zh/reference/settings/session-settings#any_join_distinct_right_table_keys) 设置。
 
 **另请参见**
 
-* [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm)
-* [`join_any_take_last_row`](/zh/reference/settings/session-settings/join#join_any_take_last_row)
-* [`join_use_nulls`](/zh/reference/settings/session-settings/join#join_use_nulls)
-* [`partial_merge_join_rows_in_right_blocks`](/zh/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
-* [`join_on_disk_max_files_to_merge`](/zh/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
-* [`any_join_distinct_right_table_keys`](/zh/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
+* [`join_algorithm`](/zh/reference/settings/session-settings#join_algorithm)
+* [`join_any_take_last_row`](/zh/reference/settings/session-settings#join_any_take_last_row)
+* [`join_use_nulls`](/zh/reference/settings/session-settings#join_use_nulls)
+* [`partial_merge_join_rows_in_right_blocks`](/zh/reference/settings/session-settings#partial_merge_join_rows_in_right_blocks)
+* [`join_on_disk_max_files_to_merge`](/zh/reference/settings/session-settings#join_on_disk_max_files_to_merge)
+* [`any_join_distinct_right_table_keys`](/zh/reference/settings/session-settings#any_join_distinct_right_table_keys)
 
 使用 `cross_to_inner_join_rewrite` 设置可定义当 ClickHouse 无法将 `CROSS JOIN` 重写为 `INNER JOIN` 时的行为。默认值为 `1`，表示允许 join 继续执行，但速度会更慢。如果希望抛出错误，请将 `cross_to_inner_join_rewrite` 设为 `0`；将其设为 `2` 时，则不会运行 cross joins，而是强制重写所有逗号/cross joins。如果在该值为 `2` 时重写失败，你将收到一条错误消息：“Please, try to simplify `WHERE` section”。
 
@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## 对不同表中的列使用带不等条件的 JOIN
 </div>
 
-ClickHouse 当前支持在 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` 中，除相等条件外，还可使用不等条件。不等条件仅支持 `hash`、`parallel_hash` 和 `grace_hash` JOIN 算法。JOIN 过程中求值的非等值条件不能包含 `arrayJoin`，因为此类条件必须保持行数不变；仅适用于一侧的条件，以及基于 `arrayJoin` 的等值键会在 JOIN 前被提取，因此不受影响；非析取的 `ALL INNER JOIN` 条件同样不受影响，因为此类条件会在 JOIN 后应用。如果展开操作仅依赖于一侧，请在 JOIN 前将其移至子查询中的 `ARRAY JOIN`；如果条件中的 `arrayJoin` 参数读取两侧的列，则必须重构该条件。
+ClickHouse 当前支持在 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` 中，除等值条件外，还可使用不等条件。不等条件仅支持 `hash` 和 `grace_hash` JOIN 算法。启用 `join_use_nulls` 时，不支持不等条件。
 
 **示例**
 
@@ -231,7 +231,7 @@ key4    f    2    3    4            0    0    \N
 ```
 
 <div id="null-values-in-join-keys">
-  ## JOIN 连接键中的 NULL 和 NaN 值
+  ## JOIN 连接键中的 NULL 值
 </div>
 
 `NULL` 不等于任何值，包括其自身。这意味着，如果某个 `JOIN` 连接键在一个表中的值为 `NULL`，它就不会与另一个表中的 `NULL` 值匹配。
@@ -285,13 +285,6 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 │ Charlie │    88 │
 └─────────┴───────┘
 ```
-
-浮点 `JOIN` 键中的 `NaN` 值不遵循上述 `NULL` 规则。
-两个 `NaN` 值的标量比较 (`NaN = NaN`) 结果为 `0`；但 `JOIN` 键并非按标量语义比较，因此 `NaN` 键可能会匹配。
-它们是否实际匹配属于实现细节，取决于 JOIN 算法、键类型和会话设置。
-请勿依赖特定行为。
-如果需要确保 `NaN` 行不匹配，请将其映射为 `NULL` 值：`ON if(isNaN(A.id), NULL, A.id) = B.id`。
-在 `ASOF JOIN` 中，最近匹配列按排序进行比较，而 `NaN` 不支持排序——请在两侧过滤掉此类行。
 
 <div id="asof-join-usage">
   ## ASOF JOIN 用法
@@ -472,7 +465,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
   ### 空单元格或 NULL 单元格的处理
 </div>
 
-在连接表时，可能会出现空单元格。设置 [join&#95;use&#95;nulls](/zh/reference/settings/session-settings/join#join_use_nulls) 用于定义 ClickHouse 如何填充这些单元格。
+在连接表时，可能会出现空单元格。设置 [join&#95;use&#95;nulls](/zh/reference/settings/session-settings#join_use_nulls) 用于定义 ClickHouse 如何填充这些单元格。
 
 如果 `JOIN` 键是 [Nullable](/zh/reference/data-types/nullable) 字段，则键中只要有一个值为 [NULL](/zh/reference/syntax#null)，对应的行就不会被连接。
 
@@ -514,14 +507,14 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
   ### 内存限制
 </div>
 
-默认情况下，ClickHouse 使用 [哈希连接](https://en.wikipedia.org/wiki/Hash_join) 算法。ClickHouse 会获取 right&#95;table，并在 RAM 中为其创建哈希表。如果启用了 `join_algorithm = 'auto'`，那么当内存消耗达到某个阈值后，ClickHouse 会回退到 [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join 算法。有关 `JOIN` 算法的说明，请参见 [join&#95;algorithm](/zh/reference/settings/session-settings/join#join_algorithm) 设置。
+默认情况下，ClickHouse 使用 [hash join](https://en.wikipedia.org/wiki/Hash_join) 算法。ClickHouse 会获取 right&#95;table，并在 RAM 中为其创建哈希表。如果启用了 `join_algorithm = 'auto'`，那么当内存消耗达到某个阈值后，ClickHouse 会回退到 [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join 算法。有关 `JOIN` 算法的说明，请参见 [join&#95;algorithm](/zh/reference/settings/session-settings#join_algorithm) 设置。
 
 如果需要限制 `JOIN` 操作的内存消耗，请使用以下设置：
 
-* [max&#95;rows&#95;in&#95;join](/zh/reference/settings/session-settings/max-rows#max_rows_in_join) — 限制哈希表中的行数。
-* [max&#95;bytes&#95;in&#95;join](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join) — 限制哈希表的大小。
+* [max&#95;rows&#95;in&#95;join](/zh/reference/settings/session-settings#max_rows_in_join) — 限制哈希表中的行数。
+* [max&#95;bytes&#95;in&#95;join](/zh/reference/settings/session-settings#max_bytes_in_join) — 限制哈希表的大小。
 
-当达到这些限制中的任意一个时，ClickHouse 会按照 [join&#95;overflow&#95;mode](/zh/reference/settings/session-settings/join#join_overflow_mode)
+当达到这些限制中的任意一个时，ClickHouse 会按照 [join&#95;overflow&#95;mode](/zh/reference/settings/session-settings#join_overflow_mode)
 设置中的指示执行。
 
 <div id="examples">

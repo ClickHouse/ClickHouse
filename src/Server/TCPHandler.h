@@ -119,7 +119,6 @@ struct QueryState
     /// If true, the data packets will be skipped instead of reading. Used to recover after errors.
     bool skipping_data = false;
     bool query_duration_already_logged = false;
-    bool run_query_in_background = false;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
@@ -197,7 +196,6 @@ private:
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
     LoggerPtr log;
-    bool is_from_introspection_port = false;
 
     String forwarded_for;
     String certificate;

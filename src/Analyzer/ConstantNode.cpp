@@ -88,24 +88,6 @@ bool ConstantNode::receivedFromInitiatorServer() const
     auto * cast_function = getSourceExpression()->as<FunctionNode>();
     if (!cast_function || cast_function->getFunctionName() != "_CAST")
         return false;
-    /// A constant genuinely serialized by the initiator arrives as a _CAST over literals. A _CAST
-    /// produced locally by folding a server-context function (e.g. shardNum() -> _CAST(shardNum(),
-    /// ...), which folds to a literal on shards but stays symbolic on the initiator) is different:
-    /// its argument is either still a live function node, or a folded but non-deterministic
-    /// constant that carries that server-context function as its source expression. In that case
-    /// the initiator did not fold it, so the shard must name it via its source expression to match
-    /// the initiator; treating it as received-from-initiator would bake in the folded literal and
-    /// diverge the header (e.g. shard "_CAST(2, ...)" vs initiator "_CAST(shardNum(), ...)").
-    /// Deterministic wrapped literals (tuple(0), NULL, ...) are genuine received constants and must
-    /// keep being named via the cast, so only non-deterministic source-carrying args are excluded.
-    for (const auto & argument : cast_function->getArguments())
-    {
-        auto * constant_arg = argument->as<ConstantNode>();
-        if (!constant_arg)
-            return false;
-        if (constant_arg->hasSourceExpression() && !constant_arg->isDeterministic())
-            return false;
-    }
 
     /// The initiator serializes a folded constant as `_CAST('<value>', '<type>')` with a plain literal inside,
     /// so only that shape means that the constant was received from the initiator. `_CAST(__getScalar('<hash>'), '<type>')`

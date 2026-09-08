@@ -1,5 +1,0 @@
-Nullable(Tuple(Nullable(String), Nullable(String)))
-Array(Nullable(String))
-('1',NULL)
-['1',NULL]
-Nullable(Tuple(Nullable(String), Nullable(String)))

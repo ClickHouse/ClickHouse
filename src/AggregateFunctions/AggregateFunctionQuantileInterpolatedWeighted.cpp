@@ -370,7 +370,7 @@ To get the interpolated value, all the passed values are combined into an array,
 Quantile interpolation is then performed using the [weighted percentile method](https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method) by building a cumulative distribution based on weights and then a linear interpolation is performed using the weights and the values to compute the quantiles.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
+In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileInterpolatedWeighted(level)(expr, weight)
@@ -412,7 +412,7 @@ SELECT quantileInterpolatedWeighted(n, val) FROM t;
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.
 
-This function is equivalent to [`quantileInterpolatedWeighted`](/reference/functions/aggregate-functions/quantileInterpolatedWeighted) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileInterpolatedWeighted`](/sql-reference/aggregate-functions/reference/quantileInterpolatedWeighted) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesInterpolatedWeighted(level1, level2, ...)(expr, weight)

@@ -47,7 +47,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Global discriminators of the `Geometry` Variant. The order is fixed and new geo types are appended.
+/// Global discriminator order of the `Geometry` Variant: alternatives are sorted alphabetically by type name.
 namespace GeoDisc
 {
     constexpr UInt8 LineString = 0;
@@ -56,7 +56,6 @@ namespace GeoDisc
     constexpr UInt8 Point = 3;
     constexpr UInt8 Polygon = 4;
     constexpr UInt8 Ring = 5;
-    constexpr UInt8 MultiPoint = 6;
 }
 
 /// Mapbox Vector Tile feature geometry types.
@@ -399,23 +398,6 @@ private:
                 for (const Field & line : lines)
                     emitLineTo(out, readPointSequence(line, getName()), cursor_x, cursor_y);
                 return MVTGeomType::LineString;
-            }
-            case GeoDisc::MultiPoint:
-            {
-                /// A MULTIPOINT geometry is a single MoveTo command whose count is the number of
-                /// points, with each point encoded relative to the previous one.
-                const TilePoints points = readPointSequence(geometry, getName());
-                if (points.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} received an empty MultiPoint", getName());
-                MVT::writeVarint(out, (MVTCommand::MoveTo & 0x7) | (static_cast<UInt32>(points.size()) << 3));
-                for (const auto & [x, y] : points)
-                {
-                    MVT::writeVarint(out, zigZagDelta(x - cursor_x));
-                    MVT::writeVarint(out, zigZagDelta(y - cursor_y));
-                    cursor_x = x;
-                    cursor_y = y;
-                }
-                return MVTGeomType::Point;
             }
             case GeoDisc::Ring:
                 emitRing(out, readPointSequence(geometry, getName()), /*exterior=*/true, cursor_x, cursor_y);

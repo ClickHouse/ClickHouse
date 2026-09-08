@@ -3,13 +3,10 @@
 #include <condition_variable>
 #include <limits>
 #include <memory>
-#include <type_traits>
 #include <vector>
 #include <base/types.h>
 
 #include <Common/Logger_fwd.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
@@ -129,10 +126,6 @@ struct SystemLogQueueSettings
 template <typename LogElement>
 class SystemLogQueue
 {
-    /// `queue` reallocates while `mutex` is held. libc++ relocates with std::move_if_noexcept, so an element
-    /// that can throw on move is deep-copied instead, and the critical section becomes O(queue size).
-    static_assert(std::is_nothrow_move_constructible_v<LogElement>);
-
 public:
     using Index = ISystemLog::Index;
 
@@ -140,17 +133,8 @@ public:
 
     void shutdown();
 
-    // producer method: fill the element in place under a memory-tracker blocker, then enqueue it (moved).
-    template <typename FillElement>
-    requires std::is_invocable_r_v<void, FillElement, LogElement &>
-    void add(FillElement && fill)
-    {
-        MemoryTrackerUntrackedAllocationsBlockerInThread untracked_allocations_blocker;
-        MemoryTrackerBlockerInThread block_memory_tracker;
-        LogElement element{};
-        fill(element);
-        push(std::move(element));
-    }
+    // producer methods
+    void push(LogElement && element);
 
     Index getLastLogIndex();
     void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway);
@@ -172,9 +156,6 @@ public:
     void confirm(Index last_flashed_index);
 
 private:
-    /// Enqueue an already-built element. Private so add() (which holds the memory blocker) is the only entry.
-    void push(LogElement && element);
-
     void notifyFlushUnlocked(Index expected_flushed_index, bool should_prepare_tables_anyway);
 
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
@@ -229,19 +210,10 @@ public:
 
     void startup() override;
 
-    /** Append a record into log (asynchronous; may be lost on failure).
-      *
-      * The callback fills the element in place: it is built under a memory-tracker blocker and moved into
-      * the queue, so its allocations are charged to the global tracker only (the flush thread frees them
-      * later and cannot credit the query/user tracker). Build or copy the fields inside the callback; do not
-      * std::move() in buffers allocated before the call - that keeps their charge on the query/user tracker.
+    /** Append a record into log.
+      * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
-    template <typename FillElement>
-    requires std::is_invocable_r_v<void, FillElement, LogElement &>
-    void add(FillElement && fill)
-    {
-        queue->add(std::forward<FillElement>(fill));
-    }
+    void add(LogElement element);
 
     Index getLastLogIndex() override;
 

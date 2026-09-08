@@ -17,9 +17,7 @@
 
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/threadPoolCallbackRunner.h>
 
-#include <mutex>
 #include <optional>
 #include <base/defines.h>
 
@@ -48,13 +46,9 @@ public:
         IcebergDataSnapshotPtr data_snapshot_,
         PersistentTableComponents persistent_components);
 
-    ~SingleThreadIcebergKeysIterator();
-
     std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
 
 private:
-    void schedulePrefetchIfPossible();
-
     ObjectStoragePtr object_storage;
     std::shared_ptr<const ActionsDAG> filter_dag;
     ContextPtr local_context;
@@ -67,14 +61,6 @@ private:
     Iceberg::ManifestIteratorPtr current_manifest_file_iterator;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
-
-    struct PrefetchedManifest
-    {
-        size_t manifest_list_index;
-        std::future<Iceberg::ManifestFileCacheableInfo> future;
-    };
-    std::optional<PrefetchedManifest> prefetched_manifest;
-    ThreadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo> prefetch_runner;
 };
 
 }
@@ -97,27 +83,18 @@ public:
     ~IcebergIterator() override;
 
 private:
-    void ensureDeletesReady();
-    void decodeDeleteManifests();
-
     LoggerPtr logger;
+    std::shared_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;
-    ContextPtr local_context;
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
-    Iceberg::IcebergDataSnapshotPtr data_snapshot;
     Iceberg::PersistentTableComponents persistent_components;
-    std::shared_ptr<const ActionsDAG> deletes_filter_dag;
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
+    Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ProcessedManifestFileEntryPtr> blocking_queue;
     std::unique_ptr<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
-    /// Filled once under `deletes_mutex` and never mutated afterwards, so `next` may read them
-    /// unguarded once it has gone through `ensureDeletesReady`.
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> position_deletes_files;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
-    std::mutex deletes_mutex;
-    bool deletes_ready TSA_GUARDED_BY(deletes_mutex) = false;
-    std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
     std::exception_ptr exception;
     std::mutex exception_mutex;
 };

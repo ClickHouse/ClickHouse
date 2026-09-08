@@ -24,7 +24,7 @@ picture-in-picture"
 Sintaxis:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -39,23 +39,22 @@ EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM nu
 ```
 
 ```sql
-Output: sum(number)
-
 Union
-├──Aggregating
-│  │  Keys:
-│  │  Aggregates: sum(number)
-│  │  Skip merging: 0
-│  └──ReadFromSystemNumbers
-│        Output: number
-└──Sorting (Sorting for ORDER BY)
-   │  Sort description: sum(number) ASC
-   └──Aggregating
-      │  Keys:
-      │  Aggregates: sum(number)
-      │  Skip merging: 0
-      └──ReadFromSystemNumbers
-            Output: number
+  Expression (Projection)
+    Expression (Before ORDER BY and SELECT)
+      Aggregating
+        Expression (Before GROUP BY)
+          SettingQuotaAndLimits (Set limits and quota after reading from storage)
+            ReadFromStorage (SystemNumbers)
+  Expression (Projection)
+    MergingSorted (Merge sorted streams for ORDER BY)
+      MergeSorting (Merge sorted blocks for ORDER BY)
+        PartialSorting (Sort each block for ORDER BY)
+          Expression (Before ORDER BY and SELECT)
+            Aggregating
+              Expression (Before GROUP BY)
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
 ```
 
 <div id="explain-types">
@@ -66,10 +65,7 @@ Union
 * `SYNTAX` — Texto de la consulta tras las optimizaciones a nivel de AST.
 * `QUERY TREE` — Árbol de consulta tras las optimizaciones a nivel de Query Tree.
 * `PLAN` — Plan de ejecución de la consulta.
-* `PIPELINE` — Canalización de ejecución de la consulta.
-* `ANALYZE` — Ejecuta la consulta y anota el plan de ejecución con métricas de runtime medidas.
-* `ESTIMATE` — Número estimado de filas, marcas y partes que se leerán de las tablas al procesar la consulta.
-* `TABLE OVERRIDE` — Resultado validado de una sobrescritura de tabla sobre el esquema de una función de tabla.
+* `PIPELINE` — Pipeline de ejecución de la consulta.
 
 <div id="explain-ast">
   ### EXPLAIN AST
@@ -124,7 +120,6 @@ Configuración:
 * `oneline` – Imprime la consulta en una sola línea. Valor predeterminado: `0`.
 * `run_query_tree_passes` – Ejecuta las pasadas del árbol de consulta antes de volcar el árbol de consulta. Valor predeterminado: `0`.
 * `query_tree_passes` – Si se establece `run_query_tree_passes`, especifica cuántas pasadas se ejecutan. Si no se especifica `query_tree_passes`, se ejecutan todas las pasadas.
-* `single_record` – Devuelve la consulta reformateada como un único registro multilínea en lugar de un registro por línea. Valor predeterminado: `1` (controlado por la configuración `explain_syntax_single_record`). Establézcalo en `0` para restaurar la salida histórica de un registro por línea, o establezca `explain_syntax_single_record = 0` (globalmente o en `SETTINGS` por consulta), o establezca `compatibility` en cualquier versión anterior a `26.8`.
 
 Ejemplos:
 
@@ -198,49 +193,39 @@ Configuración:
 * `description` — Imprime la descripción del paso. Predeterminado: 1.
 * `indexes` — Muestra los índices utilizados, el número de partes filtradas y el número de gránulos filtrados para cada índice aplicado. Predeterminado: 0. Compatible con tablas [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree). A partir de ClickHouse &gt;= v25.9, esta sentencia solo muestra una salida adecuada cuando se usa con `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 * `projections` — Muestra todas las proyecciones analizadas y su efecto en el filtrado a nivel de parte según las condiciones de la clave primaria de la proyección. Para cada proyección, esta sección incluye estadísticas como el número de partes, filas, marcas y rangos evaluados con la clave primaria de la proyección. También muestra cuántas partes de datos se omitieron debido a este filtrado, sin leer de la propia proyección. Si una proyección se usó realmente para la lectura o solo se analizó para el filtrado puede determinarse mediante el campo `description`. Predeterminado: 0. Compatible con tablas [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
-* `actions` — Imprime información detallada sobre las acciones del paso. Predeterminado: 1.
+* `actions` — Imprime información detallada sobre las acciones del paso. Predeterminado: 0.
 * `sorting` — Imprime la descripción de ordenación de cada paso del plan que produce una salida ordenada. Predeterminado: 0.
 * `keep_logical_steps` — Conserva los pasos lógicos del plan para joins en lugar de convertirlos en implementaciones físicas de join. Predeterminado: 0.
 * `json` — Imprime los pasos del plan de consulta como una fila en formato [JSON](/es/reference/formats/JSON/JSON). Predeterminado: 0. Se recomienda usar el formato [TabSeparatedRaw (TSVRaw)](/es/reference/formats/TabSeparated/TabSeparatedRaw) para evitar escapes innecesarios.
 * `input_headers` — Imprime los encabezados de entrada del paso. Predeterminado: 0. Principalmente útil solo para desarrolladores al depurar problemas relacionados con discrepancias entre los encabezados de entrada y salida.
 * `column_structure` — Imprime también la estructura de las columnas en los encabezados, además de su nombre y tipo. Predeterminado: 0. Principalmente útil solo para desarrolladores al depurar problemas relacionados con discrepancias entre los encabezados de entrada y salida.
-* `distributed` — Muestra los planes de consulta ejecutados en nodos remotos para tablas distribuidas o réplicas paralelas. No compatible con `json`. Predeterminado: 0.
-* `compact` — Cuando está habilitado, oculta del plan los pasos de expresión y la información detallada de las acciones (entradas, funciones, alias y posiciones de salida). Solo tiene efecto cuando `actions = 1`. Predeterminado: 1.
-* `pretty` — Imprime el árbol del plan usando caracteres de dibujo de líneas (├──, └──, │) en lugar de sangría para visualizar la jerarquía. También muestra en línea las propiedades del paso de join. Predeterminado: 1.
+* `distributed` — Muestra los planes de consulta ejecutados en nodos remotos para tablas distribuidas o réplicas paralelas. Predeterminado: 0.
+* `compact` — Cuando está habilitado, oculta del plan los pasos de expresión y la información detallada de las acciones (entradas, funciones, alias y posiciones de salida). Solo tiene efecto cuando actions = 1. Predeterminado: 0.
+* `pretty` — Imprime el árbol del plan usando caracteres de dibujo de líneas (├──, └──, │) en lugar de sangría para visualizar la jerarquía. También muestra en línea las propiedades del paso de join. Predeterminado: 0.
 
-<Note>
-  De forma predeterminada, `explain_query_plan_default = 'pretty'`, por lo que `actions`, `compact` y `pretty` se inicializan en `1` y el plan se representa en la forma compacta, visualmente estructurada y anotada con acciones. Especificar cualquiera de estas opciones explícitamente en la sentencia `EXPLAIN` (por ejemplo, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) siempre sobrescribe el valor predeterminado.
-
-  Antes de ClickHouse 26.7, los valores predeterminados de `actions`, `compact` y `pretty` eran `0`. Aún puede obtener esa salida configurando `explain_query_plan_default = 'legacy'` (globalmente o en `SETTINGS` por consulta), o configurando `compatibility` en cualquier versión anterior a `26.7`.
-
-  Las opciones `json` y `distributed` no habilitan los valores predeterminados de `pretty` (`actions`, `compact` y `pretty`), incluso cuando `explain_query_plan_default = 'pretty'`. Para incluir detalles de las acciones en su salida, configure `actions = 1` manualmente.
-</Note>
+Cuando `json=1`, los nombres de los pasos contendrán un sufijo adicional con un identificador único de paso.
 
 Ejemplo:
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```sql
-Output: sum(number)
-
-Limit (preliminary LIMIT)
-│  Limit 1
-│  Offset 0
-└──Aggregating
-   │  Keys: number MOD 4
-   │  Aggregates: sum(number)
-   │  Skip merging: 0
-   └──ReadFromSystemNumbers
-         Output: number
+Union
+  Expression (Projection)
+  Expression (Before ORDER BY and SELECT)
+    Aggregating
+      Expression (Before GROUP BY)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromStorage (SystemNumbers)
 ```
 
 <Note>
   No se admite la estimación del costo de los pasos ni de la consulta.
 </Note>
 
-Cuando `json = 1`, el plan de consulta se representa en formato JSON. Cada nodo es un diccionario que siempre tiene las claves `Node Type`, `Node Id` y `Plans`. `Node Type` es una cadena con el nombre del paso, y `Node Id` es un identificador único del paso (el nombre del paso con un sufijo numérico, p. ej. `Union_10`). `Plans` es un array con descripciones de pasos secundarios. Pueden añadirse otras claves opcionales según el tipo de nodo y la configuración.
+Cuando `json = 1`, el plan de consulta se representa en formato JSON. Cada nodo es un diccionario que siempre tiene las claves `Node Type` y `Plans`. `Node Type` es una cadena con el nombre de un paso. `Plans` es un array con las descripciones de los pasos secundarios. Pueden añadirse otras claves opcionales según el tipo de nodo y la configuración.
 
 Ejemplo:
 
@@ -385,16 +370,16 @@ Ejemplo:
 ]
 ```
 
-Con `projections` = 1, se añade la clave `Projections`. Contiene un array de proyecciones analizadas. Cada proyección se describe como JSON con las siguientes claves:
+Con `projections` = 1, se añade la clave `Projections`. Contiene un array de proyecciones analizadas. Cada proyección se describe en formato JSON con las siguientes claves:
 
 * `Name` — El nombre de la proyección.
-* `Condition` — La condición de la clave primaria usada por la proyección.
-* `Description` — La descripción de cómo se usa la proyección (p. ej., filtrado a nivel de partes).
+* `Condition` — La condición de clave primaria usada por la proyección.
+* `Description` — La descripción de cómo se usa la proyección (p. ej., filtrado a nivel de parte).
 * `Selected Parts` — Número de partes seleccionadas por la proyección.
 * `Selected Marks` — Número de marcas seleccionadas.
 * `Selected Ranges` — Número de rangos seleccionados.
 * `Selected Rows` — Número de filas seleccionadas.
-* `Filtered Parts` — Número de partes omitidas debido al filtrado a nivel de partes.
+* `Filtered Parts` — Número de partes omitidas debido al filtrado a nivel de parte.
 
 Ejemplo:
 
@@ -485,39 +470,24 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-Con `compact = 0` y `actions = 1`, se pueden ver los pasos `Expression` junto con información detallada sobre las expresiones:
+Con `compact = 1`, cada paso `Expression` se elimina. Además, si se establece `actions = 1`, las líneas `Actions` y `Positions` se ocultan y solo se muestran las descripciones de los pasos:
 
 ```sql
-EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
 ```
 
 ```text
-Output: sum(number)
-
-Expression ((Project names + Projection))
-│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
-│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
-│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
-│  Positions: 2
-└──Aggregating
-   │  Keys: number MOD 4
-   │  Aggregates: sum(number)
-   │  Skip merging: 0
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      │  Actions: INPUT : 0 -> number UInt64 : 0
-      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
-      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
-      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
-      │  Positions: 0 2
-      └──ReadFromSystemNumbers
-            Output: number
+Aggregating
+Keys: modulo(__table1.number, 4_UInt8)
+Aggregates:
+    sum(__table1.number)
+      Function: sum(UInt64) → UInt64
+      Arguments: __table1.number
+Skip merging: 0
+  ReadFromSystemNumbers
 ```
 
 Con `distributed` = 1, la salida incluye no solo el plan de consulta local, sino también los planes de consulta que se ejecutarán en los nodos remotos. Esto resulta útil para analizar y depurar consultas distribuidas.
-
-<Note>
-  `distributed` se representa solo en la forma `legacy` (no `pretty`), porque la salida `pretty` no integra los planes de los segmentos remotos en el árbol del plan. Por este motivo, habilitar `distributed` desactiva automáticamente los valores predeterminados de `pretty` (`actions`, `compact` y `pretty`), independientemente de `explain_query_plan_default`. Aun así, puede establecer `actions=1` manualmente. La opción `distributed` tampoco se admite junto con `json`.
-</Note>
 
 Ejemplo con tabla distribuida:
 
@@ -564,12 +534,12 @@ En ambos ejemplos, el plan de consulta muestra el flujo de ejecución completo, 
 Con `pretty` = 1, el árbol del plan se muestra con caracteres de dibujo de líneas en lugar de sangría, y se muestra información adicional para los pasos clave:
 
 * Las **columnas de salida de la consulta** se imprimen en la parte superior del plan.
-* Las **expresiones** en filtros, claves de agregación, descripciones de ordenación y funciones de ventana se muestran en una notación legible para humanos similar a SQL (por ejemplo, `a + 1 > 5` en lugar de `greater(plus(a, 1), 5)`). Los prefijos internos de los identificadores de columna (como `__table1.`) se eliminan para mayor claridad.
+* Las **expresiones** en filtros, claves de agregación, criterios de ordenación y funciones de ventana se muestran en una notación similar a SQL legible para humanos (p. ej., `a + 1 > 5` en lugar de `greater(plus(a, 1), 5)`). Los prefijos internos de los identificadores de columna (como `__table1.`) se eliminan para mayor claridad.
 * Los **pasos de origen** (como `ReadFromMergeTree`) muestran sus columnas de salida.
-* Los **pasos de filtro** muestran la condición de filtro en notación SQL. Cuando hay filtros de join en tiempo de ejecución, se muestran por separado.
-* Los **pasos de agregación** muestran las claves y las funciones de agregación con sus argumentos (por ejemplo, `sum(c)`, `count()`).
-* Los **conjuntos `IN`** de literales de tupla muestran sus valores (truncados para conjuntos grandes), los conjuntos basados en subconsultas se etiquetan como `subquery1`, `subquery2`, etc., y los conjuntos de tablas con motor `Set` muestran el nombre de la tabla.
-* Los **pasos de join** muestran la relación de join mediante notación matemática, el número estimado de filas del resultado,
+* Los **pasos de filtro** muestran la condición de filtro en notación SQL. Cuando hay filtros de JOIN en tiempo de ejecución, se muestran por separado.
+* Los **pasos de agregación** muestran las claves y las funciones de agregación con sus argumentos (p. ej., `sum(c)`, `count()`).
+* Los **conjuntos IN** de literales Tuple muestran sus valores (truncados para conjuntos grandes), los conjuntos basados en subconsultas se etiquetan como `subquery1`, `subquery2`, etc., y los conjuntos de tablas con engine `Set` muestran el nombre de la tabla.
+* Los **pasos de JOIN** muestran la relación de JOIN mediante notación matemática, el número estimado de filas del resultado,
   y qué columnas de salida provienen del lado izquierdo frente al derecho. Se usan los siguientes símbolos para
   representar distintos tipos de JOIN:
 
@@ -591,7 +561,18 @@ cuando hay estadísticas de tabla disponibles.
 
 La opción `pretty` funciona bien junto con `compact = 1`, que oculta los pasos `Expression` y la información detallada de las acciones, lo que hace que el plan sea más fácil de leer.
 
-Un ejemplo detallado con JOIN:
+```sql
+EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Expression ((Project names + Projection))
+└──Aggregating
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      └──ReadFromSystemNumbers
+```
+
+Un ejemplo más detallado con JOIN:
 
 ```sql
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
@@ -604,28 +585,24 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, id, value
+Output: id, value, t2.id, t2.value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
-│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
+│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-│     Runtime filters: RF1(id, id from default.t2)
-└──BuildRuntimeFilter (Build runtime join filter on id)
-   │  Filter id: RF1
-   │  Source table: default.t2
-   └──ReadFromMergeTree (default.t2)
-         Read type: Default
-         Parts: 1 | Granules: 1
-         Output: id, value
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value
 ```
 
 <div id="explain-pipeline">
@@ -670,277 +647,6 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-<div id="explain-analyze">
-  ### EXPLAIN ANALYZE
-</div>
-
-`EXPLAIN ANALYZE` sí ejecuta la consulta, descarta las filas del resultado y muestra el mismo árbol del plan que `EXPLAIN PLAN`, con cada paso anotado con lo que realmente ocurrió en tiempo de ejecución.
-
-Configuración:
-
-`EXPLAIN ANALYZE` acepta las mismas opciones de visualización que `EXPLAIN PLAN` (documentadas en la sección [EXPLAIN PLAN](#explain-plan)).
-
-* `header` — consulte la sección [EXPLAIN PLAN](#explain-plan).
-* `description` — consulte la sección [EXPLAIN PLAN](#explain-plan).
-* `projections` — consulte la sección [EXPLAIN PLAN](#explain-plan).
-* `sorting` — consulte la sección [EXPLAIN PLAN](#explain-plan).
-* `input_headers` — consulte la sección [EXPLAIN PLAN](#explain-plan).
-* `column_structure` — consulte la sección [EXPLAIN PLAN](#explain-plan).
-* `actions` — consulte la sección [EXPLAIN PLAN](#explain-plan). Valor predeterminado: 1.
-* `indexes` — consulte la sección [EXPLAIN PLAN](#explain-plan). Valor predeterminado: 1.
-* `compact` — consulte la sección [EXPLAIN PLAN](#explain-plan). Valor predeterminado: 1.
-* `pretty` — consulte la sección [EXPLAIN PLAN](#explain-plan). Valor predeterminado: 1.
-* `processors` — En `EXPLAIN ANALYZE`, muestra una línea adicional por etapa con la distribución del tiempo transcurrido por procesador: `min`, `median`, `max` y `sum`. Es útil para detectar desequilibrios de carga entre procesadores paralelos. Valor predeterminado: 0.
-* `matches` — En `EXPLAIN ANALYZE`, hace que los pasos de join realicen el registro adicional necesario para las métricas `matched`, `match rate` y `fanout` en los casos en que esos valores no puedan derivarse de lo que produce el join. Cuando pueden derivarse, se informan sin esta opción. Consulte [Pasos de join](#explain-analyze-join-steps). Valor predeterminado: 0.
-
-<Note>
-  Como `EXPLAIN ANALYZE` realmente ejecuta la consulta encapsulada, se comporta como esa
-  consulta — y, a diferencia de las formas `EXPLAIN` que no ejecutan — de varias maneras:
-
-  * **Cuotas y límites.** Se contabiliza en las mismas [cuotas](/es/concepts/features/configuration/server-config/quotas)
-    y está sujeto a los mismos [límites](/es/concepts/features/configuration/settings/query-complexity)
-    (por ejemplo, `query_selects`, `read_rows`) que ejecutar la consulta directamente. Las fuentes exentas de cuotas durante la planificación
-    (como `system.one`) no se contabilizan.
-  * **Transacciones fallidas.** Dentro de una [transacción](/es/concepts/features/operations/insert/transactions)
-    que ya falló (`ROLLED_BACK`), se rechaza con `INVALID_TRANSACTION`,
-    igual que un `SELECT` simple: primero ejecute `ROLLBACK`.
-  * **Lecturas en streaming.** En una lectura en streaming (`FROM ... STREAM`), se rechaza con
-    `NOT_IMPLEMENTED`, porque esa lectura nunca finaliza.
-  * **Consultas distribuidas.** No es compatible con consultas ejecutadas en
-    modo [distribuido](/es/reference/engines/table-engines/special/distributed).
-</Note>
-
-Ejemplo:
-
-```sql
-EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
-```
-
-```text
-Query summary:
-  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
-  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
-  Peak memory: 28.98 KiB
-
-Output: number MOD 10, count()
-
-Expression ((Project names + Projection))
-│  I/O: rows 10 → 10 · 90 B → 90 B
-│    time 21.82 us (0.5%) · parallelism 0.98/1
-└──Aggregating
-   │  Keys: number MOD 10
-   │  Aggregates: count()
-   │  Skip merging: 0
-   │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
-   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
-   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
-      │    time 677.07 us (15.9%) · parallelism 4.31/15
-      └──ReadFromSystemNumbers
-            Output: number
-            I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
-              time 993.94 us (23.3%) · parallelism 7.52/15
-```
-
-Veamos la salida. Primero, veamos el encabezado.
-
-```txt
-   Query summary:
-     Time:        <total> (planning <planning> · execution <execution>)
-     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
-     Peak memory: <peak>
-```
-
-* `Time` — tiempo total dividido en las fases de planificación (es decir, creación del plan + optimización del plan + construcción de la canalización) y ejecución (ejecución de la canalización).
-* `Read` — filas y bytes sin comprimir leídos de las tablas, junto con el rendimiento: los mismos valores que el pie de la consulta normal muestra como &quot;Processed&quot;.
-* `Peak memory` — memoria máxima utilizada por la consulta.
-
-Ahora veamos las nuevas líneas que aparecen en el plan de consulta.
-
-```txt
-I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
-  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
-```
-
-Las filas y los bytes se informan una vez para todo el paso (la línea `I/O`). El tiempo y el paralelismo se informan por etapa del paso en las siguientes líneas con sangría.
-
-* `rows <in> → <out>` — filas que entraron y salieron del paso; (`<selectivity>`%) muestra cuánto filtró (`out/in`) o expandió los datos el paso; se oculta cuando las filas de entrada son iguales a las de salida y cuando las filas de entrada son iguales a `0`.
-* `<bytes_in> → <bytes_out>` — bytes en memoria sin comprimir que fluyen por el paso (se omite cuando ambos son cero).
-* `time <t> (<share>%)` — tiempo de reloj durante el que la etapa estuvo activa y su proporción del tiempo de ejecución de la consulta (es decir, sin incluir el tiempo de build). Tenga en cuenta que las proporciones pueden sumar más del 100% porque las etapas y los pasos se ejecutan de forma concurrente.
-* `parallelism <avg>/<max>` — número medio de hilos de CPU trabajando a la vez dentro de esta etapa, sobre el máximo que podía usar. Un valor cercano al máximo significa que la etapa estuvo bien paralelizada; un valor cercano a 1 significa que se ejecutó casi siempre en serie.
-* `Stage (<stage>)` — el nombre de la etapa. Un paso con una sola etapa imprime la línea de tiempo directamente, sin una etiqueta `Stage (...)`. Los pasos con varias etapas imprimen una línea etiquetada por etapa; por ejemplo, `Aggregating` muestra `Stage (partial aggregation)` y `Stage (final aggregation)`, y un hash join muestra `Stage (build)` y `Stage (probe)`.
-
-<Note>
-  ClickHouse paraleliza no solo la ejecución de tareas dentro de un paso del plan, sino también la ejecución de los propios pasos del plan. La métrica `parallelism` refleja solo el trabajo de este paso. Otros pasos pueden ejecutarse de forma concurrente, por lo que este valor no muestra cómo se compara el paralelismo del paso con el de toda la consulta.
-</Note>
-
-<Note>
-  El valor máximo en `parallelism` se calcula como el mínimo entre:
-
-  1. el número total de tareas dentro del paso del plan;
-  2. el número máximo de hilos de procesamiento de consultas configurado en `max_threads`.
-</Note>
-
-<div id="explain-analyze-join-steps">
-  #### Pasos de join
-</div>
-
-En un paso de join, `EXPLAIN ANALYZE` muestra líneas de *participación* para cada lado —`Left` y `Right`—, seguidas de las líneas específicas de la implementación del join. `Left` y `Right` corresponden a los lados lógicos de SQL. En la mayoría de los casos, `Left` también será el lado de sondeo del join y `Right`, el lado de construcción. Sin embargo, no siempre es así, debido al swap que puede producirse durante la ejecución del join. Se cubren todos los valores de [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), así como las dos implementaciones que esta configuración no puede seleccionar: un join `CROSS` o `COMMA`, cualquier sección `ON` sin igualdad de clave y el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join). La mayoría informa sobre ambos lados; algunas solo informan del lado que materializan (por ejemplo, `direct` solo muestra `Left:`).
-
-Las líneas de cada lado tienen la misma estructura:
-
-```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
-```
-
-Para cada lado, `EXPLAIN ANALYZE` informa de lo siguiente:
-
-* `rows <rows>` — el número total de filas de ese lado que pasaron por el join.
-* `matched <matched_rows>` — el número de filas de ese lado que encontraron al menos una fila correspondiente en el otro lado del join. Esto cuenta *filas*, no claves: si una clave aparece tres veces en el lado derecho y coincide, las tres filas de ese lado se cuentan como coincidentes.
-* `match rate <match_rate>%` — el porcentaje de filas de ese lado que coincidieron, calculado como `100 * <matched_rows> / <rows>`.
-* `fanout <fanout>` — el número de filas de salida que produjo, en promedio, una fila coincidente de ese lado.
-
-Un valor que no puede calcularse con exactitud se informa como `not collected` en lugar de `0`. `match rate` y `fanout` se derivan de `matched`, por lo que, si un lado no dispone de este valor, los tres se informan como `not collected`.
-
-<div id="explain-analyze-fanout">
-  #### Fanout
-</div>
-
-`fanout` mide la multiplicación de filas:
-
-```txt
-matched output rows = <output_rows> - <NULL-padded rows of both sides>
-fanout              = <matched output rows> / <matched_rows of that side>
-```
-
-Un `outer join` genera una fila de salida rellenada con `NULL` por cada fila del lado preservado que no encontró correspondencia. Estas filas se restan para que no distorsionen la proporción. Solo el lado preservado las tiene: el derecho para `RIGHT` y `FULL`, y el izquierdo para `LEFT` y `FULL`:
-
-* `fanout = 0` — las filas coincidentes no generaron ninguna fila de salida, como ocurre con un join `ANTI`: solo genera las filas que no encontraron correspondencia.
-* `fanout = 1` — un join 1:1 sin duplicados; cada fila coincidente generó exactamente una fila de salida.
-* `fanout > 1` — un join 1:N; las claves duplicadas del otro lado multiplicaron las filas. Un valor alto en ambos lados a la vez indica una explosión cartesiana no intencionada.
-
-<div id="explain-analyze-matches">
-  #### Cuándo los números requieren `matches = 1`
-</div>
-
-La mayoría de estos números se obtienen de datos que el join ya genera de todos modos y se muestran con un `EXPLAIN ANALYZE` normal. El resto requiere un seguimiento que el join no realizaría de otro modo, por lo que solo se muestra con `EXPLAIN ANALYZE matches = 1`. Cuáles son depende del algoritmo; en la familia hash hay dos casos:
-
-* el lado **derecho** de `ALL INNER` y `ALL LEFT`, que requiere marcar cada fila derecha coincidente;
-* el lado **izquierdo** de `ALL LEFT` y `ALL FULL`, pero solo cuando la consulta no selecciona nada de la
-  tabla derecha y la sección `ON` es una igualdad de clave simple. De lo contrario, el sondeo ya registra
-  qué filas izquierdas coincidieron, ya sea para materializar las columnas derechas o para evaluar la condición
-  residual, y el recuento es exacto sin la opción.
-
-`partial_merge` lo necesita para el lado **derecho** de los cuatro tipos `ALL`, por el mismo motivo.
-`full_sorting_merge` y `parallel_full_sorting_merge` lo necesitan para **ambos** lados de los tipos `ANY`. Los
-tipos `ALL` no necesitan nada.
-
-<Note>
-  La opción está desactivada de forma predeterminada porque el seguimiento adicional no es gratuito: su coste es la fidelidad de la medición. El trabajo se realiza dentro del bucle de sondeo y aumenta con el número de filas de salida. Use `matches = 1` cuando necesite conocer las coincidencias exactas que las filas izquierdas y derechas encontraron en el otro lado.
-</Note>
-
-`matches = 1` no permite recopilar todas las combinaciones. El lado sobre el que un join puede informar depende de lo que ese join debe hacer de todos modos, por lo que también depende del algoritmo, además del tipo y la strictness.
-
-**Familia hash.** `hash`, `parallel_hash` y `grace_hash` siempre se comportan igual:
-
-| Join                                             | `matched` izquierdo | `matched` derecho |
-| ------------------------------------------------ | ------------------- | ----------------- |
-| `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL` | sí                  | sí                |
-| `SEMI LEFT`, `ANTI LEFT`                         | sí                  | no                |
-| `ANY RIGHT`, `ANTI RIGHT`                        | no                  | sí                |
-| `ASOF` (inner)                                   | sí                  | no                |
-| `SEMI RIGHT`                                     | no                  | no                |
-| `ANY INNER`, `ANY LEFT`, `ASOF LEFT`             | no                  | no                |
-
-El lado derecho no está disponible cuando el join conserva solo una fila por clave en su tabla hash, como hacen los joins `ANY`, `SEMI` y `ANTI`: las filas derechas duplicadas nunca se almacenan, por lo que no pueden contarse. El lado izquierdo no está disponible cuando el join suprime la salida de una fila izquierda cuya fila asociada ya fue reclamada por otra fila izquierda, lo que hace que las filas emitidas infravaloren el número de filas coincidentes.
-
-Al habilitar [`any_join_distinct_right_table_keys`](/es/reference/settings/session-settings/other#any_join_distinct_right_table_keys), `ANY` cambia a la semántica anterior de `RightAny`, que emite una fila por cada fila izquierda y, por tanto, conserva ambos recuentos. `ANY RIGHT` y `ANY FULL` informan entonces de **ambos** lados, y `ANY INNER` se reescribe como `SEMI LEFT`.
-
-El motor de tabla [`Join`](/es/reference/engines/table-engines/special/join) sigue la misma tabla y usa el tipo y la strictness declarados en el motor: `Join(ALL, INNER, …)` informa de ambos lados y `Join(ANY, LEFT, …)`, de ninguno.
-
-**Algoritmos de fusión.** `full_sorting_merge` y `parallel_full_sorting_merge` aceptan los cuatro tipos `ALL`, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` y `ASOF LEFT`. Informan de **ambos** lados para todos los tipos excepto `ASOF` y `ASOF LEFT`, donde el lado derecho es `not collected`, y lo hacen sin `matches = 1`: recorren las dos entradas ordenadas y ven cada fila de un rango de igualdad a medida que lo consumen, por lo que no es necesario reconstruir nada después.
-
-`partial_merge` acepta `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` y `SEMI LEFT`. Informa de ambos lados para los cuatro tipos `ALL`, del derecho con `matches = 1`; para `ANY INNER`, `ANY LEFT` y `SEMI LEFT`, el lado derecho es `not collected`.
-
-**`direct`.** Solo el lado izquierdo. El lado derecho es un almacén de clave-valor que nunca se materializa en filas, por lo que no tiene ninguna línea `Right:`.
-
-**`CROSS`, `COMMA` y un `ON` constante.** Ningún lado, como se describe [anteriormente](#explain-analyze-join-algorithm-lines).
-
-Cuando ambos algoritmos informan un número, los resultados coinciden. Los algoritmos de fusión simplemente disponen de más información; no difieren en cuanto a lo que constituye una coincidencia.
-
-<div id="explain-analyze-join-algorithm-lines">
-  #### Líneas específicas del algoritmo
-</div>
-
-Veamos las líneas que añade cada implementación de JOIN además de las anteriores.
-
-En los JOIN `hash` y `parallel_hash`, y en el motor de tabla `Join`, una línea `Hash table:` describe la tabla hash creada a partir de la tabla de la derecha:
-
-```txt
-Hash table: unique keys <unique_keys> · memory <peak_memory>
-```
-
-* `unique keys <unique_keys>` — el número de claves únicas almacenadas en la tabla hash durante la fase de construcción.
-* `memory <peak_memory>` — el pico de memoria utilizado por la tabla hash durante la fase de construcción.
-
-Para el join `grace_hash`, la línea `Hash table:` también indica cómo se adaptó el join al límite de memoria, y la línea `Spill:` indica si los datos se volcaron al disco:
-
-```txt
-Hash table: unique keys <unique_keys> · memory <peak_memory> · buckets <buckets> · rehashes <rehashes>
-Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_bytes>
-```
-
-* `buckets <buckets>` — el número de buckets que tuvo el join grace hash al finalizar la ejecución. Siempre es una potencia de `2`.
-* `rehashes <rehashes>` — cuántas veces fue necesario duplicar el número de buckets para ajustarse al límite de memoria.
-* `Spill:` — un indicador `yes`/`no` que señala si se produjo algún volcado a disco. Si lo hubo, `left spilled <left_spilled_bytes>` y `right spilled <right_spilled_bytes>` indican los bytes comprimidos volcados de los lados izquierdo (sondeo) y derecho (construcción), respectivamente; si no se volcó nada, la línea es simplemente `Spill: no`.
-
-Para el join `partial_merge`, la línea `Right:` incluye información adicional sobre cómo se almacenó temporalmente en el búfer y se ordenó la tabla derecha, y el tiempo de ordenación se muestra en las líneas `Stage (build)` y `Stage (probe)`:
-
-```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
-  Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
-  Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
-```
-
-* `size <right_size>` — el tamaño en memoria de los bloques de la tabla de la derecha.
-* `blocks <right_blocks>` — el número de bloques en los que se almacenó temporalmente en el búfer la tabla de la derecha.
-* `storage <in-memory|external>` — indica si la tabla de la derecha cabía en memoria (`in-memory`) o tuvo que volcarse al disco (`external`). Cuando es `external`, un campo adicional `spilled <spilled_bytes>` informa de los bytes comprimidos escritos en disco.
-* `sort time <sort_time>` — el tiempo empleado en ordenar la tabla de la derecha (en la fase de construcción) y cada bloque entrante de la izquierda (en la fase de sondeo).
-* `sort share <sort_share>%` — `sort time` como proporción del *propio tiempo activo de esa fase* (la suma del tiempo transcurrido de sus procesadores), a diferencia del porcentaje `time` de la fase, que representa una proporción del *tiempo de ejecución de toda la consulta*.
-
-Para el join `full_sorting_merge`, solo se muestran las líneas comunes `Left:` y `Right:`.
-
-Para el join `direct`, solo se muestra la línea `Left:`, ya que el lado derecho es un almacén de clave-valor que se consulta directamente en lugar de materializarse en filas.
-
-Para un join `CROSS` o `COMMA`, y para cualquier sección `ON` sin una igualdad de clave, una línea `Buffer:` describe cómo se mantuvo la tabla de la derecha en memoria y una línea `Spill:` informa de si se volcó al disco:
-
-```txt
-Buffer: memory <peak_memory> · compressed <yes|no>
-Spill: yes · right spilled <right_spilled_bytes>
-```
-
-* `memory <peak_memory>` — el pico de memoria que ocupó la tabla derecha almacenada temporalmente en el búfer.
-* `compressed <yes|no>` — indica si se comprimió al menos un bloque almacenado temporalmente en el búfer; en ese caso, los lectores descomprimen todos los bloques almacenados.
-* `Spill:` — el mismo indicador `yes`/`no` que para `grace_hash`; `right spilled <right_spilled_bytes>` indica los bytes comprimidos escritos en disco.
-
-Ambos lados informan `matched not collected` aquí: un predicado constante empareja todas las filas izquierdas con todas las filas derechas, o ninguna, por lo que no se puede indicar qué filas individuales coincidieron.
-
-Para un join con el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join), se muestran ambos lados, junto con la línea `Hash table:`, que describe la tabla preconstruida. El lado derecho cuenta las filas almacenadas en el motor, no las filas de una compilación específica de cada consulta.
-
-<div id="explain-analyze-processors">
-  #### Tiempos por procesador
-</div>
-
-Con `processors = 1`, se imprime una línea adicional debajo de cada etapa que muestra la distribución del tiempo transcurrido entre los procesadores de la etapa:
-
-```txt
-Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
-```
-
-`<n>` es el número de procesadores de la etapa. Una gran diferencia entre `median` y `max` apunta a un desequilibrio de carga entre los procesadores paralelos.
-
 <div id="explain-estimate">
   ### EXPLAIN ESTIMATE
 </div>
@@ -966,128 +672,6 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
-
-<div id="explain-whatif">
-  ### EXPLAIN WHATIF
-</div>
-
-Estima el beneficio que tendría un índice de omisión hipotético en una consulta `SELECT`, *sin* materializar el índice en disco. Defina uno o más candidatos con [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#create-hypothetical-index) y luego ejecute `EXPLAIN WHATIF SELECT ...` para ver, para cada candidato, si aplica, las marcas estimadas leídas, los bytes estimados y la tasa de omisión.
-
-**Sintaxis**
-
-```sql
-EXPLAIN WHATIF [empirical = 0] SELECT ...
-```
-
-**Configuración**
-
-* `empirical` — `1` (predeterminado) ejecuta el índice en memoria sobre los gránulos descartados según la línea base para medir la tasa de descarte (un límite superior). `0` omite ese paso. En cualquier caso, si `empirical` no produce un resultado (porque está deshabilitado o porque el índice no puede evaluarse en memoria), el estimador recurre a las [estadísticas de columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) y, por último, a un resumen únicamente de aplicabilidad si ninguna de las dos está disponible.
-
-**Salida**
-
-```text
-Baseline (after PK + partition + existing indexes):
-  table:       db.t
-  parts:       1
-  marks:       100
-  est_bytes:   1.50 MiB             (only when the query reads rows)
-
-With idx_b (minmax, hypothetical):
-  status:       applicable
-  marks:        1
-  est_bytes:    15.00 KiB           (only when baseline bytes are known)
-  skip_ratio:   99.0%
-
-Estimation:
-  source:           empirical | statistical | applicability_only
-  empirical_status: ok | unsupported | disabled
-  sampled_parts:    50 / 100        (only when source = empirical)
-  sampled_marks:    50 / 100        (only when source = empirical)
-  elapsed_us:       631             (only when source = empirical)
-```
-
-* `source` — cómo se generó la estimación.
-  * `empirical`: construyó el índice en memoria sobre los gránulos podados por la línea base y contó los gránulos que el índice omitiría. Este es un límite superior; consulta las limitaciones en [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#limitations).
-  * `statistical`: se deriva de las estadísticas de columnas. Se usa cuando `empirical` está deshabilitado (`empirical = 0`) o cuando `empirical` no pudo producir un resultado, y hay estadísticas de columnas definidas en las columnas relevantes.
-  * `applicability_only`: el índice es aplicable al predicado, pero ni la estimación `empirical` ni la `statistical` produjeron un resultado (p. ej., `empirical = 0` y no hay estadísticas de columnas definidas). Informa `skip_ratio: 0.0%` como límite conservador.
-* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Muestra qué fracción de la tabla quedó tras la poda por PK, partición e índices existentes; es decir, la entrada del índice hipotético.
-* `est_bytes` — una estimación de los bytes leídos, derivada del tamaño medio de fila de la tabla, por lo que es aproximada y varía según el almacenamiento y la compresión. La línea de base aparece solo cuando la consulta lee filas; la línea por candidato, solo cuando se conoce la estimación de bytes de la línea de base.
-
-La configuración se escribe en línea entre `WHATIF` y `SELECT`; no hay palabra clave `SETTINGS` (esto coincide con cómo otras variantes de `EXPLAIN` aceptan sus opciones).
-
-Si no hay índices hipotéticos definidos para la tabla, `EXPLAIN WHATIF` informa `status: not_applicable` con una sugerencia para crear uno.
-
-**Fila combinada (múltiples candidatos)**
-
-Cuando dos o más candidatos se evalúan empíricamente, `EXPLAIN WHATIF` agrega un bloque adicional llamado `(combined: idx_a, idx_b, ...)` después de las filas de cada candidato. Informa del beneficio conjunto de tener *todos* esos índices a la vez: una lectura real conserva un gránulo solo si sobrevive a *todos* los índices de omisión, por lo que la estimación combinada es la intersección de los gránulos supervivientes de los candidatos. Por tanto, su `skip_ratio` es al menos tan alta como la del mejor candidato individual: los índices complementarios podan más juntos, mientras que los redundantes la dejan sin cambios.
-
-Solo contribuyen los candidatos con `source: empirical`, porque la fila combinada se construye al intersectar sus conjuntos de supervivencia por gránulo. Los candidatos estimados como `statistical` o `applicability_only` no tienen datos por gránulo y se excluyen; en consecuencia, el bloque combinado aparece solo cuando al menos dos candidatos produjeron una estimación empírica y, en caso contrario, se omite (por ejemplo, con `empirical = 0`). Sus campos de estimación se leen igual que los de un bloque empírico por candidato, excepto que `elapsed_us` es `0` — la estimación combinada se deriva de los escaneos por candidato, no de un escaneo nuevo. El nombre sintético `(combined: ...)` es solo una etiqueta del informe y no puede usarse con `force_data_skipping_indices`.
-
-**Ejemplo empírico**
-
-```sql
-CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 100;
-
-INSERT INTO t SELECT number, number FROM numbers(10000);
-
-CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
-
-EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
-```
-
-```text
-Baseline (after PK + partition + existing indexes):
-  table:       default.t
-  parts:       1
-  marks:       100
-  est_bytes:   85.52 KiB
-
-With idx_b (minmax, hypothetical):
-  status:       applicable
-  marks:        1
-  est_bytes:    875.00 B
-  skip_ratio:   99.0%
-
-Estimation:
-  source:           empirical
-  empirical_status: ok
-  sampled_parts:    1 / 1
-  sampled_marks:    100 / 100
-```
-
-El `minmax` hipotético podaría de 100 marcas a 1 — `skip_ratio: 99.0%`. (`est_bytes` es una estimación basada en el tamaño promedio de la fila, por lo que la cifra exacta puede variar.)
-
-**Ejemplo estadístico**
-
-Las [estadísticas de columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) están desactivadas de forma predeterminada. Para usar la ruta `statistical`, defínalas primero en las columnas correspondientes y espere a que finalice la mutación de materialización:
-
-```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
-ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
-```
-
-Luego, deshabilite el método empírico para que el estimador vuelva a usar las estadísticas de columna:
-
-```sql
-EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
-```
-
-```text
-With idx_b (minmax, hypothetical):
-  status:       applicable
-  marks:        1
-  est_bytes:    1.66 KiB
-  skip_ratio:   99.9%
-
-Estimation:
-  source:           statistical
-  empirical_status: disabled
-```
-
-El número proviene de la selectividad de las estadísticas de columna para `b < 10` (aproximadamente 10 filas de 10000) y se muestra como un límite superior de `skip_ratio`. No hay `sampled_parts` / `sampled_marks`: no se leyó ningún dato.
-
-Si ninguna de las dos vías está disponible (p. ej., `empirical = 0` y no hay estadísticas de columna definidas), el estimador informa `source: applicability_only` y un `skip_ratio: 0.0%` conservador.
 
 <div id="explain-table-override">
   ### EXPLAIN TABLE OVERRIDE

@@ -1,4 +1,6 @@
-SELECT count()\nFROM t_constraints_where\nWHERE 0
+SELECT count()
+FROM t_constraints_where
+WHERE 0
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -10,7 +12,9 @@ QUERY id: 0
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT count()\nFROM t_constraints_where\nWHERE 0
+SELECT count()
+FROM t_constraints_where
+WHERE 0
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -22,7 +26,9 @@ QUERY id: 0
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT count()\nFROM t_constraints_where\nWHERE 0
+SELECT count()
+FROM t_constraints_where
+WHERE 0
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -34,7 +40,9 @@ QUERY id: 0
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT count()\nFROM t_constraints_where\nWHERE less(b, 8)
+SELECT count()
+FROM t_constraints_where
+WHERE less(b, 8)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -50,7 +58,9 @@ QUERY id: 0
           COLUMN id: 6, column_name: b, result_type: UInt32, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_8, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT count()\nFROM t_constraints_where\nPREWHERE or(greater(b, 20), less(b, 8))
+SELECT count()
+FROM t_constraints_where
+PREWHERE or(greater(b, 20), less(b, 8))
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -66,7 +76,8 @@ QUERY id: 0
           COLUMN id: 6, column_name: b, result_type: UInt32, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_8, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT count()\nFROM t_constraints_where
+SELECT count()
+FROM t_constraints_where
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64

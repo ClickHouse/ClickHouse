@@ -1,10 +1,8 @@
-#include "config.h"
-
-#include <Access/AuthenticationData.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
@@ -96,23 +94,7 @@ namespace
         {
             // we only check if user exceeds the allowed quantity of authentication methods in case the create/alter query includes
             // authentication information. Otherwise, we can bypass this check to avoid blocking non-authentication related alters.
-
-            // Count each SSH key individually toward the limit, so the same set of keys counts equally whether
-            // written as one `ssh_key` method with several keys (`ssh_key BY KEY k1 TYPE t1, KEY k2 TYPE t2`)
-            // or as several `ssh_key` methods (`ssh_key BY KEY k1 TYPE t1, ssh_key BY KEY k2 TYPE t2`).
-            auto count_methods = [](const std::vector<AuthenticationData> & methods)
-            {
-#if USE_SSH
-                size_t count = 0;
-                for (const auto & method : methods)
-                    count += method.getType() == AuthenticationType::SSH_KEY ? method.getSSHKeys().size() : 1;
-                return count;
-#else
-                return methods.size();
-#endif
-            };
-
-            auto number_of_authentication_methods = count_methods(user.authentication_methods) + count_methods(authentication_methods);
+            auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
             if (number_of_authentication_methods > max_number_of_authentication_methods)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -227,8 +209,17 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
 
+    /// `CREATE USER OR REPLACE` overwrites an existing user - its authentication methods, its granted
+    /// roles and its settings - so it is a drop followed by a create and requires the privileges of both.
+    /// With `CREATE USER` alone its holder could reset the password of any user, including a privileged
+    /// one, and then log in as that user. `DROP USER` is required whether or not the user currently
+    /// exists, mirroring `REPLACE TABLE`, so that the check does not reveal which users exist either.
+    AccessFlags required_access = query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER;
+    if (query.or_replace)
+        required_access |= AccessType::DROP_USER;
+
     for (const auto & name : query.names->toStrings())
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
+        access->checkAccess(required_access, name);
 
     if (query.new_name && !query.alter)
         access->checkAccess(AccessType::CREATE_USER, *query.new_name);

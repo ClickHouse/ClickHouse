@@ -47,12 +47,8 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
     ParserStringLiteral string_literal_parser;
     ASTPtr comment;
 
-    auto begin = pos;
-    if (s_comment.ignore(pos, expected))
-    {
-        if (!string_literal_parser.parse(pos, comment, expected))
-            pos = begin;
-    }
+    s_comment.ignore(pos, expected) && string_literal_parser.parse(pos, comment, expected);
+
     return comment;
 }
 
@@ -770,9 +766,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
-    /// Parse the table function after AS in the table-function mode, so that a trailing
-    /// SETTINGS clause is accepted: CREATE TABLE ... AS remote(..., SETTINGS skip_unavailable_shards = 1)
-    ParserFunction table_function_p{/*allow_function_parameters_=*/ true, /*is_table_function_=*/ true};
+    ParserFunction table_function_p;
     ParserNameList names_p;
     ParserSQLSecurity sql_security_p;
 
@@ -1727,8 +1721,10 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                     ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
 
             if (s_populate.ignore(pos, expected))
-                is_populate = true;
-            else if (s_empty.ignore(pos, expected))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
+
+            if (s_empty.ignore(pos, expected))
             {
                 if (!refresh_strategy)
                     throw Exception(
@@ -1757,8 +1753,10 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else
         {
             if (s_populate.ignore(pos, expected))
-                is_populate = true;
-            else if (s_empty.ignore(pos, expected))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
+
+            if (s_empty.ignore(pos, expected))
             {
                 if (!refresh_strategy)
                     throw Exception(
@@ -1772,14 +1770,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     try_parse_populate_or_empty();
     auto comment = parseComment(pos, expected);
     try_parse_populate_or_empty();
-
-    /// The first refresh of a refreshable materialized view already fills it with data, so 'POPULATE'
-    /// would load the initial data twice (declare 'EMPTY' to skip the initial refresh instead).
-    if (is_populate && refresh_strategy)
-        throw Exception(
-            ErrorCodes::SYNTAX_ERROR,
-            "When creating a refreshable materialized view you can't declare 'POPULATE': "
-            "the first refresh fills the view (declare 'EMPTY' to skip it)");
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))

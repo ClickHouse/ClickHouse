@@ -139,11 +139,6 @@ public:
     /// But calling `checkAccessWithFilter(READ, "S3", "s3://foo/bar.csv")` will succeed, because we have just enough rights.
     void checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
 
-    /// The non-throwing counterpart of `checkAccessWithFilter`, for callers that have to observe the
-    /// decision instead of failing the query (e.g. to decide whether an operation may look at the data
-    /// at all, without disclosing through the error message what it would have seen).
-    bool isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
-
     static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
 
     ContextAccess(const AccessControl & access_control_, const Params & params_);
@@ -334,9 +329,6 @@ public:
 
     /// Checks access of grants with parameter where a filter can be applied.
     ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }
-
-    /// Checks access of grants with parameter where a filter can be applied, without throwing.
-    ALWAYS_INLINE bool isGrantedWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { return access->isGrantedWithFilter(context, flags, parameter, filter); }
 
 private:
     ContextAccessPtr access;

@@ -328,6 +328,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
+    , use_fake_transaction(config_.getBool(config_prefix_ + ".use_fake_transaction", true))
 {
     delegate->createDirectories(disk_path);
 }
@@ -339,6 +340,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
+    , use_fake_transaction(true)
 {
     delegate->createDirectories(disk_path);
 }

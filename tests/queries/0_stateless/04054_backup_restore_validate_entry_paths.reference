@@ -1,2 +1,7 @@
 OK: path traversal was blocked
 1	hello
+OK: doubled separator was blocked
+OK: shallow traversal was blocked
+a	2
+b	1
+1

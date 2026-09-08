@@ -32,9 +32,9 @@ public:
             auto type_removed_nullable = removeNullable(type);
             WhichDataType which(type_removed_nullable);
 
-            if (which.isDateOrDate32())
+            if (which.isDate())
                 has_date = true;
-            if (which.isDateTimeOrDateTime64())
+            if (which.isDateTime())
                 has_datetime = true;
 
             if (has_date && has_datetime)

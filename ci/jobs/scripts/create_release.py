@@ -49,7 +49,6 @@ from copy import copy
 from pathlib import Path
 from typing import Iterator, List
 
-from ci.jobs.scripts import release_packages
 from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
     CHVersion,
@@ -209,10 +208,13 @@ class ReleaseInfo:
     commit_sha: str
     latest: bool
     codename: str
-    # True once the branch tip has moved past this release (its post-release bump landed, or a newer release advanced it further), so this is no longer the branch's current release.
-    is_bump_landed: bool = True
-    # True once the release tag for this commit has been pushed, so this run re-publishes an existing release rather than creating one.
-    is_tag_pushed: bool = True
+    # Whether this release is the latest on its branch (controls the floating
+    # minor/major docker tags). `latest` above is whether the branch is the
+    # latest release branch (additionally controls the `latest` docker tag).
+    is_branch_release: bool = False
+    # Whether this run creates a new release (tag/version-bump/changelog). False
+    # when re-publishing artifacts for an already-released or out-of-order ref.
+    create_new_release: bool = False
     changelog_pr: str = ""
     version_bump_pr: str = ""
     prs_merged: bool = False
@@ -240,6 +242,26 @@ class ReleaseInfo:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
         return self
 
+    @staticmethod
+    def _is_empty_patch_release(patch: int, tweak: int) -> bool:
+        """
+        Whether a patch release would be empty and must be refused.
+
+        For a patch release the tweak equals the number of commits since the
+        previous release tag (see `Git.tweak`), so `tweak == 1` means the only
+        commit on top of the previous release is the automated post-release
+        version bump — there is nothing to release (e.g. `v25.8.28.1-lts`).
+
+        The exception is `patch == 1`: that is the first user-facing
+        `stable`/`lts` release of a freshly cut branch. Its previous tag is the
+        non-user-facing `vX.Y.1.1-new`, and the single automated
+        `testing -> stable/lts` version-update commit also yields `tweak == 1`.
+        That release is legitimate and must be allowed. The post-release bump
+        always increments `patch`, so an already-published branch is always at
+        `patch >= 2` on a rerun.
+        """
+        return tweak == 1 and patch != 1
+
     def prepare(
         self, commit_ref: str, release_type: str, dry_run: bool = False
     ) -> "ReleaseInfo":
@@ -257,8 +279,10 @@ class ReleaseInfo:
         release_tag = None
         latest_release = False
         codename = ""
-        # A new release starts a fresh minor with no prior bump landed; recomputed for patch below.
-        self.is_bump_landed = False
+        # Whether the branch has already moved to a newer release than this one
+        # (set for patch releases from the branch-tip version file). A new
+        # release cuts a fresh minor, so it is always the latest.
+        newer_release_exists = False
 
         if release_type == "new":
             if commit_ref != "master":
@@ -293,10 +317,13 @@ class ReleaseInfo:
                 verbose=True,
             )
 
-            # Branch-tip version (version file, not tags): if it is ahead of this commit, the post-release bump already landed, so this is no longer the branch's current release.
+            # The branch's current version, read from the version file at its tip
+            # (not from release tags). If this commit's version is older than the
+            # branch tip, the branch has already moved to a newer release, so this
+            # ref is behind / superseded.
             with checkout(f"origin/{release_branch}"):
                 branch_version = CHVersion.get_current_version()
-            self.is_bump_landed = version.is_older(branch_version)
+            newer_release_exists = version.is_older(branch_version)
 
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
@@ -320,42 +347,88 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
 
-        # Behind the tip and not the release tag itself -> out of order; else an existing release tag (at this commit) is recovery, a missing one is create.
-        self.is_tag_pushed = Git.tag_exists(release_tag)
-        assert not (self.is_bump_landed and commit_ref != release_tag), (
-            f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
-            f"branch [{release_branch}] tip is already ahead of it. Pass a "
-            f"release tag to recover an existing release, or the branch to "
-            f"release its next commit."
-        )
-        if self.is_tag_pushed:
-            tagged_sha = Git.get_commit_sha(release_tag)
-            assert tagged_sha == commit_sha, (
-                f"release tag [{release_tag}] already exists at [{tagged_sha}] but this run "
-                f"targets [{commit_sha}]: the version file at [{commit_ref}] is stale (it still "
-                f"describes an already-published release); land the post-release bump and "
-                f"dispatch the tip, or pass the release tag to recover."
+        # Is the branch already developing a newer release than this one? This
+        # release is the latest on its branch unless the branch tip is newer —
+        # controls the floating minor/major Docker tags (recovering the current
+        # release re-applies them; recovering a superseded one does not).
+        self.is_branch_release = not newer_release_exists
+
+        # The operation is decided from the ref and the branch's version:
+        #   * ref is an existing release tag -> recovery: re-publish exactly that
+        #     release (allowed even for a superseded one);
+        #   * ref is a branch/commit that is older than the branch tip -> out of
+        #     order. A branch ref can't reach this (its tip is never older than
+        #     itself), so it is a raw SHA pointing behind the tip; refuse it;
+        #   * ref is a branch/commit whose own release tag already exists at this
+        #     commit -> recovery: a rerun. auto_releases dispatches ref=<commit_sha>
+        #     and GitHub's "Re-run failed jobs" replays the matrix with that same
+        #     SHA while AutoReleaseInfo is not recomputed, so the tag pushed on the
+        #     first attempt already points here — degrade to recovery instead of
+        #     trying to create (and re-merge) the release a second time;
+        #   * otherwise -> create the next release.
+        #
+        # The stale-SHA and superseded-recovery cases both compute the same
+        # existing release_tag; only the ref KIND distinguishes them, so the tag
+        # ref is checked first and the newer-release guard runs before the rerun
+        # case.
+        #
+        # release_job.py defers the patch branch version bump to the very last
+        # step (after publishing), so a rerun after any failure runs while the
+        # branch tip still equals the released commit: newer_release_exists is
+        # False and this reaches the rerun-recovery branch. The branch only moves
+        # ahead once the whole release has succeeded, when no rerun is pending.
+        # That keeps reruns recoverable without consulting release tags here.
+        if Git.tag_exists(commit_ref):
+            recover = True
+            assert release_tag == commit_ref, (
+                f"ref [{commit_ref}] is a release tag but the version at its commit "
+                f"describes [{release_tag}]; refusing to re-publish a different "
+                f"release"
             )
+        elif newer_release_exists:
+            raise RuntimeError(
+                f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
+                f"branch [{release_branch}] is already on a newer release. Pass a "
+                f"release tag to recover an existing release, or the branch to "
+                f"release its next commit."
+            )
+        elif Git.tag_exists(release_tag):
+            tagged_sha = Git.get_commit_sha(release_tag)
+            if tagged_sha != commit_sha:
+                # The version computed from the file at this ref describes a
+                # release that already exists at a different commit. This is the
+                # stale-version-file hazard for a branch ref: the post-release
+                # version bump has not been applied to the branch, so the tip
+                # still describes an already-published release. Fail closed with
+                # an actionable message rather than assert or silently mint a
+                # colliding tag. (Detecting the wider "computed release is below
+                # the branch's latest" case would need to scan release tags,
+                # which the release job deliberately does not do — see
+                # 80c722e39ae.)
+                raise RuntimeError(
+                    f"release tag [{release_tag}] already exists at [{tagged_sha}] "
+                    f"but this run targets [{commit_sha}]. The version file at "
+                    f"[{commit_ref}] is stale (it still describes an "
+                    f"already-published release); land the post-release version "
+                    f"bump on the branch, then dispatch its tip, or pass a "
+                    f"release tag to recover an existing release."
+                )
+            recover = True
         else:
-            if release_type == "patch":
-                # tweak == 1: the only commit since the previous release is the automated bump — nothing to release.
-                if version.tweak == 1:
-                    raise RuntimeError(
-                        f"Refusing to create an empty patch release [{release_tag}] "
-                        f"from [{commit_ref}]: version [{version.string}] has tweak 1, "
-                        f"so the only commit since the previous release is the "
-                        f"automated version bump — there is nothing to release."
-                    )
-                # A -stable/-lts tag for this exact X.Y.P line means it was already released — refuse creating it again.
-                released = Shell.get_output(
-                    f"git tag --list 'v{version.major}.{version.minor}.{version.patch}.*-stable' "
-                    f"'v{version.major}.{version.minor}.{version.patch}.*-lts'"
+            # Creating (not recovering): refuse an empty patch release, where the
+            # only commit since the previous release is the automated version
+            # bump (tweak == 1). The recovery branches above are exempt.
+            if release_type == "patch" and self._is_empty_patch_release(
+                version.patch, version.tweak
+            ):
+                raise RuntimeError(
+                    f"Refusing to create an empty patch release [{release_tag}] "
+                    f"from [{commit_ref}]: version [{version.string}] has tweak 1, "
+                    f"so the only commit since the previous release is the "
+                    f"automated version bump — there is nothing to release."
                 )
-                assert not released, (
-                    f"release line {version.major}.{version.minor}.{version.patch} already has a "
-                    f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
-                    f"superseded release, or there is a bug in the release/versioning logic"
-                )
+            recover = False
+        self.create_new_release = not recover
         self.release_type = release_type
         return self
 
@@ -442,34 +515,20 @@ class ReleaseInfo:
 
         with checkout(self.release_branch):
             if self.release_type == "new":
-                # A freshly cut branch keeps its committed VERSION_GITHASH, not the release commit's.
+                # A freshly cut branch keeps its committed VERSION_GITHASH rather
+                # than repointing it at the release commit.
                 version.githash = CHVersion.get_release_version().githash
             else:
-                # Update the branch to origin's tip right before the push, so a backport landed during the release is not rejected as non-fast-forward.
-                if not dry_run:
-                    Shell.check(
-                        f"{GIT_PREFIX} fetch --quiet origin {self.release_branch}",
-                        strict=True,
-                        verbose=True,
-                    )
-                    Shell.check(
-                        f"{GIT_PREFIX} reset --hard FETCH_HEAD", strict=True, verbose=True
-                    )
-                # VERSION_GITHASH is the released commit — the baseline the next release's tweak counts from, not the backport-advanced tip.
-                version.githash = self.commit_sha
-                latest_release_version = CHVersion.get_release_version()
-                assert not version.is_older(latest_release_version), (
-                    f"BUG: refusing to write version [{version.string}] onto branch "
-                    f"[{self.release_branch}] whose tip already describes "
-                    f"[{latest_release_version.string}]; the branch version must never move backwards"
-                )
+                version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
             version.write()
             update_contributors(raise_error=True)
             cmd_commit_version_upd = (
                 f"{GIT_PREFIX} commit '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}' "
                 f"-m 'Update autogenerated version to {self.version} and contributors'"
             )
-            # `git diff --quiet`: 0 = no changes (rerun, skip), 1 = changes, >1 = error.
+            # `git diff --quiet` exit codes: 0 = no changes, 1 = changes, >1 = error.
+            # On a rerun the files are already up to date (exit 0), so skip the
+            # commit + push silently. Treat >1 as a hard failure.
             diff_rc = Shell.run(
                 f"git diff --quiet HEAD -- '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'"
             )
@@ -489,8 +548,6 @@ class ReleaseInfo:
                     dry_run=dry_run,
                     strict=True,
                     retries=3,  # transient workflow-scope timeout (see push_release_tag)
-                    rebase_retries=5,  # heal a backport landing during the push
-                    git_prefix=GIT_PREFIX,
                 )
             if dry_run:
                 Shell.check(
@@ -556,10 +613,7 @@ class ReleaseInfo:
                     else:
                         Shell.check(
                             f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' "
-                            f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}"
-                            # 'do not test': this bot PR is auto-enqueued to the
-                            # merge queue, so it must not run the full PR CI.
-                            f" --label 'do not test'",
+                            f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}",
                             strict=True,
                             dry_run=dry_run,
                             verbose=True,
@@ -679,89 +733,73 @@ class ReleaseInfo:
             self.release_url = "dry-run"
         self.dump()
 
-    def _enqueue_release_pr(self, pr_url: str, label: str, dry_run: bool) -> bool:
-        """Add a release bot PR to `master`'s merge queue so it actually merges.
-
-        `master` is behind a merge queue, and `gh pr merge --auto`
-        (`enablePullRequestAutoMerge`) is disabled there, so the PR is added via
-        `enqueuePullRequest` - GitHub merges it from the queue once its required
-        checks pass. The PR is opened before the long package export / docker
-        publish, so its `CH Inc sync` check has time to run before this enqueue at
-        the end of the release; the retries ride out any short remaining wait.
-        Best-effort: it never raises, so a PR that is not yet mergeable does not
-        fail the already-published release (merge_prs then only warns; a later
-        rerun re-enqueues it).
-        """
-        pr_num = 23456 if dry_run else int(pr_url.rsplit("/", 1)[-1])
-        if not dry_run:
-            # Idempotent for recovery / reruns: only an open PR needs enqueuing.
-            # Non-strict read: a transient gh failure must not fail the release.
-            state = Shell.get_output(
-                f"gh pr view {pr_num} --repo {GITHUB_REPOSITORY}"
-                f" --json state --jq .state"
-            ).strip()
-            if not state:
-                print(f"ERROR: could not fetch state for {label} PR #{pr_num}")
-                return False
-            if state != "OPEN":
-                print(f"{label} PR #{pr_num} is {state}, nothing to merge")
-                return True
-        print(f"Enqueuing {label} PR to the merge queue")
-        return Git.enqueue_pull_request(
-            pr_num, GITHUB_REPOSITORY, dry_run=dry_run, retries=10, delay=30
-        )
-
     def merge_prs(self, dry_run: bool) -> None:
         res = True
-        # A recovery / rerun may find no PR (it was already merged and the branch
-        # lookup returned nothing) - that is a no-op, not a failure.
         if self.release_type == "patch":
-            if self.changelog_pr:
-                res = self._enqueue_release_pr(self.changelog_pr, "ChangeLog", dry_run)
-            else:
-                print("No ChangeLog PR to merge")
+            assert self.changelog_pr
+            print("Merging ChangeLog PR")
+            changelog_pr_num = 23456 if dry_run else int(self.changelog_pr.rsplit("/", 1)[-1])
+            res = Shell.check(
+                f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
+                verbose=True,
+                dry_run=dry_run,
+                strict=True,
+            )
         if self.release_type == "new":
-            if self.version_bump_pr:
-                res = res and self._enqueue_release_pr(
-                    self.version_bump_pr, "Version Bump", dry_run
-                )
-            else:
-                print("No Version Bump PR to merge")
+            assert self.version_bump_pr
+            print("Merging Version Bump PR")
+            version_bump_pr_num = 23456 if dry_run else int(self.version_bump_pr.rsplit("/", 1)[-1])
+            res = res and Shell.check(
+                f"gh pr merge {version_bump_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
+                verbose=True,
+                dry_run=dry_run,
+                strict=True,
+            )
         else:
             if not dry_run:
                 assert not self.version_bump_pr
         self.prs_merged = res
-        if not res:
-            # Best-effort: by the time this runs the release itself (tag, GitHub
-            # release, packages) is already published, so a failed PR enqueue must
-            # not fail the release. Leave the PR open to be landed separately and
-            # only warn - do not raise.
-            print(
-                "WARNING: could not enqueue the release PR(s) to the merge queue; "
-                "they must be landed separately. The release itself is unaffected."
-            )
+
+
+class RepoTypes:
+    RPM = "rpm"
+    DEBIAN = "deb"
+    TGZ = "tgz"
 
 
 class PackageDownloader:
-    # The package/build-job/filename contract lives in `release_packages`, the
-    # single source of truth shared with the `AutoReleases` gate
-    # (`tests/ci/auto_release.py`), so the producer here and the checker there
-    # cannot drift. Re-export the two constants callers read off the class.
-    PACKAGES = release_packages.PACKAGES
-    PACKAGE_ARCHS = release_packages.PACKAGE_ARCHS
+    PACKAGES = (
+        "clickhouse-client",
+        "clickhouse-common-static",
+        "clickhouse-common-static-dbg",
+        "clickhouse-keeper",
+        "clickhouse-keeper-dbg",
+        "clickhouse-server",
+    )
+
+    PACKAGE_ARCHS = ("amd", "arm")
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
         "amd": "macos",
         "arm": "macos-aarch64",
     }
     LOCAL_DIR = "/tmp/packages"
 
+    @classmethod
+    def _get_arch_suffix(cls, package_arch, repo_type):
+        if package_arch == "amd":
+            return "amd64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "x86_64"
+        if package_arch == "arm":
+            return "arm64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "aarch64"
+        assert False, "BUG"
+
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
-        with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
-        self.with_signed_macos = with_signed_macos
         self.package_names = list(self.PACKAGES)
         self.release = release
-        self.s3_release_prefix = release_packages.s3_release_prefix(release)
+        major_version = int(release.split(".")[0])
+        minor_version = int(release.split(".")[1])
+        self.is_new_ci = (major_version >= 25 and minor_version >= 3) or major_version > 25
+        self.s3_release_prefix = f"REFs/{release}" if self.is_new_ci else release
         self.commit_sha = commit_sha
         self.version = version
         self.s3 = S3Helper()
@@ -769,41 +807,41 @@ class PackageDownloader:
         self.rpm_package_files = []
         self.tgz_package_files = []
         self.macos_package_files = ["clickhouse-macos", "clickhouse-macos-aarch64"]
-        self.macos_signed_files = (
-            [f"{f}.zip" for f in self.macos_package_files] if with_signed_macos else []
-        )
         self.file_to_job_name = {}
         self.macos_binary_to_job_name = {}
-        self.macos_signed_to_job_name = {}
 
         Shell.check(f"mkdir -p {self.LOCAL_DIR}")
 
-        files_by_repo_type = {
-            "deb": self.deb_package_files,
-            "rpm": self.rpm_package_files,
-            "tgz": self.tgz_package_files,
-        }
-        for repo_type, package_file, job_name in release_packages.iter_package_objects(
-            version
-        ):
-            files_by_repo_type[repo_type].append(package_file)
-            self.file_to_job_name[package_file] = job_name
+        for package_arch in self.PACKAGE_ARCHS:
+            if not self.is_new_ci:
+                job_name = "package_release" if package_arch == "amd" else "package_aarch64"
+                job_name_darwin = "binary_darwin" if package_arch == "amd" else "binary_darwin_aarch64"
+            else:
+                job_name = "build_amd_release" if package_arch == "amd" else "build_arm_release"
+                job_name_darwin = "build_amd_darwin" if package_arch == "amd" else "build_arm_darwin"
 
-        for package_arch, job_name_darwin in release_packages.iter_macos_objects():
-            dest_bin = f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
-            assert dest_bin in self.macos_package_files
-            self.macos_binary_to_job_name[dest_bin] = job_name_darwin
+            for package in self.package_names:
+                arch = self._get_arch_suffix(package_arch, RepoTypes.DEBIAN)
+                deb = f"{package}_{self.version}_{arch}.deb"
+                self.deb_package_files.append(deb)
+                self.file_to_job_name[deb] = job_name
 
-        if with_signed_macos:
-            for (
-                package_arch,
-                job_name_sign,
-            ) in release_packages.iter_macos_signed_objects():
-                dest_zip = (
-                    f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}.zip"
-                )
-                assert dest_zip in self.macos_signed_files
-                self.macos_signed_to_job_name[dest_zip] = job_name_sign
+                arch = self._get_arch_suffix(package_arch, RepoTypes.RPM)
+                rpm = f"{package}-{self.version}.{arch}.rpm"
+                self.rpm_package_files.append(rpm)
+                self.file_to_job_name[rpm] = job_name
+
+                arch = self._get_arch_suffix(package_arch, RepoTypes.TGZ)
+                tgz = f"{package}-{self.version}-{arch}.tgz"
+                self.tgz_package_files.append(tgz)
+                self.file_to_job_name[tgz] = job_name
+                tgz_sha = tgz + ".sha512"
+                self.tgz_package_files.append(tgz_sha)
+                self.file_to_job_name[tgz_sha] = job_name
+
+                dest_bin = f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
+                assert dest_bin in self.macos_package_files
+                self.macos_binary_to_job_name[dest_bin] = job_name_darwin
 
     def get_deb_packages_files(self):
         return self.deb_package_files
@@ -817,9 +855,6 @@ class PackageDownloader:
     def get_macos_packages_files(self):
         return self.macos_package_files
 
-    def get_macos_signed_files(self):
-        return self.macos_signed_files
-
     def get_packages_names(self):
         return self.package_names
 
@@ -828,14 +863,12 @@ class PackageDownloader:
         assert self.local_deb_packages_ready()
         assert self.local_rpm_packages_ready()
         assert self.local_macos_packages_ready()
-        assert self.local_macos_signed_ready()
         res = []
         for pkg in (
             self.deb_package_files
             + self.rpm_package_files
             + self.tgz_package_files
             + self.macos_package_files
-            + self.macos_signed_files
         ):
             res.append(self.LOCAL_DIR + "/" + pkg)
         return res
@@ -883,21 +916,6 @@ class PackageDownloader:
                 local_file_path=local_path,
             )
 
-        for macos_zip, job_name in self.macos_signed_to_job_name.items():
-            local_path = self.LOCAL_DIR + "/" + macos_zip
-            print(f"Downloading: [{job_name}] signed zip to [{macos_zip}]")
-            s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
-                job_name,
-                release_packages.MACOS_SIGNED_S3_OBJECT,
-            ])
-            self.s3.download_file(
-                bucket=S3_BUILDS_BUCKET,
-                s3_path=s3_path,
-                local_file_path=local_path,
-            )
-
     def local_deb_packages_ready(self) -> bool:
         return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.deb_package_files)
 
@@ -909,9 +927,6 @@ class PackageDownloader:
 
     def local_macos_packages_ready(self) -> bool:
         return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.macos_package_files)
-
-    def local_macos_signed_ready(self) -> bool:
-        return all(Path(self.LOCAL_DIR + "/" + f).is_file() for f in self.macos_signed_files)
 
 
 @contextmanager
@@ -993,6 +1008,11 @@ def parse_args() -> argparse.Namespace:
         "--create-gh-release",
         action="store_true",
         help="Create GH Release object and attach all packages",
+    )
+    parser.add_argument(
+        "--merge-prs",
+        action="store_true",
+        help="Merge PRs with version, changelog updates",
     )
     parser.add_argument(
         "--post-status",
@@ -1091,6 +1111,13 @@ if __name__ == "__main__":
         # fail is conveyed by the workflow job result, not re-derived here.
         print(f"{title}: {release_info.release_tag}")
         print(json.dumps(dataclasses.asdict(release_info), indent=2))
+
+    if args.merge_prs:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.MERGE_CREATED_PRS
+        ) as release_info:
+            release_info.update_release_info(dry_run=args.dry_run)
+            release_info.merge_prs(dry_run=args.dry_run)
 
     if _ssh_agent and _key_pub:
         _ssh_agent.remove(_key_pub)

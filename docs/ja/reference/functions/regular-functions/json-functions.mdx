@@ -46,57 +46,6 @@ ClickHouse には、簡易 JSON を扱うための特別な関数があります
   これらの関数は大文字・小文字を区別する対応する関数よりもパフォーマンスが低下する場合があるため、可能であれば通常の JSONExtract 関数を使用してください。
 </Note>
 
-<div id="jsonpath-syntax">
-  ## JSONPath 構文
-</div>
-
-`JSON_EXISTS`、`JSON_VALUE`、`JSON_QUERY` 関数は、2 番目の引数として JSONPath
-式を受け取ります。ClickHouse では、SQL/JSON 標準 (ISO/IEC TR 19075-6) におおまかに基づく
-JSONPath の限定的なサブセットを実装しています。これは、[RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
-やその他の一般的な実装よりも意図的に狭い範囲に限定されています。サポートされる演算子を以下に示します。
-
-正式な実装は
-[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers) にあります。
-
-<div id="supported-operators">
-  ### サポートされる演算子
-</div>
-
-| 構文            | 説明                                                                     | 例                                 |
-| ------------- | ---------------------------------------------------------------------- | --------------------------------- |
-| `$`           | ルート要素。すべてのパスはこれで始まる必要があります。                                            | `$`                               |
-| `.key`        | クォートなしのドット記法によるメンバーアクセス。キーは数字で始めることも、数字だけで構成することもできます。                 | `$.store.book`, `$.1key`, `$.123` |
-| `."key"`      | クォート付きのドット記法によるメンバーアクセス。スペースや特殊文字を含むキーに使用します。ダブルクォートまたはバッククォートを使用できます。 | `$."foo bar"`                     |
-| `[key]`       | クォートなしのブラケット記法によるメンバーアクセス。                                             | `$[hello]`                        |
-| `['key']`     | クォート付きのブラケット記法によるメンバーアクセス。シングルクォート、ダブルクォート、またはバッククォートを使用できます。          | `$['foo bar']`                    |
-| `[n]`         | インデックスによるArray要素へのアクセス (0始まり) 。                                        | `$.items[0]`                      |
-| `[n, m, ...]` | 複数のArray要素へのアクセス。                                                      | `$.items[0, 2, 4]`                |
-| `[n to m]`    | Array要素の範囲。終了インデックス `m` は含まれません。                                       | `$.items[0 to 3]`                 |
-| `[*]`         | ワイルドカード。Arrayのすべての要素に一致します。                                            | `$.items[*]`                      |
-
-注記:
-
-* 索引と範囲は、同じ角括弧内で組み合わせて使用できます (例: `[0 to 2, 4]`) 。
-* 索引範囲とワイルドカードは、同じ角括弧内で組み合わせて使用できません (例: `[* , 0]` は無効です) 。
-* 範囲 `[n to m]` では、開始インデックス `n` は終了インデックス `m` より厳密に小さくなければなりません。そうでない場合は例外が発生します。
-* 単独の索引 `[n]` は、範囲 `[n to n+1]` と同等です。
-
-<div id="unsupported-operators">
-  ### サポートされていない演算子
-</div>
-
-RFC 9535 またはその他の実装で利用可能な以下の JSONPath 演算子は、ClickHouse では**サポートされていません**。
-
-| 構文                      | 説明                                       |
-| ----------------------- | ---------------------------------------- |
-| `..`                    | 再帰的な下降。                                  |
-| `?(@.expr)`             | フィルタ式。                                   |
-| `[start:end:step]`      | スライス表記。代わりに `[n to m]` を使用してください。        |
-| `@`                     | 現在のノードへの参照。                              |
-| `[-n]`                  | 負の (末尾から数える) 配列インデックス。                   |
-| スクリプト式                  | パス内の算術式または関数式。                           |
-| `ON ERROR` / `ON EMPTY` | エラー時および空の場合の動作を制御する Standard SQL/JSON 句。 |
-
 {/* 
   以下のタグ内の内容は、ドキュメントフレームワークのビルド時に
   system.functions から生成されたドキュメントに差し替えられます。タグは変更または削除しないでください。
@@ -772,7 +721,7 @@ SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
 
 導入バージョン: v20.1.0
 
-値が指定した ClickHouse のデータ型である JSON から、キー・バリューのペアを解析します。
+値が指定した ClickHouse のデータ型である JSON から、キーと値のペアを解析します。
 
 **構文**
 
@@ -795,13 +744,13 @@ JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)
 **使用例**
 
 ```sql title=Query
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
 ```
 
 ```response title=Response
-┌─res────────────────────────┐
+┌─res────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────────┘
+└────────────────────────┘
 ```
 
 <div id="JSONExtractKeysAndValuesCaseInsensitive">
@@ -846,7 +795,7 @@ SELECT JSONExtractKeysAndValuesCaseInsensitive('{"Name": "Alice", "AGE": 30}', '
 
 導入バージョン: v20.4.0
 
-JSON オブジェクト のキーと値を含む タプル の Array を返します。すべての値は、未解析の文字列として表されます。
+JSON オブジェクト のキーと値を含む タプル の Array を返します。すべての値は、解析されていない文字列として表されます。
 
 **構文**
 
@@ -861,7 +810,7 @@ JSONExtractKeysAndValuesRaw(json[, indices_or_keys, ...])
 
 **戻り値**
 
-値が未解析の文字列である、パース済みのキー・バリューのペアからなるタプルの配列を返します。[`Array(Tuple(String, String))`](/ja/reference/data-types/array)
+値が未パースの文字列である、パース済みのキー・バリューのペアからなるタプルの配列を返します。[`Array(Tuple(String, String))`](/ja/reference/data-types/array)
 
 **例**
 
@@ -873,7 +822,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
 
 ```response title=Response
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200]'),('b','"hello"')] │
+│ [('a','[-100,200.0]'),('b','"hello"')] │
 └──────────────────────────────────────┘
 ```
 
@@ -1405,10 +1354,10 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ```response title=Response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                 │
-│ {"b":"Hello"}                        │ {'b':'String'}                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
-└──────────────────────────────────────┴────────────────────────────────────┘
+│ {"a":"42"}                           │ {}                                  │
+│ {"b":"Hello"}                        │ {'b':'String'}                      │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
+└──────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
 <div id="JSONType">
@@ -2213,14 +2162,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 導入バージョン: v21.7.0
 
 値を JSON 表現にシリアライズします。さまざまなデータ型とネストされた構造をサポートしています。
-64 ビットの [整数](/ja/reference/data-types/int-uint) 以上 (`UInt64` や `Int128` など) は、デフォルトで引用符で囲まれます。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) でこの動作を制御します。
-特殊な値 `NaN` と `inf` は `null` に置き換えられます。これらを表示するには、[output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats/output-format#output_format_json_quote_denormals) 設定を有効にします。
+64 ビットの [整数](/ja/reference/data-types/int-uint) 以上 (`UInt64` や `Int128` など) は、デフォルトで引用符で囲まれます。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ja/reference/settings/formats#output_format_json_quote_64bit_integers) でこの動作を制御します。
+特殊な値 `NaN` と `inf` は `null` に置き換えられます。これらを表示するには、[output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats#output_format_json_quote_denormals) 設定を有効にします。
 [Enum](/ja/reference/data-types/enum) 値をシリアライズする場合、この関数はその名前を出力します。
 
 関連項目:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats/output-format#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ja/reference/settings/formats#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats#output_format_json_quote_denormals)
 
 **構文**
 

@@ -30,11 +30,7 @@ public:
 
         enum EmpiricalStatus { Ok, Unsupported, Disabled };
         EmpiricalStatus empirical_status = Disabled;
-        /// Why the empirical estimate could not run, set only when empirical_status == Unsupported
-        String empirical_unsupported_reason;
-
-        enum EstimateSource { Empirical, Statistical, ApplicabilityOnly };
-        EstimateSource estimate_source = ApplicabilityOnly;
+        String estimate_source; /// "empirical", "statistical", "applicability_only"
 
         UInt64 sampled_parts = 0;
         UInt64 total_parts = 0;

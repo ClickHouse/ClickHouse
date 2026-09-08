@@ -34,17 +34,19 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
 * Acesso para modificar os arquivos de configuração do ClickStack
 
 <Steps>
-  <Step title="Verifique se existem arquivos de syslog" id="verify-syslog">
+  <Step>
+    #### Verifique se existem arquivos de syslog
+
     Primeiro, verifique se o seu sistema está gravando arquivos de syslog:
 
     ```bash
-    # Check if syslog files exist (Linux)
+    # Verificar se os arquivos syslog existem (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # Or on macOS
+    # Ou no macOS
     ls -la /var/log/system.log
 
-    # View recent entries
+    # Visualizar entradas recentes
     tail -20 /var/log/syslog
     ```
 
@@ -55,7 +57,9 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     * **macOS**: `/var/log/system.log`
   </Step>
 
-  <Step title="Criar configuração personalizada do OTel collector" id="custom-otel">
+  <Step>
+    #### Criar configuração personalizada do OTel collector
+
     O ClickStack permite estender a configuração base do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente.
 
     Crie um arquivo chamado `host-logs-monitoring.yaml` com a configuração do seu sistema:
@@ -199,7 +203,9 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     </Note>
   </Step>
 
-  <Step title="Configure o ClickStack para carregar uma configuração personalizada" id="load-custom">
+  <Step>
+    #### Configure o ClickStack para carregar uma configuração personalizada
+
     Para habilitar uma configuração personalizada do collector na implantação existente do ClickStack, você deve:
 
     1. Montar o arquivo de configuração personalizado em `/etc/otelcol-contrib/custom.config.yaml`
@@ -213,14 +219,14 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... configuração existente ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... outras variáveis de ambiente ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... other volumes ...
+          # ... outros volumes ...
     ```
 
     ##### Opção 2: Docker Run (imagem all-in-one)
@@ -241,7 +247,9 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     </Note>
   </Step>
 
-  <Step title="Verificando logs no HyperDX" id="verifying-logs">
+  <Step>
+    #### Verificando logs no HyperDX
+
     Depois de configurar, faça login no HyperDX e verifique se os logs estão chegando:
 
     1. Acesse a Search view
@@ -256,13 +264,15 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
 </Steps>
 
 <div id="demo-dataset">
-  ## Dataset de demonstração
+  ## dataset de demonstração
 </div>
 
 Para usuários que desejam testar a integração de logs do host antes de configurar seus sistemas de produção, fornecemos um conjunto de dados de exemplo com logs de sistema pré-gerados e padrões realistas.
 
 <Steps>
-  <Step title="Baixe o conjunto de dados de exemplo" id="download-sample">
+  <Step>
+    #### Baixe o conjunto de dados de exemplo
+
     Baixe o arquivo de log de exemplo:
 
     ```bash
@@ -280,7 +290,9 @@ Para usuários que desejam testar a integração de logs do host antes de config
     * Combinação de operações normais e eventos relevantes
   </Step>
 
-  <Step title="Crie a configuração de teste do collector" id="test-config">
+  <Step>
+    #### Crie a configuração de teste do collector
+
     Crie um arquivo chamado `host-logs-demo.yaml` com a seguinte configuração:
 
     ```yaml
@@ -322,7 +334,9 @@ Para usuários que desejam testar a integração de logs do host antes de config
     ```
   </Step>
 
-  <Step title="Execute o ClickStack com a configuração de demonstração" id="run-demo">
+  <Step>
+    #### Execute o ClickStack com a configuração de demonstração
+
     Execute o ClickStack com os logs de demonstração e a configuração correspondente:
 
     ```bash
@@ -336,10 +350,13 @@ Para usuários que desejam testar a integração de logs do host antes de config
 
     <Note>
       **Isso monta o arquivo de log diretamente no contêiner. Isso é feito apenas para testes com dados de demonstração estáticos.**
+
     </Note>
   </Step>
 
-  <Step title="Verifique os logs no HyperDX" id="verify-demo-logs">
+  <Step>
+    #### Verifique os logs no HyperDX
+
     Quando o ClickStack estiver em execução:
 
     1. Abra o [HyperDX](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
@@ -353,7 +370,7 @@ Para usuários que desejam testar a integração de logs do host antes de config
     <Info>
       **Exibição de fuso horário**
 
-      O HyperDX exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração cobrem o período de **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você poderá restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
+      O HyperDX exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração cobrem o período de **2025-11-11 00:00:00 a 2025-11-12 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você poderá restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
     </Info>
   </Step>
 </Steps>
@@ -365,11 +382,13 @@ Para usuários que desejam testar a integração de logs do host antes de config
 Para ajudar você a começar a monitorar logs do host com o ClickStack, fornecemos visualizações essenciais para logs do sistema.
 
 <Steps>
-  <Step title="Baixe a configuração do dashboard" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Baixe o arquivo de configuração do dashboard</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Baixe</TrackedLink> a configuração do dashboard
   </Step>
 
-  <Step title="Importe o dashboard pré-configurado" id="import-dashboard">
+  <Step>
+    #### Importe o dashboard pré-configurado
+
     1. Abra o HyperDX e navegue até a seção Dashboards
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
@@ -380,7 +399,9 @@ Para ajudar você a começar a monitorar logs do host com o ClickStack, fornecem
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Concluir importação" />
   </Step>
 
-  <Step title="Visualize o dashboard" id="created-dashboard">
+  <Step>
+    #### Visualize o dashboard
+
     O dashboard será criado com todas as visualizações pré-configuradas:
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="Dashboard de logs" />
@@ -391,7 +412,7 @@ Para ajudar você a começar a monitorar logs do host com o ClickStack, fornecem
     * Principais unidades do systemd que geram logs
     * Atividade de login via SSH (bem-sucedidos vs. falhos)
     * Atividade do firewall (bloqueado vs. permitido)
-    * Eventos de segurança (logins com falha, banimentos e bloqueios)
+    * Eventos de segurança (logins com falha, banimentos, bloqueios)
     * Atividade de reinicialização de serviços
 
     <Note>
@@ -492,7 +513,7 @@ Se o formato não corresponder, selecione a guia de configuração adequada na s
 * Crie dashboards personalizados para monitoramento de segurança (tentativas de SSH, uso de sudo, bloqueios de firewall)
 
 <div id="going-to-production">
-  ## Preparando para produção
+  ## Colocando em produção
 </div>
 
-Este guia utiliza o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

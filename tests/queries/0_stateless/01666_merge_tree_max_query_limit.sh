@@ -5,12 +5,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# The throttle asserted below is a per-table counter keyed on query id. Under parallel replicas one
-# statement becomes several reads of the same table on the same server, each carrying a different
-# query id, so the long running query competes against itself for the single max_concurrent_queries
-# slot and is rejected instead of holding it.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0 --enable_parallel_replicas 0"
-
 function wait_for_query_to_start() {
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT sum(read_rows) FROM system.processes WHERE query_id = '$1'") == 0 ]]; do sleep 0.1; done
 }
@@ -27,7 +21,7 @@ insert into simple select number, number + 100 from numbers(5000);
 query_id="long_running_query-$CLICKHOUSE_DATABASE"
 
 echo "Spin up a long running query"
-${CLICKHOUSE_CLIENT} --query "select sleepEachRow(0.1) from simple settings max_block_size = 1, max_threads = 1 format Null" --query_id "$query_id" >/dev/null 2>&1 &
+${CLICKHOUSE_CLIENT} --query "select sleepEachRow(0.1) from simple settings max_block_size = 1 format Null" --query_id "$query_id" >/dev/null 2>&1 &
 wait_for_query_to_start "$query_id"
 
 # query which reads marks >= min_marks_to_honor_max_concurrent_queries is throttled
