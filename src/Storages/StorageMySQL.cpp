@@ -203,14 +203,14 @@ class StorageMySQLSink final : public SinkToStorage
 {
 public:
     explicit StorageMySQLSink(
-        const StorageMySQL & storage_,
+        std::shared_ptr<const StorageMySQL> storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
-        , storage{storage_}
+        , storage{std::move(storage_)}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
         , remote_table_name{remote_table_name_}
@@ -244,17 +244,17 @@ public:
     void writeBlockData(const Block & block)
     {
         WriteBufferFromOwnString sqlbuf;
-        sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
+        sqlbuf << (storage->replace_query ? "REPLACE" : "INSERT") << " INTO ";
         if (!remote_database_name.empty())
             sqlbuf << backQuoteMySQL(remote_database_name) << ".";
         sqlbuf << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext());
         writer->write(block);
 
-        if (!storage.on_duplicate_clause.empty())
-            sqlbuf << " ON DUPLICATE KEY " << storage.on_duplicate_clause;
+        if (!storage->on_duplicate_clause.empty())
+            sqlbuf << " ON DUPLICATE KEY " << storage->on_duplicate_clause;
 
         sqlbuf << ";";
 
@@ -305,7 +305,12 @@ public:
     }
 
 private:
-    const StorageMySQL & storage;
+    /// The sink owns a `mysqlxx::PoolWithFailover::Entry` pointing into the pool that the storage owns,
+    /// so it has to keep the storage alive: a pipeline can outlive its `QueryPipeline` resource holders
+    /// (`BlockIO::onException` releases the pipeline while the executor still owns the processors), and
+    /// the destruction order of the processors is not defined - the sink must not be destroyed after the
+    /// pool it borrows a connection from.
+    std::shared_ptr<const StorageMySQL> storage;
     StorageMetadataPtr metadata_snapshot;
     std::string remote_database_name;
     std::string remote_table_name;
@@ -320,7 +325,7 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a MySQL table representing the result of a query");
 
     return std::make_shared<StorageMySQLSink>(
-        *this,
+        std::static_pointer_cast<const StorageMySQL>(shared_from_this()),
         metadata_snapshot,
         remote_database_name,
         remote_table_or_query.getTableName(),
