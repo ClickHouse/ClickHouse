@@ -3886,6 +3886,61 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         Tokens tokens(begin, end, 0, true);
         IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
 
+        /// Mirror a `SET` that the executor would have run before parsing the next statement:
+        /// apply its changes to the local settings copy and rebuild the parser (and the parse
+        /// position, which carries the parser limits), so the following statements are probed
+        /// exactly as `executeMultiQuery` reparses them. Nothing is executed -- only the local
+        /// copies change. Used for a `SET` parsed from SQL and for one deserialized from a
+        /// `clickhouse_json` statement alike.
+        auto mirror_set_query = [&](const ASTSetQuery & set_query)
+        {
+            /// Skip `profile` exactly like the real `SET` handling does
+            /// (see `processParsedSingleQuery` above): the client never
+            /// applies a settings profile to `client_context`, because a
+            /// profile is defined by the server's access control and its
+            /// contents are unknown to the client. Consequently the
+            /// executor's own reparse of the following statements is not
+            /// shaped by the profile either, so honoring it here would make
+            /// the probe disagree with the executor: a buffer like
+            /// `SET profile = '<sets dialect to kusto>'; let x = 1; print`
+            /// would be kept open forever as an unfinished Kusto statement,
+            /// while submitting it reports a SQL syntax error on `let`.
+            /// Mirroring the executor keeps the buffer submittable.
+            SettingsChanges changes;
+            for (const auto & change : set_query.changes)
+                if (change.name != "profile")
+                    changes.push_back(change);
+            /// Resolve query parameters used as setting values against the
+            /// parameters known at this point in the buffer, as the executor
+            /// does. This works on the local copy of the changes, so the AST
+            /// is left untouched. An unknown parameter throws, which is caught
+            /// by the outer handler and commits the buffer -- the executor
+            /// throws there too.
+            replaceQueryParametersInSettingsChanges(changes, effective_query_parameters);
+            effective_settings.applyChanges(changes);
+            /// `SET name = DEFAULT` lands in `default_settings`, not `changes`;
+            /// the executor resets those via `resetSettingsToDefaultValue`.
+            /// Mirror it, so e.g. `SET dialect = 'kusto'; SET dialect = DEFAULT; ...`
+            /// probes the trailing statements with the session's parser again.
+            for (const auto & name : set_query.default_settings)
+                effective_settings.setDefaultValue(name);
+            /// `SET param_x = ...` declares a query parameter for the following
+            /// statements; remember it for their `SET` resolution above.
+            for (const auto & [name, value] : set_query.query_parameters)
+                effective_query_parameters.insert_or_assign(name, value);
+            parser = make_parser();
+
+            /// The `SET` may also have changed the parser limits, and the
+            /// current parse position still carries the old ones. Rebuild it
+            /// at the same token with the limits from the updated settings
+            /// (`Pos::operator=` keeps the accumulated backtrack count, so
+            /// a lowered `max_parser_backtracks` still applies to the whole
+            /// buffer, never less strictly than the executor's reparse).
+            max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
+            max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
+            token_iterator = IParser::Pos(token_iterator, max_parser_depth, max_parser_backtracks);
+        };
+
         /// If there are no significant tokens, no continuation needed.
         if (token_iterator->isEnd())
             return false;
@@ -4005,14 +4060,31 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
                 /// A complete JSON object. The executor accepts only `;` or the end of input
                 /// after it (anything else is "excessive input" to report), so submit unless
-                /// a `;` introduces another statement to probe. A JSON statement cannot be a
-                /// `SET` escape (handled above), so the effective settings are unchanged.
+                /// a `;` introduces another statement to probe.
                 Tokens after_json_tokens(json_end, end, 0, true);
                 TokenIterator after_json_iterator(after_json_tokens);
                 if (after_json_iterator->isEnd() || after_json_iterator->type != TokenType::Semicolon)
                     return false;
 
+                /// More statements follow, so this object has to be interpreted before them:
+                /// a JSON AST can be an `ASTSetQuery` just like SQL text can (it is what
+                /// `parseQueryToJSON('SET dialect = ...')` produces), and the executor applies
+                /// its changes before parsing the next statement. Deserialize it and mirror a
+                /// `SET`, so e.g. a JSON `SET dialect = 'clickhouse'` followed by an
+                /// incomplete `SELECT` keeps probing that `SELECT` as SQL -- otherwise it
+                /// would still be probed as JSON, judged complete, and the buffer committed
+                /// with the `SET` executed while its last statement is still being typed.
+                /// A malformed object throws and the outer handler commits the buffer, which
+                /// is what the executor reports on its own anyway.
+                ASTPtr json_ast = IAST::createFromJSON(
+                    String(json_begin, json_end),
+                    effective_settings[Setting::max_ast_depth],
+                    effective_settings[Setting::max_ast_elements]);
+                if (const auto * json_set_query = json_ast->as<ASTSetQuery>())
+                    mirror_set_query(*json_set_query);
+
                 /// Advance the shared parse position past the object, up to its terminator.
+                /// (`mirror_set_query` may have rebuilt the position, but not moved it.)
                 while (!token_iterator->isEnd() && token_iterator->begin < json_end)
                     ++token_iterator;
                 continue;
@@ -4072,19 +4144,22 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                     /// (`let x = 1; print (` is one statement still being typed), and a `;`
                     /// the user really typed after the failing point makes the bracket scan
                     /// below submit instead.
+                    bool incomplete_at_end_of_query = false;
                     try
                     {
                         throw;
                     }
                     catch (const Exception & e)
                     {
-                        if (e.message().ends_with("found end of query"))
-                            return true;
+                        incomplete_at_end_of_query = e.message().ends_with("found end of query");
                     }
-                    catch (...)
+                    catch (...) /// Ok: anything else is judged by the bracket scan below.
                     {
-                        /// Judged by the bracket scan below, like a non-EOF failure.
+                        incomplete_at_end_of_query = false;
                     }
+
+                    if (incomplete_at_end_of_query)
+                        return true;
                     return has_unclosed_opener(statement_begin);
                 }
 
@@ -4142,52 +4217,7 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             /// keep using the SQL parser, fail on the `let`, and be committed --
             /// running the prefix even though the final `print` is still incomplete.
             if (const auto * set_query = ast->as<ASTSetQuery>())
-            {
-                /// Skip `profile` exactly like the real `SET` handling does
-                /// (see `processParsedSingleQuery` above): the client never
-                /// applies a settings profile to `client_context`, because a
-                /// profile is defined by the server's access control and its
-                /// contents are unknown to the client. Consequently the
-                /// executor's own reparse of the following statements is not
-                /// shaped by the profile either, so honoring it here would make
-                /// the probe disagree with the executor: a buffer like
-                /// `SET profile = '<sets dialect to kusto>'; let x = 1; print`
-                /// would be kept open forever as an unfinished Kusto statement,
-                /// while submitting it reports a SQL syntax error on `let`.
-                /// Mirroring the executor keeps the buffer submittable.
-                SettingsChanges changes;
-                for (const auto & change : set_query->changes)
-                    if (change.name != "profile")
-                        changes.push_back(change);
-                /// Resolve query parameters used as setting values against the
-                /// parameters known at this point in the buffer, as the executor
-                /// does. This works on the local copy of the changes, so the AST
-                /// is left untouched. An unknown parameter throws, which is caught
-                /// below and commits the buffer -- the executor throws there too.
-                replaceQueryParametersInSettingsChanges(changes, effective_query_parameters);
-                effective_settings.applyChanges(changes);
-                /// `SET name = DEFAULT` lands in `default_settings`, not `changes`;
-                /// the executor resets those via `resetSettingsToDefaultValue`.
-                /// Mirror it, so e.g. `SET dialect = 'kusto'; SET dialect = DEFAULT; ...`
-                /// probes the trailing statements with the session's parser again.
-                for (const auto & name : set_query->default_settings)
-                    effective_settings.setDefaultValue(name);
-                /// `SET param_x = ...` declares a query parameter for the following
-                /// statements; remember it for their `SET` resolution above.
-                for (const auto & [name, value] : set_query->query_parameters)
-                    effective_query_parameters.insert_or_assign(name, value);
-                parser = make_parser();
-
-                /// The `SET` may also have changed the parser limits, and the
-                /// current parse position still carries the old ones. Rebuild it
-                /// at the same token with the limits from the updated settings
-                /// (`Pos::operator=` keeps the accumulated backtrack count, so
-                /// a lowered `max_parser_backtracks` still applies to the whole
-                /// buffer, never less strictly than the executor's reparse).
-                max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
-                max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
-                token_iterator = IParser::Pos(token_iterator, max_parser_depth, max_parser_backtracks);
-            }
+                mirror_set_query(*set_query);
 
             if (token_iterator->isEnd())
                 return false;

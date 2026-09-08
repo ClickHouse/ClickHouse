@@ -1,12 +1,12 @@
 #!/usr/bin/expect -f
 
 # Regression test: in single-line interactive mode the incomplete-query probe
-# `ClientBase::queryNeedsContinuation` must be free of side effects. The Kusto
-# parser is not: `ParserKQLStatement::parseImpl` records `let` bindings in a
-# thread-local map. If the probe left those bindings behind, a `let` in an
-# incomplete buffer that is then discarded (without ever being submitted) would
-# leak into later queries. This is observable in `clickhouse-local`, where
-# parsing and execution share the same process (and thread-local state).
+# `ClientBase::queryNeedsContinuation` must be free of side effects. It parses
+# the buffer speculatively on every <ENTER>, so a `let` binding seen there must
+# not outlive the probe: a `let` in an incomplete buffer that is then discarded
+# (without ever being submitted) must not leak into later queries. This is
+# observable in `clickhouse-local`, where parsing and execution share the same
+# process (and any process-wide parser state).
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -52,16 +52,16 @@ send -- [string repeat "\x7f" 40]
 send -- "print x\r"
 expect {
     "Unknown expression identifier" {}
-    "│ 1 │" { exit 1 }
+    -re {│ +1 │} { exit 1 }
 }
 expect ":) "
 
-# A `let` binding that is actually submitted still works, so the probe's
-# snapshot/restore does not disable Kusto `let` for real queries.
+# A `let` binding that is actually submitted still works, so probing does not
+# disable Kusto `let` for real queries.
 send -- "let y = 5; print y\r"
 expect {
     "Unknown expression identifier" { exit 1 }
-    "│ 5 │" {}
+    -re {│ +5 │} {}
 }
 expect ":) "
 

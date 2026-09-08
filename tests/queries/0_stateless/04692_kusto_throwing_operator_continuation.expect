@@ -36,7 +36,7 @@ expect ":) "
 
 # The final statement stops inside `!between (`, where the Kusto operator parser
 # throws instead of returning false. The buffer must fold and wait.
-send -- "SET dialect = 'kusto'; numbers(3) | where number !between (\r"
+send -- "SET dialect = 'kusto'; system.numbers | take 3 | where number !between (\r"
 # Give the client time to react to the <ENTER> on its own: two lines sent back to
 # back arrive in a single read and are inserted as one pasted block, which would
 # fold the buffer regardless of what the continuation probe decides.
