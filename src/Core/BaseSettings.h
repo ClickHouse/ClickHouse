@@ -244,6 +244,11 @@ public:
     /// Resets specified setting to its default value
     void resetToDefault(std::string_view name);
 
+    /// Clears the `changed` flag of the specified built-in setting while keeping its current value.
+    /// The setting keeps acting locally (readers see the value) but is no longer serialized to a
+    /// remote server, which only receives changed settings. No-op for custom settings.
+    void markUnchanged(std::string_view name);
+
     /// Check if a setting exists (either built-in or custom)
     bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
 
@@ -308,8 +313,8 @@ public:
         std::string_view getPath() const;
         Field getValue() const;
         void setValue(const Field & value);
-        String getValueString() const;
-        String getDefaultValueString() const;
+        String getValueString(bool show_secrets) const;
+        String getDefaultValueString(bool show_secrets) const;
         bool isValueChanged() const;
         std::string_view getTypeName() const;
         std::string_view getDescription() const;
@@ -545,6 +550,15 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 }
 
 template <typename TTraits>
+void BaseSettings<TTraits>::markUnchanged(std::string_view name)
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        accessor.setValueChanged(*this, index, false);
+}
+
+template <typename TTraits>
 bool BaseSettings<TTraits>::hasBuiltin(std::string_view name)
 {
     name = TTraits::resolveName(name);
@@ -693,7 +707,7 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
                 flags = static_cast<Flags>(flags | Flags::IMPORTANT);
             BaseSettingsHelpers::writeFlags(flags, out);
 
-            BaseSettingsHelpers::writeString(field.getValueString(), out);
+            BaseSettingsHelpers::writeString(field.getValueString(/* show_secrets */ true), out);
         }
         else
             accessor.writeBinary(*this, field.index, out);
@@ -1040,23 +1054,25 @@ void BaseSettings<TTraits>::SettingFieldRef::setValue(const Field & value)
 }
 
 template <typename TTraits>
-String BaseSettings<TTraits>::SettingFieldRef::getValueString() const
+String BaseSettings<TTraits>::SettingFieldRef::getValueString(bool show_secrets) const
 {
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return (*custom_setting)->second.toString();
+            return (*custom_setting)->second.toString(show_secrets);
     }
     return accessor->getValueString(*settings, index);
 }
 
 template <typename TTraits>
-String BaseSettings<TTraits>::SettingFieldRef::getDefaultValueString() const
+String BaseSettings<TTraits>::SettingFieldRef::getDefaultValueString(bool show_secrets) const
 {
     if constexpr (Traits::allow_custom_settings)
     {
+        /// A custom setting has no default of its own, so this is its value, and its value can be an
+        /// AST that embeds a credential.
         if (custom_setting)
-            return (*custom_setting)->second.toString();
+            return (*custom_setting)->second.toString(show_secrets);
     }
     return accessor->getDefaultValueString(index);
 }
@@ -1384,6 +1400,11 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             { \
                 const auto & fi = field_infos[index]; \
                 return fi.ops->is_changed(settingPtr(data, fi.data_offset)); \
+            } \
+            void setValueChanged(Data & data, size_t index, bool changed) const \
+            { \
+                const auto & fi = field_infos[index]; \
+                fi.ops->set_changed(settingPtr(data, fi.data_offset), changed); \
             } \
             void resetValueToDefault(Data & data, size_t index) const \
             { \
