@@ -27,8 +27,13 @@ const PCO_ERROR: i32 = -1;
 /// buffer is exhausted it records the overflow and returns an error instead of
 /// writing partial data. Lets `pco` stream straight into ClickHouse's
 /// destination buffer while giving us a clean "did not fit" signal.
+///
+/// The destination is held as a raw pointer and not as a `&mut [u8]`: it is a freshly allocated
+/// C++ compression buffer, so its bytes are uninitialized, and a slice reference may only refer to
+/// initialized memory. Writing through the pointer needs no initialized bytes at all.
 struct SliceWriter<'a> {
-    buf: &'a mut [u8],
+    dst: *mut u8,
+    capacity: usize,
     pos: usize,
     overflowed: &'a std::cell::Cell<bool>,
 }
@@ -37,13 +42,15 @@ impl Write for SliceWriter<'_> {
     #[inline]
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         let end = match self.pos.checked_add(data.len()) {
-            Some(end) if end <= self.buf.len() => end,
+            Some(end) if end <= self.capacity => end,
             _ => {
                 self.overflowed.set(true);
                 return Err(io::Error::from(io::ErrorKind::WriteZero));
             }
         };
-        self.buf[self.pos..end].copy_from_slice(data);
+        // SAFETY: `dst` is writable for `capacity` bytes and `end <= capacity`, so the whole write
+        // stays inside the destination; `data` is `pco`'s own output buffer and cannot overlap it.
+        unsafe { ptr::copy_nonoverlapping(data.as_ptr(), self.dst.add(self.pos), data.len()) };
         self.pos = end;
         Ok(data.len())
     }
@@ -110,7 +117,8 @@ unsafe fn compress_typed<T: Number>(
 
     let overflowed = std::cell::Cell::new(false);
     let writer = SliceWriter {
-        buf: slice::from_raw_parts_mut(dst, dst_capacity),
+        dst,
+        capacity: dst_capacity,
         pos: 0,
         overflowed: &overflowed,
     };
@@ -183,6 +191,13 @@ unsafe fn decompress_typed<T: Number>(
 
     if dst as usize % align_of::<T>() == 0 {
         // Aligned: decode straight into the destination.
+        //
+        // The destination comes from the C++ caller as raw writable bytes, which are not
+        // initialized (a decompression buffer is freshly allocated, not zeroed). A `&mut [T]` may
+        // only refer to initialized memory - `pco` writes every value it decodes, but the reference
+        // itself is formed before that - so the bytes are zeroed first. `memset` costs a fraction of
+        // the decode and keeps the aligned fast path, unlike decoding through an owned `Vec<T>`.
+        ptr::write_bytes(dst, 0, needed);
         let out = slice::from_raw_parts_mut(dst as *mut T, n_values);
         if decompress_exact(file_decompressor, src, out).is_err() {
             return PCO_ERROR;
