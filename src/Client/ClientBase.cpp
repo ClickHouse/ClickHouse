@@ -1451,7 +1451,12 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
                 /// `AutoCanceledWriteBuffer` wrapper.
                 using StderrLogsBuffer = AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>;
                 out_logs_buf = std::make_unique<StderrLogsBuffer>(stderr_fd);
-                logs_out_terminal_buf = static_cast<StderrLogsBuffer *>(out_logs_buf.get());
+                /// Same classification as for an explicit --server_logs_file below: stderr is a
+                /// terminal only in an interactive run, and when it is redirected to a regular file
+                /// the responsive hook would be a no-op while the epilogue best-effort budget would
+                /// swallow a real write error.
+                if (isBlockingCapableSink(stderr_fd))
+                    logs_out_terminal_buf = static_cast<StderrLogsBuffer *>(out_logs_buf.get());
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
