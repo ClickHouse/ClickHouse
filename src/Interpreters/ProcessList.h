@@ -270,6 +270,10 @@ public:
     /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
     void throwIfKilled();
 
+    /// Checks identity with the stored exception that `throwIfKilled` would rethrow.
+    /// A `TIMEOUT` produces a new `TIMEOUT_EXCEEDED` exception instead.
+    bool isStoredCancellationException(const std::exception_ptr & exception) const;
+
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
 

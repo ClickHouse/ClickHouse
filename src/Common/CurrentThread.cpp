@@ -134,13 +134,16 @@ bool CurrentThread::isQueryCancellationException(const std::exception_ptr & exce
         || code == ErrorCodes::TIMEOUT_EXCEEDED)
         return true;
 
-    try
+    if (QueryCancellationBlockerInThread::isBlocked())
+        return false;
+
+    if (auto group = getGroup())
     {
-        checkIfNotCancelled();
-    }
-    catch (...)
-    {
-        return std::current_exception() == exception;
+        if (auto context = group->query_context.lock())
+        {
+            if (auto query_status = context->getProcessListElementSafe())
+                return query_status->isStoredCancellationException(exception);
+        }
     }
 
     return false;

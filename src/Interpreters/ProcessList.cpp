@@ -707,6 +707,12 @@ void QueryStatus::throwIfKilled()
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), 0);
 }
 
+bool QueryStatus::isStoredCancellationException(const std::exception_ptr & exception) const
+{
+    std::lock_guard lock(cancel_mutex);
+    return is_killed && cancel_reason != CancelReason::TIMEOUT && cancellation_exception && cancellation_exception == exception;
+}
+
 CancelReason QueryStatus::getCancelReason() const
 {
     std::lock_guard<std::mutex> lock(cancel_mutex);
