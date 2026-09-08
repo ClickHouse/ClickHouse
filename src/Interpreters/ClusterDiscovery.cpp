@@ -402,7 +402,10 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
     ClusterConnectionParameters params{
         /* username= */ cluster_info.username,
         /* password= */ cluster_info.password,
-        /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
+        /// The addresses come from Keeper, where every node registered itself on the port it actually
+        /// bound (see `ClusterInfo::port` above), so locality detection must compare against the bound
+        /// port as well - otherwise a node with a non-zero `port_offset` would not recognize itself.
+        /* clickhouse_port= */ secure ? context->getBoundTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getBoundTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,

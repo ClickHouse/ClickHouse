@@ -509,11 +509,14 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     if (shards.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
+    /// `host_id` is written by `getHostID` with the port the server actually bound, so the port used
+    /// for locality detection must carry `port_offset` too - otherwise a node with a non-zero offset
+    /// stops recognizing its own replica as local and self-connects over TCP.
     UInt16 default_port = 0;
     if (cluster_auth_info.cluster_secure_connection)
-        default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
+        default_port = getContext()->getBoundTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
     else
-        default_port = getContext()->getTCPPort();
+        default_port = getContext()->getBoundTCPPort();
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;

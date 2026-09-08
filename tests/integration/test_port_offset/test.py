@@ -25,6 +25,8 @@ node_offset = cluster.add_instance(
         "configs/config.d/ports_offset.xml",
         "configs/config.d/port_offset.xml",
     ],
+    macros={"shard": 1, "replica": 1},
+    with_zookeeper=True,
 )
 
 
@@ -229,3 +231,26 @@ def test_port_offset_does_not_shift_outbound_default_port(start_cluster):
         node_default.query("SELECT * FROM remote('node_offset', system.one)").strip()
         == "0"
     )
+
+
+def test_port_offset_replicated_database_replica_is_local(start_cluster):
+    """A `Replicated` database recognizes its own replica as local on an offset node.
+
+    The replica registers itself in Keeper under the port it actually bound (`8900` + the
+    `100` offset = `9000`), so the port used for locality detection when the internal
+    `Cluster` is built must carry the offset too. Otherwise the node compares the
+    advertised `9000` against the configured `8900`, stops matching itself, and every
+    query against the database round-trips through a TCP self-connection.
+    """
+    node_offset.query(
+        "CREATE DATABASE db_port_offset ENGINE = Replicated('/test/db_port_offset', '{shard}', '{replica}')"
+    )
+    try:
+        assert (
+            node_offset.query(
+                "SELECT is_local, port FROM system.clusters WHERE cluster = 'db_port_offset'"
+            ).strip()
+            == "1\t9000"
+        )
+    finally:
+        node_offset.query("DROP DATABASE db_port_offset SYNC")
