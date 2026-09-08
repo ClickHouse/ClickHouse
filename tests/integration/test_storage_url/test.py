@@ -714,6 +714,39 @@ def test_url_cluster_rejects_bucket_granularity_for_archives():
     assert "cluster_table_function_split_granularity" in error
 
 
+def test_url_archive_brace_paths_are_filtered_before_metadata_probe():
+    settings = {
+        "allow_experimental_url_wildcard_from_index_pages": 0,
+        "glob_expansion_max_elements": 2,
+    }
+    valid_source = "http://resolver:8087/data/archive_braces/a.zip :: value.tsv"
+    source_with_missing = "http://resolver:8087/data/archive_braces/{a,missing}.zip :: value.tsv"
+    visible_path = node1.query(
+        f"SELECT DISTINCT _path FROM url('{valid_source}', 'TSV', 'x UInt64')",
+        settings=settings,
+    ).strip()
+
+    table_functions = [
+        f"url('{source_with_missing}', 'TSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{source_with_missing}', 'TSV', 'x UInt64')",
+    ]
+    for table_function in table_functions:
+        reset_index_page_server_stats()
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function} WHERE _path = '{visible_path}'", settings=settings
+        ).strip() == "11"
+        stats = get_index_page_server_stats()
+        assert all("missing.zip" not in request for request in stats)
+
+    for table_function in table_functions:
+        reset_index_page_server_stats()
+        assert node1.query(
+            f"SELECT count() FROM {table_function} WHERE _file = 'other.tsv'", settings=settings
+        ).strip() == "0"
+        stats = get_index_page_server_stats()
+        assert all("archive_braces" not in request for request in stats)
+
+
 def test_url_cluster_archive_processing_modes_do_not_duplicate_members():
     source = "http://resolver:8087/data/multi_member_archive.zip :: *.tsv"
     for process_on_multiple_nodes in (0, 1):

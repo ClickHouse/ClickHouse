@@ -456,14 +456,18 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// builds filter values from the listed outer archive objects, not from the entry virtual paths,
     /// so pushing an entry-level predicate there would wrongly discard every archive. Such archive
     /// forms still need the regular filter step after `ArchiveIterator` has created entry object infos.
+    const bool is_locally_expanded_web_path
+        = match_web_paths_only && reading_path.path.find_first_of("*?") == String::npos;
     const bool is_explicit_archive_member = is_archive && !configuration->isPathInArchiveWithGlobs()
-        && (!reading_path.hasGlobs() || (!match_web_paths_only && hasExactlyOneBracketsExpansion(reading_path.path)));
+        && (!reading_path.hasGlobs()
+            || (!match_web_paths_only && hasExactlyOneBracketsExpansion(reading_path.path))
+            || is_locally_expanded_web_path);
     const auto * path_filter_predicate = is_archive && !is_explicit_archive_member ? nullptr : predicate;
 
     /// Web URL shards use `read_source_index` to distinguish union shards from failover options.
     /// For fixed paths and locally-expandable `{...}` paths, build indexed keys directly instead
     /// of listing an HTTP index page or dropping the source identity in `KeysIterator`.
-    if (match_web_paths_only && reading_path.path.find_first_of("*?") == String::npos)
+    if (is_locally_expanded_web_path)
     {
         const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
         const auto expanded_paths = reading_path.hasGlobs()
@@ -484,13 +488,47 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 indexed_paths.emplace_back(std::make_shared<RelativePathWithMetadata>(expanded_path, source_index));
         }
 
+        ExpressionActionsPtr deferred_filter_actions;
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(
+                path_filter_predicate, virtual_columns, local_context, hive_columns))
+        {
+            Strings filter_paths;
+            filter_paths.reserve(indexed_paths.size());
+            for (const auto & indexed_path : indexed_paths)
+            {
+                auto filter_path = formatObjectPath(
+                    *configuration, indexed_path->relative_path, /*include_connection_info=*/false);
+                if (is_explicit_archive_member)
+                    filter_path += fmt::format("::{}", configuration->getPathInArchive());
+                filter_paths.push_back(std::move(filter_path));
+            }
+
+            std::vector<String> archive_member_names;
+            if (is_explicit_archive_member)
+                archive_member_names.assign(indexed_paths.size(), configuration->getPathInArchive());
+
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(
+                    indexed_paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
+                    /*format_settings=*/std::nullopt,
+                    is_explicit_archive_member ? &archive_member_names : nullptr);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
+        }
+
         /// Hard-code `skip_object_metadata` to false here because archive reading needs correct object
         /// metadata: fixed archive paths must not keep skipping metadata fetch, otherwise whole-archive
         /// distribution may end up with a wrong archive size.
         iterator = std::make_unique<KeysIterator>(
             indexed_paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
-            file_progress_callback);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
     }
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
