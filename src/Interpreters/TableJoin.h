@@ -208,6 +208,10 @@ private:
     /// Filled by JoinStepLogical; empty means no key is promoted.
     NameSet using_promoted_right_keys;
 
+    /// Right keys the join emits as `Nullable`, restored from the matched left key with NULL for an
+    /// unmatched left row, instead of storing a `Nullable` copy of the key. Filled by JoinStepLogical.
+    NameSet nullable_right_keys;
+
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only renamed columns.
@@ -479,6 +483,7 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     void setUsingPromotedRightKeys(NameSet keys) { using_promoted_right_keys = std::move(keys); }
+    void setNullableRightKeys(NameSet keys) { nullable_right_keys = std::move(keys); }
 
     String renamedRightColumnName(const String & name) const;
     String renamedRightColumnNameWithAlias(const String & name) const;
