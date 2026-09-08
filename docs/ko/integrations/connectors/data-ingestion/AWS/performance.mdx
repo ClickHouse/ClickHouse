@@ -112,7 +112,7 @@ ClickHouse 서버는 데이터를 병렬로 처리하고 삽입할 수 있습니
 Go to ①. 
 ```
 
-이러한 병렬 삽입에 사용하는 삽입 스레드 수는 [`max_insert_threads`](/ko/reference/settings/session-settings/max-insert#max_insert_threads) 설정으로 구성할 수 있습니다. 기본값은 오픈소스 ClickHouse에서 `1`, [ClickHouse Cloud](https://clickhouse.com/cloud)에서는 4입니다.
+이러한 병렬 삽입에 사용하는 삽입 스레드 수는 [`max_insert_threads`](/ko/reference/settings/session-settings/max-insert#max_insert_threads) 설정으로 구성할 수 있습니다. 오픈소스 ClickHouse에서는 26.8부터 기본값이 `0`입니다(자동: CPU 코어 수이며, 메모리 압박 상황에서는 감소). [ClickHouse Cloud](https://clickhouse.com/cloud)에서는 메모리가 8GiB인 노드의 기본값은 `1`, 16GiB인 노드는 `2`, 더 큰 노드는 `4`입니다.
 
 파일 수가 많을 때는 여러 삽입 스레드를 통한 병렬 처리가 효과적입니다. 이 방식은 사용 가능한 CPU 코어와 네트워크 대역폭(병렬 파일 다운로드 시)까지 모두 충분히 활용할 수 있습니다. 반면 소수의 큰 파일만 테이블에 로드하는 시나리오에서는 ClickHouse가 자동으로 높은 수준의 데이터 처리 병렬성을 확보하고, 큰 파일의 서로 다른 범위를 병렬로 읽기(다운로드)할 수 있도록 각 삽입 스레드마다 추가 읽기 스레드를 생성해 네트워크 대역폭 사용도 최적화합니다.
 
@@ -169,11 +169,11 @@ ClickHouse는 `s3` 함수와 `S3` 엔진을 사용해 [지원되는 포맷](/ko/
 튜닝을 적용하지 않은 상태에서 이 데이터셋을 MergeTree 테이블 엔진에 삽입하는 성능과, 가장 많은 질문을 하는 사용자를 계산하는 쿼리의 성능을 보여드립니다. 이 두 작업은 모두 의도적으로 데이터를 전체 스캔하도록 구성했습니다.
 
 ```sql
--- 상위 사용자 이름
+-- Top usernames
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -194,9 +194,9 @@ Peak memory usage: 603.64 MiB.
 ```
 
 ```sql
--- posts 테이블에 로드
+-- Load into posts table
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -228,7 +228,7 @@ S3에서의 읽기 성능은 네트워크 대역폭이나 로컬 I/O에 의해 �
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -281,11 +281,11 @@ Peak memory usage: 639.99 MiB.
 이러한 매개변수의 동작이 성능과 리소스에 어떤 영향을 미치는지 자세히 알아보려면 [이 블로그 게시물](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2)을 읽어보시길 권장합니다. 이 블로그 게시물에서 설명하듯이, 튜닝은 두 매개변수 간의 균형을 세심하게 맞추는 작업이 될 수 있습니다. 하지만 이러한 광범위한 테스트는 현실적으로 어려운 경우가 많으므로, 요약하면 다음을 권장합니다.
 
 ```bash
-• max_insert_threads: 삽입 스레드에 사용 가능한 CPU 코어의 약 절반을 선택하십시오 (백그라운드 머지를 위한 전용 코어를 충분히 확보하기 위해)
+• max_insert_threads: choose ~ half of the available CPU cores for insert threads (to leave enough dedicated cores for background merges)
 
-• peak_memory_usage_in_bytes: 목표 최대 메모리 사용량을 선택하십시오. 사용 가능한 전체 RAM (독립적인 수집 작업인 경우) 또는 절반 이하 (다른 동시 작업을 위한 여유를 남겨두기 위해)
+• peak_memory_usage_in_bytes: choose an intended peak memory usage; either all available RAM (if it is an isolated ingest) or half or less (to leave room for other concurrent tasks)
 
-그런 다음:
+Then:
 min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_threads)
 ```
 
@@ -299,7 +299,7 @@ min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_thre
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -322,7 +322,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -333,7 +333,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -369,7 +369,7 @@ SETTINGS max_threads = 92
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -394,7 +394,7 @@ Peak memory usage: 176.74 MiB.
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -408,7 +408,7 @@ FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws
 ```sql
 INSERT INTO posts
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
@@ -435,7 +435,7 @@ Peak memory usage: 11.75 GiB.
 INSERT INTO posts
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 ```
 
@@ -454,7 +454,7 @@ ClickHouse에서 `optimize_on_insert` 설정은 삽입 과정에서 데이터 �
 
 ```sql
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
 ```
 

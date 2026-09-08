@@ -30,4 +30,4 @@ SELECT '---';
 SELECT toDateTime('2020-06-13 01:02:03') = '2020-06-13T01:02:03';
 SELECT '---';
 
-SELECT 0 = ''; -- { serverError ATTEMPT_TO_READ_AFTER_EOF }
+SELECT 0 = ''; -- { serverError TYPE_MISMATCH }
