@@ -2162,12 +2162,16 @@ TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_conte
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this
     /// replica's `CREATE` query still states whatever it was created with.
-    /// `parallel_inserts` is deliberately not here, though `getSettings` reads it from the table
-    /// metadata: `ObjectStorageQueueTableMetadata` declares the field and never populates it - the
-    /// constructor from settings does not set it, `toString` does not write it and the JSON
-    /// constructor does not read it - so the shared metadata does not carry it and saying it does
-    /// would be wrong about a setting this table exists to explain. Whether the value itself can be
-    /// reported at all is a question for the engine rather than for this hook.
+    /// `parallel_inserts` is deliberately not here, even though two things claim otherwise:
+    /// `getSettings` reads it from the table metadata, and `ObjectStorageQueueTableMetadata::
+    /// isStoredInKeeper` lists its name. Both claims are unbacked - the field is declared and never
+    /// written. The constructor from settings does not set it, `toString` does not serialize it and
+    /// the JSON constructor does not read it, so nothing ever puts it into Keeper and nothing reads
+    /// it back. Serialization is the authority on what the shared metadata holds; a name registry
+    /// is not. Reporting `shared_metadata` here would be wrong about exactly the thing this table
+    /// exists to explain. Whether the value can be reported at all is an engine question, not one
+    /// for this hook: `getSettings` returns the never-written field, so a table created with
+    /// `parallel_inserts = 1` reports `0`, with `source = 'definition'` from the `CREATE` query.
     static const NameSet held_in_shared_metadata{
         "mode", "after_processing", "keeper_path", "loading_retries", "processing_threads_num",
         "last_processed_path", "bucketing_mode", "partitioning_mode",
