@@ -36,6 +36,15 @@ FROM remote('127.0.0.1', system.one);
 SELECT DISTINCT arrayMap(x -> dynamicType(x), materialize([1::Int64::Dynamic, 1::UInt64::Dynamic]))
 FROM remote('127.0.0.1', system.one) SETTINGS use_variant_as_common_type = 0;
 
+-- map() resolves one key type and one value type from all of its arguments, so the rule applies to
+-- both halves of a Dynamic-keyed, Dynamic-valued map. Two entries are needed: with one entry there
+-- are no siblings to reconcile and the restriction is invisible.
+SELECT DISTINCT arrayMap(x -> dynamicType(x), mapKeys(m)), arrayMap(x -> dynamicType(x), mapValues(m))
+FROM (
+    SELECT materialize(map(1::Int64::Dynamic, 3::Int64::Dynamic, 2::UInt64::Dynamic, 4::UInt64::Dynamic)) AS m
+    FROM remote('127.0.0.1', system.one))
+SETTINGS use_variant_as_common_type = 0;
+
 -- A DateTime is written as local text, and both instants of a DST overlap share that text, so
 -- naming its member type would turn a visible type mismatch into a silently different instant.
 -- 1698543000 is the later of the two occurrences; its own text re-parses to the earlier one.
