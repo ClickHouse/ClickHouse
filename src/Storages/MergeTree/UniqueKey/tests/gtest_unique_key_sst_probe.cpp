@@ -700,7 +700,6 @@ using namespace DB;
 
 TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
 {
-    const auto * test_info = ::testing::UnitTest::GetInstance()->current_test_info();
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_"
            + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
@@ -739,7 +738,6 @@ TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
 
 TEST(UniqueKeyNoRocksDB, ConstructorThrowsSupportIsDisabled)
 {
-    const auto * test_info = ::testing::UnitTest::GetInstance()->current_test_info();
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_ctor_"
            + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
