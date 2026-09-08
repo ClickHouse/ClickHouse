@@ -735,6 +735,24 @@ struct JoinPlanningContext
     bool is_prebuilt_hash_join{};
 };
 
+/// The comparison functions compare `FixedString` with `String` as if the shorter value were padded with zero bytes,
+/// so values that differ only in trailing zero bytes are equal (`toFixedString('a', 3) = 'a'`). The cast to the common
+/// type `String` drops the trailing zero bytes of the `FixedString` operand; the `String` operand needs the same
+/// normalization, otherwise the keys would order `'a'` before `'a\0\0'` where the operator sees a tie.
+static bool isFixedStringVsString(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    auto left = removeLowCardinalityAndNullable(left_type);
+    auto right = removeLowCardinalityAndNullable(right_type);
+    return (isFixedString(left) && isString(right)) || (isString(left) && isFixedString(right));
+}
+
+static const ActionsDAG::Node * addTrimZeroBytes(ActionsDAG & dag, const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    auto string_type = std::make_shared<DataTypeString>();
+    const auto & zero_byte = dag.addColumn(string_type->createColumnConst(1, String(1, '\0')), string_type, "'\\0'_String");
+    return &dag.addFunction(FunctionFactory::instance().get("trimRight", nullptr), {nodes.at(0), &zero_byte}, {});
+}
+
 /** Convert the operands of an equality (or ASOF inequality) predicate in the JOIN ON section to a common type.
   * `allow_conversion_to_subtype` enables the fallback described in `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
   * It is not applicable to null-safe comparisons, because there NULL matches NULL,
@@ -815,24 +833,12 @@ static void predicateOperandsToCommonType(
         return &dag.addCast(*arg, common_type, {}, nullptr);
     };
 
-    /// The comparison functions compare `FixedString` with `String` as if the shorter value were padded
-    /// with zero bytes, so values that differ only in trailing zero bytes are equal (`toFixedString('a', 3) = 'a'`).
-    /// The cast to `String` drops the trailing zero bytes of a `FixedString`; the `String` operand needs
-    /// the same normalization, otherwise the keys would order `'a'` before `'a\0\0'` where the operator sees a tie.
-    auto unwrap = [](const DataTypePtr & type) { return removeNullable(recursiveRemoveLowCardinality(type)); };
-    bool trim_zero_bytes = !cast_to_subtype && isString(unwrap(common_type))
-        && (isFixedString(unwrap(left_type)) || isFixedString(unwrap(right_type)));
-    auto trim_zero_bytes_transform = [](ActionsDAG & dag, auto && nodes)
-    {
-        auto string_type = std::make_shared<DataTypeString>();
-        const auto & zero_byte = dag.addColumn(string_type->createColumnConst(1, String(1, '\0')), string_type, "'\\0'_String");
-        return &dag.addFunction(FunctionFactory::instance().get("trimRight", nullptr), {nodes.at(0), &zero_byte}, {});
-    };
+    bool trim_zero_bytes = !cast_to_subtype && isFixedStringVsString(left_type, right_type);
 
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
-    if (trim_zero_bytes && isString(unwrap(left_type)))
-        left_node = JoinActionRef::transform({left_node}, trim_zero_bytes_transform);
+    if (trim_zero_bytes && isString(removeLowCardinalityAndNullable(left_type)))
+        left_node = JoinActionRef::transform({left_node}, addTrimZeroBytes);
 
     auto transform_right_node = [&](auto && transform)
     {
@@ -871,8 +877,8 @@ static void predicateOperandsToCommonType(
     {
         if (!right_type->equals(*common_type))
             transform_right_node(cast_transform);
-        if (trim_zero_bytes && isString(unwrap(right_type)))
-            transform_right_node(trim_zero_bytes_transform);
+        if (trim_zero_bytes && isString(removeLowCardinalityAndNullable(right_type)))
+            transform_right_node(addTrimZeroBytes);
     }
 }
 
@@ -2160,6 +2166,24 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
         auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals)
             continue;
+
+        bool is_key_pair = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+
+        /// The callers compare the extracted keys at their least supertype, so a `FixedString` vs `String` pair
+        /// has to leave here normalized: the `FixedString` side cast to the common type, the `String` side trimmed.
+        if (is_key_pair && isFixedStringVsString(lhs.getType(), rhs.getType()))
+        {
+            auto common_type = getLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
+            auto cast_transform = [&](ActionsDAG & dag, auto && nodes) { return &dag.addCast(*nodes.at(0), common_type, {}, nullptr); };
+            for (auto * operand : {&lhs, &rhs})
+            {
+                if (isFixedString(removeLowCardinalityAndNullable(operand->getType())))
+                    *operand = JoinActionRef::transform({*operand}, cast_transform);
+                else
+                    *operand = JoinActionRef::transform({*operand}, addTrimZeroBytes);
+            }
+            expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
+        }
 
         const auto * left_node = lhs.getNode();
         const auto * right_node = rhs.getNode();
