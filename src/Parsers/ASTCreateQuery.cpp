@@ -67,6 +67,7 @@ void ASTColumns::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "Columns definition");
     w.writeChild("columns", columns);
     w.writeChild("indices", indices);
+    w.writeChild("lookup_indices", lookup_indices);
     w.writeChild("constraints", constraints);
     w.writeChild("projections", projections);
     /// `primary_key`/`primary_key_from_columns` are parser-intermediate slots that are always cleared
@@ -98,6 +99,7 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
     };
 
     readDeclarationList.operator()<ASTColumnDeclaration>("columns", columns);
+    readDeclarationList.operator()<ASTIndexDeclaration>("lookup_indices", lookup_indices);
 
     /// A column-level PRIMARY KEY is a parser-intermediate bit in a CREATE column list:
     /// `ParserTablePropertiesDeclarationList` transfers it into `primary_key_from_columns` (which
@@ -326,6 +328,8 @@ ASTPtr ASTColumns::clone() const
 
     if (columns)
         res->set(res->columns, columns->clone());
+    if (lookup_indices)
+        res->set(res->lookup_indices, lookup_indices->clone());
     if (indices)
         res->set(res->indices, indices->clone());
     if (constraints)
@@ -351,6 +355,16 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
             auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "";
             elem->set(elem->elem, column->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (lookup_indices)
+    {
+        for (const auto & index : lookup_indices->children)
+        {
+            auto elem = make_intrusive<ASTColumnsElement>();
+            elem->prefix = "LOOKUP INDEX";
+            elem->set(elem->elem, index->clone());
             list.children.push_back(elem);
         }
     }

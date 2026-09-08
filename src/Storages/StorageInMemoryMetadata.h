@@ -41,6 +41,7 @@ struct StorageInMemoryMetadata
     /// Needed for compatibility
     bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
+    IndicesDescription lookup_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
     /// Table projections. Currently supported for MergeTree only.
@@ -113,6 +114,9 @@ struct StorageInMemoryMetadata
     /// Sets secondary indices
     void setSecondaryIndices(IndicesDescription secondary_indices_);
 
+    /// Sets lookup indices
+    void setLookupIndices(IndicesDescription lookup_indices_);
+
     /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
 
@@ -161,6 +165,11 @@ struct StorageInMemoryMetadata
 
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
+
+    /// Returns lookup indices
+    const IndicesDescription & getLookupIndices() const;
+
+    bool hasLookupIndices() const;
 
     /// Return table constraints
     const ConstraintsDescription & getConstraints() const;
