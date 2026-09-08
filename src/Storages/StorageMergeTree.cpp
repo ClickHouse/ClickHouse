@@ -170,6 +170,9 @@ namespace ActionLocks
     extern const StorageActionBlockType Cleanup;
 }
 
+/// The directory with the log of the block numbers inserted into a non-replicated table, see `MergeTreeDeduplicationLog`.
+static constexpr auto DEDUPLICATION_LOGS_DIR_NAME = "deduplication_logs";
+
 static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
 {
     chassert(!mutation.tid.isEmpty());
@@ -463,15 +466,15 @@ void StorageMergeTree::drop()
     shutdown(true);
 
     /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
-    /// recursively (see `MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation`), so the mutation files stored
-    /// there would survive the drop and get loaded by the next table created on the same disk.
+    /// recursively (see `MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation`), so the state that this table
+    /// keeps there would survive the drop and get loaded by the next table created on the same disk.
     if ((*getSettings())[MergeTreeSetting::table_disk])
-        removeMutationFilesOnDrop();
+        removeOwnFilesInDiskRootOnDrop();
 
     dropAllData();
 }
 
-void StorageMergeTree::removeMutationFilesOnDrop()
+void StorageMergeTree::removeOwnFilesInDiskRootOnDrop()
 {
     for (const auto & disk : getDisks())
     {
@@ -489,8 +492,18 @@ void StorageMergeTree::removeMutationFilesOnDrop()
             }
         }
 
+        /// Otherwise the next table created on the same disk loads the block numbers of this one and deduplicates
+        /// (silently skips) its inserts.
+        const auto deduplication_logs_path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
+        if (disk->existsDirectory(deduplication_logs_path))
+        {
+            LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path.string());
+            disk->removeRecursive(deduplication_logs_path);
+            ++removed_count;
+        }
+
         if (removed_count > 0)
-            LOG_INFO(log, "Removed {} mutation files from disk {} on drop", removed_count, disk->getName());
+            LOG_INFO(log, "Removed {} entries of this table from the root of the disk {} on drop", removed_count, disk->getName());
     }
 }
 
@@ -1593,7 +1606,7 @@ void StorageMergeTree::loadDeduplicationLog()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
     auto disk = getDisks()[0];
-    std::string path = fs::path(relative_data_path) / "deduplication_logs";
+    std::string path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
 
     /// Deduplication log only matters on INSERTs.
     if (!disk->isReadOnly())
