@@ -2217,13 +2217,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {
-                NameSet dropped_column_names{command.column_name};
-                if (share_nested && all_columns.hasNested(command.column_name))
-                {
-                    dropped_column_names.clear();
-                    for (const auto & nested_column : all_columns.getNested(command.column_name))
-                        dropped_column_names.emplace(nested_column.name);
-                }
+                const auto affected_column_names = getColumnNamesAffectedByDrop(all_columns, command.column_name, share_nested);
+                const NameSet dropped_column_names(affected_column_names.begin(), affected_column_names.end());
 
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
@@ -2536,6 +2531,19 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     }
 
     return result;
+}
+
+Names getColumnNamesAffectedByDrop(const ColumnsDescription & columns, const String & column_name, bool share_nested_offsets)
+{
+    if (share_nested_offsets && !columns.has(column_name) && columns.hasNested(column_name))
+    {
+        Names nested_column_names;
+        for (const auto & nested_column : columns.getNested(column_name))
+            nested_column_names.push_back(nested_column.name);
+        return nested_column_names;
+    }
+
+    return {column_name};
 }
 
 }
