@@ -28,7 +28,8 @@ $CLICKHOUSE_CLIENT -q "
     -- WITH SETTINGS granularity overrides need an adaptive-granularity parent
     DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;
     CREATE TABLE t_est_g (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 10485760, use_const_adaptive_granularity = 0,
+                 min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
     CREATE TABLE t_real_g AS t_est_g;
     ALTER TABLE t_real_g ADD PROJECTION p_g (SELECT a, b, v ORDER BY b) WITH SETTINGS (index_granularity = 50);
     INSERT INTO t_est_g SELECT number, number % 100, number FROM numbers(10000);
@@ -101,7 +102,8 @@ echo "--- Compact parts, where a wide column the projection does not store must 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;
     CREATE TABLE t_est_c (id UInt64, b UInt64, v UInt64, payload String) ENGINE = MergeTree ORDER BY id
-        SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 1000000000;
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, use_const_adaptive_granularity = 0,
+                 min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 0;
     CREATE TABLE t_real_c AS t_est_c;
     ALTER TABLE t_real_c ADD PROJECTION p_c (SELECT id, b, v ORDER BY b);
     INSERT INTO t_est_c SELECT number, number % 1000, number, repeat('x', 4000) FROM numbers(50000);
@@ -124,10 +126,19 @@ $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT a, b, v FROM t_real_g WHERE a 
 echo "--- a near-tie on an adaptive-granularity part is not called ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_a;
-    CREATE TABLE t_est_a (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+    CREATE TABLE t_est_a (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 10485760, use_const_adaptive_granularity = 0,
+                 min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
     INSERT INTO t_est_a SELECT number, number % 100, number FROM numbers(250);
     CREATE HYPOTHETICAL PROJECTION p_a ON t_est_a (SELECT a, b, v ORDER BY b);
     EXPLAIN WHATIF SELECT a, b, v FROM t_est_a WHERE b >= 0 SETTINGS ${PIN};
+" | grep -E '^\s+(marks|read_ratio|verdict|reason):' | awk '{$1=$1; print}'
+
+# the ORDER BY tie-break is decided by the same mark comparison, so it is uncertain in the same window
+echo "--- an ORDER BY tie-break inside the margin is not called either ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_a ON t_est_a (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, b, v FROM t_est_a ORDER BY b SETTINGS ${PIN};
 " | grep -E '^\s+(marks|read_ratio|verdict|reason):' | awk '{$1=$1; print}'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_a;"
 
@@ -172,7 +183,7 @@ echo "--- a query that reads no parts gets no verdict, the optimizer ignores pro
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_pruned;
     CREATE TABLE t_pruned (d Date, a UInt64, b UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a
-        SETTINGS index_granularity = 100;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
     INSERT INTO t_pruned SELECT toDate('2020-01-01'), number, number % 100 FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p_all ON t_pruned (SELECT d, a, b ORDER BY b);
     EXPLAIN WHATIF SELECT count() FROM t_pruned WHERE d = '2030-05-05' AND b = 42 SETTINGS ${PIN};
