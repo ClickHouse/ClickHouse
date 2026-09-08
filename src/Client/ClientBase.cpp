@@ -1024,16 +1024,21 @@ int openFileCancellable(const String & file_name, int flags, const std::function
 }
 
 /// Whether writes into this descriptor can block indefinitely, i.e. whether the sink needs the
-/// lossy best-effort discipline at all. A regular file (or a block device) always accepts the data
-/// and reports real errors such as `ENOSPC`, so it must stay on the ordinary throwing path: silently
-/// dropping the tail of a diagnostic file the user explicitly asked for would hide the error.
-/// Terminals, FIFOs, sockets and character devices, on the other hand, can park a write forever.
+/// lossy best-effort discipline at all. The classification must match the one
+/// `WriteBufferFromFileDescriptor::initializeResponsiveWriteState` makes, because that is what
+/// decides whether the responsive write path is used at all: only a FIFO, a socket or a terminal
+/// can park a write forever. Everything else - a regular file, a block device, and a non-terminal
+/// character device such as `/dev/null` or `/dev/full` - always completes the write and reports real
+/// errors such as `ENOSPC` or `EIO`, so it must stay on the ordinary throwing path: for such a sink
+/// the cancellation hook would be a no-op anyway, while the epilogue best-effort budget would
+/// silently swallow the error and drop the tail of a diagnostic file the user explicitly asked for.
+/// If `fstat` fails, assume the sink can block, which is the safe (responsive) side.
 bool isBlockingCapableSink(int fd)
 {
     struct stat file_stat{};
     if (::fstat(fd, &file_stat) != 0)
         return true;
-    return !S_ISREG(file_stat.st_mode) && !S_ISBLK(file_stat.st_mode);
+    return S_ISFIFO(file_stat.st_mode) || S_ISSOCK(file_stat.st_mode) || (0 != ::isatty(fd));
 }
 
 }
@@ -1435,7 +1440,7 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
             else
             {
                 /// The user-specified path is not necessarily a regular file: it can be a FIFO,
-                /// character device or socket, which can block in write() just like a terminal, and
+                /// terminal or socket, which can block in write() just like a terminal, and
                 /// a reader-less FIFO blocks already in open(). So acquire the descriptor with the
                 /// interruptible open (this runs from onLogData / onProfileEvents, i.e. with the
                 /// interrupt handler armed for the query) and track the buffer as the terminal-facing
@@ -1472,9 +1477,10 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
                 });
 
                 /// Only a sink that can actually block is treated as terminal-facing: an ordinary
-                /// file must keep the plain throwing write path, so that a real write error
-                /// (`ENOSPC`, `EIO`) surfaces instead of being swallowed by the lossy best-effort
-                /// discipline that the responsive hook and the epilogue budget apply.
+                /// file - and likewise a non-terminal character device such as `/dev/full` - must
+                /// keep the plain throwing write path, so that a real write error (`ENOSPC`, `EIO`)
+                /// surfaces instead of being swallowed by the lossy best-effort discipline that the
+                /// responsive hook and the epilogue budget apply.
                 const bool sink_can_block = isBlockingCapableSink(logs_fd);
 
                 /// See the note above on why the member is assigned first and downcast with
@@ -1496,9 +1502,10 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
         /// output - so without a hook the first Ctrl+C could still hang in a log/profile-events flush.
         /// In --server_logs_file=- mode the sink is std_out, which is already armed for the query (and
         /// whose hook resetOutput() re-points during teardown), so it must not be re-armed from here.
-        /// An explicit --server_logs_file=<path> naming a sink that can block (a FIFO, a character
-        /// device, a socket) is armed here as well so it stays interruptible; a regular file is not
-        /// tracked at all, because it cannot block and its write errors must not be swallowed.
+        /// An explicit --server_logs_file=<path> naming a sink that can block (a FIFO, a terminal,
+        /// a socket) is armed here as well so it stays interruptible; any other sink - a regular file
+        /// or a non-terminal character device - is not tracked at all, because it cannot block and
+        /// its write errors must not be swallowed.
         if (server_logs_file != "-" && logs_out_terminal_buf)
             armResponsiveOutput(*logs_out_terminal_buf);
     }
