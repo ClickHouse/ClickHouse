@@ -45,6 +45,18 @@ static ITransformingStep::Traits getTraits(bool preserves_sorting)
     };
 }
 
+/// Whether the frame aggregate tree can serve this step at all: the frame start moves and at least one
+/// function merges partial states in place of re-adding rows. The threshold decides separately.
+static bool frameTreeApplies(const WindowDescription & window_description, const std::vector<WindowFunctionDescription> & window_functions)
+{
+    if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+        return false;
+    return std::ranges::any_of(window_functions, [](const auto & function)
+    {
+        return WindowTransform::aggregateFunctionSupportsFrameTree(*function.aggregate_function);
+    });
+}
+
 static Block addWindowFunctionResultColumns(const Block & block,
     std::vector<WindowFunctionDescription> window_functions)
 {
@@ -150,6 +162,15 @@ void WindowStep::describeActions(FormatSettings & settings) const
         const auto & column_name = window_functions[i].column_name;
         settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column_name, settings.pretty_names) : column_name) << "\n";
     }
+
+    if (frameTreeApplies(window_description, window_functions))
+    {
+        settings.out << prefix << "Aggregate tree threshold: ";
+        if (min_frame_rows_for_aggregate_tree == std::numeric_limits<UInt64>::max())
+            settings.out << "disabled\n";
+        else
+            settings.out << min_frame_rows_for_aggregate_tree << " rows\n";
+    }
 }
 
 void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -171,6 +192,14 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
         functions_array->add(func.column_name);
 
     map.add("Functions", std::move(functions_array));
+
+    if (frameTreeApplies(window_description, window_functions))
+    {
+        if (min_frame_rows_for_aggregate_tree == std::numeric_limits<UInt64>::max())
+            map.add("Aggregate Tree Threshold", "disabled");
+        else
+            map.add("Aggregate Tree Threshold", min_frame_rows_for_aggregate_tree);
+    }
 }
 
 void WindowStep::updateOutputHeader()
@@ -360,14 +389,10 @@ static bool mayUseAggregateTree(
 {
     if (min_frame_rows_for_aggregate_tree == std::numeric_limits<UInt64>::max())
         return false;
-    if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+    if (!frameTreeApplies(window_description, window_functions))
         return false;
-    if (const auto max_rows = maxFrameRows(window_description.frame); max_rows && *max_rows < min_frame_rows_for_aggregate_tree)
-        return false;
-    return std::ranges::any_of(window_functions, [](const auto & function)
-    {
-        return WindowTransform::aggregateFunctionSupportsFrameTree(*function.aggregate_function);
-    });
+    const auto max_rows = maxFrameRows(window_description.frame);
+    return !max_rows || *max_rows >= min_frame_rows_for_aggregate_tree;
 }
 
 void WindowStep::serialize(Serialization & ctx) const
