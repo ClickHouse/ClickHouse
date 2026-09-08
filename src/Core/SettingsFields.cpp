@@ -627,8 +627,12 @@ void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
 }
 
-String SettingFieldCustom::toString() const
+String SettingFieldCustom::toString(bool show_secrets) const
 {
+    CustomType custom;
+    if (!show_secrets && value.tryGet<CustomType>(custom) && custom.isSecret())
+        return custom.toString(/* show_secrets */ false);
+
     return value.dump();
 }
 
