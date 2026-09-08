@@ -1,0 +1,92 @@
+<test>
+    <!--
+        Plan-time cost of analysing the implicit `minmax_count` projection, which no other
+        performance test covers.
+
+        Every MergeTree table carries that projection, so an aggregating query used to build an
+        InterpreterSelectQuery over its definition during plan optimisation even when the query
+        aggregates with a function the projection cannot provide. The cost is per plan, not per
+        row, so the fixture is short (200000 rows) and the queries are EXPLAIN PLAN, which runs
+        the optimisation while excluding execution, the same way statistics_plan_time_uniq.xml
+        isolates plan time.
+
+        Two deliberate amplifications, so the measured statement is dominated by the work under
+        test rather than by fixed per-query overhead:
+          - a two-column PARTITION BY, because the implicit projection carries a min/max pair per
+            partition column on top of the primary key, which widens the projection definition
+            that gets interpreted. Only 4 partitions, so the fixture stays at a few parts.
+          - eight UNION ALL branches per query, each a separate aggregation over the table.
+            Measured on this fixture, plan-optimisation time is 387 us at one branch and 1714 us
+            at eight, i.e. about 190 us of per-branch work against a 190 us fixed cost, so eight
+            branches put ~89% of the statement into the path being measured.
+
+        The last two queries are controls: `count()` and `min`/`max`/`count` are exactly the
+        aggregates the projection does store, so they must not get slower.
+    -->
+
+    <settings>
+        <optimize_use_projections>1</optimize_use_projections>
+        <optimize_use_implicit_projections>1</optimize_use_implicit_projections>
+        <optimize_aggregation_in_order>0</optimize_aggregation_in_order>
+        <aggregate_functions_null_for_empty>0</aggregate_functions_null_for_empty>
+    </settings>
+
+    <create_query>
+        CREATE TABLE minmax_proj_plan (k UInt64, p1 UInt8, p2 UInt8, a UInt64, b UInt64, d Float64)
+        ENGINE = MergeTree PARTITION BY (p1, p2) ORDER BY k
+        SETTINGS index_granularity = 8192, add_minmax_index_for_numeric_columns = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO minmax_proj_plan
+            SELECT number, number % 2, intDiv(number, 100000) % 2, number, number, number * 1.5
+            FROM numbers(200000)
+    </fill_query>
+
+    <query><![CDATA[
+        EXPLAIN PLAN
+        SELECT sum(d + 0) FROM minmax_proj_plan UNION ALL SELECT sum(d + 1) FROM minmax_proj_plan
+        UNION ALL SELECT sum(d + 2) FROM minmax_proj_plan UNION ALL SELECT sum(d + 3) FROM minmax_proj_plan
+        UNION ALL SELECT sum(d + 4) FROM minmax_proj_plan UNION ALL SELECT sum(d + 5) FROM minmax_proj_plan
+        UNION ALL SELECT sum(d + 6) FROM minmax_proj_plan UNION ALL SELECT sum(d + 7) FROM minmax_proj_plan
+        FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        EXPLAIN PLAN
+        SELECT uniq(d + 0) FROM minmax_proj_plan UNION ALL SELECT uniq(d + 1) FROM minmax_proj_plan
+        UNION ALL SELECT uniq(d + 2) FROM minmax_proj_plan UNION ALL SELECT uniq(d + 3) FROM minmax_proj_plan
+        UNION ALL SELECT uniq(d + 4) FROM minmax_proj_plan UNION ALL SELECT uniq(d + 5) FROM minmax_proj_plan
+        UNION ALL SELECT uniq(d + 6) FROM minmax_proj_plan UNION ALL SELECT uniq(d + 7) FROM minmax_proj_plan
+        FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        EXPLAIN PLAN
+        SELECT p1, avg(d) FROM minmax_proj_plan GROUP BY p1 UNION ALL SELECT p1, avg(d + 1) FROM minmax_proj_plan GROUP BY p1
+        UNION ALL SELECT p1, avg(d + 2) FROM minmax_proj_plan GROUP BY p1 UNION ALL SELECT p1, avg(d + 3) FROM minmax_proj_plan GROUP BY p1
+        UNION ALL SELECT p1, avg(d + 4) FROM minmax_proj_plan GROUP BY p1 UNION ALL SELECT p1, avg(d + 5) FROM minmax_proj_plan GROUP BY p1
+        UNION ALL SELECT p1, avg(d + 6) FROM minmax_proj_plan GROUP BY p1 UNION ALL SELECT p1, avg(d + 7) FROM minmax_proj_plan GROUP BY p1
+        FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        EXPLAIN PLAN
+        SELECT count() FROM minmax_proj_plan UNION ALL SELECT count() FROM minmax_proj_plan
+        UNION ALL SELECT count() FROM minmax_proj_plan UNION ALL SELECT count() FROM minmax_proj_plan
+        UNION ALL SELECT count() FROM minmax_proj_plan UNION ALL SELECT count() FROM minmax_proj_plan
+        UNION ALL SELECT count() FROM minmax_proj_plan UNION ALL SELECT count() FROM minmax_proj_plan
+        FORMAT Null
+    ]]></query>
+
+    <query><![CDATA[
+        EXPLAIN PLAN
+        SELECT min(k), max(k), count() FROM minmax_proj_plan UNION ALL SELECT min(k), max(k), count() FROM minmax_proj_plan
+        UNION ALL SELECT min(k), max(k), count() FROM minmax_proj_plan UNION ALL SELECT min(k), max(k), count() FROM minmax_proj_plan
+        UNION ALL SELECT min(k), max(k), count() FROM minmax_proj_plan UNION ALL SELECT min(k), max(k), count() FROM minmax_proj_plan
+        UNION ALL SELECT min(k), max(k), count() FROM minmax_proj_plan UNION ALL SELECT min(k), max(k), count() FROM minmax_proj_plan
+        FORMAT Null
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS minmax_proj_plan</drop_query>
+</test>
