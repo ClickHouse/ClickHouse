@@ -66,6 +66,8 @@ enum class FormatSyntax : uint8_t
     Joda
 };
 
+constexpr size_t MAX_JODA_TIMEZONE_NAME_LENGTH = 32;
+
 template <typename DataType> struct InstructionValueTypeMap {};
 template <> struct InstructionValueTypeMap<DataTypeInt8>       { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeUInt8>      { using InstructionValueType = UInt32; };
@@ -851,6 +853,8 @@ private:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
 
             auto str = timezone.getTimeZone();
+            if (str.size() > MAX_JODA_TIMEZONE_NAME_LENGTH)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time zone name is longer than the maximum supported length of {} bytes", MAX_JODA_TIMEZONE_NAME_LENGTH);
             memcpy(dest, str.data(), str.size());
             return str.size();
         }
@@ -2002,8 +2006,7 @@ public:
                         Instruction<T> instruction;
                         instruction.setJodaFunc(std::bind_front(&Instruction<T>::jodaTimezone, repetitions));
                         instructions.push_back(std::move(instruction));
-                        /// Longest length of full name of time zone is 32.
-                        reserve_size += 32;
+                        reserve_size += MAX_JODA_TIMEZONE_NAME_LENGTH; /// we'll throw at runtime if the time zone is longer than that
                         break;
                     }
                     case 'Z':

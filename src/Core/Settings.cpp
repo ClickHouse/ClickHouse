@@ -7486,6 +7486,8 @@ Maximum time to read from a pipe for receiving information from the threads when
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
 
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
+
 ### Placeholders
 
 - `%a` — Full original filename (e.g., "sample.csv").
