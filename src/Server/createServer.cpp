@@ -43,9 +43,11 @@ bool createServer(
     /// Shift the configured port by `port_offset` (0 by default). An unset / OS-assigned (`0`) port is
     /// left untouched so `tcp_port=0` still binds an ephemeral port instead of `port_offset`.
     const UInt16 port = applyPortOffset(static_cast<UInt16>(configured_port), port_offset);
+    bool binds_on_start = false;
     try
     {
         servers.push_back(func(port));
+        binds_on_start = servers.back().bindsOnStart();
         try
         {
             if (start_server)
@@ -73,6 +75,13 @@ bool createServer(
     }
     catch (const Poco::Exception &)
     {
+        /// Delayed-bind protocols can fail their `start` operation before attempting a bind,
+        /// for example while loading TLS credentials. `listen_try` applies only to unavailable
+        /// listen addresses, so preserve these configuration errors for callers such as
+        /// `SYSTEM START LISTEN`.
+        if (start_server && binds_on_start && getCurrentExceptionCode() != ErrorCodes::NETWORK_ERROR)
+            throw;
+
         if (listen_try)
         {
             LOG_WARNING(log, "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
@@ -88,6 +97,39 @@ bool createServer(
         }
     }
     return false;
+}
+
+void startServers(std::vector<ProtocolServerAdapter> & servers, bool listen_try, LoggerRawPtr log)
+{
+    for (auto it = servers.begin(); it != servers.end();)
+    {
+        try
+        {
+            it->start();
+            LOG_INFO(log, "Listening for {}", it->getDescription());
+            ++it;
+        }
+        catch (const Poco::Exception &)
+        {
+            /// A protocol that binds when its server is created has already passed the `listen_try`
+            /// check in `createServer`, so a failure here is not a listen failure and must not be
+            /// swallowed.
+            if (!it->bindsOnStart() || getCurrentExceptionCode() != ErrorCodes::NETWORK_ERROR)
+                throw;
+
+            if (!listen_try)
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to listen for {}: {}",
+                    it->getDescription(), getCurrentExceptionMessage(false));
+
+            LOG_WARNING(log, "Failed to listen for {}: {}. If it is an IPv6 or IPv4 address and your host has disabled "
+                "IPv6 or IPv4, then consider to specify not disabled IPv4 or IPv6 address to listen in <listen_host> "
+                "element of configuration file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
+                " Example for disabled IPv4: <listen_host>::</listen_host>",
+                it->getDescription(), getCurrentExceptionMessage(false));
+
+            it = servers.erase(it);
+        }
+    }
 }
 
 }
