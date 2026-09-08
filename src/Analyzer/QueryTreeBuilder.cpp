@@ -303,12 +303,17 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
         /// A nested `SETTINGS` clause is clamped to the session's settings constraints: violating changes are
         /// dropped or clamped (a top-level clause still throws in `applySettingsFromQuery`), while an unknown
-        /// name or an uncastable value throws as everywhere else. The node records the effective clause, so
-        /// `toAST`, the tree hash and the Planner see what was actually applied.
+        /// name or an uncastable value throws as for a top-level clause. The node records the effective clause,
+        /// so `toAST`, the tree hash, the `Planner` and the shards receiving the subquery see what was applied.
+        /// A secondary query carries a clause the initiator already validated and possibly with settings this
+        /// (older) server does not know, so it is clamped leniently, as its settings packet is in `TCPHandler`.
         if (!set_query.changes.empty())
         {
             settings_changes = set_query.changes;
-            updated_context->clampToSettingsConstraintsRejectingInvalidChanges(settings_changes, SettingSource::QUERY);
+            if (updated_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                updated_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+            else
+                updated_context->clampToSettingsConstraintsRejectingInvalidChanges(settings_changes, SettingSource::QUERY);
             updated_context->applySettingsChanges(settings_changes);
         }
     }

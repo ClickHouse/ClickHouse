@@ -2582,8 +2582,7 @@ void Planner::buildPlanForUnionNode()
 }
 
 /// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
-/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins,
-/// judged by the value applied to the node's context (after constraints), not the clause as written.
+/// For actual subqueries (is_subquery=true): explicit `SETTINGS use_query_cache` on the node wins.
 /// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
 /// By default, `use_query_cache` does NOT propagate.
 ///
@@ -2604,15 +2603,9 @@ static bool shouldUseQueryCacheForSubquery(
     /// Only check explicit per-node `use_query_cache` for actual subqueries.
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
     /// `settings` is the node's own context (`buildPlannerContext` takes `query_node->getMutableContext()`),
-    /// so it already holds the clause value clamped by settings constraints; the clause `Field` may be a String.
-    if (is_subquery && query_node.hasSettingsChanges())
-    {
-        for (const auto & change : query_node.getSettingsChanges())
-        {
-            if (Settings::resolveName(change.name) == "use_query_cache")
-                return settings[Setting::use_query_cache];
-        }
-    }
+    /// so it holds the clause value clamped by the settings constraints; the clause `Field` may be a `String`.
+    if (is_subquery && query_node.getSettingsChanges().tryGet("use_query_cache"))
+        return settings[Setting::use_query_cache];
 
     /// `query_cache_for_subqueries` enables the Planner-level (`is_subquery = true`) cache
     /// only for actual subqueries. The top-level query is cached separately by `executeQuery`

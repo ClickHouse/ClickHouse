@@ -17,5 +17,9 @@
 1
 -- a nested value the setting cannot take still throws
 1
+-- a nested clause forwarded to the shards carries the clamped value
+1
+-- the same query for an unconstrained user reads both shards
+6
 -- the session settings are untouched
 false

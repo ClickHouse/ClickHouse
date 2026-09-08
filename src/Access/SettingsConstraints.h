@@ -97,7 +97,8 @@ public:
     /// Checks whether `change` violates these and clamps the `change` if so.
     void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
-    /// Same as `clamp`, but an unknown or disallowed setting name and an uncastable value throw, as in `check`.
+    /// Same as `clamp`, but an unknown or disallowed setting name and an uncastable value throw, as in `check`,
+    /// and a change equal to the current value is kept in `changes`.
     void clampRejectingInvalidChanges(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
 

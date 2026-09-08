@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Tags: no-old-analyzer
 # (the clamp is analyzer-path behaviour; the legacy interpreter throws on such a nested clause)
-# A nested SETTINGS clause is clamped to the session's settings constraints, and the clamped clause is
+# A nested `SETTINGS` clause is clamped to the session's settings constraints, and the clamped clause is
 # what the query node keeps. So a nested `use_query_cache = 1` the constraints dropped must not enable
-# the query result cache in the Planner (issue #117226), and an unknown name or an uncastable value in a
-# nested clause still throws, as it does in a top-level clause.
+# the query result cache in the `Planner` (issue #117226), a shard receives the clamped clause, and an
+# unknown name or an uncastable value in a nested clause throws, as it does in a top-level clause.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,25 +18,33 @@ CONST_PROFILE="profile_const_${SUFFIX}"
 RO_USER="user_ro_${SUFFIX}"
 RO_PROFILE="profile_ro_${SUFFIX}"
 FREE_USER="user_free_${SUFFIX}"
+DIST_USER="user_dist_${SUFFIX}"
+DIST_PROFILE="profile_dist_${SUFFIX}"
 TABLE="t_05141"
+DIST_TABLE="dist_05141"
 # `system.query_cache` lists the entries of every user and every test, and the cache is never dropped
 # here, so each cached subquery carries a per-run marker in its text and is looked up by it.
 MARKER="marker_${SUFFIX}"
 
-${CLICKHOUSE_CLIENT} --multiquery --query "
-DROP USER IF EXISTS ${CONST_USER}, ${RO_USER}, ${FREE_USER};
-DROP SETTINGS PROFILE IF EXISTS ${CONST_PROFILE}, ${RO_PROFILE};
+${CLICKHOUSE_CLIENT} --query "
+DROP USER IF EXISTS ${CONST_USER}, ${RO_USER}, ${FREE_USER}, ${DIST_USER};
+DROP SETTINGS PROFILE IF EXISTS ${CONST_PROFILE}, ${RO_PROFILE}, ${DIST_PROFILE};
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${DIST_TABLE};
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${TABLE};
 
 CREATE TABLE ${CLICKHOUSE_DATABASE}.${TABLE} (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ${CLICKHOUSE_DATABASE}.${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c');
+CREATE TABLE ${CLICKHOUSE_DATABASE}.${DIST_TABLE} AS ${CLICKHOUSE_DATABASE}.${TABLE}
+    ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), ${TABLE});
 
 CREATE SETTINGS PROFILE ${CONST_PROFILE} SETTINGS use_query_cache = 0 CONST;
 CREATE SETTINGS PROFILE ${RO_PROFILE} SETTINGS readonly = 1 CONST;
+CREATE SETTINGS PROFILE ${DIST_PROFILE} SETTINGS max_rows_to_read MAX 2;
 CREATE USER ${CONST_USER} IDENTIFIED WITH no_password SETTINGS PROFILE ${CONST_PROFILE};
 CREATE USER ${RO_USER} IDENTIFIED WITH no_password SETTINGS PROFILE ${RO_PROFILE};
 CREATE USER ${FREE_USER} IDENTIFIED WITH no_password;
-GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${CONST_USER}, ${RO_USER}, ${FREE_USER};
+CREATE USER ${DIST_USER} IDENTIFIED WITH no_password SETTINGS PROFILE ${DIST_PROFILE};
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${CONST_USER}, ${RO_USER}, ${FREE_USER}, ${DIST_USER};
 "
 
 # The bare binary, not ${CLICKHOUSE_CLIENT}: the harness's randomized settings would be rejected for the readonly user.
@@ -44,6 +52,7 @@ RESTRICTED_CLIENT="${CLICKHOUSE_CLIENT_BINARY} --host=${CLICKHOUSE_HOST} --port=
 CONST="${RESTRICTED_CLIENT} --user=${CONST_USER}"
 RO="${RESTRICTED_CLIENT} --user=${RO_USER}"
 FREE="${RESTRICTED_CLIENT} --user=${FREE_USER}"
+DIST="${RESTRICTED_CLIENT} --user=${DIST_USER}"
 
 # Cache entries whose text carries the marker: subquery entries, then top-level entries.
 function cache_entries()
@@ -79,11 +88,20 @@ ${CONST} --query "SELECT count() FROM (SELECT id FROM ${TABLE} SETTINGS max_thre
 echo "-- a nested value the setting cannot take still throws"
 ${CONST} --query "SELECT count() FROM (SELECT id FROM ${TABLE} SETTINGS max_threads = 'abc')" 2>&1 | grep -c -F "CANNOT_PARSE_INPUT_ASSERTION_FAILED"
 
+# The IN subquery runs on the shards, whose user has no constraints. It must arrive with the value the
+# initiator clamped (2, so reading 3 rows fails there), not with the value as written.
+echo "-- a nested clause forwarded to the shards carries the clamped value"
+${DIST} --query "SELECT count() FROM ${DIST_TABLE} WHERE id IN (SELECT id FROM ${TABLE} SETTINGS max_rows_to_read = 100)" 2>&1 | grep -c -F "TOO_MANY_ROWS"
+
+echo "-- the same query for an unconstrained user reads both shards"
+${FREE} --query "SELECT count() FROM ${DIST_TABLE} WHERE id IN (SELECT id FROM ${TABLE} SETTINGS max_rows_to_read = 100)"
+
 echo "-- the session settings are untouched"
 ${CONST} --query "SELECT getSetting('use_query_cache')"
 
-${CLICKHOUSE_CLIENT} --multiquery --query "
+${CLICKHOUSE_CLIENT} --query "
+DROP TABLE ${CLICKHOUSE_DATABASE}.${DIST_TABLE};
 DROP TABLE ${CLICKHOUSE_DATABASE}.${TABLE};
-DROP USER ${CONST_USER}, ${RO_USER}, ${FREE_USER};
-DROP SETTINGS PROFILE ${CONST_PROFILE}, ${RO_PROFILE};
+DROP USER ${CONST_USER}, ${RO_USER}, ${FREE_USER}, ${DIST_USER};
+DROP SETTINGS PROFILE ${CONST_PROFILE}, ${RO_PROFILE}, ${DIST_PROFILE};
 "
