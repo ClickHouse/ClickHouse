@@ -25,8 +25,8 @@ WITH (SELECT count() FROM numbers(10)) AS e1,
      (SELECT count() FROM numbers(10)) AS e3
 SELECT e1, e2, e3;
 
--- The new analyzer does not clone aliases per subquery and handles all of it.
-SELECT 'new analyzer unaffected';
+-- The analyzer does not clone aliases per subquery and handles all of it.
+SELECT 'analyzer unaffected';
 WITH (SELECT count() FROM (EXPLAIN PLAN SELECT 1)) AS e1,
      (SELECT count() FROM (EXPLAIN PLAN SELECT 1)) AS e2,
      (SELECT count() FROM (EXPLAIN PLAN SELECT 1)) AS e3
