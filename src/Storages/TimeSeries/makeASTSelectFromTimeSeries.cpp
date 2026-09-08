@@ -760,7 +760,7 @@ ASTPtr makeASTSelectFromTimeSeries(
                                            requested_tags, columns_by_tags, deduplicate_tags_by_id);
 }
 
-SettingsChanges getSettingsForSelectFromTimeSeries(bool final)
+SettingsChanges getSettingsForSelectFromTimeSeries()
 {
     SettingsChanges changes;
 
@@ -776,32 +776,10 @@ SettingsChanges getSettingsForSelectFromTimeSeries(bool final)
     /// the default values - an empty string / empty array - on which the reconstruction relies).
     changes.emplace_back("join_use_nulls", Field{false});
 
-    /// If `join_algorithm` is `full_sorting_merge` or `partial_merge` then the generated query would throw
-    /// NOT_IMPLEMENTED (because the merge-join algorithms do not implement the SEMI and FULL joins it uses).
-    /// `hash` is the final fallback supporting every join kind, while `parallel_hash` keeps the faster
-    /// parallel build of the join's right side where applicable.
-    changes.emplace_back("join_algorithm", Field{"parallel_hash,hash"});
-
     /// If `optimize_aggregation_in_order` is 0 then the GROUP BY id over the "samples" table would build a hash
     /// table of all the series in memory (because only this setting lets the aggregation stream in sorting-key
     /// order, which is possible here: `id` is the first column of the default samples sorting key `(id, timestamp)`).
     changes.emplace_back("optimize_aggregation_in_order", Field{true});
-
-    if (!final)
-    {
-        /// If `allow_aggregate_partitions_independently` is 0 then partitions of the "samples" table would never
-        /// be aggregated in fully independent pipelines even when its partition key is a function of `id`, and
-        /// if `force_aggregate_partitions_independently` is 0 then that optimization could still be skipped
-        /// when the optimizer decides it would not help (e.g. too few partitions).
-        /// Enabled only without FINAL: under FINAL the canonical merged execution is kept.
-        ///
-        /// TODO: Prefer a per-block no-merge aggregation mode once one exists (a proposed
-        /// `group_by_each_block_no_merge` setting): per-block aggregation without merging is streaming,
-        /// needs no precondition on the partition key, and its sliced output (several `time_series` rows
-        /// per series) is a valid non-FINAL result.
-        changes.emplace_back("allow_aggregate_partitions_independently", Field{true});
-        changes.emplace_back("force_aggregate_partitions_independently", Field{true});
-    }
 
     return changes;
 }
