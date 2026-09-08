@@ -82,6 +82,10 @@ SELECT countEqual(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))
 SELECT notHas(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) = 0 AS oracle;
 SELECT has(materialize(CAST([''], 'Array(LowCardinality(FixedString(4)))')), unhex('00')) AS lc, length(arrayFilter(x -> x = unhex('00'), materialize(CAST([''], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
 SELECT has(materialize(CAST(['a'], 'Array(LowCardinality(Nullable(FixedString(4))))')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), materialize(CAST(['a'], 'Array(LowCardinality(Nullable(FixedString(4))))')))) AS oracle;
+-- A constant needle's own LowCardinality and Nullable wrappers are peeled before its type is read, so a
+-- wrapped needle resolves to the same dictionary entry as a bare one.
+SELECT has(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), CAST(unhex('6100'), 'Nullable(String)')) AS lc, length(arrayFilter(x -> x = CAST(unhex('6100'), 'Nullable(String)'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
+SELECT has(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), CAST(unhex('6100'), 'LowCardinality(String)')) AS lc, length(arrayFilter(x -> x = CAST(unhex('6100'), 'LowCardinality(String)'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
 -- A needle wider than the element is a different value. A cast to a nullable dictionary type reports
 -- that by returning NULL instead of throwing, and the value under that NULL is the element type's
 -- default, so the needle has to be found nowhere.
