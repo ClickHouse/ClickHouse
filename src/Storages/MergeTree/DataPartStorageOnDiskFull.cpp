@@ -216,7 +216,11 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
     });
 }
 
-void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
+void DataPartStorageOnDiskFull::copyFileFrom(
+    const IDataPartStorage & source,
+    const std::string & from,
+    const std::string & to,
+    const std::function<void()> & cancellation_hook)
 {
     const auto * source_on_disk = typeid_cast<const DataPartStorageOnDiskFull *>(&source);
     if (!source_on_disk)
@@ -231,7 +235,9 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
         fs::path(source_on_disk->getRelativePath()) / from,
         *volume->getDisk(),
         fs::path(root_path) / part_dir / to,
-        getReadSettings());
+        getReadSettings(),
+        {},
+        cancellation_hook);
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)

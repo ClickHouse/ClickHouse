@@ -3064,7 +3064,7 @@ private:
                 if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
                 {
                     ctx->new_data_part->getDataPartStorage().copyFileFrom(
-                        ctx->source_part->getDataPartStorage(), it->name(), destination);
+                        ctx->source_part->getDataPartStorage(), it->name(), destination, ctx->cancellation_hook);
                 }
                 else
                 {
@@ -3087,7 +3087,7 @@ private:
                     if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
                     {
                         projection_data_part_storage_dst->copyFileFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
+                            *projection_data_part_storage_src, p_it->name(), p_it->name(), ctx->cancellation_hook);
                     }
                     else
                     {

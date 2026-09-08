@@ -508,7 +508,8 @@ void DataPartStorageOnDiskPacked::createHardLinkFrom(const IDataPartStorage &, c
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DataPartStorageOnDiskPacked does not support creating hardlinks");
 }
 
-void DataPartStorageOnDiskPacked::copyFileFrom(const IDataPartStorage &, const std::string &, const std::string &)
+void DataPartStorageOnDiskPacked::copyFileFrom(
+    const IDataPartStorage &, const std::string &, const std::string &, const std::function<void()> &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DataPartStorageOnDiskPacked does not support copying files");
 }

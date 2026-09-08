@@ -80,7 +80,11 @@ public:
     void removeSharedRecursive(bool keep_in_remote_fs) override;
 
     void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
-    void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
+    void copyFileFrom(
+        const IDataPartStorage & source,
+        const std::string & from,
+        const std::string & to,
+        const std::function<void()> & cancellation_hook) override;
 
     void beginTransaction() override;
     void commitTransaction() override;

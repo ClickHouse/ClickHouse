@@ -989,6 +989,35 @@ def test_cancelling_untouched_mutation_copy_stops_s3_retries(
     assert_s3_cancelled(node, table, request, broken_s3, "object_upload")
 
 
+def test_cancelling_partial_mutation_copy_stops_s3_retries(
+    s3_cancellation, broken_s3
+):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value UInt32, unchanged String) "
+        "ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage=0, "
+        "min_rows_for_wide_part=0, min_bytes_for_wide_part=0"
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number, number, toString(number) FROM numbers(10000)"
+    )
+    assert node.query(
+        f"SELECT part_type, part_storage_type FROM system.parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == "Wide\tFull"
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_copy(action="internal_error", count=10000)
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value + 1 WHERE key = 0 SETTINGS mutations_sync=1",
+        timeout=30,
+    )
+    wait_for_s3_request(broken_s3, "object_copy", count=2)
+    assert_s3_cancelled(node, table, request, broken_s3, "object_copy")
+
+
 @pytest.mark.parametrize("request_kind", ["object_head", "object_read"])
 def test_cancelling_mutation_copy_source_stops_s3_retries(
     s3_cancellation, broken_s3, request_kind
