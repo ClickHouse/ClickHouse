@@ -1353,9 +1353,11 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 if (metadata_snapshot)
                 {
                     has_asynchronous_metrics |= table_name == "asynchronous_metrics";
-                    const char * documentation_source = getSystemTableDocumentationSource(table_name);
+                    /// Persisted comments identify schema-specific system logs even when their configuration has
+                    /// since been removed. Prefer that owner over the canonical name's default registration.
+                    const char * documentation_source = getSystemTableDocumentationSourceFromComment(metadata_snapshot->comment);
                     if (!documentation_source)
-                        documentation_source = getSystemTableDocumentationSourceFromComment(metadata_snapshot->comment);
+                        documentation_source = getSystemTableDocumentationSource(table_name);
                     addRow(
                         res_columns,
                         EntityType::SystemTable,

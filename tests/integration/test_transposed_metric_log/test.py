@@ -114,6 +114,36 @@ def test_table_rotation(start_cluster):
     )
 
 
+def test_persisted_metric_log_documentation_without_config(start_cluster):
+    node3.replace_in_config(LOG_PATH, ">wide<", ">transposed<")
+    node3.restart_clickhouse()
+    node3.query("SYSTEM FLUSH LOGS metric_log")
+
+    assert (
+        node3.query(
+            "SELECT source FROM system.documentation"
+            " WHERE type = 'System Table' AND name = 'metric_log'"
+        )
+        == "src/Interpreters/TransposedMetricLog.h\n"
+    )
+
+    node3.remove_file_from_container(LOG_PATH)
+    node3.restart_clickhouse()
+
+    assert (
+        node3.query(
+            "SELECT source FROM system.documentation"
+            " WHERE type = 'System Table' AND name = 'metric_log'"
+        )
+        == "src/Interpreters/TransposedMetricLog.h\n"
+    )
+    documentation = node3.query(
+        "SELECT description FROM system.documentation"
+        " WHERE type = 'System Table' AND name = 'metric_log' FORMAT TSVRaw"
+    )
+    assert "This is the `transposed` schema" in documentation
+
+
 def test_bucketed_schema(start_cluster):
     # default wide mode
     node2.query("SYSTEM FLUSH LOGS")
