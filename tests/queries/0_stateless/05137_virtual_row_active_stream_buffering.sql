@@ -7,7 +7,7 @@ SET use_statistics_for_part_pruning = 0, use_skip_indexes = 0, log_queries = 1;
 
 CREATE TABLE vrow_active (k UInt64, probe UInt64)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 128, index_granularity_bytes = 0;
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES vrow_active;
 INSERT INTO vrow_active SELECT number, number FROM numbers(32768);
 INSERT INTO vrow_active SELECT number + 32768, number FROM numbers(32768);

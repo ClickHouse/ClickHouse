@@ -38,8 +38,8 @@ INSERT INTO t SELECT
     number
 FROM numbers(8192 * 3);
 
--- Expecting 2 virtual rows + one chunk (8192) for result + one extra chunk for next consumption in merge transform (8192),
--- both chunks come from the same part.
+-- Expecting 2 virtual rows + one chunk (8192) for result. The preliminary merge forwards
+-- the per-block virtual row that follows it, so it does not fetch a spare chunk.
 SELECT x
 FROM t
 ORDER BY x ASC
@@ -108,8 +108,9 @@ ORDER BY query_start_time DESC
 LIMIT 1;
 
 SELECT '========';
--- Expecting 2 virtual rows + two chunks (8192*2) get filtered out + one chunk for result (8192),
--- all chunks come from the same part.
+-- Expecting two chunks (8192*2) filtered out + one chunk for result (8192) from the first
+-- part. Per-block virtual rows announce the filtered-out intervals, which lets the
+-- read-ahead read the second part (8192*3) in parallel instead of waiting for demand.
 SELECT k
 FROM t
 WHERE k > 8192 * 2

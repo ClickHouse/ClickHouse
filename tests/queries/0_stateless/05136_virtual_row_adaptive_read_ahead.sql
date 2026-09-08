@@ -97,7 +97,7 @@ DROP TABLE vrow_adaptive;
 -- With disjoint parts an immediate result must not start deferred readers.
 CREATE TABLE vrow_adaptive_lazy (k UInt64, probe UInt64)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 128, index_granularity_bytes = 0;
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES vrow_adaptive_lazy;
 INSERT INTO vrow_adaptive_lazy SELECT number + 0 * 4096, number FROM numbers(4096);
 INSERT INTO vrow_adaptive_lazy SELECT number + 1 * 4096, number FROM numbers(4096);
