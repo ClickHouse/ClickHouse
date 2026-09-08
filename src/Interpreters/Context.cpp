@@ -5493,9 +5493,9 @@ void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
 
-    /// Each cache is null-checked because some `Context` users (e.g. the
-    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
-    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
+    /// Each cache is null-checked because some `Context` users intentionally do
+    /// not initialize the full set of caches; matches the single-cache
+    /// `clear<X>Cache` methods.
 
     if (shared->uncompressed_cache)
         shared->uncompressed_cache->clear();
@@ -8410,8 +8410,8 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 
 bool Context::isServerCompletelyStarted() const
 {
+    /// Only the server ever sets the flag, so every other application reads it as "not started yet".
     SharedLockGuard lock(shared->mutex);
-    chassert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
 
@@ -8817,7 +8817,7 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
     res.reader_executor.plan_look_ahead_max_window = settings_ref[Setting::reader_executor_plan_look_ahead_max_window];
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
-    /// Below 4 KiB the executor would serve near-empty windows / stall on tiny source reads.
+    /// Below this the executor would serve near-empty windows / stall on tiny source reads.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
     if (res.reader_executor.window_size < min_reader_executor_size)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",

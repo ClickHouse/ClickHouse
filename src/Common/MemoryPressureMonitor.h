@@ -4,9 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
-#include <mutex>
 
-/// `MemoryTracker` lives in the global namespace (see Common/MemoryTracker.h).
 class MemoryTracker;
 
 namespace DB
@@ -15,179 +13,165 @@ namespace DB
 enum class MemoryPressureLevel : uint8_t
 {
     Normal = 0,
-    Elevated = 1,
-    High = 2,
-    Critical = 3,
+    Elevated,
+    High,
+    Critical,
+    Count,
 };
 
-inline constexpr int memoryPressureLevelCount() { return 4; }
+constexpr MemoryPressureLevel stepDown(MemoryPressureLevel level)
+{
+    return level == MemoryPressureLevel::Normal
+        ? MemoryPressureLevel::Normal
+        : static_cast<MemoryPressureLevel>(static_cast<uint8_t>(level) - 1);
+}
 
-/// Snapshot of the three `Elevated` / `High` / `Critical` thresholds as
-/// percent of `total_memory_tracker.getHardLimit()`. Returned by
-/// `IMemoryPressureMonitor::getThresholds` so observability surfaces
-/// (e.g. `system.server_settings`) can report the live values, which can
-/// drift from the on-disk config after `SYSTEM RELOAD CONFIG`.
+/// The three thresholds as percent of a tracker's hard limit, with the generation that identifies this
+/// publication of them. The generation is assigned by the store, so a caller never supplies one, and it
+/// moves only when the values change - that is what lets a cooldown tell one publication from another.
 struct MemoryPressureThresholds
 {
-    UInt64 l1_pct;
-    UInt64 l2_pct;
-    UInt64 l3_pct;
-};
+    /// Width of a publication generation, shared by both packed words in this file. A wrap needs 65536
+    /// reloads between two samples of one monitor.
+    static constexpr int GENERATION_BITS = 16;
 
-/// Pressure → level mapping is the monitor's job. The mapping of level →
-/// concrete sizes (read window, block) lives with the consumer (e.g.
-/// `ReaderExecutor`). The interface intentionally exposes only the level
-/// and the configurable thresholds.
+    UInt64 elevated_pct = 0;
+    UInt64 high_pct = 0;
+    UInt64 critical_pct = 0;
+    uint16_t generation = 0;
 
-/// Validate the three thresholds: each in [0, 100] and `l1 <= l2 <= l3`;
-/// throws `BAD_ARGUMENTS` otherwise. Exposed so the config-reload path can
-/// reject an invalid triple BEFORE applying any other live setting, instead of
-/// leaving earlier settings from the same rejected reload partially applied.
-void validateMemoryPressureThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct);
-
-class IMemoryPressureMonitor
-{
-public:
-    virtual ~IMemoryPressureMonitor() = default;
-
-    /// Sample current pressure, apply the sticky-downward 60 s cooldown,
-    /// return the level the monitor settles on. Non-const because each
-    /// call advances the level state machine.
-    virtual MemoryPressureLevel currentLevel() = 0;
-
-    /// Thresholds for `Elevated` / `High` / `Critical` as percent of
-    /// `total_memory_tracker.getHardLimit()`. Each value must be in [0, 100]
-    /// and `l1 <= l2 <= l3`; violation throws `BAD_ARGUMENTS`. Takes
-    /// `UInt64` (the server-settings type) so out-of-range inputs reach the
-    /// validator instead of silently wrapping through `uint8_t`.
-    virtual void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) = 0;
-
-    /// Snapshot of the currently-active thresholds. Used by
-    /// `system.server_settings` to report the live (post-reload) values
-    /// rather than the originally configured ones.
-    virtual MemoryPressureThresholds getThresholds() const = 0;
-};
-
-/// Internal state machine reused by both impls. Owns the level + cooldown
-/// timestamp + threshold atomics; given a fresh `(pressure, now_ns)`
-/// sample, applies the snap-up-immediate / step-down-on-cooldown rule.
-class PressureLevelMachine
-{
-public:
-    /// Server-total cooldown: RAM freed now may be re-taken by anyone, so
-    /// de-escalation is slow.
-    static constexpr uint64_t COOLDOWN_NS = 60ULL * 1000ULL * 1000ULL * 1000ULL;
-    /// Query-scoped cooldown (the `ThreadGroup` machine): within one query
-    /// there is no other tenant to re-take the freed memory, so recovery is
-    /// fast - long enough to smooth alloc/free flapping at a threshold, short
-    /// enough that a query outlives its own spike.
-    static constexpr uint64_t QUERY_COOLDOWN_NS = 10ULL * 1000ULL * 1000ULL * 1000ULL;
-
-    explicit PressureLevelMachine(uint64_t cooldown_ns_ = COOLDOWN_NS) : cooldown_ns(cooldown_ns_) {}
-
-    MemoryPressureLevel sample(double pressure, uint64_t now_ns);
-
-    /// The cooldown rule applied to an ALREADY-CLASSIFIED level: snap up
-    /// immediately, step down one level per `cooldown_ns` of sustained lower
-    /// classification. Split from `sample` so a scope-local machine (the
-    /// per-query `ThreadGroup` one) can keep its own sticky state while the
-    /// classification ladder stays in ONE place - the global machine.
-    MemoryPressureLevel stick(uint8_t raw_level, uint64_t now_ns);
-
-    /// Map a pressure ratio to a level using the current thresholds, WITHOUT
-    /// the cooldown state machine — the classification step, also used as-is
-    /// for a thread with no group (nowhere to scope sticky state to).
-    /// Lock-free: read on the executor's per-window hot path.
-    MemoryPressureLevel levelForPressure(double pressure) const;
-
-    void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct);
-    MemoryPressureThresholds getThresholds() const;
-
-private:
-    /// Raw level for `pressure` against the (atomic) threshold ladder. Lock-free.
-    uint8_t rawLevel(double pressure) const;
-
-    /// Callers hold `mutex`.
-    MemoryPressureLevel stickUnlocked(uint8_t raw_level, uint64_t now_ns);
-
-    /// Thresholds packed as bytes `(l1 << 16) | (l2 << 8) | l3`, published as one
-    /// atomic so `levelForPressure` / `rawLevel` need no lock. The mutex below
-    /// guards only the cooldown state (`level`, `last_at_or_above_ns`).
-    std::atomic<uint32_t> thresholds_packed{(75u << 16) | (90u << 8) | 95u};
-    const uint64_t cooldown_ns;
-    mutable std::mutex mutex;
-    uint8_t level{0};
-    uint64_t last_at_or_above_ns{0};
-};
-
-/// Production implementation — reads `total_memory_tracker` (used / hard
-/// limit) and `std::chrono::steady_clock` for the cooldown timer.
-class MemoryPressureMonitor final : public IMemoryPressureMonitor
-{
-public:
-    MemoryPressureLevel currentLevel() override;
-    void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) override { machine.setThresholds(l1_pct, l2_pct, l3_pct); }
-    MemoryPressureThresholds getThresholds() const override { return machine.getThresholds(); }
-
-private:
-    PressureLevelMachine machine;
-};
-
-/// Test implementation — pressure and time are controllable atomics. Tests
-/// own an instance on the stack and install it via `ScopedMemoryPressureMonitor`
-/// for the duration of a test case. No global state, no captured lambdas,
-/// no stack-use-after-return surface.
-class FakeMemoryPressureMonitor final : public IMemoryPressureMonitor
-{
-public:
-    explicit FakeMemoryPressureMonitor(double initial_pressure = 0.0, uint64_t initial_now_ns = 0)
-        : pressure(initial_pressure)
-        , now_ns(initial_now_ns)
+    /// The values alone, as one word. Two publications hold the same thresholds when these are equal.
+    constexpr uint32_t packValues() const
     {
+        return (static_cast<uint32_t>(elevated_pct) << 16)
+             | (static_cast<uint32_t>(high_pct) << 8)
+             | static_cast<uint32_t>(critical_pct);
     }
 
-    void setPressure(double p) { pressure.store(p, std::memory_order_relaxed); }
-    void setNowNs(uint64_t t) { now_ns.store(t, std::memory_order_relaxed); }
+    /// The published form, `(generation << 32) | packValues()`. Values and generation share one word, so
+    /// a reader can never pair a new generation with old values.
+    constexpr uint64_t pack() const { return (static_cast<uint64_t>(generation) << 32) | packValues(); }
 
-    MemoryPressureLevel currentLevel() override;
-    void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) override { machine.setThresholds(l1_pct, l2_pct, l3_pct); }
-    MemoryPressureThresholds getThresholds() const override { return machine.getThresholds(); }
+    static constexpr MemoryPressureThresholds unpack(uint64_t packed)
+    {
+        return {(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu, packed & 0xFFu, static_cast<uint16_t>(packed >> 32)};
+    }
 
-private:
-    std::atomic<double> pressure;
-    std::atomic<uint64_t> now_ns;
-    PressureLevelMachine machine;
+    MemoryPressureLevel classify(double pressure) const;
 };
 
-/// Most-constraining transient memory pressure in `start`'s tracker chain:
-/// `used / hard_limit` walked over `start` and its parents, taking the max
-/// across the per-query (`Process`) and per-user (`User`) levels. `Global`
-/// (the server total) is skipped — it is handled, with cooldown smoothing, by
-/// the total-pressure path. Trackers without a hard limit are skipped.
-/// `start == nullptr` (no current thread) yields 0. Pure; used by the
-/// production monitor and unit-tested directly with a hand-built chain.
-double localMemoryPressureFromChain(MemoryTracker * start);
+/// Each threshold must be in [1, 100] with `elevated <= high <= critical`, else throws `BAD_ARGUMENTS`.
+/// An `elevated` of 0 would classify every scope as `Elevated`, including one with no hard limit.
+void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
 
-/// Active monitor accessor. Production code (`ReaderExecutor`, `Server.cpp`)
-/// always uses this. Defaults to a Meyers `MemoryPressureMonitor` singleton.
-IMemoryPressureMonitor & memoryPressureMonitor();
+/// The thresholds are server-wide: one shared triple every monitor classifies against. `set` validates
+/// and publishes atomically (config reload), assigning the generation itself; `get` reads the live
+/// values together with the generation they were published under.
+void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
+MemoryPressureThresholds getMemoryPressureThresholds();
 
-/// RAII swap of the active monitor for the duration of a test. The
-/// destructor restores the prior monitor — so production code that fires
-/// `memoryPressureMonitor().currentLevel()` between cases or at teardown
-/// always sees the real `MemoryPressureMonitor`, never a dangling test
-/// instance.
-class ScopedMemoryPressureMonitor
+MemoryPressureLevel classifyMemoryPressure(double pressure);
+
+/// Sticky cooldown over an already-classified level: snap up immediately, step down one level per
+/// `cooldown_ms` of sustained lower pressure. One instance per monitor.
+///
+/// Lock-free. The level, the timestamp its cooldown runs from, and the thresholds generation it was
+/// classified against share one atomic word, because they must move as a unit: separate atomics pair a
+/// level with another level's timestamp and step down twice in one cooldown. A sample that changes
+/// nothing does not write, so an idle monitor's word stays read-only on every reader thread.
+class PressureCooldown
 {
 public:
-    explicit ScopedMemoryPressureMonitor(IMemoryPressureMonitor & override_monitor);
-    ~ScopedMemoryPressureMonitor();
+    /// Server-total cooldown: freed RAM may be re-taken by any tenant, so de-escalate slowly.
+    static constexpr uint64_t COOLDOWN_MS = 60 * 1000;       /// 1 minute
+    /// Scope cooldown (user, query): no other tenant competes for the freed memory, so recover fast.
+    static constexpr uint64_t SCOPE_COOLDOWN_MS = 10 * 1000; /// 10 seconds
 
-    ScopedMemoryPressureMonitor(const ScopedMemoryPressureMonitor &) = delete;
-    ScopedMemoryPressureMonitor & operator=(const ScopedMemoryPressureMonitor &) = delete;
+    explicit PressureCooldown(uint64_t cooldown_ms_ = COOLDOWN_MS) : cooldown_ms(cooldown_ms_) {}
+
+    /// `thresholds_generation` identifies the thresholds `raw_level` was classified against. A generation
+    /// other than the held level's means that level came from thresholds that no longer exist, so it is
+    /// replaced at once rather than decaying over a cooldown, and a reload needs no per-monitor flag.
+    ///
+    /// Reads the clock only when there is state to update.
+    MemoryPressureLevel apply(MemoryPressureLevel raw_level, uint16_t thresholds_generation);
+    /// Time-injecting form, for tests.
+    MemoryPressureLevel apply(MemoryPressureLevel raw_level, uint64_t now_ms, uint16_t thresholds_generation);
+
+    void reset();
 
 private:
-    IMemoryPressureMonitor * prior;
+    /// The published word, `[ level: 2 | generation: 16 | cooldown_since_ms: 46 ]`. The fields tile it,
+    /// so `pack` and `unpack` are exact inverses - that is what lets `apply` spot a no-op by comparing
+    /// packed words. 46 bits of milliseconds is ~2200 years; `elapsedTo` masks the subtraction anyway.
+    struct State
+    {
+        static constexpr int MS_BITS = 46;
+        static constexpr uint64_t MS_MASK = (1ULL << MS_BITS) - 1;
+        static constexpr int LEVEL_SHIFT = MS_BITS + MemoryPressureThresholds::GENERATION_BITS;
+
+        MemoryPressureLevel level = MemoryPressureLevel::Normal;
+        uint16_t generation = 0;
+        uint64_t cooldown_since_ms = 0;
+
+        constexpr uint64_t pack() const
+        {
+            return (static_cast<uint64_t>(level) << LEVEL_SHIFT)
+                 | (static_cast<uint64_t>(generation) << MS_BITS)
+                 | (cooldown_since_ms & MS_MASK);
+        }
+
+        static constexpr State unpack(uint64_t packed)
+        {
+            return {
+                static_cast<MemoryPressureLevel>(packed >> LEVEL_SHIFT),
+                static_cast<uint16_t>(packed >> MS_BITS),
+                packed & MS_MASK};
+        }
+
+        constexpr uint64_t elapsedTo(uint64_t now_ms) const { return (now_ms - cooldown_since_ms) & MS_MASK; }
+    };
+
+    static_assert(State::LEVEL_SHIFT + 2 == 64, "the packed state must fill exactly one word");
+    static_assert(static_cast<size_t>(MemoryPressureLevel::Count) <= 4, "the level field holds 2 bits");
+
+    const uint64_t cooldown_ms;
+    std::atomic<uint64_t> state{0};
 };
+
+/// Watches one memory tracker and classifies its pressure with a sticky cooldown. Levels compose
+/// through the parent chain: a monitor escalates against its parent (`max`), so a level never reads
+/// below any level above it. The chain mirrors the tracker hierarchy - the global monitor watches
+/// `total_memory_tracker`, a per-user monitor watches the user tracker with the global as parent, and
+/// a per-query monitor watches the query tracker with the user monitor as parent. Classification uses
+/// the shared server-wide thresholds (`getMemoryPressureThresholds`).
+class MemoryPressureMonitor
+{
+public:
+    /// Global (root) monitor: watches `total_memory_tracker`, server cooldown.
+    MemoryPressureMonitor();
+    /// Scoped monitor: watches `scope`, scope cooldown, escalated against `parent`.
+    MemoryPressureMonitor(MemoryTracker & scope, MemoryPressureMonitor & parent);
+
+    /// Advances the cooldown, so non-const.
+    MemoryPressureLevel currentLevel();
+
+    /// Repoint the escalation parent - e.g. a query monitor onto its user monitor once the query joins
+    /// the user (until then it escalates straight against the global monitor).
+    void setParent(MemoryPressureMonitor & new_parent);
+
+    /// Clear the sticky cooldown, e.g. when a shared scope (the per-user monitor) goes idle, so the
+    /// next query does not inherit the previous one's level.
+    void reset();
+
+private:
+    double samplePressure() const;
+
+    MemoryTracker * scope;
+    std::atomic<MemoryPressureMonitor *> parent;    /// null = root (global)
+    PressureCooldown cooldown;
+};
+
+MemoryPressureMonitor & getGlobalMemoryPressureMonitor();
 
 }

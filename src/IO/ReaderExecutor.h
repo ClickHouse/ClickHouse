@@ -172,6 +172,15 @@ public:
         bool use_fiber_runner = false;
     };
 
+    /// The sizes one window is read with. Sampled once per window from the memory-pressure level, so
+    /// they are at or below `window_size` / `block_size`, and travel together: every rule stated in
+    /// terms of "the current window" must use `window_bytes`, not the base `window_size`.
+    struct BlockAndWindowSizes
+    {
+        size_t window_bytes;
+        size_t block_bytes;
+    };
+
     ReaderExecutor(
         std::shared_ptr<IFileBasedSourceReader> source,
         const StoredObjects & objects,

@@ -923,10 +923,19 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
     /// halved at Elevated. Uses the stateless path (a present-but-zero-capacity
     /// long_connection_limit, so no slot is acquired) so the window read is observable.
     struct Reading { size_t sync_window; bool scheduled; size_t prefetch_window; };
-    auto measure = [](double pressure) -> Reading
+    /// Drive the query's pressure level by loading a fresh group memory tracker to `pressure_pct`
+    /// of a large hard limit (large enough that the executor's own tracked reads stay well inside
+    /// it). A fresh group per call starts the cooldown clean and snap-up is immediate, so the first
+    /// window already reflects the level. The default thresholds are 75 / 90 / 95 percent.
+    auto measure = [](UInt64 pressure_pct) -> Reading
     {
-        FakeMemoryPressureMonitor fake(pressure, /*initial_now_ns=*/1'000'000'000ULL);
-        ScopedMemoryPressureMonitor scope(fake);
+        TestThreadGroup tg;
+        MemoryTracker & memory_tracker = tg.thread_group->memory_tracker;
+        constexpr Int64 hard_limit = Int64(8) << 30;   /// 8 GiB
+        memory_tracker.setHardLimit(hard_limit);
+        const Int64 loaded = hard_limit * static_cast<Int64>(pressure_pct) / 100;
+        memory_tracker.adjustWithUntrackedMemory(loaded);
+        SCOPE_EXIT({ memory_tracker.adjustWithUntrackedMemory(-loaded); });
 
         auto source = std::make_shared<MemorySourceReader>(
             std::unordered_map<String, String>{{"obj", String(1u << 20, 'p')}});   // 1 MiB
@@ -947,21 +956,21 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
         return {chain.range().size, inspect(executor).hasInflightPrefetch(), inspect(executor).inflightPrefetchSize()};
     };
 
-    const Reading normal = measure(0.50);
+    const Reading normal = measure(50);
     EXPECT_TRUE(normal.scheduled);
     EXPECT_EQ(normal.prefetch_window, 256u << 10)
         << "Normal: the bypass ask is clamped to one fetch window";
 
-    const Reading elevated = measure(0.80);
+    const Reading elevated = measure(80);
     EXPECT_TRUE(elevated.scheduled);
     EXPECT_EQ(elevated.prefetch_window, 128u << 10)
         << "Elevated: the clamp is the pressure-halved window";
 
-    const Reading high = measure(0.92);
+    const Reading high = measure(92);
     EXPECT_FALSE(high.scheduled) << "High pressure: prefetch suppressed";
     EXPECT_EQ(high.prefetch_window, 0u);
 
-    const Reading critical = measure(0.99);
+    const Reading critical = measure(99);
     EXPECT_FALSE(critical.scheduled) << "Critical pressure: prefetch suppressed";
     EXPECT_EQ(critical.prefetch_window, 0u);
 }

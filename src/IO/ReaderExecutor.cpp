@@ -1667,7 +1667,12 @@ void ReaderExecutor::dropLongConnection(std::optional<LongConnection> & conn, St
     /// the pool reusable; if it drained but did not reach the bound, it ended short at EOF.
     /// The drain is best-effort (`drainTail` never throws): a read error leaves the
     /// connection in an unknown state, so it is always released as incomplete.
-    const auto drain = conn->drainTail(max_tail_for_drain, block_size, log);
+    /// The scratch buffer the discarded tail is drained through follows the same
+    /// pressure-adjusted block a read would use, so a drop under pressure holds no
+    /// more memory than a read under the same pressure.
+    const MemoryPressureLevel level
+        = read_plan.geometry() ? read_plan.geometry()->pressure_level : MemoryPressureLevel::Normal;
+    const auto drain = conn->drainTail(max_tail_for_drain, effectiveBlockSize(level), log);
     out_stats.add(Stats::BytesFromSource, drain.bytes);
     if (drain.failed)
         out_stats.add(Stats::IncompleteConnections);
@@ -2637,7 +2642,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// Sample memory pressure ONCE here, per plan. Every read within this plan (cache
     /// and remote, foreground and the prefetch worker via the machine's `pressure_snapshot`)
     /// sizes off this cached level instead of re-querying the global monitor per call.
-    geom->pressure_level = memoryPressureMonitor().currentLevel();
+    geom->pressure_level = CurrentThread::getMemoryPressureMonitor().currentLevel();
 
     /// TRIM: the plan span, bounded to the file end and the read extent. An empty
     /// span (the start already at/past a bound) publishes an empty plan.
@@ -2822,7 +2827,7 @@ void ReaderExecutor::extendPlan(size_t position_phys)
     geom->plan_start = std::min(std::max(old_geom->plan_start, release_line), position_phys);
     chassert(!pieces.empty());
     geom->plan_end = pieces.back().covered_end;
-    geom->pressure_level = memoryPressureMonitor().currentLevel();
+    geom->pressure_level = CurrentThread::getMemoryPressureMonitor().currentLevel();
     for (size_t i = 0; i < old_geom->entries.size(); ++i)
     {
         const auto & entry = old_geom->entries[i];
@@ -3055,14 +3060,14 @@ struct WindowAndBlock
 /// `MemoryPressureLevel` (Normal, Elevated, High, Critical). Normal divides by
 /// 1 (the configured base); higher pressure shrinks more. Per-level arrays so
 /// each step is tunable independently.
-constexpr size_t WINDOW_REDUCTION[memoryPressureLevelCount()] = {1, 4, 16, 64};
-constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()]  = {1, 2, 2,  8};
+constexpr size_t WINDOW_REDUCTION[static_cast<size_t>(MemoryPressureLevel::Count)] = {1, 4, 16, 64};
+constexpr size_t BLOCK_REDUCTION[static_cast<size_t>(MemoryPressureLevel::Count)]  = {1, 2, 2,  8};
 
 /// Whether read-ahead runs at each `MemoryPressureLevel`. Prefetch is speculative —
 /// a seek-away wastes both the bytes it read and the memory holding them — so it is
 /// suppressed entirely once memory is High/Critical. When it runs it reads the same
 /// window as a synchronous read (no prefetch-specific reduction).
-constexpr bool PREFETCH_ENABLED[memoryPressureLevelCount()] = {true, true, false, false};
+constexpr bool PREFETCH_ENABLED[static_cast<size_t>(MemoryPressureLevel::Count)] = {true, true, false, false};
 
 /// The configured base is the ceiling; the 128 KiB floor only bounds the
 /// pressure shrink and never raises a base that is itself below it (e.g. a tiny
