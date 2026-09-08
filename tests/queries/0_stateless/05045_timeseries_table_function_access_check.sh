@@ -152,8 +152,8 @@ SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DEN
 DESCRIBE timeSeriesSamples($db.ts) SETTINGS describe_include_virtual_columns = 1 FORMAT Null; -- { serverError ACCESS_DENIED }
 EOF
 
-# An Alias target exposes another table's metadata, so that table is checked too. Nothing in this test
-# ever grants on ts_samples_hidden, which is what ts_samples_alias points at.
+# An Alias target exposes another table's metadata, so that table is checked too. Nothing grants this
+# user on ts_samples_hidden, which is what ts_samples_alias points at.
 ${CLICKHOUSE_CLIENT} <<EOF
 GRANT SHOW COLUMNS ON $db.ts_via_alias TO $user;
 GRANT SHOW COLUMNS ON $db.ts_samples_alias TO $user;
@@ -313,6 +313,26 @@ DESCRIBE timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }
 SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }
 EOF
 ${CLICKHOUSE_CLIENT} -q "DROP USER $user_target_col"
+
+# The same holds behind an `Alias` target, where the alias leg carries the rule: this caller holds the
+# alias whole and the table behind it column by column, so it reads that column through the alias and
+# is still refused the target whole.
+user_alias_col="user05045a_${CLICKHOUSE_DATABASE}_$RANDOM"
+${CLICKHOUSE_CLIENT} <<EOF
+INSERT INTO $db.ts_samples_hidden VALUES (5, '2026-01-01 00:00:05.000', 11);
+DROP USER IF EXISTS $user_alias_col;
+CREATE USER $user_alias_col;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $user_alias_col;
+GRANT SELECT, SHOW COLUMNS ON $db.ts_via_alias TO $user_alias_col;
+GRANT SELECT, SHOW COLUMNS ON $db.ts_samples_alias TO $user_alias_col;
+GRANT SHOW COLUMNS, SELECT(id) ON $db.ts_samples_hidden TO $user_alias_col;
+EOF
+echo 'ids read through an Alias target with a column-scoped grant on the table behind it'
+${CLICKHOUSE_CLIENT} --user "$user_alias_col" <<EOF
+SELECT id FROM $db.ts_samples_alias ORDER BY id FORMAT TSV;
+SELECT id FROM timeSeriesSamples($db.ts_via_alias) FORMAT Null; -- { serverError ACCESS_DENIED }
+EOF
+${CLICKHOUSE_CLIENT} -q "DROP USER $user_alias_col"
 
 # An `Alias` tags target carries that same column through to the table it points at. Nothing grants on
 # tags_hidden until the last arm here, while the alias itself is granted throughout.
