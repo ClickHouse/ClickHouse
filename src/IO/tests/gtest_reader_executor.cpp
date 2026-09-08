@@ -84,7 +84,7 @@ unsigned char patternByte(size_t i)
 }
 
 /// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
-/// `concurrent_download` holds the ranges another thread is downloading: `claim` leaves them
+/// `concurrent_download` holds the ranges another thread is downloading: `role` leaves them
 /// unlisted and `write` refuses to land bytes there, so the driver fetches them through from source.
 struct MockCacheState
 {
@@ -96,8 +96,8 @@ struct MockCacheState
     IntervalSet resident;
     IntervalSet concurrent_download;
     /// Ranges that became committed AFTER `resolve` but are still reported as a miss by `resolve`
-    /// (they are not in `resident`). `claimLeadRole` reports them as `available` - models a block a
-    /// concurrent query populated in the window between our read-only probe and the claim.
+    /// (they are not in `resident`). `takeFillRole` reports them as `available` - models a block a
+    /// concurrent query populated in the window between our read-only probe and the role.
     IntervalSet late_committed;
     VectorWithMemoryTracking<ByteRange> writes;
     explicit MockCacheState(size_t file_size) : store(file_size, 0), declared_size(file_size) {}
@@ -177,39 +177,26 @@ private:
     public:
         Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
         ByteRange range() const override { return r; }
-        IntervalSet committed() const override
+        bool fillsWholeSegment() const override { return true; }
+        size_t committed() const override
         {
-            IntervalSet c;
-            if (state->resident.subtract(r).empty())  // whole block resident
-                c.add(r);
-            return c;
+            /// Whole-block: committed at resolve time (`resident`) or populated since (`late_committed`).
+            const bool done = state->resident.subtract(r).empty() || state->late_committed.subtract(r).empty();
+            return done ? r.end() : r.offset;
         }
         ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
-        Lead claimLeadRole(ByteRange range) override
+        FillRole takeFillRole() override
         {
-            Lead lead;
-            const size_t lo = std::max(range.offset, r.offset);
-            const size_t hi = std::min(range.end(), r.end());
-            lead.available = ByteRange{lo, 0};
-            if (lo >= hi)
-                return lead;
-            const ByteRange overlap{lo, hi - lo};
-            /// A block populated since `resolve` is reported as an available committed prefix; the
-            /// caller serves it from cache and there is nothing left to fill (no claim).
-            if (state->late_committed.subtract(overlap).empty())
-            {
-                lead.available = overlap;
-                return lead;
-            }
-            /// We hold the role over the free part (not led by a concurrent downloader); if the whole
-            /// overlap is being downloaded elsewhere we hold nothing, matching the real provider.
-            const bool held = !state->concurrent_download.subtract(overlap).empty();
-            lead.claim = makeClaim(held, /*release=*/nullptr);
-            return lead;
+            /// A block populated since `resolve` (`committed()` now reports it): nothing to fill, no role.
+            if (state->late_committed.subtract(r).empty())
+                return {};
+            /// We hold the role unless the whole block is being downloaded elsewhere (then hold nothing).
+            const bool held = !state->concurrent_download.subtract(r).empty();
+            return makeFillRole(held, /*release=*/nullptr);
         }
-        size_t write(ChainedBuffers data, const Claim & claim) override
+        size_t write(ChainedBuffers data, const FillRole & role) override
         {
-            chassert(claim);
+            chassert(role);
             /// A block another thread is downloading is not ours to fill (no downloader role).
             size_t free_bytes = 0;
             for (const auto & fr : state->concurrent_download.subtract(r))
@@ -600,7 +587,7 @@ TEST_F(ReaderExecutorTest, ConcurrentDownloadCellIsFetchedThrough)
 TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
 {
     /// A block that a concurrent query populated AFTER our `resolve` (a read-only probe) but BEFORE we
-    /// claim it: `claimLeadRole` re-probes and reports it as `available`, so the executor serves it
+    /// role it: `takeFillRole` re-probes and reports it as `available`, so the executor serves it
     /// from cache and does not re-read it from the source. Here block 0 is committed-since-resolve;
     /// blocks 1..3 are plain misses fetched from source. Zero source bytes for block 0 is the signal.
     const size_t block = 256;
@@ -608,7 +595,7 @@ TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
 
     auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
     /// Block [0, block) is NOT resident (so `resolve` misses it), but it became committed since - the
-    /// bytes are in the store and the claim reports it available.
+    /// bytes are in the store and the role reports it available.
     state->late_committed.add(ByteRange{0, block});
     for (size_t i = 0; i < block; ++i)
         state->store[i] = static_cast<char>(patternByte(i));
@@ -625,10 +612,10 @@ TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
     for (size_t i = 0; i < data.size(); ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
 
-    /// Only blocks 1..3 hit the source; block 0 came from cache via the claim-time recheck.
+    /// Only blocks 1..3 hit the source; block 0 came from cache via the role-time recheck.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 3 * block)
         << "block committed since resolve should be served from cache, not the source";
-    /// Nothing filled block 0 - it was already committed (available, no claim).
+    /// Nothing filled block 0 - it was already committed (available, no role).
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, block) << "wrote the already-committed block 0";
 }
