@@ -35,35 +35,38 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
         use_join_disjunctions_push_down = 1
 "
 
-# One secondary query per replica, bar the one the initiator runs in process itself.
-expected_secondaries=$($CLICKHOUSE_CLIENT -q "
-    SELECT count() - 1 FROM system.clusters
-    WHERE cluster = 'test_cluster_one_shard_three_replicas_localhost'")
-
-# The secondary queries reach `query_log` a little after the initiator's own row, so one flush can miss
-# them - and a replica whose rows are still missing contributes no push-downs to count, which would read
-# as a pass for the wrong reason. Wait for all of them, not just the first: if any never arrives,
-# `shipped_to_replicas` stays zero and the test fails.
+# The secondary queries reach `query_log` a little after the initiator's own row, so counting straight
+# after one flush can see a replica's push-downs as absent - which would read as a pass for the wrong
+# reason. Wait until their number stops changing, so nothing is still in flight when they are counted.
+# How many there are is not derivable and can be zero here: the coordinator hands the marks of these
+# small tables to as many replicas as it sees fit, and a replica logs one row or two. Hence settling on
+# the count rather than waiting for a particular one, and hence the shipping proof below coming from the
+# initiator's own counters instead.
+secondaries=-1
 for _ in {1..100}; do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, text_log"
-    [ "$($CLICKHOUSE_CLIENT -q "
-        SELECT count() FROM system.query_log
+    settled=$($CLICKHOUSE_CLIENT -q "
+        SELECT uniqExact(query_id) FROM system.query_log
         WHERE initial_query_id = '$query_id' AND NOT is_initial_query
-        SETTINGS enable_parallel_replicas = 0")" -ge "$expected_secondaries" ] && break
+        SETTINGS enable_parallel_replicas = 0")
+    [ "$settled" = "$secondaries" ] && break
+    secondaries=$settled
     sleep 0.1
 done
 
 # The initiator pushes the two partial predicates once while planning; the replicas, which receive that
 # plan already optimized, must add none. The other two columns keep a zero from being vacuous:
-# `shipped_to_replicas` proves every replica's fragment ran and was accounted for rather than the query
-# falling back to a local plan, and `on_initiator` proves the log message this counts still exists.
+# `used_parallel_replicas` proves the query really went through the parallel-replicas path rather than
+# falling back to a local plan, and `on_initiator` proves the log message this counts still exists under
+# that name. Both are read off the initiator's own row, which is always there.
 #
 # The secondary queries of the plan-based path are logged with `current_database` = `default` rather than
 # the database of the query they belong to, so only the initiator row can be pinned to `currentDatabase()`.
 $CLICKHOUSE_CLIENT -q "
     SELECT
-        (SELECT count() >= $expected_secondaries FROM system.query_log
-         WHERE initial_query_id = '$query_id' AND NOT is_initial_query) AS shipped_to_replicas,
+        (SELECT ProfileEvents['ParallelReplicasQueryCount'] > 0 FROM system.query_log
+         WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish')
+             AS used_parallel_replicas,
         countIf(query_id = '$query_id') AS on_initiator,
         countIf(query_id != '$query_id') AS on_replicas
     FROM system.text_log
