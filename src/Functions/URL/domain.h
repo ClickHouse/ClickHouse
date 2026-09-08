@@ -12,7 +12,7 @@ namespace DB
 
 inline std::string_view checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
-    if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1)
+    if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1 || dot_pos == start_of_host)
         return std::string_view{};
 
     auto after_dot = *(dot_pos + 1);

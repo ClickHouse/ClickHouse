@@ -28,6 +28,10 @@ SELECT domain{{ suffix }}('//foo:bar%41%40@example2.com') AS Host;
 SELECT domain{{ suffix }}('//foo%41%40:bar@example3.com') AS Host;
 SELECT domain{{ suffix }}('www.example4.com') as Host;
 SELECT domain{{ suffix }}('example.com') as Host;
+-- A host cannot legally start with a dot.
+SELECT domain{{ suffix }}('http://user@.com/') AS Host;
+SELECT domain{{ suffix }}('.com') AS Host;
+SELECT domain{{ suffix }}('http://.com/') AS Host;
 SELECT domainWithoutWWW{{ suffix }}('//paul@www.example.com') AS Host;
 SELECT domainWithoutWWW{{ suffix }}('http://paul@www.example.com:80/') AS Host;
 
