@@ -25,6 +25,7 @@ settings=(
   --workload "$workload"
   --max_rows_to_read 0
   --grace_hash_join_initial_buckets 1
+  --min_bytes_to_spill 20Mi
 )
 $CLICKHOUSE_CLIENT -nm "${settings[@]}" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);

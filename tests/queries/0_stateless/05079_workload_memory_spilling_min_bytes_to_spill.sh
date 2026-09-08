@@ -20,7 +20,8 @@ function cleanup()
 trap cleanup EXIT
 
 # The per-operator thresholds are disabled, so the only spill trigger is the workload soft limit.
-# The adaptive aggregation stays enabled: its spill requests are served by draining the staged backlog.
+# With min_bytes_to_spill above any single aggregation state, nothing is reported as spillable,
+# so the query runs over the soft limit without spilling and still finishes.
 settings=(
   --workload "$workload"
   --max_rows_to_read 0
@@ -28,18 +29,17 @@ settings=(
   --max_bytes_ratio_before_external_group_by 0
   --max_threads 4
   --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME"
-  --min_bytes_to_spill 0
 )
-$CLICKHOUSE_CLIENT --enable_adaptive_aggregator 1 -nm "${settings[@]}" -q "
+$CLICKHOUSE_CLIENT -nm "${settings[@]}" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);
 CREATE OR REPLACE WORKLOAD $workload IN $parent_workload SETTINGS max_memory = '4Gi', max_memory_before_spill = '200Mi';
-SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS enable_adaptive_aggregator=1;
-SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS enable_adaptive_aggregator=0;
+SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS min_bytes_to_spill = 0;
+SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS min_bytes_to_spill = '10Gi';
 "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
-SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['AdaptiveAggregationSpillDrains'] > 0, Settings['enable_adaptive_aggregator']
+SELECT Settings['min_bytes_to_spill'], ProfileEvents['MemoryReservationReclaimableBytes'] > 0, ProfileEvents['MemoryReservationSpilledBytes'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND event_date >= yesterday()

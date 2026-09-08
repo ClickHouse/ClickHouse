@@ -4477,6 +4477,12 @@ A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL, \
         {"26.7", 0, 0, "New setting to reserve memory for specific workload before starting a query."}) \
+    DECLARE(UInt64, min_bytes_to_spill, 64_MiB, R"(
+Used in workload scheduling.
+The minimum amount of bytes to spill.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL, \
+        {"26.10", 0, 64_MiB, "New setting for dynamic spilling via workloads."}) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 

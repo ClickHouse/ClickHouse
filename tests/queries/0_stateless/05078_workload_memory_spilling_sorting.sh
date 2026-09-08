@@ -27,6 +27,7 @@ settings=(
   --max_bytes_ratio_before_external_sort 0
   --max_threads 4
   --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME"
+  --min_bytes_to_spill 8Mi
 )
 $CLICKHOUSE_CLIENT -nm "${settings[@]}" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);

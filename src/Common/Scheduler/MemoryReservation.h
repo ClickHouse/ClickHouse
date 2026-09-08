@@ -56,7 +56,7 @@ public:
     // steady_clock deadline shared with the query slot so the whole admission phase uses one budget; on
     // expiry the still-pending allocation is canceled and a `MEMORY_RESERVATION_ACQUISITION_TIMEOUT`
     // exception is thrown. `time_point::max()` means no timeout.
-    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size,
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size, ResourceCost min_bytes_to_spill_,
                       std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max());
     ~MemoryReservation() override;
 
@@ -89,6 +89,7 @@ private:
     void allocationFailed(const std::exception_ptr & reason) override;
 
     const ResourceCost reserved_size;
+    const ResourceCost min_bytes_to_spill;
 
     /// Keeps reclaimable totals from reaching the queue out of order.
     /// Query threads take this lock first, read the total under `MemoryReservation::mutex`,
