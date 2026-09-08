@@ -1138,7 +1138,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
 
-Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. A normal projection is estimated by building its primary index in memory over the parts the query would read and pruning it as a materialized projection would be pruned. The report gives the marks and rows the projection read would touch, a signed `skip_ratio` (negative when the projection would read *more* than the base table) and a `verdict` that follows the optimizer's rule: the projection wins when it reads fewer marks than the base table, or the same number while serving an outer `ORDER BY`. Listed as `status: not_applicable` and not estimated yet: aggregate projections, projections with a `WHERE` clause or their own skip indexes (`WITH SETTINGS add_minmax_index_*`), and projections that do not provide every column the query reads. `force_optimize_projection`, `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored. A projection whose definition no longer fits the table is reported with that reason.
+Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. A normal projection is estimated by building its primary index in memory over the parts the query would read and pruning it as a materialized projection would be pruned. The report gives the marks and rows the projection read would touch, a `read_ratio` against the base-table read (below `1x` means less work, above means more) and a `verdict` with the reason behind it, following the optimizer's rule: the projection wins when it reads fewer marks than the base table, or the same number while serving an outer `ORDER BY`. Listed as `status: not_applicable` and not estimated yet: aggregate projections, projections with a `WHERE` clause or their own skip indexes (`WITH SETTINGS add_minmax_index_*`), and projections that do not provide every column the query reads. `force_optimize_projection`, `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored. A projection whose definition no longer fits the table is reported with that reason.
 
 **Syntax**
 
@@ -1157,6 +1157,7 @@ Baseline (after PK + partition + existing indexes):
   table:       db.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   1.50 MiB             (only when the query reads rows)
 
 With idx_b (minmax, hypothetical):
@@ -1210,6 +1211,7 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   85.52 KiB
 
 With idx_b (minmax, hypothetical):
@@ -1274,14 +1276,16 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   80.79 KiB
 
-With p_b (projection (normal), hypothetical):
+With p_b (normal projection, hypothetical):
   status:       applicable
   marks:        2
   rows:         200
-  skip_ratio:   98.0%
-  verdict:      would be chosen, it reads fewer marks than the base table
+  read_ratio:   0.02x
+  verdict:      chosen
+  reason:       2 marks would be read instead of 100 from the base table
 
 Estimation:
   source:           empirical
@@ -1291,7 +1295,7 @@ Estimation:
   elapsed_us:       1126
 ```
 
-`marks` and `rows` are what the projection read itself would touch, not a share of the base-table read, because a projection granule holds different rows than a base granule. `skip_ratio` is signed: a projection that would read *more* marks than the base table shows a negative value. `verdict` applies the optimizer's own rule — fewer marks than the base table, or the same number when the projection serves the query's `ORDER BY` — so a candidate can be `applicable` and still not be chosen.
+`marks` and `rows` are what the projection read itself would touch, not a share of the base-table read, because a projection granule holds different rows than a base granule. `read_ratio` is those marks over the base-table marks, so `0.02x` is fifty times less work and `15x` is fifteen times more. `verdict` applies the optimizer's own rule — fewer marks than the base table, or the same number when the projection serves the query's `ORDER BY` — so a candidate can be `applicable` and still not be chosen.
 
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
