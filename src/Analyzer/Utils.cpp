@@ -1644,6 +1644,42 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
     return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
 }
 
+/// True when the literal written for `type` identifies the value, so casting the literal back to
+/// `type` reconstructs it. Numbers and Enums are written as their exact value, Decimal/DateTime64/
+/// Time64 through their own exact carrier, and Date/Date32/UUID/IPv4/IPv6 as text no two values of
+/// the type share. Anything unlisted is excluded because its text is not an injective carrier: a
+/// DateTime's local text is shared by both instants of a DST overlap, an Object's dynamic paths are
+/// re-inferred from their tokens, and an AggregateFunction state is read back according to
+/// `aggregate_function_input_format`, which builds a different state without failing.
+bool literalIdentifiesValue(const IDataType & type)
+{
+    auto identifies = [](const IDataType & node)
+    {
+        WhichDataType which(node);
+        return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum() || which.isDecimal()
+            || which.isDateTime64() || which.isTime64() || which.isDateOrDate32()
+            || which.isUUID() || which.isIPv4() || which.isIPv6() || which.isStringOrFixedString()
+            || which.isNullable() || which.isArray() || which.isTuple() || which.isMap()
+            || which.isLowCardinality();
+    };
+    bool result = identifies(type);
+    type.forEachChild([&](const IDataType & child) { result &= identifies(child); });
+    return result;
+}
+
+/// Name the value's own type, then `Dynamic` itself. Naming `Dynamic` is required, not redundant:
+/// `array` and `map` resolve their result type from their arguments, so a member that is itself a
+/// container of `Dynamic` stays one only if every element arrives named as `Dynamic`. Named as its
+/// own type instead, the container resolves to `Array(Int64)` and the shard stores a type the
+/// initiator never held. A string-like value is left unnamed because a String source is re-parsed
+/// under `cast_string_to_dynamic_use_inference`, and naming it is a no-op when that setting is off.
+ASTPtr nameDynamicMemberAST(ASTPtr value, const DataTypePtr & member_type, const DataTypePtr & dynamic_type)
+{
+    if (literalIdentifiesValue(*member_type) && !isStringOrFixedString(removeLowCardinality(member_type)))
+        value = makeCastToTypeNameAST(std::move(value), member_type->getName());
+    return makeCastToTypeNameAST(std::move(value), dynamic_type->getName());
+}
+
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type)
 {
     /// Decimal-free subtrees are serialized exactly by the default literal path, unchanged.
@@ -1745,15 +1781,14 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
 
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
             {
-                /// Recurse into the active member itself rather than through the `Variant` branch above:
-                /// `Dynamic` accepts a value of any type, so its member type must not be named, and doing so
-                /// would change the stored subtype of values whose literal is inferred back as a wider or
-                /// narrower type than the initiator's.
                 const auto & variant_types
                     = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
-                return columnConstantToExactLiteralASTImpl(
-                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
-                    variant_types[global_discr]);
+                const auto & member_type = variant_types[global_discr];
+                return nameDynamicMemberAST(
+                    columnConstantToExactLiteralASTImpl(
+                        variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
+                        member_type),
+                    member_type, type);
             }
 
             /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
@@ -1765,7 +1800,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             auto tmp_column = decoded_type->createColumn();
             tmp_column->reserve(1);
             decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
-            return columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type);
+            return nameDynamicMemberAST(
+                columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type), decoded_type, type);
         }
         case TypeIndex::Object:
         {
