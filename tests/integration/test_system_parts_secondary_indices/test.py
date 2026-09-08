@@ -252,6 +252,13 @@ def test_missing_marks_file(started_cluster):
 
     assert materialized_indices(node, "t_missing_marks") == "['mm_v']"
 
+    # While the part is intact the index is applied and drops all but one granule; this is the
+    # control for the same query after the marks file is removed below.
+    healthy_plan = node.query(
+        "EXPLAIN indexes = 1 SELECT count() FROM t_missing_marks WHERE v = 1500"
+    )
+    assert "Granules: 1/20" in healthy_plan, healthy_plan
+
     part_path = get_active_part_path(node, "t_missing_marks")
     marks_file = bash(
         node, f"basename $(ls {shlex.quote(part_path)}skp_idx_mm_v.*mrk*)"
@@ -277,5 +284,22 @@ def test_missing_marks_file(started_cluster):
         == "yes"
     )
     assert materialized_indices(node, "t_missing_marks") == "[]"
+
+    # The column and the read path share one gate (`IMergeTreeIndex::getDeserializedFormat`), so a
+    # query filtering on the indexed column must agree with what the column reports: the index is
+    # skipped and the query answers from the data, instead of routing into the unusable index and
+    # failing on the missing marks file.
+    assert (
+        node.query("SELECT count() FROM t_missing_marks WHERE v = 1500").strip() == "1"
+    )
+    plan = node.query(
+        "EXPLAIN indexes = 1 SELECT count() FROM t_missing_marks WHERE v = 1500"
+    )
+    # 2000 rows with `index_granularity = 100`: the index is not applied to this part, so
+    # none of its 20 granules are dropped. Without the shared gate the query would instead
+    # route into the index and fail on the missing marks file.
+    assert "Name: mm_v" in plan, plan
+    assert "Granules: 20/20" in plan, plan
+    assert "Granules: 1/20" not in plan, plan
 
     node.query("DROP TABLE t_missing_marks SYNC")

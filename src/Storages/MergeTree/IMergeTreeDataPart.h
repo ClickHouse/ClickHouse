@@ -188,6 +188,8 @@ public:
     ///   index (`text`) with a lost `.dct.idx` / `.pst.idx` is not reported as materialized;
     /// - each substream needs its marks file too (`MergeTreeIndexReader` loads marks for every
     ///   stream it opens), under the same plain/hashed/packed ownership rules as the data file.
+    /// All of that is decided by `IMergeTreeIndex::getDeserializedFormat`, the gate every read path
+    /// goes through, so this column cannot disagree with what a query is able to use.
     bool hasMaterializedSecondaryIndex(const IMergeTreeIndex & skip_index) const;
 
     /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
