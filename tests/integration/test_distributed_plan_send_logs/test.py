@@ -57,15 +57,17 @@ TASK_LOG_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\}")
 TASK_ERROR_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\} <Error>")
 
 
-def run_query_capturing_logs(query):
+def run_query_capturing_logs(query, send_logs_level="trace"):
     """Logs requested with send_logs_level go to the client's stderr; capture both
     streams. `|| true` keeps a failing query (expected in the exception test) from
-    failing the container exec itself."""
+    failing the container exec itself. Pass send_logs_level=None to omit the flag
+    entirely and exercise the default (no log forwarding)."""
+    level_arg = f"--send_logs_level={send_logs_level} " if send_logs_level else ""
     return node1.exec_in_container(
         [
             "bash",
             "-c",
-            f'clickhouse client --send_logs_level=trace --query "{query}" 2>&1 || true',
+            f'clickhouse client {level_arg}--query "{query}" 2>&1 || true',
         ]
     )
 
@@ -91,4 +93,21 @@ def test_worker_exception_context_reaches_client(started_cluster):
     assert "boom on worker" in out
     assert TASK_ERROR_LINE.search(out), (
         "worker exception context was not forwarded to the client: " + out[-2000:]
+    )
+
+
+def test_no_logs_forwarded_without_send_logs_level(started_cluster):
+    """Forwarding is opt-in: with no send_logs_level the worker never attaches a logs queue,
+    so no worker task logs reach the client even though the fragments still run on workers."""
+    out = run_query_capturing_logs(
+        f"SELECT sum(id) FROM t_worker_logs SETTINGS {DISTRIBUTED_SETTINGS}",
+        send_logs_level=None,
+    )
+    # The query still executes (fragments run on workers, producing logs worker-side) ...
+    assert "499999500000" in out, (
+        "query did not return the expected result; test setup problem: " + out[-2000:]
+    )
+    # ... but none of those worker task logs are forwarded to the client.
+    assert not TASK_LOG_LINE.search(out), (
+        "worker task logs were forwarded although send_logs_level was not set: " + out[-2000:]
     )
