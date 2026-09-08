@@ -1,7 +1,9 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/SymbolsHelper.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -13,6 +15,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <mutex>
 #include <vector>
 
 namespace DB
@@ -121,6 +124,9 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[column_idx++]->insert(Array(last_error_trace.begin(), last_error_trace.end()));
 
+    IColumn & symbols_column = *columns[column_idx++];
+    IColumn & lines_column = *columns[column_idx++];
+
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (!last_error_trace.empty())
     {
@@ -129,16 +135,37 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
         for (UInt64 addr : last_error_trace)
             frame_pointers.push_back(reinterpret_cast<const void *>(addr));
 
-        auto [symbols, lines] = symbolizeTrace(frame_pointers.data(), frame_pointers.size());
-        columns[column_idx++]->insert(Array(symbols.begin(), symbols.end()));
-        columns[column_idx++]->insert(Array(lines.begin(), lines.end()));
+        /// Unlike `system.errors`, which is materialized while answering a query, `system.error_log`
+        /// is filled by a background flush that builds the whole batch inside `SystemLog::flushImpl`:
+        /// a single exception here (`CANNOT_PARSE_DWARF` while reading debug info, a missing or
+        /// truncated `.dSYM`, ...) aborts the flush and drops every pending row of the batch.
+        /// These two columns are diagnostic sugar, so symbolization is best-effort for this table:
+        /// the failure is reported to the server log and the columns are left empty.
+        try
+        {
+            auto [symbols, lines] = symbolizeTrace(frame_pointers.data(), frame_pointers.size());
+            symbols_column.insert(Array(symbols.begin(), symbols.end()));
+            lines_column.insert(Array(lines.begin(), lines.end()));
+            return;
+        }
+        catch (...)
+        {
+            /// Symbolization fails for the whole binary rather than for a single address, so it would
+            /// fail for every row of every flush - report it only once instead of flooding the log.
+            static std::once_flag reported;
+            std::call_once(reported, []
+            {
+                tryLogCurrentException(
+                    getLogger("ErrorLog"),
+                    "Cannot symbolize the stack trace for system.error_log, "
+                    "last_error_symbols and last_error_lines will be empty");
+            });
+        }
     }
-    else
 #endif
-    {
-        columns[column_idx++]->insertDefault();
-        columns[column_idx++]->insertDefault();
-    }
+
+    symbols_column.insertDefault();
+    lines_column.insertDefault();
 }
 
 struct ValuePair
