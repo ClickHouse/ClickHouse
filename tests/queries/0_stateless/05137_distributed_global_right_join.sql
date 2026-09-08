@@ -144,7 +144,7 @@ FORMAT TSVWithNames;
 DROP TABLE IF EXISTS right_one_shard_05137;
 
 CREATE TABLE right_one_shard_05137 AS right_local_05137
-ENGINE = Distributed('test_cluster_one_shard_localhost', currentDatabase(), right_local_05137);
+ENGINE = Distributed('test_shard_localhost', currentDatabase(), right_local_05137);
 
 SELECT 'right_is_local_table_initiator';
 SELECT k1, v1, k2, v2
@@ -262,7 +262,7 @@ FORMAT TSVWithNames;
 DROP TABLE IF EXISTS left_one_shard_05137;
 
 CREATE TABLE left_one_shard_05137 AS left_local_05137
-ENGINE = Distributed('test_cluster_one_shard_localhost', currentDatabase(), left_local_05137);
+ENGINE = Distributed('test_shard_localhost', currentDatabase(), left_local_05137);
 
 SELECT 'left_is_one_shard_initiator';
 SELECT k1, v1, k2, v2
