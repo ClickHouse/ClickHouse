@@ -121,6 +121,7 @@ public:
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
     void forceSpill() { force_spill = true; }
+    bool hasPendingSpill() const;
 
 private:
     void initBuckets();

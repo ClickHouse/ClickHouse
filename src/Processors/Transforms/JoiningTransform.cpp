@@ -423,6 +423,13 @@ bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
     return false;
 }
 
+bool FillingRightJoinSideTransform::hasPendingSpill() const
+{
+    if (const auto * grace_join = typeid_cast<const GraceHashJoin *>(join.get()))
+        return grace_join->hasPendingSpill();
+    return false;
+}
+
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
     SharedHeader output_header_,
     NonJoinedStreamBuilder non_joined_stream_builder_)

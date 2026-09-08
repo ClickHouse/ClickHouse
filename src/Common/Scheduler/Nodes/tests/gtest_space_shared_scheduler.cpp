@@ -1965,7 +1965,7 @@ public:
 
     void work() override
     {
-        if (spill_pending)
+        if (spill_pending && !spill_blocked)
         {
             ++completed_spills;
             spill_pending = false;
@@ -1975,6 +1975,8 @@ public:
     size_t completedSpillCount() const { return completed_spills; }
     size_t spillCallCount() const { return spill_calls; }
     size_t lastSpillSize() const { return last_spill_size; }
+    bool hasPendingSpill() const override { return spill_pending; }
+    void setSpillBlocked(bool blocked) { spill_blocked = blocked; }
 
 private:
     Int64 spillable_bytes;
@@ -1983,6 +1985,7 @@ private:
     size_t last_spill_size = 0;
     size_t completed_spills = 0;
     bool spill_pending = false;
+    bool spill_blocked = false;
 };
 
 
@@ -2003,6 +2006,31 @@ TEST(SchedulerSpaceShared, ForcedSpillWaitsForProcessorWork)
 
     processor.work();
     scheduler.finishSpill(&processor);
+    EXPECT_EQ(processor.completedSpillCount(), 1u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Progress);
+}
+
+TEST(SchedulerSpaceShared, ForcedSpillWaitsUntilDeferredSpillFinishes)
+{
+    MemorySpillScheduler scheduler(/*enable_=*/ false);
+    ManualSpillProcessor processor(4096, /*spill_succeeds_=*/ true);
+    scheduler.registerProcessor(&processor);
+
+    const auto request = scheduler.requestForcedSpill();
+    scheduler.checkAndSpill(&processor);
+    processor.setSpillBlocked(true);
+    processor.work();
+    scheduler.finishSpill(&processor);
+    EXPECT_EQ(processor.completedSpillCount(), 0u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+        MemorySpillScheduler::ForcedSpillOutcome::Pending);
+
+    processor.setSpillBlocked(false);
+    scheduler.checkAndSpill(&processor);
+    processor.work();
+    scheduler.finishSpill(&processor);
+    EXPECT_EQ(processor.spillCallCount(), 1u);
     EXPECT_EQ(processor.completedSpillCount(), 1u);
     EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
@@ -3731,4 +3759,3 @@ TEST(SchedulerSpaceShared, SiblingLimitsSharePolicySuctionSlot)
             "");
     }
 }
-

@@ -357,6 +357,14 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
     return true;
 }
 
+bool GraceHashJoin::hasPendingSpill() const
+{
+    /// Rehash clears the request before it releases and rebuilds the table. Acquiring the same
+    /// mutex ensures that a cleared request also means the in-flight rehash has finished.
+    std::lock_guard lock(hash_join_mutex);
+    return force_spill.load();
+}
+
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
     if (force_spill)

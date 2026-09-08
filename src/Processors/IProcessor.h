@@ -392,6 +392,10 @@ public:
     // If the in-memory data's size is not larger then bytes, it doesn't spill
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
+    /// Deferred spilling may need more than one work call. Called after work by the same worker;
+    /// implementations with shared spill state must also synchronize with its completion.
+    virtual bool hasPendingSpill() const { return false; }
+
 protected:
     /// May be called in parallel with work().
     virtual void onCancel() noexcept {}

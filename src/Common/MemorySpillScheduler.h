@@ -38,7 +38,7 @@ public:
 
     void checkAndSpill(IProcessor * processor);
     /// Called by the same worker after successful processor work. A spill callback may only arm
-    /// deferred work, so returning from that callback does not complete its forced-spill attempt.
+    /// deferred work, so neither the callback nor work completes the attempt while a spill is pending.
     void finishSpill(IProcessor * processor);
     void registerProcessor(IProcessor * processor);
     void remove(IProcessor * processor);
