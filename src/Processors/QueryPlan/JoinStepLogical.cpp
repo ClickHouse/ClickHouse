@@ -780,6 +780,9 @@ static void predicateOperandsToCommonType(
         {
             if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
             {
+                /// A converted key must report a NULL at the top level; see `removeNullableInsideTuple`.
+                subtype = JoinCommon::removeNullableInsideTuple(subtype);
+
                 /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
                 /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
                 /// applies only when the storage key itself is the subtype, so that only the probe side is converted.
