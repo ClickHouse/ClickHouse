@@ -1139,6 +1139,13 @@ def test_missing_collection_in_config_does_not_block_startup(cluster):
         "SELECT * FROM t_startup"
     )
 
+    # A rename commits its metadata move before it creates the table's symlink, and the symlink
+    # needs the table's data path, so a stand-in must not fail it.
+    node.query("RENAME TABLE t_startup TO t_startup_renamed")
+    assert "t_startup_renamed" in node.query(
+        "SELECT name FROM system.tables WHERE database = currentDatabase()"
+    )
+
     # Putting the collection back makes the table work again without another restart. The read
     # still fails, because the endpoint is unreachable, but no longer on the collection.
     with node.with_replace_config(
@@ -1148,6 +1155,6 @@ def test_missing_collection_in_config_does_not_block_startup(cluster):
         reload_after=True,
     ):
         assert "NAMED_COLLECTION_DOESNT_EXIST" not in node.query_and_get_error(
-            "SELECT * FROM t_startup"
+            "SELECT * FROM t_startup_renamed"
         )
-        node.query("DROP TABLE t_startup")
+        node.query("DROP TABLE t_startup_renamed")

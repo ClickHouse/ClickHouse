@@ -16,8 +16,12 @@ SET check_named_collection_dependencies = 0;
 DROP NAMED COLLECTION nc_x;
 "
 
-# The database still loads, and the table is listed as a stand-in for the storage that cannot be built.
-$CLICKHOUSE_LOCAL --path "$STORE" -q "SELECT name, engine FROM system.tables WHERE database = currentDatabase()"
+# The database still loads, and the table is listed as a stand-in for the storage that cannot be
+# built. `data_paths` and `metadata_version` reach that storage, so they are the columns that must
+# not abort the scan.
+$CLICKHOUSE_LOCAL --path "$STORE" -q "SELECT name, engine, data_paths, metadata_version FROM system.tables WHERE database = currentDatabase()"
+
+$CLICKHOUSE_LOCAL --path "$STORE" -q "SELECT name, type, data_compressed_bytes FROM system.columns WHERE database = currentDatabase() AND table = 't_x'"
 
 # Reading the table reports the missing collection itself, not a load job that failed around it,
 # so the first line of the error must be the collection error and not a wrapper of it.

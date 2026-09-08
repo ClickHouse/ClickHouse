@@ -648,13 +648,15 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
     if (!db_disk->isSymlinkSupported())
         return;
 
-    if (table->getDataPaths().empty())
-        return;
-
-    const auto table_data_path = fs::path(table->getDataPaths().front()).lexically_normal();
-
     try
     {
+        /// `renameTable` calls this after committing the metadata move, so nothing here may throw.
+        const auto data_paths = table->getDataPaths();
+        if (data_paths.empty())
+            return;
+
+        const auto table_data_path = fs::path(data_paths.front()).lexically_normal();
+
         String table_name = table->getStorageID().getTableName();
 
         if (!table->storesDataOnDisk())
