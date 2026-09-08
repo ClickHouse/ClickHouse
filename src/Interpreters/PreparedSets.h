@@ -196,12 +196,12 @@ public:
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    /// `speculative_build` marks the two in-place builds below, whose result the runtime build can
-    /// still redo; see `CreatingSetStep::speculative_build`. Every caller states it explicitly.
+    /// `recoverable_build` marks the one in-place build whose result the deferred build can still redo;
+    /// see `CreatingSetStep::recoverable_build`. Deliberately not defaulted.
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,
         const PreparedSetsCachePtr & prepared_sets_cache,
-        bool speculative_build = false);
+        bool recoverable_build);
 
     /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
     /// retain the values, and make the source run as a distributed plan when its shape allows

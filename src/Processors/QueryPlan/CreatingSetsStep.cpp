@@ -50,12 +50,12 @@ CreatingSetStep::CreatingSetStep(
     SetAndKeyPtr set_and_key_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_,
-    bool speculative_build_)
+    bool recoverable_build_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(Block{}), getTraits())
     , set_and_key(std::move(set_and_key_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
-    , speculative_build(speculative_build_)
+    , recoverable_build(recoverable_build_)
 {
 }
 
@@ -95,7 +95,7 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         set_and_key,
         network_transfer_limits,
         prepared_sets_cache,
-        speculative_build);
+        recoverable_build);
 }
 
 void CreatingSetStep::updateOutputHeader()
@@ -192,7 +192,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subque
         if (future_set->get())
             continue;
 
-        auto plan = future_set->build(network_transfer_limits, prepared_sets_cache, /*speculative_build=*/false);
+        auto plan = future_set->build(network_transfer_limits, prepared_sets_cache, /*recoverable_build=*/false);
         if (!plan)
             continue;
 
@@ -232,7 +232,7 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
         if (future_set->get())
             continue;
 
-        auto plan = future_set->build(network_transfer_limits, prepared_sets_cache, /*speculative_build=*/false);
+        auto plan = future_set->build(network_transfer_limits, prepared_sets_cache, /*recoverable_build=*/false);
         if (!plan)
             continue;
 
@@ -255,7 +255,7 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
             continue;
 
         auto plan = future_set->build(
-            optimization_settings.network_transfer_limits, optimization_settings.prepared_sets_cache, /*speculative_build=*/false);
+            optimization_settings.network_transfer_limits, optimization_settings.prepared_sets_cache, /*recoverable_build=*/false);
         if (!plan)
             continue;
 

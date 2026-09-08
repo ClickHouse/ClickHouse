@@ -71,12 +71,12 @@ CreatingSetsTransform::CreatingSetsTransform(
     SetAndKeyPtr set_and_key_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_,
-    bool speculative_build_)
+    bool recoverable_build_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
     , set_and_key(std::move(set_and_key_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
-    , speculative_build(speculative_build_)
+    , recoverable_build(recoverable_build_)
 {
 }
 
@@ -250,9 +250,9 @@ Chunk CreatingSetsTransform::generate()
     if (set_and_key->set && !set_from_cache)
     {
         /// Simulate a silent in-place build failure: skip `finishInsert`, leaving the set not created
-        /// (as a subquery timeout with `overflow_mode = 'break'` does). Only a speculative build may be
-        /// abandoned so, and the check precedes the injection so a runtime build cannot spend the shot.
-        if (speculative_build)
+        /// (as a subquery timeout with `overflow_mode = 'break'` does). Only a recoverable build may be
+        /// abandoned, and the check precedes the injection so another build cannot spend the one shot.
+        if (recoverable_build)
         {
             fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail,
             {

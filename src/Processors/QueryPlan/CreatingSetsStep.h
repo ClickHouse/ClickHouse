@@ -21,7 +21,7 @@ public:
         SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_,
-        bool speculative_build_ = false);
+        bool recoverable_build_ = false);
 
     String getName() const override { return "CreatingSet"; }
 
@@ -47,10 +47,10 @@ private:
     PreparedSetsCachePtr prepared_sets_cache;
     bool preliminary_distinct = false;
 
-    /// The set is filled during analysis (`FutureSetFromSubquery::buildSetInplace` /
-    /// `::buildOrderedSetInplace`), so a build that stops without creating it can still be redone by the
-    /// runtime build. A runtime build has no such second chance.
-    bool speculative_build = false;
+    /// True only for the in-place build that runs against a CLONE of the subquery source
+    /// (`FutureSetFromSubquery::buildOrderedSetInplace`): only there does abandoning the build leave
+    /// `source` intact for the deferred build to create the set. `build()` moves `source` out.
+    bool recoverable_build = false;
 };
 
 class CreatingSetsStep : public IQueryPlanStep
