@@ -1645,11 +1645,11 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
 }
 
 /// True when the literal written for `type` identifies the value, so casting that literal back to `type`
-/// reconstructs it: numbers and Enums are written as their exact value, Decimal/DateTime64/Time64 through their
-/// own exact carrier, Date/UUID/IPv4/IPv6 as text no two values of the type share. Anything unlisted is excluded
-/// because its text is not injective: every floating-point NaN is written `nan`, a Date32 day number outside the
-/// type range saturates to `0000-01-01`/`9999-12-31`, a DateTime's local text is shared by both instants of a DST
-/// overlap, an Object's dynamic paths are re-inferred from their tokens, and an AggregateFunction state is read
+/// reconstructs it: numbers and `Enum`s are written as their exact value, `Decimal`/`DateTime64`/`Time64` through their
+/// own exact carrier, `Date`/`UUID`/`IPv4`/`IPv6` as text no two values of the type share. Anything unlisted is excluded
+/// because its text is not injective: every floating-point NaN is written `nan`, a `Date32` day number outside the
+/// type range saturates to `0000-01-01`/`9999-12-31`, a `DateTime`'s local text is shared by both instants of a DST
+/// overlap, an `Object`'s dynamic paths are re-inferred from their tokens, and an `AggregateFunction` state is read
 /// back according to `aggregate_function_input_format`, which builds a different state without failing.
 bool literalIdentifiesValue(const IDataType & type)
 {
