@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 
@@ -129,20 +130,44 @@ def test_keeper_session_loss_during_coordinated_refresh(started_cluster):
     wait_for_status(node2, "a", "Running", timeout=30)
     wait_for_status(node1, "a", "RunningOnAnotherReplica", timeout=30)
 
-    # Restart all keeper nodes. With session_timeout_ms=5000 (see zookeeper.xml)
-    # and >5s of total quorum-loss below, every client session expires, so
-    # node2's 'running' ephemeral disappears -- but node2's SELECT keeps
-    # running because query execution is independent of keeper. This is the
-    # bug's trigger condition and mirrors the user's manual repro.
-    started_cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    started_cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    started_cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"], timeout=60)
-
-    # Make node1 want to refresh for the same yearly timeslot. With the fix,
-    # node1 sees `refresh_running=true` in the root znode and waits for node2
-    # to finish; without the fix, node1 races and APPENDs a duplicate row.
+    # Put node1 on the fake clock for node2's timeslot and START its view BEFORE
+    # touching keeper. node1's 'running' ephemeral check in RefreshTask runs
+    # before the stop_requested check, so node1 is already coordinating
+    # (RunningOnAnotherReplica) regardless of START/STOP; what matters is that
+    # node1 is now on the fake clock while node2's ephemeral is still present, so
+    # it has not yet entered the missing-znode grace path.
+    #
+    # This ordering is the crux of the fix: node1's grace deadline is computed
+    # from currentTime(), which returns the frozen fake clock once set. If node1
+    # recorded running_znode_missing_since while still on the real clock (i.e. if
+    # the ephemeral disappeared before this SET FAKE TIME) and we then jumped its
+    # clock forward, the real-clock deadline would already be in the past and
+    # node1 would clear the lock immediately, producing the duplicate this test
+    # only wants to see when the coordination fix is absent. Setting the fake
+    # clock first makes node1 record grace-start on the frozen clock instead.
     node1.query(f"SYSTEM TEST VIEW re.a SET FAKE TIME '{node1_fake}'")
     node1.query("SYSTEM START VIEW re.a")
+    wait_for_status(node1, "a", "RunningOnAnotherReplica", timeout=30)
+
+    # Cut only node2 off from keeper instead of restarting the whole keeper
+    # cluster. Keeper stays healthy for node1, so node1's session never expires
+    # and its watches keep firing. node2's session expires
+    # (>session_timeout_ms=5000, see zookeeper.xml) so its 'running' ephemeral
+    # disappears, but its SELECT keeps running because query execution is
+    # independent of keeper -- the bug's trigger condition.
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(node2)
+
+        # Wait until node1 actually notices the missing 'running' ephemeral and
+        # enters its crash-detection grace period, then restore node2 at once.
+        # Chaining the restore to this log line (instead of a fixed sleep)
+        # removes the load-dependent race: node2 reconnects ~1s after node1
+        # starts the grace period, always well within the ~6.25s window,
+        # regardless of how loaded the runner is. With the fix node1 waits and
+        # sees node2 re-register; without it node1 has no grace and APPENDs a
+        # duplicate row.
+        node1.wait_for_log_line("no corresponding ephemeral znode", timeout=60)
+        pm.restore_instance_zk_connections(node2)
 
     # Wait for the dust to settle: node2's refresh completes (~30s SELECT +
     # post-keeper INSERT) and propagates to keeper, then both replicas idle.
@@ -150,9 +175,10 @@ def test_keeper_session_loss_during_coordinated_refresh(started_cluster):
     wait_for_status(node2, "a", "Scheduled", timeout=120)
 
     # Pull both replicas' parts before counting -- otherwise the count races
-    # against ReplicatedMergeTree replication.
-    node1.query("SYSTEM SYNC REPLICA re.tgt")
-    node2.query("SYSTEM SYNC REPLICA re.tgt")
+    # against ReplicatedMergeTree replication. Retry: a replica may still be
+    # transiently read-only right after re-establishing its keeper session.
+    node1.query_with_retry("SYSTEM SYNC REPLICA re.tgt")
+    node2.query_with_retry("SYSTEM SYNC REPLICA re.tgt")
 
     rows = node1.query("SELECT toInt64(t), i, _part FROM re.tgt ORDER BY t")
     final_count = int(node1.query("SELECT count() FROM re.tgt").strip())

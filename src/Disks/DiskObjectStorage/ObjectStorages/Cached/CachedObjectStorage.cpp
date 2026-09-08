@@ -43,7 +43,12 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    return object_storage->patchSettings(read_settings);
+    return object_storage->patchSettings(IObjectStorage::patchSettings(read_settings));
+}
+
+WriteSettings CachedObjectStorage::patchSettings(const WriteSettings & write_settings) const
+{
+    return object_storage->patchSettings(IObjectStorage::patchSettings(write_settings));
 }
 
 void CachedObjectStorage::startup()
@@ -69,6 +74,19 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, use_external_buffer, restrict_seek);
 }
 
+SmallObjectDataWithMetadata CachedObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    size_t max_size_bytes,
+    std::optional<size_t> read_hint) const
+{
+    /// Delegate to the underlying storage so its override populates `ObjectMetadata`
+    /// (notably `etag`). The base `IObjectStorage` implementation only reads the bytes
+    /// and leaves metadata empty, which silently breaks Iceberg `version-hint.text`
+    /// CAS updates on cached S3/Azure storage.
+    return object_storage->readSmallObjectAndGetObjectMetadata(object, patchSettings(read_settings), max_size_bytes, read_hint);
+}
+
 void CachedObjectStorage::prepareRead(
     ObjectStoragePtr /* storage */,
     const StoredObjects & objects,
@@ -89,7 +107,7 @@ void CachedObjectStorage::prepareRead(
         if (cache->isInitialized())
         {
             auto global_context = Context::getGlobalContextInstance();
-            pipeline.needFilesystemCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
+            pipeline.needFilesystemCache(cache, read_settings.filesystem_cache_settings, global_context->getFilesystemCacheLog());
         }
         else
         {

@@ -41,7 +41,7 @@ protected:
     struct BatchAndHasNext
     {
         RelativePathsWithMetadata batch;
-        bool has_next;
+        bool has_next{};
     };
 
     std::future<BatchAndHasNext> scheduleBatch();

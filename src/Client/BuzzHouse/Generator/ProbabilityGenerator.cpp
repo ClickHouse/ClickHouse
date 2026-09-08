@@ -136,12 +136,9 @@ std::vector<double> ProbabilityGenerator::generateInitial()
 {
     switch (strategy)
     {
-        case ProbabilityStrategy::Balanced:
-            return genBalanced();
-        case ProbabilityStrategy::BoundedRealism:
-            return genBounded();
-        case ProbabilityStrategy::Drifting:
-            return genBounded(); /// start from bounded
+        case ProbabilityStrategy::Balanced: return genBalanced();
+        case ProbabilityStrategy::BoundedRealism: return genBounded();
+        case ProbabilityStrategy::Drifting: return genBounded(); /// start from bounded
     }
     /// Defensive against future enum additions; current enumerators all return above.
     throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown ProbabilityStrategy at {}", description);

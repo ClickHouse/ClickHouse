@@ -1,11 +1,6 @@
 #pragma once
 
-#include <cstdint>
-#include <functional>
-#include <string>
 #include <string_view>
-#include <utility>
-#include <vector>
 
 /// Flush coverage report to file, depending on coverage system
 /// proposed by compiler (llvm for clang and gcov for gcc).
@@ -33,6 +28,11 @@ void setCoverageTest(std::string_view test_name);
 void resetCoverage();
 
 #if WITH_COVERAGE_DEPTH
+
+#include <cstdint>
+#include <functional>
+#include <tuple>
+#include <vector>
 
 /// Each entry is (name_hash, func_hash, counter_id, min_depth).
 ///

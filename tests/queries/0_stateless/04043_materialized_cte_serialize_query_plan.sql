@@ -47,15 +47,13 @@ SELECT count() FROM pr_04043
 WHERE x IN (t) OR x IN (t)
 SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas',
-    parallel_replicas_for_non_replicated_merge_tree = 1,
-    parallel_replicas_local_plan = 1;
+    parallel_replicas_for_non_replicated_merge_tree = 1;
 
 WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(50))
 SELECT count() FROM pr_04043
 WHERE x IN (SELECT c FROM t WHERE c < 10) OR x IN (SELECT c FROM t WHERE c >= 10 AND c < 50)
 SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas',
-    parallel_replicas_for_non_replicated_merge_tree = 1,
-    parallel_replicas_local_plan = 1;
+    parallel_replicas_for_non_replicated_merge_tree = 1;
 
 DROP TABLE pr_04043;

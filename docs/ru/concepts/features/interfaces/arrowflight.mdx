@@ -1,0 +1,486 @@
+---
+description: 'Документация по интерфейсу Apache Arrow Flight в ClickHouse, который позволяет клиентам Flight SQL подключаться к ClickHouse'
+sidebarTitle: 'Интерфейс Arrow Flight'
+slug: /interfaces/arrowflight
+title: 'Интерфейс Arrow Flight'
+doc_type: 'справочник'
+---
+
+<div id="overview">
+  ## Обзор
+</div>
+
+ClickHouse поддерживает протокол [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) — высокопроизводительный RPC-фреймворк для эффективной передачи столбцовых данных в формате [Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc) поверх [gRPC](https://grpc.io/).
+
+Реализация также поддерживает [Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html), что позволяет BI-инструментам и приложениям, работающим по протоколу Flight SQL, отправлять запросы к ClickHouse напрямую.
+
+Основные возможности:
+
+* Выполнение SQL-запросов и получение результатов в формате Apache Arrow.
+* Вставка данных в таблицы с использованием формата Arrow.
+* Запрос метаданных (каталогов, схем, таблиц, первичных ключей) через команды Flight SQL.
+* Создание, связывание, выполнение и закрытие серверных подготовленных операторов через Flight SQL.
+* Управление сеансами и настройками через действия Flight SQL.
+* Шифрование TLS и аутентификация по имени пользователя и паролю.
+* Поэтапное получение результатов через `PollFlightInfo`.
+* Отмена запросов через `CancelFlightInfo`.
+
+<div id="enabling-server">
+  ## Включение сервера Arrow Flight
+</div>
+
+Чтобы включить сервер Arrow Flight, добавьте настройку `arrowflight_port` в конфигурацию сервера ClickHouse:
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+</clickhouse>
+```
+
+При запуске в журнале появляется сообщение, подтверждающее, что интерфейс активен:
+
+```text
+{} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9090
+```
+
+<div id="tls-configuration">
+  ## Настройка TLS
+</div>
+
+Чтобы включить TLS для интерфейса Arrow Flight, настройте следующие параметры:
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+    <arrowflight>
+        <enable_ssl>true</enable_ssl>
+        <ssl_cert_file>/path/to/server-cert.pem</ssl_cert_file>
+        <ssl_key_file>/path/to/server-key.pem</ssl_key_file>
+    </arrowflight>
+</clickhouse>
+```
+
+Когда TLS включен, клиенты должны подключаться по схеме `grpc+tls://` вместо `grpc://`.
+
+<div id="authentication">
+  ## Аутентификация
+</div>
+
+Интерфейс Arrow Flight поддерживает два метода аутентификации:
+
+<div id="basic-auth">
+  ### Базовая аутентификация
+</div>
+
+Клиенты проходят аутентификацию по имени пользователя и паролю через стандартный HTTP-заголовок `Authorization: Basic`. При успешной аутентификации server возвращает Bearer-токен в заголовке ответа.
+
+<div id="bearer-auth">
+  ### Аутентификация с Bearer-токеном
+</div>
+
+В последующих запросах можно использовать Bearer-токен, полученный при базовой аутентификации, передавая его в заголовке `Authorization: Bearer <token>`. Токен автоматически обновляется при каждом использовании и действует до истечения времени, заданного настройкой сервера `default_session_timeout` (по умолчанию — 60 секунд).
+
+<div id="auth-python-example">
+  ### Пример на Python
+</div>
+
+```python
+import pyarrow.flight as flight
+
+client = flight.FlightClient("grpc://localhost:9090")
+
+# Базовая аутентификация возвращает bearer-токен для последующих запросов
+token_pair = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+С использованием TLS:
+
+```python
+import pyarrow.flight as flight
+
+with open("ca-cert.pem", "rb") as f:
+    tls_root_certs = f.read()
+
+client = flight.FlightClient(
+    "grpc+tls://localhost:9090",
+    tls_root_certs=tls_root_certs,
+)
+
+token_pair = client.authenticate_basic_token("default", "password")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+<div id="session-management">
+  ## Управление сеансами
+</div>
+
+Интерфейс Arrow Flight поддерживает сеансы ClickHouse с помощью пользовательских заголовков метаданных gRPC:
+
+| Заголовок                      | Описание                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `x-clickhouse-session-id`      | Идентификатор сеанса. Если указан, несколько запросов используют одно и то же состояние сеанса (временные таблицы, настройки).                                                 |
+| `x-clickhouse-session-timeout` | Тайм-аут сеанса в секундах. Не должен превышать `max_session_timeout`.                                                                                                         |
+| `x-clickhouse-session-check`   | Установите значение `1`, чтобы проверить, существует ли сеанс, не создавая его.                                                                                                |
+| `x-clickhouse-session-close`   | Установите значение `1`, чтобы закрыть сеанс после завершения запроса. Для этого в конфигурации сервера параметр `enable_arrow_close_session` должен быть установлен в `true`. |
+
+<Note>
+  Поскольку Arrow Flight использует gRPC поверх HTTP/2, имена заголовков метаданных учитывают регистр и должны быть указаны строчными буквами точно так, как показано (например, `x-clickhouse-session-id`, а не `X-ClickHouse-Session-Id`). Это требование [RFC 9113, раздел 8.2](https://www.rfc-editor.org/rfc/rfc9113#section-8.2), согласно которому имена полей HTTP/2 должны содержать только строчные символы. В отличие от этого, в HTTP/1.1 имена заголовков регистронезависимы.
+</Note>
+
+Сеансы позволяют задавать сохраняемые настройки ClickHouse через действие `SetSessionOptions` (см. [DoAction](#doaction)).
+
+<div id="configuration-reference">
+  ## Справочник по конфигурации сервера
+</div>
+
+| Параметр                                                      | По умолчанию | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arrowflight_port`                                            | —            | Порт сервера Arrow Flight. Сервер запускается только при указании этого параметра.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `arrowflight.enable_ssl`                                      | `false`      | Включает шифрование TLS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `arrowflight.ssl_cert_file`                                   | —            | Путь к файлу TLS-сертификата. Обязателен, если TLS включен.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `arrowflight.ssl_key_file`                                    | —            | Путь к файлу TLS private key. Обязателен, если TLS включен.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `arrowflight.tickets_lifetime_seconds`                        | `600`        | Время в секундах до истечения срока действия тикетов Flight и их удаления. Установите `0`, чтобы отключить автоматическое истечение срока действия тикетов.                                                                                                                                                                                                                                                                                                                                        |
+| `arrowflight.cancel_ticket_after_do_get`                      | `false`      | Если `true`, тикеты отменяются сразу после получения через `DoGet`, что освобождает память.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `arrowflight.poll_descriptors_lifetime_seconds`               | `600`        | Время в секундах до истечения срока действия дескрипторов опроса. Установите `0`, чтобы отключить автоматическое истечение срока действия.                                                                                                                                                                                                                                                                                                                                                         |
+| `arrowflight.cancel_flight_descriptor_after_poll_flight_info` | `false`      | Если `true`, дескрипторы опроса отменяются после использования в `PollFlightInfo`.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `arrowflight.max_prepared_statements_per_user`                | `100`        | Максимальное количество открытых подготовленных операторов на пользователя. Установите `0`, чтобы отключить ограничение.                                                                                                                                                                                                                                                                                                                                                                           |
+| `arrowflight.prepared_statements_lifetime_seconds`            | `-1`         | Режим времени жизни подготовленных операторов. `> 0`: использовать это значение как время жизни и обновлять срок действия при каждом запросе как для операторов, привязанных к сеансу, так и для операторов, не привязанных к сеансу. `0`: отключить автоматическое истечение срока действия. `-1`: для операторов, привязанных к сеансу, использовать тайм-аут сеанса в качестве времени жизни и обновлять его при каждом запросе; операторы, не привязанные к сеансу, не истекают автоматически. |
+| `enable_arrow_close_session`                                  | `true`       | Разрешает клиентам закрывать сеансы через заголовок `x-clickhouse-session-close`.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `default_session_timeout`                                     | `60`         | Тайм-аут сеанса по умолчанию в секундах. Также определяет срок действия Bearer-токена.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `max_session_timeout`                                         | `3600`       | Максимально допустимый тайм-аут сеанса в секундах.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+
+<div id="rpc-methods">
+  ## Поддерживаемые методы RPC
+</div>
+
+<div id="getflightinfo">
+  ### GetFlightInfo
+</div>
+
+Выполняет запрос и возвращает `FlightInfo`, содержащий схему результата, конечные точки с тикетами для получения данных, число строк и число байтов.
+
+Принимает `FlightDescriptor`, который может быть одним из следующих:
+
+* **дескриптор PATH**: Путь с одним компонентом, интерпретируемый как имя таблицы. Генерирует `SELECT * FROM <table>`.
+* **дескриптор CMD**: Либо исходную строку SQL-запроса, либо сериализованную protobuf-команду Flight SQL (см. [Команды Flight SQL](#flight-sql-commands)).
+
+Запрос выполняется полностью, а результаты сохраняются в тикетах на стороне сервера. Каждый block данных создает отдельную конечную точку/тикет, что позволяет клиентам получать данные параллельно.
+
+```python
+# Запрос по имени таблицы
+descriptor = flight.FlightDescriptor.for_path("my_table")
+info = client.get_flight_info(descriptor, options)
+
+# Запрос по SQL
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM my_table WHERE id > 100"
+)
+info = client.get_flight_info(descriptor, options)
+
+# Получение результатов
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+<div id="pollflightinfo">
+  ### PollFlightInfo
+</div>
+
+Позволяет получать результаты длительно выполняющихся запросов по мере готовности. Вместо того чтобы ждать завершения всего запроса (как в случае с `GetFlightInfo`), `PollFlightInfo` возвращает результаты блоками.
+
+При первом вызове запрос начинает выполняться. Ответ включает:
+
+* `FlightInfo` с конечными точками для всех блоков данных, доступных на текущий момент.
+* `FlightDescriptor` для следующего опроса (если ожидаются дополнительные результаты).
+
+Последующие вызовы с возвращённым дескриптором извлекают дополнительные блоки. Когда данных больше нет, ответ не содержит дескриптора для следующего опроса.
+
+<Note>
+  Текущая реализация ждёт, пока не станет доступен блок данных, вместо того чтобы сразу возвращать ответ без данных.
+</Note>
+
+<div id="getschema">
+  ### GetSchema
+</div>
+
+Возвращает схему Arrow для результата запроса без выполнения всего запроса. Поддерживает те же типы дескрипторов, что и `GetFlightInfo`.
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT 1 AS x, 'hello' AS y"
+)
+schema_result = client.get_schema(descriptor, options)
+schema = schema_result.schema
+print(schema)  # x: int32, y: string
+```
+
+<div id="doget">
+  ### DoGet
+</div>
+
+Извлекает данные по указанному тикету. Принимает одно из следующего:
+
+* Тикет, возвращённый `GetFlightInfo` или `PollFlightInfo`.
+* Необработанную строку SQL-запроса в качестве значения тикета.
+
+```python
+# Использование ticket из GetFlightInfo
+reader = client.do_get(endpoint.ticket, options)
+table = reader.read_all()
+
+# Использование SQL-запроса в качестве ticket
+ticket = flight.Ticket("SELECT number FROM system.numbers LIMIT 10")
+reader = client.do_get(ticket, options)
+table = reader.read_all()
+```
+
+<div id="doput">
+  ### DoPut
+</div>
+
+Отправляет данные в ClickHouse. Принимает `FlightDescriptor` и поток батчей записей Arrow.
+
+**Вставка по имени таблицы** (дескриптор PATH):
+
+```python
+schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3]), pa.array(["Alice", "Bob", "Charlie"])],
+    schema=schema,
+)
+
+descriptor = flight.FlightDescriptor.for_path("my_table")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**Вставка с помощью SQL** (дескриптор CMD):
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "INSERT INTO my_table FORMAT Arrow"
+)
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**Выполнение DDL/DML через Flight SQL `CommandStatementUpdate`:**
+
+Клиенты Flight SQL используют `CommandStatementUpdate` для выполнения DDL/DML-команд (CREATE, INSERT, ALTER и т. д.). В ответе возвращается количество затронутых строк.
+
+**Пакетный приём через Flight SQL `CommandStatementIngest`:**
+
+Поддерживается только добавление данных в существующие таблицы (`TABLE_NOT_EXIST_OPTION_FAIL` + `TABLE_EXISTS_OPTION_APPEND`). Каталоги и временные таблицы для этой команды не поддерживаются.
+
+`transaction_id` не поддерживается для `CommandStatementUpdate` и `CommandStatementIngest`. Если он указан, ClickHouse возвращает ошибку `NotImplemented`.
+
+<Note>
+  Для передачи данных поддерживается только формат `Arrow`. Указание других форматов в SQL (например, `FORMAT JSON`) приводит к ошибке.
+</Note>
+
+<div id="doaction">
+  ### DoAction
+</div>
+
+Выполняет именованные действия. Поддерживаются следующие из них:
+
+<div id="cancelflightinfo">
+  #### CancelFlightInfo
+</div>
+
+Отменяет выполняемый запрос, связанный с `FlightInfo`. Идентификатор запроса извлекается из поля `app_metadata` объекта `FlightInfo`. Также отменяет все дескрипторы опроса, связанные с этим запросом.
+
+```python
+# Запустить длительный запрос через PollFlightInfo, затем отменить его
+cancel_request = flight.CancelFlightInfoRequest(info)
+result = client.cancel_flight_info(cancel_request, options)
+# result.status равен CancelStatus.CANCELLED в случае успеха
+```
+
+<div id="setsessionoptions">
+  #### SetSessionOptions
+</div>
+
+Устанавливает настройки сервера ClickHouse для текущего сеанса. Для этого требуется, чтобы идентификатор сеанса был задан через заголовок `x-clickhouse-session-id`.
+
+Поддерживаемые типы значений: string, boolean, integer, double и списки строк.
+
+Если имя настройки неизвестно, возвращается ошибка `INVALID_NAME`. Если значение не удаётся разобрать, возвращается ошибка `INVALID_VALUE`.
+
+<div id="getsessionoptions">
+  #### GetSessionOptions
+</div>
+
+Возвращает все текущие настройки ClickHouse и их значения для данного сеанса. Возвращает сопоставление имён настроек со строковыми значениями (внутри выполняет запрос к `system.settings`).
+
+<div id="createpreparedstatement">
+  #### CreatePreparedStatement
+</div>
+
+Создаёт подготовленный оператор на стороне сервера и возвращает дескриптор оператора. Запрос содержит текст SQL-запроса с плейсхолдерами `?`.
+
+`transaction_id` для этого действия не поддерживается. Если он указан, ClickHouse возвращает ошибку `NotImplemented`.
+
+Для операторов запроса ответ может включать:
+
+* `dataset_schema`: схема результирующего набора.
+* `parameter_schema`: схема параметров оператора.
+
+Если не удаётся определить схему для корректного запроса (например, когда замена плейсхолдеров на `NULL` недопустима для этого запроса), ClickHouse всё равно создаёт подготовленный оператор и возвращает дескриптор без `dataset_schema`.
+
+Подготовленные операторы принадлежат аутентифицированному пользователю, а не отдельному сеансу. Если вы открываете несколько сеансов от имени одного и того же пользователя, вы можете выполнять, повторно привязывать и закрывать один и тот же дескриптор оператора из любого из этих сеансов.
+
+Другие пользователи не могут выполнять, привязывать или закрывать дескриптор оператора, который они не создавали.
+
+`arrowflight.prepared_statements_lifetime_seconds` управляет поведением при истечении срока действия:
+
+* `> 0`: использовать настроенное значение как время жизни оператора. Срок действия обновляется при каждом запросе как для операторов, привязанных к сеансу, так и для операторов без сеанса.
+* `0`: подготовленные операторы не истекают автоматически.
+* `-1` (по умолчанию): если оператор создан в сеансе, его время жизни соответствует тайм-ауту этого сеанса и обновляется при каждом запросе в этом сеансе. Если оператор создан без сеанса, он не истекает автоматически.
+
+Операторы с истекшим сроком действия удаляются и больше не учитываются в `arrowflight.max_prepared_statements_per_user`.
+
+<div id="closepreparedstatement">
+  #### ClosePreparedStatement
+</div>
+
+Закрывает подготовленный оператор и освобождает связанные с ним ресурсы на стороне сервера, если запрос содержит непустой дескриптор оператора.
+
+ClickHouse также поддерживает массовое закрытие с помощью `ClosePreparedStatement`, когда дескриптор пуст:
+
+* Если указан `x-clickhouse-session-id`, закрываются все подготовленные операторы аутентифицированного пользователя в этом сеансе.
+* Если идентификатор сеанса не указан, закрываются только подготовленные операторы без сеанса для аутентифицированного пользователя.
+
+Если подготовленный оператор создан в сеансе (через `x-clickhouse-session-id`), он также автоматически закрывается при закрытии этого сеанса.
+
+<div id="flight-sql-commands">
+  ## Команды Flight SQL
+</div>
+
+Если дескриптор `CMD` содержит сериализованное сообщение [Flight SQL protobuf](https://arrow.apache.org/docs/format/FlightSql.html), ClickHouse обрабатывает следующие команды:
+
+<div id="flightsql-getflightinfo">
+  ### Поддерживаются через GetFlightInfo / GetSchema
+</div>
+
+| Команда                         | Описание                                                                                                                      |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `CommandStatementQuery`         | Выполняет произвольный SQL-запрос. `transaction_id` не поддерживается.                                                        |
+| `CommandGetSqlInfo`             | Возвращает метаданные сервера (имя, версия, версия Arrow, возможности).                                                       |
+| `CommandGetCatalogs`            | Возвращает список каталогов. Результат пустой (ClickHouse не использует каталоги).                                            |
+| `CommandGetDbSchemas`           | Возвращает список баз данных. Поддерживает необязательный параметр `db_schema_filter_pattern` (шаблон SQL `LIKE`).            |
+| `CommandGetTables`              | Возвращает список таблиц. Поддерживает фильтры по схеме, имени таблицы, типам таблиц, а также необязательное включение схемы. |
+| `CommandGetTableTypes`          | Возвращает список типов движков таблиц (из `system.table_engines`).                                                           |
+| `CommandGetPrimaryKeys`         | Возвращает столбцы первичного ключа для указанной таблицы.                                                                    |
+| `CommandPreparedStatementQuery` | Выполняет подготовленный оператор типа `SELECT` по дескриптору.                                                               |
+
+<div id="flightsql-doput">
+  ### Поддерживается через DoPut
+</div>
+
+| Command                          | Description                                                                                                                                                                                                                                                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CommandStatementUpdate`         | Выполняет оператор DDL/DML (CREATE, INSERT, ALTER и т. д.). Возвращает количество затронутых строк. `transaction_id` не поддерживается.                                                                                                                                                                                    |
+| `CommandStatementIngest`         | Выполняет массовую вставку данных Arrow в существующую таблицу. Поддерживается только режим добавления. `transaction_id` не поддерживается.                                                                                                                                                                                |
+| `CommandPreparedStatementQuery`  | При отправке через `DoPut` привязывает значения параметров для подготовленного оператора, а затем возвращает `DoPutPreparedStatementResult` с дескриптором оператора. Принимается только один набор параметров (одна строка), и количество привязанных значений должно точно соответствовать количеству плейсхолдеров `?`. |
+| `CommandPreparedStatementUpdate` | Выполняет подготовленный оператор DDL/DML по дескриптору и возвращает количество затронутых строк.                                                                                                                                                                                                                         |
+
+<div id="flightsql-not-implemented">
+  ### Не поддерживается в ClickHouse
+</div>
+
+Эти команды относятся к возможностям, которых в ClickHouse нет, поэтому они не поддерживаются интерфейсом Arrow Flight SQL.
+
+| Команда                         | Причина                                                                                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CommandGetCrossReference`      | ClickHouse не является реляционной базой данных и не поддерживает ограничения внешних ключей, поэтому метаданные перекрёстных ссылок недоступны.   |
+| `CommandGetExportedKeys`        | ClickHouse не является реляционной базой данных и не поддерживает ограничения внешних ключей, поэтому метаданные экспортируемых ключей недоступны. |
+| `CommandGetImportedKeys`        | ClickHouse не является реляционной базой данных и не поддерживает ограничения внешних ключей, поэтому метаданные импортируемых ключей недоступны.  |
+| `CommandStatementSubstraitPlan` | ClickHouse не поддерживает планы Substrait.                                                                                                        |
+
+<div id="complete-example">
+  ## Полный пример
+</div>
+
+```python title="Query"
+import pyarrow as pa
+import pyarrow.flight as flight
+
+# Подключение и аутентификация
+client = flight.FlightClient("grpc://localhost:9090")
+token = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token])
+
+# Вставка данных с помощью DoPut с дескриптором PATH
+schema = pa.schema([("id", pa.uint32()), ("value", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3], type=pa.uint32()), pa.array(["a", "b", "c"])],
+    schema=schema,
+)
+descriptor = flight.FlightDescriptor.for_path("test")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+
+# Запрос данных с помощью GetFlightInfo + DoGet
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM test ORDER BY id"
+)
+info = client.get_flight_info(descriptor, options)
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+```text title="Response"
+   id value
+0   1     a
+1   2     b
+2   3     c
+```
+
+<div id="data-format">
+  ## Формат данных
+</div>
+
+Все данные передаются в формате Apache Arrow IPC. Поддерживается только формат `Arrow` — указание других форматов ClickHouse (например, `FORMAT JSON`, `FORMAT CSV`) приводит к ошибке.
+
+При сериализации типы данных ClickHouse сопоставляются с типами Arrow. Параметр `output_format_arrow_unsupported_types_as_binary` определяет, будут ли неподдерживаемые типы ClickHouse сериализоваться как бинарные BLOB-объекты.
+
+<div id="compatibility">
+  ## Совместимость
+</div>
+
+Интерфейс Arrow Flight совместим с любым клиентом или инструментом, поддерживающим протокол Arrow Flight или Arrow Flight SQL, в том числе:
+
+* Python (`pyarrow`)
+* Java (`org.apache.arrow.flight`)
+* C++ (`arrow::flight`)
+* Go (`apache/arrow/go`)
+* драйверы ADBC (Arrow Database Connectivity)
+* DBeaver и другие инструменты с поддержкой Flight SQL
+
+Если для вашего инструмента доступен собственный коннектор ClickHouse (например, JDBC, ODBC или собственный протокол), лучше использовать его, если только Arrow Flight не нужен именно для повышения производительности или совместимости форматов.
+
+<div id="client-side">
+  ## Возможности ArrowFlight на стороне клиента
+</div>
+
+ClickHouse также может выступать клиентом Flight и читать данные с внешних серверов Arrow Flight. См.:
+
+* [Движок таблицы ArrowFlight](/ru/reference/engines/table-engines/integrations/arrowflight)
+* [Табличная функция arrowFlight](/ru/reference/functions/table-functions/arrowflight)
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [Спецификация Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html)
+* [Спецификация Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
+* [Формат Arrow в ClickHouse](/ru/reference/formats/Arrow/Arrow)

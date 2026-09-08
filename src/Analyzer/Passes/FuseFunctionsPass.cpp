@@ -1,5 +1,7 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
+#include <Common/FieldVisitorConvertToNumber.h>
+
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -203,12 +205,12 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
 
     if (function_name == "sum")
     {
-        assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
+        chassert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
         node = createTupleElementFunction(context, sum_count_node, 1);
     }
     else if (function_name == "count")
     {
-        assert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
+        chassert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
         node = createTupleElementFunction(context, sum_count_node, 2);
     }
     else if (function_name == "avg")
@@ -263,7 +265,7 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
         auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
         for (auto * node : nodes)
         {
-            assert(node);
+            chassert(node);
             replaceWithSumCount(*node, sum_count_node, context);
         }
     }
@@ -301,13 +303,10 @@ QuantileLevelMapping collectUniqueQuantileLevels(const std::vector<QueryTreeNode
         if (!constant_node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' should have constant parameter", function_name);
 
-        const auto & value = constant_node->getValue();
-        if (value.getType() != Field::Types::Float64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' should have parameter of type Float64, got '{}'",
-                function_name, value.getTypeName());
-
-        levels_per_node.push_back(value.safeGet<Float64>());
+        /// The level is converted exactly as the aggregate function itself converts it (see
+        /// `QuantileLevels`), so a level written as an integer literal, `quantile(1)(x)`, is
+        /// accepted here too. Resolution of the original function has already validated it.
+        levels_per_node.push_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), constant_node->getValue()));
     }
 
     /// Build the unique, sorted list of levels.

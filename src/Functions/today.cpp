@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 
@@ -97,7 +98,7 @@ R"(
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 )"
         },
@@ -105,10 +106,8 @@ R"(
 SELECT TODAY, CURDATE,CURRENT_DATE
         )",
         R"(
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
+┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
         )"}
     };

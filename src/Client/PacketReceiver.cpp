@@ -5,7 +5,8 @@
 namespace DB
 {
 
-PacketReceiver::PacketReceiver(Connection * connection_) : AsyncTaskExecutor(std::make_unique<Task>(*this)), connection(connection_)
+PacketReceiver::PacketReceiver(Connection * connection_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this), "PacketReceiver"), connection(connection_)
 {
     epoll.add(timeout_descriptor.getDescriptor());
     socket_fd = connection->getSocket()->impl()->sockfd();
@@ -20,7 +21,7 @@ bool PacketReceiver::checkBeforeTaskResume()
 
 void PacketReceiver::processAsyncEvent(int fd [[maybe_unused]], Poco::Timespan socket_timeout, AsyncEventTimeoutType, const std::string &, uint32_t)
 {
-    assert(fd == socket_fd);
+    chassert(fd == socket_fd);
     timeout_descriptor.setRelative(socket_timeout);
     timeout = socket_timeout;
     is_read_in_process = true;

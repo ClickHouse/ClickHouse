@@ -1,0 +1,109 @@
+---
+title: مثال بسيط على سير عمل لاستخراج بيانات JSON باستخدام جدول وسيط مع عرض مادي
+description: "مثال بسيط على سير عمل لاستخراج بيانات JSON باستخدام جدول وسيط مع عرض مادي"
+date: 2024-05-20
+tags: ['تنسيقات البيانات']
+keywords: ['JSON', 'جدول وسيط', 'عرض مادي']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+كيف أتعامل مع رسالة JSON باستخدام مصدر أو جدول وسيط لاستخراج البيانات عبر عرض مادي؟
+كيف أتعامل مع JSON من دون كائن JSON التجريبي؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+من الأنماط الشائعة للتعامل مع بيانات JSON إرسالها إلى جدول وسيط، ثم استخدام دوال JSONExtract لاستخراج البيانات إلى جدول جديد عبر مُشغِّل عرض مادي.
+ويتم ذلك عادةً وفق التدفق والنمط التاليين:
+
+```
+source data --> MergeTree table --> Materialized View (with base table) --> application/client
+```
+
+يجب أن يحتوي الجدول الوسيط على حقل نصي `raw` تُخزَّن فيه بيانات JSON الخام. كما ينبغي أن يحتوي أيضًا على حقل أو حقلين إضافيين يمكن استخدامهما لإدارة هذا الجدول، بحيث يمكن تقسيمه وحذف البيانات الأقدم منه مع تقادم البيانات.
+
+*يمكن لبعض عمليات التكامل إضافة حقول إلى البيانات الأصلية، على سبيل المثال عند استخدام ClickHouse Kafka Connector Sink.
+
+مثال مبسّط أدناه:
+
+* أنشئ قاعدة البيانات التجريبية
+
+```
+create database db1;
+```
+
+* أنشئ جدول وسيط تُدرج فيه بيانات `json` الأولية الخاصة بك:
+
+```
+create table db1.table2_json_raw
+(
+    id Int32,
+    timestamp DateTime,
+    raw String
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+* أنشئ الجدول الأساسي الخاص بالعرض المادي
+
+```
+create table db1.table2_json_mv_base
+(
+ id Int32,
+ timestamp DateTime,
+ raw_string String,
+ custId Int8,
+ custName String
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+* أنشئ العرض المادي استنادًا إلى الجدول الأساسي
+
+```
+create materialized view db1.table2_json_mv to db1.table2_json_mv_base
+AS SELECT
+ id,
+ timestamp,
+ raw as raw_string,
+ simpleJSONExtractRaw(raw, 'customerId') as custId,
+ simpleJSONExtractRaw(raw, 'customerName') as custName
+ FROM
+db1.table2_json_raw;
+```
+
+* أدرِج بعض الصفوف النموذجية
+
+```
+ insert into db1.table2_json_raw
+ values
+ (1, '2024-05-16 00:00:00', '{"customerId":1, "customerName":"ABC"}'),
+ (2, '2024-05-16 00:00:01', '{"customerId":2, "customerName":"XYZ"}');
+```
+
+* عرض نتائج الاستخراج والعرض المادي الذي سيُستخدم في الاستعلامات
+
+```
+clickhouse-cloud :) select * from db1.table2_json_mv;
+
+SELECT *
+FROM db1.table2_json_mv
+
+Query id: 12655fd3-567a-4dfb-9ef7-abc4b11ad044
+
+┌─id─┬───────────timestamp─┬─raw_string─────────────────────────────┬─custId─┬─custName─┐
+│  1 │ 2024-05-16 00:00:00 │ {"customerId":1, "customerName":"ABC"} │ 1      │ "ABC"    │
+│  2 │ 2024-05-16 00:00:01 │ {"customerId":2, "customerName":"XYZ"} │ 2      │ "XYZ"    │
+└────┴─────────────────────┴────────────────────────────────────────┴────────┴──────────┘
+```
+
+روابط مرجعية إضافية:
+العروض المادية: [https://clickhouse.com/docs/guides/developer/cascading-materialized-views](https://clickhouse.com/docs/guides/developer/cascading-materialized-views)
+العمل مع JSON: [https://clickhouse.com/docs/integrations/data-formats/json#other-approaches](https://clickhouse.com/docs/integrations/data-formats/json#other-approaches)
+دوال JSON: [https://clickhouse.com/docs/sql-reference/functions/json-functions](https://clickhouse.com/docs/sql-reference/functions/json-functions)

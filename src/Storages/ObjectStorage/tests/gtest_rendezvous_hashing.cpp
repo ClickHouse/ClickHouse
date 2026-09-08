@@ -1,4 +1,8 @@
 #include <gtest/gtest.h>
+#include <Core/ProtocolDefines.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
@@ -10,6 +14,11 @@ namespace
     {
     public:
         explicit TestIterator(const std::vector<std::string> & paths)
+        {
+            for (const auto & path : paths)
+                objects.push_back(std::make_shared<ObjectInfo>(path));
+        }
+        explicit TestIterator(const std::vector<RelativePathWithMetadata> & paths)
         {
             for (const auto & path : paths)
                 objects.push_back(std::make_shared<ObjectInfo>(path));
@@ -57,6 +66,22 @@ namespace
                 return false;
             auto path = object->getPath();
             paths.emplace_back(path);
+        }
+        return true;
+    }
+
+    bool extractNForReplica(
+        StorageObjectStorageStableTaskDistributor & distributor,
+        std::vector<std::optional<size_t>> & read_source_indices,
+        size_t replica_id,
+        size_t n)
+    {
+        for (size_t i = 0; i < n; ++i)
+        {
+            ObjectInfoPtr object = distributor.getNextTask(replica_id);
+            if (!object)
+                return false;
+            read_source_indices.emplace_back(object->relative_path_with_metadata.read_source_index);
         }
         return true;
     }
@@ -230,4 +255,64 @@ TEST(RendezvousHashing, MultipleNodesReducedClusterOneByOne)
 
     ASSERT_TRUE(checkHead(paths0, {1, 5, 6, 7, 8, 9}));
     ASSERT_TRUE(checkHead(paths1, {0, 2, 3, 4}));
+}
+
+TEST(RendezvousHashing, DoesNotDeduplicateSamePathFromDifferentReadSources)
+{
+    const auto path = makePath(0);
+    std::vector<RelativePathWithMetadata> paths;
+    paths.emplace_back(path, 0);
+    paths.emplace_back(path, 1);
+
+    auto iterator = std::make_shared<TestIterator>(paths);
+    std::vector<std::string> replicas = {"replica0", "replica1", "replica2", "replica3"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    std::vector<std::optional<size_t>> read_source_indices;
+    ASSERT_TRUE(extractNForReplica(distributor, read_source_indices, 0, 2));
+
+    std::set<size_t> actual;
+    for (const auto & read_source_index : read_source_indices)
+    {
+        ASSERT_TRUE(read_source_index.has_value());
+        actual.insert(*read_source_index);
+    }
+
+    ASSERT_EQ(actual, (std::set<size_t>{0, 1}));
+}
+
+TEST(RelativePathWithMetadata, FileNameKeepsObjectKeyByDefault)
+{
+    RelativePathWithMetadata object_path("dir/part?.parquet#fragment");
+    ASSERT_EQ(object_path.getFileName(), "part?.parquet#fragment");
+
+    RelativePathWithMetadata web_path("dir/part.tsv.gz?download=1#fragment");
+    web_path.derive_file_name_from_url_path = true;
+    ASSERT_EQ(web_path.getFileName(), "part.tsv.gz");
+}
+
+TEST(ObjectInfo, IdentifierWithoutFileBucketInfoKeepsReadSourceIndex)
+{
+    ObjectInfo object_info(RelativePathWithMetadata("dir/file.parquet", 7));
+    ASSERT_EQ(object_info.getIdentifier(/*include_file_bucket_info=*/ false), "7:dir/file.parquet");
+}
+
+TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file";
+    response.read_source_index = 42;
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+    out.finalize();
+
+    ReadBufferFromString in(serialized);
+    ClusterFunctionReadTaskResponse deserialized;
+    deserialized.deserialize(in);
+
+    auto object_info = deserialized.getObjectInfo();
+    ASSERT_TRUE(object_info->relative_path_with_metadata.read_source_index.has_value());
+    ASSERT_EQ(*object_info->relative_path_with_metadata.read_source_index, 42);
 }

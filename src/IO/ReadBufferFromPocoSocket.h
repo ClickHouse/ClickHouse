@@ -4,6 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Stopwatch.h>
+#include <Common/ProfileEvents.h>
 #include <Poco/Net/Socket.h>
 
 namespace DB
@@ -29,9 +30,9 @@ public:
     explicit ReadBufferFromPocoSocketBase(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
     explicit ReadBufferFromPocoSocketBase(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    bool poll(size_t timeout_microseconds) const;
+    bool poll(size_t timeout_microseconds) override;
 
-    void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
+    void setAsyncCallback(AsyncCallback async_callback_);
 
     ssize_t socketReceiveBytesImpl(char * ptr, size_t size);
 

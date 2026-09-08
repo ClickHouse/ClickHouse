@@ -60,11 +60,11 @@ TableStateSnapshot TableStateSnapshot::deserialize(DB::ReadBuffer & in, const in
 
     auto read_optional_int64 = [&](std::optional<Int64> & field)
     {
-        char has_value;
+        char has_value = 0;
         DB::readChar(has_value, in);
         if (has_value != 0)
         {
-            Int64 value;
+            Int64 value = 0;
             DB::readIntBinary(value, in);
             field = value;
         }

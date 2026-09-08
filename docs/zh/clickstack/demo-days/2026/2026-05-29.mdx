@@ -1,0 +1,116 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-29
+title: '演示日 - 2026-05-29'
+sidebarTitle: '2026-05-29'
+description: 'ClickStack 2026-05-29 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="version-aware-improved-schema-filtering">
+  ## 按版本感知优化的 schema 过滤
+</div>
+
+*由 [@knudtty](https://github.com/knudtty) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bAVaBnfJ82Y" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack 现在仅在 ClickHouse 26.2 及以上版本中启用 direct&#95;read 优化，因为只有这些版本的全文搜索索引才能正确支持添加到开源 schema 中的别名列。此前，这项优化也可能会在更早版本上尝试启用，但实际上无法正常工作。版本检查会在查询时通过检查 schema 完成，而这些别名列现在也已默认包含在开源 schema 中。
+
+此外还展示了一项进行中的工作：用直接查询文本索引来替代自动补全 materialized view。目前两者的功能有部分重叠，增加了摄取压力。如果基准测试确认文本索引查询在性能上足够可靠，那么这个 materialized view 就可以简化甚至移除。Aaron 还解答了团队提出的问题：未来 ClickHouse 文本索引版本中的位置编码，可能会让键值过滤器查找更加准确。
+
+**相关 PR：** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: 默认添加针对日志和链路追踪的 direct&#95;read 优化, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): 将 direct&#95;read KV 项优化应用于 SQL 过滤器, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: 使用文本索引驱动过滤器和自动补全
+
+<div id="better-log-parsing">
+  ## 更好的日志解析
+</div>
+
+*由 [@dhable](https://github.com/dhable) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vhkMlddahu4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+某个客户的日志中，事件 body 是一个包含 `level` 字段的 JSON 对象。严重性推断逻辑会做两件事：将 body 解析为 JSON 以提取属性；如果 OTel 层未设置严重性，再回退到字符串匹配。结果，字符串匹配从 body 中某个 alert manager 的名称里识别出了“alert”一词，导致日志级别被错误分类。
+
+这个修复增加了一个保护条件：如果 body 能解析为 JSON，并且已经包含 level 字段，就完全跳过字符串推断步骤。大约一年前构建的一套冒烟测试套件，让验证这个修复并捕获相关边界情况变得很容易——只需添加新的测试用例即可，而这正是它的设计初衷。
+
+**相关 PR：** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): 当 body 解析为包含 level 字段的 JSON 时，跳过字符串推断
+
+<div id="mcp-server-improvements">
+  ## MCP 服务器改进
+</div>
+
+*演示者：[ @brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aIy1zfmlz3Y" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+本周发布了多项 MCP 改进：优化了事件模式的分桶与评分、改进了错误提示，并清理了共享 helper。工具前缀也从 `hyperdx_` 重命名为 `clickstack_`，以匹配产品名称。
+
+**相关 PR：** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): 提升 MCP 工具质量——错误提示、共享 helper 和更好的消息，[#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): 将工具前缀从 hyperdx&#95; 重命名为 clickstack&#95;，[#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): 添加 patch&#95;dashboard、get&#95;dashboard&#95;tile、search&#95;dashboards 工具，[#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): 改进别名描述和示例，以生成更易读的图表图例，[#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: 使用共享 helper 和 schema 级检查简化 MCP ObjectId 验证
+
+<div id="new-series-color-palette">
+  ## 新的图表系列配色板
+</div>
+
+*演示者：[@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+为配合 Alex 在颜色选择器方面的工作，Elizabet 着手统一 HyperDX 和 ClickStack 主题中的数据可视化配色板。这两个主题原本各自使用独立的色板，并且分别带有一些例外规则，导致颜色体系过于复杂，不便于统一管理。目标是打造一套同时适用于两种主题的统一色板。
+
+她使用色觉模拟工具，对照行业标准色板 (Tableau、Observable、IBM) 测试了对比度和可访问性。ClickHouse 的色板表现较差——其中的绿色在白色背景上对比度不足。Tableau 和 Observable 都至少有一项检查未通过；IBM 的色板虽然全部通过，但只有五种颜色，数量不够。综合来看，Observable 的色板整体最接近需求，只需对蓝色稍作调整，之后就可以在两种主题中共用。
+
+**相关 PR：** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) 重构(theme)：将图表色板 token 重命名为色相名称，并在各主题间统一
+
+<div id="new-page-layout-with-sticky-header">
+  ## 带有吸顶页头的新页面布局
+</div>
+
+*由 [@elizabetdev](https://github.com/elizabetdev) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e7d3ocqi4Ac" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+全新的 PageHeader 与 PageLayout 组件组合现已在所有主要页面中推出：仪表盘、服务地图、Client Sessions、Kubernetes 以及 ClickHouse 仪表盘。现在，每个页面都采用相同的内边距、标题下方的分隔线以及标题结构。此前，各页面样式并不统一——有些页面左侧是标题、右侧是控件，有些则完全没有标题。
+
+吸顶行为通过 prop 按需启用。传入 sticky 槽位的任何内容，都会在滚动时固定在页头下方；其余内容则正常滚动。如果未传入任何内容，则面包屑或页面选项会自动吸顶。
+
+**相关 PR：** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) Add PageHeader/PageLayout and migrate Sessions, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) Use PageHeader title on list pages, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Migrate Service Map to PageLayout, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Migrate Kubernetes dashboard to PageLayout, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) Migrate ClickHouse dashboard to PageLayout, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): migrate to PageLayout with sticky query toolbar, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): keep sticky header below drawer overlays
+
+<div id="new-datasource-selector-and-color-picking-for-series">
+  ## 全新的数据源选择器和系列颜色选择功能
+</div>
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/DKfJs9onl50" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Alex 带来了两项 UI 改进。数据源选择器经过了整理：现在点击后，只会显示可供选择的数据源。查看 schema 或创建新 source 之类的管理操作，则被移到了单独的 kebab 菜单中。这样就把选择和配置分开了——这项调整已经在待办列表里放了一段时间，也回应了团队的反馈。
+
+数值卡片现在也支持静态颜色选择器，因此你可以为某个指标指定固定颜色。条件颜色规则 (根据阈值或列变为红色、绿色或黄色) 也在开发中。等 Elizabet 的统一调色板上线后，这两项功能都会改用有明确名称的颜色，而不再是现在这种“颜色 1、2、3”的标签；对于从 Grafana 等工具迁移过来的用户来说，这会是一个很有意义的改进。
+
+**相关 PR：** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
+
+<div id="better-hints-for-dashboard-actions">
+  ## 为仪表盘操作提供更清晰的提示
+</div>
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yQaKMSXp8YA" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+仪表盘表格卡片中的行现在会显示更有用的悬停提示。鼠标悬停时，光标和图标都会变化，明确提示点击后会发生什么——要么打开关联的仪表盘，要么下钻到某个数据源。修改前，这些行是否可以点击并不直观，更别说点击后具体会执行什么操作了。
+
+**相关 PR：** [#2321](https://github.com/hyperdxio/hyperdx/pull/2321) feat(app): 为仪表盘表格卡片行点击添加悬停提示和原生链接交互提示

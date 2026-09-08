@@ -1,0 +1,41 @@
+variant: single variant no nulls
+\N
+\N
+\N
+\N
+variant: single variant with nulls
+\N
+\N
+\N
+\N
+variant: multiple variants
+1
+\N
+\N
+0
+0
+\N
+\N
+1
+variant: arithmetic still works
+47
+\N
+\N
+15
+dynamic: single variant no nulls
+\N
+\N
+dynamic: single variant with nulls
+\N
+\N
+dynamic: multiple variants
+1
+\N
+0
+0
+47
+\N
+5
+15
+variant: throws with default setting
+dynamic: throws with default setting

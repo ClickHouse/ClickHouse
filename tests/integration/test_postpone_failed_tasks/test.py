@@ -128,9 +128,10 @@ def test_fetch_exponential_backoff_with_replicated_tree(
     ## The fetch from the src replica will be impossible, until table is detached.
     ## Actually this is an imitation of scenario when one replica inserted the data and immediately becomes unavaliable,
     ## so fethes are impossible.
-    retry_count = 200
+    start_time = time.monotonic()
     task_posponed = False
-    for _ in range(0, retry_count):
+    while time.monotonic() < start_time + 80:
+        time.sleep(1)
         if count_postponed_tasks_in_replicated_queue(dst_node):
             task_posponed = True
             break

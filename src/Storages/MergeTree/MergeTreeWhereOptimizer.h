@@ -42,6 +42,7 @@ public:
         ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
+        bool supported_columns_include_subcolumns_,
         LoggerPtr log_);
 
     void optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const;
@@ -61,11 +62,13 @@ public:
 private:
     struct Condition
     {
-        explicit Condition(RPNBuilderTreeNode node_)
-            : node(std::move(node_))
+        explicit Condition(std::vector<RPNBuilderTreeNode> nodes_)
+            : nodes(std::move(nodes_))
         {}
 
-        RPNBuilderTreeNode node;
+        /// One or more conjuncts that share the same required column set and are
+        /// treated as a single unit for PREWHERE reordering and selectivity estimation.
+        std::vector<RPNBuilderTreeNode> nodes;
 
         UInt64 columns_size = 0;
         NameSet table_columns;
@@ -77,7 +80,12 @@ private:
         bool good = false;
 
         /// the lower the better
-        Float64 estimated_row_count = 0;
+        UInt64 estimated_row_count = 0;
+
+        /// Lower is better: bytes_per_row * total_rows / (total_rows - estimated_row_count), +inf
+        /// when the condition rejects no rows. Comparable across conditions only in the same unit,
+        /// hence a column of unknown size is charged an estimated per-row size, never a row count.
+        double bytes_per_rejected_row = 0;
 
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
@@ -87,21 +95,29 @@ private:
         /// For debugging purposes
         String toString() const
         {
+            String names;
+            for (const auto & n : nodes)
+            {
+                if (!names.empty())
+                    names += " AND ";
+                names += n.getColumnName();
+            }
             return fmt::format(
                 "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, table_columns.size: {})",
-                node.getColumnName(),
+                "columns_size: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
+                names,
                 viable,
                 good,
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
+                bytes_per_rejected_row,
                 table_columns.size());
         }
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, estimated_row_count, columns_size, table_columns.size());
+            return std::make_tuple(!viable, !good, -min_position_in_primary_key, bytes_per_rejected_row, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -144,6 +160,9 @@ private:
 
     UInt64 getColumnsSize(const NameSet & columns) const;
 
+    double approximateBytesPerRow(const NameSet & columns) const;
+    double approximateBytesPerRowAndColumn(const String & column) const;
+
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
     bool isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const;
@@ -169,12 +188,14 @@ private:
     const NameSet table_columns;
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
+    const bool supported_columns_include_subcolumns;
     const NameSet sorting_key_names;
     const NameToIndexMap primary_key_names_positions;
     StorageMetadataPtr storage_metadata;
     LoggerPtr log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;
+    UInt64 total_rows = 0;
 };
 
 

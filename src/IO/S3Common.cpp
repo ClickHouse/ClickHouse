@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Settings.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -25,7 +26,7 @@ namespace DB
 bool S3Exception::isRetryableError() const
 {
     /// Looks like these list is quite conservative, add more codes if you wish
-    static const std::unordered_set<Aws::S3::S3Errors> unretryable_errors = {
+    static const UnorderedSetWithMemoryTracking<Aws::S3::S3Errors> unretryable_errors = {
         Aws::S3::S3Errors::NO_SUCH_KEY,
         Aws::S3::S3Errors::ACCESS_DENIED,
         Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
@@ -40,6 +41,13 @@ bool S3Exception::isRetryableError() const
 bool S3Exception::isAccessTokenExpiredError() const
 {
     return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID || code == Aws::S3::S3Errors::ACCESS_DENIED || code == Aws::S3::S3Errors::INVALID_SIGNATURE || code == Aws::S3::S3Errors::UNKNOWN;
+}
+
+bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
+{
+    return error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY
+        || error.GetExceptionName() == "InvalidPart"
+        || error.GetExceptionName() == "InvalidPartOrder";
 }
 
 }

@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/instrument-application
+title: 'Managed ClickStack로 5분 만에 애플리케이션 계측하기'
+description: 'OpenTelemetry로 Node.js 애플리케이션을 계측하고 로그, 메트릭, 트레이스를 Managed ClickStack으로 전송합니다'
+doc_type: 'guide'
+keywords: ['ClickStack', '계측', 'OpenTelemetry', '관리형', '관측성', 'sdk', 'NodeJS']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import InstrumentApplication from '/snippets/ko/clickstack/_instrument_application.mdx';
+
+이 가이드에서는 OpenTelemetry를 사용해 소규모 Node.js 애플리케이션을 계측하고 해당 애플리케이션의 logs, 메트릭, traces를 Managed ClickStack으로 전송하는 방법을 설명합니다. 백엔드는 애플리케이션 소스 코드를 변경하지 않고 계측됩니다.
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)는 공개 ClickHouse 데모에 호스팅된 HackerNews 데이터셋에 쿼리를 실행하는 Node.js 앱입니다. 모든 차트, 테이블, 검색 상자는 실제 ClickHouse 쿼리로 동작하므로 모든 상호작용에서 trace가 생성되며, 그 주요 스팬은 백엔드에서 ClickHouse로 보내는 HTTPS 호출입니다.
+
+이 가이드는 [OpenTelemetry Collector 설정하기](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)를 이미 완료했고, 이 애플리케이션을 실행하는 머신에서 접근할 수 있는 ClickStack collector가 실행 중이라고 가정합니다. **해당 collector의 OTLP endpoint**와 배포 시 설정한 `OTLP_AUTH_TOKEN`을 반드시 기록해 두십시오.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 이 머신에서 접근할 수 있는 ClickStack collector. 아직 배포하지 않았다면 먼저 [OpenTelemetry Collector 설정하기](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)를 따르십시오.
+* 해당 collector의 OTLP endpoint와 여기에 설정한 `OTLP_AUTH_TOKEN`.
+* Node 18+와 npm.
+
+<InstrumentApplication />
+
+<div id="further-reading">
+  ## 추가 자료
+</div>
+
+* [Kubernetes 모니터링](/ko/clickstack/managed-onboarding/monitoring-kubernetes): 클러스터에서 로그, 인프라 메트릭, Kubernetes 이벤트를 수집합니다.
+* [AWS CloudWatch 로그 모니터링](/ko/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch 수신기를 통해 CloudWatch 로그를 전달합니다.
+* [세션 리플레이](/ko/clickstack/features/session-replay): 기능 개요, SDK 옵션, 개인정보 보호 설정.
+* [프로덕션 전환](/ko/clickstack/managing/production): 프로덕션 전환 시 권장 사항을 확인하십시오.

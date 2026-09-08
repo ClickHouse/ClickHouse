@@ -55,7 +55,7 @@ void ExtremesTransform::work()
         ISimpleTransform::work();
 }
 
-void ExtremesTransform::transform(DB::Chunk & chunk)
+void accumulateExtremes(MutableColumns & extremes_columns, const Chunk & chunk)
 {
 
     if (chunk.getNumRows() == 0)
@@ -124,7 +124,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             {
                 if (value.isNull())
                     return true;
-                Float64 rawVal;
+                Float64 rawVal = 0;
                 return value.tryGet<Float64>(rawVal) && isNaN(rawVal);
             };
             if (isNullORNaN(min_value) || (!isNullORNaN(cur_min_value) && cur_min_value < min_value))
@@ -140,6 +140,11 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             extremes_columns[i] = std::move(new_extremes);
         }
     }
+}
+
+void ExtremesTransform::transform(DB::Chunk & chunk)
+{
+    accumulateExtremes(extremes_columns, chunk);
 }
 
 }

@@ -6,6 +6,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/defines.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 namespace DB
@@ -15,11 +17,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsString default_compression_codec;
 }
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache)
@@ -115,6 +112,11 @@ std::optional<Columns> IMergeTreeDataPartWriter::releaseIndexColumns()
     /// We need to deallocate it in shrinkToFit without memory tracker as well.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
+    /// `shrinkToFit` reallocates each index column to a right-sized buffer, and that buffer is the
+    /// resident primary index kept for the part's whole lifetime. Route it into the dedicated arena
+    /// (the reload path does the same in `loadIndex`).
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     Columns result;
     result.reserve(index_columns.size());
 
@@ -154,12 +156,13 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
 ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
+    /// The `default_codec` is already resolved by `MergeTreeData::getCompressionCodecForPart`, which
+    /// honors the table-level `default_compression_codec` setting as well as `RECOMPRESS` TTL codecs.
+    /// We must trust it here: re-reading `default_compression_codec` and overriding `default_codec`
+    /// would make a `RECOMPRESS` TTL merge write column streams with the setting's codec while the
+    /// part metadata (`default_compression_codec.txt`) records the TTL codec, so the metadata and the
+    /// actual on-disk data would diverge and recompression would not be applied.
     ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
-
-    auto default_compression_codec_mergetree_settings = (*storage_settings)[MergeTreeSetting::default_compression_codec].value;
-    // Prioritize the codec from the settings over `default_codec`
-    if (!default_compression_codec_mergetree_settings.empty())
-        default_codec_desc = CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
 
     if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
         return column_desc->codec ? column_desc->codec : default_codec_desc;
@@ -170,6 +173,17 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
 
+bool IMergeTreeDataPartWriter::columnUsesDefaultCodec(const String & column_name) const
+{
+    if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
+        return CompressionCodecFactory::isDefaultCodec(column_desc->codec);
+
+    if (const auto * virtual_desc
+        = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        return CompressionCodecFactory::isDefaultCodec(virtual_desc->codec);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 

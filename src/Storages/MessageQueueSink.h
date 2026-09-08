@@ -73,7 +73,7 @@ private:
 
     std::unique_ptr<WriteBufferFromOwnString> buffer;
     IOutputFormatPtr format;
-    IRowOutputFormat * row_format;
+    IRowOutputFormat * row_format{};
     std::unique_ptr<IMessageProducer> producer;
 
     const String storage_name;

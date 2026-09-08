@@ -1,24 +1,65 @@
 #include <Parsers/CreateQueryUUIDs.h>
 
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
 namespace DB
 {
 
-namespace ServerSetting
+namespace ErrorCodes
 {
-extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+    extern const int BAD_ARGUMENTS;
 }
 
-CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
+namespace ServerSetting
 {
-    if (!generate_random || !force_random)
+    extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+}
+
+namespace
+{
+    ViewTarget::Kind parseViewTargetKindFromString(std::string_view str)
+    {
+        if (auto kind = magic_enum::enum_cast<ViewTarget::Kind>(str))
+        {
+            return *kind;
+        }
+        else if (str == "to")
+        {
+            return ViewTarget::To;
+        }
+        else if (str == "inner")
+        {
+            return ViewTarget::Inner;
+        }
+        else if (str == "data")
+        {
+            return ViewTarget::Samples;
+        }
+        else if (str == "tags")
+        {
+            return ViewTarget::Tags;
+        }
+        else if (str == "metrics")
+        {
+            return ViewTarget::Metrics;
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
+    }
+}
+
+
+CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool for_restore)
+{
+    if (!generate_random || !for_restore)
     {
         uuid = query.uuid;
         if (query.targets)
@@ -66,9 +107,20 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
 
             if (query.is_time_series_table)
             {
-                generate_target_uuid(ViewTarget::Data);
+                generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::Metrics);
+
+                bool recent_samples_enabled = getTimeSeriesSettingRecentSamplesTTL(query) != 0;
+                if (for_restore && !hasExplicitTimeSeriesSettingRecentSamplesTTL(query))
+                {
+                    /// A query restored from a backup can come from a version before the `recent_samples_ttl_seconds`
+                    /// setting existed, where the absent setting means zero (see upgradeFromVersionWithNoRecentSamplesTTL),
+                    /// so a fresh UUID is not stamped on RESTORE.
+                    recent_samples_enabled = false;
+                }
+                if (recent_samples_enabled)
+                    generate_target_uuid(ViewTarget::RecentSamples);
             }
         }
     }
@@ -102,7 +154,7 @@ String CreateQueryUUIDs::toString() const
     for (const auto & [kind, inner_uuid] : targets_inner_uuids)
     {
         if (inner_uuid != UUIDHelpers::Nil)
-            add_name_and_uuid_to_string(::DB::toString(kind), inner_uuid);
+            add_name_and_uuid_to_string(magic_enum::enum_name(kind), inner_uuid);
     }
     out << "}";
     return out.str();
@@ -115,7 +167,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
     skipWhitespaceIfAny(in);
     in >> "{";
     skipWhitespaceIfAny(in);
-    char c;
+    char c = 0;
     while (in.peek(c) && c != '}')
     {
         String name;
@@ -132,8 +184,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
         }
         else
         {
-            ViewTarget::Kind kind;
-            parseFromString(kind, name);
+            ViewTarget::Kind kind = parseViewTargetKindFromString(name);
             res.setTargetInnerUUID(kind, parse<UUID>(value));
         }
         if (in.peek(c) && c == ',')

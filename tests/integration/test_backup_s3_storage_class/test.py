@@ -37,7 +37,7 @@ def test_backup_s3_storage_class(started_cluster):
             INSERT INTO test_s3_storage_class VALUES (1, 'a');
         """,
     )
-    result = node.query(
+    node.query(
         f"""
             BACKUP TABLE test_s3_storage_class TO S3('http://minio1:9001/root/data', 'minio', '{minio_secret_key}')
             SETTINGS s3_storage_class='STANDARD';

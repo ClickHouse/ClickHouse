@@ -240,7 +240,7 @@ void FractionalOffsetTransform::splitChunk(Chunk & current_chunk) const
     /// <----------> num_rows
     /// <---> offset
 
-    assert(offset < num_rows);
+    chassert(offset < num_rows);
 
     UInt64 length = num_rows - offset;
     auto columns = current_chunk.detachColumns();
