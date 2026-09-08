@@ -23,6 +23,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -35,7 +36,9 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageValues.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -129,9 +132,11 @@ namespace Setting
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
     extern const SettingsDouble limit;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsJoinAlgorithm join_algorithm;
@@ -295,8 +300,27 @@ bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & 
 /// already constant-folded live in ConstantNode::source_expression, which is NOT a child
 /// (children_size == 0), so they are correctly ignored: by then they are constants evaluated on
 /// the initiator and safe to ship.
+///
+/// A bare `IN some_table` / `NOT IN some_table` carries a TABLE node - or a TABLE_FUNCTION node for
+/// a table function - instead of a QUERY node, and reads a table by name exactly the way a subquery
+/// does: on the normal StorageView path against the initiator's table, per-shard once the
+/// optimization fires. Those count here too, otherwise two spellings of the same predicate over the
+/// same view return different rows. Only the right-hand side of an `IN` is inspected for them,
+/// because the query's own join tree is made of TABLE nodes as well.
 bool containsSubqueryNode(const QueryTreeNodePtr & node)
 {
+    if (const auto * function_node = node->as<FunctionNode>();
+        function_node && isNameOfInFunction(function_node->getFunctionName()))
+    {
+        const auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() >= 2)
+        {
+            const auto right_node_type = arguments[1]->getNodeType();
+            if (right_node_type == QueryTreeNodeType::TABLE || right_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+                return true;
+        }
+    }
+
     for (const auto & child : node->getChildren())
     {
         if (!child)
@@ -316,6 +340,13 @@ bool containsSubqueryNode(const QueryTreeNodePtr & node)
 /// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
 /// the optimization fires, with the same divergence risk described above, so suppress the
 /// optimization when present. Mirrors hasSubquery in StorageView.cpp.
+///
+/// Like containsSubqueryNode, this also treats a bare `IN some_table` / `IN some_table_function(...)`
+/// as a subquery. The expression parser produces an ASTFunction from the IN family whose right-hand
+/// side is an ASTIdentifier (the table name) or an ASTFunction naming a table function, never an
+/// ASTSubquery, so the plain ASTSubquery check above misses it, while the analyzer resolves that
+/// identifier as a table and reads it exactly the way a subquery would - on each shard once folded
+/// into the shipped query. Only the right-hand side of an IN is inspected.
 bool astContainsSubquery(const ASTPtr & ast)
 {
     if (!ast)
@@ -323,6 +354,22 @@ bool astContainsSubquery(const ASTPtr & ast)
 
     if (ast->as<ASTSubquery>())
         return true;
+
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            const auto & right = arguments[1];
+            if (right->as<ASTIdentifier>())
+                return true;
+
+            if (const auto * right_function = right->as<ASTFunction>();
+                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
+                return true;
+        }
+    }
 
     for (const auto & child : ast->children)
     {
@@ -348,9 +395,12 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
           * one table column is accessible.
           */
         auto access = query_context->getAccess();
+        const auto * alias = storage->as<StorageAlias>();
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+            /// An `Alias` also requires access to the selected column of its target table.
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 
@@ -481,8 +531,16 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     if (!columns_with_sizes.empty())
         result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
     else
+    {
+        /// A table expression can resolve to no columns at all, for example a table function over a
+        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+        if (column_names_and_types.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Cannot read from table expression with no columns");
+
         /// If we have no information about columns sizes, choose a column of minimum size of its data type
         result = ExpressionActions::getSmallestColumn(column_names_and_types);
+    }
 
     return result;
 }
@@ -516,6 +574,15 @@ RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const
         return nullptr;
     auto row_policy_filter = query_context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (const auto * alias = storage->as<StorageAlias>())
+    {
+        const auto target_storage_id = alias->getTargetTable()->getStorageID();
+        auto target_row_policy_filter = query_context->getRowPolicyFilter(
+            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
+    }
+
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
     return row_policy_filter;
@@ -533,6 +600,11 @@ bool applyTrivialCountIfPossible(
 {
     const auto & settings = query_context->getSettingsRef();
     if (!settings[Setting::optimize_trivial_count_query])
+        return false;
+
+    /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
+    /// clone; a distributed plan counts the rows with a distributed read instead.
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
@@ -574,6 +646,12 @@ bool applyTrivialCountIfPossible(
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
+        return false;
+
+    /// `arrayJoin` in the argument multiplies rows above the source read, so the aggregate does not
+    /// observe `totalRows()` rows. Must precede `optimize_trivial_count`: storages that count in
+    /// read() act on that flag even when this function later declines.
+    if (hasFunctionNode(aggregates.front(), "arrayJoin"))
         return false;
 
     /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
@@ -649,6 +727,11 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     /// disabling the parent setting also disables this variant.
     if (!settings[Setting::optimize_trivial_count_query]
         || !settings[Setting::optimize_trivial_count_with_sparsity_filter])
+        return false;
+
+    /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
+    /// clone; a distributed plan counts the rows with a distributed read instead.
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
@@ -2106,8 +2189,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// globally (see Aggregator::ensureLimitsFixedMapMerge), so shards could each keep a
                         /// different, locally-permitted set of keys and the initiator would return more groups
                         /// in total than the limit allows. Matches the precedent set by
-                        /// AggregatingStep::canUseShardedAggregation and useDataParallelAggregation, which
-                        /// disable independent aggregation for the same reason.
+                        /// `useDataParallelAggregation`, which disables independent aggregation for the same
+                        /// reason.
                         const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
                             && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
 
@@ -2437,14 +2520,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// It is just a safety check needed until we have a proper sending plan to replicas.
                     /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                     /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                    /// The chosen table and union children are TableNodes, so a table function matches
+                    /// neither and equality against them is meaningless when table_node is null.
                     const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                         = query_context->canUseParallelReplicasOnFollower()
-                        && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+                        && (!table_node || table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
                         ContextPtr updated_context = effective_context;
-                        if (const UnionNode * table_union = planner_context->getGlobalPlannerContext()->parallel_replicas_table_union)
+                        if (const UnionNode * table_union
+                            = table_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
                         {
                             SelectQueryOptions options;
                             for (const auto & child : table_union->getQueries().getNodes())
@@ -2462,6 +2548,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             auto mutable_context = Context::createCopy(effective_context);
                             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                             updated_context = mutable_context;
+                            /// Source processors may hold only a weak_ptr to the context they read
+                            /// with, so this copy has to outlive read() for the whole pipeline.
+                            query_plan.addInterpreterContext(updated_context);
                         }
 
                         effective_storage->read(
@@ -2748,6 +2837,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         table_expression->formatASTForErrorMessage());
     }
 
+    /// Filled by `buildShardCollapseFanOut` below: duplicate GROUP BY key columns the shard collapsed before bucketing.
+    /// Propagated to the outer planner so a distributed aggregation merge buckets by only the representative keys.
+    std::unordered_map<String, String> shard_collapse_duplicate_keys;
+
     if (till_stage == QueryProcessingStage::FetchColumns)
     {
         ActionsDAG rename_actions_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
@@ -2825,7 +2918,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     select_query_info.query_tree,
                     select_query_info.planner_context,
                     *query_plan.getCurrentHeader(),
-                    *expected_header))
+                    *expected_header,
+                    &shard_collapse_duplicate_keys))
             {
                 auto fan_out_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
                 fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");
@@ -2876,6 +2970,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         .useful_sets = std::move(useful_sets),
         .query_node_to_plan_step_mapping = std::move(query_node_to_plan_step_mapping),
         .source_constants = std::move(source_constants),
+        .shard_collapse_duplicate_keys = std::move(shard_collapse_duplicate_keys),
     };
 }
 
@@ -3013,9 +3108,9 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         return;
 
     const auto * children_step = root_node->children.front()->step.get();
+    /// Only steps that support clone(), because the lookup plan below is cloned per lookup batch.
     bool is_allowed_storage = typeid_cast<const ReadFromMergeTree *>(children_step)
-                           || typeid_cast<const ReadNothingStep *>(children_step)
-                           || typeid_cast<const ReadFromPreparedSource *>(children_step);
+                           || typeid_cast<const ReadNothingStep *>(children_step);
     if (!is_allowed_storage)
         return;
 

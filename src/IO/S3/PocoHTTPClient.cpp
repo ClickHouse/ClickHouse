@@ -472,7 +472,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto method = getMethod(request);
 
     auto sdk_attempt = getSDKAttemptNumber(request);
-    auto ch_attempt = getClickhouseAttemptNumber(request);
+    auto ch_attempt = getClickHouseAttemptNumber(request);
     bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
 
     if (!first_attempt)
@@ -805,6 +805,25 @@ constexpr auto DEFAULT_SERVICE_ACCOUNT = "default";
 constexpr auto DEFAULT_METADATA_SERVICE = "metadata.google.internal";
 constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "computeMetadata/v1/instance/service-accounts";
 
+/// A non-positive receive timeout is unbounded downstream: Poco maps it to INT_MAX microseconds in
+/// `SecureSocketImpl::getMaxTimeoutOrLimit`, so it must be replaced by the cap rather than compared
+/// against it.
+Poco::Timespan capTimespan(Poco::Timespan timespan, Poco::Timespan cap)
+{
+    if (timespan.totalMicroseconds() <= 0)
+        return cap;
+    return std::min(timespan, cap);
+}
+
+}
+
+ConnectionTimeouts getCredentialAcquisitionTimeouts(const ConnectionTimeouts & timeouts)
+{
+    const Poco::Timespan request_cap(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000);
+
+    return ConnectionTimeouts(timeouts)
+        .withSendTimeout(capTimespan(timeouts.send_timeout, request_cap))
+        .withReceiveTimeout(capTimespan(timeouts.receive_timeout, request_cap));
 }
 
 PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration & client_configuration)
@@ -878,7 +897,7 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
         LOG_TEST(log, "Make request to: {}", url.toString());
 
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
-    auto session = makeHTTPSession(group, url, timeouts);
+    auto session = makeHTTPSession(group, url, getCredentialAcquisitionTimeouts(timeouts));
     session->sendRequest(request);
 
     Poco::Net::HTTPResponse response;
@@ -915,7 +934,8 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromADC() const
 {
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
-    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, timeouts, group);
+    auto result = fetchGCPOAuthToken(
+        google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, getCredentialAcquisitionTimeouts(timeouts), group);
     return
     {
         .token = std::move(result.access_token),

@@ -12,6 +12,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
@@ -565,6 +566,9 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
 DataTypePtr
 IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
 {
+    /// The schema comes from the table metadata and can be nested arbitrarily deeply.
+    checkStackSize();
+
     String type_name = type->getValue<String>(f_type);
     if (type_name == f_list)
     {
@@ -731,7 +735,15 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 /// a whitespace-only difference is the same type and needs only a rename, not a cast.
                 if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
                 {
-                    if (old_json->getValue<String>(f_name) != name)
+                    /// Nullability is carried by the separate `required` key, so equal type strings
+                    /// can still resolve to different types. Only relaxing required to optional is
+                    /// legal evolution; the reverse keeps the plain passthrough.
+                    const bool old_required = old_json->getValue<bool>(f_required);
+                    if (old_required && !required && !old_node->result_type->equals(*type))
+                    {
+                        node = &dag->addCast(*old_node, type, name, nullptr);
+                    }
+                    else if (old_json->getValue<String>(f_name) != name)
                     {
                         node = &dag->addAlias(*old_node, name);
                     }
@@ -838,7 +850,7 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 }
 
 
-std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
+std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);
 
@@ -848,7 +860,7 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
     return it->second;
 }
 
-bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
+bool IcebergSchemaProcessor::hasClickHouseTableSchemaById(Int32 id) const
 {
     SharedLockGuard lock(mutex);
 
