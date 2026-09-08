@@ -304,8 +304,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         /// A nested `SETTINGS` clause is clamped to the session's settings constraints: violating changes are
         /// dropped or clamped (a top-level clause still throws in `applySettingsFromQuery`), while an unknown
         /// name or an uncastable value throws as for a top-level clause, on every server that executes the
-        /// query. The node records the effective clause, so `toAST`, the tree hash, the `Planner` and the shards
-        /// receiving the subquery see what was applied.
+        /// query. The node records the effective `changes`: the ones that survive, with their clamped values
+        /// and the literals as written, so `toAST`, the tree hash, the `Planner` and the shards receiving the
+        /// subquery see what was applied. `name = DEFAULT` in a nested clause is not applied on this path,
+        /// as before (see 05019_settings_constraints_nested_settings_clamp).
         if (!set_query.changes.empty())
         {
             settings_changes = set_query.changes;
