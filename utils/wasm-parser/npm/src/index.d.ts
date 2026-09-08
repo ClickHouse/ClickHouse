@@ -44,13 +44,16 @@ export interface FormatOptions
     oneLine?: boolean;
 }
 
-export const FEATURE_FORMAT = 1;
-export const FEATURE_DCL = 2;
-export const FEATURE_AST_JSON = 4;
+export interface Features
+{
+    readonly format: boolean;
+    readonly dcl: boolean;
+    readonly astJson: boolean;
+}
 
 export const Parser: {
     init(options?: InitOptions): Promise<void>;
-    readonly features: number;
+    readonly features: Features;
     parse(sql: string): ParseResult;
     format(sql: string, options?: FormatOptions): FormatResult;
     formatJson(ast: unknown, options?: FormatOptions): FormatResult;

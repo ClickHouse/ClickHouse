@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Parser, FEATURE_FORMAT, FEATURE_AST_JSON } from './src/full-node.mjs';
+import { Parser } from './src/full-node.mjs';
 import { Parser as SlimParser } from './src/slim-node.mjs';
 import { createParser } from './src/parser.mjs';
 import { instantiate } from './src/wasi-node.mjs';
@@ -50,7 +50,6 @@ check('parse before init throws', throwsInitHint(() => Parser.parse('SELECT 1'))
 check('format before init throws', throwsInitHint(() => Parser.format('SELECT 1')));
 check('formatJson before init throws', throwsInitHint(() => Parser.formatJson('{}')));
 check('features before init throws', throwsInitHint(() => Parser.features));
-check('exports feature constants', FEATURE_FORMAT === 1 && FEATURE_AST_JSON === 4);
 check('slim parse before init throws', throwsInitHint(() => SlimParser.parse('SELECT 1')));
 
 {
@@ -239,9 +238,10 @@ const slimWasm = pathToFileURL(join(wasmDir, 'parser-no-formatting-no-dcl.wasm')
 
 await Parser.init({ url: fullWasm });
 await Parser.init({ url: fullWasm });
-check('init is idempotent', typeof Parser.features === 'number');
-check('full build has formatting', (Parser.features & FEATURE_FORMAT) !== 0);
-check('full build has AST JSON', (Parser.features & FEATURE_AST_JSON) !== 0);
+check('init is idempotent', typeof Parser.features === 'object' && Parser.features !== null);
+check('full build has formatting', Parser.features.format === true);
+check('full build has AST JSON', Parser.features.astJson === true);
+check('full build has DCL', Parser.features.dcl === true);
 
 {
     const result = Parser.parse('SELECT 1');
@@ -277,7 +277,8 @@ check('full build has AST JSON', (Parser.features & FEATURE_AST_JSON) !== 0);
 }
 
 await SlimParser.init({ url: slimWasm });
-check('slim build has no formatting', (SlimParser.features & FEATURE_FORMAT) === 0);
+check('slim build has no formatting', SlimParser.features.format === false);
+check('slim build has no AST JSON', SlimParser.features.astJson === false);
 
 {
     const result = SlimParser.parse('SELECT 1');

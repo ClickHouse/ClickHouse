@@ -35,7 +35,7 @@ Firefox 100, Safari 18.2, Node 22 as used by `clickhouse/wasm-builder`).
 import { Parser } from '@clickhouse/wasm-parser'
 
 await Parser.init() // or { url } / { bytes } for a bundler asset
-Parser.features
+Parser.features // { format: true, dcl: true, astJson: true }
 
 const { ast, highlights, error } = Parser.parse(sql)
 const { sql, error } = Parser.format(query, { oneLine: true })
@@ -85,3 +85,62 @@ node utils/wasm-parser/npm/scripts/pack.mjs \
   --wasm-dir <dir-with-both-wasm-files> \
   --out-dir tmp
 ```
+
+## Interactive playground
+
+An interactive Node.js REPL is available in `utils/wasm-parser/playground` to experiment with `@clickhouse/wasm-parser` in a terminal.
+
+### Starting the playground
+
+Compile the `.wasm` modules first if they are not already built, then start the REPL:
+
+```bash
+cd utils/wasm-parser/npm
+npm run setup
+npm run build
+
+cd ../playground
+npm install
+npm start
+```
+
+Both `Parser` (full build) and `SlimParser` (slim build) are pre-initialized in the global context.
+
+### What is possible
+
+- **Parse SQL and inspect the AST tree**:
+  ```js
+  const res = Parser.parse('SELECT number * 2 AS val FROM numbers(10) WHERE val > 5')
+  console.dir(res.ast, { depth: null })
+  ```
+- **Syntax token highlighting offsets**:
+  ```js
+  Parser.parse('SELECT 1').highlights
+  // [ { begin: 0, end: 6, type: 'keyword' }, { begin: 7, end: 8, type: 'number' } ]
+  ```
+- **Parse error diagnostics without exceptions**:
+  ```js
+  const res = Parser.parse('SELECT * FORM table')
+  console.log(res.error)
+  // { message: "Syntax error: failed at position 10 ('FORM') ...", expected: [ ... ] }
+  ```
+- **SQL formatting and query normalization**:
+  ```js
+  Parser.format('select   1 as a,   2 as b', { oneLine: true })
+  // { sql: 'SELECT 1 AS a, 2 AS b' }
+  ```
+- **Round-trip and transform AST JSON**:
+  ```js
+  const { ast } = Parser.parse('SELECT 1')
+  Parser.formatJson(ast, { oneLine: true })
+  // { sql: 'SELECT 1' }
+  ```
+- **Compare full vs slim parser capabilities**:
+  ```js
+  Parser.features     // { format: true, dcl: true, astJson: true }
+  SlimParser.features // { format: false, dcl: false, astJson: false }
+
+  SlimParser.parse('SELECT 1')   // syntax validation succeeds
+  SlimParser.format('SELECT 1')  // { error: { message: 'format is not in this build' } }
+  ```
+

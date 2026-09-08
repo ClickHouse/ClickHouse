@@ -2,10 +2,6 @@
 /// `instantiate` comes from `wasi-node.mjs` or `wasi-browser.mjs`. The `.wasm` is a sibling of
 /// `src/` at pack time (`parser.wasm` / `parser-no-formatting-no-dcl.wasm`).
 
-export const FEATURE_FORMAT = 1;
-export const FEATURE_DCL = 2;
-export const FEATURE_AST_JSON = 4;
-
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -100,7 +96,12 @@ export function createParser({ instantiate, wasmURL })
 
         get features()
         {
-            return requireReady().ch_features();
+            const mask = requireReady().ch_features();
+            return {
+                format: (mask & 1) !== 0,
+                dcl: (mask & 2) !== 0,
+                astJson: (mask & 4) !== 0,
+            };
         },
 
         parse(sql)
