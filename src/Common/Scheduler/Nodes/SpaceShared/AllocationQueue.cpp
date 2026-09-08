@@ -135,7 +135,7 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
         /// A regular request remains in the same eviction-queue entry while its one spill pass is
         /// active or waiting to acquire suction. Re-hide it without opening another spill epoch.
         if (allocation.increase.kind == IncreaseRequest::Kind::Regular
-            && allocation.isProtectedFromEviction()
+            && allocation.canRecoverFromGrowthPressure()
             && allocation.memory_growth_eviction_order != 0)
         {
             allocation.memory_growth_suspended = true;
@@ -148,7 +148,7 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
 
     allocation.memory_growth_suspension_attempted = true;
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular
-        && allocation.isProtectedFromEviction())
+        && allocation.canRecoverFromGrowthPressure())
     {
         /// The query setting decides whether entering the eviction queue starts a forced spill.
         /// The suction ceiling may end that spill early after reconciliation, but it must not bypass

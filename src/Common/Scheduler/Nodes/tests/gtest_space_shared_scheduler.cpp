@@ -2178,6 +2178,44 @@ TEST(SchedulerSpaceShared, RejectedSpillCompletesAfterProcessorWork)
         MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
 }
 
+/// Force-spill alone must reach the query controller without granting eviction protection.
+TEST(SchedulerSpaceShared, ForceSpillWithoutEvictionProtection)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceLink link;
+    link.allocation_queue = queue;
+    MemoryTracker tracker;
+    auto scheduler = std::make_shared<MemorySpillScheduler>(/*enable_=*/ false);
+    ManualSpillProcessor processor(4096, /*spill_succeeds_=*/ true);
+    scheduler->registerProcessor(&processor);
+
+    MemoryReservation::Settings settings;
+    settings.force_spill_before_eviction = true;
+    settings.pressure_policy.max_allocation_before_suction_bytes = 1;
+    MemoryReservation reservation(link, "force_only", 0, settings);
+    reservation.setMemorySpillScheduler(scheduler);
+    tracker.adjustWithUntrackedMemory(8000);
+    reservation.syncWithMemoryTracker(&tracker);
+    ManualAllocation competitor(queue, "competitor", 1000);
+
+    tracker.adjustWithUntrackedMemory(3000);
+    auto growth = std::async(std::launch::async, [&] { reservation.syncWithMemoryTracker(&tracker); });
+    EXPECT_EQ(growth.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    EXPECT_NO_THROW(growth.get());
+
+    scheduler->checkAndSpill(&processor);
+    EXPECT_EQ(processor.spillCallCount(), 1u);
+    EXPECT_FALSE(reservation.isProtectedFromEviction());
+    processor.work();
+    scheduler->finishSpill(&processor);
+    tracker.adjustWithUntrackedMemory(-11000);
+}
+
 /// Queue entry starts one spill epoch. Re-observation cannot open another epoch, and suction is
 /// selected by the allocation hierarchy only after this explicit completion.
 TEST(SchedulerSpaceShared, QueueEntryOwnsOneForcedSpillEpoch)

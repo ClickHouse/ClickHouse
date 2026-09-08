@@ -388,7 +388,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                 if (!suspended_growth)
                 {
                     suspended = new_increase->kind == IncreaseRequest::Kind::Regular
-                        && new_increase->allocation.isProtectedFromEviction()
+                        && new_increase->allocation.canRecoverFromGrowthPressure()
                         && new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
                     if (suspended)
                     {
@@ -420,9 +420,9 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                 }
                 else if (!suspended_growth
                     || (new_increase->kind == IncreaseRequest::Kind::Regular
-                        && !new_increase->allocation.isProtectedFromEviction()))
+                        && !new_increase->allocation.canRecoverFromGrowthPressure()))
                 {
-                    /// An unprotected request only yields once to let the current recovery search
+                    /// A request without recovery enabled only yields once to let the current recovery search
                     /// advance. If it still cannot fit when it resurfaces, retain the old eviction
                     /// behavior instead of making another query's opt-in policy park it indefinitely.
                     selectAndKill(*new_increase);

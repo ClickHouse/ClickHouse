@@ -75,6 +75,10 @@ public:
     virtual void onGrowthPressureResolved() {}
     virtual bool isGrowthRecoveryActive() { return false; }
 
+    /// Recovery eligibility is independent of victim protection. A query may request a spill
+    /// before eviction while remaining an ordinary candidate in the victim policy.
+    virtual bool canRecoverFromGrowthPressure() const { return isProtectedFromEviction(); }
+
     /// At an explicit recovery checkpoint, reconcile a parked request with the allocation's
     /// current demand. Called by the scheduler thread under the allocation-queue mutex.
     virtual ResourceCost reconcilePendingIncrease(ResourceCost, ResourceCost requested_size) { return requested_size; }
