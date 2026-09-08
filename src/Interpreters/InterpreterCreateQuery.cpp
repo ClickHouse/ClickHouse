@@ -1592,6 +1592,22 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
+        /// Inheriting the definition of the source table also inherits the credentials embedded in it, and the
+        /// user is not necessarily allowed to see them: `SHOW CREATE TABLE` masks them as `[HIDDEN]`. Reading
+        /// through such a copy would bypass the `SELECT` grant on the source, so require that grant here.
+        /// Inheriting a definition that cannot carry them still needs only `SHOW COLUMNS`, as before.
+        auto check_access_to_inherited_definition = [&](const ASTFunction & definition)
+        {
+            /// A table engine that can carry credentials declares a source access type (`S3`, `MySQL`, ...).
+            /// A table function declares none, so for it we go by whether its arguments are masked as secret.
+            const bool carries_credentials = definition.hasSecretParts()
+                || (definition.getKind() == ASTFunction::Kind::TABLE_ENGINE
+                    && StorageFactory::instance().getSourceAccessObject(definition.name).has_value());
+
+            if (carries_credentials)
+                getContext()->checkAccess(AccessType::SELECT, as_database_name, as_table_name);
+        };
+
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
 
@@ -1617,6 +1633,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             /// clauses were specified for the new table; otherwise keep the explicit storage definition.
             if (!create.storage)
             {
+                check_access_to_inherited_definition(as_create.as_table_function->as<ASTFunction &>());
                 create.set(create.as_table_function, as_create.as_table_function->ptr());
                 return;
             }
@@ -1636,6 +1653,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
         }
+
+        if (storage_def && storage_def->engine)
+            check_access_to_inherited_definition(*storage_def->engine);
     }
 
     if (create.storage)

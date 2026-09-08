@@ -15,6 +15,9 @@ $CLICKHOUSE_CLIENT --query "GRANT SHOW COLUMNS ON *.* TO user_test_02184;"
 
 $CLICKHOUSE_CLIENT --query "CREATE TABLE url ENGINE=URL('https://clickhouse.com', LineAsString)"
 
+# Inheriting the URL engine inherits the credentials it can carry, which requires SELECT on the source table.
+$CLICKHOUSE_CLIENT --query "GRANT SELECT ON url TO user_test_02184;"
+
 $CLICKHOUSE_CLIENT  --user=user_test_02184 --password=user_test_02184  --query "CREATE TABLE t AS url" 2>&1| grep -Fo "ACCESS_DENIED" | uniq
 
 $CLICKHOUSE_CLIENT --query "GRANT READ, WRITE ON URL TO user_test_02184;"
