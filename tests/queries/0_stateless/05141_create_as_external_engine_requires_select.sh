@@ -43,20 +43,17 @@ function try_copy()
 echo "with SHOW COLUMNS only:"
 try_copy local_src
 try_copy url_src
-# The engine can carry credentials, so SELECT is required even though this one has none.
-try_copy url_src_no_password
 try_copy function_src
-# A table function without credentials is copied as before.
+# Nothing is masked in these two, so they are copied as before.
+try_copy url_src_no_password
 try_copy function_src_no_password
 
 echo "after GRANT SELECT:"
 ${CLICKHOUSE_CLIENT} -q "
     GRANT SELECT ON ${db}.url_src TO ${user};
-    GRANT SELECT ON ${db}.url_src_no_password TO ${user};
     GRANT SELECT ON ${db}.function_src TO ${user};
 "
 try_copy url_src
-try_copy url_src_no_password
 try_copy function_src
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${user}"

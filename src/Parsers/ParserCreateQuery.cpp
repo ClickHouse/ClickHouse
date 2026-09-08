@@ -2115,6 +2115,8 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 
 For both features, you can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
+Copying the schema requires the `SHOW COLUMNS` privilege on `db.table`. If the inherited definition holds credentials, which `SHOW CREATE TABLE` masks - an `S3` or `MySQL` table, or a table created `AS s3(...)` - the copy can read through them, so it also requires the `SELECT` privilege on `db.table`.
+
 ### Create a table with a table function {#from-a-table-function}
 
 ```sql
