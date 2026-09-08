@@ -109,13 +109,10 @@ ThreadGroupPtr CurrentThread::getGroup()
 
 ResourceSchedulingContext * CurrentThread::getResourceSchedulingContext()
 {
-    // Requests issued outside any query or background thread group (low-level or system IO) share one
-    // anonymous context, so the schedulers can assume every request carries a context.
-    static ResourceSchedulingContext anonymous(0, 1.0, 1.0, 0.0, 0.0, 0.0, 0);
     if (unlikely(!current_thread))
-        return &anonymous;
+        return &ResourceSchedulingContext::anonymous();
     ResourceSchedulingContext * context = current_thread->getResourceSchedulingContext();
-    return context ? context : &anonymous;
+    return context ? context : &ResourceSchedulingContext::anonymous();
 }
 
 ContextPtr CurrentThread::tryGetQueryContext()
