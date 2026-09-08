@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <functional>
 #include <future>
+#include <limits>
 #include <thread>
+#include <vector>
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
@@ -229,6 +232,78 @@ TEST(MemoryTracker, SpeculativeReservationSurvivesExternalCorrection)
     MemoryTracker::updateRSS(measured_rss);
     EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
     EXPECT_LE(std::abs(total_memory_tracker.getRSS() - measured_rss), GLOBAL_TOLERANCE);
+}
+
+TEST(MemoryTracker, ConcurrentCorrectionNeverErasesLiveReservation)
+{
+    /// The correction of the total tracker towards an externally measured value must be
+    /// applied as a relative delta. An absolute store would erase a reservation charged
+    /// between reading the measured value and installing it, while the paired
+    /// `freeGlobal` still subtracts that reservation - pushing the total tracker below
+    /// the measured usage and breaking the upper-bound invariant.
+    constexpr Int64 reservation = 16 * MB;
+    constexpr Int64 measured_amount = 300 * MB;
+    constexpr size_t reserving_threads = 4;
+    const auto duration = std::chrono::milliseconds(300);
+
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    SCOPE_EXIT({
+        MemoryTracker::updateAllocated(amount_before, /*log_change=*/ false);
+        MemoryTracker::updateRSS(rss_before);
+    });
+
+    std::atomic_bool stop = false;
+    std::atomic<Int64> lowest_observed_amount = std::numeric_limits<Int64>::max();
+
+    auto observe = [&]
+    {
+        Int64 observed = total_memory_tracker.get();
+        Int64 lowest = lowest_observed_amount.load(std::memory_order_relaxed);
+        while (observed < lowest
+            && !lowest_observed_amount.compare_exchange_weak(lowest, observed, std::memory_order_relaxed))
+        {
+        }
+    };
+
+    std::thread corrector([&]
+    {
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+            observe();
+        }
+    });
+
+    std::vector<std::thread> reservers;
+    for (size_t thread = 0; thread < reserving_threads; ++thread)
+    {
+        reservers.emplace_back([&]
+        {
+            while (!stop.load(std::memory_order_relaxed))
+            {
+                auto * credited_tracker = CurrentMemoryTracker::allocGlobal(reservation);
+                CurrentMemoryTracker::freeGlobal(reservation, credited_tracker);
+
+                /// A reservation erased by a correction shows up right here, as a total
+                /// tracker below the measured value by a multiple of the reservation.
+                observe();
+            }
+        });
+    }
+
+    std::this_thread::sleep_for(duration);
+    stop.store(true, std::memory_order_relaxed);
+    for (auto & reserver : reservers)
+        reserver.join();
+    corrector.join();
+
+    EXPECT_GE(lowest_observed_amount.load(), measured_amount - TOLERANCE);
+
+    /// No reservation is live any more, so a correction installs the measured value.
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+    EXPECT_EQ(MemoryTracker::global_speculative_reservations.load(), 0);
 }
 
 TEST(MemoryTracker, FailedSpeculativeReservationLeavesCorrectionUntouched)

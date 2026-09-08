@@ -756,8 +756,12 @@ void MemoryTracker::updateRSS(Int64 rss_)
 {
     /// Live speculative reservations are not backed by allocations, so they are not part
     /// of the measured resident memory; add them back to keep the counter an upper bound.
-    total_memory_tracker.rss.store(
-        rss_ + global_speculative_reservations.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    /// Applied as a relative delta for the same reason as in `updateAllocated`: an
+    /// absolute store would erase a reservation charged concurrently with this correction,
+    /// while its paired `freeGlobal` would still subtract it.
+    Int64 current_rss = total_memory_tracker.rss.load(std::memory_order_relaxed);
+    Int64 target_rss = rss_ + global_speculative_reservations.load(std::memory_order_relaxed);
+    total_memory_tracker.rss.fetch_add(target_rss - current_rss, std::memory_order_relaxed);
 }
 
 void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
@@ -766,15 +770,27 @@ void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
     /// by allocations, so they are not part of the externally measured `allocated_`.
     /// Add them back, otherwise the paired `freeGlobal` would push the corrected amount
     /// below the actual memory usage.
-    Int64 new_amount = allocated_ + global_speculative_reservations.load(std::memory_order_relaxed);
+    ///
+    /// The correction is applied as a relative delta instead of overwriting `amount`.
+    /// Overwriting would erase every charge that happened after `allocated_` and the
+    /// reservations counter were read: a reservation taken in that window would be gone
+    /// from `amount` while its paired `freeGlobal` still subtracts it, leaving the
+    /// server-wide counter below the real usage. With a delta, a concurrent charge is
+    /// never lost - at worst a reservation is counted twice until the next correction,
+    /// which is the safe direction for an upper bound.
+    Int64 current_amount = total_memory_tracker.amount.load(std::memory_order_relaxed);
+    Int64 target_amount = allocated_ + global_speculative_reservations.load(std::memory_order_relaxed);
+
     if (log_change)
         LOG_INFO(
             getLogger("MemoryTracker"),
             "Correcting the value of global memory tracker from {} to {}",
-            ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
-            ReadableSize(new_amount));
+            ReadableSize(current_amount),
+            ReadableSize(target_amount));
 
-    auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
+    Int64 correction = target_amount - current_amount;
+    Int64 new_amount = total_memory_tracker.amount.fetch_add(correction, std::memory_order_relaxed) + correction;
+
     total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
     total_memory_tracker.last_corrected_amount = new_amount;
     CurrentMetrics::set(CurrentMetrics::MemoryTrackingUncorrected, total_memory_tracker.uncorrected_amount);

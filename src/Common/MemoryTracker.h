@@ -375,9 +375,11 @@ public:
     /// currently charged on the total tracker via `CurrentMemoryTracker::allocGlobal`.
     /// No actual allocation backs them, so they are invisible to external measurements
     /// (resident memory, jemalloc stats). `updateRSS`/`updateAllocated` add this sum back
-    /// when replacing the total tracker's counters with a measured value — otherwise the
-    /// paired `CurrentMemoryTracker::freeGlobal` would push the corrected counters below
-    /// the actual memory usage, breaking the upper-bound invariant the reservations provide.
+    /// when correcting the total tracker's counters towards a measured
+    /// value — otherwise the paired `CurrentMemoryTracker::freeGlobal` would push the
+    /// corrected counters below the actual memory usage, breaking the upper-bound invariant
+    /// the reservations provide. The correction is applied as a relative delta, so that a
+    /// reservation charged concurrently with it cannot be erased.
     static std::atomic<Int64> global_speculative_reservations;
 
     /// Prints info about peak memory consumption into log.
