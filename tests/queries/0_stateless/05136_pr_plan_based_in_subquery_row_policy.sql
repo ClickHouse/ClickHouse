@@ -31,14 +31,11 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_plan_based = 1;
 SET automatic_parallel_replicas_mode = 0;
 
--- The policy keeps rows 0..24, for both local-plan modes (previously a LOGICAL_ERROR).
-SET parallel_replicas_local_plan = 0;
-SELECT count(), min(k), max(k) FROM t_rp_main;
-SET parallel_replicas_local_plan = 1;
+-- The policy keeps rows 0..24 (previously a LOGICAL_ERROR). `parallel_replicas_local_plan` is left to the
+-- value CI randomizes it to.
 SELECT count(), min(k), max(k) FROM t_rp_main;
 
 -- The read stays local: the fragment cannot be serialized, so the split marker is left unconverted.
-SET parallel_replicas_local_plan = 0;
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') = 0 AS stayed_local
 FROM (EXPLAIN optimize = 1, description = 0 SELECT count() FROM t_rp_main);
 

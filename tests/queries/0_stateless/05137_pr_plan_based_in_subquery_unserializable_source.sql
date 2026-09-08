@@ -20,15 +20,11 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_plan_based = 1;
 SET automatic_parallel_replicas_mode = 0;
 
--- Only the empty string is generated, so exactly the one row with `s = ''` matches. Both local-plan modes
--- previously threw here.
-SET parallel_replicas_local_plan = 0;
-SELECT count() FROM t_gen_in WHERE s IN (SELECT x FROM generateRandom('x String', 1, 0, 1) LIMIT 3);
-SET parallel_replicas_local_plan = 1;
+-- Only the empty string is generated, so exactly the one row with `s = ''` matches. This threw before.
+-- `parallel_replicas_local_plan` is left to the value CI randomizes it to.
 SELECT count() FROM t_gen_in WHERE s IN (SELECT x FROM generateRandom('x String', 1, 0, 1) LIMIT 3);
 
 -- The fragment stays local: the split marker is left unconverted.
-SET parallel_replicas_local_plan = 0;
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') = 0 AS stayed_local
 FROM (EXPLAIN optimize = 1, description = 0 SELECT count() FROM t_gen_in WHERE s IN (SELECT x FROM generateRandom('x String', 1, 0, 1) LIMIT 3));
 

@@ -18,15 +18,19 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_plan_based = 1;
 SET automatic_parallel_replicas_mode = 0;
 
--- Correctness: IN (subquery) returns the same rows as without parallel replicas, for both local-plan
--- modes (previously a LOGICAL_ERROR).
-SET parallel_replicas_local_plan = 0;
-SELECT v FROM t_pr_in_subquery WHERE v IN (SELECT v FROM t_pr_in_subquery WHERE v % 2 = 0) ORDER BY v;
-SET parallel_replicas_local_plan = 1;
+-- Correctness: IN (subquery) returns the same rows as without parallel replicas (previously a
+-- LOGICAL_ERROR). `parallel_replicas_local_plan` is left to the value CI randomizes it to.
 SELECT v FROM t_pr_in_subquery WHERE v IN (SELECT v FROM t_pr_in_subquery WHERE v % 2 = 0) ORDER BY v;
 
--- Non-primary-key IN (subquery) is distributed: the read is shipped to the replicas.
-SET parallel_replicas_local_plan = 0;
+-- The same with the initiator's local read slowed down: on a table this small its arm would otherwise
+-- finish before any replica contributes, leaving the shipped fragment - and the set rebuilt from it -
+-- unexercised. The failpoint is a no-op when the local plan is off, which is fine.
+SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
+SELECT v FROM t_pr_in_subquery WHERE v IN (SELECT v FROM t_pr_in_subquery WHERE v % 2 = 0) ORDER BY v;
+SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
+
+-- Non-primary-key IN (subquery) is distributed: the read is shipped to the replicas. `> 0` holds whichever
+-- local-plan mode is in effect - with a local plan the fragment simply also keeps the initiator's own read.
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS non_pk_in_distributed
 FROM (EXPLAIN optimize = 1, description = 0 SELECT v FROM t_pr_in_subquery WHERE v IN (SELECT v FROM t_pr_in_subquery WHERE v % 2 = 0));
 
@@ -34,14 +38,7 @@ FROM (EXPLAIN optimize = 1, description = 0 SELECT v FROM t_pr_in_subquery WHERE
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS pk_in_distributed
 FROM (EXPLAIN optimize = 1, description = 0 SELECT v FROM t_pr_in_subquery WHERE k IN (SELECT k FROM t_pr_in_subquery WHERE k % 2 = 0));
 
--- The same holds with a local plan on the initiator (`parallel_replicas_local_plan = 1`), where the plan
--- also keeps the initiator's own `ReadFromMergeTree`.
-SET parallel_replicas_local_plan = 1;
-SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS non_pk_in_distributed_local_plan
-FROM (EXPLAIN optimize = 1, description = 0 SELECT v FROM t_pr_in_subquery WHERE v IN (SELECT v FROM t_pr_in_subquery WHERE v % 2 = 0));
-
 -- Regression guard: a plain tuple IN (no subquery set) stays distributed.
-SET parallel_replicas_local_plan = 0;
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS tuple_in_distributed
 FROM (EXPLAIN optimize = 1, description = 0 SELECT v FROM t_pr_in_subquery WHERE k IN (1, 2, 3));
 
