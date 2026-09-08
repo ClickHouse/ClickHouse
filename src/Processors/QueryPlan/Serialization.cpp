@@ -87,9 +87,14 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 
 void QueryPlan::serializeForQueryPlanCache(WriteBuffer & out) const
 {
-    writeVarUInt(QUERY_PLAN_CACHE_SERIALIZATION_VERSION, out);
+    /// A cache entry is written and read by the same server process, so the plan is always
+    /// serialized with the newest format this build knows. The version must be on the same scale as
+    /// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`: individual steps gate their fields on the
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_*` constants and refuse to serialize below
+    /// them, so a cache-private version scale would reject any plan using a newer step feature.
+    writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, out);
 
-    SerializationFlags flags{.version = QUERY_PLAN_CACHE_SERIALIZATION_VERSION};
+    SerializationFlags flags{.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
     serialize(out, flags);
 }
 
@@ -223,10 +228,10 @@ QueryPlanAndSets QueryPlan::deserializeForQueryPlanCache(ReadBuffer & in, const 
     UInt64 version = 0;
     readVarUInt(version, in);
 
-    if (version > QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
+    if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan cache serialization version {} is not supported. The last supported version is {}",
-            version, QUERY_PLAN_CACHE_SERIALIZATION_VERSION);
+            version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     SerializationFlags flags;
     flags.version = version;

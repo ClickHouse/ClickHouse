@@ -93,7 +93,7 @@ TEST(QueryPlanSerialization, ReadFromTableVersionZeroWithoutParallelReplicasHasN
     EXPECT_FALSE(step.useParallelReplicas());
 }
 
-TEST(QueryPlanSerialization, QueryPlanCacheSerializationUsesPrivateVersion)
+TEST(QueryPlanSerialization, QueryPlanCacheSerializationUsesCurrentVersion)
 {
     ensureReadFromTableStepRegistered();
 
@@ -106,7 +106,7 @@ TEST(QueryPlanSerialization, QueryPlanCacheSerializationUsesPrivateVersion)
     ReadBufferFromString version_in(serialized);
     UInt64 version = 0;
     readVarUInt(version, version_in);
-    EXPECT_EQ(version, QUERY_PLAN_CACHE_SERIALIZATION_VERSION);
+    EXPECT_EQ(version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     ReadBufferFromString plan_in(serialized);
     auto plan_and_sets = QueryPlan::deserializeForQueryPlanCache(plan_in, getContext().context);
@@ -116,10 +116,10 @@ TEST(QueryPlanSerialization, QueryPlanCacheSerializationUsesPrivateVersion)
     EXPECT_FALSE(step.useParallelReplicas());
 }
 
-TEST(QueryPlanSerialization, QueryPlanCacheRejectsFuturePrivateVersion)
+TEST(QueryPlanSerialization, QueryPlanCacheRejectsFutureVersion)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(QUERY_PLAN_CACHE_SERIALIZATION_VERSION + 1, out);
+    writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1, out);
     out.finalize();
 
     ReadBufferFromString in(out.str());
