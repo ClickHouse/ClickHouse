@@ -1266,8 +1266,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
                 executor.setCancelCallback(
-                    std::move(cancel_callback),
-                    query_context->getSettingsRef()[Setting::interactive_delay] / 1000, CancelCallbackMode::PartialResult);
+                    ExecutorCancellation::finishPartialResult(std::move(cancel_callback)),
+                    query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
             auto outer_thread_group = CurrentThread::getGroup();
             if (!outer_thread_group)

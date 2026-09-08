@@ -4683,22 +4683,6 @@ void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_
         std::rethrow_exception(callback_exception);
 }
 
-std::function<bool()> makeFullQueryCancellationCallback(std::function<bool()> callback, ContextPtr context)
-{
-    return [callback = std::move(callback), context = std::move(context)]
-    {
-        if (!callback())
-            return false;
-
-        auto exception = std::make_exception_ptr(
-            Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query."));
-        if (auto process_list_element = context->getProcessListElementSafe())
-            process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
-
-        std::rethrow_exception(exception);
-    };
-}
-
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel)
 {
     try
@@ -4716,7 +4700,7 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_inte
         if (auto callback = context->getInteractiveCancelCallback(); callback && with_interactive_cancel)
         {
             auto interactive_delay = context->getSettingsRef()[Setting::interactive_delay];
-            executor.setCancelCallback(makeFullQueryCancellationCallback(std::move(callback), context), interactive_delay / 1000);
+            executor.setCancelCallback(ExecutorCancellation::cancelQuery(std::move(callback), context), interactive_delay / 1000);
         }
 
         executor.execute();

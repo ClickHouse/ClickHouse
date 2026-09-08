@@ -216,7 +216,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
             if (auto cancel_cb = data.getContext()->hasQueryContext() ? data.getContext()->getQueryContext()->getInteractiveCancelCallback() : nullptr)
-                executor.setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000), CancelCallbackMode::PartialResult);
+                executor.setCancelCallback(ExecutorCancellation::finishPartialResult(std::move(cancel_cb)), std::max(UInt64(100), data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
 
             while (block.rows() == 0 && executor.pull(block))
             {

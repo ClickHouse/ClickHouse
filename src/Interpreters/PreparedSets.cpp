@@ -495,14 +495,14 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     {
         if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
             executor.setCancelCallback(
-                [&observed_cancel, is_cancelled = std::move(cancel_callback)]
+                ExecutorCancellation::finishPartialResult([&observed_cancel, is_cancelled = std::move(cancel_callback)]
                 {
                     if (!is_cancelled())
                         return false;
                     observed_cancel = true;
                     return true;
-                },
-                std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000), CancelCallbackMode::PartialResult);
+                }),
+                std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
     executor.execute();
 
@@ -702,14 +702,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         {
             if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
                 executor.setCancelCallback(
-                    [&observed_cancel, is_cancelled = std::move(cancel_callback)]
+                    ExecutorCancellation::finishPartialResult([&observed_cancel, is_cancelled = std::move(cancel_callback)]
                     {
                         if (!is_cancelled())
                             return false;
                         observed_cancel = true;
                         return true;
-                    },
-                    std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000), CancelCallbackMode::PartialResult);
+                    }),
+                    std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
         }
         executor.execute();
 

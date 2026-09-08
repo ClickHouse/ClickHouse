@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/Executors/CancelCallbackMode.h>
+#include <Processors/Executors/ExecutorCancellation.h>
 #include <functional>
 #include <memory>
 
@@ -29,8 +29,9 @@ public:
     const Block & getHeader() const;
 
     /// Check before starting execution and every interactive_timeout_ms during `pull`.
-    /// A true result cancels execution, or only reading in PartialResult mode.
-    void setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_, CancelCallbackMode mode = CancelCallbackMode::Cancel);
+    /// A true result cancels execution. Use an explicit policy to finish a partial result or cancel the query.
+    void setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_);
+    void setCancelCallback(ExecutorCancellation callback, uint64_t interactive_timeout_ms_);
 
     /// Methods return false if query is finished.
     /// If milliseconds > 0, returns empty object and `true` after timeout exceeded. Otherwise method is blocking.
@@ -63,14 +64,11 @@ private:
 
     void cancelWithExceptionHandling(CancelFunc && cancel_func);
 
-    void checkCancelCallback();
-
-    CancelCallbackMode cancel_callback_mode = CancelCallbackMode::Cancel;
     QueryPipeline & pipeline;
     std::shared_ptr<LazyOutputFormat> lazy_format;
     std::unique_ptr<Data> data;
 
-    std::function<bool()> cancel_callback;
+    ExecutorCancellation cancel_callback;
     uint64_t interactive_timeout_ms = 0;
 };
 

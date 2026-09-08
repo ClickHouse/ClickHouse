@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/Executors/CancelCallbackMode.h>
+#include <Processors/Executors/ExecutorCancellation.h>
 
 #include <functional>
 #include <memory>
@@ -20,8 +20,9 @@ public:
     ~CompletedPipelineExecutor();
 
     /// Check before starting execution and each interactive_timeout_ms (if it is not 0).
-    /// A true result cancels execution, or only reading in PartialResult mode.
-    void setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_, CancelCallbackMode mode = CancelCallbackMode::Cancel);
+    /// A true result cancels execution. Use an explicit policy to finish a partial result or cancel the query.
+    void setCancelCallback(std::function<bool()> callback, size_t interactive_timeout_ms_);
+    void setCancelCallback(ExecutorCancellation callback, size_t interactive_timeout_ms_);
 
     void initialize();
     void execute();
@@ -30,11 +31,8 @@ public:
     struct Data;
 
 private:
-    void checkCancelCallback();
-
-    CancelCallbackMode cancel_callback_mode = CancelCallbackMode::Cancel;
     QueryPipeline & pipeline;
-    std::function<bool()> is_cancelled_callback;
+    ExecutorCancellation cancel_callback;
     size_t interactive_timeout_ms = 0;
     std::unique_ptr<Data> data;
 };

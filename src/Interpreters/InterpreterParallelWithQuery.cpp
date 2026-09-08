@@ -173,7 +173,7 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
         CompletedPipelineExecutor executor(combined_pipeline);
         if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
             executor.setCancelCallback(
-                makeFullQueryCancellationCallback(std::move(cancel_callback), getContext()),
+                ExecutorCancellation::cancelQuery(std::move(cancel_callback), getContext()),
                 std::max(UInt64(100), getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
         executor.execute();
     }

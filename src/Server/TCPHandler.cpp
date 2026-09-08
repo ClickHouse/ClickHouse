@@ -972,7 +972,7 @@ void TCPHandler::runImpl()
                         !query_state->need_receive_data_for_input && callback)
                     {
                         executor.setCancelCallback(
-                            makeFullQueryCancellationCallback(std::move(callback), query_state->query_context), interactive_delay / 1000);
+                            ExecutorCancellation::cancelQuery(std::move(callback), query_state->query_context), interactive_delay / 1000);
                     }
 
                     executor.execute();
@@ -1608,13 +1608,13 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
     {
         PullingAsyncPipelineExecutor executor(pipeline);
         executor.setCancelCallback(
-            [this, &state]
+            ExecutorCancellation::finishPartialResult([this, &state]
             {
                 std::lock_guard lock(*callback_mutex);
                 receivePacketsExpectCancel(state);
                 return state.stop_read_return_partial_result;
-            },
-            interactive_delay / 1000, CancelCallbackMode::PartialResult);
+            }),
+            interactive_delay / 1000);
         pipeline.setConcurrencyControl(state.query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
