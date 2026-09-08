@@ -102,9 +102,20 @@ void RemoteQueryExecutorReadContext::processAsyncEvent(
 
 void RemoteQueryExecutorReadContext::clearAsyncEvent()
 {
+    /// Clear the flag before any cleanup that can throw.
+    ///
+    /// From this point the coroutine is no longer suspended waiting for an event on `connection_fd`,
+    /// whether or not the cleanup below succeeds. If the flag were left set after a throw -- for
+    /// example `timer.reset` failing because the process ran out of file descriptors -- then
+    /// `cancelBefore` would block forever in `checkTimeout` waiting for an event that can no longer
+    /// be delivered: the timer has been disarmed and `connection_fd` has been unregistered, and only
+    /// `processAsyncEvent` arms them again, which is never reached.
+    ///
+    /// `PacketReceiver::clearAsyncEvent` already clears its flag first, for the same reason.
+    is_in_progress.store(false);
+
     epoll.remove(connection_fd);
     timer.reset();
-    is_in_progress.store(false);
 }
 
 bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
@@ -159,7 +170,11 @@ void RemoteQueryExecutorReadContext::cancelBefore()
         /// planning phase for a packet that will be discarded. The connection is disconnected by
         /// `~RemoteQueryExecutor` in that case rather than reused, so it cannot be left
         /// unsynchronised for anyone else.
-        while (!skip_drain_on_cancel.load(std::memory_order_relaxed) && is_in_progress.load(std::memory_order_relaxed))
+        /// Stop if the routine has already finished, for instance because it threw: resume() has
+        /// destroyed the coroutine by then, so resumeUnlocked() would resume a moved-from one, and
+        /// no async event can be delivered any more, so the wait below could never be satisfied.
+        while (!isRoutineFinished() && !skip_drain_on_cancel.load(std::memory_order_relaxed)
+            && is_in_progress.load(std::memory_order_relaxed))
         {
             checkTimeout(/* blocking= */ true);
             resumeUnlocked();
