@@ -8440,11 +8440,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 create_user->reset_authentication_methods_to_new = !create_user->reset_authentication_methods_to_new;
             if (create_user->alter && fuzz_rand() % 20 == 0)
                 create_user->add_identified_with = !create_user->add_identified_with;
-            /// REMOVE EXPIRED AUTHENTICATION METHODS is ALTER USER-only too. It is accepted only next to
-            /// the clauses that keep the existing methods, so the combination is fixed up below, once the
-            /// final verb and the final IDENTIFIED payload are known.
-            if (create_user->alter && fuzz_rand() % 20 == 0)
-                create_user->remove_expired_authentication_methods = !create_user->remove_expired_authentication_methods;
             normalizeAccessEntityMode(create_user->alter, create_user->if_exists, create_user->if_not_exists, create_user->or_replace);
             /// Payloads are verb-specific: ROLE and bare SETTINGS are CREATE-only, while RENAME TO,
             /// ADD/DROP HOST, ADD/MODIFY/DROP SETTINGS and the auth modifiers are ALTER-only. Drop the
@@ -8453,14 +8448,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 create_user->roles.reset();
                 create_user->settings.reset();
-                /// The parser rejects REMOVE EXPIRED AUTHENTICATION METHODS next to RESET AUTHENTICATION
-                /// METHODS TO NEW or a leading (non-ADD) IDENTIFIED payload, both of which replace every
-                /// method and make removing only the expired ones pointless. Any of the toggles above can
-                /// have just introduced such a payload, so the flag is dropped here rather than guarded
-                /// at the point where it is flipped.
-                if (create_user->reset_authentication_methods_to_new
-                    || (!create_user->authentication_methods.empty() && !create_user->add_identified_with))
-                    create_user->remove_expired_authentication_methods = false;
             }
             else
             {
@@ -8469,7 +8456,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 create_user->remove_hosts.reset();
                 create_user->alter_settings.reset();
                 create_user->reset_authentication_methods_to_new = false;
-                create_user->remove_expired_authentication_methods = false;
                 create_user->add_identified_with = false;
             }
         }

@@ -309,9 +309,6 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
 
     if (reset_authentication_methods_to_new)
         ostr << " RESET AUTHENTICATION METHODS TO NEW";
-
-    if (remove_expired_authentication_methods)
-        ostr << " REMOVE EXPIRED AUTHENTICATION METHODS";
 }
 
 }
