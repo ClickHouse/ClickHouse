@@ -195,6 +195,16 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     /// The root directory has a metadata object only in the explicit form, and it is stored under the reserved remote path.
                     if (remote_path.value() == PlainRewritableLayout::ROOT_DIRECTORY_TOKEN)
                         local_path.clear();
+                    else if (normalizePath(local_path).empty())
+                    {
+                        /// Only the reserved metadata object maps to the logical root, so an empty logical path here means that
+                        /// the object does not describe a directory: it is either not written yet (`LocalObjectStorage` writes
+                        /// to the final key directly, so an interrupted write can leave the object empty and visible),
+                        /// or it is a leftover of a directory that has been removed. Loading it as the root would hide the real
+                        /// root and send lookups under it to the prefix of this directory.
+                        LOG_WARNING(log, "The object with the key '{}' does not contain the logical path of a directory, ignoring it", object_path);
+                        return;
+                    }
 
                     if (do_not_load_unchanged_directories)
                     {

@@ -2695,6 +2695,41 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkAndRewriteInSameTransactio
     EXPECT_EQ(listAllBlobs(test).size(), 4u);  /// two prefix.path and two blobs
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, EmptyDirectoryMetadataIsNotLoadedAsRoot)
+{
+    thread_local_rng.seed(42);
+
+    const std::string test = "EmptyDirectoryMetadataIsNotLoadedAsRoot";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "data");
+        tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size)});
+        size_t root_size = writeObject(object_storage, tx->generateObjectKeyForPath("root.txt").serialize(), "root");
+        tx->createMetadataFile("root.txt", {StoredObject("root.txt", "root.txt", root_size)});
+        tx->createDirectory("B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto root_file_key = metadata->getStorageObjects("root.txt").front().remote_path;
+
+    /// An interrupted write of `prefix.path` can leave the object empty and visible (`LocalObjectStorage` writes to the
+    /// final key directly). Such an object does not contain the logical path of a directory, and only the reserved
+    /// metadata object maps to the logical root, so it must be ignored: loading it as the root would hide the files of
+    /// the root and send the lookups under it to the prefix of this directory.
+    writeObject(object_storage, createMetadataObjectPath(metadata, "B"), "");
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_FALSE(metadata->existsDirectory("B"));
+    EXPECT_EQ(sorted(metadata->listDirectory("")), std::vector<std::string>({"A", "root.txt"}));
+    ASSERT_EQ(metadata->getStorageObjects("root.txt").front().remote_path, root_file_key);
+    EXPECT_EQ(readObject(object_storage, root_file_key), "root");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f1").front().remote_path), "data");
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabled)
 {
     thread_local_rng.seed(42);
