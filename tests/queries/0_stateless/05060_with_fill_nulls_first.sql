@@ -46,9 +46,47 @@ SELECT * FROM values('x Nullable(Float64)', (7), (3), (nan))
 ORDER BY x ASC NULLS FIRST WITH FILL;
 SELECT '---';
 
--- A range holding only prefix rows must emit each generated row exactly once.
-SELECT count() FROM
-(
-    SELECT * FROM values('x Nullable(Float64)', (nan))
-    ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3
-);
+-- A range holding only prefix rows must emit each generated row after the prefix, exactly once.
+SELECT * FROM values('x Nullable(Float64)', (nan))
+ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
+SELECT '---';
+
+-- The `FILL FROM` row must not precede the prefix when ordinary values follow it either.
+SELECT * FROM values('x Nullable(Float64)', (nan), (5))
+ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
+SELECT '---';
+
+-- `NULLS FIRST` sorts a `NaN` below every value in a non-`Nullable` column too.
+SELECT * FROM values('x Float64', (nan), (5))
+ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
+SELECT '---';
+
+-- A range starting with an ordinary value takes its `FILL FROM` row from the preamble, so the prefix
+-- rules must not emit it again, neither in the first range nor in one following a prefix range.
+SELECT * FROM values('x Nullable(Float64)', (5))
+ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
+SELECT '---';
+SELECT * FROM values('p UInt8, x Nullable(Float64)', (0, NULL), (1, 5))
+ORDER BY p ASC NULLS LAST, x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
+SELECT '---';
+
+-- A `NaN` bound is not an ordered position either, so the prefix rules stay off and a bound reaching the
+-- filling row keeps generating exactly the rows it does without them.
+SELECT * FROM values('x Nullable(Float64)', (3), (7))
+ORDER BY x ASC NULLS FIRST WITH FILL FROM nan;
+SELECT '---';
+-- A `NaN` `FILL TO` never closes the range, so a range re-anchored under one would generate rows without
+-- end. The memory limit bounds that to a failed query rather than an exhausted host.
+SELECT * FROM values('x Nullable(Float64)', (nan), (3), (7))
+ORDER BY x ASC NULLS FIRST WITH FILL TO nan
+SETTINGS max_memory_usage = 536870912;
+SELECT '---';
+
+-- An infinity does not close the range either, and an infinite `FILL FROM` still emits its own row ahead
+-- of the prefix, both exactly as they did before the rules above.
+SELECT * FROM values('x Nullable(Float64)', (nan), (3), (7))
+ORDER BY x ASC NULLS FIRST WITH FILL TO inf
+SETTINGS max_memory_usage = 536870912;
+SELECT '---';
+SELECT * FROM values('x Nullable(Float64)', (nan), (3), (7))
+ORDER BY x ASC NULLS FIRST WITH FILL FROM inf;

@@ -253,6 +253,12 @@ static bool isNullPrefixSkippable(
     if (running_with_staleness)
         return false;
 
+    /// A bound that is not a finite number has no ordered position either: a `NaN` reaches the filling
+    /// row as a prefix row does, and an infinity never closes the range.
+    const auto & descr = fill_description[0].fill_description;
+    if (descr.fill_from.isNaN() || descr.fill_from.isInf() || descr.fill_to.isNaN() || descr.fill_to.isInf())
+        return false;
+
     return use_with_fill_by_sorting_prefix || sort_description.empty()
         || sort_description[0].column_name == fill_description[0].column_name;
 }
@@ -787,7 +793,9 @@ void FillingTransform::transformRange(
             {
                 filling_row.initUsingFrom(i);
                 filling_row_inserted = false;
-                if (less(fill_from, current_value, filling_row.getDirection(i)))
+                /// `Field` ordering places a `NaN` above every value; `NULLS FIRST` places it below them.
+                if (less(fill_from, current_value, filling_row.getDirection(i))
+                    && !(null_prefix_skippable && isNullPrefixField(current_value)))
                 {
                     interpolate(result_columns, interpolate_block);
                     insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
