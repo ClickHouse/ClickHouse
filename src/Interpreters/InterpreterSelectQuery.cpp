@@ -35,6 +35,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/RejectMaterializedCTEVisitor.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -614,9 +615,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     // Only propagate WITH elements to subqueries if we're not a subquery
     if (!options.is_subquery)
     {
+        if (settings[Setting::force_materialized_cte])
+        {
+            RejectMaterializedCTEVisitor::Data data;
+            RejectMaterializedCTEVisitor(data).visit(query_ptr);
+        }
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor::visit(query_ptr, settings[Setting::force_materialized_cte]);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
