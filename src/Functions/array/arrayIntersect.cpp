@@ -400,8 +400,12 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             /// In case the column was cast, we need to create an overflow mask for integer types.
             if (arg.nested_column != initial_column)
             {
-                const auto & nested_init_type = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
-                const auto & nested_cast_type = typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType();
+                /// The nested columns above are already unwrapped out of `ColumnNullable`, and `WhichDataType`
+                /// reports `Nullable` for `Nullable(T)`: both uses below need the element type without it.
+                const auto nested_init_type
+                    = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType());
+                const auto nested_cast_type
+                    = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType());
 
                 if (isInteger(nested_init_type)
                     || isDate(nested_init_type)
