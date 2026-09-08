@@ -59,26 +59,17 @@ void Worker::profileWaits(IProcessor & processor, std::optional<IProcessor::Stat
         processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
 }
 
-void Worker::run(const KeepGoing & keep_going, std::atomic_bool * yield_flag)
+void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
     while (auto task = pickTask())
     {
-        try
-        {
-            runTask(*task);
+        runTask(*task);
 
-            if (scheduler.size() > 1)
-                coordinator.wakeOne();
+        if (scheduler.size() > 1)
+            coordinator.wakeOne();
 
-            if (pipeline.hasReadyForRemoval())
-                pipeline.removeReady();
-        }
-        catch (...)
-        {
-            pipeline.fail(std::current_exception());
-            coordinator.stop();
-            break;
-        }
+        if (pipeline.hasReadyForRemoval())
+            pipeline.removeReady();
 
         if (pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft())
         {
@@ -87,7 +78,7 @@ void Worker::run(const KeepGoing & keep_going, std::atomic_bool * yield_flag)
             break;
         }
 
-        if (!keep_going())
+        if (!slot.keepGoing())
             break;
 
         if (yield_flag && yield_flag->load())

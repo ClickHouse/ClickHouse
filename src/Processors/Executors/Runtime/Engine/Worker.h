@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/Engine/TaskScheduler.h>
+#include <Processors/Executors/Runtime/Engine/WorkerSlot.h>
 #include <Processors/Executors/Runtime/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/Pipeline/ExecutingPipeline.h>
 
 #include <atomic>
-#include <functional>
 #include <optional>
 
 namespace DB
@@ -25,11 +25,9 @@ class Worker
     void notifyNeighbour(PortT & neighbour);
 
 public:
-    using KeepGoing = std::function<bool()>;
-
     Worker(size_t worker_id_, TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_);
 
-    void run(const KeepGoing & keep_going, std::atomic_bool * yield_flag);
+    void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
 
 private:
     const size_t worker_id;
