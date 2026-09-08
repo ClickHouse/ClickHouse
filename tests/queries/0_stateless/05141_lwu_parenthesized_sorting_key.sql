@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS t_lwu_parenthesized_key;
 CREATE TABLE t_lwu_parenthesized_key (k UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY (k)
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
-    patch_parts_version = 'v2', index_granularity = 128, index_granularity_bytes = 0;
+    patch_parts_version = 'v2', index_granularity = 128, index_granularity_bytes = 1048576;
 
 SYSTEM STOP MERGES t_lwu_parenthesized_key;
 INSERT INTO t_lwu_parenthesized_key SELECT number, number FROM numbers(20000);
