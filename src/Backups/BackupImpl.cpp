@@ -477,6 +477,7 @@ void BackupImpl::writeBackupMetadata()
     chassert(!params.is_internal_backup);
     checkLockFile(true);
 
+    constexpr char metadata_file[] = ".backup";
 #if CLICKHOUSE_CLOUD
     /// A Keeper session can expire while this upload is in flight. The progress fingerprint covers every
     /// input written to the manifest, so a new owner can only publish the same metadata bytes.
@@ -486,15 +487,10 @@ void BackupImpl::writeBackupMetadata()
 
     std::unique_ptr<WriteBuffer> out;
     if (use_archive)
-        out = archive_writer->writeFile(".backup");
+        out = archive_writer->writeFile(metadata_file);
     else
-        out = writer->writeFile(".backup");
+        out = writer->writeFile(metadata_file);
 
-    /// Every user-controlled string below must go through this. `<< xml <<` escapes a `std::string_view` and a
-    /// `const char *`, but a `String` operand is an exact match for the generic `operator<<` template, which
-    /// copies the bytes verbatim - converting a `String` to a `std::string_view` is a user-defined conversion,
-    /// so the escaping overload loses overload resolution and the value lands in the manifest unescaped. See
-    /// `src/IO/Operators.h`.
     auto xml_string = [](const String & str) { return std::string_view(str.data(), str.size()); };
 
     *out << "<config>";
@@ -560,8 +556,8 @@ void BackupImpl::writeBackupMetadata()
 
     if (params.is_lightweight_snapshot)
     {
-        *out << "<original_endpoint>" << original_endpoint << "</original_endpoint>";
-        *out << "<original_namespace>" << original_namespace << "</original_namespace>";
+        *out << "<original_endpoint>" << xml << xml_string(original_endpoint) << "</original_endpoint>";
+        *out << "<original_namespace>" << xml << xml_string(original_namespace) << "</original_namespace>";
     }
 
     num_files = num_all_file_infos;
@@ -579,7 +575,7 @@ void BackupImpl::writeBackupMetadata()
 
         if (!info.object_key.empty())
         {
-            *out << "<object_key>" << info.object_key << "</object_key>";
+            *out << "<object_key>" << xml << xml_string(info.object_key) << "</object_key>";
             if (original_endpoint.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "In lightweight snapshot backup, the endpoint should not be empty. Do not run this command with `ON CLUSTER`");
         }
