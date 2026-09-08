@@ -70,4 +70,14 @@ SELECT DISTINCT dynamicType(c), c FROM (
     FROM remote('127.0.0.1', system.one))
 SETTINGS cast_string_to_dynamic_use_inference = 0;
 
+-- A string-like member is left unnamed: the receiving side decides with
+-- `cast_string_to_dynamic_use_inference` whether to re-parse the text, so a named `FixedString(3)` would
+-- arrive as `FixedString(3)` with the setting off and as the inferred type with it on. Left unnamed it is a
+-- `String` either way. `String` itself cannot show this, since naming it changes nothing, so the cell uses
+-- `FixedString(3)` with a value that fills the type exactly, so no padding reaches the reference.
+SELECT DISTINCT dynamicType(c), c FROM (
+    SELECT materialize(CAST(CAST('abc', 'FixedString(3)') AS Dynamic)) AS c
+    FROM remote('127.0.0.1', system.one))
+SETTINGS cast_string_to_dynamic_use_inference = 0;
+
 DROP TABLE t_dynamic_const_fold;
