@@ -102,6 +102,9 @@ void appendSideMetrics(MetricGroup & group, const JoinSideRows & side, std::opti
 std::optional<UInt64> matchedOutputRows(
     const JoinSideRows & left_side, const JoinSideRows & right_side, UInt64 output_rows, JoinKind kind, JoinStrictness strictness)
 {
+    if (strictness == JoinStrictness::Anti)
+      return isRight(kind) ? right_side.matched_rows : left_side.matched_rows;
+
     const bool left_side_preserved_with_nulls = isLeftOrFull(kind) && strictness != JoinStrictness::Semi;
     const bool right_side_preserved_with_nulls = isRightOrFull(kind) && strictness != JoinStrictness::Semi;
 
@@ -208,8 +211,23 @@ std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_r
         static_cast<double>(actual_rows) / static_cast<double>(*estimated_rows));
 }
 
+std::optional<double> actualSelectivity(
+    const JoinSideRows & left_side, const JoinSideRows & right_side, 
+    std::optional<UInt64> matched_output_rows, UInt64 output_rows,
+    JoinKind kind, JoinStrictness strictness)
+{   
+    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+    {
+        const auto & preserved = isRight(kind) ? right_side : left_side;
+        if (!preserved.input_rows || !*preserved.input_rows)
+            return std::nullopt;
+        return static_cast<double>(output_rows) / static_cast<double>(*preserved.input_rows);
+    }   
+    return cartesianSelectivity(left_side, right_side, matched_output_rows);
+} 
+
 void prependEstimationComparison(
-    StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
+    StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows, JoinKind kind, JoinStrictness strictness)
 {
     const JoinEstimation & estimation = join_step.getEstimation();
 
@@ -238,7 +256,7 @@ void prependEstimationComparison(
     MetricGroup selectivity{MetricGroupKey::Selectivity, {}};
     selectivity.metrics.emplace_back(MetricKey::EstimatedNDV, optionalDouble(estimation.selectivity));
     selectivity.metrics.emplace_back(
-        MetricKey::ActualCartesian, optionalDouble(cartesianSelectivity(left_side, right_side, matched_output_rows)));
+        MetricKey::ActualCartesian, optionalDouble(actualSelectivity(left_side, right_side, matched_output_rows, context.io.output_rows, kind, strictness)));
 
     MetricGroup output{MetricGroupKey::Output, {}};
     output.metrics.emplace_back(MetricKey::Estimated, optionalQuantity(estimation.output_rows));
