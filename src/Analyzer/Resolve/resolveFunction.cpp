@@ -27,6 +27,7 @@
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1480,17 +1481,20 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     if (node->getResultType()->equals(*target_type))
         return node;
 
-    /// When a constant was originally a NumberLiteral (e.g. "3.14" parsed as Float64 or
-    /// "100000000000000000000000" parsed as UInt128), cast from the original text to the
-    /// target type. This preserves precision — parsing "3.14" → Decimal64 directly is
-    /// exact, whereas Float64(3.14) → Decimal64 loses trailing digits.
+    /// When a constant was originally a `NumberLiteral` (e.g. "3.14" parsed as Float64 or
+    /// "100000000000000000000000" parsed as UInt128), cast from the original text, but only for a
+    /// number or a `Decimal` target: there text parsing is exact, so it preserves precision that the
+    /// resolved value has already lost. Parsing "3.14" into Decimal64 is exact, whereas
+    /// Float64(3.14) into Decimal64 loses trailing digits.
     ///
-    /// A string target is the exception: it compares against the value the literal denotes, so it has
-    /// to stringify the resolved value. The original text of `1e2` would give '1e2', not '100'.
+    /// Every other target compares against the value the literal denotes and takes the resolved
+    /// value. A semantic type parses text by its own spelling rules, not as a number: `DateTime`
+    /// would read the original text of `0x1p4` as a date-time string, and `String` would stringify
+    /// `1e2` as '1e2' instead of '100'.
     if (const auto * constant_node = node->as<ConstantNode>())
     {
         const auto unwrapped_target = removeNullable(removeLowCardinality(target_type));
-        if (constant_node->hasNumberLiteralText() && !isStringOrFixedString(*unwrapped_target))
+        if (constant_node->hasNumberLiteralText() && WhichDataType(*unwrapped_target).isNumber())
         {
             auto string_constant = std::make_shared<ConstantNode>(
                 constant_node->getNumberLiteralText(), std::make_shared<DataTypeString>());
