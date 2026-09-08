@@ -239,6 +239,15 @@ static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
         if (dagReferencesUnshippableSubquerySet(expression->getExpression()))
             return true;
     }
+    else if (const auto * join = typeid_cast<const JoinStepLogical *>(step))
+    {
+        /// `JoinStepLogical::serialize` writes this one DAG; `join_operator` (the `ON` conditions and the
+        /// residual filter) and `actions_after_join` are only node ids into it. An `ON` conjunct which reads
+        /// the preserved side of an outer join stays here instead of being pushed down to that side - see
+        /// `canPushDownFromOn` - so this is where such a set is found.
+        if (dagReferencesUnshippableSubquerySet(join->getActionsDAG()))
+            return true;
+    }
     else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))
     {
         /// Both are serialized with the read (`ReadFromMergeTree::serialize` writes `row_level_filter` and
