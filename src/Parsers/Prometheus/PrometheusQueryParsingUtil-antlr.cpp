@@ -495,8 +495,13 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected PromQL matcher type");
         }
 
-        bool validateSelectorHasNonEmptyMatcher(const MatcherList & matchers, size_t error_pos)
+        /// `matcher_positions` holds the start position of every matcher in `matchers`, so that an error
+        /// about a particular matcher points at that matcher and not at the start of the whole selector.
+        bool validateSelectorHasNonEmptyMatcher(
+            const MatcherList & matchers, const std::vector<size_t> & matcher_positions, size_t selector_pos)
         {
+            chassert(matchers.size() == matcher_positions.size());
+
             /// Follow Prometheus parser semantics: a selector like `{job=~".*"}` does not just mean
             /// "all series with a `job` label", it also matches series where the `job` label is absent.
             /// That makes typos and broad dashboard variables silently select every metric. Require
@@ -504,10 +509,10 @@ namespace
             /// metrics, use `{__name__=~".+"}`; if an empty-matching label matcher is needed, keep it
             /// and add `{__name__=~".+"}` as another matcher.
             bool has_non_empty_matcher = false;
-            for (const auto & matcher : matchers)
+            for (size_t i = 0; i != matchers.size(); ++i)
             {
                 bool matches_empty_string = false;
-                if (!matcherMatchesEmptyString(matcher, error_pos, matches_empty_string))
+                if (!matcherMatchesEmptyString(matchers[i], matcher_positions[i], matches_empty_string))
                     return false;
                 if (!matches_empty_string)
                     has_non_empty_matcher = true;
@@ -516,7 +521,8 @@ namespace
             if (has_non_empty_matcher)
                 return true;
 
-            error_listener.setError("vector selector must contain at least one non-empty matcher", error_pos);
+            /// This one is about the selector as a whole, so it points at the start of the selector.
+            error_listener.setError("vector selector must contain at least one non-empty matcher", selector_pos);
             return false;
         }
 
@@ -526,9 +532,13 @@ namespace
             auto new_node = std::make_unique<InstantSelector>();
 
             MatcherList matchers;
+            std::vector<size_t> matcher_positions;
             auto * metric_name_ctx = ctx->metricName();
             if (metric_name_ctx)
+            {
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
+                matcher_positions.push_back(getStartPos(metric_name_ctx));
+            }
 
             if (auto * label_matcher_list_ctx = ctx->labelMatcherList())
             {
@@ -553,10 +563,11 @@ namespace
                     }
 
                     matchers.push_back(std::move(matcher));
+                    matcher_positions.push_back(getStartPos(label_matcher_ctx));
                 }
             }
 
-            if (!validateSelectorHasNonEmptyMatcher(matchers, getStartPos(ctx)))
+            if (!validateSelectorHasNonEmptyMatcher(matchers, matcher_positions, getStartPos(ctx)))
                 return nullptr;
 
             new_node->matchers = std::move(matchers);

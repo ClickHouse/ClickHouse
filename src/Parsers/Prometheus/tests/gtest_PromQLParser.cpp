@@ -1695,9 +1695,13 @@ TEST(PromQLParser, SelectorValidationErrorPosition)
     for (const auto & [query, expected_error_pos, expected_error_message] :
          std::initializer_list<std::tuple<std::string_view, size_t, std::string_view>>{
              {R"({job=~".*"})", 0, "vector selector must contain at least one non-empty matcher"},
-             {R"({job=~"(.*"})", 0, "invalid regular expression in label matcher"},
+             {R"({job=~"(.*"})", 1, "invalid regular expression in label matcher"},
              {R"({foo="é"} or {job=~".*"})", 14, "vector selector must contain at least one non-empty matcher"},
-             {R"({foo="é"} or {job=~"(.*"})", 14, "invalid regular expression in label matcher"},
+             {R"({foo="é"} or {job=~"(.*"})", 15, "invalid regular expression in label matcher"},
+             /// An invalid regexp must be reported at the offending matcher, not at the start of the selector.
+             {R"({__name__=~".+", job=~"(.*"})", 17, "invalid regular expression in label matcher"},
+             {R"(metric{job=~"(.*"})", 7, "invalid regular expression in label matcher"},
+             {R"({foo="é", job=~"(.*"})", 11, "invalid regular expression in label matcher"},
          })
     {
         PrometheusQueryTree query_tree;
