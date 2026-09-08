@@ -53,7 +53,7 @@ ResourceGuard::Request & ResourceGuard::Request::local(const Metrics * metrics)
 
 void ResourceGuard::Request::captureSchedulingContext()
 {
-    scheduling_context = CurrentThread::getResourceSchedulingContext();
+    scheduling.context = CurrentThread::getResourceSchedulingContext();
 }
 
 namespace ErrorCodes

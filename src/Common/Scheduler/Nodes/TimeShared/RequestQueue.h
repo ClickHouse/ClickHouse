@@ -145,14 +145,14 @@ public:
 
     void push(ResourceRequest * request) override
     {
-        auto & state = request->scheduling_context->getResourceState(leaf);
-        double effective_weight = updateEffectiveWeight(*request->scheduling_context, state);
+        auto & state = request->scheduling.context->getResourceState(leaf);
+        double effective_weight = updateEffectiveWeight(*request->scheduling.context, state);
         // Corrected cost (see consumeCorrectedCost), stored on the request so pop() charges the same
         // amount; never negative, so vruntime only moves forward.
-        request->scheduling_charge = state.consumeCorrectedCost(request->scheduling_cost);
+        request->scheduling.charge = state.consumeCorrectedCost(request->scheduling.cost);
         double vstart = std::max(system_vruntime, state.vruntime);
-        state.vruntime = vstart + static_cast<double>(request->scheduling_charge) / effective_weight;
-        request->scheduling_key = {vstart, next_seq++};
+        state.vruntime = vstart + static_cast<double>(request->scheduling.charge) / effective_weight;
+        request->scheduling.key = {vstart, next_seq++};
         requests.insert(*request);
     }
 
@@ -164,10 +164,10 @@ public:
         ResourceRequest * request = &*it;
         requests.erase(it);
         // System virtual time advances to the start tag of the served request (monotonic).
-        system_vruntime = std::max(system_vruntime, request->scheduling_key.first);
-        auto & state = request->scheduling_context->getResourceState(leaf);
+        system_vruntime = std::max(system_vruntime, request->scheduling.key.first);
+        auto & state = request->scheduling.context->getResourceState(leaf);
         // Same corrected charge that advanced vruntime at push(), so attained tracks real cost.
-        state.attained_cost += request->scheduling_charge;
+        state.attained_cost += request->scheduling.charge;
         state.last_activity_ns = clock_gettime_ns();
         return request;
     }
@@ -256,7 +256,7 @@ private:
     {
         bool operator()(const ResourceRequest & lhs, const ResourceRequest & rhs) const noexcept
         {
-            return lhs.scheduling_key < rhs.scheduling_key;
+            return lhs.scheduling.key < rhs.scheduling.key;
         }
     };
     using Set = boost::intrusive::set<ResourceRequest, ResourceRequest::SchedulingHook, boost::intrusive::compare<ByKey>>;
@@ -286,8 +286,8 @@ public:
 
     void push(ResourceRequest * request) override
     {
-        Int64 attained = request->scheduling_context->getResourceState(leaf).attained_cost;
-        request->scheduling_key = {levelOf(attained), next_seq++};
+        Int64 attained = request->scheduling.context->getResourceState(leaf).attained_cost;
+        request->scheduling.key = {levelOf(attained), next_seq++};
         requests.insert(*request);
     }
 
@@ -302,21 +302,21 @@ public:
         {
             auto it = requests.begin();
             ResourceRequest * request = &*it;
-            auto & state = request->scheduling_context->getResourceState(leaf);
+            auto & state = request->scheduling.context->getResourceState(leaf);
             // Real service = attained_cost + pending correction (peeked, as `fair` does), so a badly
             // under-estimated finished request doesn't key the query too low and jump a lighter one.
             double real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
-            if (real_level > request->scheduling_key.first)
+            if (real_level > request->scheduling.key.first)
             {
                 requests.erase(it);
-                request->scheduling_key.first = real_level;
+                request->scheduling.key.first = real_level;
                 requests.insert(*request);
                 continue;
             }
             requests.erase(it);
             // Charge the corrected cost (see consumeCorrectedCost) so attained (the level key) tracks
             // real bytes/CPU; never negative, so the level never drops.
-            state.attained_cost += state.consumeCorrectedCost(request->scheduling_cost);
+            state.attained_cost += state.consumeCorrectedCost(request->scheduling.cost);
             state.last_activity_ns = clock_gettime_ns();
             return request;
         }
@@ -378,7 +378,7 @@ private:
     {
         bool operator()(const ResourceRequest & lhs, const ResourceRequest & rhs) const noexcept
         {
-            return lhs.scheduling_key < rhs.scheduling_key;
+            return lhs.scheduling.key < rhs.scheduling.key;
         }
     };
     using Set = boost::intrusive::set<ResourceRequest, ResourceRequest::SchedulingHook, boost::intrusive::compare<ByKey>>;
@@ -399,21 +399,21 @@ class PriorityAlgorithm final : public ISchedulingAlgorithm
 public:
     void push(ResourceRequest * request) override
     {
-        UInt64 priority = request->scheduling_context ? request->scheduling_context->priority : 0;
+        UInt64 priority = request->scheduling.context ? request->scheduling.context->priority : 0;
         // Map the `UInt64` `priority` query setting onto the Int64 `Priority` key (lower value =
         // higher precedence). `priority == 0` = "no priority" → the max key so it sorts strictly
         // last. Explicit priorities are clamped into `[1, max-1]` so (a) they always sort ahead of
         // "no priority" (0 and a huge explicit value no longer collide), and (b) a value above
         // `INT64_MAX` cannot wrap to a negative (spuriously high-precedence) key. This uses an
-        // integer key rather than the `double` half of `scheduling_key`, which would lose ordering
+        // integer key rather than the `double` half of `scheduling.key`, which would lose ordering
         // above 2^53. Priorities beyond `INT64_MAX` are not distinguishable (the `Priority` type is
         // Int64), which is well beyond any realistic query priority. FIFO within equal priority.
         constexpr Int64 max_key = std::numeric_limits<Int64>::max();
         Int64 key = priority == 0
             ? max_key
             : static_cast<Int64>(std::min<UInt64>(priority, static_cast<UInt64>(max_key) - 1));
-        request->scheduling_priority = Priority{key};
-        request->scheduling_key = {0.0, next_seq++};
+        request->scheduling.priority = Priority{key};
+        request->scheduling.key = {0.0, next_seq++};
         requests.insert(*request);
     }
 
@@ -463,9 +463,9 @@ private:
         bool operator()(const ResourceRequest & lhs, const ResourceRequest & rhs) const noexcept
         {
             // Integer priority first (exact, lower value = higher priority), then the sequence for FIFO.
-            if (lhs.scheduling_priority.value != rhs.scheduling_priority.value)
-                return lhs.scheduling_priority.value < rhs.scheduling_priority.value;
-            return lhs.scheduling_key.second < rhs.scheduling_key.second;
+            if (lhs.scheduling.priority.value != rhs.scheduling.priority.value)
+                return lhs.scheduling.priority.value < rhs.scheduling.priority.value;
+            return lhs.scheduling.key.second < rhs.scheduling.key.second;
         }
     };
     using Set = boost::intrusive::set<ResourceRequest, ResourceRequest::SchedulingHook, boost::intrusive::compare<ByKey>>;
@@ -652,22 +652,22 @@ public:
         // per fair-instance (with drain-time cleanup to avoid an unbounded per-query map), which is
         // not worth the added state and lifetime complexity for so rare a case.
         // A request pulled from `fair` carries its real-vs-estimate correction already folded into
-        // `scheduling_charge` (fair charges at push), while every other algorithm re-derives the
-        // charge from `scheduling_cost` plus the shared `cost_correction` at pop and ignores
-        // `scheduling_charge`. Return the consumed delta to the shared state before re-pushing, so a
+        // `scheduling.charge` (fair charges at push), while every other algorithm re-derives the
+        // charge from `scheduling.cost` plus the shared `cost_correction` at pop and ignores
+        // `scheduling.charge`. Return the consumed delta to the shared state before re-pushing, so a
         // live swap does not drop it. A no-op for a request coming from a pop-charging algorithm,
-        // where `reset()` keeps `scheduling_charge == scheduling_cost`.
+        // where `reset()` keeps `scheduling.charge == scheduling.cost`.
         for (ResourceRequest * request : pending)
         {
-            auto & state = request->scheduling_context->getResourceState(this);
+            auto & state = request->scheduling.context->getResourceState(this);
             state.cost_correction.fetch_add(
-                static_cast<Int64>(request->scheduling_charge) - static_cast<Int64>(request->scheduling_cost),
+                static_cast<Int64>(request->scheduling.charge) - static_cast<Int64>(request->scheduling.cost),
                 std::memory_order_relaxed);
-            request->scheduling_charge = request->scheduling_cost;
+            request->scheduling.charge = request->scheduling.cost;
         }
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest * request : pending)
-                request->scheduling_context->getResourceState(this).vruntime = 0.0;
+                request->scheduling.context->getResourceState(this).vruntime = 0.0;
         for (ResourceRequest * request : pending)
             algo->push(request);
     }

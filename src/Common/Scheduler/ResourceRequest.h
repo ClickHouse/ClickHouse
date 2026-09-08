@@ -60,48 +60,44 @@ public:
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
     ResourceCost cost{};
 
-    /// Per-query scheduling cost, used by the query-aware schedulers (`fair`, `las`) for the query's
-    /// own virtual-runtime / attained-service accounting. It is the request's ORIGINAL declared cost,
-    /// captured by `reset()` before any `ResourceBudget` adjustment. `ResourceBudget::ask()` rewrites
-    /// `cost` queue-wide to smooth estimation error across the queue, which is correct for queue-level
-    /// throughput accounting but would let one query's misestimate bleed into another query's fairness
-    /// state; keeping a separate declared cost isolates per-query scheduling from that redistribution.
-    ResourceCost scheduling_cost{};
-
-    /// Effective per-query charge used by `fair` to advance both `vruntime` and `attained_cost`:
-    /// the declared `scheduling_cost` adjusted by the query's accumulated real-vs-estimate cost
-    /// correction, computed once at enqueue by `FairAlgorithm::push`. (`las` folds the same
-    /// correction into `attained_cost` directly at pop, so it does not use this field.) Defaults to
-    /// `scheduling_cost` in `reset()` so it is never stale for schedulers that ignore it.
-    ResourceCost scheduling_charge{};
-
     /// If true, request is not throttled by the scheduler
     /// This is used for special requests that should not be throttled, e.g. for CPUSlotsAllocation
     bool ignore_throttling = false;
 
-    /// Non-owning link to the per-query scheduling context shared by all requests of one query.
-    /// Used by the query-aware schedulers in `RequestQueue` (`fair`, `las`) to look up the query's
-    /// weight, age and per-resource attained cost / virtual runtime. Set by the producer just before
-    /// `enqueueRequest()` and cleared by `reset()`; requests issued outside a query or background
-    /// group get one shared anonymous context, so it is never null while in the queue. The owner (the
-    /// query's `ThreadGroup`, or the static anonymous context) outlives the request, so this raw
-    /// pointer never dangles while the request is in the queue.
-    ResourceSchedulingContext * scheduling_context = nullptr;
+    /// Query-aware scheduling state (`fair` / `las` / `priority`), grouped so the related fields are
+    /// easy to find. Filled at enqueue by the `RequestQueue` schedulers and reset by `reset()`.
+    struct
+    {
+        /// Per-query scheduling cost for the query's own virtual-runtime / attained-service
+        /// accounting: the request's ORIGINAL declared cost, captured before any `ResourceBudget`
+        /// adjustment. `ResourceBudget::ask()` rewrites `cost` queue-wide, which would let one query's
+        /// misestimate bleed into another query's fairness state, so per-query scheduling keeps its
+        /// own declared cost.
+        ResourceCost cost{};
 
-    /// Ordering key for the query-aware schedulers (`fair`, `las`) in `RequestQueue`. Computed at
-    /// enqueue and constant while the request is in the queue (required by the intrusive ordered
-    /// set). `.first` is the virtual runtime (`fair`) or MLFQ level (`las`); `.second` a monotonic
-    /// sequence number for a stable FIFO tie-break (also used by the `priority` scheduler). Unused
-    /// by the `fifo` scheduler.
-    std::pair<double, UInt64> scheduling_key{0.0, 0};
+        /// Effective per-query charge `fair` applies to `vruntime` and `attained_cost`: the declared
+        /// `scheduling.cost` adjusted by the query's accumulated real-vs-estimate correction, computed
+        /// at enqueue by `FairAlgorithm::push` (`las` folds the correction in at pop). Defaults to
+        /// `scheduling.cost` so it is never stale for schedulers that ignore it.
+        ResourceCost charge{};
 
-    /// Primary ordering key for the `priority` scheduler in `RequestQueue` (lower value first,
-    /// then `scheduling_key.second` for FIFO). Uses the scheduler's `Priority` type (lower value =
-    /// higher priority) for consistency. The `priority` query setting (`UInt64`) is mapped into it
-    /// at enqueue: priority `0` = "no priority" → the max value so it sorts last. An integer key
-    /// avoids the precision loss of routing the value through the `double` half of `scheduling_key`
-    /// (which would collapse distinct priorities above 2^53). Unused by the other schedulers.
-    Priority scheduling_priority;
+        /// Non-owning link to the per-query scheduling context shared by all of a query's requests.
+        /// Set by the producer just before `enqueueRequest()` and cleared by `reset()`; requests
+        /// issued outside a query or background group get one shared anonymous context, so it is never
+        /// null while in the queue. The owner (the query's `ThreadGroup`, or the static anonymous
+        /// context) outlives the request, so this raw pointer never dangles in the queue.
+        ResourceSchedulingContext * context = nullptr;
+
+        /// Ordering key for `fair` / `las`, constant while the request is in the intrusive ordered
+        /// set. `.first` is the virtual runtime (`fair`) or MLFQ level (`las`); `.second` a monotonic
+        /// sequence number for a stable FIFO tie-break (also used by `priority`).
+        std::pair<double, UInt64> key{0.0, 0};
+
+        /// Primary ordering key for the `priority` scheduler (lower value first, then `key.second`).
+        /// The `priority` query setting (`UInt64`) is mapped in at enqueue (priority `0` sorts last);
+        /// an integer key avoids the precision loss of routing it through the `double` half of `key`.
+        Priority priority;
+    } scheduling;
 
     /// Scheduler nodes to be notified on consumption finish
     /// Auto-filled during request dequeue
@@ -120,15 +116,15 @@ public:
         cost = cost_;
         // Capture the declared cost for per-query scheduling BEFORE any `ResourceBudget` adjustment
         // (which later rewrites `cost` only). For queues without a budget the two stay equal.
-        scheduling_cost = cost_;
-        scheduling_charge = cost_;
+        scheduling.cost = cost_;
+        scheduling.charge = cost_;
         for (auto & constraint : constraints)
             constraint = nullptr;
         // Clear per-request query identity and ordering key so a reused request (e.g. the
         // thread-local `ResourceGuard::Request`) never carries stale state from a previous query.
-        scheduling_context = nullptr;
-        scheduling_key = {0.0, 0};
-        scheduling_priority = {};
+        scheduling.context = nullptr;
+        scheduling.key = {0.0, 0};
+        scheduling.priority = {};
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 
@@ -155,9 +151,9 @@ public:
 
 private:
     friend class FifoAlgorithm; // uses `enqueued_hook` for the `fifo` scheduler
-    friend class FairAlgorithm; // uses `scheduling_hook` + `scheduling_key` for the `fair` scheduler
-    friend class LasAlgorithm; // uses `scheduling_hook` + `scheduling_key` for the `las` scheduler
-    friend class PriorityAlgorithm; // uses `scheduling_hook` + `scheduling_key` for the `priority` scheduler
+    friend class FairAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `fair` scheduler
+    friend class LasAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `las` scheduler
+    friend class PriorityAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `priority` scheduler
     friend class RequestQueue;
     friend class CPUSlotsAllocation; // hack for tests only
 

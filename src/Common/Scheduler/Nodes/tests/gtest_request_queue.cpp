@@ -58,7 +58,7 @@ struct Fixture
     {
         pool.emplace_back(id, cost);
         TestRequest * r = &pool.back();
-        r->scheduling_context = ctx;
+        r->scheduling.context = ctx;
         queue->enqueueRequest(r);
         return r;
     }
@@ -399,10 +399,10 @@ TEST(RequestQueue, FairSwapRoundTripNoVruntimeDoubleCount)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3, 2}));
 }
 
-/// A correction consumed by `fair::push` (folded into `scheduling_charge`) must survive a live swap
+/// A correction consumed by `fair::push` (folded into `scheduling.charge`) must survive a live swap
 /// to `las`. `fair` charges at push and stores the corrected cost on the request; `las` charges at
-/// pop and re-derives it from `scheduling_cost` + the shared `cost_correction`, ignoring
-/// `scheduling_charge`. `setScheduler` returns the consumed delta to `cost_correction` before
+/// pop and re-derives it from `scheduling.cost` + the shared `cost_correction`, ignoring
+/// `scheduling.charge`. `setScheduler` returns the consumed delta to `cost_correction` before
 /// re-pushing, so the migrated request's real cost still lands in attained under `las` — not just
 /// the estimate. Regression for the swap silently dropping the correction.
 TEST(RequestQueue, FairToLasSwapPreservesCorrection)
@@ -410,7 +410,7 @@ TEST(RequestQueue, FairToLasSwapPreservesCorrection)
     Fixture f(SchedulerAlgorithm::Fair);
     auto * a = f.makeQuery();
     f.addCorrection(a, /*real=*/100, /*estimate=*/10);   // +90 pending on the shared state
-    f.enqueue(1, a, 10);                                 // fair::push consumes it into scheduling_charge (=100)
+    f.enqueue(1, a, 10);                                 // fair::push consumes it into scheduling.charge (=100)
     f.queue->setScheduler(SchedulerAlgorithm::Las);      // migrate the pending request to las
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));    // popped under las
     EXPECT_EQ(f.attainedOf(a), 100);                     // corrected cost preserved across the swap, not 10
@@ -462,7 +462,7 @@ TEST(RequestQueue, MaxWaitingQueries)
         f.enqueue(1, a);
         f.enqueue(2, a);
         TestRequest overflow(3);
-        overflow.scheduling_context = a;
+        overflow.scheduling.context = a;
         EXPECT_THROW(f.queue->enqueueRequest(&overflow), DB::Exception);
         EXPECT_EQ(f.queue->rejected_requests.load(), 1u);
     }
@@ -487,14 +487,14 @@ TEST(RequestQueue, ResetClearsSchedulingState)
 {
     auto ctx = std::make_shared<ResourceSchedulingContext>(clock_gettime_ns(), 1.0, 1.0, 0, 0, 0, 0);
     TestRequest r(1, 5);
-    r.scheduling_context = ctx.get();
-    r.scheduling_key = {42.0, 7};
-    r.scheduling_priority = Priority{123};
+    r.scheduling.context = ctx.get();
+    r.scheduling.key = {42.0, 7};
+    r.scheduling.priority = Priority{123};
     r.reset(9);
-    EXPECT_EQ(r.scheduling_context, nullptr);
-    EXPECT_EQ(r.scheduling_key.first, 0.0);
-    EXPECT_EQ(r.scheduling_key.second, 0u);
-    EXPECT_EQ(r.scheduling_priority.value, 0);
+    EXPECT_EQ(r.scheduling.context, nullptr);
+    EXPECT_EQ(r.scheduling.key.first, 0.0);
+    EXPECT_EQ(r.scheduling.key.second, 0u);
+    EXPECT_EQ(r.scheduling.priority.value, 0);
     EXPECT_EQ(r.cost, 9);
 }
 
@@ -549,7 +549,7 @@ TEST(RequestQueue, WeightLoweringThresholdsClampNegativeToDisabled)
     EXPECT_EQ(positive.weight_lowering_io_bytes, 5.0);
 }
 
-/// `fair` accounts virtual runtime from `scheduling_cost` (the query's DECLARED cost), not `cost`
+/// `fair` accounts virtual runtime from `scheduling.cost` (the query's DECLARED cost), not `cost`
 /// (which ResourceBudget::ask rewrites queue-wide). Simulate a budget that inflated query A's first
 /// request `cost` far above its declared cost: A must still interleave fairly with B instead of
 /// being pushed to the back by another query's estimation error bleeding through the shared budget.
@@ -559,18 +559,18 @@ TEST(RequestQueue, FairUsesSchedulingCostNotBudgetAdjustedCost)
     auto * a = f.makeQuery(1.0);
     auto * b = f.makeQuery(1.0);
 
-    // A1: declared cost 1 (so scheduling_cost == 1), but `cost` inflated to 1000 as if
+    // A1: declared cost 1 (so scheduling.cost == 1), but `cost` inflated to 1000 as if
     // ResourceBudget::ask() had rewritten it queue-wide after reset().
     f.pool.emplace_back(11, 1);
     TestRequest * a1 = &f.pool.back();
-    a1->scheduling_context = a;
+    a1->scheduling.context = a;
     a1->cost = 1000;
     f.queue->enqueueRequest(a1);
 
     f.enqueue(21, b);
     f.enqueue(12, a);
     f.enqueue(22, b);
-    // With scheduling_cost (=1) A and B interleave fairly: 11,21,12,22.
+    // With scheduling.cost (=1) A and B interleave fairly: 11,21,12,22.
     // Had fair used `cost` (=1000), A's vruntime would jump and A2 would be served last: 11,21,22,12.
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 12, 22}));
 }

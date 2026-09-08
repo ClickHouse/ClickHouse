@@ -16,7 +16,7 @@ namespace DB
 ///
 /// Created once per query or background activity (on its `ThreadGroup`, from the settings), owned
 /// by a `shared_ptr` for that lifetime. Every request carries a non-owning raw pointer to it
-/// (`ResourceRequest::scheduling_context`); requests issued outside any group share one static
+/// (`ResourceRequest::scheduling.context`); requests issued outside any group share one static
 /// anonymous context, so the pointer is never null.
 ///
 /// It holds (1) immutable per-query configuration used by the `fair` scheduler to adjust the
@@ -78,14 +78,14 @@ public:
         double effective_weight = 0.0;
         bool weight_lowered = false;
 
-        /// Accumulated `real_cost - scheduling_cost` for this query's finished requests on this
+        /// Accumulated `real_cost - scheduling.cost` for this query's finished requests on this
         /// resource, not yet applied to a scheduling key. `ResourceGuard::Request::finish()` adds to
         /// it from the consumer thread (hence atomic; the other fields are touched only by the leaf
         /// thread). `fair`/`las` fold it into the NEXT request's charge in `consumeCorrectedCost()`,
         /// so per-query service tracks real cost long-term without ever rewriting an assigned key.
         std::atomic<Int64> cost_correction{0};
 
-        /// Fold the accumulated correction into `base_cost` (the request's declared `scheduling_cost`)
+        /// Fold the accumulated correction into `base_cost` (the request's declared `scheduling.cost`)
         /// to get the charge to apply to `vruntime`/`attained_cost` for the next request. The charge
         /// is never negative — a refund (over-estimate/failed op) is realized by charging LESS on
         /// subsequent requests, never by moving `vruntime`/`attained_cost` backward (which would break

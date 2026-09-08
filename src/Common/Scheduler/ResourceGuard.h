@@ -101,7 +101,7 @@ public:
 
         void wait();
 
-        /// Sets `scheduling_context` from the current thread's query context. Defined out of line to
+        /// Sets `scheduling.context` from the current thread's query context. Defined out of line to
         /// keep `CurrentThread.h` out of this header.
         void captureSchedulingContext();
 
@@ -117,8 +117,8 @@ public:
             // consumer thread, hence atomic) and folded into the query's NEXT request charge at
             // push/pop — it never rewrites an already-assigned key. `link_.queue` is the same leaf
             // the algorithms key the per-query state by.
-            scheduling_context->getResourceState(link_.queue).cost_correction.fetch_add(
-                static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling_cost),
+            scheduling.context->getResourceState(link_.queue).cost_correction.fetch_add(
+                static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost),
                 std::memory_order_relaxed);
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);

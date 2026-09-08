@@ -74,7 +74,7 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
     for (CPUSlotRequest & request : requests)
     {
         request.allocation = this;
-        request.scheduling_context = scheduling_context_;
+        request.scheduling.context = scheduling_context_;
     }
 
     std::unique_lock lock{schedule_mutex};

@@ -149,7 +149,7 @@ bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost r
 
     head->reset(cost);
     // Requests are reused across renewals and `reset()` clears the context, so re-stamp here.
-    head->scheduling_context = scheduling_context;
+    head->scheduling.context = scheduling_context;
     head->is_master_slot = std::exchange(request_master_slot, false);
     head->max_consumed = requested_ns_;  // Lease expires if we consume what we requested
 
