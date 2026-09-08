@@ -10,6 +10,12 @@
 #include <Common/Exception.h>
 #include <base/types.h>
 
+#include "config.h"
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#endif
+
 namespace DB
 {
 
@@ -23,11 +29,17 @@ namespace
 
 UInt8 isValidASCII(const UInt8 * data, UInt64 len)
 {
+#if USE_SIMDUTF
+    /// Hand-written SIMD kernels with runtime dispatch. The plain OR-reduction below is vectorized with
+    /// 32-bit lanes by clang 23 (the accumulator is promoted to int), which quarters its throughput.
+    return simdutf::validate_ascii(reinterpret_cast<const char *>(data), len);
+#else
     /// https://lemire.me/blog/2025/12/20/performance-trick-optimistic-vs-pessimistic-checks/
     UInt8 res = 0;
     for (UInt64 i = 0; i < len; ++i)
         res |= data[i];
     return res <= 0x7F;
+#endif
 }
 
 }
