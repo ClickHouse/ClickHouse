@@ -215,8 +215,26 @@ static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
     return isInteger(removeNullable(type));
 }
 
+/// An `accurateCastOrNull` of a `LowCardinality(Nullable(T))` Tuple element to a non-Nullable element throws
+/// instead of reporting the NULL in the null map of the whole Tuple. Only the elements are converted
+/// element-wise, so a `LowCardinality` or `Nullable` wrapper around the whole key is not affected.
+static bool hasNullableLowCardinalityTupleElement(const DataTypePtr & type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+    if (!tuple_type)
+        return false;
+
+    return std::ranges::any_of(
+        tuple_type->getElements(),
+        [](const auto & element)
+        { return element->isLowCardinalityNullable() || hasNullableLowCardinalityTupleElement(element); });
+}
+
 DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
+    if (hasNullableLowCardinalityTupleElement(left_type) || hasNullableLowCardinalityTupleElement(right_type))
+        return nullptr;
+
     DataTypes types{
         removeNullable(recursiveRemoveLowCardinality(left_type)),
         removeNullable(recursiveRemoveLowCardinality(right_type))};
@@ -232,6 +250,24 @@ DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const 
         return nullptr;
 
     return subtype;
+}
+
+DataTypePtr removeNullableInsideTuple(const DataTypePtr & type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (!tuple_type)
+        return type;
+
+    DataTypes elements;
+    elements.reserve(tuple_type->getElements().size());
+    for (const auto & element : tuple_type->getElements())
+        elements.push_back(removeNullableInsideTuple(removeNullable(element)));
+
+    /// `accurateCastOrNull` matches the elements of two named Tuples by name and the elements of
+    /// unnamed ones by position, so the names have to be carried over.
+    if (tuple_type->hasExplicitNames())
+        return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+    return std::make_shared<DataTypeTuple>(elements);
 }
 
 bool canBecomeNullable(const DataTypePtr & type)
