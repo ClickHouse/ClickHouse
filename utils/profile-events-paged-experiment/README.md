@@ -62,3 +62,13 @@ python3 utils/profile-events-paged-experiment/validate_adapter.py \
 ```
 
 It defaults to ASan/UBSan and stores unique build/per-case logs plus source/binary hashes. The tests cover dense/paged hot128 and all-hot1562, global-ID values, overflow, zero-update nonallocation, retained reset, modeled ownership transfer, concurrent first publication/snapshots, diagnostics, and explicit unsupported-path/configuration exits. Additional cases check stable reservation ordering, inverse mapping, unchanged rejection of invalid reservations, and reserved updates through two modeled owners before/after reset with aligned allocations forced to fail. A first cold-page allocation is forced to throw; the tests verify no publication, successful reserved updates afterward, and a successful explicit retry. The mandatory-event function uses an explicitly synthetic ten-event reservation stub in these standalone checks. They model the adapter's caller; they do not test actual `Counters` moves, real signal delivery, server allocator hooks, or the full server. An enabled full-server build and profiler-enabled functional/stress validation remain necessary before drawing integration conclusions.
+
+
+To check the real public catalogue and bundled rank, add `--actual-catalogue`:
+
+```
+python3 utils/profile-events-paged-experiment/validate_adapter.py \
+    --repo /absolute/checkout --output /absolute/new-build-directory --actual-catalogue
+```
+
+This mode resolves the pinned 1562 builtin IDs from `ProfileEvents.cpp`, checks that the 40-event mandatory catalogue includes all seven CPU scheduler events plus the memory-reservation and IO-resource event sets, and generates the adapter's reservation fixture from those IDs. Unsupported catalogue formats, missing names and malformed ranks fail validation. It checks the shipped layout at hot budgets 40 and 128, including normalized order, reserved updates with aligned allocations forced to fail, and cold-allocation failure/retry; budget 39 is rejected. The default mode retains its synthetic ten-event fixture. Both modes exercise the actual adapter with modeled owners; neither links the production `Counters`, scheduler timers or allocator hooks. The generated fixture and source hashes are recorded in the receipt.

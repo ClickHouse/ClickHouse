@@ -37,11 +37,19 @@ using ProfileEvents::PagedExperimentStorage::Event;
 using ProfileEvents::PagedExperimentStorage::EventCount;
 using Count = uint64_t;
 
-/// Standalone-only synthetic reservation IDs; production resolves the named global events.
+#if defined(VALIDATE_ACTUAL_CATALOGUE)
+#include <required_events.h>
+#endif
+
+/// The driver optionally resolves the actual public catalogue; default IDs remain synthetic.
 std::span<const uint16_t> ProfileEvents::PagedExperiment::requiredHotEvents() noexcept
 {
+#if defined(VALIDATE_ACTUAL_CATALOGUE)
+    return actual_required_events;
+#else
     static constexpr std::array<uint16_t, 10> events{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     return events;
+#endif
 }
 
 
@@ -187,6 +195,10 @@ void testReservedUpdates(bool inject_cold_failure)
 {
     /// Two already constructed owners model explicit parent propagation only.
     /// This is not the production parent traversal or reparenting protocol.
+    const auto & layout = Experiment::configuration().layout;
+    if (Experiment::configuration().mode == Experiment::Mode::Paged)
+        for (const Event event : Experiment::requiredHotEvents())
+            require(layout.slot_of[event] < layout.hot_count, "required event is cold after normalization");
     Owner child;
     Owner parent;
     const auto child_empty = Experiment::backing(child.pointer);
@@ -236,7 +248,7 @@ void testReservedUpdates(bool inject_cold_failure)
         require(child.load(cold) == 11 && AllocationFailureTest::attempts.load() == attempts_before + 2, "cold guard did not unwind or retry failed");
     }
     AllocationFailureTest::fail.store(false);
-    std::puts("PASS: reserved synthetic ten events, modeled parents, retained reset, aligned allocation attempts and optional cold failure");
+    std::puts("PASS: configured reserved events, modeled parents, retained reset, aligned allocation attempts and optional cold failure");
 }
 
 int main(int argc, char ** argv)
@@ -251,6 +263,16 @@ int main(int argc, char ** argv)
     if (test == "reserved_updates" || test == "allocation_failure")
     {
         testReservedUpdates(test == "allocation_failure");
+        return 0;
+    }
+    if (test == "catalogue_layout")
+    {
+        for (size_t slot = 0; slot < EventCount; ++slot)
+        {
+            const Event event = config.layout.event_at_slot[slot];
+            require(config.layout.slot_of[event] == slot, "configured layout inverse differs");
+            std::printf("%u\n", static_cast<unsigned>(event));
+        }
         return 0;
     }
     if (test == "configuration")
