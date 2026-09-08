@@ -173,3 +173,11 @@ SELECT id, `c0.a` FROM file(currentDatabase() || '_04401_cicase.arrow', 'Arrow',
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_cifold.orc', 'ORC') SELECT CAST(tuple(tuple(70)), 'Tuple(UP Tuple(B UInt32))') AS c0;
 SELECT `c0.up` FROM file(currentDatabase() || '_04401_cifold.orc', 'ORC', '`c0.up` Tuple(b UInt32)') SETTINGS input_format_orc_case_insensitive_column_matching = 1;
 SELECT c0 FROM file(currentDatabase() || '_04401_cifold.orc', 'ORC', 'c0 Tuple(up Tuple(b UInt32))') SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+
+-- Top-level file columns are resolved by the same rule, and which of two columns differing only by
+-- case answers a request must not depend on the order the file lists them in.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_citop.orc', 'ORC') SELECT 10 AS A, 20 AS a, 70 AS UP;
+SELECT A, a FROM file(currentDatabase() || '_04401_citop.orc', 'ORC', 'A UInt32, a UInt32') SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+SELECT up FROM file(currentDatabase() || '_04401_citop.orc', 'ORC', 'up UInt32') SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_citop_rev.orc', 'ORC') SELECT 20 AS a, 10 AS A;
+SELECT A, a FROM file(currentDatabase() || '_04401_citop_rev.orc', 'ORC', 'A UInt32, a UInt32') SETTINGS input_format_orc_case_insensitive_column_matching = 1;

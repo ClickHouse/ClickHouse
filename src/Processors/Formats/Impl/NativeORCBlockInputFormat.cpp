@@ -1535,20 +1535,22 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
 
     size_t field_num = struct_batch->fields.size();
     NameToColumnPtr name_to_column_ptr;
+    /// The file's own spellings, in file order: the keys above are what a request is matched
+    /// against, and a case-folded match has to pick among them in a fixed order.
+    Names orc_field_names;
+    orc_field_names.reserve(field_num);
     for (size_t i = 0; i < field_num; ++i)
     {
-        auto name = schema->getFieldName(i);
+        const auto & name = schema->getFieldName(i);
         const auto * field = struct_batch->fields[i];
         if (!field)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table field {} is null", name);
 
-        if (case_insensitive_matching)
-            boost::to_lower(name);
-
-        name_to_column_ptr[std::move(name)] = {field, schema->getSubtype(i)};
+        name_to_column_ptr[name] = {field, schema->getSubtype(i)};
+        orc_field_names.push_back(name);
     }
 
-    orcColumnsToCHChunk(res, name_to_column_ptr, num_rows, block_missing_values);
+    orcColumnsToCHChunk(res, name_to_column_ptr, orc_field_names, num_rows, block_missing_values);
 }
 
 /// Creates a null bytemap from ORC's not-null bytemap
@@ -2972,8 +2974,27 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 }
 
 void ORCColumnToCHColumn::orcColumnsToCHChunk(
-    Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values)
+    Chunk & res,
+    NameToColumnPtr & name_to_column_ptr,
+    const Names & orc_field_names,
+    size_t num_rows,
+    BlockMissingValues * block_missing_values)
 {
+    /// A file field spelled exactly like the request wins over one that only matches case-folded,
+    /// so two fields whose names differ only by case are not both answered by the same one. Among
+    /// fields that only match folded, the first in file order answers.
+    auto find_orc_column = [&](const String & name)
+    {
+        auto it = name_to_column_ptr.find(name);
+        if (it == name_to_column_ptr.end() && case_insensitive_matching)
+        {
+            for (const auto & field_name : orc_field_names)
+                if (boost::iequals(field_name, name))
+                    return name_to_column_ptr.find(field_name);
+        }
+        return it;
+    };
+
     Columns columns_list;
     columns_list.reserve(header.columns());
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
@@ -2981,23 +3002,20 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
 
-        auto search_column_name = header_column.name;
-        if (case_insensitive_matching)
-            boost::to_lower(search_column_name);
-
         ColumnWithTypeAndName column;
-        if (!name_to_column_ptr.contains(search_column_name))
+        auto orc_column_it = find_orc_column(header_column.name);
+        if (orc_column_it == name_to_column_ptr.end())
         {
             bool read_from_nested = false;
 
             /// Check if it's a column from nested table.
             String nested_table_name = Nested::extractTableName(header_column.name);
-            String search_nested_table_name = nested_table_name;
-            if (case_insensitive_matching)
-                boost::to_lower(search_nested_table_name);
-            if (name_to_column_ptr.contains(search_nested_table_name))
+            auto orc_nested_column_it = find_orc_column(nested_table_name);
+            if (orc_nested_column_it != name_to_column_ptr.end())
             {
-                if (!nested_tables.contains(search_nested_table_name))
+                /// Keyed by the file's spelling, so requests that differ only by case share one.
+                const String & resolved_nested_table_name = orc_nested_column_it->first;
+                if (!nested_tables.contains(resolved_nested_table_name))
                 {
                     NamesAndTypesList nested_columns;
                     for (const auto & name_and_type : header.getNamesAndTypesList())
@@ -3007,17 +3025,17 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     }
                     auto nested_table_type = Nested::collect(nested_columns).front().type;
 
-                    auto orc_column_with_type = name_to_column_ptr[search_nested_table_name];
+                    const auto & orc_column_with_type = orc_nested_column_it->second;
                     ColumnsWithTypeAndName cols = {readColumnFromORCColumn(
                         orc_column_with_type.first, orc_column_with_type.second, nested_table_name, false, nested_table_type)};
                     BlockPtr block_ptr = std::make_shared<Block>(cols);
                     auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
-                    nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
+                    nested_tables[resolved_nested_table_name] = {block_ptr, column_extractor};
                 }
 
-                /// The requested spelling, not the lower-cased one: the helper matches names
+                /// The requested spelling, not the file's one: the helper matches names
                 /// case-insensitively itself, and an exact element name outranks a folded match.
-                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(header_column.name);
+                auto nested_column = nested_tables[resolved_nested_table_name].second->extractColumn(header_column.name);
                 if (nested_column)
                 {
                     column = *nested_column;
@@ -3043,7 +3061,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         }
         else
         {
-            auto orc_column_with_type = name_to_column_ptr[search_column_name];
+            const auto & orc_column_with_type = orc_column_it->second;
             column = readColumnFromORCColumn(
                 orc_column_with_type.first, orc_column_with_type.second, header_column.name, false, header_column.type);
         }
