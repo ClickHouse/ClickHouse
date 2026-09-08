@@ -178,10 +178,19 @@ def test_restart_reads_changelog_from_s3(started_cluster):
     finally:
         stop_zk(node_zk)
 
-    # Restart Keeper without touching any data. This drops the in-memory entry caches,
-    # so on startup Keeper must rebuild its state by reading the changelog back from S3.
-    # This is the actual storage contract: restart/replay, not just live reads.
-    node_logs.restart_clickhouse()
+    # Restart Keeper after wiping the local log directory. This drops the in-memory
+    # entry caches and removes any local changelog residue, so on startup Keeper must
+    # rebuild its state by reading the changelog back from S3. This is the actual
+    # storage contract: restart/replay, not just live reads.
+    #
+    # The local snapshot directory is deliberately kept: only the changelog is moved to
+    # S3 by this feature, snapshots stay on `snapshot_storage_disk`. With
+    # `snapshot_distance=10`, `stale_log_gap=10` and `reserved_log_items=1` the log is
+    # compacted once a snapshot is taken, so the changelog alone is not expected to
+    # carry the whole history.
+    node_logs.stop_clickhouse()
+    node_logs.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/logs"])
+    node_logs.start_clickhouse()
     keeper_utils.wait_until_connected(
         started_cluster, node_logs, wait_complete_readiness=False
     )
