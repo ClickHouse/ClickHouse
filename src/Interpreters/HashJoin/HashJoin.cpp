@@ -68,6 +68,8 @@ extern const Event HashJoinBuildMicroseconds;
 extern const Event HashJoinBuildScatterMicroseconds;
 extern const Event HashJoinBuildInsertMicroseconds;
 extern const Event HashJoinBuildLockWaitMicroseconds;
+extern const Event HashJoinBuiltWithParallelLayout;
+extern const Event HashJoinBuiltWithSerialLayout;
 }
 
 namespace CurrentMetrics
@@ -3317,6 +3319,12 @@ void HashJoin::onBuildPhaseFinish()
     }
 
     build_phase_finished = true;
+
+    /// The plan prints `HashJoin` for both layouts now that `ConcurrentHashJoin` is gone, so record
+    /// which one this join built on. `data->type` is promoted to its two-level variant exactly when
+    /// `use_parallel_layout` holds, so this is the bucket split the reader is after.
+    ProfileEvents::increment(
+        use_parallel_layout ? ProfileEvents::HashJoinBuiltWithParallelLayout : ProfileEvents::HashJoinBuiltWithSerialLayout);
 
     /// In case addBlockToJoin is returning early
     /// we take a peak snapshot
