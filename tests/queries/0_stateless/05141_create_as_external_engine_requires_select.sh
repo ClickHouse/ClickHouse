@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 
-# `CREATE TABLE x AS y` inherits the storage definition of `y`, the credentials in it included. They are
-# masked as `[HIDDEN]` in `SHOW CREATE TABLE`, so a user who may only see the schema of `y` must not be
-# able to read through them what the SELECT privilege on `y` denies: inheriting a definition that can
-# carry credentials requires SELECT on the source table, while any other one still requires only
-# SHOW COLUMNS.
+# `CREATE TABLE x AS y` inherits the engine of `y` with its credentials, which are masked in
+# `SHOW CREATE TABLE`. That needs SELECT on `y`; copying any other definition still needs only SHOW COLUMNS.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="user_${CLICKHOUSE_DATABASE}"
 db="${CLICKHOUSE_DATABASE}"
 
-# The URLs are never contacted: only the definition of the source table is copied.
+# The URLs are never contacted, only the definitions are copied.
 ${CLICKHOUSE_CLIENT} -q "
     DROP USER IF EXISTS ${user};
     CREATE USER ${user};
@@ -46,10 +43,10 @@ function try_copy()
 echo "with SHOW COLUMNS only:"
 try_copy local_src
 try_copy url_src
-# An engine that can carry credentials requires SELECT even when this definition holds none.
+# The engine can carry credentials, so SELECT is required even though this one has none.
 try_copy url_src_no_password
 try_copy function_src
-# A table function is judged by its arguments, so one without credentials is copied as before.
+# A table function without credentials is copied as before.
 try_copy function_src_no_password
 
 echo "after GRANT SELECT:"

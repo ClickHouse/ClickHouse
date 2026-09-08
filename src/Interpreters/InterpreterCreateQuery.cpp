@@ -1592,14 +1592,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
-        /// Inheriting the definition of the source table also inherits the credentials embedded in it, and the
-        /// user is not necessarily allowed to see them: `SHOW CREATE TABLE` masks them as `[HIDDEN]`. Reading
-        /// through such a copy would bypass the `SELECT` grant on the source, so require that grant here.
-        /// Inheriting a definition that cannot carry them still needs only `SHOW COLUMNS`, as before.
+        /// The inherited credentials are masked in `SHOW CREATE TABLE`, so copying them would give away
+        /// the data of the source table to someone who cannot `SELECT` from it.
         auto check_access_to_inherited_definition = [&](const ASTFunction & definition)
         {
-            /// A table engine that can carry credentials declares a source access type (`S3`, `MySQL`, ...).
-            /// A table function declares none, so for it we go by whether its arguments are masked as secret.
+            /// Engines that can carry credentials declare a source access type; table functions don't,
+            /// so look at whether their arguments are masked.
             const bool carries_credentials = definition.hasSecretParts()
                 || (definition.getKind() == ASTFunction::Kind::TABLE_ENGINE
                     && StorageFactory::instance().getSourceAccessObject(definition.name).has_value());
