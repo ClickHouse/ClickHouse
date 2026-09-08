@@ -2542,7 +2542,8 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     /// restored from `base` (the pre-override effective settings) when the baseline value is safe, and
     /// from the declaration default otherwise. Returns, per reset setting, its name and a
     /// human-readable note.
-    std::vector<MergeTreeSettings::CompressionCodecSettingReset> sanitizeCompressionCodecSettings(const MergeTreeSettingsImpl & base);
+    std::vector<MergeTreeSettings::CompressionCodecSettingReset> sanitizeCompressionCodecSettings(
+        const MergeTreeSettingsImpl & base, const MergeTreeSettings::CodecPolicyCheck & baseline_is_allowed);
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2869,7 +2870,8 @@ void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
     check_codec_setting(pcc.value, pcc.changed, "primary_key_compression_codec");
 }
 
-std::vector<MergeTreeSettings::CompressionCodecSettingReset> MergeTreeSettingsImpl::sanitizeCompressionCodecSettings(const MergeTreeSettingsImpl & base)
+std::vector<MergeTreeSettings::CompressionCodecSettingReset> MergeTreeSettingsImpl::sanitizeCompressionCodecSettings(
+    const MergeTreeSettingsImpl & base, const MergeTreeSettings::CodecPolicyCheck & baseline_is_allowed)
 {
     /// `checkCompressionCodecSettings` only runs from `sanityCheck`, which `MergeTreeData` skips on the
     /// metadata-load path (ATTACH / SECONDARY_CREATE / RESTORE). So an `ATTACH TABLE ... SETTINGS
