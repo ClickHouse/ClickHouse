@@ -9,6 +9,7 @@
 
 #if USE_ANTLR4_GRAMMARS
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Common/re2.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
@@ -230,6 +231,8 @@ namespace
         {
             return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
         }
+
+        size_t getStartPos(const antlr4::ParserRuleContext * ctx) const { return getStartPos(ctx->getStart()); }
 
         size_t getStartPos(const antlr4::Token * token) const
         {
@@ -458,15 +461,84 @@ namespace
             return matcher;
         }
 
+        bool matcherMatchesEmptyString(const Matcher & matcher, size_t error_pos, bool & result)
+        {
+            switch (matcher.matcher_type)
+            {
+                case MatcherType::EQ:
+                    result = matcher.label_value.empty();
+                    return true;
+                case MatcherType::NE:
+                    result = !matcher.label_value.empty();
+                    return true;
+                case MatcherType::RE:
+                case MatcherType::NRE:
+                {
+                    re2::RE2::Options options;
+                    options.set_log_errors(false);
+                    re2::RE2 regexp(matcher.label_value, options);
+                    if (!regexp.ok())
+                    {
+                        error_listener.setError(
+                            "invalid regular expression in label matcher: " + regexp.error(), error_pos);
+                        return false;
+                    }
+
+                    bool regexp_matches_empty_string = re2::RE2::FullMatch("", regexp);
+                    result = (matcher.matcher_type == MatcherType::RE)
+                        ? regexp_matches_empty_string
+                        : !regexp_matches_empty_string;
+                    return true;
+                }
+            }
+
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected PromQL matcher type");
+        }
+
+        /// `matcher_positions` holds the start position of every matcher in `matchers`, so that an error
+        /// about a particular matcher points at that matcher and not at the start of the whole selector.
+        bool validateSelectorHasNonEmptyMatcher(
+            const MatcherList & matchers, const std::vector<size_t> & matcher_positions, size_t selector_pos)
+        {
+            chassert(matchers.size() == matcher_positions.size());
+
+            /// Follow Prometheus parser semantics: a selector like `{job=~".*"}` does not just mean
+            /// "all series with a `job` label", it also matches series where the `job` label is absent.
+            /// That makes typos and broad dashboard variables silently select every metric. Require
+            /// one matcher that cannot match an empty label value instead. To intentionally query all
+            /// metrics, use `{__name__=~".+"}`; if an empty-matching label matcher is needed, keep it
+            /// and add `{__name__=~".+"}` as another matcher.
+            bool has_non_empty_matcher = false;
+            for (size_t i = 0; i != matchers.size(); ++i)
+            {
+                bool matches_empty_string = false;
+                if (!matcherMatchesEmptyString(matchers[i], matcher_positions[i], matches_empty_string))
+                    return false;
+                if (!matches_empty_string)
+                    has_non_empty_matcher = true;
+            }
+
+            if (has_non_empty_matcher)
+                return true;
+
+            /// This one is about the selector as a whole, so it points at the start of the selector.
+            error_listener.setError("vector selector must contain at least one non-empty matcher", selector_pos);
+            return false;
+        }
+
         /// Makes a node for an instant selector.
         Node * makeInstantSelector(antlr4_grammars::PromQLParser::InstantSelectorContext * ctx)
         {
             auto new_node = std::make_unique<InstantSelector>();
 
             MatcherList matchers;
+            std::vector<size_t> matcher_positions;
             auto * metric_name_ctx = ctx->metricName();
             if (metric_name_ctx)
+            {
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
+                matcher_positions.push_back(getStartPos(metric_name_ctx));
+            }
 
             if (auto * label_matcher_list_ctx = ctx->labelMatcherList())
             {
@@ -491,8 +563,12 @@ namespace
                     }
 
                     matchers.push_back(std::move(matcher));
+                    matcher_positions.push_back(getStartPos(label_matcher_ctx));
                 }
             }
+
+            if (!validateSelectorHasNonEmptyMatcher(matchers, matcher_positions, getStartPos(ctx)))
+                return nullptr;
 
             new_node->matchers = std::move(matchers);
             return addNode(std::move(new_node));
