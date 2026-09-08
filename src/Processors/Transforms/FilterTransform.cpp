@@ -497,7 +497,11 @@ void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t 
         /// Copy it in column form because some values cannot be materialized as a `Field`.
         auto value = columns[position]->cloneEmpty();
         value->insertFrom(*columns[position], 0);
-        columns[position] = ColumnConst::create(std::move(value), num_rows);
+
+        /// The value must be unwrapped: a `ColumnSparse` (or any other wrapper) nested inside a `ColumnConst`
+        /// is invisible to `IColumn::isSparse`, so `IExecutableFunction::executeWithoutSparseColumns` and
+        /// `Aggregator` do not materialize it and then read the raw data of a column that is not there.
+        columns[position] = ColumnConst::create(ColumnPtr(std::move(value))->convertToFullIfWrapped(), num_rows);
     }
 }
 
