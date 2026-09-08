@@ -1,3 +1,8 @@
+-- hash-first algorithm lists are carried through the serialized logical join --
 10
+10
+10
+-- a fragment that really builds a full sort rejects the invalid value --
+-- valid values still execute the serialized full sort --
 10
 10
