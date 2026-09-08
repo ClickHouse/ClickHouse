@@ -290,7 +290,16 @@ def _assert_broadcast_delivered(probe_arrivals):
     allowed to lose, and losing it is not a defect. Measured on a machine oversubscribed 6x, 10 of
     139 single topologies saw no arrival, while none of 93 sweeps came up empty and the emptiest
     of them still delivered 2 states. Worth asserting even so: every other count here is taken
-    where a state is serialized, so a broadcast that dropped all of them would pass unnoticed."""
+    where a state is serialized, so a broadcast that dropped all of them would pass unnoticed.
+
+    Thread sanitizer loses the whole sweep, not just a topology. It stretches the build side far
+    enough that every probe task has finished its scan and dropped its receive branch before the
+    root can publish, so no arrival is possible and the assertion would be measuring the
+    sanitizer. Under tsan the counts this sweep is built from all came back 0, while the other
+    configurations delivered on every run."""
+    if INITIATOR.is_built_with_thread_sanitizer():
+        logging.info("skipping the broadcast-arrival check under tsan: %s", probe_arrivals)
+        return
     assert max(probe_arrivals) >= 1, probe_arrivals
 
 
