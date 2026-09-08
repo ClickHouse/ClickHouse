@@ -53,3 +53,14 @@ SELECT countDistinct(n) <= 1 FROM (
 SELECT name FROM system.table_engines
 WHERE supports_settings AND name NOT IN (SELECT DISTINCT engine_name FROM system.engine_settings)
 ORDER BY name;
+
+-- A setting writable under more than one name gets a row per name, as `system.settings` does, so
+-- that looking it up by the name you happen to know finds it. `alias_for` tells the rows apart and
+-- is empty on the setting's own row.
+SELECT name, alias_for FROM system.engine_settings
+WHERE engine_name = 'MergeTree' AND name IN ('enable_block_number_column', 'allow_experimental_block_number_column')
+ORDER BY name;
+
+-- The rows carry the same values; only the name and `alias_for` differ.
+SELECT countDistinct((value, `default`, type, tier)) = 1 FROM system.engine_settings
+WHERE engine_name = 'MergeTree' AND name IN ('enable_block_number_column', 'allow_experimental_block_number_column');

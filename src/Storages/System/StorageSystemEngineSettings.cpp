@@ -47,6 +47,9 @@ development and the expectations one might have when using them:
 * EXPERIMENTAL: The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
 * OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
 )"},
+        {"alias_for",    std::make_shared<DataTypeString>(),
+            "Empty on a setting's own row. A setting writable under more than one name also gets a row per other name, "
+            "carrying the same values, with this naming the one it is declared under. As in `system.settings`."}
     };
 }
 
@@ -86,13 +89,18 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
 
         for (const auto & setting : enumerate(context))
         {
+            /// A setting that answers to more than one name gets a row per name, as
+            /// `system.settings` does, so that looking it up by the name you happen to know finds
+            /// it. The rows carry the same values; `alias_for` tells them apart.
+            auto add_row = [&](std::string_view name, std::string_view alias_for)
+            {
             size_t src_index = 0;
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(engine_name);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(setting.name);
+                res_columns[res_index++]->insert(name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(setting.value);
             if (columns_mask[src_index++])
@@ -121,6 +129,13 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
                 res_columns[res_index++]->insert(setting.tier == SettingsTierType::OBSOLETE);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(setting.tier);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(alias_for);
+            };
+
+            add_row(setting.name, "");
+            for (const auto alias : setting.aliases)
+                add_row(alias, setting.name);
         }
     }
 }
