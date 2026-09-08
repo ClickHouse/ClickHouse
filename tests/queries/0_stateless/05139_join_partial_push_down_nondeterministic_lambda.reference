@@ -1,0 +1,100 @@
+-- { echo }
+-- The mechanism is analyzer-only. This one has to be a session-level SET: a subquery may not
+-- change it (INCORRECT_QUERY when the top-level value differs), and the runner never
+-- randomizes it.
+SET enable_analyzer = 1;
+DROP TABLE IF EXISTS t_left_big;
+DROP TABLE IF EXISTS t_right_big;
+CREATE TABLE t_left_big (a UInt64) ENGINE = Log;
+CREATE TABLE t_right_big (a UInt64, b UInt64) ENGINE = Log;
+INSERT INTO t_left_big SELECT number FROM numbers(200000);
+INSERT INTO t_right_big SELECT number, number FROM numbers(200000);
+-- The settings the runner randomizes, use_join_disjunctions_push_down and
+-- enable_join_runtime_filters, are pinned in each query's own SETTINGS clause rather than by a SET:
+-- the runner passes randomized settings on the client command line, which are per-query settings and
+-- outrank a SET issued earlier in the session.
+
+-- use_join_disjunctions_push_down extracts a partial predicate and pushes it below the join while
+-- keeping the original filter above, so a predicate drawn per row is drawn twice and only the rows
+-- passing both draws survive: about a quarter of the input instead of about a half. Assert the two
+-- arms agree within 5%; without the guard the ratio is about 0.5. 200000 rows make that band about
+-- 16 standard deviations wide, so the two verdicts cannot be confused.
+--
+-- B1 needs no lambda at all, because the extraction had no determinism check of any kind. The main
+-- push-down rejects a visible non-deterministic function node already, so this verdict can move only
+-- through the partial path, which is gated on use_join_disjunctions_push_down; with the push-down
+-- off the row reads 1 whatever the optimizer does, so pin it.
+SELECT 'B1 visible non deterministic', abs((
+    (SELECT count() FROM (
+        SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE rand(t_left_big.a) % 2 = 0) SETTINGS
+            query_plan_filter_push_down = 1, use_join_disjunctions_push_down = 1) /
+    (SELECT count() FROM (
+        SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE rand(t_left_big.a) % 2 = 0) SETTINGS
+            query_plan_filter_push_down = 0)) - 1.) < 0.05;
+B1 visible non deterministic	1
+-- CONTROL: a deterministic predicate must keep the same count with and without push-down, so a red
+-- B1 or B3 is the optimizer and not the fixture.
+SELECT 'B2 deterministic', abs((
+    (SELECT count() FROM (
+        SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE t_left_big.a % 2 = 0) SETTINGS
+            query_plan_filter_push_down = 1, use_join_disjunctions_push_down = 1) /
+    (SELECT count() FROM (
+        SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE t_left_big.a % 2 = 0) SETTINGS
+            query_plan_filter_push_down = 0)) - 1.) < 0.05;
+B2 deterministic	1
+-- The same oracle with the non-deterministic call HIDDEN in a lambda body, which constant folding
+-- turns into a ColumnFunction whose body is a separate inner DAG. A guard that reads the metadata of
+-- the node holding it, the way B1's visible `rand` is read, cannot observe this one.
+SELECT 'B3 hidden non deterministic', abs((
+    (SELECT count() FROM (
+        SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE arrayExists(z -> rand(z) % 2 = 0, [t_left_big.a])) SETTINGS
+            query_plan_filter_push_down = 1, use_join_disjunctions_push_down = 1) /
+    (SELECT count() FROM (
+        SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE arrayExists(z -> rand(z) % 2 = 0, [t_left_big.a])) SETTINGS
+            query_plan_filter_push_down = 0)) - 1.) < 0.05;
+B3 hidden non deterministic	1
+-- CONTROL: a lambda-bearing predicate must still be extracted below the join, or the check has degraded
+-- into refusing every lambda. `randConstant` draws once per query, so duplicating the extracted copy
+-- cannot change any row's verdict and refusing it would cost this pre-filter to every function that is
+-- non-deterministic only across queries: that is why the check is the in-query one and not the stricter
+-- `isDeterministic`. The lambda captures a column, so this row's carrier is `FunctionCapture`.
+SELECT 'B4 query constant capturing lambda still extracted',
+    (SELECT countIf(explain ILIKE '%arrayExists%') FROM (
+        EXPLAIN SELECT t_left_big.a FROM t_left_big JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE (arrayExists(z -> randConstant(z + t_left_big.a) % 2 = 0, [t_left_big.a]) AND t_right_big.b = 7)
+           OR (arrayExists(z -> randConstant(z + t_left_big.a) % 2 = 1, [t_left_big.a]) AND t_right_big.b = 8)) SETTINGS
+            explain_query_plan_default = 'pretty', query_plan_filter_push_down = 1,
+            use_join_disjunctions_push_down = 1, enable_join_runtime_filters = 0)
+  > (SELECT countIf(explain ILIKE '%arrayExists%') FROM (
+        EXPLAIN SELECT t_left_big.a FROM t_left_big JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE (arrayExists(z -> randConstant(z + t_left_big.a) % 2 = 0, [t_left_big.a]) AND t_right_big.b = 7)
+           OR (arrayExists(z -> randConstant(z + t_left_big.a) % 2 = 1, [t_left_big.a]) AND t_right_big.b = 8)) SETTINGS
+            explain_query_plan_default = 'pretty', query_plan_filter_push_down = 1,
+            use_join_disjunctions_push_down = 0, enable_join_runtime_filters = 0);
+B4 query constant capturing lambda still extracted	1
+-- The rejection direction of B4's shape: a disjunction spanning both sides cannot be moved below the
+-- join by the main push-down, so only the partial path can act and the plan says whether it extracted
+-- the lambda. B4's `>` on the same shape is this row's non-vacuity witness: if the plan stopped
+-- printing the lambda at all, B4 goes red first.
+SELECT 'B5 non deterministic capturing lambda not extracted',
+    (SELECT countIf(explain ILIKE '%arrayExists%') FROM (
+        EXPLAIN SELECT t_left_big.a FROM t_left_big JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE (arrayExists(z -> rand(z + t_left_big.a) % 2 = 0, [t_left_big.a]) AND t_right_big.b = 7)
+           OR (arrayExists(z -> rand(z + t_left_big.a) % 2 = 1, [t_left_big.a]) AND t_right_big.b = 8)) SETTINGS
+            explain_query_plan_default = 'pretty', query_plan_filter_push_down = 1,
+            use_join_disjunctions_push_down = 1, enable_join_runtime_filters = 0)
+  = (SELECT countIf(explain ILIKE '%arrayExists%') FROM (
+        EXPLAIN SELECT t_left_big.a FROM t_left_big JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE (arrayExists(z -> rand(z + t_left_big.a) % 2 = 0, [t_left_big.a]) AND t_right_big.b = 7)
+           OR (arrayExists(z -> rand(z + t_left_big.a) % 2 = 1, [t_left_big.a]) AND t_right_big.b = 8)) SETTINGS
+            explain_query_plan_default = 'pretty', query_plan_filter_push_down = 1,
+            use_join_disjunctions_push_down = 0, enable_join_runtime_filters = 0);
+B5 non deterministic capturing lambda not extracted	1
+DROP TABLE t_left_big;
+DROP TABLE t_right_big;
