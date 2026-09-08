@@ -12,7 +12,7 @@ namespace DB
 class ReadFromTimeSeriesStep : public ISourceStep
 {
 public:
-    ReadFromTimeSeriesStep(QueryPlanPtr query_plan_, ContextPtr read_context_);
+    ReadFromTimeSeriesStep(QueryPlanPtr query_plan_, ContextPtr read_context_, bool aggregate_samples_in_blocks);
 
     String getName() const override { return "ReadFromTimeSeries"; }
 

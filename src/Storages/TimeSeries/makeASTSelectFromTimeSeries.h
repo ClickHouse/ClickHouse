@@ -22,6 +22,9 @@ struct SelectQueryInfo;
 /// with just those keys is built) and the `FINAL` flag (with `FINAL` unmerged rows of the
 /// "tags" table are deduplicated so a series is returned exactly once; without it a series may be
 /// returned once per unmerged part, but the read is cheaper).
+/// When `time_series` is requested without `FINAL`, `ReadFromTimeSeriesStep` replaces the generated
+/// samples aggregation with independent aggregation of each input block. A series can therefore
+/// occupy several rows; `FINAL` is required to collect all its samples into a single array.
 ASTPtr makeASTSelectFromTimeSeries(
     const StorageTimeSeries & storage,
     const NameSet & requested_columns,

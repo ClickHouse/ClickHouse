@@ -21,23 +21,23 @@ INSERT INTO ts_read_in_order (metric_name, tags, time_series) VALUES ('m', map('
 INSERT INTO ts_read_in_order (metric_name, tags, time_series) VALUES ('m', map('n', 'a'), [(toDateTime64('2024-01-01 00:00:15', 3), 2.)]), ('m', map('n', 'b'), [(toDateTime64('2024-01-01 00:00:15', 3), 20.)]);
 INSERT INTO ts_read_in_order (metric_name, tags, time_series) VALUES ('m', map('n', 'a'), [(toDateTime64('2024-01-01 00:00:30', 3), 3.)]), ('m', map('n', 'b'), [(toDateTime64('2024-01-01 00:00:30', 3), 30.)]);
 
-SELECT '-- the samples GROUP BY id is read in order even though the caller did not set optimize_aggregation_in_order';
+SELECT '-- FINAL reads the samples GROUP BY id in order even though the caller did not set optimize_aggregation_in_order';
 SELECT countSubstrings(pipeline, 'AggregatingInOrderTransform') > 0 AS reads_samples_in_order
 FROM (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS pipeline
-    FROM (EXPLAIN PIPELINE SELECT time_series FROM ts_read_in_order)
+    FROM (EXPLAIN PIPELINE SELECT time_series FROM ts_read_in_order FINAL)
 );
 
 SELECT '-- it is a streaming ordered read, not a full sort of the samples';
 SELECT countSubstrings(pipeline, 'MergeSortingTransform') = 0 AS no_full_sort
 FROM (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS pipeline
-    FROM (EXPLAIN PIPELINE SELECT time_series FROM ts_read_in_order)
+    FROM (EXPLAIN PIPELINE SELECT time_series FROM ts_read_in_order FINAL)
 );
 
-SELECT '-- reading back returns each series with all its samples (content is unchanged; array order is not guaranteed, so normalize with arraySort)';
+SELECT '-- FINAL returns each series with all its samples (content is unchanged; array order is not guaranteed, so normalize with arraySort)';
 SELECT tags['n'] AS series, arraySort(time_series) AS samples
-FROM ts_read_in_order
+FROM ts_read_in_order FINAL
 ORDER BY series;
 
 DROP TABLE ts_read_in_order;

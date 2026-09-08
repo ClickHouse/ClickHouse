@@ -23,6 +23,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
@@ -742,7 +743,8 @@ void StorageTimeSeries::readImpl(
 
     auto generated_plan = std::make_unique<QueryPlan>(std::move(query_plan));
     query_plan = QueryPlan();
-    query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(std::move(generated_plan), read_context));
+    query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(
+        std::move(generated_plan), read_context, !query_info.isFinal() && requested_columns.contains(TimeSeriesColumnNames::TimeSeries)));
 }
 
 
@@ -851,6 +853,30 @@ CREATE TABLE my_table ENGINE=TimeSeries
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
 - [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
 - [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
+
+### Reading with `SELECT` {#reading-with-select}
+
+```sql
+SELECT * FROM my_table LIMIT 5;
+```
+
+Without `FINAL`, samples are assembled independently for each input block. The same metric and tags can
+appear in several rows, each containing a fragment of the series in `time_series`. `LIMIT` counts these
+rows; it does not select a number of distinct series or return their complete histories. This lets the
+samples read stream regardless of the `id` type and the samples table's sorting key.
+
+To collect all samples of each series into one array and deduplicate its tags, use `FINAL`:
+
+```sql
+SELECT * FROM my_table FINAL LIMIT 5;
+```
+
+`FINAL` can require substantial memory for long series or samples that are not ordered by `id`.
+The order of samples inside each array is not guaranteed; use `arraySort` if needed.
+
+Reads that also request tags or metadata join the target tables. Their join build sides are read before
+results are returned and can spill to disk according to `max_bytes_before_external_join` and
+`max_bytes_ratio_before_external_join`.
 
 ### Outer columns {#outer-columns}
 

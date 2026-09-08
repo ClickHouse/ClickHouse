@@ -1,0 +1,17 @@
+-- empty samples
+0
+-- samples-only reads retain orphan samples
+[('1970-01-01 00:00:01.000000000',11),('1970-01-01 00:00:02.000000000',22),('1970-01-01 00:00:03.000000000',100)]
+-- joins retain metadata-only rows and deduplicate tags
+m	a	[('1970-01-01 00:00:01.000000000',11)]	m	gauge	seconds	description
+m	b	[('1970-01-01 00:00:02.000000000',22)]	m	gauge	seconds	description
+		[]	unused	gauge		no samples
+-- caller aggregation and filters still apply across all fragments
+22
+m	a	[('1970-01-01 00:00:01.000000000',11)]	m
+m	b	[('1970-01-01 00:00:02.000000000',22)]	m
+		[]	unused
+-- disk-backed joins
+m	a	[('1970-01-01 00:00:01.000000000',11)]	m
+m	b	[('1970-01-01 00:00:02.000000000',22)]	m
+		[]	unused

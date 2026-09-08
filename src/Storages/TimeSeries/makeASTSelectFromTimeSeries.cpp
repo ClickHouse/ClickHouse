@@ -340,7 +340,7 @@ namespace
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
-    ASTPtr makeSamplesTableElement(const StorageID & samples_table_id)
+    ASTPtr makeSamplesTableElement(const StorageID & samples_table_id, bool final)
     {
         auto inner = make_intrusive<ASTSelectQuery>();
 
@@ -349,7 +349,29 @@ namespace
         select_list->children.push_back(makeGroupArrayOfSamples());
         inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
-        inner->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(samples_table_id));
+        auto tables = makeSingleTableList(samples_table_id);
+        if (!final)
+        {
+            /// A `Distributed` target could execute the aggregation on its shards already during
+            /// planning. Read raw samples through `view` so the generated aggregation stays local
+            /// and `ReadFromTimeSeriesStep` can replace it before any samples are aggregated.
+            auto raw_samples = make_intrusive<ASTSelectQuery>();
+            auto raw_columns = make_intrusive<ASTExpressionList>();
+            for (const auto * name : {TimeSeriesColumnNames::ID, TimeSeriesColumnNames::Timestamp, TimeSeriesColumnNames::Value})
+                raw_columns->children.push_back(make_intrusive<ASTIdentifier>(name));
+            raw_samples->setExpression(ASTSelectQuery::Expression::SELECT, raw_columns);
+            raw_samples->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+            auto table_expression = make_intrusive<ASTTableExpression>();
+            table_expression->table_function = makeASTFunction("view", makeSelectWithUnionQuery(std::move(raw_samples)));
+            table_expression->children.push_back(table_expression->table_function);
+            auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+            table_element->table_expression = table_expression;
+            table_element->children.push_back(std::move(table_expression));
+            tables = make_intrusive<ASTTablesInSelectQuery>();
+            tables->children.push_back(std::move(table_element));
+        }
+        inner->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
         auto group_by = make_intrusive<ASTExpressionList>();
         group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
@@ -525,7 +547,7 @@ namespace
     ///
     /// Unlike the joined read (where the SEMI JOIN with the "tags" table drops them), this branch also returns
     /// samples whose id has no "tags" row - possible only after direct writes into the inner "samples" table.
-    ASTPtr buildSelectQueryFromSamplesOnly(const StorageID & samples_table_id, const NameSet & requested_columns)
+    ASTPtr buildSelectQueryFromSamplesOnly(const StorageID & samples_table_id, const NameSet & requested_columns, bool final)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
@@ -539,7 +561,7 @@ namespace
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(makeSamplesTableElement(samples_table_id));
+        tables->children.push_back(makeSamplesTableElement(samples_table_id, final));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return makeSelectWithUnionQuery(std::move(select_query));
@@ -673,7 +695,7 @@ namespace
         if (samples_table_id)
         {
             /// Samples-anchored: samples are the (streamed) probe side, tags/metrics the smaller build sides.
-            tables->children.push_back(makeSamplesTableElement(*samples_table_id));
+            tables->children.push_back(makeSamplesTableElement(*samples_table_id, /* final= */ deduplicate_tags_by_id));
             tables->children.push_back(makeTagsSemiJoinElement(tags_table_id));
         }
         else
@@ -745,7 +767,7 @@ ASTPtr makeASTSelectFromTimeSeries(
 
     /// Single-table reads (no join).
     if (need_samples && !need_tags && !need_metrics)
-        return buildSelectQueryFromSamplesOnly(*samples_table_id, requested_columns);
+        return buildSelectQueryFromSamplesOnly(*samples_table_id, requested_columns, query_info.isFinal());
 
     if (need_tags && !need_samples && !need_metrics)
         return buildSelectQueryFromTagsOnly(*tags_table_id, requested_columns, requested_tags, columns_by_tags,
@@ -782,25 +804,27 @@ SettingsChanges getSettingsForSelectFromTimeSeries(bool final)
     /// parallel build of the join's right side where applicable.
     changes.emplace_back("join_algorithm", Field{"parallel_hash,hash"});
 
-    /// If `optimize_aggregation_in_order` is 0 then the GROUP BY id over the "samples" table would build a hash
-    /// table of all the series in memory (because only this setting lets the aggregation stream in sorting-key
-    /// order, which is possible here: `id` is the first column of the default samples sorting key `(id, timestamp)`).
+    /// Keep samples on the probe side. Building a hash table from them would buffer every sample,
+    /// even though the samples aggregation itself can stream.
+    changes.emplace_back("query_plan_join_swap_table", Field{false});
+
+    /// Under `FINAL`, prefer streaming complete series when the samples sorting key permits it.
+    /// Non-`FINAL` reads use block-local aggregation in `ReadFromTimeSeriesStep` regardless of the key.
     changes.emplace_back("optimize_aggregation_in_order", Field{true});
 
-    if (!final)
+    if (final)
     {
-        /// If `allow_aggregate_partitions_independently` is 0 then partitions of the "samples" table would never
-        /// be aggregated in fully independent pipelines even when its partition key is a function of `id`, and
-        /// if `force_aggregate_partitions_independently` is 0 then that optimization could still be skipped
-        /// when the optimizer decides it would not help (e.g. too few partitions).
-        /// Enabled only without FINAL: under FINAL the canonical merged execution is kept.
-        ///
-        /// TODO: Prefer a per-block no-merge aggregation mode once one exists (a proposed
-        /// `group_by_each_block_no_merge` setting): per-block aggregation without merging is streaming,
-        /// needs no precondition on the partition key, and its sliced output (several `time_series` rows
-        /// per series) is a valid non-FINAL result.
-        changes.emplace_back("allow_aggregate_partitions_independently", Field{true});
-        changes.emplace_back("force_aggregate_partitions_independently", Field{true});
+        /// `FINAL` must merge samples across all partitions, including when the caller forces
+        /// independent aggregation of partitions whose keys are not functions of `id`.
+        changes.emplace_back("allow_aggregate_partitions_independently", Field{false});
+        changes.emplace_back("force_aggregate_partitions_independently", Field{false});
+    }
+    else
+    {
+        /// Preserve the raw-samples `view` boundary until the generated aggregation has been
+        /// replaced. Inlining it or pushing aggregation through it would defeat block assembly.
+        changes.emplace_back("analyzer_inline_views", Field{false});
+        changes.emplace_back("optimize_trivial_view_pushdown_to_distributed", Field{false});
     }
 
     return changes;
