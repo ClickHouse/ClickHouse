@@ -518,9 +518,9 @@ constexpr size_t base58DecodeWords(size_t body)
 }
 
 /// The words live in the destination buffer when they fit its documented bound (2n+1 encode, n decode).
-/// A decode of at most 15 characters does not: it needs two words, 16 bytes, where `dst` holds fewer, so
-/// for those an array is required rather than merely preferred. The cutoffs below are not that point;
-/// they are the largest bodies whose word-count bound fits 64, which is why they cover both cases.
+/// A decode below 16 characters can need two words, 16 bytes, which is more than `dst` holds, so there an
+/// array is required rather than merely preferred. The cutoffs below are not that point; they are the
+/// largest bodies whose word-count bound fits 64, which is why they cover both cases.
 constexpr size_t BASE58_STACK_WORDS = 64;
 constexpr size_t BASE58_ENCODE_STACK_MAX_BODY = 467;
 constexpr size_t BASE58_DECODE_STACK_MAX_BODY = 697;
