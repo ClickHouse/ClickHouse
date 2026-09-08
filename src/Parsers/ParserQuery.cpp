@@ -104,7 +104,7 @@ static bool parseGrantOrDropAccessEntityQuery(IParser::Pos & pos, ASTPtr & node,
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// QueryWithOutput includes SELECT, SELECT with UNION ALL, SHOW, and similar:
-    ParserQueryWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
+    ParserQueryWithOutput query_with_output_p(end, allow_settings_after_format_in_insert, parse_output_options);
 
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserUseQuery use_p;
@@ -159,7 +159,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 #if !defined(CLICKHOUSE_PARSER_NO_DCL)
     if (!res && allow_execute_as)
     {
-        ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select};
+        ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select, parse_output_options};
         subquery_p.allow_execute_as = false;
         ParserExecuteAsQuery execute_as_p{subquery_p};
         res = execute_as_p.parse(pos, node, expected);
@@ -168,7 +168,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (res && allow_in_parallel_with)
     {
-        ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select};
+        ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select, parse_output_options};
         subquery_p.allow_in_parallel_with = false;
         ParserParallelWithQuery in_parallel_with_query_p(subquery_p, node);
         in_parallel_with_query_p.parse(pos, node, expected);

@@ -39,6 +39,8 @@ public:
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 
+    void validateShape() const;
+
 protected:
     void formatImpl(
         WriteBuffer & ostr,
@@ -47,7 +49,6 @@ protected:
         FormatStateStacked frame) const override;
 
 private:
-    void validateShape() const;
     Kind kind;
 };
 

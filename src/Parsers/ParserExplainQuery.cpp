@@ -1,10 +1,14 @@
+#include <Common/Exception.h>
+
 #include <Parsers/ParserExplainQuery.h>
 
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTExplainTextAction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserExplainTextActions.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
@@ -21,6 +25,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTExplainQuery::ExplainKind kind = {};
 
     ParserKeyword s_ast(Keyword::AST);
+    ParserKeyword s_text(Keyword::TEXT);
     ParserKeyword s_explain(Keyword::EXPLAIN);
     ParserKeyword s_syntax(Keyword::SYNTAX);
     ParserKeyword s_query_tree(Keyword::QUERY_TREE);
@@ -38,6 +43,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
         if (s_ast.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::ParsedAST;
+        else if (s_text.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::FormattedQuery;
         else if (s_syntax.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::AnalyzedSyntax;
         else if (s_query_tree.ignore(pos, expected))
@@ -68,7 +75,12 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
         auto begin = pos;
         if (parser_settings.parse(pos, settings, expected))
+        {
+            if (kind == ASTExplainQuery::ExplainKind::FormattedQuery)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT does not support settings before the explained query");
+
             explain_query->setSettings(std::move(settings), String(textBetween(begin, pos)));
+        }
         else
             pos = begin;
     }
@@ -78,7 +90,43 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserSystemQuery system_p;
     ASTPtr query;
-    if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
+    if (kind == ASTExplainQuery::ExplainKind::FormattedQuery)
+    {
+        ASTPtr actions;
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+            ParserQuery source_parser(end, allow_settings_after_format_in_insert);
+            if (!source_parser.parse(pos, query, expected) || pos->type != TokenType::ClosingRoundBracket)
+                return false;
+
+            ++pos;
+
+            ParserExplainTextActions actions_parser;
+            actions_parser.parse(pos, actions, expected);
+        }
+        else if (!parseExplainTextBareSourceAndActions(pos, query, actions, expected, end, allow_settings_after_format_in_insert))
+        {
+            return false;
+        }
+        if (actions)
+        {
+            for (const auto & action : actions->children)
+                action->as<const ASTExplainTextAction &>().validateShape();
+        }
+
+        if (const auto * insert_query = query->as<ASTInsertQuery>();
+            insert_query && insert_query->hasInlinedData())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT cannot format an INSERT query containing inline data");
+        }
+
+        explain_query->setExplainedQuery(std::move(query));
+
+        if (actions)
+            explain_query->setActions(std::move(actions));
+    }
+    else if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
     {
         ParserQuery p(end, allow_settings_after_format_in_insert);
         bool parsed_query = false;

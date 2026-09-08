@@ -137,6 +137,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parsed)
         return false;
 
+    if (!parse_output_options)
+    {
+        node = std::move(query);
+        return true;
+    }
+
     /// FIXME: try to prettify this cast using `as<>()`
     auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);
 
