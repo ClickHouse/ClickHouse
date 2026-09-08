@@ -12,6 +12,7 @@
 #include <Core/Field.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -87,7 +88,8 @@ static UInt64 extractResponseVersion(ReadWriteBufferFromHTTP * in)
     for (const auto & header : in->getResponseHeaders())
     {
         const auto & name_and_value = header.safeGet<Tuple>();
-        if (name_and_value.at(0).safeGet<String>() == "X-ClickHouse-Task-Status-Version")
+        /// HTTP header names are case-insensitive, so compare accordingly.
+        if (boost::iequals(name_and_value.at(0).safeGet<String>(), "X-ClickHouse-Task-Status-Version"))
             return parse<UInt64>(name_and_value.at(1).safeGet<String>());
     }
     return DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
