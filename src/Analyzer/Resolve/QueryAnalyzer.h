@@ -312,6 +312,12 @@ private:
     /// CTEs that are currently in resolve process
     QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
 
+    /// Parameterized CTEs that are currently being expanded, by name. Their bodies never enter the query
+    /// tree (see `Context::tryGetParameterizedCTE`), so they cannot be tracked by node identity the way
+    /// `ctes_in_resolve_process` tracks ordinary CTEs. Serves the same purpose: a reference to a
+    /// parameterized CTE from inside its own body must not expand it again.
+    NameSet parameterized_ctes_in_resolve_process;
+
     /// Window definitions that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
