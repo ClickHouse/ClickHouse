@@ -104,9 +104,13 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case ':':
             if (has_open_bracket)
                 continue;
-            if (has_at_symbol || colon_pos) goto done;
-            colon_pos = pos;
-            break;
+            if (!has_at_symbol)
+            {
+                if (colon_pos == nullptr)
+                    colon_pos = pos;
+                break;
+            }
+            goto done; /// the host itself (outside brackets) has exactly one ':', the port separator
         case '/': /// end symbols
         case '?':
         case '#':

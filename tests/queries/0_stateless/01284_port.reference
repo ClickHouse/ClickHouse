@@ -64,3 +64,5 @@ ipv6-RFC-query-fragment
 ipv6-RFC-mixed
 80
 80
+ipv6-RFC-userinfo-multicolon
+80

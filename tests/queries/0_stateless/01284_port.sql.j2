@@ -69,3 +69,7 @@ select portRFC('http://[2001:db8::8a2e:370:7334]:80#fragment');
 select 'ipv6-RFC-mixed';
 select portRFC('http://[::ffff:192.0.2.128]:80');
 select portRFC('http://user@[::ffff:192.0.2.128]:80/', toUInt16(443));
+
+-- userinfo may contain more than one ':' and must not be mistaken for the host:port separator
+select 'ipv6-RFC-userinfo-multicolon';
+select portRFC('http://user:pass:word@[2001:db8::1]:80', toUInt16(443));
