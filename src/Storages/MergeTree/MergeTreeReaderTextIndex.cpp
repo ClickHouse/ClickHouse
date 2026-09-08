@@ -28,6 +28,7 @@ namespace ProfileEvents
     extern const Event TextIndexReaderTotalMicroseconds;
     extern const Event TextIndexPositionsDecodeMicroseconds;
     extern const Event TextIndexPhraseMatchMicroseconds;
+    extern const Event TextIndexPhraseCandidatesMicroseconds;
     extern const Event TextIndexPositionsBlocksRead;
     extern const Event TextIndexPositionsBlocksTotal;
     extern const Event TextIndexPositionsBytesRead;
@@ -1054,6 +1055,8 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
     const auto & unique_infos = terms.unique_infos;
     const auto & term_to_unique = terms.term_to_unique;
 
+    Stopwatch candidates_watch;
+
     /// Candidate rows = intersection of the phrase tokens' postings. The full per-token posting
     /// list is also the rank space the blocked position stream is addressed in.
     std::vector<PostingList> token_postings;
@@ -1089,13 +1092,13 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
     std::vector<TextIndexBlockedPositionsCodec::Directory> dirs(unique_tokens.size());
     std::vector<PaddedPODArray<UInt64>> candidate_ranks(unique_tokens.size());
     size_t blocks_total = 0;
-    UInt64 decode_us = 0;
+    UInt64 directory_us = 0;
     {
-        Stopwatch prep_watch;
         PaddedPODArray<UInt32> posting_docs;
         for (size_t u = 0; u < unique_tokens.size(); ++u)
         {
             const auto & token_info = *unique_infos[u];
+            Stopwatch directory_watch;
             /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
             if ((token_info.position_bytes == 0) || (token_info.position_offset > pos_file_size)
                 || (token_info.position_bytes > pos_file_size - token_info.position_offset))
@@ -1113,6 +1116,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
             dirs[u] = TextIndexBlockedPositionsCodec::readDirectory(
                 *data_buffer, token_info.position_offset, postings.cardinality(), available);
             blocks_total += dirs[u].numBlocks();
+            directory_us += directory_watch.elapsedMicroseconds();
 
             auto & ranks = candidate_ranks[u];
             ranks.resize(candidates.size());
@@ -1135,8 +1139,9 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
                     ranks[i] = postings.rank(candidates[i]) - 1;
             }
         }
-        decode_us += prep_watch.elapsedMicroseconds();
     }
+    const UInt64 elapsed_us = candidates_watch.elapsedMicroseconds();
+    const UInt64 candidates_us = elapsed_us > directory_us ? elapsed_us - directory_us : 0;
 
     PhraseChunkMatcher matcher(*positions_stream, blocked_positions_scratch, dirs, term_to_unique);
 
@@ -1153,7 +1158,8 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
         matcher.match(std::span<const UInt32>(candidates.data() + chunk_lo, chunk_hi - chunk_lo), chunk_ranks, matching);
     }
 
-    ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, decode_us + matcher.decode_us);
+    ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
+    ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + matcher.decode_us);
     ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, matcher.match_us);
     ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, matcher.blocks_read);
     ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
@@ -1173,7 +1179,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
 
     std::vector<TextIndexBlockedPositionsCodec::Directory> dirs(num_tokens);
     size_t blocks_total = 0;
-    Stopwatch prepare_watch;
+    Stopwatch directory_watch;
     for (size_t u = 0; u < num_tokens; ++u)
     {
         const auto & token_info = *unique_infos[u];
@@ -1188,6 +1194,9 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
             *data_buffer, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
         blocks_total += dirs[u].numBlocks();
     }
+    const UInt64 directory_us = directory_watch.elapsedMicroseconds();
+
+    Stopwatch candidates_watch;
 
     /// Sharing one stream is safe: every cursor read reseeks and serves blocks from its own buffer.
     std::vector<TextIndexPostingsRankCursor> cursors;
@@ -1210,7 +1219,6 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
         if (!cursors.back().valid())
             return {};
     }
-    const UInt64 prepare_us = prepare_watch.elapsedMicroseconds();
 
     PhraseChunkMatcher matcher(*positions_stream, blocked_positions_scratch, dirs, term_to_unique);
 
@@ -1234,7 +1242,6 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
     };
 
     /// Each candidate arrives with its rank in every token, so the ranks cost nothing extra.
-    Stopwatch candidates_watch;
     bool exhausted = false;
     while (!exhausted)
     {
@@ -1273,13 +1280,14 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
     }
     match_chunk();
 
-    /// Candidate generation shares a bucket with the directory reads, as in the bitmap path.
-    const UInt64 loop_us = candidates_watch.elapsedMicroseconds();
+    /// The matcher's own time is subtracted: it runs inside the leapfrog loop.
+    const UInt64 elapsed_us = candidates_watch.elapsedMicroseconds();
     const UInt64 nested_us = matcher.decode_us + matcher.match_us;
-    const UInt64 candidates_us = loop_us > nested_us ? loop_us - nested_us : 0;
+    const UInt64 candidates_us = elapsed_us > nested_us ? elapsed_us - nested_us : 0;
 
     ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidates, num_candidates);
-    ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, prepare_us + candidates_us + matcher.decode_us);
+    ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
+    ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + matcher.decode_us);
     ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, matcher.match_us);
     ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, matcher.blocks_read);
     ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
