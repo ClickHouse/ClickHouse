@@ -19,6 +19,8 @@
 #include <base/range.h>
 #include <Common/logger_useful.h>
 
+#include <sys/socket.h>
+
 
 namespace DB
 {
@@ -102,6 +104,27 @@ void PostgreSQLSource<T>::finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx
 
     if (connection_holder)
         connection_holder->setBroken();
+}
+
+
+/// Wakes a read parked in the client library, which waits on the socket with no deadline of its own.
+/// `shutdown` and not `close` keeps the descriptor valid for the thread still reading it.
+template<typename T>
+void PostgreSQLSource<T>::interruptRead(const std::shared_ptr<T> & tx_to_interrupt) noexcept
+{
+    try
+    {
+        const int fd = tx_to_interrupt->conn().sock();
+        if (fd < 0 || connection_torn_down.exchange(true))
+            return;
+
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "Shutting the connection down to interrupt the read");
+        ::shutdown(fd, SHUT_RDWR);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 template<typename T>
@@ -194,7 +217,19 @@ Chunk PostgreSQLSource<T>::generate()
 
     while (!isCancelled() && !stop_requested.load())
     {
-        const std::vector<pqxx::zview> * row{stream->read_row()};
+        const std::vector<pqxx::zview> * row{nullptr};
+        try
+        {
+            row = stream->read_row();
+        }
+        catch (const pqxx::failure &)
+        {
+            /// An interrupted read fails here instead of returning. Report the cancellation, not a
+            /// transport error the user did not cause.
+            if (stop_requested.load())
+                break;
+            throw;
+        }
 
         /// row is nullptr if pqxx::stream_from is finished
         if (!row)
@@ -261,12 +296,18 @@ void PostgreSQLSource<T>::onCancel() noexcept
             tx_snapshot = tx;
         }
 
-        /// Interrupt the connection only while onStart() is blocked on it (typically in
-        /// pqxx::from_query). Once streaming, the pipeline thread owns it, so the flag has to be
-        /// enough: generate() drops out between rows and the destructor then cancels the COPY.
-        if (!started.load() && tx_snapshot && tx_snapshot->conn().is_open())
+        if (!tx_snapshot)
+            return;
+
+        /// The connection is ours to discard, so the read can be interrupted at any point of its life.
+        if (connection_holder)
         {
-            /// `stream` belongs to onStart(), which is still running, so it is not touched here.
+            interruptRead(tx_snapshot);
+            connection_holder->setBroken();
+        }
+        /// A connection that came with the transaction outlives this source, so ask the server instead.
+        else if (!started.load() && tx_snapshot->conn().is_open())
+        {
             finalize(tx_snapshot, nullptr);
         }
     }
@@ -283,7 +324,11 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     /// cancelling the COPY the ROLLBACK issued during transaction abort waits for it. With no
     /// transaction nothing reached the connection, so it stays healthy and is left in the pool.
     if (!finalized.exchange(true) && tx)
-        finalize(stream ? tx : nullptr, stream.get());
+    {
+        /// A connection already taken down has nothing left to cancel, and the attempt would block.
+        const bool cancel_running_query = stream && !connection_torn_down.load();
+        finalize(cancel_running_query ? tx : nullptr, stream.get());
+    }
 
     stream.reset();
     tx.reset();

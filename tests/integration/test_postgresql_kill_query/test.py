@@ -314,6 +314,106 @@ class StatementStallingProxy:
             t.join(timeout=5)
 
 
+class ResponseStallingProxy:
+    """Forwards the PostgreSQL wire protocol, then stops relaying the server's output once the
+    COPY is streaming, holding both sockets open until release() is called.
+
+    This is the steady state the startup proxies cannot reach: the reading thread is parked
+    inside the client library on a socket that is alive and delivering nothing, and cancellation
+    is only checked between rows. `stall_after_bytes` has to land inside the COPY, past the
+    handshake and `CopyOutResponse`.
+    """
+
+    def __init__(self, stall_after_bytes=16 * 1024):
+        self._stall_after_bytes = stall_after_bytes
+        self._release = threading.Event()
+        self._stalled = threading.Event()
+        self._sock = None
+        self._threads = []
+        self._stop = False
+
+    def _pump(self, source, destination, is_server_to_client):
+        forwarded = 0
+        stalled_once = False
+        while not self._stop:
+            try:
+                data = source.recv(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not data:
+                break
+
+            if is_server_to_client and not stalled_once and forwarded >= self._stall_after_bytes:
+                stalled_once = True
+                self._stalled.set()
+                # Withhold everything from here on. The bounded wait keeps a failure surfacing
+                # as an assertion rather than as a hung worker.
+                self._release.wait(timeout=60)
+
+            try:
+                destination.sendall(data)
+            except OSError:
+                break
+            forwarded += len(data)
+
+        for s in (source, destination):
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def _serve(self):
+        while not self._stop:
+            try:
+                downstream, _ = self._sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                upstream.connect(self._address)
+            except OSError:
+                downstream.close()
+                continue
+
+            downstream.settimeout(1)
+            upstream.settimeout(1)
+            for args in ((downstream, upstream, False), (upstream, downstream, True)):
+                t = threading.Thread(target=self._pump, args=args, daemon=True)
+                self._threads.append(t)
+                t.start()
+
+    def start(self, address):
+        self._address = address
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("", 0))
+        self._sock.listen()
+        self._sock.settimeout(1)
+        self._runner = threading.Thread(target=self._serve, daemon=True)
+        self._runner.start()
+        return self._sock.getsockname()[1]
+
+    def wait_until_stalled(self, timeout=60):
+        if not self._stalled.wait(timeout=timeout):
+            raise AssertionError("proxy never reached the COPY output")
+
+    def release(self):
+        self._release.set()
+
+    def stop(self):
+        self._stop = True
+        self._release.set()
+        if self._sock:
+            self._sock.close()
+        for t in self._threads:
+            t.join(timeout=5)
+
+
 def test_kill_query_while_transaction_is_starting(started_cluster, setup_infinite_query):
     """A cancel arriving while the transaction is still being constructed must not be lost.
 
@@ -502,6 +602,80 @@ ENGINE = PostgreSQL(
         proxy.stop()
         query_thread.join(timeout=60)
         node1.query("DROP TABLE IF EXISTS copy_stalled_counter")
+        assert not query_thread.is_alive(), "query thread outlived the test"
+
+
+def test_kill_query_while_the_read_is_stalled(started_cluster, setup_streaming_view):
+    """A cancel arriving while the COPY is streaming must not wait for the server.
+
+    The startup tests cover a cancel reaching a connection with no statement running on it. Here
+    the statement runs and its output simply stops, leaving the reading thread inside the client
+    library with no deadline. The proxy stays stalled across the kill, so the read can only end
+    if the cancellation reaches the transport itself.
+    """
+    proxy = ResponseStallingProxy()
+    port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
+    proxy_host = socket.gethostbyname(socket.gethostname())
+    query_id = str(uuid.uuid4())
+    query_errors = []
+
+    node1.query("DROP TABLE IF EXISTS read_stalled_counter")
+    node1.query(
+        f"""CREATE TABLE read_stalled_counter (counter Nullable(Int32))
+ENGINE = PostgreSQL(
+    '{proxy_host}:{port}',
+    'postgres_database',
+    'streaming_counter',
+    'postgres',
+    'ClickHouse_PostgreSQL_P@ssw0rd')"""
+    )
+
+    def execute_query():
+        _, error = node1.query_and_get_answer_with_error(
+            "SELECT * FROM read_stalled_counter",
+            query_id=query_id,
+            timeout=120,
+        )
+        query_errors.append(error)
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    try:
+        # The COPY is streaming and its output is withheld, so the source is parked in the
+        # client library rather than between rows.
+        proxy.wait_until_stalled()
+
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+
+        # Still stalled: without the fix the read waits for as long as the peer stays silent.
+        query_thread.join(timeout=30)
+        assert (
+            not query_thread.is_alive()
+        ), "cancelled query kept waiting on a silent connection"
+        assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+            "0",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+    finally:
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
+        proxy.release()
+        proxy.stop()
+        query_thread.join(timeout=60)
+        node1.query("DROP TABLE IF EXISTS read_stalled_counter")
         assert not query_thread.is_alive(), "query thread outlived the test"
 
 
