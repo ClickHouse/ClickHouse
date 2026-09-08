@@ -1,0 +1,14 @@
+-- TSV key carries both new fields, once per setting value
+input_format_try_infer_exponent_floats=false	max_parser_depth=1000
+input_format_try_infer_exponent_floats=true	max_parser_depth=1000
+-- Values (Quoted) key carries the exponent field
+input_format_try_infer_exponent_floats=true
+-- Form key is no longer empty
+1
+-- Parquet key carries max_parser_depth and all five new Parquet fields
+max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true	skip_columns_with_unsupported_types=false	schema_inference_make_json_columns_nullable=false	schema_inference_allow_nullable_tuple_type=false
+-- JSON key carries the array_of_dynamic field, once per setting value
+infer_array_of_dynamic_from_array_of_different_values=false
+infer_array_of_dynamic_from_array_of_different_values=true
+-- Template key follows the row format's rule, not format_regexp_escaping_rule
+1	0
