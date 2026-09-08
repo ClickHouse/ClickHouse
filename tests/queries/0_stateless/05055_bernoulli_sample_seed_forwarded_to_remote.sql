@@ -1,10 +1,11 @@
 -- Tags: no-random-settings
 
--- `bernoulli_sample_seed = 0` draws one random seed for the whole query. The seed lives in the
--- initiator's query context, which remote nodes do not share - they only receive the settings.
--- The initiator therefore freezes the drawn seed into the setting, so a remote read samples the
--- same rows as a local read of the same table. Without that, every node draws its own seed and
--- the two sides of the comparison below select different rows.
+-- `bernoulli_sample_seed = 0` means one random seed for the whole query. Remote nodes build
+-- their own query contexts and only receive the settings, so a seed drawn into the initiator's
+-- context would not reach them. It is instead derived from the initial query id, which is
+-- forwarded to every node that participates in the query, so a remote read samples the same
+-- rows as a local read of the same table. Without that, every node draws its own seed and the
+-- two sides of the comparison below select different rows.
 
 SET allow_experimental_bernoulli_sample = 1;
 SET max_insert_threads = 1;
