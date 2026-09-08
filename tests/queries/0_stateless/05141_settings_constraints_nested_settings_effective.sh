@@ -4,7 +4,8 @@
 # A nested `SETTINGS` clause is clamped to the session's settings constraints, and the clamped clause is
 # what the query node keeps. So a nested `use_query_cache = 1` the constraints dropped must not enable
 # the query result cache in the `Planner` (issue #117226), a shard receives the clamped clause, and an
-# unknown name or an uncastable value in a nested clause throws, as it does in a top-level clause.
+# unknown name or an uncastable value in a nested clause throws, as it does in a top-level clause - also
+# when the clause sits in a view's stored body and the view is read on a remote shard.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,6 +23,9 @@ DIST_USER="user_dist_${SUFFIX}"
 DIST_PROFILE="profile_dist_${SUFFIX}"
 TABLE="t_05141"
 DIST_TABLE="dist_05141"
+VIEW="v_05141"
+DIST_VIEW="dist_v_05141"
+PARAM_VIEW="pv_05141"
 # `system.query_cache` lists the entries of every user and every test, and the cache is never dropped
 # here, so each cached subquery carries a per-run marker in its text and is looked up by it.
 MARKER="marker_${SUFFIX}"
@@ -31,6 +35,9 @@ DROP USER IF EXISTS ${CONST_USER}, ${RO_USER}, ${FREE_USER}, ${DIST_USER};
 DROP SETTINGS PROFILE IF EXISTS ${CONST_PROFILE}, ${RO_PROFILE}, ${DIST_PROFILE};
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${DIST_TABLE};
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${TABLE};
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${DIST_VIEW};
+DROP VIEW IF EXISTS ${CLICKHOUSE_DATABASE}.${VIEW};
+DROP VIEW IF EXISTS ${CLICKHOUSE_DATABASE}.${PARAM_VIEW};
 
 CREATE TABLE ${CLICKHOUSE_DATABASE}.${TABLE} (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ${CLICKHOUSE_DATABASE}.${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c');
@@ -45,6 +52,14 @@ CREATE USER ${RO_USER} IDENTIFIED WITH no_password SETTINGS PROFILE ${RO_PROFILE
 CREATE USER ${FREE_USER} IDENTIFIED WITH no_password;
 CREATE USER ${DIST_USER} IDENTIFIED WITH no_password SETTINGS PROFILE ${DIST_PROFILE};
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${CONST_USER}, ${RO_USER}, ${FREE_USER}, ${DIST_USER};
+"
+
+# `CREATE` does not analyze the body of a view with an explicit column list nor of a parameterized view, so
+# such definitions can carry an invalid nested setting.
+${CLICKHOUSE_CLIENT} --query "
+CREATE VIEW ${CLICKHOUSE_DATABASE}.${VIEW} (x UInt8) AS SELECT * FROM (SELECT 1 AS x SETTINGS max_threds = 1);
+CREATE TABLE ${CLICKHOUSE_DATABASE}.${DIST_VIEW} (x UInt8) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), ${VIEW});
+CREATE VIEW ${CLICKHOUSE_DATABASE}.${PARAM_VIEW} AS SELECT * FROM (SELECT 1 AS x SETTINGS max_threds = 1) WHERE x = {p:UInt8};
 "
 
 # The bare binary, not ${CLICKHOUSE_CLIENT}: the harness's randomized settings would be rejected for the readonly user.
@@ -96,12 +111,36 @@ ${DIST} --query "SELECT count() FROM ${DIST_TABLE} WHERE id IN (SELECT id FROM $
 echo "-- the same query for an unconstrained user reads both shards"
 ${FREE} --query "SELECT count() FROM ${DIST_TABLE} WHERE id IN (SELECT id FROM ${TABLE} SETTINGS max_rows_to_read = 100)"
 
+# The bare binary again: `${CLICKHOUSE_CLIENT}` adds `--send_logs_level`, so the server's error log line would
+# be printed too and `grep -c` would count two lines.
+echo "-- a view with an invalid nested setting in its stored body fails on a direct read"
+${RESTRICTED_CLIENT} --query "SELECT * FROM ${VIEW}" 2>&1 | grep -c -F "UNKNOWN_SETTING"
+
+# `prefer_localhost_replica = 0` is explicit: the local shard is analyzed under the initiator's query kind
+# and already throws, so only the remote path exercises the fix, and the harness randomizes this setting.
+echo "-- and on a remote shard through Distributed"
+${RESTRICTED_CLIENT} --query "SELECT * FROM ${DIST_VIEW} SETTINGS prefer_localhost_replica = 0" 2>&1 | grep -c -F "UNKNOWN_SETTING"
+
+echo "-- also when the shard inlines the view"
+${RESTRICTED_CLIENT} --query "SELECT * FROM ${DIST_VIEW} SETTINGS prefer_localhost_replica = 0, analyzer_inline_views = 1" 2>&1 | grep -c -F "UNKNOWN_SETTING"
+
+echo "-- a parameterized view with an invalid nested setting fails on a direct read"
+${RESTRICTED_CLIENT} --query "SELECT * FROM ${PARAM_VIEW}(p = 1)" 2>&1 | grep -c -F "UNKNOWN_SETTING"
+
+# 127.0.0.2 is the non-local shard of `test_cluster_two_shards`; the port is explicit so the test runs on
+# a non-default port; the database is qualified because the remote session does not inherit the test database.
+echo "-- and on a remote shard"
+${RESTRICTED_CLIENT} --query "SELECT * FROM remote('127.0.0.2:${CLICKHOUSE_PORT_TCP}', view(SELECT * FROM ${CLICKHOUSE_DATABASE}.${PARAM_VIEW}(p = 1)))" 2>&1 | grep -c -F "UNKNOWN_SETTING"
+
 echo "-- the session settings are untouched"
 ${CONST} --query "SELECT getSetting('use_query_cache')"
 
 ${CLICKHOUSE_CLIENT} --query "
 DROP TABLE ${CLICKHOUSE_DATABASE}.${DIST_TABLE};
 DROP TABLE ${CLICKHOUSE_DATABASE}.${TABLE};
+DROP TABLE ${CLICKHOUSE_DATABASE}.${DIST_VIEW};
+DROP VIEW ${CLICKHOUSE_DATABASE}.${VIEW};
+DROP VIEW ${CLICKHOUSE_DATABASE}.${PARAM_VIEW};
 DROP USER ${CONST_USER}, ${RO_USER}, ${FREE_USER}, ${DIST_USER};
 DROP SETTINGS PROFILE ${CONST_PROFILE}, ${RO_PROFILE}, ${DIST_PROFILE};
 "
