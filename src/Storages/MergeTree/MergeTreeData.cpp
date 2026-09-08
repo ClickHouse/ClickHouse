@@ -49,6 +49,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -3858,8 +3859,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
     return true;
 }
 
-
-size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     size_t cleared_count = 0;
 
@@ -3867,14 +3867,15 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
     if (allowRemoveStaleMovingParts())
     {
+        static constexpr std::array<std::string_view, 1> moving_prefixes = {""};
         /// Clear _all_ parts from the `moving` directory
-        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, {""});
+        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, moving_prefixes);
     }
 
     return cleared_count;
 }
 
-size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -3901,7 +3902,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
             bool start_with_valid_prefix = false;
             for (const auto & prefix : valid_prefixes)
             {
-                if (startsWith(basename, prefix))
+                if (std::string_view(basename).starts_with(prefix))
                 {
                     start_with_valid_prefix = true;
                     break;
@@ -4762,7 +4763,7 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     resetColumnSizes();
     unregisterFromMergeSelection(settings_ptr);
@@ -6379,6 +6380,76 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
 }
 
+void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
+{
+    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+
+    if (!disk->existsFileOrDirectory(format_version_path))
+        return;
+
+    if (!disk->existsFile(format_version_path))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+    auto buf = disk->readFileIfExists(format_version_path, getReadSettings());
+    if (buf)
+    {
+        UInt32 current_format_version{0};
+        if (!tryReadIntText(current_format_version, *buf) || !buf->eof())
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+        if (current_format_version != format_version.toUnderType())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Version file on {} contains version {} expected version is {}.",
+                fullPath(disk, format_version_path),
+                current_format_version,
+                format_version.toUnderType());
+
+        return;
+    }
+
+    throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+}
+
+bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
+{
+    if (!disk->existsDirectory(relative_data_path))
+        return false;
+
+    /// A newly added disk may have only explicitly safe entries.
+    /// Anything else would become owned by the table path after the policy change.
+    validateFormatVersion(disk);
+
+    for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+    {
+        const auto name = it->name();
+
+        /// `format_version.txt` is validated above and has no table rows or mutable table state.
+        if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
+            continue;
+
+        const auto entry_path = fs::path(relative_data_path) / name;
+        if (name == DETACHED_DIR_NAME)
+        {
+            /// `detached/` is removed recursively on `DROP TABLE`, so accept it only when empty.
+            if (!disk->existsDirectory(entry_path))
+                return true;
+
+            if (!disk->isDirectoryEmpty(entry_path))
+                return true;
+
+            continue;
+        }
+
+        /// Recovery-only entries like `tmp_`, `delete_tmp_`, `tmp-fetch_`, `tmp_mutation_`,
+        /// and `moving/` are not cleaned before `changeSettings` publishes the new policy.
+        /// They can conflict with later writes, merges, mutations, or moves. See #109823.
+        return true;
+    }
+
+    return false;
+}
+
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
@@ -6417,8 +6488,11 @@ void MergeTreeData::changeSettings(
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
-                        if (disk->existsDirectory(relative_data_path))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
+
+                        if (containsTableDataOnNewDisk(disk))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
                     for (const String & disk_name : all_diff_disk_names)
@@ -6427,7 +6501,10 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(relative_data_path);
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
-                    /// FIXME how would that be done while reloading configuration???
+                    /// FIXME: current update in config reload is done asynchronously, so we can't guarantee that it will
+                    /// initialize new disks before they are actually used
+                    /// so we can't use disks reliably without some kind of authoritative initialization model
+                    /// but this issue is relatively rare
 
                     has_storage_policy_changed = true;
                 }
