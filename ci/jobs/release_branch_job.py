@@ -14,6 +14,7 @@ reuse. The repo is always shallow at the start (hence the unconditional
 `--unshallow`), and no leftover files/branches/credentials can exist.
 """
 
+import argparse
 import os
 import shlex
 from pathlib import Path
@@ -37,19 +38,45 @@ REPO_PATH = Utils.cwd()
 RELEASE_INFO_FILE = "/tmp/release_info.json"
 
 
-def main():
-    stopwatch = Utils.Stopwatch()
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Cuts a new ClickHouse release branch",
+    )
+    parser.add_argument(
+        "--ref",
+        type=str,
+        default=None,
+        help="Git reference (branch or commit sha) to cut the new release branch from",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Do not make any actual changes, just show what will be done",
+    )
+    args = parser.parse_args()
 
-    # Parameters come from the workflow inputs (workflow_dispatch / workflow_call),
-    # read via praktika Info - there is no CLI.
+    # When CLI args are absent, fall back to workflow inputs (CI runs).
+    # workflow_dispatch passes strings; workflow_call passes native types
+    # (e.g. booleans), so coerce to str before the callers do `.lower()`.
     def _wi(name: str) -> str:
         value = Info.get_workflow_input_value(name)
         return "" if value is None else str(value)
 
-    ref = _wi("ref")
-    assert ref, "workflow input 'ref' must be set"
-    dry_run = _wi("dry-run").lower() == "true"
-    dry_run_flag = "--dry-run" if dry_run else ""
+    if args.ref is None:
+        args.ref = _wi("ref")
+    if not args.dry_run:
+        args.dry_run = _wi("dry-run").lower() == "true"
+
+    assert args.ref, "ref must be set via --ref or workflow dispatch input 'ref'"
+
+    return args
+
+
+def main():
+    stopwatch = Utils.Stopwatch()
+    args = parse_args()
+    dry_run_flag = "--dry-run" if args.dry_run else ""
 
     # Drop a release-info file left by a previous release; "Prepare Release Info"
     # writes a fresh stub, so from here it exists only if that step ran this attempt.
@@ -60,7 +87,11 @@ def main():
 
     # Export the robot PAT (workflow scope) once; commands reference $GH_TOKEN so
     # praktika's verbose command logging never writes its value to the job log.
-    os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
+    # A dry run has no SSM access, so use the minted PR token instead of the PAT.
+    if not args.dry_run:
+        os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
+    else:
+        os.environ["GH_TOKEN"] = Shell.get_output("gh auth token", strict=True)
 
     results = []
     ok = True
@@ -87,6 +118,14 @@ def main():
         workdir=REPO_PATH,
     )
 
+    # "new" cuts from `master`, but the PR dry-run runs on a detached ref with no local `master`; recreate it from origin (a real release is already on `master`, where `git branch -f` would refuse).
+    if ok and Shell.get_output("git rev-parse --abbrev-ref HEAD") != "master":
+        step(
+            name="Ensure Local master Branch",
+            command=["git branch --force master origin/master"],
+            workdir=REPO_PATH,
+        )
+
     step(
         name="Configure Git Auth for Release Pushes",
         command=[
@@ -103,7 +142,7 @@ def main():
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(ref)} --release-type new"
+            f" --ref {shlex.quote(args.ref)} --release-type new"
             f" {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
@@ -113,19 +152,19 @@ def main():
         with ReleaseContextManager(
             release_progress=ReleaseProgress.PUSH_RELEASE_TAG
         ) as release_info:
-            release_info.push_release_tag(dry_run=dry_run)
+            release_info.push_release_tag(dry_run=args.dry_run)
 
     def _push_new_release_branch():
         with ReleaseContextManager(
             release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
         ) as release_info:
-            release_info.push_new_release_branch(dry_run=dry_run)
+            release_info.push_new_release_branch(dry_run=args.dry_run)
 
     def _bump_version():
         with ReleaseContextManager(
             release_progress=ReleaseProgress.BUMP_VERSION
         ) as release_info:
-            release_info.update_version_and_contributors_list(dry_run=dry_run)
+            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
 
     step(
         name="Push Git Tag for the Release",
