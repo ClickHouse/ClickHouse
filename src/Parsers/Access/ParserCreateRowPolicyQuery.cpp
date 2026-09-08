@@ -469,7 +469,9 @@ any other table in mydb would have only `b=1` policy applied for the user.
 
 ## Tables that read from other tables {#tables-that-read-from-other-tables}
 
-A row policy filters rows where the data is actually read. When a table returns the rows of another table as its own, such as an `Alias` table, a materialized view read through its target table, or a `Buffer` table with a destination table, the row policies of that underlying table apply to reads through the wrapper as well. They are combined with the policies of the wrapper itself using a logical `AND`. A `Merge` table applies the policies of every table it reads from.
+A row policy filters rows where the data is actually read. An `Alias` table returns the rows of its target table as its own, so the row policies of the target apply to reads through the alias as well, combined with the policies of the alias itself using a logical `AND`. A `Merge` table applies the policies of every table it reads from.
+
+This does not extend to every table that reads from another table. A `Buffer` table and a materialized view read through their destination or target table do **not** inherit that table's row policies: the policy is written against the target's schema and, for a view with `SQL SECURITY DEFINER`, is evaluated for a different user than the one running the read. Define the policy on the table users actually query in those cases.
 
 ## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
 

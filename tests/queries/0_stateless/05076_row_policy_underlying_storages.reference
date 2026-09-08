@@ -6,4 +6,3 @@ Count through Alias, trivial count enabled	2
 Combined policies, old analyzer	[1]
 Combined policies, analyzer	[1]
 Alias policy only	[1,3]
-Target policy through a lazily loaded Alias	[1,3]

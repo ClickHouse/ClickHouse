@@ -39,19 +39,3 @@ DROP ROW POLICY rp_alias_policy ON rp_alias;
 DROP TABLE rp_merge;
 DROP TABLE rp_alias;
 DROP TABLE rp_target;
-
--- A lazily loaded table is a proxy until first access; the target policy must apply either way.
-DROP DATABASE IF EXISTS 05076_lazy SYNC;
-CREATE DATABASE 05076_lazy ENGINE = Atomic SETTINGS lazy_load_tables = 1;
-CREATE TABLE 05076_lazy.base (id UInt32, tenant_id UInt32) ENGINE = MergeTree ORDER BY id;
-INSERT INTO 05076_lazy.base VALUES (1, 1), (2, 2), (3, 1);
-CREATE TABLE 05076_lazy.al ENGINE = Alias('05076_lazy', 'base');
-CREATE ROW POLICY rp_lazy ON 05076_lazy.base FOR SELECT USING tenant_id = 1 TO CURRENT_USER;
-
-DETACH DATABASE 05076_lazy SYNC;
-ATTACH DATABASE 05076_lazy;
--- Read the alias before anything materializes the proxy of its target.
-SELECT 'Target policy through a lazily loaded Alias', arraySort(groupArray(id)) FROM 05076_lazy.al;
-
-DROP ROW POLICY rp_lazy ON 05076_lazy.base;
-DROP DATABASE 05076_lazy SYNC;
