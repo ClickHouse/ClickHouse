@@ -592,3 +592,19 @@ TEST(RequestQueue, AnonymousContextErasesLeafStateOnDestroy)
     // the stale entry was erased rather than left to be inherited by a reused address.
     EXPECT_EQ(anon.getResourceState(leaf).vruntime, 0.0);
 }
+
+/// A `fair` request charges its corrected cost at push(), consuming the shared cost_correction. If it
+/// is cancelled before it pops, that consumed correction must return to the context — otherwise the
+/// query re-enters lighter than the resource it actually ran.
+TEST(RequestQueue, FairCancelReturnsConsumedCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    f.addCorrection(a, /*real=*/100, /*estimate=*/0);   // seed cost_correction = 100
+    auto * r = f.enqueue(1, a, /*cost=*/1);             // push folds the correction into r's charge
+    EXPECT_TRUE(f.queue->cancelRequest(r));             // cancel before pop must return the 100
+    f.enqueue(2, a, /*cost=*/1);
+    auto [req, _] = f.queue->dequeueRequest();
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(f.attainedOf(a), 101);                    // 1 (cost) + 100 (returned correction)
+}

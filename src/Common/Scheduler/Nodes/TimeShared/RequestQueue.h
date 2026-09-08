@@ -565,6 +565,7 @@ public:
             return false; // Any request should already be failed or executed
         if (!algo->erase(request))
             return false;
+        returnConsumedCorrection(request);
         queue_cost -= request->cost;
         total_requests--;
         canceled_requests++;
@@ -608,6 +609,7 @@ public:
             {
                 ResourceRequest * request = algo->popWorst();
                 chassert(request);
+                returnConsumedCorrection(request);
                 queue_cost -= request->cost;
                 total_requests--;
                 rejected_requests++;
@@ -654,20 +656,10 @@ public:
         // scheduler between `fair` stints; eliminating it entirely would require storing vruntime
         // per fair-instance (with drain-time cleanup to avoid an unbounded per-query map), which is
         // not worth the added state and lifetime complexity for so rare a case.
-        // A request pulled from `fair` carries its real-vs-estimate correction already folded into
-        // `scheduling.charge` (fair charges at push), while every other algorithm re-derives the
-        // charge from `scheduling.cost` plus the shared `cost_correction` at pop and ignores
-        // `scheduling.charge`. Return the consumed delta to the shared state before re-pushing, so a
-        // live swap does not drop it. A no-op for a request coming from a pop-charging algorithm,
-        // where `reset()` keeps `scheduling.charge == scheduling.cost`.
+        // Return each migrated request's consumed correction to the shared state before re-pushing,
+        // so a live swap does not drop it.
         for (ResourceRequest * request : pending)
-        {
-            auto & state = request->scheduling.context->getResourceState(this);
-            state.cost_correction.fetch_add(
-                static_cast<Int64>(request->scheduling.charge) - static_cast<Int64>(request->scheduling.cost),
-                std::memory_order_relaxed);
-            request->scheduling.charge = request->scheduling.cost;
-        }
+            returnConsumedCorrection(request);
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest * request : pending)
                 request->scheduling.context->getResourceState(this).vruntime = 0.0;
@@ -710,6 +702,19 @@ public:
     }
 
 private:
+    /// `fair` folds the shared `cost_correction` into `scheduling.charge` at push(); when such a
+    /// request is removed without pop() applying it (cancel, reject, live scheduler swap), return the
+    /// consumed delta so the query's real-vs-estimate correction is not dropped. No-op for pop-charging
+    /// algorithms, where reset() leaves `scheduling.charge == scheduling.cost`.
+    void returnConsumedCorrection(ResourceRequest * request)
+    {
+        Int64 consumed = static_cast<Int64>(request->scheduling.charge) - static_cast<Int64>(request->scheduling.cost);
+        if (consumed == 0)
+            return;
+        request->scheduling.context->getResourceState(this).cost_correction.fetch_add(consumed, std::memory_order_relaxed);
+        request->scheduling.charge = request->scheduling.cost;
+    }
+
     static std::unique_ptr<ISchedulingAlgorithm> makeAlgorithm(SchedulerAlgorithm algorithm_, CostUnit unit_, const void * leaf_)
     {
         switch (algorithm_)
