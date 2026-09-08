@@ -324,3 +324,31 @@ CREATE TABLE test_outer_limit_totals (a UInt32, z UInt32) ENGINE = MergeTree ORD
 INSERT INTO test_outer_limit_totals SELECT number % 5000, number FROM numbers_mt(200000);
 SELECT a, count() AS c FROM test_outer_limit_totals GROUP BY a WITH TOTALS ORDER BY a DESC LIMIT 1 BY (a) LIMIT 10;
 DROP TABLE test_outer_limit_totals;
+
+-- A step can own nested plans rather than plan children: `ReadFromMerge` builds one per member table, and
+-- their steps run in the same pipeline, so an early stop truncates a stateful expression there as well.
+DROP TABLE IF EXISTS test_outer_limit_merge_member_1;
+DROP TABLE IF EXISTS test_outer_limit_merge_member_2;
+DROP TABLE IF EXISTS test_outer_limit_merge;
+CREATE TABLE test_outer_limit_merge_member_1 (a UInt32, b UInt32, c UInt32, z UInt32, s UInt64 ALIAS rowNumberInAllBlocks()) ENGINE = MergeTree ORDER BY (a, b, c);
+CREATE TABLE test_outer_limit_merge_member_2 (a UInt32, b UInt32, c UInt32, z UInt32, s UInt64 ALIAS rowNumberInAllBlocks()) ENGINE = MergeTree ORDER BY (a, b, c);
+-- `s` is a plain column of the `Merge` table, so its stateful expression appears in no outer plan step.
+CREATE TABLE test_outer_limit_merge (a UInt32, b UInt32, c UInt32, z UInt32, s UInt64) ENGINE = Merge(currentDatabase(), '^test_outer_limit_merge_member_');
+SYSTEM STOP MERGES test_outer_limit_merge_member_1;
+SYSTEM STOP MERGES test_outer_limit_merge_member_2;
+INSERT INTO test_outer_limit_merge_member_1 (a, b, c, z) SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(0, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_merge_member_1 (a, b, c, z) SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(125000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_merge_member_2 (a, b, c, z) SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(250000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_merge_member_2 (a, b, c, z) SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(375000, 125000) SETTINGS max_insert_block_size = 1000000;
+-- Row numbers depend on how rows are distributed over streams, so only the row count read is asserted.
+SELECT a, b, c, z, s FROM test_outer_limit_merge ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a) LIMIT 10 SETTINGS log_comment = '04238_outer_limit_merge_stateful' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows > 250000 FROM system.query_log WHERE log_comment = '04238_outer_limit_merge_stateful' AND current_database = currentDatabase() AND type = 'QueryFinish';
+-- Optimized: the same tables and the same `Merge` table, only without the stateful column, so the early
+-- stop is reachable here and the case above is not vacuous.
+SELECT a, b, c, z FROM test_outer_limit_merge ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a) LIMIT 10 SETTINGS log_comment = '04238_outer_limit_merge_plain';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows < 250000 FROM system.query_log WHERE log_comment = '04238_outer_limit_merge_plain' AND current_database = currentDatabase() AND type = 'QueryFinish';
+DROP TABLE test_outer_limit_merge;
+DROP TABLE test_outer_limit_merge_member_1;
+DROP TABLE test_outer_limit_merge_member_2;

@@ -44,7 +44,10 @@ static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
 /// Whether any step in the subtree makes it unsafe to stop reading early below a `LIMIT BY`: a stateful
 /// expression sees a different set of rows and blocks, and a `TotalsHavingStep` emits totals only once its
 /// input finishes, so a closed input yields partial totals.
-static bool subtreeBlocksLimitByGroupHint(const QueryPlan::Node * node)
+///
+/// `descend_into_child_plans` must stay off before `ReadFromMerge` has its tables pruned, because
+/// `getChildPlans()` materializes its per-table plans, and they are then memoized as they are.
+static bool subtreeBlocksLimitByGroupHint(QueryPlan::Node * node, bool descend_into_child_plans)
 {
     if (typeid_cast<const TotalsHavingStep *>(node->step.get()))
         return true;
@@ -71,9 +74,16 @@ static bool subtreeBlocksLimitByGroupHint(const QueryPlan::Node * node)
             return true;
     }
 
-    for (const auto * child : node->children)
-        if (subtreeBlocksLimitByGroupHint(child))
+    for (auto * child : node->children)
+        if (subtreeBlocksLimitByGroupHint(child, descend_into_child_plans))
             return true;
+
+    /// A step can own whole nested plans instead of plan children (`ReadFromMerge` builds one per member
+    /// table), and their steps run in the same pipeline, so an early stop truncates them as well.
+    if (descend_into_child_plans)
+        for (auto * child_plan : node->step->getChildPlans())
+            if (child_plan && subtreeBlocksLimitByGroupHint(child_plan->getRootNode(), true))
+                return true;
 
     return false;
 }
@@ -167,7 +177,9 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
         /// An early stop truncates `rows_before_limit_at_least`, which this input must report exactly.
         if (limit->alwaysReadTillEnd())
             return 0;
-        if (subtreeBlocksLimitByGroupHint(child_node))
+        /// Scanned in this pass as well as where the hint is used: later passes move steps out of the plan
+        /// into fragments they own, so a stateful step visible now can be invisible by then.
+        if (subtreeBlocksLimitByGroupHint(child_node, /*descend_into_child_plans=*/false))
             return 0;
         limit_by->updateOuterLimitHint(limit->getLimitForSorting());
         return 0;
@@ -255,7 +267,13 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// A group holding at most `offset` rows yields no output row, so the number of groups an outer
     /// `LIMIT` needs is unbounded once the `LIMIT BY` offset is non-zero. The group hint is then
     /// disabled; the per-stream row pre-cap below stays as it is, being offset-correct by widening.
-    const UInt64 groups_hint = offset == 0 ? limit_by->getOuterLimitHint() : 0;
+    UInt64 groups_hint = offset == 0 ? limit_by->getOuterLimitHint() : 0;
+
+    /// Nested child plans are scanned only here: `ReadFromMerge` has them by now, `applyFilters` having
+    /// pruned its tables in an earlier pass of this stage.
+    if (groups_hint && subtreeBlocksLimitByGroupHint(&node, /*descend_into_child_plans=*/true))
+        groups_hint = 0;
+
     sort->updateLimitByHint(limit_by->getColumns(), length + offset, groups_hint);
 }
 
