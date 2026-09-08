@@ -824,7 +824,7 @@ public:
     {
         auto lookup_data = data.getReadOnly();
         auto it = lookup_data->filters_by_name.find(name);
-        if (it == lookup_data->filters_by_name.end() || !it->second->isReady())
+        if (it == lookup_data->filters_by_name.end())
             return nullptr;
         return it->second;
     }

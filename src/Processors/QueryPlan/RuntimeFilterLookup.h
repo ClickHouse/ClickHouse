@@ -372,7 +372,7 @@ struct IRuntimeFilterLookup : boost::noncopyable
     /// built by `BuildRuntimeFilterStep`.
     virtual void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
-    /// Get filter by name
+    /// Return a registered filter, which may still be building. Check `isReady` before probing.
     virtual RuntimeFilterConstPtr find(const String & name) const = 0;
 
     /// Log various RuntimeFilter usage statistics such as number of filtered rows

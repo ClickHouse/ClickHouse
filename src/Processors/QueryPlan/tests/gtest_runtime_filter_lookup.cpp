@@ -1,9 +1,15 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <base/unit.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <array>
@@ -121,6 +127,16 @@ TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
 {
     const auto type = makeUInt64Type();
     auto lookup = createRuntimeFilterLookup();
+    auto query_context = Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setRuntimeFilterLookup(lookup);
+    ThreadStatus thread_status;
+    CurrentThread::attachToGroup(std::make_shared<ThreadGroup>(query_context, 0));
+
+    const auto id_type = std::make_shared<DataTypeString>();
+    ColumnsWithTypeAndName arguments{
+        {id_type->createColumnConst(3, "runtime_filter"), id_type, "filter_id"}, makeUInt64ColumnWithType({1, 3, 5}, type)};
+    auto apply_filter = FunctionFactory::instance().get("__applyFilter", query_context)->build(arguments);
 
     auto first_filter = std::make_unique<RuntimeFilter>(
         /*filters_to_merge_=*/1,
@@ -132,8 +148,12 @@ TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
     first_filter->insert(makeUInt64Column({1}));
     lookup->add("runtime_filter", "runtime_filter", std::move(first_filter));
 
-    /// The first stream's filter is installed but must remain invisible while a merge is pending.
-    EXPECT_FALSE(lookup->find("runtime_filter"));
+    /// Publication must be able to find the first stream's filter while a merge is pending.
+    auto pending_filter = lookup->find("runtime_filter");
+    ASSERT_TRUE(pending_filter);
+    EXPECT_FALSE(pending_filter->isReady());
+    expectMask(apply_filter->execute(arguments, apply_filter->getResultType(), 3, false), {1, 1, 1});
+    EXPECT_EQ(pending_filter->getStats().blocks_processed.load(), 0);
 
     auto second_filter = std::make_unique<RuntimeFilter>(
         /*filters_to_merge_=*/0,
@@ -147,7 +167,11 @@ TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
 
     auto filter = lookup->find("runtime_filter");
     ASSERT_TRUE(filter);
-    expectMask(filter->find(makeUInt64ColumnWithType({1, 3, 5}, type)), {1, 0, 1});
+    EXPECT_TRUE(filter->isReady());
+    EXPECT_TRUE(pending_filter->isReady());
+    expectMask(apply_filter->execute(arguments, apply_filter->getResultType(), 3, false), {1, 0, 1});
+    EXPECT_EQ(filter->getStats().blocks_processed.load(), 1);
+    EXPECT_EQ(filter->getStats().rows_checked.load(), 3);
 }
 
 TEST(RuntimeFilterLookup, SkipBudgetPreservesSerialExhaustionSemantics)
@@ -409,18 +433,22 @@ TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationFailsOpenForIndexMe
     initial_filter->insert(makeUInt64Column({3, 7}));
     lookup->add("runtime_filter", "runtime_filter", std::move(initial_filter));
 
-    EXPECT_FALSE(lookup->find("runtime_filter"));
-    std::optional<Range> recorded_key_range;
-    ColumnPtr recorded_key_values;
+    auto existing = lookup->find("runtime_filter");
+    ASSERT_TRUE(existing);
+    EXPECT_FALSE(existing->isReady());
+    auto recorded_key_range = existing->getRecordedKeyRanges();
+    auto recorded_key_values = existing->getRecordedKeyValues();
+    EXPECT_FALSE(recorded_key_range);
+    EXPECT_FALSE(recorded_key_values);
 
     /// Simulate post-build publication. The probe sees the complete hash table, including key 1
     /// whose stream-local filter has not registered yet. The unfinished filter contributes no
     /// metadata, so read-side index analysis fails open instead of pruning by {3, 7}.
     auto shared_filter = std::make_unique<RuntimeFilter>(
         /*filters_to_merge_=*/0,
-        makeRuntimeFilterConfig(),
+        existing->getConfig(),
         RuntimeFilter::SharedFixedHashTable(
-            type,
+            existing->getFilterColumnTargetType(),
             [](const ColumnWithTypeAndName & values)
             {
                 auto result = ColumnUInt8::create();
@@ -450,6 +478,7 @@ TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationFailsOpenForIndexMe
 
     auto filter = lookup->find("runtime_filter");
     ASSERT_TRUE(filter);
+    EXPECT_TRUE(filter->isReady());
     expectMask(filter->find(makeUInt64ColumnWithType({1, 3, 7}, type)), {1, 1, 1});
     EXPECT_FALSE(filter->getRecordedKeyValues());
     EXPECT_FALSE(filter->getRecordedKeyRanges());
