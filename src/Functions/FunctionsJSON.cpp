@@ -474,14 +474,24 @@ public:
             /// Typed paths are always present in a JSON column, even when the key was missing
             /// from the inserted JSON (they get the type's default value). For non-typed paths
             /// the combined subcolumn returns a Dynamic column where NULL means absent.
+            /// When `type_json_skip_null_typed_paths` is enabled, a NULL typed path is treated as absent.
             /// Computed after case-insensitive resolution so it reflects the resolved stored path.
+            const bool skip_null_typed_paths = format_settings.json.type_json_skip_null_typed_paths;
             bool is_typed_path = data_type_object.getTypedPaths().contains(path);
+            bool treat_typed_as_always_present = is_typed_path && !skip_null_typed_paths;
 
             auto read_merged_for_path = [&](const String & p)
             {
                 String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + p + "`";
                 auto merged_type = data_type_object.getSubcolumnType(combined_name);
-                auto merged = data_type_object.getSubcolumn(combined_name, object_column);
+
+                /// When `skip_null_typed_paths` is enabled for a non-typed parent path (e.g. `a` when `a.b`
+                /// is typed), use `extractCombinedSubcolumn` which propagates the setting into sub-object
+                /// emptiness checks. Otherwise the sub-object with all-NULL typed descendants would be
+                /// considered non-empty.
+                auto merged = (skip_null_typed_paths && !data_type_object.getTypedPaths().contains(p))
+                    ? data_type_object.extractCombinedSubcolumn(p, object_column, true)
+                    : data_type_object.getSubcolumn(combined_name, object_column);
                 return std::make_pair(std::move(merged), std::move(merged_type));
             };
 
@@ -507,22 +517,23 @@ public:
                     /// Typed paths are always present even when the value equals the type's default,
                     /// so presence must not be checked with `isDefaultAt` (see #101721). For non-typed
                     /// paths the combined subcolumn is Dynamic where NULL means absent.
-                    VectorWithMemoryTracking<UInt8> path_is_typed(num_paths);
+                    VectorWithMemoryTracking<UInt8> path_always_present(num_paths);
                     for (size_t k = 0; k < num_paths; ++k)
-                        path_is_typed[k] = data_type_object.getTypedPaths().contains(case_insensitive_matches[k]);
+                        path_always_present[k] = !skip_null_typed_paths
+                            && data_type_object.getTypedPaths().contains(case_insensitive_matches[k]);
                     auto path_has_value_at = [&](size_t k, size_t i)
                     {
-                        return path_is_typed[k] || !per_path_merged[k]->isNullAt(i);
+                        return path_always_present[k] || !per_path_merged[k]->isNullAt(i);
                     };
 
                     /// A value that is definitely present at this row rather than a placeholder default.
-                    /// A typed path always reports present via `path_is_typed`, but its stored value is
+                    /// A typed path always reports present via `path_always_present`, but its stored value is
                     /// indistinguishable from an absent key when it equals the type default (#101721), so
                     /// only a non-default typed value proves presence. For non-typed paths a non-null
                     /// Dynamic value proves presence.
                     auto path_has_real_value_at = [&](size_t k, size_t i)
                     {
-                        return path_is_typed[k] ? !per_path_merged[k]->isDefaultAt(i) : !per_path_merged[k]->isNullAt(i);
+                        return path_always_present[k] ? !per_path_merged[k]->isDefaultAt(i) : !per_path_merged[k]->isNullAt(i);
                     };
 
                     /// Pick the stored path to use for this row. Prefer a candidate carrying a real value so
@@ -595,7 +606,7 @@ public:
 
             if constexpr (is_has)
             {
-                if (is_typed_path)
+                if (treat_typed_as_always_present)
                     return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
 
                 auto result = ColumnVector<UInt8>::create(input_rows_count);
@@ -615,7 +626,7 @@ public:
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    if (!is_typed_path && merged->isNullAt(i))
+                    if (!treat_typed_as_always_present && merged->isNullAt(i))
                         raw_col->insertDefault();
                     else
                         serialize_raw(*merged, *serialization, i, *raw_col);
