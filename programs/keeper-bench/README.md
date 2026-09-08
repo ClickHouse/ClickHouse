@@ -28,7 +28,7 @@ An example config is available at `programs/keeper-bench/example.yaml`.
 |------|-------|-------------|
 | `--help` | | Print help and exit |
 | `--config` | | YAML/XML config file |
-| `--input-request-log` | | Replay requests from a request log file |
+| `--input-request-log` | | Replay requests from a request log file (enables replay mode) |
 | `--setup-nodes-snapshot-path` | | Directory containing Keeper snapshots used to build initial node state for replay |
 | `--concurrency` | `-c` | Number of parallel worker threads |
 | `--report-delay` | `-d` | Delay between periodic reports in seconds (`0` disables periodic reports) |
@@ -42,7 +42,8 @@ Rules:
 - `--config` or `--input-request-log` must be provided.
 - Command-line values override config values for overlapping fields.
 - Hosts can come from `--hosts` or from `connections` in config.
-- If config does not define `generator`, execution uses replay mode, so `--input-request-log` must be provided.
+- If `--input-request-log` is provided, replay mode is used, even if the config defines `generator` (so the same config can serve both modes).
+- Otherwise, generated mode is used; the config must define `generator`.
 
 ## Modes
 
@@ -107,7 +108,7 @@ Config can be YAML or XML.
 | `pipeline_depth` | integer | `1` | In-flight async requests per worker (`>= 1`) |
 | `warmup_seconds` | float | `0` | Measurement warmup window |
 | `enable_tracing` | bool | `false` | Attach OpenTelemetry trace context |
-| `use_remove_recursive` | bool | `true` | Use the native `RemoveRecursive` Keeper request for cleanup; falls back to a manual recursive traversal if the server does not advertise the `REMOVE_RECURSIVE` feature flag or if this is set to `false` (needed for ZooKeeper or older Keeper versions) |
+| `use_remove_recursive` | bool | `true` | Use the native `RemoveRecursive` Keeper request for cleanup (limited to 1M nodes per request to avoid blocking raft for too long); falls back to a manual recursive traversal if the subtree is larger, if the server does not advertise the `REMOVE_RECURSIVE` feature flag, or if this is set to `false` (needed for ZooKeeper or older Keeper versions) |
 | `connections` | object | required if `--hosts` absent | Keeper endpoints and connection settings |
 | `setup` | object | optional | Data tree created before run |
 | `generator` | object | optional | Request generator (enables generated mode) |
@@ -151,7 +152,7 @@ key:
 
 ### `PathGetter`
 
-One or more ZooKeeper paths. Paths can be explicit, expanded from children of a parent, or drawn from a tagged set of paths created during setup.
+A set of ZooKeeper paths that requests draw from. Sources can be combined freely: explicit path(s), the children of parent node(s), and tagged sets of paths created during setup.
 
 ```yaml
 # explicit paths
@@ -166,16 +167,31 @@ path:
 # paths collected by tag during setup (see Setup section)
 path:
     tagged: "my_tag"
-```
 
-All forms can be used together and merged into one candidate set.
+# union of several sources
+path:
+    - "/path1"
+    - tagged: "my_tag"
+    - tagged: "other_tag"
+    - children_of: "/path3"
+```
 
 Notes:
 
 - Paths must start with `/`.
-- `children_of` is resolved at startup; if it has no children and no explicit paths are provided, an exception is raised.
-- `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found, an exception is raised.
-- Duplicate `path` keys in one section are supported when parsed by ClickHouse config loader (Poco-style key indexing).
+- `children_of` is resolved at startup by listing the parent; if it has no children (and no `create` generator adds to it), an exception is raised.
+- `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found (and no `create` generator outputs to it), an exception is raised.
+- With several sources, paths are drawn uniformly from their union: a set is picked with probability proportional the set's current size.
+
+### Dynamic path sets
+
+A `PathSet` that some `create` generator outputs to (see the `create` section) is *dynamic*: its contents change while the benchmark runs. Created nodes are added to the set, and `remove_factor` removes take nodes out of it. This makes workloads like "`set` random nodes produced by `create`" possible: point the `create`'s output and the `set`'s `path` at the same tag (or at `children_of` of the same parent).
+
+Behavior details:
+
+- Dynamic sets are sharded by worker thread: each thread reads and updates only its own shard, so different threads operate on disjoint subsets of paths. Initial contents (from setup or listing) are distributed across shards round-robin.
+- A dynamic set may transiently disagree with the real state of the tree (e.g. a remove reported as timed out actually succeeded). Requests drawing paths from a dynamic set therefore treat "node doesn't exist" and "node already exists" results as expected: they are counted separately as ignored errors (reported in stats and in the JSON output as `ignored_errors`) and don't stop the benchmark even without `--continue_on_errors`.
+- A dynamic set may start empty (e.g. a tag only a `create` outputs to). Generators whose input set is currently empty are skipped in favor of other generators; if all generators decline, an exception is raised.
 
 ---
 
@@ -328,14 +344,23 @@ Requests are defined in `generator.requests`.
 
 ```yaml
 create:
-    path: "/bench/creates"           # PathGetter
+    path: "/bench/creates"           # PathGetter (parent for created nodes)
     name_length: 10                    # IntegerGetter, default: 5
     data: "payload"                   # StringGetter, default: empty
     remove_factor: 0.5                 # in [0.0, 1.0], default: 0
+    tag: "created_nodes"              # optional output tag
 ```
 
-When `remove_factor` is enabled, some operations become random removes of previously created nodes.
-If unique name generation keeps colliding, the generator raises an exception after bounded retries.
+Created paths are recorded in an output `PathSet`, which other generators can read (see [Dynamic path sets](#dynamic-path-sets)):
+
+- If `tag` is set, the created paths are added to that tagged set.
+- Otherwise, if `path` is a single fixed path, they are added to the `children_of` set of that parent (so e.g. a `get` with `children_of` pointing at the same parent automatically sees the created nodes).
+- Otherwise, if `remove_factor` is set, they are tracked in an anonymous set only this generator uses.
+
+Setting `tag` while another generator reads `children_of` of the same fixed parent is an error: reference the tag consistently instead.
+The output set is only actually populated if some generator reads it (including this generator's own `remove_factor`).
+
+When `remove_factor` is enabled, some operations become random removes of nodes from the output set. Node names are random and not checked for uniqueness; with small `name_length` creates can fail with "node exists" errors.
 
 ### `set`
 
@@ -450,7 +475,7 @@ If `--setup-nodes-snapshot-path` is provided during replay, the tool can infer r
 
 Periodic stderr reports (controlled by `report_delay`) include:
 
-- Total read/write request counts (cumulative).
+- Total read/write request counts (cumulative), errors, and ignored errors (see [Dynamic path sets](#dynamic-path-sets)).
 - Read/write RPS and throughput (for the last reporting period).
 - Read/write latency percentiles (`0, 10, ..., 90, 95, 99, 99.9, 99.99`).
 - Watches fired (when `watch_probability` is configured).
@@ -472,6 +497,8 @@ output:
 JSON fields:
 
 - `timestamp` (epoch milliseconds).
+- `errors`.
+- `ignored_errors` (present only if nonzero; see [Dynamic path sets](#dynamic-path-sets)).
 - `read_results` (present only if read requests exist).
 - `write_results` (present only if write requests exist).
 - `watches_fired` (present only when watches are used).
@@ -490,12 +517,15 @@ Each result object contains:
 Common configuration exceptions:
 
 - `No config file or hosts defined`: provide `--hosts` or `connections`.
-- `Both --config and --input_request_log cannot be empty`: provide at least one mode input.
+- `--config is required`: generated mode needs a config file; pass `--input-request-log` for replay mode.
+- `Config file must contain a generator section`: define `generator` in the config, or pass `--input-request-log` for replay mode.
 - `Invalid path for request generator`: all paths must start with `/`.
-- `PathGetter has no paths after initialization`: `children_of` parent has no children and no explicit `path` entries were supplied.
+- `... is referenced twice in path`: the same tag or `children_of` parent appears more than once in one `path` section.
+- `... is empty: check that the children_of target has children or that setup nodes carry the tag`: the referenced path set ended up empty after setup.
 - `Generator weight must be >= 1`: use positive weights only.
 - `remove_factor must be in [0.0, 1.0]`: keep probability in range.
 - `watch_probability must be in [0.0, 1.0]`: keep probability in range.
 - `Nested multi requests are not allowed`: only one `multi` level is supported.
-- `Tag '...' not found in setup`: a `tagged` path reference names a tag that no setup node defines. Check spelling and ensure the setup section includes nodes with matching `tag` values.
+- `... is used by a request generator, but no setup node has this tag and no create generator outputs to it`: a `tagged` path reference names an unknown tag. Check spelling and ensure the setup section includes nodes with matching `tag` values (or that a `create` generator outputs to the tag).
+- `... outputs to tag ..., but another generator reads children_of ...`: reference the created nodes via the tag everywhere instead of mixing `tag` with `children_of`.
 - `Repeating node creation ..., but name is not randomly generated`: use random `name` when `repeat` is set.
