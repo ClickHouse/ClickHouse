@@ -1685,11 +1685,6 @@ class SettingsRandomizer:
         "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
             0, 1
         ),
-        # Per-query override of the server's read/write-through switches; "auto" follows the
-        # server. Inert outside Cloud, and a cache error falls back to skipping the cache
-        # rather than throwing (distributed_cache_throw_on_error defaults to false).
-        "force_read_through_distributed_cache": lambda: random.choice(["auto", "true", "false"]),
-        "force_write_through_distributed_cache": lambda: random.choice(["auto", "true", "false"]),
         "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
             0, 1
         ),

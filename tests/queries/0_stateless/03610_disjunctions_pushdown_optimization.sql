@@ -10,6 +10,11 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_propagate_predicate_across_join = 0;
 SET query_plan_optimize_join_order_randomize = 0;
+-- Pin (randomized in CI): below the limit, an IN set is ranked by its exact range-based
+-- selectivity; above it, by set size alone. CASE A's `t1.k IN (1,2)` and `t2.x = ...` are
+-- otherwise on-par candidates for which PREWHERE filter prints first, so a limit small enough to
+-- flip the estimate (CI randomizes it as low as 1) swaps the two pinned lines below.
+SET statistics_max_set_size_for_exact_selectivity_estimation = 10000;
 
 DROP TABLE IF EXISTS tp1;
 DROP TABLE IF EXISTS tp2;
