@@ -13,9 +13,11 @@ CREATE TABLE tbl (a Int32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tbl VALUES (1), (2), (3);
 "
 
-# `SETTINGS id` is written to the manifest as `<backup_id>`.
+# `SETTINGS id` is written to the manifest as `<backup_id>`. The id has to be unique across the whole server,
+# not just this database - `BackupsWorker` rejects a second backup carrying an id it has already seen, which
+# the flaky check would hit on the second run.
 backup_with_id="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_id')"
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${backup_with_id} SETTINGS id = 'a&b<c>d\"e'" > /dev/null
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE tbl TO ${backup_with_id} SETTINGS id = 'a&b<c>d\"e ${CLICKHOUSE_TEST_UNIQUE_NAME}'" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE tbl AS tbl_from_id FROM ${backup_with_id}" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "SELECT 'backup_id', sum(a) FROM tbl_from_id"
 
