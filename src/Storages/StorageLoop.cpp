@@ -1,5 +1,6 @@
 #include <Storages/StorageLoop.h>
 #include <Storages/StorageFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
 #include <Common/CurrentThread.h>
@@ -9,13 +10,18 @@ namespace DB
 {
     StorageLoop::StorageLoop(
             const StorageID & table_id_,
-            StoragePtr inner_storage_,
+            const StoragePtr & inner_storage_,
             ASTPtr inner_table_function_ast_)
             : IStorage(table_id_)
-            , inner_storage(std::move(inner_storage_))
+            , inner_table_id(inner_storage_->getStorageID())
             , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
-        auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        /// The source is followed by name and resolved per read: holding its `StoragePtr` would keep
+        /// the storage object alive after the source is dropped, and a pinned UUID would not survive
+        /// dropping and recreating it.
+        inner_table_id.uuid = UUIDHelpers::Nil;
+
+        auto metadata_snapshot = inner_storage_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         setInMemoryMetadata(*metadata_snapshot);
     }
 
@@ -37,15 +43,19 @@ namespace DB
             const StorageSnapshotPtr & storage_snapshot,
             SelectQueryInfo & query_info,
             ContextPtr context,
-            QueryProcessingStage::Enum processed_stage,
-            size_t max_block_size,
-            size_t num_streams)
+            QueryProcessingStage::Enum,
+            size_t,
+            size_t)
     {
         query_info.optimize_trivial_count = false;
 
+        StoragePtr inner_storage;
+        if (!inner_table_function_ast)
+            inner_storage = DatabaseCatalog::instance().getTable(inner_table_id, context);
+
         query_plan.addStep(std::make_unique<ReadFromLoopStep>(
-                column_names, query_info, storage_snapshot, context, processed_stage, inner_storage,
-                inner_table_function_ast, max_block_size, num_streams
+                column_names, query_info, storage_snapshot, context, std::move(inner_storage),
+                inner_table_function_ast
         ));
     }
 

@@ -16,11 +16,8 @@ namespace DB
                 const SelectQueryInfo & query_info_,
                 const StorageSnapshotPtr & storage_snapshot_,
                 const ContextPtr & context_,
-                QueryProcessingStage::Enum processed_stage_,
                 StoragePtr inner_storage_,
-                ASTPtr inner_table_function_ast_,
-                size_t max_block_size_,
-                size_t num_streams_);
+                ASTPtr inner_table_function_ast_);
 
         String getName() const override { return "ReadFromLoop"; }
 
@@ -31,10 +28,7 @@ namespace DB
         Pipe makePipe();
 
         const Names column_names;
-        QueryProcessingStage::Enum processed_stage;
         StoragePtr inner_storage;
         ASTPtr inner_table_function_ast;
-        size_t max_block_size;
-        size_t num_streams;
     };
 }

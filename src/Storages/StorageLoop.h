@@ -11,7 +11,7 @@ namespace DB
     public:
         StorageLoop(
                 const StorageID & table_id,
-                StoragePtr inner_storage_,
+                const StoragePtr & inner_storage_,
                 ASTPtr inner_table_function_ast_ = nullptr);
 
         std::string getName() const override { return "Loop"; }
@@ -32,7 +32,7 @@ namespace DB
         bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return false; }
 
     private:
-        StoragePtr inner_storage;
+        StorageID inner_table_id;
         ASTPtr inner_table_function_ast;
     };
 }
