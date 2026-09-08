@@ -99,6 +99,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_bernoulli_sample;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
@@ -1118,7 +1119,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 sampling_requested = query_info.table_expression_modifiers->hasSampleSizeRatio();
 
             /// If sampling requested, then check that table supports it.
-            if (sampling_requested && !storage->supportsSampling())
+            /// Bernoulli sampling works on any storage that delegates to a MergeTree table without a SAMPLE BY key.
+            if (sampling_requested && !storage->supportsSampling()
+                && !(storage->supportsBernoulliSampling() && modified_context->getSettingsRef()[Setting::allow_experimental_bernoulli_sample]))
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table {} doesn't support sampling", storage->getStorageID().getNameForLogs());
 
             Aliases aliases;

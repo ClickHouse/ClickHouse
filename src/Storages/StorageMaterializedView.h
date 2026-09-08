@@ -31,6 +31,7 @@ public:
     bool hasInnerTable() const { return has_inner_table; }
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
+    bool supportsBernoulliSampling() const override { return getTargetTable()->supportsBernoulliSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
     bool supportedPrewhereColumnsIncludeSubcolumns() const override;

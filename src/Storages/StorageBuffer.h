@@ -121,6 +121,14 @@ public:
             return destination->supportsSampling();
         return true;
     }
+    /// Fails closed on purpose, even when the destination table is a `MergeTree`.
+    /// `read()` forwards `SAMPLE` only to the destination table; the rows that are still resident in the
+    /// in-memory buffers are read by `BufferSource` (and, for stages after `FetchColumns`, through
+    /// `StorageValues`), and no Bernoulli filter is attached to that leg. Delegating the capability would
+    /// therefore let `SAMPLE p` over a destination without a `SAMPLE BY` key silently return all buffered
+    /// rows next to the sampled ones. Until the buffered rows are filtered with the same semantics, the
+    /// `SAMPLE` clause is rejected instead.
+    bool supportsBernoulliSampling() const override { return false; }
     bool supportsPrewhere() const override;
     /// read() hands the built PREWHERE to the destination (converting declared-type differences
     /// with a prefix), so a column must exist there and be allowed by the destination's own
