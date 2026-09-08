@@ -1,0 +1,35 @@
+Test DESCRIBE through the chain
+ACCESS_DENIED
+Test system.columns through the chain
+0
+Test resolved and declared system.tables columns through the chain
+1	1	1	1	1	1
+Test SHOW CREATE TABLE exposes the declared target
+1
+1
+0
+Control: the same filter over a definition that does name the target
+match
+Test DESCRIBE of the last alias in the chain
+ACCESS_DENIED
+Test SELECT through the chain
+ACCESS_DENIED
+Test hasColumnInTable through the chain
+ACCESS_DENIED
+Test system.projections, system.constraints and system.data_skipping_indices through the chain
+0	0	0
+Test DESCRIBE with only the middle alias of the chain ungranted
+ACCESS_DENIED
+Test system.columns with a column-level grant on the final table
+secret_id
+Test DESCRIBE through the chain with the final target granted
+secret_id	UInt64
+secret_payload	String
+Test system.columns through the chain with the final target granted
+2
+Test resolved and declared system.tables columns through the chain with the final target granted
+secret_id	2	1
+Test hasColumnInTable through the chain with the final target granted
+1
+Test system.projections, system.constraints and system.data_skipping_indices with the final target granted
+1	1	1

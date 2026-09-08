@@ -61,7 +61,7 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
-bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
+bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     if (!query_context)
         return false;
@@ -71,6 +71,31 @@ bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType acc
         return access->isGranted(access_type, target_database, target_table);
 
     return access->isGranted(access_type, target_database, target_table, column_name);
+}
+
+bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
+{
+    /// `getInMemoryMetadataPtr` forwards through nested aliases, so a caller reads the metadata of the
+    /// chain's last table, and `read` authorizes every hop by re-entering `read` on each one.
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> authorized;
+    const StorageAlias * alias = this;
+    /// Owns the storage `alias` points into, from the second hop on.
+    StoragePtr alias_holder;
+
+    while (alias->isDeclaredTargetGranted(query_context, access_type, column_name))
+    {
+        /// A cyclic chain is loadable state, so a repeated name means there is no final table left to
+        /// reach, and every name in the chain is authorized.
+        if (!authorized.emplace(alias->target_database, alias->target_table).second)
+            return true;
+
+        alias_holder = alias->tryGetTargetTable();
+        alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
+        if (!alias)
+            return true;
+    }
+
+    return false;
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline

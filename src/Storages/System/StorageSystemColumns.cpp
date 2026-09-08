@@ -149,6 +149,11 @@ protected:
             SerializationInfoByName serialization_hints{{}};
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
             const auto * alias = storage->as<StorageAlias>();
+            /// The chain an Alias resolves through is the same for every column, and a table-level grant
+            /// covers all of them, so one check answers every column loop below. Resolving the chain
+            /// costs a catalog lookup per hop, and for a target in a Remote, PostgreSQL or SQLite
+            /// database each of those is a fresh schema fetch.
+            const bool alias_chain_granted = alias && alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
 
             {
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
@@ -168,7 +173,7 @@ protected:
                 {
                     for (const auto & column : columns)
                     {
-                        if (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
+                        if (!alias || alias_chain_granted || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
                         {
                             can_expose_any_column_metadata = true;
                             break;
@@ -212,7 +217,7 @@ protected:
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
-                if (alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
+                if (alias && !alias_chain_granted && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
                     continue;
 
                 size_t src_index = 0;

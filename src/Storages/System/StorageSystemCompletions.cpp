@@ -91,6 +91,10 @@ static void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
+    const auto * alias = table->as<StorageAlias>();
+    /// One chain check answers every column; see the comment in StorageSystemColumns.
+    const bool alias_chain_granted = alias && alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
+
     const auto snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
@@ -98,8 +102,8 @@ static void fillDataWithTableColumns(
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
             continue;
 
-        if (const auto * alias = table->as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
+        if (alias && !alias_chain_granted
+            && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
             continue;
 
         res_columns[0]->insert(column.name);
