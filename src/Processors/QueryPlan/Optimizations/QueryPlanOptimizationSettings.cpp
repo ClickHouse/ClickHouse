@@ -19,6 +19,8 @@ namespace Setting
     extern const SettingsBool allow_aggregate_partitions_independently;
     extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_distinct_partitions_independently;
+    extern const SettingsBool allow_window_partitions_independently;
+    extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool collect_hash_table_stats_during_joins;
@@ -28,6 +30,7 @@ namespace Setting
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
+    extern const SettingsBool cascades_aggregation_pushdown;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
@@ -47,6 +50,7 @@ namespace Setting
     extern const SettingsBool optimize_use_projections;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool query_plan_aggregation_bucket_top_k;
     extern const SettingsBool query_plan_aggregation_in_order;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
@@ -58,6 +62,11 @@ namespace Setting
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
+    extern const SettingsBool query_plan_propagate_predicate_across_join;
+    extern const SettingsBool query_plan_fuse_filter_into_array_join;
+    extern const SettingsBool query_plan_lower_array_join_function;
+    extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_lift_up_array_join;
     extern const SettingsBool query_plan_lift_up_union;
@@ -76,7 +85,6 @@ namespace Setting
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
-    extern const SettingsBool query_plan_read_in_order_through_spilling_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -86,6 +94,7 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool use_join_disjunctions_push_down;
+    extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -99,6 +108,8 @@ namespace Setting
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
+    extern const SettingsBool query_plan_optimize_join_order_use_cd_a_conflict_detector;
+    extern const SettingsBool query_plan_optimize_join_order_use_cd_c_conflict_detector;
     extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
@@ -116,6 +127,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
+    extern const SettingsBool distributed_plan_read_in_order;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
@@ -172,13 +184,19 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     lift_up_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_array_join];
     push_down_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit];
-    /// Always on under the master toggle: the result is bit-exact, so there is no behavior to preserve.
-    aggregation_bucket_top_k = from[Setting::query_plan_enable_optimizations];
+    aggregation_bucket_top_k = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_bucket_top_k];
     split_filter = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_split_filter];
     merge_expressions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expressions];
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
+    /// Without `use_primary_key` the copy would just be a full scan filter
+    propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
+        && from[Setting::use_primary_key];
+    fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
+    lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
+    enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
+    short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
@@ -229,6 +247,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     distinct_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_distinct_partitions_independently];
+    window_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_window_partitions_independently];
+    force_window_partitions_independently = from[Setting::force_window_partitions_independently];
     creating_set_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_creating_set_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
@@ -244,7 +264,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         && from[Setting::optimize_trivial_count_query];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
-    read_in_order_through_spilling_join = from[Setting::query_plan_read_in_order_through_spilling_join];
     /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,
     /// incompatible with distributed execution. When make_distributed_plan is enabled,
     /// always use the materialization path (materializeQueryPlanReferences) instead.
@@ -299,12 +318,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_force_exchange_kind = "Persisted";
 #endif
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
+    distributed_plan_read_in_order = from[Setting::distributed_plan_read_in_order];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
     exact_rows_before_limit = from[Setting::exact_rows_before_limit];
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
+    cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
@@ -356,6 +377,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
+    query_plan_optimize_join_order_use_cd_a_conflict_detector = from[Setting::query_plan_optimize_join_order_use_cd_a_conflict_detector];
+    query_plan_optimize_join_order_use_cd_c_conflict_detector = from[Setting::query_plan_optimize_join_order_use_cd_c_conflict_detector];
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 

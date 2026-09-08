@@ -8,7 +8,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -313,9 +312,6 @@ ProcessList::EntryPtr ProcessList::insert(
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
                     .metrics = {}, /// Metrics are set by child scopes
                 };
-
-                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
 
                 if (user_process_list.user_temp_data_on_disk)
                     query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
@@ -803,6 +799,59 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
     /// The ProcessListEntry cannot be destroy if is_cancelling is true.
     {
         LockAndBlocker lock(mutex);
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        Lock lock(mutex);
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+
+void ProcessList::registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys[{connection_id, secret_key}] = query_id;
+}
+
+
+void ProcessList::unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys.erase({connection_id, secret_key});
+}
+
+
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key)
+{
+    QueryStatusPtr elem;
+
+    {
+        LockAndBlocker lock(mutex);
+
+        /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
+        /// unknown connection.
+        auto cancellation_key = postgresql_cancellation_keys.find({process_id, secret_key});
+        if (cancellation_key == postgresql_cancellation_keys.end())
+            return CancellationCode::NotFound;
+
+        const String & current_query_id = cancellation_key->second;
+        auto query_user = queries_to_user.find(current_query_id);
+        if (query_user == queries_to_user.end())
+            return CancellationCode::NotFound;
+
+        /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
+        elem = tryGetProcessListElement(current_query_id, query_user->second);
+        if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
+            return CancellationCode::NotFound;
+
+        /// Keep the verified entry by pointer to prevent query-id reuse races.
         elem->is_cancelling = true;
     }
 

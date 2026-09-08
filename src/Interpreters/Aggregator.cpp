@@ -36,6 +36,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -130,12 +131,18 @@ void initDataVariantsWithSizeHint(
     const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
     {
-        /// A table predicted to reach the freeze threshold stays single-level (a two-level table
-        /// cannot freeze), pre-sized to at most what it can hold before freezing. A table
-        /// predicted to stay below the threshold will give up on freezing instead.
-        if (params.enable_adaptive_aggregator && hint->median_size >= params.adaptive_aggregator_freeze_threshold)
+        /// An engaged run starts single-level at the default size, ignoring the hint. Two-level
+        /// is ruled out because a two-level table cannot freeze: the generic initialization
+        /// below goes two-level once the sizes reach `group_by_two_level_threshold`, and sizes
+        /// recorded by a run that ended large would make the next run unfreezable. The hint's
+        /// size is ignored because the freeze bounds make it worthless or harmful: an engaged
+        /// table stays small enough that the rehash chain from the default size is trivial,
+        /// while a pre-allocation at or above the byte bound would count as the table's
+        /// footprint and freeze it at its first between-blocks check, after one block of keys.
+        /// Ignoring the size keeps a warm run's freeze point identical to a cold run's.
+        if (params.enable_adaptive_aggregator)
         {
-            result.init(method_chosen, std::min<size_t>(hint->median_size, 2 * params.adaptive_aggregator_freeze_threshold));
+            result.init(method_chosen);
         }
         else
         {
@@ -280,7 +287,6 @@ size_t getMinBytesForPrefetch()
     return getL2CacheSize();
 }
 
-
 }
 
 namespace DB
@@ -393,7 +399,8 @@ Aggregator::Params::Params(
     bool enable_parallel_single_level_merge_,
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
-    UInt64 adaptive_aggregator_freeze_threshold_)
+    UInt64 adaptive_aggregator_freeze_threshold_,
+    UInt64 adaptive_aggregator_freeze_threshold_bytes_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -418,6 +425,7 @@ Aggregator::Params::Params(
     , stats_collecting_params(stats_collecting_params_)
     , enable_adaptive_aggregator(enable_adaptive_aggregator_)
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
+    , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
@@ -1153,8 +1161,11 @@ void Aggregator::executeImpl(
             /// below calls `getKeyHolder` a second time for every row, so a method that materializes
             /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
             /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
+            /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
+            /// smaller threshold.
+            const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+                && (method.data.getBufferSizeInBytes() > min_bytes);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -1370,23 +1381,6 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
-    auto emplace = [&](size_t row)
-    {
-        // For some methods we simply don't have a set counterpart, so a map method is used.
-        // Thus we have to set a `mapped` even though nothing reads it. Only the row that creates the
-        // cell has to: for a key that is already there the cell holds the same sentinel, and writing it
-        // again is a store into a random place of the table on every row.
-        if constexpr (State::has_mapped)
-        {
-            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
-            if (emplace_result.isInserted())
-                emplace_result.setMapped(place);
-            return emplace_result;
-        }
-        else
-            return state.emplaceKey(method.data, row, *aggregates_pool);
-    };
-
     auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result)
     {
         if constexpr (top_k)
@@ -1401,9 +1395,31 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         }
     };
 
+    /// Returns nothing and is force-inlined on purpose: a variant of this that returned the emplace
+    /// result was compiled into an out-of-line call per row for the string methods, and the call is
+    /// what the loop's speed is made of - it costs more than the work it wraps.
+    auto process_row = [&](size_t row) ALWAYS_INLINE
+    {
+        // For some methods we simply don't have a set counterpart, so a map method is used.
+        // Thus we have to set a `mapped` even though nothing reads it. Only the row that creates the
+        // cell has to: for a key that is already there the cell holds the same sentinel, and writing it
+        // again is a store into a random place of the table on every row.
+        if constexpr (State::has_mapped)
+        {
+            auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
+            if (emplace_result.isInserted())
+                emplace_result.setMapped(place);
+            heap_push(row, emplace_result);
+        }
+        else
+        {
+            heap_push(row, state.emplaceKey(method.data, row, *aggregates_pool));
+        }
+    };
+
     if (all_keys_are_const)
     {
-        heap_push(0, emplace(0));
+        process_row(0);
         return;
     }
 
@@ -1442,7 +1458,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
             }
         }
 
-        heap_push(i, emplace(i));
+        process_row(i);
 
         if constexpr (top_k)
         {
@@ -2043,7 +2059,7 @@ void Aggregator::addBatchSinglePlace(
     if (inst->offsets)
         inst->batch_that->addBatchSinglePlace(
             inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-            inst->offsets[row_end - 1],
+            inst->offsets[static_cast<ssize_t>(row_end) - 1],
             place,
             inst->batch_arguments,
             arena);
@@ -2081,7 +2097,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
         if (inst->offsets)
             inst->batch_that->addBatchSinglePlace(
                 inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-                inst->offsets[row_end - 1],
+                inst->offsets[static_cast<ssize_t>(row_end) - 1],
                 res + inst->state_offset,
                 inst->batch_arguments,
                 data_variants.aggregates_pool);
@@ -2155,33 +2171,43 @@ void Aggregator::prepareAggregateInstructions(
                 has_sparse_arguments = true;
         }
 
-        aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
-        aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
-        aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
-        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
-
-        const auto * that = aggregate_functions[i];
-        /// Unnest consecutive trailing -State combinators
-        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
-            that = func->getNestedFunction().get();
-        aggregate_functions_instructions[i].that = that;
-
-        if (const auto * func = typeid_cast<const AggregateFunctionArray *>(that))
-        {
-            /// Unnest consecutive -State combinators before -Array
-            that = func->getNestedFunction().get();
-            while (const auto * nested_func = typeid_cast<const AggregateFunctionState *>(that))
-                that = nested_func->getNestedFunction().get();
-            auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
-            nested_columns_holder.push_back(std::move(nested_columns));
-            aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
-            aggregate_functions_instructions[i].offsets = offsets;
-        }
-        else
-            aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
-
-        aggregate_functions_instructions[i].batch_that = that;
+        buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
     }
+}
+
+void Aggregator::buildAggregateFunctionInstruction(
+    size_t i,
+    bool has_sparse_arguments,
+    AggregateColumns & aggregate_columns,
+    AggregateFunctionInstructions & aggregate_functions_instructions,
+    NestedColumnsHolder & nested_columns_holder) const
+{
+    aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
+    aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
+    aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
+    aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+
+    const auto * that = aggregate_functions[i];
+    /// Unnest consecutive trailing -State combinators
+    while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
+        that = func->getNestedFunction().get();
+    aggregate_functions_instructions[i].that = that;
+
+    if (const auto * func = typeid_cast<const AggregateFunctionArray *>(that))
+    {
+        /// Unnest consecutive -State combinators before -Array
+        that = func->getNestedFunction().get();
+        while (const auto * nested_func = typeid_cast<const AggregateFunctionState *>(that))
+            that = nested_func->getNestedFunction().get();
+        auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
+        nested_columns_holder.push_back(std::move(nested_columns));
+        aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
+        aggregate_functions_instructions[i].offsets = offsets;
+    }
+    else
+        aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
+
+    aggregate_functions_instructions[i].batch_that = that;
 }
 
 bool Aggregator::executeOnBlock(Columns columns,
@@ -2217,7 +2243,8 @@ bool Aggregator::executeOnBlock(Columns columns,
       */
     Columns materialized_columns;
     bool all_keys_are_const = false;
-    if (params.optimize_group_by_constant_keys)
+    /// A single key row stands for the whole block, so an empty block would get a group out of nothing.
+    if (params.optimize_group_by_constant_keys && row_begin != row_end)
     {
         all_keys_are_const = true;
         for (size_t i = 0; i < params.keys_size; ++i)
@@ -2291,9 +2318,9 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// above the threshold is state the frozen table would replicate on every worker. The
         /// slicer only reports the boundary; the transition is decided here. A const block
         /// stays on the baseline path: it adds at most one key, and the between-blocks check
-        /// handles it. The admission gate rules out `max_rows_to_group_by` and the overflow
-        /// row, which is what entitles the slices to pass `no_more_keys = false` and no
-        /// overflow destination.
+        /// handles it. The admission gate rules out the dropping overflow modes and the
+        /// overflow row, so `no_more_keys` can never become true, which is what entitles the
+        /// slices to pass `no_more_keys = false` and no overflow destination.
         const size_t split
             = executeImplUntilAdaptiveFreeze(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data());
         if (split < row_end)
@@ -2360,9 +2387,21 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// The freeze replaces the local two-level conversion: from now on the local table
             /// only updates the keys it already holds, so it stays single-level and bounded by
             /// the threshold, and the frozen kernel pairs it with its two-level twin.
-            if (adaptive->isLearning() && result_size >= params.adaptive_aggregator_freeze_threshold
-                && result.isConvertibleToTwoLevel())
-                freezeAdaptive(result, *adaptive);
+            if (adaptive->isLearning())
+            {
+                /// The byte twin of the key-count freeze bound. The measure is the local
+                /// table's own footprint, its hash-table buffer plus its arenas, checked
+                /// between blocks like the baseline's conversion thresholds; the mid-block
+                /// freeze crossing checks only the key count, so a byte-triggered freeze
+                /// lands on a block boundary. The query-wide tracked memory is deliberately
+                /// not used: it sums every thread's allocations, so it would freeze all the
+                /// tables off each other's growth.
+                const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
+                    && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
+                if ((result_size >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
+                    && result.isConvertibleToTwoLevel())
+                    freezeAdaptive(result, *adaptive);
+            }
 
             if (adaptive->isFrozen())
             {
@@ -2437,15 +2476,27 @@ bool Aggregator::executeOnBlock(Columns columns,
     if (!checkLimits(result_size, no_more_keys))
         return false;
 
+    /// The spill below is decided from query-wide memory but can only free this thread's own
+    /// table. The session's shared drain table is memory no sweep writes once it is below the
+    /// part floor, so left resident it keeps every later block over the threshold.
+    Int64 spill_decision_memory = current_memory_usage;
+    if (adaptive && adaptive->isBaseline() && params.max_bytes_before_external_group_by
+        && result.isTwoLevel() && worth_convert_to_two_level
+        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+    {
+        if (auto sampled = releaseAdaptiveDrainResidue(*adaptive->session))
+            spill_decision_memory = *sampled;
+    }
+
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
+        && spill_decision_memory > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
+        size_t size = spill_decision_memory + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
     }
 
@@ -2541,8 +2592,12 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     Arena * arena,
     bool final,
     Int32 bucket,
-    UInt64 * topk_full_key_bytes) const
+    UInt64 * topk_full_key_bytes,
+    size_t * full_group_count) const
 {
+    if (full_group_count)
+        *full_group_count = method.data.impls[bucket].size();
+
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
 
@@ -2623,6 +2678,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     /// The root is the worst kept candidate, so a new cell only pays the heap when it beats it.
     const auto worse_first = [&](const Candidate & a, const Candidate & b) { return better(a.value, b.value); };
 
+    /// Only the dataflow statistics cache consumes this byte count, so a null counter makes the
+    /// per-group key materialization below dead work.
+    const bool need_full_key_bytes = full_key_bytes != nullptr;
+
     /// Account for the full output using the same conversion as the final result. A serialized
     /// multi-key table stores a length-prefixed arena blob, whose size is not the size of the
     /// materialized key columns (in particular, every String key has an offset column).
@@ -2639,12 +2698,15 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
-            method.insertKeyIntoColumns(
-                key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
-            for (auto * column : key_size_columns.raw_key_columns)
+            if (need_full_key_bytes)
             {
-                key_bytes += column->byteSizeAt(column->size() - 1);
-                column->popBack(1);
+                method.insertKeyIntoColumns(
+                    key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
+                for (auto * column : key_size_columns.raw_key_columns)
+                {
+                    key_bytes += column->byteSizeAt(column->size() - 1);
+                    column->popBack(1);
+                }
             }
             const UInt64 value = count_of(mapped);
             if (top.size() < params.bucket_top_k)
@@ -2735,14 +2797,16 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     bool final,
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+    size_t * full_group_count) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
 
-    /// Filled by the Top-K conversion (zero otherwise): the untruncated key bytes to account in
-    /// the dataflow statistics, because the truncated chunk carries only the kept groups.
+    /// Filled by the Top-K conversion when the statistics ask for it (zero otherwise): the
+    /// untruncated key bytes to account in the dataflow statistics, because the truncated chunk
+    /// carries only the kept groups.
     UInt64 topk_full_key_bytes = 0;
 
     if (false) {} // NOLINT
@@ -2754,7 +2818,7 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
             updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
-        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, &topk_full_key_bytes); \
+        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, updater ? &topk_full_key_bytes : nullptr, full_group_count); \
         if (updater) \
         { \
             if (topk_full_key_bytes) \
@@ -2817,7 +2881,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVa
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, /*topk_full_key_bytes=*/nullptr); \
+        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, /*topk_full_key_bytes=*/nullptr, /*full_group_count=*/nullptr); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -2873,7 +2937,7 @@ void Aggregator::writeToTemporaryFileImpl(
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
-        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*topk_full_key_bytes=*/nullptr);
+        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*topk_full_key_bytes=*/nullptr, /*full_group_count=*/nullptr);
         auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
@@ -3970,7 +4034,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*topk_full_key_bytes=*/nullptr));
+            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*topk_full_key_bytes=*/nullptr, /*full_group_count=*/nullptr));
         }
     };
 
@@ -4418,7 +4482,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes()
+            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -4506,7 +4571,8 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
+            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
