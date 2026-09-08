@@ -90,6 +90,9 @@ std::optional<Task> Worker::pickTask()
 {
     while (true)
     {
+        if (coordinator.stopped())
+            return std::nullopt;
+
         if (auto task = scheduler.tryPop(worker_id))
             return task;
 

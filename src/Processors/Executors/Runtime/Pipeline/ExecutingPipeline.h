@@ -24,7 +24,7 @@ struct ExecutingPipeline
     const QueryStatusPtr process_list_element;
     const StepWallClockRegistry * const wall_clocks;
 
-    ReadProgressCallback * const read_progress_callback = nullptr;
+    ReadProgressCallback * read_progress_callback = nullptr;
 
     std::atomic<IProcessor::CancelReason> cancel_reason = IProcessor::CancelReason::NotCancelled;
     std::exception_ptr exception;

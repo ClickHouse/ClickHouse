@@ -1,0 +1,873 @@
+#include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Parsers/IAST.h>
+#include <Processors/Executors/Runtime/Executor.h>
+#include <Processors/ISource.h>
+#include <Processors/Port.h>
+#include <Processors/ResizeProcessor.h>
+#include <Processors/Sinks/NullSink.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Common/Exception.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/assert_cast.h>
+#include <Common/tests/gtest_global_context.h>
+
+#include <gtest/gtest.h>
+
+#include <fmt/format.h>
+
+#include <functional>
+#include <thread>
+#include <utility>
+
+using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace
+{
+
+SharedHeader makeHeader()
+{
+    return std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")});
+}
+
+Chunk makeChunk(UInt8 value)
+{
+    auto col = ColumnUInt8::create();
+    col->insertValue(value);
+    Columns columns;
+    columns.emplace_back(std::move(col));
+    return Chunk(std::move(columns), 1);
+}
+
+String describeProcessor(const IProcessor & processor)
+{
+    return fmt::format("{} at {}", processor.getUniqID(), static_cast<const void *>(&processor));
+}
+
+QueryStatusPtr makeQueryStatus(UInt64 max_execution_time_seconds)
+{
+    ClientInfo client_info;
+    client_info.current_query_id = "gtest_executor";
+    Settings settings;
+    settings.set("max_execution_time", max_execution_time_seconds);
+    return std::make_shared<QueryStatus>(
+        getContext().context,
+        "SELECT 1",
+        /*normalized_query_hash_*/ 0,
+        client_info,
+        /*priority_handle_*/ QueryPriorities::Handle{},
+        /*query_slot_*/ nullptr,
+        /*memory_reservation_*/ nullptr,
+        /*thread_group_*/ nullptr,
+        IAST::QueryKind::Select,
+        settings,
+        /*watch_start_nanoseconds*/ 0,
+        /*is_internal*/ false);
+}
+
+/// Emits one UInt8 row, then finishes.
+class SingleValueSource final : public ISource
+{
+public:
+    SingleValueSource(SharedHeader header_, UInt8 value)
+        : ISource(std::move(header_), /*enable_auto_progress=*/false)
+        , chunk(makeChunk(value))
+    {
+    }
+
+    String getName() const override { return "SingleValueSource"; }
+
+protected:
+    std::optional<Chunk> tryGenerate() override
+    {
+        return std::exchange(chunk, std::nullopt);
+    }
+
+private:
+    std::optional<Chunk> chunk;
+};
+
+/// Emits 0, 1, ..., count - 1, one row per chunk, then finishes.
+class ValuesSource final : public ISource
+{
+public:
+    ValuesSource(SharedHeader header_, size_t count_)
+        : ISource(std::move(header_), /*enable_auto_progress=*/false)
+        , count(count_)
+    {
+    }
+
+    String getName() const override { return "ValuesSource"; }
+
+protected:
+    std::optional<Chunk> tryGenerate() override
+    {
+        if (next == count)
+            return std::nullopt;
+
+        return makeChunk(static_cast<UInt8>(next++));
+    }
+
+private:
+    const size_t count;
+    size_t next = 0;
+};
+
+/// Never finishes on its own.
+class EndlessSource final : public ISource
+{
+public:
+    explicit EndlessSource(SharedHeader header_)
+        : ISource(std::move(header_), /*enable_auto_progress=*/false)
+    {
+    }
+
+    String getName() const override { return "EndlessSource"; }
+
+protected:
+    std::optional<Chunk> tryGenerate() override
+    {
+        return makeChunk(0);
+    }
+};
+
+class ThrowingSource final : public ISource
+{
+public:
+    explicit ThrowingSource(SharedHeader header_)
+        : ISource(std::move(header_), /*enable_auto_progress=*/false)
+    {
+    }
+
+    String getName() const override { return "ThrowingSource"; }
+
+protected:
+    std::optional<Chunk> tryGenerate() override
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "work failed");
+    }
+};
+
+/// Pulls everything and remembers the values. With a limit, calls on_limit and closes its input after that many chunks.
+class CollectingSink final : public IProcessor
+{
+public:
+    CollectingSink(SharedHeader header_, size_t limit_ = 0, std::function<void()> on_limit_ = {})
+        : IProcessor({Block(*header_)}, {})
+        , limit(limit_)
+        , on_limit(std::move(on_limit_))
+    {
+    }
+
+    String getName() const override { return "CollectingSink"; }
+
+    Status prepare() override
+    {
+        auto & input = inputs.front();
+
+        if (input.isFinished())
+            return Status::Finished;
+
+        input.setNeeded();
+        if (!input.hasData())
+            return Status::NeedData;
+
+        auto chunk = input.pull(/*set_not_needed=*/true);
+        const auto & col = assert_cast<const ColumnUInt8 &>(*chunk.getColumns().front());
+        values.push_back(col.getElement(0));
+        ++pulled;
+
+        if (limit && values.size() >= limit)
+        {
+            if (on_limit)
+                std::exchange(on_limit, {})();
+
+            input.close();
+            return Status::Finished;
+        }
+
+        return Status::PortFull;
+    }
+
+    std::vector<UInt8> values;
+    std::atomic<size_t> pulled = 0;
+
+private:
+    const size_t limit;
+    std::function<void()> on_limit;
+};
+
+/// On each cycle: remove finished upstream, add a fresh one. Never finishes.
+class DynamicSourceCoordinator final : public IProcessor
+{
+public:
+    explicit DynamicSourceCoordinator(SharedHeader header_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+    {
+    }
+
+    String getName() const override { return "DynamicSourceCoordinator"; }
+
+    /// Called once, from `prepare`, right before the cycle that retires the current source.
+    void setBeforeRetireHook(std::function<void()> hook) { before_retire_hook = std::move(hook); }
+
+    Status prepare() override
+    {
+        auto & output = outputs.front();
+
+        if (!current_source)
+            return Status::UpdatePipeline;
+
+        auto & input = inputs.back();
+        if (input.isFinished())
+        {
+            if (before_retire_hook)
+                std::exchange(before_retire_hook, {})();
+
+            return Status::UpdatePipeline;
+        }
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (!input.hasData())
+        {
+            input.setNeeded();
+            return Status::NeedData;
+        }
+
+        output.push(input.pull(/*set_not_needed=*/true));
+        return Status::PortFull;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (current_source)
+        {
+            EXPECT_TRUE(inputs.back().isConnected());
+            EXPECT_TRUE(inputs.back().isFinished());
+
+            disconnect(current_source->getOutputs().front(), inputs.back());
+
+            EXPECT_FALSE(inputs.back().isConnected());
+
+            update.to_remove.push_back(current_source);
+            current_source.reset();
+        }
+        else
+        {
+            inputs.emplace_back(*header, this);
+        }
+
+        auto new_source = std::make_shared<SingleValueSource>(header, static_cast<UInt8>(source_history.size()));
+        source_history.emplace_back(new_source);
+
+        connect(new_source->getOutputs().front(), inputs.back());
+        inputs.back().reopen();
+        inputs.back().setNeeded();
+
+        EXPECT_TRUE(inputs.back().isConnected());
+        EXPECT_FALSE(inputs.back().isFinished());
+
+        current_source = new_source;
+        update.to_add.push_back(std::move(new_source));
+
+        return update;
+    }
+
+    size_t totalSourcesCreated() const { return source_history.size(); }
+    std::weak_ptr<IProcessor> getSourceWeak(size_t idx) const { return source_history.at(idx); }
+
+private:
+    const SharedHeader header;
+    ProcessorPtr current_source;
+    std::vector<std::weak_ptr<IProcessor>> source_history;
+    std::function<void()> before_retire_hook;
+};
+
+class FinishingSource final : public IProcessor
+{
+public:
+    FinishingSource(SharedHeader header_, size_t fan_out)
+        : IProcessor({}, OutputPorts(fan_out, header_))
+    {
+    }
+
+    String getName() const override { return "FinishingSource"; }
+
+    Status prepare() override
+    {
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
+};
+
+class MultiInputRemovingCoordinator final : public IProcessor
+{
+public:
+    explicit MultiInputRemovingCoordinator(SharedHeader header_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+    {
+    }
+
+    String getName() const override { return "MultiInputRemovingCoordinator"; }
+
+    Status prepare() override
+    {
+        if (outputs.front().isFinished())
+            return Status::Finished;
+
+        if (!source_added)
+            return Status::UpdatePipeline;
+
+        if (std::ranges::all_of(inputs, [](const auto & input) { return input.isFinished(); }))
+            return Status::UpdatePipeline;
+
+        return Status::NeedData;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (!source_added)
+        {
+            source = std::make_shared<FinishingSource>(header, 8);
+            for (auto & output : source->getOutputs())
+            {
+                auto & input = inputs.emplace_back(*header, this);
+                connect(output, input);
+                input.setNeeded();
+            }
+            update.to_add.push_back(source);
+            source_added = true;
+            return update;
+        }
+
+        for (auto & input : inputs)
+            disconnect(input.getOutputPort(), input);
+
+        update.to_remove.push_back(source);
+        source.reset();
+        outputs.front().finish();
+        return update;
+    }
+
+private:
+    const SharedHeader header;
+    ProcessorPtr source;
+    bool source_added = false;
+};
+
+/// After its input or output closes it still needs one work call before it reports Finished.
+class DeferredFinishTransform final : public IProcessor
+{
+public:
+    explicit DeferredFinishTransform(SharedHeader header_)
+        : IProcessor({Block(*header_)}, {Block(*header_)})
+    {
+    }
+
+    String getName() const override { return "DeferredFinishTransform"; }
+
+    Status prepare() override
+    {
+        auto & input = inputs.front();
+        auto & output = outputs.front();
+
+        if (!draining)
+        {
+            if (output.isFinished() || input.isFinished())
+            {
+                draining = true;
+                return Status::Ready;
+            }
+
+            if (!output.canPush())
+                return Status::PortFull;
+
+            if (!input.hasData())
+            {
+                input.setNeeded();
+                return Status::NeedData;
+            }
+
+            output.push(input.pull(/*set_not_needed=*/true));
+            return Status::PortFull;
+        }
+
+        if (!drained)
+            return Status::Ready;
+
+        input.close();
+        output.finish();
+        return Status::Finished;
+    }
+
+    void work() override { drained = true; }
+
+private:
+    bool draining = false;
+    bool drained = false;
+};
+
+/// Closes its input and finishes its output on the first prepare.
+class EarlyClosingTransform final : public IProcessor
+{
+public:
+    explicit EarlyClosingTransform(SharedHeader header_)
+        : IProcessor({Block(*header_)}, {Block(*header_)})
+    {
+    }
+
+    String getName() const override { return "EarlyClosingTransform"; }
+
+    Status prepare() override
+    {
+        inputs.front().close();
+        outputs.front().finish();
+        return Status::Finished;
+    }
+};
+
+/// Cycles source -> deferred-finish (-> early closer for the first batch) sub-pipelines, retiring each batch via to_remove.
+class BatchCyclingCoordinator final : public IProcessor
+{
+public:
+    BatchCyclingCoordinator(SharedHeader header_, size_t total_batches_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+        , total_batches(total_batches_)
+    {
+    }
+
+    String getName() const override { return "BatchCyclingCoordinator"; }
+
+    Status prepare() override
+    {
+        auto & output = outputs.front();
+
+        if (output.isFinished())
+            return Status::Finished;
+
+        if (inputs.empty() || inputs.back().isFinished())
+            return Status::UpdatePipeline;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        auto & input = inputs.back();
+        if (!input.hasData())
+        {
+            input.setNeeded();
+            return Status::NeedData;
+        }
+
+        output.push(input.pull(/*set_not_needed=*/true));
+        return Status::PortFull;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (!inputs.empty())
+        {
+            disconnect(inputs.back().getOutputPort(), inputs.back());
+            update.to_remove = std::move(current_batch);
+        }
+        else
+        {
+            inputs.emplace_back(*header, this);
+        }
+
+        if (batches_started == total_batches)
+        {
+            outputs.front().finish();
+            return update;
+        }
+
+        auto source = std::make_shared<SingleValueSource>(header, static_cast<UInt8>(batches_started));
+        auto laggard = std::make_shared<DeferredFinishTransform>(header);
+        connect(source->getOutputs().front(), laggard->getInputs().front());
+        current_batch = {source, laggard};
+
+        if (batches_started == 0)
+        {
+            auto closer = std::make_shared<EarlyClosingTransform>(header);
+            connect(laggard->getOutputs().front(), closer->getInputs().front());
+            current_batch.push_back(closer);
+        }
+
+        connect(current_batch.back()->getOutputs().front(), inputs.back());
+        inputs.back().reopen();
+        inputs.back().setNeeded();
+
+        update.to_add = current_batch;
+        batch_history.append_range(current_batch);
+        ++batches_started;
+
+        return update;
+    }
+
+    const std::vector<std::weak_ptr<IProcessor>> & batchHistory() const { return batch_history; }
+
+private:
+    const SharedHeader header;
+    const size_t total_batches;
+    size_t batches_started = 0;
+    Processors current_batch;
+    std::vector<std::weak_ptr<IProcessor>> batch_history;
+};
+
+std::shared_ptr<Processors> chain(const std::vector<ProcessorPtr> & processors)
+{
+    for (size_t i = 0; i + 1 < processors.size(); ++i)
+        connect(processors[i]->getOutputs().front(), processors[i + 1]->getInputs().front());
+
+    return std::make_shared<Processors>(processors.begin(), processors.end());
+}
+
+}
+
+TEST(Executor, RunsAConnectedPipeline)
+{
+    auto header = makeHeader();
+    auto source = std::make_shared<SourceFromSingleChunk>(header, makeChunk(1));
+    auto sink = std::make_shared<NullSink>(header);
+
+    auto processors = chain({source, sink});
+    Executor executor(processors, nullptr);
+    executor.execute(1, false);
+}
+
+#ifndef DEBUG_OR_SANITIZER_BUILD
+TEST(Executor, PortsNotConnected)
+{
+    auto header = makeHeader();
+    auto source = std::make_shared<SourceFromSingleChunk>(header, makeChunk(1));
+    auto sink = std::make_shared<NullSink>(header);
+
+    auto processors = std::make_shared<Processors>(Processors{source, sink});
+
+    try
+    {
+        Executor executor(processors, nullptr);
+        executor.execute(1, false);
+        FAIL() << "Should have thrown.";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(ErrorCodes::LOGICAL_ERROR, e.code());
+        EXPECT_TRUE(e.displayText().contains("Port is not connected")) << e.displayText();
+    }
+}
+#endif
+
+namespace
+{
+
+struct MalformedGraph
+{
+    std::shared_ptr<Processors> processors;
+    /// Deliberately not in `processors`, but it must outlive the construction: the message dereferences it.
+    ProcessorPtr omitted_sink;
+    String source_description;
+    String expected_message;
+};
+
+MalformedGraph makeGraphWithOmittedSink()
+{
+    auto header = makeHeader();
+    auto source = std::make_shared<SourceFromSingleChunk>(header, makeChunk(1));
+    auto sink = std::make_shared<NullSink>(header);
+    connect(source->getPort(), sink->getPort());
+
+    MalformedGraph graph;
+    graph.source_description = describeProcessor(*source);
+    graph.expected_message = fmt::format(
+        "Processor {} was found as output for processor {}, but not found in list of processors",
+        describeProcessor(*sink),
+        graph.source_description);
+    graph.processors = std::make_shared<Processors>(Processors{source});
+    graph.omitted_sink = std::move(sink);
+    return graph;
+}
+
+}
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+
+TEST(ExecutorDeathTest, MissingNeighbourIdentifiesBothEndpoints)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    auto graph = makeGraphWithOmittedSink();
+
+    const String expected_pattern
+        = "Processor NullSink_.* at 0x.* was found as output for processor "
+          "SourceFromSingleChunk_.* at 0x.*, but not found in list of processors";
+
+    EXPECT_DEATH(
+        {
+            Executor executor(graph.processors, nullptr);
+            executor.execute(1, false);
+        },
+        expected_pattern);
+}
+
+#else
+
+TEST(Executor, MissingNeighbourIdentifiesBothEndpointsAndAppendsTheDump)
+{
+    auto graph = makeGraphWithOmittedSink();
+
+    try
+    {
+        Executor executor(graph.processors, nullptr);
+        executor.execute(1, false);
+        FAIL() << "Expected a LOGICAL_ERROR for the processor missing from the list of processors.";
+    }
+    catch (const Exception & e)
+    {
+        const auto & message = e.message();
+        const auto exception_pos = message.find(graph.expected_message);
+        ASSERT_NE(exception_pos, std::string::npos) << message;
+        ASSERT_NE(message.find("Query pipeline:"), std::string::npos) << message;
+        ASSERT_NE(message.find(graph.source_description, exception_pos + graph.expected_message.size()), std::string::npos) << message;
+    }
+}
+
+#endif
+
+TEST(Executor, UpdatePipeline)
+{
+    auto header = makeHeader();
+    constexpr size_t pulls = 3;
+
+    auto coordinator = std::make_shared<DynamicSourceCoordinator>(header);
+    std::optional<Executor> executor;
+    auto sink = std::make_shared<CollectingSink>(header, pulls, [&] { executor->cancel(IProcessor::CancelReason::CancelledByUser); });
+
+    auto processors = chain({coordinator, sink});
+    executor.emplace(processors, nullptr);
+    executor->execute(1, false);
+
+    EXPECT_EQ(sink->values, (std::vector<UInt8>{0, 1, 2}));
+
+    /// One upstream per pull, no extras.
+    EXPECT_EQ(coordinator->totalSourcesCreated(), pulls);
+
+    /// All but the last upstream have been removed and destroyed.
+    for (size_t i = 0; i + 1 < pulls; ++i)
+        EXPECT_TRUE(coordinator->getSourceWeak(i).expired()) << "source #" << i;
+
+    /// Last source is still in use.
+    EXPECT_FALSE(coordinator->getSourceWeak(pulls - 1).expired()) << "last source";
+
+    /// Input slot was reused, not grown.
+    EXPECT_EQ(coordinator->getInputs().size(), 1u);
+    EXPECT_EQ(coordinator->getOutputs().size(), 1u);
+}
+
+TEST(Executor, UpdatePipelineMultipleCoordinatorsMultithreaded)
+{
+    constexpr size_t num_streams = 16;
+    constexpr size_t total_pulls = 1000;
+    auto header = makeHeader();
+
+    std::vector<std::shared_ptr<DynamicSourceCoordinator>> coordinators;
+    auto resize = std::make_shared<ResizeProcessor>(header, num_streams, 1);
+    std::optional<Executor> executor;
+    auto sink = std::make_shared<CollectingSink>(header, total_pulls, [&] { executor->cancel(IProcessor::CancelReason::CancelledByUser); });
+
+    Processors processors;
+    for (auto & input : resize->getInputs())
+    {
+        auto coordinator = std::make_shared<DynamicSourceCoordinator>(header);
+        connect(coordinator->getOutputs().front(), input);
+        coordinators.push_back(coordinator);
+        processors.push_back(coordinator);
+    }
+    connect(resize->getOutputs().front(), sink->getInputs().front());
+    processors.push_back(resize);
+    processors.push_back(sink);
+
+    auto processors_ptr = std::make_shared<Processors>(std::move(processors));
+    executor.emplace(processors_ptr, nullptr);
+    executor->execute(num_streams, false);
+
+    EXPECT_EQ(sink->pulled, total_pulls);
+
+    /// Every pulled chunk came from exactly one cycle of some coordinator.
+    size_t produced = 0;
+    for (const auto & coordinator : coordinators)
+    {
+        produced += coordinator->totalSourcesCreated();
+        EXPECT_EQ(coordinator->getInputs().size(), 1u);
+        EXPECT_EQ(coordinator->getOutputs().size(), 1u);
+
+        /// At most one source (the currently-live one) is still alive per coordinator.
+        size_t alive = 0;
+        for (size_t i = 0; i < coordinator->totalSourcesCreated(); ++i)
+            if (!coordinator->getSourceWeak(i).expired())
+                ++alive;
+        EXPECT_LE(alive, 1u);
+    }
+    EXPECT_GE(produced, total_pulls);
+}
+
+TEST(Executor, UpdatePipelineFanInRemovalNoUseAfterFree)
+{
+    auto header = makeHeader();
+    auto coordinator = std::make_shared<MultiInputRemovingCoordinator>(header);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    auto processors = chain({coordinator, sink});
+    Executor executor(processors, nullptr);
+    executor.execute(1, false);
+
+    EXPECT_TRUE(sink->values.empty());
+}
+
+TEST(Executor, UpdatePipelineDeferredRemovalOfUnfinishedProcessors)
+{
+    auto header = makeHeader();
+    auto coordinator = std::make_shared<BatchCyclingCoordinator>(header, /*total_batches=*/5);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    auto processors = chain({coordinator, sink});
+    Executor executor(processors, nullptr);
+    executor.execute(1, false);
+
+    EXPECT_EQ(sink->values, (std::vector<UInt8>{1, 2, 3, 4}));
+
+    for (const auto & weak : coordinator->batchHistory())
+        EXPECT_TRUE(weak.expired());
+
+    EXPECT_EQ(coordinator->getInputs().size(), 1u);
+}
+
+TEST(Executor, CancelInsidePrepareStopsBeforeTheUpdate)
+{
+    auto header = makeHeader();
+    auto coordinator = std::make_shared<DynamicSourceCoordinator>(header);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    auto processors = chain({coordinator, sink});
+    Executor executor(processors, nullptr);
+
+    /// Cancel from inside `prepare`, right before the cycle that would retire the first source.
+    coordinator->setBeforeRetireHook([&] { executor.cancel(IProcessor::CancelReason::CancelledByUser); });
+    executor.execute(1, false);
+
+    EXPECT_EQ(sink->values, (std::vector<UInt8>{0}));
+    EXPECT_EQ(coordinator->totalSourcesCreated(), 1u);
+    EXPECT_TRUE(coordinator->isCancelled());
+    EXPECT_FALSE(coordinator->getSourceWeak(0).expired());
+}
+
+TEST(Executor, CancelFromAnotherThreadStopsTheExecution)
+{
+    auto header = makeHeader();
+    auto source = std::make_shared<EndlessSource>(header);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    auto processors = chain({source, sink});
+    Executor executor(processors, nullptr);
+
+    std::thread runner([&] { executor.execute(2, false); });
+
+    while (sink->pulled == 0)
+        std::this_thread::yield();
+
+    executor.cancel(IProcessor::CancelReason::CancelledByUser);
+    runner.join();
+
+    EXPECT_TRUE(source->isCancelled());
+    EXPECT_TRUE(sink->isCancelled());
+}
+
+TEST(Executor, ExceptionInWorkIsRethrown)
+{
+    auto header = makeHeader();
+    auto source = std::make_shared<ThrowingSource>(header);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    auto processors = chain({source, sink});
+    Executor executor(processors, nullptr);
+
+    try
+    {
+        executor.execute(2, false);
+        FAIL() << "execute must throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(ErrorCodes::BAD_ARGUMENTS, e.code());
+        EXPECT_TRUE(e.message().contains("While executing ThrowingSource")) << e.message();
+    }
+
+    EXPECT_TRUE(sink->isCancelled());
+}
+
+TEST(Executor, TimeoutCancelsAndThrows)
+{
+    auto header = makeHeader();
+    auto source = std::make_shared<EndlessSource>(header);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    auto processors = chain({source, sink});
+    Executor executor(processors, makeQueryStatus(/*max_execution_time_seconds=*/1));
+
+    try
+    {
+        executor.execute(2, false);
+        FAIL() << "execute must throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+
+    EXPECT_TRUE(source->isCancelled());
+    EXPECT_GT(sink->pulled, 0u);
+}
+
+TEST(Executor, ExecuteStepYieldsAndFinishes)
+{
+    auto header = makeHeader();
+    auto source = std::make_shared<ValuesSource>(header, 3);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    auto processors = chain({source, sink});
+    Executor executor(processors, nullptr);
+
+    std::atomic_bool yield = true;
+    EXPECT_TRUE(executor.executeUntil(&yield));
+    EXPECT_LE(sink->values.size(), 1u);
+
+    EXPECT_TRUE(executor.executeUntil(&yield));
+    EXPECT_LE(sink->values.size(), 1u);
+
+    yield = false;
+    EXPECT_FALSE(executor.executeUntil(&yield));
+    EXPECT_EQ(sink->values, (std::vector<UInt8>{0, 1, 2}));
+}
