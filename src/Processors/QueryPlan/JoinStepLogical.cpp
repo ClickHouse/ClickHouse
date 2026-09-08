@@ -1637,15 +1637,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// Evaluating `toNullable(x)` on the right input would make the hash join store a full `Nullable` copy
     /// of the key next to the key itself. The hash join can instead restore the key from the matched left
     /// key, with NULL for an unmatched left row (see `TableJoin::getRequiredRightKeys`), so the alias is
-    /// kept as the join output and only the plain key is handed to the right side. The merge joins emit
-    /// a stored key as is, so this needs the join to be resolved within the hash family.
+    /// kept as the join output and only the plain key is handed to the right side. `HashJoin` and
+    /// `MergeJoin` restore keys this way; the full sorting merge join emits a stored key as is.
     const bool can_restore_right_keys = !prepared_join_storage && !ie_join_description && !is_disjunctive_condition
         && table_join_clauses.size() == 1
         && join_operator.strictness != JoinStrictness::Asof
         && isLeftOrFull(join_operator.kind)
-        && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::AUTO)
-        && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARTIAL_MERGE)
-        && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PREFER_PARTIAL_MERGE)
         && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE)
         && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
 

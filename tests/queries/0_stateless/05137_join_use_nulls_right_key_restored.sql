@@ -47,10 +47,28 @@ SELECT l.k, r.k, r.w FROM l LEFT JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_
 SELECT l.k, r.k, r.w FROM l FULL JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 4;
 SELECT '-- spilling';
 SELECT l.k, r.k, r.w FROM l LEFT JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 1;
-SELECT '-- algorithms that store the key';
-SELECT l.k, r.k, r.w FROM l LEFT JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';
+SELECT '-- partial_merge';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN header = 1
+    SELECT r.k, sum(l.v) FROM l LEFT JOIN r ON l.k = r.k GROUP BY r.k
+    SETTINGS explain_query_plan_default = 'legacy', join_algorithm = 'partial_merge'
+) WHERE explain LIKE '%Right Pre Join Actions%' OR explain LIKE '%__table2.k%';
 SELECT l.k, r.k, r.w FROM l LEFT JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+SELECT l.k, r.k, r.w FROM l LEFT ANY JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+SELECT l.k, r.k, r.w FROM l FULL JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+SELECT l.k, r.k FROM l LEFT JOIN (SELECT toLowCardinality(k) AS k FROM r) AS r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+SELECT toTypeName(r.k) FROM l LEFT JOIN (SELECT toLowCardinality(k) AS k FROM r) AS r ON l.k = r.k LIMIT 1 SETTINGS join_algorithm = 'partial_merge';
+SELECT '-- auto, switched to partial_merge';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN header = 1
+    SELECT r.k, sum(l.v) FROM l LEFT JOIN r ON l.k = r.k GROUP BY r.k
+    SETTINGS explain_query_plan_default = 'legacy', join_algorithm = 'auto'
+) WHERE explain LIKE '%Right Pre Join Actions%' OR explain LIKE '%__table2.k%';
 SELECT l.k, r.k, r.w FROM l LEFT JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'auto', max_rows_in_join = 2, join_overflow_mode = 'break';
+SELECT l.k, r.k, r.w FROM l FULL JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'auto', max_rows_in_join = 2, join_overflow_mode = 'break';
+SELECT l.k, r.k FROM l LEFT JOIN (SELECT toLowCardinality(k) AS k FROM r) AS r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'auto', max_rows_in_join = 2, join_overflow_mode = 'break';
+SELECT '-- full_sorting_merge stores the key';
+SELECT l.k, r.k, r.w FROM l LEFT JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';
 SELECT '-- LowCardinality key';
 SELECT l.k, r.k FROM l LEFT JOIN (SELECT toLowCardinality(k) AS k FROM r) AS r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'hash';
 SELECT toTypeName(r.k) FROM l LEFT JOIN (SELECT toLowCardinality(k) AS k FROM r) AS r ON l.k = r.k LIMIT 1 SETTINGS join_algorithm = 'hash';

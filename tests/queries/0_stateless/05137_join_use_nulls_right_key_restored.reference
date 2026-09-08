@@ -93,7 +93,46 @@ c	c	30
 c	c	30
 c	c	31
 c	c	31
--- algorithms that store the key
+-- partial_merge
+Header: __table2.k Nullable(String)
+Header: __table2.k Nullable(String)
+__table2.k Nullable(String)
+__table2.k Nullable(String)
+Expression (Right Pre Join Actions)
+Header: __table2.k String
+Header: __table2.k String
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+a	a
+b	\N
+c	c
+c	c
+c	c
+c	c
+LowCardinality(Nullable(String))
+-- auto, switched to partial_merge
+Header: __table2.k Nullable(String)
+Header: __table2.k Nullable(String)
+__table2.k Nullable(String)
+__table2.k Nullable(String)
+Expression (Right Pre Join Actions)
+Header: __table2.k String
+Header: __table2.k String
 a	a	10
 b	\N	\N
 c	c	30
@@ -106,6 +145,14 @@ c	c	30
 c	c	30
 c	c	31
 c	c	31
+\N	d	40
+a	a
+b	\N
+c	c
+c	c
+c	c
+c	c
+-- full_sorting_merge stores the key
 a	a	10
 b	\N	\N
 c	c	30

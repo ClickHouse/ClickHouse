@@ -671,9 +671,13 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
             lowcard_right_keys.push_back(right_key);
     }
 
+    /// A required key may be asked for as `Nullable` while it is stored plain (see
+    /// `TableJoin::getRequiredRightKeys`); `copyRightRange` fills such a column from the stored one.
+    std::vector<String> required_right_keys_sources;
+    const Block required_right_keys_block = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
     for (const auto & column : right_table_keys)
-        if (required_right_keys.contains(column.name))
-            right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
+        if (const auto * required_key = required_right_keys_block.findByName(column.name))
+            right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, required_key->type, column.name});
 
     JoinCommon::createMissedColumns(right_columns_to_add);
 
