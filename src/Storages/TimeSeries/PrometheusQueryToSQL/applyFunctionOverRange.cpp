@@ -185,7 +185,8 @@ SQLQueryPiece applyFunctionOverRange(
     const Node * node,
     std::string_view function_name,
     std::vector<SQLQueryPiece> && arguments,
-    ConverterContext & context)
+    ConverterContext & context,
+    bool drop_stale_markers_from_result)
 {
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
@@ -360,7 +361,20 @@ SQLQueryPiece applyFunctionOverRange(
                 "arrayElement", std::move(aggregate_values), make_intrusive<ASTLiteral>(aggregation_grid_size)));
     }
 
-    builder.select_list.push_back(std::move(aggregate_values));
+    ASTPtr result_values = std::move(aggregate_values);
+
+    if (drop_stale_markers_from_result)
+    {
+        /// The grid of an instant selector is built from raw samples which still carry the Prometheus stale
+        /// markers, because a stale marker must hide the samples before it while `timeSeriesLastToGrid` picks
+        /// the last sample of every step. Once the grid is built the marker has done its job, so normalize it
+        /// to NULL here - this is the single place where a grid with stale markers is produced, so every
+        /// consumer of an instant vector (arithmetic, unary and comparison operators, functions, aggregations,
+        /// set operators, subqueries) sees an absent step instead of a `NaN` sample.
+        result_values = dropStaleMarkers(std::move(result_values));
+    }
+
+    builder.select_list.push_back(std::move(result_values));
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 

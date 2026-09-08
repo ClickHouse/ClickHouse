@@ -66,7 +66,12 @@ SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_
     auto instant_selector_text = instant_selector_node->toString(*context.promql_tree);
     auto range_selector = fromRangeSelector(
         instant_selector_text, instant_selector_node, /* filter_stale_markers = */ false, context);
-    return applyFunctionOverRange(instant_selector_node, "last_over_time", {std::move(range_selector)}, context);
+    return applyFunctionOverRange(
+        instant_selector_node,
+        "last_over_time",
+        {std::move(range_selector)},
+        context,
+        /* drop_stale_markers_from_result = */ true);
 }
 
 
