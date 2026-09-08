@@ -126,8 +126,7 @@
             "ko/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
             "ko/products/cloud/reference/security/console-roles",
-            "ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
-            "ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+            "ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles"
           ]
         },
         {
