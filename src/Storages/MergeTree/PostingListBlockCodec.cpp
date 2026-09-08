@@ -95,7 +95,7 @@ namespace
     };
 
     /// One PForDelta block over gaps `SegmentedPostingListCodec` already computed, hence `Delta::none`.
-    /// TODO(ahmadov): Move delta-encoding from the framework into PforDelta.
+    /// TODO(ahmadov): move delta into PFor once `deltaApply` stops spilling, today `d0` is slower on exception blocks.
     class PForDeltaPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:

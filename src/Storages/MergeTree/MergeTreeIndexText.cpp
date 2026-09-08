@@ -96,6 +96,9 @@ namespace Setting
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
+static_assert(static_cast<UInt64>(IPostingListCodec::Type::None) == 0);
+static_assert(static_cast<UInt64>(IPostingListCodec::Type::Bitpacking) == 1);
+static_assert(static_cast<UInt64>(IPostingListCodec::Type::PForDelta) == 2);
 
 /// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
