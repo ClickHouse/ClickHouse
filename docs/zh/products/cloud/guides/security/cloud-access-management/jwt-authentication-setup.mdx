@@ -3,7 +3,7 @@ sidebarTitle: 'JWT 身份验证设置'
 slug: /cloud/security/jwt-authentication-setup
 title: 'JWT 身份验证设置'
 description: '如何通过控制台为 ClickHouse Cloud 服务配置服务级 JWT（JWKS）身份验证提供商'
-doc_type: '指南'
+doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', '身份验证', '身份提供商', 'RS256']
 ---
 
@@ -12,10 +12,6 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/zh/components/VersionBadge/VersionBadge.jsx";
-
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
 
 <VersionBadge minVersion="26.4" />
 
@@ -30,7 +26,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 您可以在 ClickHouse Cloud 控制台的 **设置 → 安全** 中，按服务自行配置这些 JWKS 提供商。
 
 <div id="before-you-begin">
-  ## 开始前准备
+  ## 开始前准备 {#before-you-begin}
 </div>
 
 要为服务配置 JWT 提供商，您需要：
@@ -44,9 +40,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
   基于 JWKS 的提供商接受 **RSA** 密钥，以及从 26.8 版本起接受 P-256、P-384 和 P-521 曲线上的 **EC** 密钥。JWKS 文档可以包含其他类型的密钥，但必须至少包含一个可用的密钥。
 </Note>
 
-<div id="how-it-works">
-  ## 工作原理
-</div>
+## 工作原理 {#how-it-works}
 
 客户端 (您的身份提供商或应用程序) 生成 JWT，并使用其**私钥**对其签名。标记必须符合预期的[标记格式](/zh/concepts/features/security/external-authenticators/jwt#token-claims)。随后，ClickHouse 会使用您 JWKS URL 上发布的**公钥**验证该标记：
 
@@ -57,7 +51,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 添加或更新提供商时，ClickHouse 会验证并拉取 JWKS URL，因此会预先拒绝配置错误或无法访问的 URL。
 
 <div id="add-a-jwt-provider">
-  ## 添加 JWT 提供商
+  ## 添加 JWT 提供商 {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -93,7 +87,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 </Warning>
 
 <div id="limits">
-  ## 限制
+  ## 限制 {#limits}
 </div>
 
 * 每个服务最多可配置 **五个** JWT 提供商。
@@ -101,7 +95,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 * JWKS URL 必须是公网 HTTPS 端点。私网、内部或链路本地地址均会被拒绝。
 
 <div id="related">
-  ## 相关内容
+  ## 相关内容 {#related}
 </div>
 
 * [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt) — 标记声明、临时用户和客户端使用。

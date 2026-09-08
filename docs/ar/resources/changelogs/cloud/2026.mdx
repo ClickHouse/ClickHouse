@@ -12,12 +12,24 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 بالإضافة إلى سجل تغييرات ClickHouse Cloud هذا، يُرجى الاطلاع على صفحة [توافق Cloud](/ar/products/cloud/guides/cloud-compatibility).
 
+<Update label="8 سبتمبر 2026">
+  يجلب هذا الأسبوع تحسينات جاهزة للإنتاج في الأمان وتكامل البيانات إلى ClickHouse Cloud. أصبحت مصادقة JWT متاحة بشكل عام لخدمات Enterprise، وانتقل موصّل MySQL CDC الخاص بـ ClickPipes إلى مرحلة GA مع لقطات أسرع وإعدادات افتراضية أكثر أمانًا وobservability أفضل.
+
+  ### أصبحت مصادقة JWT لخدمات ClickHouse متاحة بشكل عام {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
+
+  يمكنك الآن المصادقة على خدمة ClickHouse الخاصة بك باستخدام رموز JWT الصادرة من مزوّد الهوية الخاص بك، بما في ذلك Okta أو Auth0 أو Microsoft Entra ID أو Keycloak أو أي مزوّد ينشر نقطة نهاية JWKS. تتيح لك مصادقة JWT إدارة الوصول من خلال مزوّد الهوية الحالي لديك، مع انتهاء صلاحية للرموز تفرضه السياسات — مما يلغي الحاجة إلى كلمات مرور ClickHouse منفصلة وإلى أسرار مشتركة يجب تدويرها. تتوفر هذه الميزة في خطة Enterprise للخدمات التي تعمل بإصدار ClickHouse 26.4 أو أحدث. اضبطها من **Service → Settings → Security → JWT authentication**. راجع [دليل إعداد مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+
+  ### أصبح موصّل MySQL CDC الخاص بـ ClickPipes متاحًا بشكل عام {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
+
+  أصبح موصّل MySQL CDC الخاص بـ ClickPipes جاهزًا للإنتاج الآن. يضيف هذا الإصدار أخذ لقطات متوازية تلقائيًا، مما يوفّر عمليات تحميل أولي أسرع بما يصل إلى 27 مرة، إلى جانب إعدادات افتراضية أكثر أمانًا لعمليات النشر في الإنتاج، بما في ذلك النسخ المتماثل المعتمد على GTID وفترة استبقاء binlog لا تقل عن 72 ساعة. كما تُسهّل المقاييس الجديدة لاستخدام الموارد والتأخر مراقبة خطوط الأنابيب. والموصّل متاح لجميع عملاء ClickHouse Cloud من خلال ClickPipes UI وOpenAPI وTerraform. راجع [وثائق MySQL ClickPipes](/ar/integrations/clickpipes/mysql) و[إعلان إصدار GA](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available).
+</Update>
+
 <Update label="31 أغسطس 2026">
   يوسّع هذا الأسبوع نطاق انتشار ClickHouse Cloud عالميًا بإضافة مناطق AWS جديدة في تايبيه وماليزيا، ويضيف دعم Global Access لـ Private Service Connect، ويُسهّل على مستخدمي SAML التنقل بين المؤسسات.
 
   ### مناطق AWS جديدة: تايبيه وماليزيا {#new-aws-regions-taipei-and-malaysia}
 
-  أصبح ClickHouse Cloud متاحًا الآن في AWS Taipei (`ap-east-2`) وAWS Malaysia (`ap-southeast-5`). أُعدّت كلتاهما كمناطق خاصة مع دعم ClickPipes. راجع [وثائق المناطق المدعومة](/ar/cloud/reference/supported-regions) و[اعتبارات المنطقة الخاصة](/ar/cloud/reference/supported-regions#private-regions) للتفاصيل.
+  أصبح ClickHouse Cloud متاحًا الآن في AWS Taipei (`ap-east-2`) وAWS Malaysia (`ap-southeast-5`). أُعدّت كلتاهما كمناطق خاصة مع دعم ClickPipes. راجع [وثائق المناطق المدعومة](/ar/cloud/reference/supported-regions) و[اعتبارات المناطق الخاصة](/ar/cloud/reference/supported-regions#private-regions) للتفاصيل.
 
   ### ClickPipes: يدعم Private Service Connect ميزة Global Access {#private-service-connect-supports-global-access}
 

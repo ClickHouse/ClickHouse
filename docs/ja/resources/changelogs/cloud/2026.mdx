@@ -12,7 +12,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 この ClickHouse Cloud changelog に加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility) ページもご覧ください。
 
-<Update label="2026年8月31日">
+<Update label="2026-09-08">
+  今週は、ClickHouse Cloud に本番環境で利用できるセキュリティおよびデータ統合の改善が加わりました。JWT authentication が Enterprise サービスで一般提供となり、ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが GA に到達し、スナップショットの高速化、より安全なデフォルト、オブザーバビリティの向上が実現しました。
+
+  ### ClickHouse サービス向けの JWT authentication が一般提供になりました {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
+
+  Okta、Auth0、Microsoft Entra ID、Keycloak、あるいは JWKS endpoint を公開している任意の provider を含む、独自の identity provider が発行した JWT を使用して ClickHouse service に認証できるようになりました。JWT authentication を使用すると、既存の identity provider を通じてアクセスを管理でき、ポリシーによってトークンの有効期限が強制されます。これにより、ClickHouse の個別のパスワードやローテーションが必要な共有シークレットが不要になります。この機能は、ClickHouse 26.4 以降を実行しているサービスの Enterprise plan で利用できます。**Service → Settings → Security → JWT authentication** から設定してください。[JWT authentication のセットアップガイド](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)をご覧ください。
+
+  ### ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが一般提供になりました {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
+
+  ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが本番環境で利用可能になりました。このリリースでは自動的な parallel snapshot が追加され、初期ロードが最大 27 倍高速化されます。あわせて、GTID ベースのレプリケーションや最低 72 時間の binlog retention period など、本番デプロイメントに適したより安全なデフォルトが導入されました。新しいリソース使用率およびラグのメトリクスにより、パイプラインの監視も容易になります。このコネクタは、ClickPipes UI、OpenAPI、Terraform を通じてすべての ClickHouse Cloud のお客様が利用できます。[MySQL ClickPipes のドキュメント](/ja/integrations/clickpipes/mysql)および [GA リリースのお知らせ](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available)をご覧ください。
+</Update>
+
+<Update label="2026-08-31">
   今週は、台北とマレーシアに新たな AWS リージョンを追加して ClickHouse Cloud のグローバルな対応範囲を拡大し、Private Service Connect の Global Access をサポートするとともに、SAML ユーザーが組織間を移動しやすくしました。
 
   ### 新しい AWS リージョン：台北とマレーシア {#new-aws-regions-taipei-and-malaysia}

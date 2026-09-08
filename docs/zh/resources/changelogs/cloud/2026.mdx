@@ -12,12 +12,24 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 除本 ClickHouse Cloud 更新日志外，请参阅 [Cloud Compatibility](/zh/products/cloud/guides/cloud-compatibility) 页面。
 
+<Update label="2026 年 9 月 8 日">
+  本周为 ClickHouse Cloud 带来了可用于生产环境的安全与数据集成改进。JWT 身份验证现已面向 Enterprise 服务正式可用，ClickPipes 的 MySQL CDC 连接器也已达到 GA 阶段，具备更快的快照速度、更安全的默认设置以及更好的可观测性。
+
+  ### ClickHouse 服务的 JWT 身份验证现已正式可用 {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
+
+  现在，你可以使用由自有身份提供商签发的 JWT 对 ClickHouse 服务进行身份验证，支持 Okta、Auth0、Microsoft Entra ID、Keycloak，以及任何提供 JWKS endpoint 的提供商。JWT 身份验证让你可以通过现有身份提供商管理访问权限，并由策略强制执行令牌过期时间——无需再单独维护和轮换 ClickHouse 密码与共享密钥。该功能适用于运行 ClickHouse 26.4 及以上版本服务的 Enterprise 计划。可在 **Service → Settings → Security → JWT authentication** 中进行配置。请参阅 [JWT 身份验证设置指南](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。
+
+  ### ClickPipes 的 MySQL CDC 连接器现已正式可用 {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
+
+  ClickPipes 的 MySQL CDC 连接器现已可用于生产环境。本次发布新增了自动并行快照功能，使初始加载速度最高提升 27 倍，同时为生产部署提供了更安全的默认设置，包括基于 GTID 的复制和至少 72 小时的 binlog 保留期。新增的资源利用率和延迟指标也让管道监控更加轻松。所有 ClickHouse Cloud 客户均可通过 ClickPipes UI、OpenAPI 和 Terraform 使用该连接器。请参阅 [MySQL ClickPipes 文档](/zh/integrations/clickpipes/mysql)和 [GA 发布公告](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available)。
+</Update>
+
 <Update label="2026 年 8 月 31 日">
   本周，ClickHouse Cloud 通过在台北和马来西亚新增 AWS 区域，进一步扩大了全球覆盖范围；同时为 Private Service Connect 新增 Global Access 支持，并让 SAML 用户能更轻松地在组织之间切换。
 
   ### 新增 AWS 区域：台北和马来西亚 {#new-aws-regions-taipei-and-malaysia}
 
-  ClickHouse Cloud 现已在 AWS 台北 (`ap-east-2`) 和 AWS 马来西亚 (`ap-southeast-5`) 推出。这两个区域均设置为支持 ClickPipes 的私有区域。详情请参阅[支持的区域文档](/zh/cloud/reference/supported-regions)和[私有区域注意事项](/zh/cloud/reference/supported-regions#private-regions)。
+  ClickHouse Cloud 现已在 AWS 台北 (`ap-east-2`) 和 AWS 马来西亚 (`ap-southeast-5`) 推出。这两个区域均设置为支持 ClickPipes 的私有区域。详情请参阅[支持区域文档](/zh/cloud/reference/supported-regions)和[私有区域注意事项](/zh/cloud/reference/supported-regions#private-regions)。
 
   ### ClickPipes：Private Service Connect 支持 Global Access {#private-service-connect-supports-global-access}
 

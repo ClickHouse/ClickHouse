@@ -12,6 +12,18 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 ClickHouse Cloud 변경 로그와 함께 [Cloud Compatibility](/ko/products/cloud/guides/cloud-compatibility) 페이지도 참조하십시오.
 
+<Update label="2026-09-08">
+  이번 주에는 ClickHouse Cloud에 프로덕션 환경에 바로 사용할 수 있는 보안 및 데이터 통합 개선 사항이 추가되었습니다. JWT authentication이 Enterprise 서비스에서 일반 제공되며, ClickPipes용 MySQL CDC 커넥터는 더 빠른 스냅샷, 더 안전한 기본값, 향상된 관측성과 함께 일반 제공 단계로 전환되었습니다.
+
+  ### ClickHouse 서비스용 JWT authentication 일반 제공 시작 {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
+
+  이제 Okta, Auth0, Microsoft Entra ID, Keycloak 등 JWKS 엔드포인트를 게시하는 모든 프로바이더를 포함해, 사용자가 직접 운영하는 IdP(Identity Provider)에서 발급한 JWT로 ClickHouse 서비스에 인증할 수 있습니다. JWT authentication을 사용하면 기존 IdP(Identity Provider)를 통해 액세스를 관리하고 정책으로 토큰 만료를 적용할 수 있어, 별도의 ClickHouse 비밀번호나 교체가 필요한 공유 시크릿을 없앨 수 있습니다. 이 기능은 ClickHouse 26.4 이상을 실행하는 서비스에서 Enterprise plan으로 사용할 수 있습니다. **Service → Settings → Security → JWT authentication**에서 구성하십시오. [JWT authentication 설정 가이드](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)를 참조하십시오.
+
+  ### ClickPipes용 MySQL CDC 커넥터 일반 제공 시작 {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
+
+  ClickPipes용 MySQL CDC 커넥터가 이제 프로덕션 환경에서 사용할 수 있습니다. 이번 릴리스에서는 자동 병렬 스냅샷이 추가되어 초기 적재 속도가 최대 27배 빨라졌으며, GTID 기반 복제와 최소 72시간의 binlog 보존 기간을 포함해 프로덕션 배포에 더 안전한 기본값이 적용되었습니다. 또한 새로운 리소스 사용량 및 지연 지표를 통해 파이프라인을 더 쉽게 모니터링할 수 있습니다. 이 커넥터는 ClickPipes UI, OpenAPI, Terraform을 통해 모든 ClickHouse Cloud 고객에게 제공됩니다. [MySQL ClickPipes 문서](/ko/integrations/clickpipes/mysql)와 [일반 제공 릴리스 안내](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available)를 참조하십시오.
+</Update>
+
 <Update label="2026-08-31">
   이번 주에는 타이베이와 말레이시아의 새로운 AWS 리전으로 ClickHouse Cloud의 글로벌 지원 범위를 확장하고, Private Service Connect에 Global Access 지원을 추가했으며, SAML 사용자가 조직 간에 더 쉽게 전환할 수 있도록 했습니다.
 

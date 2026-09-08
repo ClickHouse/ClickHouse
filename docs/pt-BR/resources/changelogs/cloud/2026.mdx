@@ -12,6 +12,18 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Além deste changelog do ClickHouse Cloud, consulte a página de [Compatibilidade da Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
 
+<Update label="2026-09-08">
+  Esta semana traz melhorias de segurança e de integração de dados prontas para produção no ClickHouse Cloud. A autenticação JWT agora está disponível de forma geral para serviços Enterprise, e o conector MySQL CDC do ClickPipes chegou ao estágio GA, com snapshots mais rápidos, padrões mais seguros e melhor observabilidade.
+
+  ### A autenticação JWT para serviços ClickHouse agora está disponível de forma geral {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
+
+  Agora você pode se autenticar no seu serviço ClickHouse usando JWTs emitidos pelo seu próprio identity provider, incluindo Okta, Auth0, Microsoft Entra ID, Keycloak ou qualquer provider que publique um JWKS endpoint. A autenticação JWT permite governar o acesso por meio do seu identity provider existente, com expiração de token aplicada por política — eliminando senhas separadas do ClickHouse e segredos compartilhados que precisam ser rotacionados. Este recurso está disponível no Enterprise plan para serviços que executam o ClickHouse 26.4 ou posterior. Configure-o em **Service → Settings → Security → JWT authentication**. Consulte o [guia de configuração da autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+
+  ### O conector MySQL CDC do ClickPipes agora está disponível de forma geral {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
+
+  O conector MySQL CDC do ClickPipes agora está pronto para produção. Este lançamento adiciona snapshot paralelo automático, com carregamentos iniciais até 27× mais rápidos, além de padrões mais seguros para implantações em produção, incluindo replicação baseada em GTID e um binlog retention period mínimo de 72 horas. Novas métricas de utilização de recursos e de lag também facilitam o monitoramento dos pipelines. O connector está disponível para todos os clientes do ClickHouse Cloud por meio da ClickPipes UI, da OpenAPI e do Terraform. Consulte a [documentação do ClickPipes do MySQL](/pt-BR/integrations/clickpipes/mysql) e o [anúncio do lançamento GA](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available).
+</Update>
+
 <Update label="2026-08-31">
   Esta semana, o ClickHouse Cloud amplia seu alcance global com novas regiões da AWS em Taipei e na Malásia, adiciona suporte ao Global Access para o Private Service Connect e facilita a alternância entre organizações para usuários SAML.
 

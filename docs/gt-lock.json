@@ -7,36 +7,36 @@
       "versionId": "a372f4e7d54d9b799344f85fa77a6c684c792c8951b74039b53becd67db973b4",
       "translations": {
         "ja": {
-          "updatedAt": "2026-09-08T14:36:53.221Z",
+          "updatedAt": "2026-09-08T16:19:57.058Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-08T14:36:54.064Z",
+          "updatedAt": "2026-09-08T16:19:57.803Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-08T14:36:54.239Z",
+          "updatedAt": "2026-09-08T16:19:57.974Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-08T14:36:52.942Z",
+          "updatedAt": "2026-09-08T16:19:56.862Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-08T14:36:54.439Z",
+          "updatedAt": "2026-09-08T16:19:58.151Z",
           "fileName": "docs.json",
           "postProcessHash": "6b330cbcbe0bc8cd26bf5feaa94d0adbddda526e306877dc11c7354287fb0d5a"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-08T14:36:53.676Z",
+          "updatedAt": "2026-09-08T16:19:57.450Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-08T14:36:53.453Z",
+          "updatedAt": "2026-09-08T16:19:57.272Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-08T14:36:53.862Z",
+          "updatedAt": "2026-09-08T16:19:57.620Z",
           "fileName": "docs.json"
         }
       },
@@ -69415,47 +69415,47 @@
     },
     {
       "fileId": "e54116367db0fa6f073e5c719d12585d4886ddb55636538dd5fcad6b994d3300",
-      "versionId": "fbc3db6c8ed7f73a367bfd08ba1394bc6d8854579228b4c9171870d22292f375",
+      "versionId": "bfd67c5556ff951dd4baf20448b116c733b8d2f41d9c1476ca7df526ee739dea",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-03T12:05:24.475Z",
+          "updatedAt": "2026-09-08T16:20:03.607Z",
           "fileName": "fr/resources/changelogs/cloud/2026.mdx",
-          "postProcessHash": "1b9680f1dc5c4f0b64516cedfd920de198f80c19bb50b8dcc3d431e5aa461fd4"
-        },
-        "zh": {
-          "updatedAt": "2026-09-03T12:05:24.476Z",
-          "fileName": "zh/resources/changelogs/cloud/2026.mdx",
-          "postProcessHash": "8e7d647d0fbcd737fa15c60dfdb704ceb874aa226acf49c0650203dec400d5d2"
-        },
-        "es": {
-          "updatedAt": "2026-09-03T12:05:24.476Z",
-          "fileName": "es/resources/changelogs/cloud/2026.mdx",
-          "postProcessHash": "38d6f44060d12b90632abd37041848dea02201ae7d80c724a20442c364681a5c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-03T12:05:24.477Z",
-          "fileName": "pt-BR/resources/changelogs/cloud/2026.mdx",
-          "postProcessHash": "bc991e8acb99faac7e9097dfe66e7d0a1982f98b7c31935a1c6bf69a8e195865"
+          "postProcessHash": "a59bd3e3430398a635b6b8c65a4de621b87a8229f5a14c847ff9fe78377cf777"
         },
         "ru": {
-          "updatedAt": "2026-09-03T12:05:24.477Z",
+          "updatedAt": "2026-09-08T16:20:03.607Z",
           "fileName": "ru/resources/changelogs/cloud/2026.mdx",
-          "postProcessHash": "2e42143a5d7e131d383e7f705bc7d2ff8c6b22ebc9f4180b63aa47101deee4f0"
+          "postProcessHash": "17def7c2c014112de616c125b6e7e63036f2ed11381582aa1c4428cf95d20b00"
         },
-        "ko": {
-          "updatedAt": "2026-09-03T12:05:24.478Z",
-          "fileName": "ko/resources/changelogs/cloud/2026.mdx",
-          "postProcessHash": "cc98eb08e4f4273461cc34c88f57dea140e20425e46d01010d8411b3a4ce4766"
-        },
-        "ar": {
-          "updatedAt": "2026-09-03T12:05:24.479Z",
-          "fileName": "ar/resources/changelogs/cloud/2026.mdx",
-          "postProcessHash": "42d1f1303f10f6f5086aa62adf529200b548bb72ac19653cd620b39318540e64"
+        "zh": {
+          "updatedAt": "2026-09-08T16:20:03.608Z",
+          "fileName": "zh/resources/changelogs/cloud/2026.mdx",
+          "postProcessHash": "1025946a4d0d0cb539e139c6eb34f2607cfb88f22080a146f26910fe7ef34a7a"
         },
         "ja": {
-          "updatedAt": "2026-09-03T12:05:24.479Z",
+          "updatedAt": "2026-09-08T16:20:03.609Z",
           "fileName": "ja/resources/changelogs/cloud/2026.mdx",
-          "postProcessHash": "6f447a3716189fd04ed5e1472be2567e58503e24d0f7a96e60c399ac5d78745d"
+          "postProcessHash": "7877d9eae9cd8fb609623c47fbc47d89f5c0b0eb60527eeb1518c6f915585360"
+        },
+        "es": {
+          "updatedAt": "2026-09-08T16:20:03.610Z",
+          "fileName": "es/resources/changelogs/cloud/2026.mdx",
+          "postProcessHash": "1c24b9b0f0e3eacbc50e08c004410ebafbe87031953bef067fc84d9166e3f533"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-08T16:20:03.611Z",
+          "fileName": "pt-BR/resources/changelogs/cloud/2026.mdx",
+          "postProcessHash": "1d658820e3066d31222bacb94be00044c1309c70ce2d8f9db39c5eb83380d1ee"
+        },
+        "ko": {
+          "updatedAt": "2026-09-08T16:20:03.611Z",
+          "fileName": "ko/resources/changelogs/cloud/2026.mdx",
+          "postProcessHash": "eb39a8ceaa996829372ac1d570a6bab6f97a40dd411be89c800e00530dabe1eb"
+        },
+        "ar": {
+          "updatedAt": "2026-09-08T16:20:03.612Z",
+          "fileName": "ar/resources/changelogs/cloud/2026.mdx",
+          "postProcessHash": "4cd28e6da861f4b91f0cc76aad0caafc85750e03e41d1af26ce9c3f58e6e6354"
         }
       },
       "fileName": "resources/changelogs/cloud/2026.mdx"
@@ -74106,47 +74106,47 @@
     },
     {
       "fileId": "810e929dfdb2aec4e14ed6044f290fce1f375d771610d942b2be171e2c37a420",
-      "versionId": "90cbc13c77adad35ab6a650a7bd382a0d498f517404b1f21f2bfcffabad3b039",
+      "versionId": "36a14bf1947baa3c813781f486734ac75e3bf1d3ae89ac355435d78371fabb94",
       "translations": {
-        "ja": {
-          "updatedAt": "2026-08-26T10:07:48.849Z",
-          "fileName": "ja/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "81406b11bc5a52e0799cfa2d1d2c00f92f0444cd57a73db810756fba5c5643d8"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T10:07:48.852Z",
-          "fileName": "fr/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "96531dfb6ecd55ce8fa0e87291e1d1be2a28264825963992da3b72c7e597b1c4"
-        },
         "ko": {
-          "updatedAt": "2026-08-26T10:07:48.858Z",
+          "updatedAt": "2026-09-08T16:20:03.601Z",
           "fileName": "ko/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "3b7b539dccbf8de6ab29c3da946044833db54c00724738eb5c7ba5837294957a"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T10:07:48.859Z",
-          "fileName": "pt-BR/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "43321589ab56d2cc3151e192898883b0fb3d1f9b61ffcf96e20fdf7f73e8f2df"
+          "postProcessHash": "59b52a2161ed642c02b8f377ccb4343f841d3e3803903caf8d8a5780fcce4e35"
         },
         "es": {
-          "updatedAt": "2026-08-26T10:07:48.860Z",
+          "updatedAt": "2026-09-08T16:20:03.602Z",
           "fileName": "es/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "aaf67b8bc3e6f4410820973b5e6dfb7d494ba085cc8b5235a3791080173547f8"
+          "postProcessHash": "14286493482e5732d8c8bb4674e6a3012806684a780a86185bf4a79a84608b7f"
         },
-        "ru": {
-          "updatedAt": "2026-08-26T10:07:48.863Z",
-          "fileName": "ru/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "0913cc2dcb640dfeec06401e475ec0e9ba9481cf29270f3dfac0255f138c60aa"
+        "fr": {
+          "updatedAt": "2026-09-08T16:20:03.602Z",
+          "fileName": "fr/concepts/features/security/external-authenticators/jwt.mdx",
+          "postProcessHash": "51113c945f5d4d8729b73b099f6f4b7670dac48283bcc15c5e394d08d93af143"
         },
         "zh": {
-          "updatedAt": "2026-08-26T10:07:48.864Z",
+          "updatedAt": "2026-09-08T16:20:03.603Z",
           "fileName": "zh/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "9064293131bc7cab435547090f5eef019b438838eefe3af798c5944c4c857526"
+          "postProcessHash": "1b05202fb9927f24b8a7bae0b8e21bca38f6507e18a50003fadf87972463190e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-08T16:20:03.604Z",
+          "fileName": "pt-BR/concepts/features/security/external-authenticators/jwt.mdx",
+          "postProcessHash": "6e50f80c1331e3af02baaa739554ccfedf5315a91d8a6c7fae5c8086ade37f45"
+        },
+        "ja": {
+          "updatedAt": "2026-09-08T16:20:03.604Z",
+          "fileName": "ja/concepts/features/security/external-authenticators/jwt.mdx",
+          "postProcessHash": "99e61ff750bcdc7fe278e3c0414ed642a84fbd536db0e6e66f08775ea3c0fc10"
+        },
+        "ru": {
+          "updatedAt": "2026-09-08T16:20:03.606Z",
+          "fileName": "ru/concepts/features/security/external-authenticators/jwt.mdx",
+          "postProcessHash": "ab7d51722caf3d87633d680c2df3f756c525e8644d6450fa3af2a50f5831e883"
         },
         "ar": {
-          "updatedAt": "2026-08-26T10:07:48.866Z",
+          "updatedAt": "2026-09-08T16:20:03.609Z",
           "fileName": "ar/concepts/features/security/external-authenticators/jwt.mdx",
-          "postProcessHash": "f2f9847e8c91efd87067eec2415f666fa636918cf4f4d049fad38b545b3e2b8e"
+          "postProcessHash": "569c872058797fec7d824c1bd3fc2bcac473862ddec209db002ce320291e4690"
         }
       },
       "fileName": "concepts/features/security/external-authenticators/jwt.mdx"
@@ -136495,47 +136495,47 @@
     },
     {
       "fileId": "6ffef4f84ad534f547a2b6f82754a46066eba5dcda1c2d67065d63531b54584b",
-      "versionId": "9102b73688b1f142ba41c67883ff4419e0500dadeaeaf4dce5bfd9a2164fe384",
+      "versionId": "4eaf4799a0a392a89fc76826edfe9fe2e6877c5910679762c27de51b7ded9b25",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T10:07:48.843Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "b617545fa6db4846da4b92e2be9d3e99176a4d8d61270c40f5b40bd72187ed3d"
+        "fr": {
+          "updatedAt": "2026-09-08T16:20:03.596Z",
+          "fileName": "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
+          "postProcessHash": "376d09ce5085979c156b19af70fd70bf38f6eead21fc3c8ba547ae6964c48713"
         },
         "ru": {
-          "updatedAt": "2026-08-26T10:07:48.845Z",
+          "updatedAt": "2026-09-08T16:20:03.597Z",
           "fileName": "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "e3818305c1a73fff997c9564babca783020475b8858af6aa3309f6f4af31fb5b"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T10:07:48.850Z",
-          "fileName": "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "838d4dbc3a184290c6a7b1c499b5c658433db675108a15b4a40cc6a68847fefa"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T10:07:48.854Z",
-          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "8a090619083d2e6c52c079d9254e2aa9b3aea6b1266508ced750f6323b7ac4d2"
+          "postProcessHash": "063702b9155e3eedd075d3fc39b9ee7e9dee510275e759aff46365a618d908a7"
         },
         "ar": {
-          "updatedAt": "2026-08-26T10:07:48.857Z",
+          "updatedAt": "2026-09-08T16:20:03.598Z",
           "fileName": "ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "3bf5a0125210b69a004bd49803475f05161f7bf2b6d2d156da59767fa3d415b6"
+          "postProcessHash": "23bb44b2eea0354b4038697000644c1785209ca7c330a40f0bc92ba7bbeb70de"
         },
         "zh": {
-          "updatedAt": "2026-08-26T10:07:48.860Z",
+          "updatedAt": "2026-09-08T16:20:03.599Z",
           "fileName": "zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "97597840a4bf362526eb04191acc92aa803b94a4fc64b991ab3334d5759dcd91"
+          "postProcessHash": "770d7c3d12c6353a3eee83916c34c20c4cc89569810f21aa1dfb2c6d4cb7888e"
+        },
+        "es": {
+          "updatedAt": "2026-09-08T16:20:03.599Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
+          "postProcessHash": "88ad3b505e2fc174c951cc4885029aaf288acfd86f97445fee14f884cb41552e"
         },
         "ja": {
-          "updatedAt": "2026-08-26T10:07:48.861Z",
+          "updatedAt": "2026-09-08T16:20:03.600Z",
           "fileName": "ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "58300d5dc72e6950ce26ec39601eed7de47bc710b7cb4ac121cb28b46dd1a7e9"
+          "postProcessHash": "a3ff2c8b8e3091fcdd14e58fc92fb533850dc2b7c32924932f1e1086ab310808"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-08T16:20:03.600Z",
+          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
+          "postProcessHash": "bf273faeba420d622966c369ecb93300e671c08fb014ca92f7c2752b21a4cb58"
         },
         "ko": {
-          "updatedAt": "2026-08-26T10:07:48.866Z",
+          "updatedAt": "2026-09-08T16:20:03.605Z",
           "fileName": "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx",
-          "postProcessHash": "71da0243cbe637261cd47a5799e5a2df66e6ec91fa5b1f794364d9d90fdfc2f4"
+          "postProcessHash": "429cb8bd3911cbbfa357b23b8fde46e0f50e60d45167aaf3bfa6f64c5e1581cc"
         }
       },
       "fileName": "products/cloud/guides/security/cloud-access-management/jwt-authentication-setup.mdx"
