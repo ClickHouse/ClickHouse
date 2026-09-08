@@ -86,10 +86,10 @@ curl http://127.0.0.1:9363/metrics
 
 ### المتطلبات الأساسية {#prerequisites}
 
-فعِّل الإعداد [`allow_experimental_time_series_table`](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) للمستخدم الذي يُنشئ الجدول ويصل إليه:
+فعِّل الإعداد `enable_time_series_table` للمستخدم الذي يُنشئ الجدول ويصل إليه:
 
 ```sql
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 ```
 
 أنشئ قاعدة بيانات وجدولًا من نوع `TimeSeries`:
@@ -99,7 +99,7 @@ CREATE DATABASE prometheus;
 CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-لطلبات واجهة برمجة تطبيقات HTTP، فعِّل `allow_experimental_time_series_table` في ملف تعريف مستخدم واجهة برمجة التطبيقات.
+لطلبات واجهة برمجة تطبيقات HTTP، فعِّل `enable_time_series_table` في ملف تعريف مستخدم واجهة برمجة التطبيقات.
 
 ### تهيئة واجهة برمجة تطبيقات Prometheus {#configure-prometheus-api}
 

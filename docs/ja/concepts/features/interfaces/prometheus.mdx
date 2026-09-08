@@ -86,10 +86,10 @@ ClickHouse は [`TimeSeries`](/ja/reference/engines/table-engines/integrations/t
 
 ### 前提条件 {#prerequisites}
 
-テーブルを作成しアクセスするユーザーに対して、[`allow_experimental_time_series_table`](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) 設定を有効にします。
+テーブルを作成しアクセスするユーザーに対して、`enable_time_series_table` 設定を有効にします。
 
 ```sql
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 ```
 
 データベースと `TimeSeries` テーブルを作成します。
@@ -99,7 +99,7 @@ CREATE DATABASE prometheus;
 CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-HTTP APIリクエストの場合は、APIユーザーのprofileで`allow_experimental_time_series_table`を有効にします。
+HTTP APIリクエストの場合は、APIユーザーのプロファイルで`enable_time_series_table`を有効にします。
 
 ### Prometheus API を設定する {#configure-prometheus-api}
 
