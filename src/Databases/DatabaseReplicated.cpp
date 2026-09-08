@@ -2379,10 +2379,10 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     if (!zookeeper)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "No ZooKeeper");
 
-    /// Stop the DDL worker before restoring metadata to prevent a race condition:
-    /// the old DDL worker may reconnect to ZooKeeper, read the intermediate state
-    /// (where table metadata has not been written yet), and mistakenly move local
-    /// tables to `_broken_replicated_tables`.
+    /// Stop this replica's DDL worker before the calls below re-initialize replication state:
+    /// its recovery reads `max_log_ptr_at_creation` and compares the Keeper metadata with the
+    /// local table set, which those calls rewrite, and a recovery running against a half-updated
+    /// view detaches local tables into `<db>_broken_replicated_tables`.
     {
         std::lock_guard lock{ddl_worker_mutex};
         if (ddl_worker)
