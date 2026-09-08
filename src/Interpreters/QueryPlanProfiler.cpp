@@ -127,7 +127,11 @@ void QueryPlanProfiler::render(const QueryPipeline * pipeline)
             error_map->add("Error", getCurrentExceptionMessage(/*with_stacktrace=*/ false));
             plan_json = toJSONString(std::move(error_map));
         }
-        catch (...)
+        catch (...) /// Ok: reporting the failure has itself failed, and this runs on the
+                    /// query-finish path of a query that already returned its result. The first
+                    /// exception was logged above; leaving the plan empty costs the row its plan
+                    /// and nothing else, whereas letting this one out would fail a query that
+                    /// succeeded.
         {
             /// Empty rather than invalid: the column takes its default, an empty JSON object.
             plan_json.emplace();
