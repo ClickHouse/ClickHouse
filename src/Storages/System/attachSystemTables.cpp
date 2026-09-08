@@ -13,6 +13,7 @@
 #include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
+#include <Storages/System/StorageSystemHypotheticalProjections.h>
 #include <Storages/System/StorageSystemInstrumentation.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
@@ -44,7 +45,6 @@
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
 #include <Storages/System/StorageSystemDimensionalMetrics.h>
-#include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Storages/System/StorageSystemPrimes.h>
@@ -124,6 +124,7 @@
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
+#include <Storages/System/StorageSystemJemallocSampledAllocations.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperCluster.h>
@@ -175,10 +176,42 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
 }
 
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
+void validateSystemUserQueryLog(ContextPtr context, const IDatabase & system_database)
+{
+    if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
+        return;
+
+    /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
+    /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
+    /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
+    if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The `query_log.table` server setting cannot be set to `user_query_log`: "
+            "the query log table is always created in the `system` database, where `system.user_query_log` "
+            "shows the query log records of the current user. "
+            "Rename the query log table or set `query_log.enable_user_query_log` to 0");
+
+    /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
+    if (system_database.isTableExist("user_query_log", context))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+            "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
+            "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
+}
+
+void attachSystemTableOne(ContextPtr context, IDatabase & system_database)
+{
+    attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
+}
+
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, bool has_keeper_server)
+{
+    attachSystemTableOne(context, system_database);
+    attachSystemTablesServerExceptOne(context, system_database, has_zookeeper, has_keeper_server);
+}
+
+void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
-    attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true, "number");
     attachNoDescription<StorageSystemPrimes>(context, system_database, "primes", "Generates all prime numbers, starting from 2, in sorted order.", "prime");
@@ -198,6 +231,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings", "Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. ");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", "Contains a list of all build flags, compiler options and commit hash for used build.");
     attach<StorageSystemHypotheticalIndexes>(context, system_database, "hypothetical_indexes", "Shows session-scoped hypothetical indexes created with CREATE HYPOTHETICAL INDEX for use with EXPLAIN WHATIF.");
+    attach<StorageSystemHypotheticalProjections>(context, system_database, "hypothetical_projections", "Shows session-scoped hypothetical projections created with CREATE HYPOTHETICAL PROJECTION for use with EXPLAIN WHATIF.");
 #if USE_XRAY
     attach<StorageSystemInstrumentation>(context, system_database, "instrumentation", "Contains a list of all functions instrumented with XRay with their IDs and handlers.");
 #endif
@@ -278,7 +312,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue", "Contains information about distributed DDL queries (ON CLUSTER clause) that were executed on a cluster.");
     attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue", "Contains information about local files that are in the queue to be sent to the shards. These local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.");
     attach<StorageSystemDictionaries>(context, system_database, "dictionaries", "Contains information about dictionaries.");
-    attach<StorageSystemModels>(context, system_database, "models", "Contains a list of CatBoost models loaded into a LibraryBridge's memory along with time when it was loaded.");
     attach<StorageSystemClusters>(context, system_database, "clusters", "Contains information about clusters defined in the configuration file or generated by a Replicated database.");
     attach<StorageSystemGraphite>(context, system_database, "graphite_retentions", "Contains information about parameters graphite_rollup which are used in tables with *GraphiteMergeTree engines.");
     attach<StorageSystemMacros>(context, system_database, "macros", "Contains a list of all macros defined in server configuration.");
@@ -303,8 +336,10 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemBackgroundSchedulePool>(context, system_database, "background_schedule_pool", "Contains information about tasks in all BackgroundSchedulePool instances. Each row represents a task.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
-    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc.");
+    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc. For small size classes the slab columns (`slab_size`, `nonfull_slabs` and the `waste` alias) measure memory lost to slab fragmentation.", /*per_arena_=*/ false);
+    attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_arena_bins", "Same as `system.jemalloc_bins` but with one row per (arena, bin) instead of aggregating over arenas. Slabs belong to a single arena, so this table locates fragmentation in a specific arena (including the dedicated MergeTree metadata, JIT and cache arenas) and joins to `system.jemalloc_sampled_allocations` on both `arena` and size class.", /*per_arena_=*/ true);
     attachNoDescription<StorageSystemJemallocProfileText>(context, system_database, "jemalloc_profile_text", "Displays the symbolized jemalloc heap profile. Run 'SYSTEM JEMALLOC FLUSH PROFILE' to generate a profile first.");
+    attachNoDescription<StorageSystemJemallocSampledAllocations>(context, system_database, "jemalloc_sampled_allocations", "One row per live sampled allocation from the jemalloc heap profiler; reading the table flushes a fresh heap profile. Only threads with the profiler armed contribute (`jemalloc_enable_profiler` setting or `jemalloc_enable_global_profiler` config); each row represents roughly `weight` similar allocations.");
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
@@ -345,24 +380,10 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
     }
 
+    validateSystemUserQueryLog(context, system_database);
+
     if (context->getConfigRef().getBool("query_log.enable_user_query_log", true))
     {
-        /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
-        /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
-        /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
-        if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The `query_log.table` server setting cannot be set to `user_query_log`: "
-                "the query log table is always created in the `system` database, where `system.user_query_log` "
-                "shows the query log records of the current user. "
-                "Rename the query log table or set `query_log.enable_user_query_log` to 0");
-
-        /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
-        if (system_database.isTableExist("user_query_log", context))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
-                "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
-
         attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
             "Contains the query log records of the current user: rows of the query log table (`system.query_log` by default) "
             "whose initiating user is the current user. Unlike the query log table itself, it can be read without any grants. "
