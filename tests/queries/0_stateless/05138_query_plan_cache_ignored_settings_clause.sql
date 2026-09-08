@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: drops the server-wide query plan cache and inspects system.query_log
+
 -- Settings that do not affect the query plan are stripped from the AST before the cache key is
 -- computed. Once every entry of a `SETTINGS` clause has been stripped, the clause itself must be
 -- dropped too, so that `SELECT ... SETTINGS log_comment = '...'` shares its cache entry with the
