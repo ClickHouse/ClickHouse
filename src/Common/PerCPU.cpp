@@ -33,7 +33,8 @@ UInt32 readPossibleCPUCount() noexcept
     if (fd < 0)
         return 0;
     ssize_t n = ::read(fd, buf, sizeof(buf) - 1);
-    ::close(fd);
+    [[maybe_unused]] int err = ::close(fd);
+    chassert(!err);
     if (n <= 0)
         return 0;
     buf[n] = 0;
@@ -45,11 +46,11 @@ UInt32 readPossibleCPUCount() noexcept
     bool any = false;
     while (*p)
     {
-        char * end;
-        long start = std::strtol(p, &end, 10);
+        char * end = nullptr;
+        Int64 start = std::strtol(p, &end, 10);
         if (end == p || start < 0)
             return 0;
-        long last = start;
+        Int64 last = start;
         if (*end == '-')
         {
             p = end + 1;
