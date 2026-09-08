@@ -601,6 +601,10 @@ public:
             try
             {
                 static_cast<const Derived *>(this)->deserialize(place, buf, version, arena);
+
+                /// Appending the pointer allocates, so it can throw as well, and then the state
+                /// would be neither destroyed here nor owned by the column.
+                data.push_back(place);
             }
             catch (...)
             {
@@ -608,7 +612,6 @@ public:
                 throw;
             }
 
-            data.push_back(place);
             place += total_size_of_state;
         }
     }
