@@ -111,7 +111,8 @@ public:
     ~SharedJoinTable()
     {
         /// Only the ASOF cells own anything (a sorted lookup behind a `unique_ptr`); the ref words are
-        /// trivial. Every range is committed by the end of a build, so the walk never faults in pages.
+        /// trivial. Every range is committed by the end of a build; a build that failed half-way leaves
+        /// uncommitted (never zeroed) ranges, which must not be read, so the walk is skipped then.
         if constexpr (!std::is_trivially_destructible_v<Cell>)
         {
             if (buffer.committedBytes() == buffer.size())
@@ -167,6 +168,7 @@ public:
     void commitRange(size_t partition) { buffer.commit(rangeBegin(partition) * sizeof(Cell), rangeCells() * sizeof(Cell)); }
     /// For tests and the single-partition path: the whole buffer at once.
     void commitAll() { buffer.commit(0, buffer.size()); }
+    bool fullyCommitted() const { return buffer.committedBytes() == buffer.size(); }
 
     /// Claims the empty cell at `pos` for `key_holder`, as `emplaceNonZeroImpl` does up to the mapped
     /// write, which the caller performs. Not counted here: owners count their claims and the build

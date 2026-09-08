@@ -59,9 +59,10 @@ constexpr size_t locator_piece_rows = 32768; /// locator synthesis scratch stays
 
 /** Per-worker scratch for the duplicate rows of the pass in progress. A key's first duplicate of the pass
   * turns its cell word into a scratch marker naming a pass-local key id; every later row of the key appends
-  * (key id, ref) here. The pass's finish counting-sorts the refs by key id into `staged` and hands each
-  * key's run to the `DuplicateRunWriter`, which writes the final word back into the cell. No marker
-  * survives a finish, so nothing probes a marker.
+  * its ref under that id. At the pass's finish the writer reserves each key's slots (a pair, a run, a node
+  * of a list) and the rows are placed straight into them in insertion order, then every marked cell gets
+  * its final word back. Nothing reads a marked cell before the finish: the probe waits for publication and
+  * a key belongs to one owner per pass.
   */
 struct TailScratch
 {
@@ -74,9 +75,9 @@ struct TailScratch
     PaddedPODArray<UInt64> tail_ref; /// per duplicate row: its ref word
     PaddedPODArray<UInt32> tail_count; /// per key id: rows of this pass
     PaddedPODArray<UInt64> tail_cell; /// per key id: the address of the cell's mapped value
-    PaddedPODArray<UInt64> tail_prev_word; /// per key id: the word the cell held before this pass
-    PaddedPODArray<UInt64> staged; /// the refs grouped by key id, in insertion order
-    PaddedPODArray<UInt32> starts; /// per key id: its first ref in `staged`
+    PaddedPODArray<UInt64> tail_prev_word; /// per key id: the word the cell held before this pass, then its final word
+    PaddedPODArray<UInt64 *> dest; /// per key id, at finish: the next slot of the span the writer reserved
+    PaddedPODArray<UInt32> left; /// per key id, at finish: slots left in that span
 
     size_t keys() const { return tail_count.size(); }
     size_t rows() const { return tail_ref.size(); }
@@ -194,34 +195,45 @@ ALWAYS_INLINE void appendRowToMapped(Mapped & mapped, UInt64 ref, TailScratch & 
 }
 
 /// The pass's finish: every key's refs of this pass become one contiguous run appended to the key's
-/// word (a pair, a run, or one more node of a list), and the scratch marker leaves the cell. Cells are
-/// prefetched in batches before the write-back, as the reference does.
+/// word (a pair, a run, or one more node of a list), and the scratch marker leaves the cell. The writer
+/// reserves each key's slots first, then the rows are placed straight into them in insertion order - one
+/// copy, as the reference's placement into its tails array - and the cells get their final words last,
+/// prefetched in batches.
 void finishTailScratch(TailScratch & scratch, DuplicateRunWriter & writer)
 {
     const size_t keys = scratch.keys();
     if (keys == 0)
         return;
-    /// Guaranteed by `checkPassRowLimit` on every pass; the offsets below are 32-bit.
+    /// Guaranteed by `checkPassRowLimit` on every pass; the per-key counters below are 32-bit.
     if (scratch.rows() >= TailScratch::MAX_PASS_ROWS)
         throwPassRowLimit(scratch.rows(), "the duplicate rows of a build pass");
 
-    scratch.starts.resize(keys + 1);
-    UInt32 running = 0;
-    for (size_t key = 0; key < keys; ++key)
+    scratch.dest.resize(keys);
+    scratch.left.resize(keys);
+    const auto reserve_next = [&](size_t key) ALWAYS_INLINE
     {
-        scratch.starts[key] = running;
-        running += scratch.tail_count[key];
-    }
-    scratch.starts[keys] = running;
-
-    /// `tail_count` doubles as the placement cursor, then holds the end offsets; `starts` keeps the
-    /// beginnings.
-    scratch.staged.resize(running);
+        RowRefList word = RowRefList::fromWord(scratch.tail_prev_word[key]);
+        const DuplicateRunWriter::Span span = writer.reserve(word, scratch.tail_count[key]);
+        scratch.tail_prev_word[key] = word.word;
+        scratch.dest[key] = span.refs;
+        scratch.left[key] = static_cast<UInt32>(span.count);
+        scratch.tail_count[key] -= static_cast<UInt32>(span.count);
+    };
     for (size_t key = 0; key < keys; ++key)
-        scratch.tail_count[key] = scratch.starts[key];
+        reserve_next(key);
+
     const size_t rows = scratch.rows();
     for (size_t row = 0; row < rows; ++row)
-        scratch.staged[scratch.tail_count[scratch.tail_key[row]]++] = scratch.tail_ref[row];
+    {
+        const UInt32 key = scratch.tail_key[row];
+        /// The writer hands out fewer slots than asked when a block fills up to its link slot before it
+        /// chains, when a tail node's free slots take only part of the rows, or when a link word's count
+        /// field is full: reserve the rest, still in order.
+        if (scratch.left[key] == 0) [[unlikely]]
+            reserve_next(key);
+        *scratch.dest[key]++ = scratch.tail_ref[row];
+        --scratch.left[key];
+    }
 
     static constexpr size_t batch_size = 32;
     for (size_t base = 0; base < keys; base += batch_size)
@@ -232,10 +244,8 @@ void finishTailScratch(TailScratch & scratch, DuplicateRunWriter & writer)
         for (size_t index = 0; index < batch; ++index)
         {
             const size_t key = base + index;
-            auto & mapped = *reinterpret_cast<RowRefList *>(scratch.tail_cell[key]); /// NOLINT(performance-no-int-to-ptr)
-            RowRefList word = RowRefList::fromWord(scratch.tail_prev_word[key]);
-            writer.append(word, scratch.staged.data() + scratch.starts[key], scratch.tail_count[key] - scratch.starts[key]);
-            mapped = word;
+            chassert(scratch.tail_count[key] == 0 && scratch.left[key] == 0);
+            *reinterpret_cast<RowRefList *>(scratch.tail_cell[key]) = RowRefList::fromWord(scratch.tail_prev_word[key]); /// NOLINT(performance-no-int-to-ptr)
         }
     }
     scratch.clear();
@@ -1177,6 +1187,8 @@ void PartitionedHashJoin::publishTableSize(const PostBuildContext & ctx)
         using Table = typename decltype(shape_maps.TYPE)::element_type; \
         if constexpr (is_shared_join_table<Table>) \
         { \
+            if (!shape_maps.TYPE->fullyCommitted()) \
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: the shared hash table is published with uncommitted ranges"); \
             if (shape_maps.TYPE->hasZero()) \
                 ++distinct; \
             shape_maps.TYPE->setSize(distinct); \

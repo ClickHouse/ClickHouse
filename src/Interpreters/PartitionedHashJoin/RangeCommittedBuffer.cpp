@@ -1,11 +1,10 @@
 #include <Interpreters/PartitionedHashJoin/RangeCommittedBuffer.h>
 
+#include <Common/AllocationInterceptors.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
-#include <base/errnoToString.h>
 #include <base/getPageSize.h>
 
 #include <cerrno>
@@ -54,27 +53,26 @@ RangeCommittedBuffer::RangeCommittedBuffer(size_t bytes_)
     if (bytes == 0)
         return;
 
-    void * mapped = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    if (mapped == MAP_FAILED)
-        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot reserve {} for the partitioned join hash table", ReadableSize(bytes));
-    ptr = static_cast<char *>(mapped);
-
-#if defined(MADV_HUGEPAGE)
-    /// Best effort: the table is probed at random, so fewer TLB misses matter and nothing here depends
-    /// on the advice being honoured.
-    if (bytes >= (2u << 20))
-        ::madvise(ptr, bytes, MADV_HUGEPAGE);
-#endif
+    /// Page aligned, so the ranges the owners commit and zero never share a page with anything else. The
+    /// untracked allocator entry point, as `Allocator` uses underneath its own accounting: the memory tracker
+    /// learns about this buffer range by range, in `commit`, and a blocked tracker would still charge the
+    /// global total here.
+    alignment = ::getPageSize();
+    void * buf = nullptr;
+    if (int res = __real_posix_memalign(&buf, alignment, bytes); res != 0)
+    {
+        /// `posix_memalign` returns the error instead of setting `errno`.
+        errno = res;
+        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate {} for the partitioned join hash table", ReadableSize(bytes));
+    }
+    ptr = static_cast<char *>(buf);
 }
 
 RangeCommittedBuffer::~RangeCommittedBuffer()
 {
     if (!ptr)
         return;
-    /// Not `tryLogCurrentException`: no exception is in flight here, so that would rethrow nothing and
-    /// terminate. Report the errno and carry on with the accounting.
-    if (0 != ::munmap(ptr, bytes))
-        LOG_ERROR(getLogger("RangeCommittedBuffer"), "Cannot munmap {} bytes at {}: {}", bytes, static_cast<const void *>(ptr), errnoToString());
+    __real_free(ptr);
     const size_t accounted = committed.load(std::memory_order_relaxed);
     if (accounted)
     {
@@ -95,23 +93,22 @@ void RangeCommittedBuffer::commit(size_t offset, size_t len)
     committed.fetch_add(len, std::memory_order_relaxed);
     trace.onAlloc(ptr + offset, len);
 
-    char * begin = ptr + offset;
+    /// Fresh pages are faulted in by the kernel in bulk first: one page fault per 4 KiB page taken from
+    /// user space, with every owner faulting into the same mapping at once, costs several times more than
+    /// the population loop (measured on a 4 GiB table: 17 s of build CPU against 8 s). Then the range is
+    /// zeroed: reused allocator memory is not zero, and the zeroing touches exactly this range, so it never
+    /// races a neighbour's cells.
     if (populateWriteSupported())
     {
 #if defined(MADV_POPULATE_WRITE)
         const size_t page = ::getPageSize();
-        const auto address = reinterpret_cast<uintptr_t>(begin);
+        const auto address = reinterpret_cast<uintptr_t>(ptr + offset);
         const uintptr_t aligned_begin = address & ~(page - 1);
         const uintptr_t aligned_end = (address + len + page - 1) & ~(page - 1);
-        const uintptr_t buffer_end = reinterpret_cast<uintptr_t>(ptr) + bytes;
-        const uintptr_t end = std::min<uintptr_t>(aligned_end, (buffer_end + page - 1) & ~(page - 1));
-        if (0 == ::madvise(reinterpret_cast<void *>(aligned_begin), end - aligned_begin, MADV_POPULATE_WRITE)) /// NOLINT(performance-no-int-to-ptr)
-            return;
+        ::madvise(reinterpret_cast<void *>(aligned_begin), aligned_end - aligned_begin, MADV_POPULATE_WRITE); /// NOLINT(performance-no-int-to-ptr)
 #endif
     }
-    /// The pages are zero already; touching exactly this range faults them in on the committing thread
-    /// without racing a neighbour's cells.
-    memset(begin, 0, len);
+    memset(ptr + offset, 0, len);
 }
 
 }
