@@ -1147,11 +1147,13 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto query_context = CurrentThread::tryGetQueryContext();
             auto access = query_context ? query_context->getAccess() : nullptr;
             const auto & storage_id = storage->getStorageID();
+            /// A table-level grant covers every column, so a granted chain answers the per-column checks below.
+            const bool alias_chain_granted = access && alias->isTargetTableGranted(query_context, AccessType::SELECT, {});
             for (const auto & column : source_columns)
             {
                 if (access
                     && access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                    && alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name))
+                    && (alias_chain_granted || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                     accessible_columns.push_back(column);
             }
         }

@@ -18,9 +18,13 @@ Test hasColumnInTable through the chain
 ACCESS_DENIED
 Test system.projections, system.constraints and system.data_skipping_indices through the chain
 0	0	0
+Test system.completions through the chain
+0
 Test DESCRIBE with only the middle alias of the chain ungranted
 ACCESS_DENIED
 Test system.columns with a column-level grant on the final table
+secret_id
+Test system.completions with a column-level grant on the final table
 secret_id
 Test DESCRIBE through the chain with the final target granted
 secret_id	UInt64
@@ -33,3 +37,5 @@ Test hasColumnInTable through the chain with the final target granted
 1
 Test system.projections, system.constraints and system.data_skipping_indices with the final target granted
 1	1	1
+Test system.completions through the chain with the final target granted
+2

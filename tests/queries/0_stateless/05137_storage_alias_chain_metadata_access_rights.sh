@@ -39,8 +39,9 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT SELECT, SHOW TABLES, SHOW COLUMNS ON chain_a1 TO ${user};
     GRANT SELECT, SHOW TABLES, SHOW COLUMNS ON chain_a2 TO ${user};
     GRANT SELECT, SHOW TABLES, SHOW COLUMNS ON chain_a3 TO ${user};
-    -- These three are outside the system.tables/system.columns carve-out, so they need an explicit
+    -- These four are outside the system.tables/system.columns carve-out, so they need an explicit
     -- grant once select_from_system_db_requires_grant is on.
+    GRANT SELECT ON system.completions TO ${user};
     GRANT SELECT ON system.constraints TO ${user};
     GRANT SELECT ON system.projections TO ${user};
     GRANT SELECT ON system.data_skipping_indices TO ${user};
@@ -55,6 +56,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a2 TO ${col_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a3 TO ${col_user};
     GRANT SHOW COLUMNS(secret_id) ON chain_base TO ${col_user};
+    GRANT SELECT ON system.completions TO ${col_user};
 "
 
 echo "Test DESCRIBE through the chain"
@@ -107,6 +109,13 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query "
         (SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'chain_a1');
 "
 
+# `belongs` carries no database qualifier, so every completions arm runs as a restricted user: only such a
+# user reaches the SHOW_TABLES filter that keeps a concurrent copy of this test out of the result.
+echo "Test system.completions through the chain"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "
+    SELECT count() FROM system.completions WHERE context = 'column' AND belongs = 'chain_a1';
+"
+
 # `mid_user` holds the grant on the declared target `chain_a2` and on the final table `chain_base`, and
 # nothing on the hop between them, so a check that skips intermediate names still passes.
 echo "Test DESCRIBE with only the middle alias of the chain ungranted"
@@ -115,6 +124,11 @@ ${CLICKHOUSE_CLIENT} --user="${mid_user}" --query "DESCRIBE TABLE chain_a1;" 2>&
 echo "Test system.columns with a column-level grant on the final table"
 ${CLICKHOUSE_CLIENT} --user="${col_user}" --query "
     SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'chain_a1' ORDER BY name;
+"
+
+echo "Test system.completions with a column-level grant on the final table"
+${CLICKHOUSE_CLIENT} --user="${col_user}" --query "
+    SELECT word FROM system.completions WHERE context = 'column' AND belongs = 'chain_a1' ORDER BY word;
 "
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON chain_base TO ${user};"
@@ -146,6 +160,11 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query "
         (SELECT count() FROM system.projections WHERE database = currentDatabase() AND table = 'chain_a1'),
         (SELECT count() FROM system.constraints WHERE database = currentDatabase() AND table = 'chain_a1'),
         (SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'chain_a1');
+"
+
+echo "Test system.completions through the chain with the final target granted"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "
+    SELECT count() FROM system.completions WHERE context = 'column' AND belongs = 'chain_a1';
 "
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "

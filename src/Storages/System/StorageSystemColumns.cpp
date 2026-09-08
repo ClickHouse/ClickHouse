@@ -149,10 +149,7 @@ protected:
             SerializationInfoByName serialization_hints{{}};
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
             const auto * alias = storage->as<StorageAlias>();
-            /// The chain an Alias resolves through is the same for every column, and a table-level grant
-            /// covers all of them, so one check answers every column loop below. Resolving the chain
-            /// costs a catalog lookup per hop, and for a target in a Remote, PostgreSQL or SQLite
-            /// database each of those is a fresh schema fetch.
+            /// A table-level grant covers every column, so a granted chain answers the per-column checks below.
             const bool alias_chain_granted = alias && alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
 
             {

@@ -396,11 +396,13 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
           */
         auto access = query_context->getAccess();
         const auto * alias = storage->as<StorageAlias>();
+        /// A table-level grant covers every column, so a granted chain answers the per-column checks below.
+        const bool alias_chain_granted = alias && alias->isTargetTableGranted(query_context, AccessType::SELECT, {});
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
             /// An `Alias` also requires access to the selected column of its target table.
             if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
+                && (!alias || alias_chain_granted || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 

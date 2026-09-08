@@ -92,7 +92,7 @@ static void fillDataWithTableColumns(
         return; // table was dropped while acquiring the lock
 
     const auto * alias = table->as<StorageAlias>();
-    /// One chain check answers every column; see the comment in StorageSystemColumns.
+    /// A table-level grant covers every column, so a granted chain answers the per-column checks below.
     const bool alias_chain_granted = alias && alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
 
     const auto snapshot = table->getInMemoryMetadataPtr(context, false);
