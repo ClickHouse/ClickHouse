@@ -161,6 +161,11 @@ void TextIndexPostingsRankCursor::loadSegment(size_t segment_idx)
     current_segment_idx = segment_idx;
     segment_first_rank = segment_ranks[segment_idx];
     has_segment = true;
+    if (ranks_known == segment_idx + 1)
+    {
+        segment_ranks[segment_idx + 1] = segment_first_rank + doc_count;
+        ranks_known = segment_idx + 2;
+    }
     /// Block indices restart per segment, so drop the decoded block instead of matching it by index.
     current_block = std::numeric_limits<size_t>::max();
     decoded_count = 0;
