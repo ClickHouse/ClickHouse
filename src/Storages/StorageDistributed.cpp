@@ -1538,7 +1538,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
                     select_settings[Setting::max_expanded_ast_elements]);
             ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
-            JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
+            /// Resolve the source's tables under the same context: `getLeftTableStorage` can interpret
+            /// a table-function source, and it must not read settings the source SELECT has overridden.
+            JoinedTables joined_tables(Context::createCopy(select_context), *select_query);
 
             if (joined_tables.tablesCount() == 1)
             {
