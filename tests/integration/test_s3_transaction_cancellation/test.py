@@ -30,7 +30,10 @@ def started_cluster():
 
 
 @pytest.mark.parametrize("cancel_method", ["cancel-packet", "disconnect"])
-def test_native_insert_cancellation_rolls_back_s3_part(started_cluster, cancel_method):
+@pytest.mark.parametrize("partial_result_on_first_cancel", [0, 1])
+def test_native_insert_cancellation_rolls_back_s3_part(
+    started_cluster, cancel_method, partial_result_on_first_cancel
+):
     table = f"txn_cancel_{uuid.uuid4().hex}"
     query_id = uuid.uuid4().hex
     part_failpoint = "merge_tree_sink_after_commit_part"
@@ -53,7 +56,8 @@ def test_native_insert_cancellation_rolls_back_s3_part(started_cluster, cancel_m
         enabled_failpoints.append(part_failpoint)
         request = node.get_query_request(
             f"INSERT INTO {table} SELECT 42 SETTINGS implicit_transaction=1, "
-            "max_threads=1, max_insert_threads=1, partial_result_on_first_cancel=0, "
+            "max_threads=1, max_insert_threads=1, "
+            f"partial_result_on_first_cancel={partial_result_on_first_cancel}, "
             "apply_mutations_on_fly=0",
             query_id=query_id,
             timeout=180,

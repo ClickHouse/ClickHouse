@@ -110,6 +110,9 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
 void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context);
 
+/// Turn a partial-result request into query-level cancellation for a pipeline with side effects.
+std::function<bool()> makeFullQueryCancellationCallback(std::function<bool()> callback, ContextPtr context);
+
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);

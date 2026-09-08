@@ -971,7 +971,8 @@ void TCPHandler::runImpl()
                     if (auto callback = query_state->query_context->getInteractiveCancelCallback();
                         !query_state->need_receive_data_for_input && callback)
                     {
-                        executor.setCancelCallback(std::move(callback), interactive_delay / 1000, CancelCallbackMode::PartialResult);
+                        executor.setCancelCallback(
+                            makeFullQueryCancellationCallback(std::move(callback), query_state->query_context), interactive_delay / 1000);
                     }
 
                     executor.execute();
