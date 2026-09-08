@@ -45,6 +45,7 @@ TEST(TaskScheduler, OwnQueueIsPoppedNewestFirst)
     f.scheduler.push(f.task(0), 0);
     f.scheduler.push(f.task(1, Task::Kind::Work), 0);
     EXPECT_EQ(2u, f.scheduler.queued());
+    EXPECT_EQ(2u, f.scheduler.total());
 
     auto first = f.scheduler.tryPop(0);
     ASSERT_TRUE(first);
@@ -56,57 +57,48 @@ TEST(TaskScheduler, OwnQueueIsPoppedNewestFirst)
     EXPECT_FALSE(f.scheduler.tryPop(0));
 }
 
-TEST(TaskScheduler, TheOldestTaskGetsATurnAfterARowOfNewest)
+TEST(TaskScheduler, SiblingsKeepTheirOrderThroughTheCap)
 {
-    Fixture f(1, 2);
-    f.scheduler.push(f.task(0), 0);
+    Fixture f(1, 100);
+    for (size_t i = 0; i < f.states.size(); ++i)
+        f.scheduler.push(f.task(i), 0);
 
-    size_t newest_in_a_row = 0;
-    while (true)
-    {
-        f.scheduler.push(f.task(1), 0);
-        const size_t popped = f.popIndex(0);
-        if (popped == 0)
-            break;
-        ASSERT_EQ(1u, popped);
-        ASSERT_LT(++newest_in_a_row, 1000u);
-    }
-
-    EXPECT_GT(newest_in_a_row, 1u);
-    EXPECT_EQ(1u, f.popIndex(0));
+    for (size_t i = f.states.size(); i > 0; --i)
+        ASSERT_EQ(i - 1, f.popIndex(0));
     EXPECT_FALSE(f.scheduler.tryPop(0));
 }
 
-TEST(TaskScheduler, OverflowedTasksComeBackOnTheFairnessTurn)
+TEST(TaskScheduler, LocalQueueOverflowsTheOldestHalfIntoTheGlobalQueue)
 {
-    Fixture f(1, 1000);
+    Fixture f(2, 200);
     for (size_t i = 0; i < f.states.size(); ++i)
         f.scheduler.push(f.task(i), 0);
     EXPECT_EQ(f.states.size(), f.scheduler.queued());
 
-    size_t previous = f.states.size();
-    size_t pops = 0;
+    EXPECT_EQ(0u, f.popIndex(1));
+    EXPECT_EQ(199u, f.popIndex(0));
+    EXPECT_EQ(1u, f.popIndex(1));
+}
+
+TEST(TaskScheduler, AChainGetsTheOldestTaskAfterTheCap)
+{
+    Fixture f(1, 2);
+    f.scheduler.push(f.task(0), 0);
+
+    size_t chain = 0;
     while (true)
     {
+        f.scheduler.push(f.task(1), 0);
         const size_t popped = f.popIndex(0);
-        ASSERT_LT(++pops, f.states.size());
+        ASSERT_LT(++chain, 1000u);
         if (popped == 0)
             break;
-        ASSERT_LT(popped, previous);
-        previous = popped;
+        ASSERT_EQ(1u, popped);
     }
 
-    EXPECT_EQ(previous - 1, f.popIndex(0));
-
-    pops = 0;
-    while (true)
-    {
-        const size_t popped = f.popIndex(0);
-        ASSERT_LT(++pops, f.states.size());
-        if (popped == 1)
-            break;
-        ASSERT_GT(popped, 6u);
-    }
+    EXPECT_GT(chain, 1u);
+    EXPECT_EQ(1u, f.popIndex(0));
+    EXPECT_FALSE(f.scheduler.tryPop(0));
 }
 
 TEST(TaskScheduler, GlobalQueueIsTakenFromTheFront)

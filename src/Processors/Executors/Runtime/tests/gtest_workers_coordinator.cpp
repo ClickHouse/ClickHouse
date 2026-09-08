@@ -156,12 +156,13 @@ TEST(WorkersCoordinator, WakeOneWakesAnIdleWorkerThatThenSteals)
     while (f.coordinator.idle() == 0)
         std::this_thread::yield();
 
+    f.scheduler.push(f.task(2), 1);
     f.scheduler.push(f.task(3), 1);
     f.coordinator.wakeOne();
     idle_worker.join();
 
     ASSERT_TRUE(picked);
-    EXPECT_EQ(&f.states[3], picked->state);
+    EXPECT_EQ(&f.states[2], picked->state);
     EXPECT_FALSE(f.coordinator.stopped());
 }
 

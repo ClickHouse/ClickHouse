@@ -280,8 +280,8 @@ struct Harness
         , coordinator(scheduler, poller, 1)
         , cpu_slots(std::make_shared<GrantedAllocation>(1))
         , pool(scheduler, coordinator, pipeline, 1, false)
-        , slot(cpu_slots->acquire(), pool, nullptr, nullptr)
-        , worker(0, scheduler, coordinator, pipeline)
+        , slot(cpu_slots->acquire(), nullptr, nullptr)
+        , worker(0, scheduler, coordinator, pipeline, pool)
     {
         for (auto * sink : pipeline.sinks())
         {

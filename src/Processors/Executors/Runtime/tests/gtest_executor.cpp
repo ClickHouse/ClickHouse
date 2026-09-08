@@ -797,6 +797,31 @@ TEST(Executor, UpdatePipeline)
     EXPECT_EQ(coordinator->getOutputs().size(), 1u);
 }
 
+TEST(Executor, SiblingsArriveInPortOrderOnOneWorker)
+{
+    auto header = makeHeader();
+    constexpr size_t branches = 5;
+    auto resize = std::make_shared<ResizeProcessor>(header, branches, 1);
+    auto sink = std::make_shared<CollectingSink>(header);
+
+    Processors processors;
+    UInt8 value = 0;
+    for (auto & input : resize->getInputs())
+    {
+        auto source = std::make_shared<SingleValueSource>(header, value++);
+        connect(source->getOutputs().front(), input);
+        processors.push_back(source);
+    }
+    connect(resize->getOutputs().front(), sink->getInputs().front());
+    processors.push_back(resize);
+    processors.push_back(sink);
+
+    Executor executor(std::make_shared<Processors>(std::move(processors)), nullptr);
+    executor.execute(1, false);
+
+    EXPECT_EQ((std::vector<UInt8>{0, 1, 2, 3, 4}), sink->values);
+}
+
 TEST(Executor, OneWorkerGivesTheOtherBranchATurn)
 {
     auto header = makeHeader();
