@@ -15,6 +15,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -50,10 +51,16 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_join;
 }
 
+namespace FailPoints
+{
+    extern const char storage_join_mutate_fail_after_promoting_consolidated_backup[];
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DEADLOCK_AVOIDED;
+    extern const int FAULT_INJECTED;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
@@ -257,6 +264,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
             /// `increment` itself untouched.
             static const auto file_suffix_size = strlen(".bin");
             std::optional<UInt64> consolidated_num;
+            std::vector<std::string> committed_backups;
             std::vector<std::string> files;
             disk->listFiles(path, files);
             for (const auto & file_name: files)
@@ -266,12 +274,33 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
                     UInt64 file_num = parse<UInt64>(file_name.substr(0, file_name.size() - file_suffix_size));
                     if (!consolidated_num || file_num < *consolidated_num)
                         consolidated_num = file_num;
-                    disk->removeFileIfExists(path + file_name);
+                    committed_backups.push_back(file_name);
                 }
             }
 
             if (consolidated_num)
-                disk->replaceFile(path + tmp_backup_file_name, path + toString(*consolidated_num) + ".bin");
+            {
+                /// Install the consolidated backup first, with a single atomic replace of the
+                /// lowest-numbered committed backup, and retire the superseded ones only
+                /// afterwards. Removing the committed backups before the replacement is installed
+                /// would make a failure in the middle of the rewrite -- a failing removal, or the
+                /// replace itself -- destroy rows that were committed before the mutation started,
+                /// and that truncated directory is what a restart would restore. With this order
+                /// a failure before the switch leaves the pre-mutation backups exactly as they
+                /// were, and a failure while retiring them can only leave rows that the mutation
+                /// was supposed to delete, never lose committed ones.
+                const auto consolidated_file_name = toString(*consolidated_num) + ".bin";
+                disk->replaceFile(path + tmp_backup_file_name, path + consolidated_file_name);
+
+                fiu_do_on(FailPoints::storage_join_mutate_fail_after_promoting_consolidated_backup,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after promoting the consolidated backup of a Join mutation");
+                });
+
+                for (const auto & file_name : committed_backups)
+                    if (file_name != consolidated_file_name)
+                        disk->removeFileIfExists(path + file_name);
+            }
             else
                 disk->removeFileIfExists(path + tmp_backup_file_name);
         }
