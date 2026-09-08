@@ -101,7 +101,7 @@ for transport in ("native", "HTTP"):
                 "SELECT sum(sipHash64(number)) FROM numbers(1000000000000)",
                 {"query_profiler_cpu_time_period_ns": 10000000,
                  "query_profiler_real_time_period_ns": 100000000,
-                 "max_execution_time": 2, "timeout_overflow_mode": "break"},
+                 "max_rows_to_read": 0, "max_execution_time": 2, "timeout_overflow_mode": "break"},
                 {"CPU", "Real"},
             ),
             (
