@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 ClickHouse가 여러 쿼리를 동시에 실행할 때는 공유 리소스(CPU, 메모리, IO)를 사용합니다. 서로 다른 워크로드 간에 리소스가 사용되고 공유되는 방식을 제어하기 위해 스케줄링 제약 조건과 정책을 적용할 수 있습니다. 모든 리소스에 대해 공통 스케줄링 계층을 구성할 수 있습니다. 계층의 루트는 공유 리소스를 나타내며, 리프 노드는 특정 쿼리와 백그라운드 작업의 리소스 요청 및 할당을 보유하는 개별 워크로드를 나타냅니다.
 
-<div id="resources">
-  ## 리소스
-</div>
+## 리소스 {#resources}
 
 기본적으로 워크로드 스케줄링은 비활성화되어 있습니다. 이를 활성화하려면 스케줄링에 사용할 리소스와 최소 1개의 워크로드를 생성해야 합니다. 모든 리소스는 서로 독립적이므로 어떤 조합으로든 사용할 수 있습니다.
 
@@ -37,8 +35,8 @@ CREATE RESOURCE query (QUERY)
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
 -- or
-CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
-CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE read_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE write_resource_name (WRITE DISK write_disk_name)
 ```
 
 하나의 리소스는 여러 개의 디스크에서 READ, WRITE 또는 READ와 WRITE 모두에 사용할 수 있습니다. 모든 디스크에 리소스를 사용할 수 있게 하는 구문이 있습니다:
@@ -52,9 +50,7 @@ CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 * **시간 공유 리소스** (CPU, IO, 쿼리 슬롯) - 스케줄링 계층 구조의 리프 노드에서 큐에 들어가는 리소스 요청을 관리합니다. 요청은 계층 구조에 정의된 정책과 제약 조건에 따라 스케줄링됩니다. 쿼리가 해당 리소스를 사용할 때 리소스 요청이 생성됩니다. 예를 들어, 쿼리가 디스크에서 데이터를 읽거나 처리 작업을 위해 CPU를 사용할 때, 수행된 작업의 각 quantum 또는 소켓을 통해 송수신된 바이트 수에 따라 리소스 요청이 생성됩니다.
 * **공간 공유 리소스** (메모리) - 스케줄링 계층 구조의 리프 노드에서 리소스 할당을 관리합니다. 할당은 실행 중이거나 대기 중일 수 있습니다. 대기 중인 할당은 충분한 공간이 확보되거나 다른 할당이 축출(강제 종료)될 때까지 차단됩니다. 판단은 계층 구조에 정의된 한도와 정책에 따라 이루어집니다. 할당과 쿼리(또는 백그라운드 활동) 사이에는 일대일 대응 관계가 있습니다. 할당은 쿼리 실행이 시작될 때 생성되고, 실행이 끝나면 해제됩니다. 실행 중인 할당은 크기가 동적으로 늘어나거나 줄어들 수 있습니다.
 
-<div id="workloads">
-  ## 워크로드 계층 구조
-</div>
+## 워크로드 계층 구조 {#workloads}
 
 ClickHouse는 스케줄링 계층 구조를 정의할 수 있는 편리한 SQL 구문을 제공합니다. 모든 리소스는 공통 WORKLOAD 계층 구조 전체에 분산됩니다. 분산 규칙은 특정 리소스에 따라 일부 측면이 달라질 수 있지만, 계층 구조 자체는 동일합니다. 각 WORKLOAD는 모든 리소스에 필요한 스케줄링 노드를 유지합니다. 하위 워크로드는 계층 구조를 이루도록 임의의 워크로드 내부에 생성할 수 있습니다. ClickHouse는 워크로드 계층 구조에 특정하거나 사전 정의된 구조를 강제하지 않습니다.
 
@@ -138,9 +134,7 @@ CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_sec
   워크로드 설정은 적절한 스케줄링 노드 집합으로 변환됩니다. 더 하위 수준의 세부 사항은 스케줄링 노드 [타입과 옵션](#hierarchy) 설명을 참조하십시오.
 </Note>
 
-<div id="workload-markup">
-  ## 워크로드 마크업
-</div>
+## 워크로드 마크업 {#workload-markup}
 
 서로 다른 워크로드를 구분하기 위해 쿼리에 설정 `workload`를 지정할 수 있습니다. `workload`가 설정되지 않으면 &quot;default&quot; 값이 사용됩니다. 설정 프로필을 사용하면 다른 값으로 지정할 수도 있습니다. 특정 사용자의 모든 쿼리에 `workload` 설정의 고정값이 적용되게 하려면 설정 제약 조건을 사용해 `workload`를 상수로 만들 수 있습니다.
 
@@ -155,9 +149,7 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 백그라운드 작업에도 `workload` 설정을 할당할 수 있습니다. 머지와 뮤테이션은 각각 `merge_workload` 및 `mutation_workload` 서버 설정을 사용합니다. 이 값은 특정 테이블에 대해 `merge_workload` 및 `mutation_workload` MergeTree 설정으로 재정의할 수도 있습니다.
 
-<div id="cpu_scheduling">
-  ## CPU 스케줄링
-</div>
+## CPU 스케줄링 {#cpu_scheduling}
 
 워크로드에 대해 CPU 스케줄링을 활성화하려면 CPU 리소스를 생성하고 동시에 실행할 수 있는 스레드 수의 제한을 설정합니다:
 
@@ -212,9 +204,7 @@ CPU 스케줄링은 아직 머지와 뮤테이션을 지원하지 않습니다.
   CPU 리소스를 선언하면 [`concurrent_threads_soft_limit_num`](/ko/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) 및 [`concurrent_threads_soft_limit_ratio_to_cores`](/ko/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) 설정이 더 이상 적용되지 않습니다. 대신 특정 워크로드에 할당되는 CPU 수를 제한하는 데 워크로드 설정 `max_concurrent_threads`를 사용합니다. 이전 동작과 동일하게 하려면 WORKER THREAD 리소스만 생성하고, 워크로드 `all`의 `max_concurrent_threads`를 `concurrent_threads_soft_limit_num`과 같은 값으로 설정한 뒤, 쿼리 설정 `workload = "all"`을 사용하십시오. 이 구성은 [`concurrent_threads_scheduler`](/ko/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) 설정 값을 &quot;fair&#95;round&#95;robin&quot;으로 지정한 것과 같습니다.
 </Note>
 
-<div id="threads_vs_cpus">
-  ## 스레드와 CPU
-</div>
+## 스레드와 CPU {#threads_vs_cpus}
 
 워크로드의 CPU 활용을 제어하는 방법은 두 가지입니다.
 
@@ -253,9 +243,7 @@ CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
   ClickHouse 서버에서 CPU 활용률을 최대화하려면 루트 워크로드 `all`에 `max_cpus`와 `max_cpu_share`를 사용하지 마십시오. 대신 `max_concurrent_threads`를 더 큰 값으로 설정하십시오. 예를 들어 CPU가 8개인 시스템에서는 `max_concurrent_threads = 16`으로 설정하십시오. 이렇게 하면 8개의 스레드는 CPU 작업을 실행하고, 나머지 8개의 스레드는 I/O 작업을 처리할 수 있습니다. 추가 스레드는 CPU 부하를 발생시켜 스케줄링 규칙이 적용되도록 합니다. 반대로 `max_cpus = 8`로 설정하면 서버가 사용 가능한 8개의 CPU를 초과할 수 없으므로 CPU 부하가 발생하지 않습니다.
 </Note>
 
-<div id="memory-reservations">
-  ## 메모리 예약
-</div>
+## 메모리 예약 {#memory-reservations}
 
 <Note>
   메모리 예약 스케줄링은 실험적 기능입니다. `MEMORY RESERVATION` 리소스가 있을 때만 적용되며, SQL 인터페이스와 동작은 향후 릴리스에서 변경될 수 있습니다. 아직 머지 및 뮤테이션은 지원되지 않으며, 실행 중인 쿼리의 축출은 best-effort 방식으로만 처리됩니다. 즉시 적용되지 않고, 해당 쿼리의 다음 메모리 동기화 지점에서 적용됩니다.
@@ -334,9 +322,7 @@ CREATE WORKLOAD testing IN user SETTINGS precedence = 2
 
 system 워크로드의 precedence는 0(default)이며, 이는 production, staging, testing 워크로드보다 높지만 서로 형제 워크로드 관계는 아닙니다. 최소 공통 상위 항목은 all 워크로드이며, 그 아래 두 자식은 동일한 precedence를 가집니다. 따라서 대기 중인 system 워크로드는 이들 어느 쪽도 축출할 수 없고, 반대의 경우도 마찬가지입니다. 이를 통해 system 활동이 쉽게 축출되지 않도록 보장합니다.
 
-<div id="query_scheduling">
-  ## 쿼리 슬롯 스케줄링
-</div>
+## 쿼리 슬롯 스케줄링 {#query_scheduling}
 
 워크로드에 대한 쿼리 슬롯 스케줄링을 활성화하려면 QUERY 리소스를 생성하고 동시 쿼리 수 또는 초당 쿼리 수 제한을 설정합니다:
 
@@ -355,21 +341,15 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   차단된 쿼리는 모든 제약 조건이 충족될 때까지 무기한 대기하며, 그전까지는 `SHOW PROCESSLIST`에 표시되지 않습니다.
 </Note>
 
-<div id="workload_entity_storage">
-  ## 워크로드 및 리소스 저장
-</div>
+## 워크로드 및 리소스 저장 {#workload_entity_storage}
 
 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 쿼리로 정의된 모든 워크로드와 리소스는 `workload_path`의 디스크 또는 `workload_zookeeper_path`의 ZooKeeper에 영구적으로 저장됩니다. 노드 간 일관성을 확보하려면 ZooKeeper 저장소를 사용하는 것이 좋습니다. 또는 디스크 저장소와 함께 `ON CLUSTER` 절을 사용할 수도 있습니다.
 
-<div id="config_based_workloads">
-  ## 구성 기반 워크로드와 리소스
-</div>
+## 구성 기반 워크로드와 리소스 {#config_based_workloads}
 
 SQL 기반 정의 외에도 워크로드와 리소스는 서버 설정 파일에서 미리 정의할 수 있습니다. 이는 일부 제한은 인프라에 의해 결정되고, 다른 제한은 고객이 변경할 수 있는 클라우드 환경에서 유용합니다. 구성 기반 엔터티는 SQL로 정의된 엔터티보다 우선순위가 높으며, SQL 명령으로 수정하거나 삭제할 수 없습니다.
 
-<div id="config_based_workloads_format">
-  ### 구성 포맷
-</div>
+### 구성 포맷 {#config_based_workloads_format}
 
 ```xml
 <clickhouse>
@@ -385,9 +365,7 @@ SQL 기반 정의 외에도 워크로드와 리소스는 서버 설정 파일에
 
 이 구성은 `CREATE WORKLOAD` 및 `CREATE RESOURCE` SQL 문과 동일한 구문을 사용합니다. 모든 쿼리는 유효해야 합니다.
 
-<div id="config_based_workloads_usage_recommendations">
-  ### 사용 권장 사항
-</div>
+### 사용 권장 사항 {#config_based_workloads_usage_recommendations}
 
 클라우드 환경에서는 일반적으로 다음과 같이 구성합니다:
 
@@ -400,9 +378,7 @@ SQL 기반 정의 외에도 워크로드와 리소스는 서버 설정 파일에
 
 또 다른 사용 사례로는 이기종 클러스터에서 노드별로 서로 다른 구성을 사용하는 경우가 있습니다.
 
-<div id="strict_resource_access">
-  ## 엄격한 리소스 액세스
-</div>
+## 엄격한 리소스 액세스 {#strict_resource_access}
 
 모든 쿼리가 리소스 스케줄링 정책을 따르도록 강제하는 서버 설정 `throw_on_unknown_workload`가 있습니다. 이 값을 `true`로 설정하면 모든 쿼리에서 유효한 `workload` 쿼리 설정을 사용해야 하며, 그렇지 않으면 `RESOURCE_ACCESS_DENIED` 예외가 발생합니다. 이 값을 `false`로 설정하면 해당 쿼리는 리소스 스케줄러를 사용하지 않으며, 즉 모든 `RESOURCE`에 무제한으로 액세스하게 됩니다. 쿼리 설정 `use_concurrency_control = 0`을 사용하면 쿼리가 CPU 스케줄러를 우회하여 CPU에 무제한으로 액세스할 수 있습니다. CPU 스케줄링을 강제하려면 `use_concurrency_control`이 읽기 전용 상수 값으로 유지되도록 setting constraint를 생성하십시오.
 
@@ -410,9 +386,7 @@ SQL 기반 정의 외에도 워크로드와 리소스는 서버 설정 파일에
   `CREATE WORKLOAD default`를 실행하지 않았다면 `throw_on_unknown_workload`를 `true`로 설정하지 마십시오. 시작 중에 `workload`를 명시적으로 설정하지 않은 쿼리가 실행되면 server 시작에 문제가 발생할 수 있습니다.
 </Note>
 
-<div id="hierarchy">
-  ### 스케줄링 노드 계층 구조
-</div>
+### 스케줄링 노드 계층 구조 {#hierarchy}
 
 스케줄링 하위 시스템의 관점에서 각 리소스는 스케줄링 노드의 계층 구조로 구성됩니다. ClickHouse는 WORKLOAD 및 RESOURCE 정의에 따라 필요한 모든 스케줄링 노드를 자동으로 생성합니다. 스케줄링 노드는 저수준 구현 세부 사항이며, [system.scheduler](/ko/reference/system-tables/scheduler) 테이블을 통해 확인할 수 있습니다.
 
@@ -462,9 +436,7 @@ graph TD
 * `precedence_allocation` - 정적 precedence에 따라 축출을 적용합니다(값이 낮을수록 precedence가 높음). precedence가 더 높은 대기 중인 할당은 precedence가 더 낮은 할당을 축출합니다. 자식 노드는 `precedence`를 지정해야 합니다(기본값은 0).
 * `queue` - 실행 중인 할당과 대기 중인 할당을 보관할 수 있는 계층 구조의 리프 노드입니다.
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 항목 {#see-also}
 
 * [system.scheduler](/ko/reference/system-tables/scheduler)
 * [system.workloads](/ko/reference/system-tables/workloads)

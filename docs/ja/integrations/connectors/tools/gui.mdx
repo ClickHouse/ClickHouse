@@ -441,6 +441,24 @@ doc_type: 'reference'
 
 ## 商用 {#commercial}
 
+<Accordion title="ADQM Notebook">
+  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) は、Arenadata が ClickHouse をベースに構築したカラム指向 DBMS である [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html) の Enterprise エディションに含まれる、notebook スタイルの SQL ワークスペースです。ClickHouse 組み込みの Web インターフェースを拡張し、マルチセルの notebook、インタラクティブな結果、クエリプラン分析、クラスター全体のスキーマブラウザーを提供します。ADQM ホストの HTTP ポート (`8123`) 上で `/play` と並んで `/notebook` から標準で利用でき、Chproxy 経由でも利用できます。
+
+  機能:
+
+  * SQL および Markdown セル、1 セルあたり最大 5 ステートメント、notebook またはセル単位のメモリ、時間、スレッド制限。
+  * 構文ハイライト、自動補完、`{{variable}}` 置換、`Beautify SQL` を備えた SQL エディタ。
+  * ソートおよび検索が可能なグリッド形式の結果表示。カラムごとの NULL 比率、ユニーク数、値の範囲を表示。
+  * 折れ線、エリア、棒チャート。CSV、TSV、JSON、JSONLines、Parquet 形式でのダウンロード。
+  * 推定および実際のクエリプラン、`EXPLAIN PIPELINE` と論理ビュー、修正案付きの検出結果。
+  * `system.query_log` からのクエリ統計とノードごとの内訳。直近 5 回の実行履歴。
+  * ローカルホストまたはクラスター全体を対象とした、カラム STATISTICS とすぐに使えるクエリを備えたデータベースパネル。
+  * テーブル、ビュー、materialized view、ディクショナリ、プロジェクションの依存関係グラフ。
+  * `KILL` ボタン付きの実行中クエリのライブビュー。
+  * クラスターへの単一エントリポイントとしての Chproxy 経由のアクセス。クエリは全ホストに分散されます。
+  * 自動保存、JSON のエクスポートとインポート、ClickHouse サーバー上での notebook の保存、リンクによる共有。
+</Accordion>
+
 <Accordion title="ProbeDeck">
   [ProbeDeck](https://probedeck.app) は、ClickHouse の監視とクエリ実行のための iOS および iPadOS クライアントです。
 
@@ -500,14 +518,12 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com) は、ClickHouse を含む 50 種類以上のデータベース SQL方言をサポートするデータプラットフォームおよびビジネスインテリジェンスツールです。Looker は SaaS プラットフォームおよびセルフホスト版として利用できます。ユーザーはブラウザから Looker を使用して、データの探索、可視化とダッシュボードの作成、レポートのスケジュール設定、インサイトの同僚との共有を行えます。Looker は、これらの機能を他のアプリケーションに埋め込むための豊富なツールセットと、他のアプリケーションとデータを
-  統合するための API を提供します。
+  [Looker](https://looker.com) は、ClickHouse を含む 50 以上のデータベース方言をサポートするデータプラットフォームおよびビジネスインテリジェンスツールです。Looker は SaaS プラットフォームとしても、セルフホストとしても利用できます。ユーザーはブラウザーから Looker を使用して、データの探索、可視化やダッシュボードの作成、レポートのスケジュール設定、同僚とのインサイト共有を行えます。Looker は、これらの機能を他のアプリケーションに埋め込むための豊富なツール群と、データを他のアプリケーションと連携させるための API を提供しています。
 
   機能:
 
-  * レポート作成者とエンドユーザーを支援する、厳選された
-    [データモデリング](https://looker.com/platform/data-modeling) をサポートする言語 LookML を使用した、容易で俊敏な開発。
-  * Looker の [Data Actions](https://looker.com/platform/actions) による強力なワークフロー統合。
+  * レポート作成者やエンドユーザーを支援するキュレーションされた [Data Models](https://looker.com/platform/data-modeling) をサポートする言語である LookML を使用した、簡単かつ俊敏な開発。
+  * Looker の [Data Actions](https://looker.com/platform/actions) による強力なワークフローインテグレーション。
 
   [Looker で ClickHouse を設定する方法。](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 </Accordion>
@@ -580,4 +596,19 @@ doc_type: 'reference'
   * 結果テーブル内でのインラインデータ編集とバッチ保存に対応し、さらに ClickHouse のネイティブフォーマットを使用した CSV/JSON/SQL のエクスポートとインポートも可能です。
   * 接続オプション: HTTP/HTTPS、ファイアウォールの背後にあるプライベートクラスター向けの SSH トンネル、安全に production 環境を参照するためのオプションの 読み取り専用モード。
   * ClickHouse Cloud とセルフホストの両方で利用できます。
+</Accordion>
+
+<Accordion title="ADQM Control">
+  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) は、Arenadata が ClickHouse 上に構築したカラム指向 DBMS である [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html) としてデプロイされた ClickHouse クラスター向けのオブザーバビリティプラットフォームです。Prometheus のホストメトリクスと、クラスターから収集したホスト、テーブル、クエリに関するデータを組み合わせ、1 つまたは複数の ADQM クラスターを横断して、テーブルの増加状況、クエリの挙動、負荷がかかっているホストを可視化します。ADQM Control は [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) を用いて独立したクラスターとしてデプロイされ、収集したデータを PostgreSQL に保存します。
+
+  機能:
+
+  * 選択した ADQM クラスターのホスト状態を示すヒートマップ。
+  * 関連するアラートを時間に基づいてインシデントとしてグループ化。感度は調整可能。
+  * テーブルサイズ、行数、リクエスト数の時系列推移と、ホスト間の偏りや不均衡を示すメトリクス。
+  * カラムごとの圧縮サイズと非圧縮サイズ、圧縮による削減量、コーデックをグラフ付きで表示。
+  * ステータス、exception code、duration、メモリ、読み書きされた行数とバイト数を含む完全なクエリ履歴。
+  * テキスト、テーブル、ユーザー、ホスト、duration、ステータス、exception code のプリセットによるクエリのフィルター。
+  * duration、ユーザー、種類別のクエリグラフ。異常検知付きのホストごとの負荷グラフ。
+  * 問題の内容を説明し、修正方法を提示するホストリソースの threshold alerts。
 </Accordion>

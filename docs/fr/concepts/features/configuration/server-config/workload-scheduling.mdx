@@ -8,53 +8,49 @@ doc_type: 'reference'
 
 Lorsque ClickHouse exécute plusieurs requêtes simultanément, elles utilisent des ressources partagées (CPU, mémoire et E/S). Des contraintes et des politiques d’ordonnancement peuvent être appliquées pour réguler l’utilisation et le partage des ressources entre différents workloads. Une hiérarchie d’ordonnancement commune peut être configurée pour toutes les ressources. La racine de cette hiérarchie représente les ressources partagées, tandis que les feuilles correspondent à des workloads spécifiques, contenant les demandes de ressources et les allocations propres à certaines requêtes et activités en arrière-plan.
 
-<div id="resources">
-  ## Ressources
-</div>
+## Ressources {#resources}
 
 Par défaut, l’ordonnancement des charges de travail est désactivé. Pour l’activer, vous devez créer des ressources qui seront utilisées pour la planification, ainsi qu’au moins un workload. Toutes les ressources sont indépendantes et peuvent être combinées librement.
 
-Pour activer la planification CPU, vous devez créer une ressource CPU pour les threads MASTER ou WORKER (voir [planification CPU](#cpu_scheduling) pour plus de détails) :
+Pour activer l’ordonnancement CPU, vous devez créer une ressource CPU pour les threads MASTER ou WORKER (voir [ordonnancement CPU](#cpu_scheduling) pour plus de détails) :
 
 ```sql
 CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 ```
 
-Pour activer la réservation de mémoire pour les workloads, vous devez créer la ressource MEMORY (voir [Réservations de mémoire](#memory-reservations) pour plus de détails) :
+Pour activer la réservation de mémoire pour les workloads, vous devez créer la ressource MEMORY (voir [Réservations de mémoire](#memory-reservations) pour plus de détails) :
 
 ```sql
 CREATE RESOURCE memory (MEMORY RESERVATION)
 ```
 
-Pour activer l’ordonnancement des slots de requête, vous devez créer une ressource QUERY (voir [Ordonnancement des slots de requête](#query_scheduling) pour en savoir plus) :
+Pour activer l’ordonnancement des slots de requête, vous devez créer une ressource QUERY (voir [Ordonnancement des slots de requête](#query_scheduling) pour en savoir plus) :
 
 ```sql
 CREATE RESOURCE query (QUERY)
 ```
 
-Pour activer l’ordonnancement des E/S pour un disque spécifique, vous devez créer des ressources en lecture et en écriture pour les accès READ et WRITE :
+Pour activer l’ordonnancement des E/S pour un disque spécifique, vous devez créer des ressources en lecture et en écriture pour les accès READ et WRITE :
 
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
 -- or
-CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
-CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE read_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE write_resource_name (WRITE DISK write_disk_name)
 ```
 
-Une ressource peut être utilisée avec un nombre quelconque de disques, en READ, en WRITE, ou à la fois en READ et en WRITE. Il existe une syntaxe permettant d’utiliser une ressource pour tous les disques :
+Une ressource peut être utilisée avec un nombre quelconque de disques, en READ, en WRITE, ou à la fois en READ et en WRITE. Il existe une syntaxe permettant d’utiliser une ressource pour tous les disques :
 
 ```sql
 CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 ```
 
-Les ressources sont classées par mode de partage :
+Les ressources sont classées par mode de partage :
 
 * **Ressources partagées dans le temps** (CPU, IO, slots de requête) - gèrent les requêtes de ressources mises en file d&#39;attente aux feuilles de la hiérarchie d&#39;ordonnancement. Les requêtes sont ordonnancées selon les politiques et les contraintes définies par la hiérarchie. Les requêtes de ressources sont créées lorsqu&#39;une requête accède à la ressource correspondante. Par exemple, lorsqu&#39;une requête lit des données sur le disque ou utilise le CPU pour le traitement, des requêtes de ressources sont créées pour chaque quantum de travail effectué ou pour chaque quantité d&#39;octets envoyés ou reçus via un socket.
-* **Ressources partagées dans l&#39;espace** (Memory) - gèrent les allocations de ressources aux feuilles de la hiérarchie d&#39;ordonnancement. Les allocations peuvent être actives ou en attente. Les allocations en attente sont bloquées jusqu&#39;à ce que suffisamment d&#39;espace soit libéré ou qu&#39;une autre allocation soit évincée (interrompue de force). Les décisions sont fondées sur les limites et les politiques définies par la hiérarchie. Il existe une correspondance un à un entre les allocations et les requêtes (ou les activités en arrière-plan). Une allocation est créée lorsqu&#39;une requête commence son exécution et elle est libérée lorsqu&#39;elle se termine. Les allocations actives peuvent augmenter ou diminuer leur taille de manière dynamique.
+* **Ressources partagées dans l&#39;espace** (Memory) - gèrent les allocations de ressources aux feuilles de la hiérarchie d&#39;ordonnancement. Les allocations peuvent être actives ou en attente. Les allocations en attente sont bloquées jusqu&#39;à ce que suffisamment d&#39;espace soit libéré ou qu&#39;une autre allocation soit évincée (interrompue de force). Les décisions sont fondées sur les limites et les politiques définies par la hiérarchie. Il existe une correspondance un à un entre les allocations et les requêtes (ou les activités en arrière-plan). Une allocation est créée lorsqu&#39;une requête commence son exécution et elle est libérée lorsqu&#39;elle se termine. Les allocations en cours d’exécution peuvent augmenter ou diminuer leur taille de manière dynamique.
 
-<div id="workloads">
-  ## Hiérarchie des workloads
-</div>
+## Hiérarchie des workloads {#workloads}
 
 ClickHouse fournit une syntaxe SQL pratique pour définir la hiérarchie d’ordonnancement. Toutes les ressources sont réparties dans une hiérarchie WORKLOAD commune. Les règles de répartition peuvent différer sur certains points selon les ressources, mais la hiérarchie reste la même. Chaque WORKLOAD comporte les nœuds d’ordonnancement nécessaires pour chaque ressource. Un workload enfant peut être créé au sein de n’importe quel workload pour construire la hiérarchie. ClickHouse n’impose aucune structure spécifique ou prédéfinie pour la hiérarchie des workloads.
 
@@ -138,9 +134,7 @@ Notez également qu’un workload ou une ressource ne peut pas être supprimé s
   Les paramètres du workload sont convertis en un ensemble approprié de nœuds d’ordonnancement. Pour plus de détails sur les mécanismes sous-jacents, consultez la description des [types et options](#hierarchy) des nœuds d’ordonnancement.
 </Note>
 
-<div id="workload-markup">
-  ## Marquage des workloads
-</div>
+## Marquage des workloads {#workload-markup}
 
 Les requêtes peuvent être marquées à l’aide du paramètre `workload` pour distinguer différents workloads. Si `workload` n’est pas défini, la valeur &quot;default&quot; est utilisée. Notez que vous pouvez également spécifier une autre valeur à l’aide de profils de paramètres. Des contraintes sur les paramètres peuvent être utilisées pour rendre `workload` constant si vous souhaitez que toutes les requêtes d’un utilisateur soient marquées avec une valeur fixe du paramètre `workload`.
 
@@ -155,9 +149,7 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 Il est possible d’attribuer un paramètre `workload` aux activités en arrière-plan. Les merges et les mutations utilisent respectivement les paramètres serveur `merge_workload` et `mutation_workload`. Ces valeurs peuvent également être redéfinies pour des tables spécifiques à l’aide des paramètres MergeTree `merge_workload` et `mutation_workload`.
 
-<div id="cpu_scheduling">
-  ## Ordonnancement du CPU
-</div>
+## Ordonnancement du CPU {#cpu_scheduling}
 
 Pour activer l’ordonnancement du CPU pour les workloads, créez une ressource CPU et définissez une limite pour le nombre de threads concurrents :
 
@@ -212,9 +204,7 @@ Pour garantir des allocations équitables entre les workloads, il est nécessair
   La déclaration d’une ressource CPU désactive l’effet des paramètres [`concurrent_threads_soft_limit_num`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) et [`concurrent_threads_soft_limit_ratio_to_cores`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores). À la place, le workload setting `max_concurrent_threads` est utilisé pour limiter le nombre de CPU alloués à une charge de travail spécifique. Pour retrouver le comportement précédent, créez uniquement la ressource WORKER THREAD, définissez `max_concurrent_threads` pour la charge de travail `all` sur la même valeur que `concurrent_threads_soft_limit_num`, puis utilisez le paramètre de requête `workload = "all"`. Cette configuration correspond au paramètre [`concurrent_threads_scheduler`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) défini sur la valeur &quot;fair&#95;round&#95;robin&quot;.
 </Note>
 
-<div id="threads_vs_cpus">
-  ## Threads vs. CPU
-</div>
+## Threads vs. CPU {#threads_vs_cpus}
 
 Il existe deux façons de contrôler la consommation de CPU d’une charge de travail :
 
@@ -253,9 +243,7 @@ Ici, nous limitons le nombre total de threads pour toutes les requêtes à 2 foi
   Si vous souhaitez maximiser l’utilisation du CPU sur votre serveur ClickHouse, évitez d’utiliser `max_cpus` et `max_cpu_share` pour le workload racine `all`. Définissez plutôt une valeur plus élevée pour `max_concurrent_threads`. Par exemple, sur un système avec 8 CPU, définissez `max_concurrent_threads = 16`. Cela permet à 8 threads d’exécuter des tâches CPU pendant que 8 autres threads peuvent gérer des opérations d’E/S. Des threads supplémentaires créeront une pression sur le CPU, ce qui garantit l’application des règles d’ordonnancement. À l’inverse, définir `max_cpus = 8` ne créera jamais de pression sur le CPU, car le serveur ne peut pas dépasser les 8 CPU disponibles.
 </Note>
 
-<div id="memory-reservations">
-  ## Réservations de mémoire
-</div>
+## Réservations de mémoire {#memory-reservations}
 
 <Note>
   La planification des réservations de mémoire est expérimentale. Elle ne prend effet que lorsqu&#39;une ressource `MEMORY RESERVATION` existe, et sa syntaxe SQL ainsi que son comportement peuvent évoluer dans les versions futures. Elle n&#39;est pas encore prise en charge pour les merge et les mutations, et l&#39;éviction d&#39;une requête en cours s&#39;effectue au mieux : elle prend effet au prochain point de synchronisation mémoire de la requête, et non instantanément.
@@ -334,9 +322,7 @@ En cas de pression sur la mémoire, les allocations du workload de test seront �
 
 Notez que le workload système a une préséance de 0 (par défaut), supérieure à celle des workloads production, staging et test, mais qu’il ne s’agit pas de workloads frères. Leur plus proche ancêtre commun est le workload all, dont les deux enfants ont la même préséance. Ainsi, un workload système en attente ne peut en évincer aucun, et inversement. Cela garantit que les activités système ne peuvent pas être facilement évincées.
 
-<div id="query_scheduling">
-  ## Ordonnancement des slots de requête
-</div>
+## Ordonnancement des slots de requête {#query_scheduling}
 
 Pour activer l’ordonnancement des slots de requête pour les workloads, créez la ressource QUERY et définissez une limite sur le nombre de requêtes simultanées ou de requêtes par seconde :
 
@@ -355,21 +341,15 @@ Le paramètre de workload `max_waiting_queries` limite le nombre de requêtes en
   Les requêtes bloquées attendent indéfiniment et n’apparaissent pas dans `SHOW PROCESSLIST` tant que toutes les contraintes ne sont pas satisfaites.
 </Note>
 
-<div id="workload_entity_storage">
-  ## Stockage des workloads et des ressources
-</div>
+## Stockage des workloads et des ressources {#workload_entity_storage}
 
 Les définitions de tous les workloads et de toutes les ressources, sous la forme de requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`, sont stockées de manière persistante soit sur le disque dans `workload_path`, soit dans ZooKeeper dans `workload_zookeeper_path`. Le stockage dans ZooKeeper est recommandé pour garantir la cohérence entre les nœuds. Sinon, la clause `ON CLUSTER` peut être utilisée avec le stockage sur disque.
 
-<div id="config_based_workloads">
-  ## Charges de travail et ressources définies par configuration
-</div>
+## Charges de travail et ressources définies par configuration {#config_based_workloads}
 
 En plus des définitions basées sur SQL, les charges de travail et les ressources peuvent être prédéfinies dans le fichier de configuration du serveur. Cela est utile dans les environnements cloud, où certaines restrictions sont imposées par l’infrastructure, tandis que d’autres limites peuvent être modifiées par les clients. Les entités définies par configuration ont priorité sur celles définies en SQL et ne peuvent pas être modifiées ni supprimées à l’aide de commandes SQL.
 
-<div id="config_based_workloads_format">
-  ### Format de la configuration
-</div>
+### Format de la configuration {#config_based_workloads_format}
 
 ```xml
 <clickhouse>
@@ -385,9 +365,7 @@ En plus des définitions basées sur SQL, les charges de travail et les ressourc
 
 La configuration utilise la même syntaxe SQL que les instructions `CREATE WORKLOAD` et `CREATE RESOURCE`. Toutes les requêtes doivent être valides.
 
-<div id="config_based_workloads_usage_recommendations">
-  ### Recommandations d’utilisation
-</div>
+### Recommandations d’utilisation {#config_based_workloads_usage_recommendations}
 
 Pour les environnements cloud, une configuration typique peut inclure :
 
@@ -400,9 +378,7 @@ Cela garantit que toutes les activités d’arrière-plan et les requêtes respe
 
 Un autre cas d’usage consiste à utiliser une configuration différente selon les nœuds d’un cluster hétérogène.
 
-<div id="strict_resource_access">
-  ## Accès strict aux ressources
-</div>
+## Accès strict aux ressources {#strict_resource_access}
 
 Pour obliger toutes les requêtes à respecter les politiques d’ordonnancement des ressources, il existe un paramètre du serveur `throw_on_unknown_workload`. S’il est défini sur `true`, chaque requête doit utiliser un paramètre de requête `workload` valide, faute de quoi l’exception `RESOURCE_ACCESS_DENIED` est levée. S’il est défini sur `false`, une telle requête n’utilise pas l’ordonnanceur de ressources, c’est-à-dire qu’elle bénéficie d’un accès illimité à n’importe quelle `RESOURCE`. Le paramètre de requête &#39;use&#95;concurrency&#95;control = 0&#39; permet à une requête de contourner l’ordonnanceur CPU et d’obtenir un accès illimité au CPU. Pour imposer l’ordonnancement CPU, créez une contrainte de paramètre afin que &#39;use&#95;concurrency&#95;control&#39; reste une valeur constante en lecture seule.
 
@@ -410,9 +386,7 @@ Pour obliger toutes les requêtes à respecter les politiques d’ordonnancement
   Ne définissez pas `throw_on_unknown_workload` sur `true` tant que `CREATE WORKLOAD default` n’a pas été exécuté. Cela peut entraîner des problèmes au démarrage du serveur si une requête sans paramètre `workload` explicite est exécutée pendant le démarrage.
 </Note>
 
-<div id="hierarchy">
-  ### Hiérarchie des nœuds d’ordonnancement
-</div>
+### Hiérarchie des nœuds d’ordonnancement {#hierarchy}
 
 Du point de vue du sous-système d’ordonnancement, chaque ressource correspond à une hiérarchie de nœuds d’ordonnancement. ClickHouse crée automatiquement tous les nœuds d’ordonnancement nécessaires à partir des définitions WORKLOAD et RESOURCE. Les nœuds d’ordonnancement sont des détails d’implémentation de bas niveau, accessibles dans la table [system.scheduler](/fr/reference/system-tables/scheduler).
 
@@ -462,9 +436,7 @@ graph TD
 * `precedence_allocation` - applique l’éviction selon une précédence statique (une valeur plus faible signifie une précédence plus élevée) ; une allocation en attente de précédence plus élevée évince les allocations de précédence plus faible ; les nœuds enfants doivent spécifier `precedence` (la valeur par défaut est 0).
 * `queue` - feuille de la hiérarchie capable de contenir des allocations en cours d’exécution et en attente.
 
-<div id="see-also">
-  ## Voir aussi
-</div>
+## Voir aussi {#see-also}
 
 * [system.scheduler](/fr/reference/system-tables/scheduler)
 * [system.workloads](/fr/reference/system-tables/workloads)

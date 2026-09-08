@@ -441,6 +441,24 @@ doc_type: 'reference'
 
 ## Comercial {#commercial}
 
+<Accordion title="ADQM Notebook">
+  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) é um espaço de trabalho SQL no estilo notebook incluído na edição Enterprise do [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), o SGBD orientado a colunas construído sobre o ClickHouse pela Arenadata. Ele estende a interface web nativa do ClickHouse com notebooks de múltiplas células, resultados interativos, análise de planos de consulta e um navegador de esquemas para todo o cluster, e está disponível imediatamente em `/notebook` na porta HTTP (`8123`) de um host ADQM, ao lado de `/play`, ou por meio do Chproxy.
+
+  Recursos:
+
+  * Células SQL e Markdown, até cinco instruções por célula e limites de memória, tempo e threads por notebook ou célula.
+  * Editor SQL com realce de sintaxe, autocompletar, substituição de `{{variable}}` e `Beautify SQL`.
+  * Resultados em uma grade ordenável e pesquisável, com proporção de NULL, contagem de valores únicos e intervalo de valores por coluna.
+  * Gráficos de linha, área e barras; downloads em CSV, TSV, JSON, JSONLines ou Parquet.
+  * Planos de consulta estimados e reais, `EXPLAIN PIPELINE` e visões lógicas, além de constatações com correções sugeridas.
+  * Estatísticas de consulta a partir de `system.query_log` com detalhamento por nó; histórico das últimas cinco execuções.
+  * Painel de bancos de dados para o host local ou para todo o cluster, com estatísticas de colunas e consultas prontas.
+  * Grafo de dependências de tabelas, views, visão materializada, dicionários e projeções.
+  * Visão em tempo real das consultas em execução com um botão `KILL`.
+  * Acesso por meio do Chproxy como ponto de entrada único para o cluster, com consultas balanceadas entre todos os hosts.
+  * Salvamento automático, exportação e importação em JSON, armazenamento dos notebooks no servidor ClickHouse e compartilhamento por link.
+</Accordion>
+
 <Accordion title="ProbeDeck">
   [ProbeDeck](https://probedeck.app) é um cliente para iOS e iPadOS para monitorar e consultar o ClickHouse.
 
@@ -500,14 +518,14 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com) é uma plataforma de dados e ferramenta de inteligência de negócios com suporte a mais de 50 dialetos de banco de dados, incluindo o ClickHouse. O Looker está disponível como plataforma SaaS e em versão auto-hospedada. Os usuários podem usar o Looker pelo navegador para explorar dados, criar visualizações e dashboards, agendar relatórios e compartilhar insights com colegas. O Looker oferece um amplo conjunto de ferramentas para incorporar esses recursos a outros aplicativos e uma API
-  para integrar dados a outros aplicativos.
+  [Looker](https://looker.com) é uma plataforma de dados e ferramenta de inteligência de negócios com suporte a mais de 50 dialetos de banco de dados, incluindo o ClickHouse. O Looker está disponível como plataforma SaaS e em versão auto-hospedada. Os usuários podem usar o Looker pelo navegador para explorar dados, criar visualizações e dashboards, agendar relatórios e compartilhar seus insights com colegas. O Looker oferece um conjunto rico de ferramentas para incorporar esses recursos em outras aplicações, além de uma API
+  para integrar dados com outras aplicações.
 
   Recursos:
 
-  * Desenvolvimento fácil e ágil usando LookML, uma linguagem que oferece suporte a
-    [modelagem de dados](https://looker.com/platform/data-modeling) selecionada para dar suporte a criadores de relatórios e usuários finais.
-  * Integração avançada de fluxo de trabalho por meio das [Data Actions](https://looker.com/platform/actions) do Looker.
+  * Desenvolvimento fácil e ágil usando o LookML, uma linguagem que oferece suporte a
+    [Data Modeling](https://looker.com/platform/data-modeling) curado para atender autores de relatórios e usuários finais.
+  * Integração poderosa de fluxos de trabalho por meio das [Data Actions](https://looker.com/platform/actions) do Looker.
 
   [Como configurar o ClickHouse no Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 </Accordion>
@@ -580,4 +598,19 @@ doc_type: 'reference'
   * Edição de dados diretamente nas tabelas de resultados, com salvamento em lote, além de exportação e importação em CSV/JSON/SQL usando os formatos nativos do ClickHouse.
   * Opções de conexão: HTTP/HTTPS, túnel SSH para clusters privados atrás de um firewall e modo somente leitura opcional para navegação segura em produção.
   * Funciona com ClickHouse Cloud e implantações auto-hospedado.
+</Accordion>
+
+<Accordion title="ADQM Control">
+  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) é uma plataforma de observabilidade para clusters do ClickHouse implantados como [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), o SGBD orientado a colunas criado pela Arenadata sobre o ClickHouse. Ele combina métricas de host do Prometheus com dados sobre hosts, tabelas e consultas coletados do cluster para mostrar como as tabelas crescem, como as consultas se comportam e onde os hosts estão sob pressão, em um ou em vários clusters ADQM. O ADQM Control é implantado como um cluster separado com o [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) e armazena os dados coletados no PostgreSQL.
+
+  Recursos:
+
+  * Mapa de calor dos estados dos hosts do cluster ADQM selecionado.
+  * Alertas relacionados agrupados em incidentes por tempo, com sensibilidade ajustável.
+  * Tamanho das tabelas, linhas e contagem de requisições ao longo do tempo, com métricas de distorção e desbalanceamento entre hosts.
+  * Tamanho comprimido e não comprimido por coluna, economia de compressão e codec, com gráficos.
+  * Histórico completo de consultas com status, códigos de exceção, duração, memória e linhas e bytes lidos e escritos.
+  * Filtros de consulta por texto, tabela, usuário, host, duração, status e presets de código de exceção.
+  * Gráficos de consultas por duração, usuário e tipo; gráficos de carga por host com detecção de anomalias.
+  * Alertas de limiar sobre recursos de host que explicam o problema e recomendam uma correção.
 </Accordion>

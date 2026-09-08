@@ -441,10 +441,28 @@ doc_type: 'reference'
 
 ## Commercial {#commercial}
 
+<Accordion title="ADQM Notebook">
+  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) est un espace de travail SQL de type notebook inclus dans l’édition Enterprise d’[Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), le SGBD orienté colonnes construit sur ClickHouse par Arenadata. Il étend l’interface web intégrée de ClickHouse avec des notebooks multi-cellules, des résultats interactifs, l’analyse du plan de requête et un explorateur de schémas à l’échelle du cluster, et il est disponible sans configuration à `/notebook` sur le port HTTP (`8123`) d’un hôte ADQM, à côté de `/play`, ou via Chproxy.
+
+  Fonctionnalités :
+
+  * Cellules SQL et Markdown, jusqu’à cinq instructions par cellule, et limites de mémoire, de temps et de threads par notebook ou par cellule.
+  * Éditeur SQL avec coloration syntaxique, autocomplétion, substitution `{{variable}}` et `Beautify SQL`.
+  * Résultats sous forme de grille triable et interrogeable, avec part de valeurs NULL, nombre de valeurs uniques et plage de valeurs par colonne.
+  * Graphiques en courbes, en aires et à barres ; téléchargements au format CSV, TSV, JSON, JSONLines ou Parquet.
+  * Plans de requête estimés et réels, `EXPLAIN PIPELINE` et vues logiques, ainsi que des constats accompagnés de corrections suggérées.
+  * Statistiques de requête issues de `system.query_log` avec une ventilation par nœud ; historique des cinq dernières exécutions.
+  * Panneau Databases pour l’hôte local ou l’ensemble du cluster, avec statistiques de colonnes et requêtes prêtes à l’emploi.
+  * Graphe de dépendances des tables, vues, vues matérialisées, dictionnaires et projections.
+  * Vue en direct des requêtes en cours d’exécution avec un bouton `KILL`.
+  * Accès via Chproxy comme point d’entrée unique au cluster, avec des requêtes réparties sur tous les hôtes.
+  * Sauvegarde automatique, export et import JSON, stockage des notebooks sur le serveur ClickHouse et partage par lien.
+</Accordion>
+
 <Accordion title="ProbeDeck">
   [ProbeDeck](https://probedeck.app) est un client iOS et iPadOS pour surveiller ClickHouse et y exécuter des requêtes.
 
-  Fonctionnalités :
+  Fonctionnalités :
 
   * ProbeDeck affiche les requêtes en cours d’exécution, les répliques, les parts de la table, les fusions, les mutations, les disques et les métriques du serveur.
   * Vous pouvez arrêter les requêtes avec `KILL QUERY` et les mutations avec `KILL MUTATION`.
@@ -459,9 +477,9 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="DataGrip">
-  [DataGrip](https://www.jetbrains.com/datagrip/) est un IDE de base de données de JetBrains offrant une prise en charge dédiée de ClickHouse. Il est également intégré à d’autres outils basés sur IntelliJ : PyCharm, IntelliJ IDEA, GoLand, PhpStorm et d’autres.
+  [DataGrip](https://www.jetbrains.com/datagrip/) est un IDE de base de données de JetBrains offrant une prise en charge dédiée de ClickHouse. Il est également intégré à d’autres outils basés sur IntelliJ : PyCharm, IntelliJ IDEA, GoLand, PhpStorm et d’autres.
 
-  Fonctionnalités :
+  Fonctionnalités :
 
   * Complétion de code très rapide.
   * Coloration syntaxique ClickHouse.
@@ -474,7 +492,7 @@ doc_type: 'reference'
 <Accordion title="Yandex DataLens">
   [Yandex DataLens](https://yandex.cloud/en/services/datalens) est un service de visualisation et d’analyse de données.
 
-  Fonctionnalités :
+  Fonctionnalités :
 
   * Large gamme de visualisations disponibles, des simples graphiques à barres aux tableaux de bord complexes.
   * Les tableaux de bord peuvent être rendus accessibles publiquement.
@@ -490,24 +508,24 @@ doc_type: 'reference'
 <Accordion title="Holistics Software">
   [Holistics](https://www.holistics.io/) est une plateforme de données full-stack et un outil de business intelligence.
 
-  Fonctionnalités :
+  Fonctionnalités :
 
   * Planification automatisée de l’envoi de rapports par e-mail, Slack et Google Sheets.
-  * Éditeur SQL avec visualisations, gestion des versions, complétion automatique, composants de requête réutilisables et filtres dynamiques.
+  * Éditeur SQL avec visualisations, contrôle de version, complétion automatique, composants de requête réutilisables et filtres dynamiques.
   * Analytique embarquée des rapports et tableaux de bord via iframe.
   * Capacités de préparation des données et d’ETL.
   * Prise en charge de la modélisation des données SQL pour le mappage relationnel des données.
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com) est une plateforme de données et un outil de business intelligence prenant en charge plus de 50 dialectes de bases de données, dont ClickHouse. Looker est disponible sous forme de plateforme SaaS et en version auto-hébergée. Les utilisateurs peuvent utiliser Looker dans leur navigateur pour explorer les données, créer des visualisations et des tableaux de bord, planifier des rapports et partager leurs analyses avec leurs collègues. Looker fournit un large éventail d’outils permettant d’intégrer ces fonctionnalités à d’autres applications, ainsi qu’une API
+  [Looker](https://looker.com) est une plateforme de données et un outil de business intelligence prenant en charge plus de 50 dialectes de bases de données, dont ClickHouse. Looker est disponible en tant que plateforme SaaS et en version auto-hébergée. Les utilisateurs peuvent utiliser Looker depuis leur navigateur pour explorer les données, créer des visualisations et des tableaux de bord, planifier des rapports et partager leurs analyses avec leurs collègues. Looker fournit un ensemble riche d’outils pour intégrer ces fonctionnalités dans d’autres applications, ainsi qu’une API
   permettant d’intégrer les données à d’autres applications.
 
-  Fonctionnalités :
+  Fonctionnalités :
 
-  * Développement simple et agile à l’aide de LookML, un langage qui prend en charge une
-    [modélisation des données](https://looker.com/platform/data-modeling) organisée pour aider les rédacteurs de rapports et les utilisateurs finaux.
-  * Intégration puissante aux workflows via les [Data Actions](https://looker.com/platform/actions) de Looker.
+  * Développement simple et agile grâce à LookML, un langage prenant en charge des
+    [Data Models](https://looker.com/platform/data-modeling) organisés, au service des rédacteurs de rapports et des utilisateurs finaux.
+  * Intégration puissante aux flux de travail via les [Data Actions](https://looker.com/platform/actions) de Looker.
 
   [Comment configurer ClickHouse dans Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 </Accordion>
@@ -515,14 +533,14 @@ doc_type: 'reference'
 <Accordion title="SeekTable">
   [SeekTable](https://www.seektable.com) est un outil de BI en libre-service destiné à l’exploration des données et au reporting opérationnel. Il est disponible à la fois comme service cloud et en version auto-hébergée. Les rapports de SeekTable peuvent être intégrés à toute application web.
 
-  Fonctionnalités :
+  Fonctionnalités :
 
   * Générateur de rapports adapté aux utilisateurs métier.
   * Paramètres de rapport puissants pour le filtrage SQL et les personnalisations de requêtes propres aux rapports.
   * Peut se connecter à ClickHouse à la fois avec un point de terminaison TCP/IP natif et une interface HTTP(S) (2 pilotes différents).
   * Il est possible d’utiliser toute la puissance du dialecte SQL de ClickHouse dans les définitions de dimensions et de mesures.
   * [API Web](https://www.seektable.com/help/web-api-integration) pour la génération automatisée de rapports.
-  * Prend en charge le flux de développement des rapports avec [sauvegarde/restauration](https://www.seektable.com/help/self-hosted-backup-restore) des données de compte ; la configuration des modèles de données (cubes) et des rapports est en XML lisible par l’humain et peut être stockée dans un système de contrôle de version.
+  * Prend en charge le flux de développement des rapports avec [sauvegarde/restauration](https://www.seektable.com/help/self-hosted-backup-restore) des données de compte ; la configuration des modèles de données (cubes) et des rapports est en XML lisible par l’humain et peut être stockée dans un système de contrôle de version.
 
   SeekTable est [gratuit](https://www.seektable.com/help/cloud-pricing) pour un usage personnel ou individuel.
 
@@ -536,9 +554,9 @@ doc_type: 'reference'
 <Accordion title="TABLUM.IO">
   [TABLUM.IO](https://tablum.io/) — un outil en ligne de requêtes et d’analyse pour l’ETL et la visualisation. Il permet de se connecter à ClickHouse, d’interroger des données via une console SQL polyvalente, ainsi que de charger des données depuis des fichiers statiques et des services tiers. TABLUM.IO peut visualiser les résultats sous forme de graphiques et de tables.
 
-  Fonctionnalités :
+  Fonctionnalités :
 
-  * ETL : chargement de données depuis des bases de données populaires, des fichiers locaux et distants, et des appels d’API.
+  * ETL : chargement de données depuis des bases de données populaires, des fichiers locaux et distants, et des appels d’API.
   * Console SQL polyvalente avec coloration syntaxique et générateur de requêtes visuel.
   * Visualisation des données sous forme de graphiques et de tables.
   * Matérialisation des données et sous-requêtes.
@@ -553,9 +571,9 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="CKMAN">
-  [CKMAN](https://www.github.com/housepower/ckman) est un outil de gestion et de surveillance des clusters ClickHouse !
+  [CKMAN](https://www.github.com/housepower/ckman) est un outil de gestion et de surveillance des clusters ClickHouse !
 
-  Fonctionnalités :
+  Fonctionnalités :
 
   * Déploiement automatisé rapide et pratique de clusters via une interface web
   * Les clusters peuvent être mis à l’échelle ou réduits
@@ -570,7 +588,7 @@ doc_type: 'reference'
 <Accordion title="1bench">
   [1bench](https://1bench.dev) est une interface graphique native pour ordinateur, compatible avec plusieurs bases de données et offrant une excellente prise en charge de ClickHouse — vue d’ensemble du serveur, gestion des schémas, recherche vectorielle et navigation dans de grands ensembles de résultats.
 
-  Fonctionnalités :
+  Fonctionnalités :
 
   * Vue d’ensemble du serveur à la connexion — version, temps de fonctionnement, requêtes en cours, fusions actives, parts de la table et volumes de stockage, état des réplicas, clusters et nœuds en un coup d’œil.
   * Générateur de requêtes visuel (sélecteurs de colonnes, filtres, tri, limite), avec un éditeur SQL Monaco doté de la coloration syntaxique et d’un historique des requêtes par connexion.
@@ -578,6 +596,21 @@ doc_type: 'reference'
   * Gestion native des types ClickHouse — `Nullable`, `Array`, `LowCardinality`, objets imbriqués.
   * Prise en charge de la recherche vectorielle — colonnes d’embeddings `Array(Float32)` affichées sous forme de cellules vectorielles compactes, visualisation 2D des embeddings et fonction Find Similar via `cosineDistance`.
   * Édition directe des données dans les tables de résultats avec enregistrement par lots, ainsi qu’export et import CSV/JSON/SQL à l’aide des formats natifs de ClickHouse.
-  * Options de connexion : HTTP/HTTPS, tunnel SSH pour les clusters privés derrière un pare-feu, mode lecture seule facultatif pour naviguer en toute sécurité en production.
+  * Options de connexion : HTTP/HTTPS, tunnel SSH pour les clusters privés derrière un pare-feu, mode lecture seule facultatif pour naviguer en toute sécurité en production.
   * Fonctionne avec ClickHouse Cloud et en auto-hébergé.
+</Accordion>
+
+<Accordion title="ADQM Control">
+  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) est une plateforme d’observability pour les clusters ClickHouse déployés sous forme d’[Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), le SGBD orienté colonnes construit sur ClickHouse par Arenadata. Elle associe les métriques des hôtes issues de Prometheus aux données relatives aux hôtes, aux tables et aux requêtes collectées depuis le cluster, afin de montrer comment les tables grossissent, comment les requêtes se comportent et où les hôtes sont sous pression, sur un ou plusieurs clusters ADQM. ADQM Control se déploie comme un cluster distinct avec [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) et stocke les données collectées dans PostgreSQL.
+
+  Fonctionnalités :
+
+  * Carte thermique de l’état des hôtes pour le cluster ADQM sélectionné.
+  * Alertes liées regroupées en incidents par plage temporelle, avec sensibilité réglable.
+  * Évolution dans le temps de la taille des tables, du nombre de rows et du nombre de requêtes, avec des métriques d’asymétrie et de déséquilibre entre les hôtes.
+  * Taille compressée et non compressée par colonne, gain de compression et codec, avec graphiques.
+  * Historique complet des requêtes avec le status, les codes d’exception, la durée, la mémoire, ainsi que les rows et octets lus et écrits.
+  * Filtres de requêtes par texte, table, utilisateur, hôte, durée, status et préréglages de codes d’exception.
+  * Graphiques des requêtes par durée, utilisateur et type ; graphiques de charge par hôte avec détection d’anomalies.
+  * Alertes de seuil sur les ressources des hôtes, qui expliquent le problème et recommandent une solution.
 </Accordion>

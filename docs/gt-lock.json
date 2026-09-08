@@ -7,36 +7,36 @@
       "versionId": "a372f4e7d54d9b799344f85fa77a6c684c792c8951b74039b53becd67db973b4",
       "translations": {
         "ja": {
-          "updatedAt": "2026-09-08T21:31:54.192Z",
+          "updatedAt": "2026-09-08T22:04:41.851Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-08T21:31:55.010Z",
+          "updatedAt": "2026-09-08T22:04:42.736Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-08T21:31:55.189Z",
+          "updatedAt": "2026-09-08T22:04:42.943Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-08T21:31:53.955Z",
+          "updatedAt": "2026-09-08T22:04:41.569Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-08T21:31:55.355Z",
+          "updatedAt": "2026-09-08T22:04:43.151Z",
           "fileName": "docs.json",
           "postProcessHash": "9725454df24b393b8483092c6cab6e80b91d3f454a4354d81fb5d885108b167d"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-08T21:31:54.616Z",
+          "updatedAt": "2026-09-08T22:04:42.313Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-08T21:31:54.413Z",
+          "updatedAt": "2026-09-08T22:04:42.082Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-08T21:31:54.821Z",
+          "updatedAt": "2026-09-08T22:04:42.527Z",
           "fileName": "docs.json"
         }
       },
@@ -41082,47 +41082,47 @@
     },
     {
       "fileId": "d056a0b322fd52145842a4140d2c36435ec8e09af128cb0ac942514e54763d91",
-      "versionId": "040d66300cca6d32a796335160e011702730bb3fb35efcba8cca2edf9543bb2b",
+      "versionId": "dcaaaa06e92ff5a54dc01573eb059f7855d6bcf395cc4faffae692fbfa1931f2",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-08T13:28:11.347Z",
+          "updatedAt": "2026-09-08T22:04:49.367Z",
           "fileName": "fr/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "da2836494aaedfeb8e561d2a1d9b2fb29ccbf8171bf822733d941c102b810667"
+          "postProcessHash": "3286a1e84d7c559597b8f15685b3cfa1b2676c93c7a4781c33743c4315dbea33"
         },
         "zh": {
-          "updatedAt": "2026-09-08T13:28:11.353Z",
+          "updatedAt": "2026-09-08T22:04:49.368Z",
           "fileName": "zh/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "5b25babf4ee7ba4660ed9dd49321e28b116f6f84d0a2053dbe8f49a57b5b4ace"
+          "postProcessHash": "9ffac2b17aa767b4676439dea46daa768e9e0083a29dbfde1d6ce383f71f7399"
         },
         "ru": {
-          "updatedAt": "2026-09-08T13:28:11.354Z",
+          "updatedAt": "2026-09-08T22:04:49.369Z",
           "fileName": "ru/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "6add307d6f5ab2d8b4e9e43638ae73ac49145c0d7a263752daa6ab07c67e229f"
-        },
-        "ja": {
-          "updatedAt": "2026-09-08T13:28:11.356Z",
-          "fileName": "ja/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "2b36a796fb67866cc2554c00a37c4cececf4a3570b1761fe42b09985e2f671c8"
-        },
-        "ko": {
-          "updatedAt": "2026-09-08T13:28:11.357Z",
-          "fileName": "ko/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "b68f21719a19d7a5b6e1600c0a05d761756ade48933bce2bd94c3111d7a4ecdd"
+          "postProcessHash": "2054048b2b20a501bd849b8e55a13caa963bd8460a07265049e76f98107a6e06"
         },
         "es": {
-          "updatedAt": "2026-09-08T13:28:11.361Z",
+          "updatedAt": "2026-09-08T22:04:49.370Z",
           "fileName": "es/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "17df5be5634b5aeec1acf431fe0dda8c9dee9139e94043a001b15d11207f0e84"
+          "postProcessHash": "aa9093ed376cca2110a01af47edc94b5ac5af02a0ef60fac8f30d023a6d5725d"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-08T13:28:11.362Z",
+          "updatedAt": "2026-09-08T22:04:49.371Z",
           "fileName": "pt-BR/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "a0cc4136a57ef6538c920dfb877727f91df81d812ed456ab665a0978c83694c1"
+          "postProcessHash": "22c905e866240f0b2acfbaf26d63aee50099d3b7125c5ade195dceb530d9fc1d"
+        },
+        "ko": {
+          "updatedAt": "2026-09-08T22:04:49.372Z",
+          "fileName": "ko/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "8106099ccd2330ccbb1f869d9d438443a44ed24642da8e8f9f687896c54a2265"
+        },
+        "ja": {
+          "updatedAt": "2026-09-08T22:04:49.373Z",
+          "fileName": "ja/integrations/connectors/tools/gui.mdx",
+          "postProcessHash": "c8a3242aeef14ec1e83b8b21348b249f7b78e814f634ca76ce70559bb6ff3ec0"
         },
         "ar": {
-          "updatedAt": "2026-09-08T13:28:11.372Z",
+          "updatedAt": "2026-09-08T22:04:49.374Z",
           "fileName": "ar/integrations/connectors/tools/gui.mdx",
-          "postProcessHash": "5c518fa844f18b4b61d74837d9fc0bacc296e587db16e33242bf45bddd573cbe"
+          "postProcessHash": "c7360b3ff4c4ec10bcfe10d05e2a4386f9e946868f596d8ab0faa35b2dfe55a6"
         }
       },
       "fileName": "integrations/connectors/tools/gui.mdx"
@@ -72094,47 +72094,47 @@
     },
     {
       "fileId": "969e0f9553959710975c69eaf4a3f200b31677aa81405eecf50acde9d374ee98",
-      "versionId": "007904b002a2fc011ad1af3745f1796f61b60fc1e92bf283a1f2669ff077d71f",
+      "versionId": "7d4845f5b535530adee2f5eee6c851f7ac21d3d59ee1f26e6f3eb0e599f33900",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-08-26T15:01:23.571Z",
-          "fileName": "fr/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "4243a7f5edd798d09e14a7265e69dd98c0d3c6b27217b4ce34d120cc9a3ddc17"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T15:01:25.221Z",
-          "fileName": "ru/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "dc3fdde25c313e36f28bd4eb009cc43c4f7370529ae7b0b87d234c8f71110d90"
+        "zh": {
+          "updatedAt": "2026-09-08T22:04:49.358Z",
+          "fileName": "zh/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "d51e3c8bab18e5ceaea2cdfa541b488dfc60175d1837a692eb26b791ab9d21b1"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T15:01:25.223Z",
+          "updatedAt": "2026-09-08T22:04:49.359Z",
           "fileName": "pt-BR/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "fa6f31d8c9d06bf119c4798d76139557e899baa204e51f17fedbae43e5376d36"
+          "postProcessHash": "4bb93dc10d0e0f7704196f9f2ee368e73805b9cc1a5f195e067b271623e080cc"
         },
-        "ar": {
-          "updatedAt": "2026-08-26T15:01:25.225Z",
-          "fileName": "ar/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "13a6870ee38c3afabf418939e5e6c67c6ef53b85964f1a4fccf50adf68548dd6"
+        "ru": {
+          "updatedAt": "2026-09-08T22:04:49.360Z",
+          "fileName": "ru/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "18dca7e23903c3b9d4fcbbdd68d8079fb49d52ec6e041e5f32b802f1b3989ea7"
         },
         "ko": {
-          "updatedAt": "2026-08-26T15:01:25.226Z",
+          "updatedAt": "2026-09-08T22:04:49.361Z",
           "fileName": "ko/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "c6f23c1bf913d7b2497931fa1470f641fe3135d0429cf6ea6431a7056a9a8735"
+          "postProcessHash": "fb8b6b8e749181dc24bc2f32476fe1ea06f859f82bf66f59f4f9373e8bd115b6"
         },
         "ja": {
-          "updatedAt": "2026-08-26T15:01:25.229Z",
+          "updatedAt": "2026-09-08T22:04:49.362Z",
           "fileName": "ja/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "57d21b9b356be56d92525c86e1c7a626c5f812945bdd5c21d428bb3530fa1575"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T15:01:25.231Z",
-          "fileName": "zh/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "e0471b6c0d05112fafcfb67fe7b3008f6ace56448c4bb1ae0559039aee147089"
+          "postProcessHash": "e3fde3609a2d4689b419db0133726fcd7a9c3f811f9d69045c32095f6d2d53b2"
         },
         "es": {
-          "updatedAt": "2026-08-26T15:01:25.232Z",
+          "updatedAt": "2026-09-08T22:04:49.364Z",
           "fileName": "es/concepts/features/configuration/server-config/workload-scheduling.mdx",
-          "postProcessHash": "9ff6763aba79d67fe555d20d014bbf0ccca1be176ecadf456c344ed0b8fc5b49"
+          "postProcessHash": "061557664e1661e95ccdffa79ab83a85b164624c62716748ab4c936bcdc20be6"
+        },
+        "fr": {
+          "updatedAt": "2026-09-08T22:04:49.365Z",
+          "fileName": "fr/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "82df9724cb6166038838715a91606f74bcc7214c3453b7afbc1cbadf94e661f4"
+        },
+        "ar": {
+          "updatedAt": "2026-09-08T22:04:49.366Z",
+          "fileName": "ar/concepts/features/configuration/server-config/workload-scheduling.mdx",
+          "postProcessHash": "af992ef9bc04074fc2877ab3e5e5a1d24cdd3b2c3fdffd888128a9374d1bcfeb"
         }
       },
       "fileName": "concepts/features/configuration/server-config/workload-scheduling.mdx"

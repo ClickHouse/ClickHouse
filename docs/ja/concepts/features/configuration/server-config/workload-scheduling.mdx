@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 ClickHouse が複数のクエリを同時に実行する場合、それらは共有リソース (CPU、メモリ、I/O) を使用します。リソースの利用方法や、異なるワークロード間での共有方法を制御するために、スケジューリングの制約とポリシーを適用できます。すべてのリソースに対して、共通のスケジューリング階層を設定できます。階層のルートは共有リソースを表し、リーフは個々のワークロードを表します。リーフには、特定のクエリおよびバックグラウンドアクティビティのリソースリクエストと割り当てが保持されます。
 
-<div id="resources">
-  ## リソース
-</div>
+## リソース {#resources}
 
 デフォルトでは、ワークロードスケジューリングは無効です。これを有効にするには、スケジューリングに使用するリソースと、少なくとも 1 つのワークロードを作成する必要があります。各リソースは独立しており、任意の組み合わせで使用できます。
 
@@ -37,11 +35,11 @@ CREATE RESOURCE query (QUERY)
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
 -- or
-CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
-CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE read_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE write_resource_name (WRITE DISK write_disk_name)
 ```
 
-1 つの resource は、任意の数のディスクに対して、READ、WRITE、またはその両方に使用できます。すべてのディスクで resource を使用できる構文もあります:
+1 つの リソース は、任意の数のディスクに対して、READ、WRITE、またはその両方に使用できます。すべてのディスクで リソース を使用できる構文もあります:
 
 ```sql
 CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
@@ -49,12 +47,10 @@ CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 
 リソースは、共有モードによって次のように分類されます。
 
-* **時間共有リソース** (CPU, I/O, クエリスロット) - スケジューリング階層の葉ノードでエンキューされるリソース要求を管理します。要求は、階層で定義されたポリシーと制約に従ってスケジュールされます。リソース要求は、クエリが対応するリソースにアクセスしたときに作成されます。たとえば、クエリがディスクからデータを読み取るときや、処理のために CPU を使用するときには、処理量子ごと、またはソケット経由で送受信されたバイト数ごとにリソース要求が作成されます。
-* **空間共有リソース** (メモリ) - スケジューリング階層の葉ノードにおけるリソース割り当てを管理します。割り当ては、実行中または保留中のいずれかです。保留中の割り当ては、十分な空き容量が確保されるか、ほかの割り当てが追い出される (強制終了される) までブロックされます。判断は、階層で定義された制限とポリシーに基づいて行われます。割り当てとクエリ (またはバックグラウンドアクティビティ) は 1 対 1 で対応します。割り当ては、クエリの実行開始時に作成され、終了時に解放されます。実行中の割り当ては、そのサイズを動的に増減できます。
+* **時間共有リソース** (CPU, I/O, クエリスロット) - スケジューリング階層のリーフノードでエンキューされるリソースリクエストを管理します。要求は、階層で定義されたポリシーと制約に従ってスケジュールされます。リソースリクエストは、クエリが対応するリソースにアクセスしたときに作成されます。たとえば、クエリがディスクからデータを読み取るときや、処理のために CPU を使用するときには、処理量子ごと、またはソケット経由で送受信されたバイト数ごとにリソースリクエストが作成されます。
+* **空間共有リソース** (メモリ) - スケジューリング階層のリーフノードにおけるリソース割り当てを管理します。割り当ては、実行中または保留中のいずれかです。保留中の割り当ては、十分な空き容量が確保されるか、ほかの割り当てが追い出される (強制終了される) までブロックされます。判断は、階層で定義された制限とポリシーに基づいて行われます。割り当てとクエリ (またはバックグラウンド処理) は 1 対 1 で対応します。割り当ては、クエリの実行開始時に作成され、終了時に解放されます。実行中の割り当ては、そのサイズを動的に増減できます。
 
-<div id="workloads">
-  ## ワークロード階層
-</div>
+## ワークロード階層 {#workloads}
 
 ClickHouse では、スケジューリング階層を定義するための便利な SQL 構文を利用できます。すべてのリソースは共通の WORKLOAD 階層に分散されます。分散ルールは特定のリソースについて一部変更できる場合がありますが、階層自体は同じです。各 WORKLOAD では、すべてのリソースに必要なスケジューリングノードが維持されます。子ワークロードは、階層を構成する任意のワークロードの下に作成できます。ClickHouse は、ワークロード階層に対して特定の構造や事前定義された構造を強制しません。
 
@@ -138,9 +134,7 @@ CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_sec
   ワークロード設定は、適切なスケジューリングノードのセットに変換されます。より下位レベルの詳細については、スケジューリングノードの[種類とオプション](#hierarchy)の説明を参照してください。
 </Note>
 
-<div id="workload-markup">
-  ## ワークロードの指定
-</div>
+## ワークロードの指定 {#workload-markup}
 
 異なるワークロードを区別するために、クエリには設定 `workload` を指定できます。`workload` が設定されていない場合は、値 &quot;default&quot; が使用されます。なお、設定プロファイルを使用して別の値を指定することもできます。ユーザーからのすべてのクエリに `workload` 設定の固定値を付与したい場合は、設定の制約を使用して `workload` を定数にできます。
 
@@ -155,9 +149,7 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 バックグラウンドアクティビティに `workload` 設定を割り当てることも可能です。マージとミューテーションでは、それぞれ `merge_workload` および `mutation_workload` サーバー設定が使用されます。これらの値は、`merge_workload` および `mutation_workload` MergeTree 設定を使用して、特定のテーブルごとに上書きすることもできます。
 
-<div id="cpu_scheduling">
-  ## CPU スケジューリング
-</div>
+## CPU スケジューリング {#cpu_scheduling}
 
 ワークロードの CPU スケジューリングを有効にするには、CPU リソースを作成し、同時実行するスレッド数の上限を設定します:
 
@@ -212,9 +204,7 @@ CPU スケジューリングは、マージとミューテーションではま�
   CPU リソースを宣言すると、[`concurrent_threads_soft_limit_num`](/ja/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) および [`concurrent_threads_soft_limit_ratio_to_cores`](/ja/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) 設定は効かなくなります。代わりに、特定のワークロードに割り当てる CPU 数の制限には、ワークロード設定 `max_concurrent_threads` が使用されます。従来の動作を再現するには、WORKER THREAD リソースのみを作成し、ワークロード `all` の `max_concurrent_threads` を `concurrent_threads_soft_limit_num` と同じ値に設定したうえで、クエリ設定 `workload = "all"` を使用してください。この構成は、[`concurrent_threads_scheduler`](/ja/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) 設定を &quot;fair&#95;round&#95;robin&quot; にした場合に相当します。
 </Note>
 
-<div id="threads_vs_cpus">
-  ## スレッドと CPU
-</div>
+## スレッドと CPU {#threads_vs_cpus}
 
 ワークロードの CPU 消費を制御する方法は 2 つあります。
 
@@ -253,9 +243,7 @@ CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
   ClickHouse server で CPU 使用率を最大化したい場合は、ルート ワークロード `all` に対して `max_cpus` や `max_cpu_share` を使用しないでください。代わりに、`max_concurrent_threads` により大きな値を設定してください。たとえば、8 CPU のシステムでは、`max_concurrent_threads = 16` に設定します。これにより、8 スレッドが CPU タスクを実行している間に、別の 8 スレッドで I/O 操作を処理できます。追加のスレッドによって CPU 負荷が生じるため、スケジューリングルールが確実に適用されます。これに対して、`max_cpus = 8` を設定しても CPU 負荷は発生しません。これは、server が利用可能な 8 CPU を超えて使用できないためです。
 </Note>
 
-<div id="memory-reservations">
-  ## メモリ予約
-</div>
+## メモリ予約 {#memory-reservations}
 
 <Note>
   メモリ予約のスケジューリングは実験的な機能です。これは `MEMORY RESERVATION` リソースが存在する場合にのみ有効であり、SQL インターフェースおよび動作は今後のリリースで変更される可能性があります。現時点では、マージとミューテーションにはまだ対応しておらず、実行中のクエリのエビクションはベストエフォートです。つまり、即時に反映されるのではなく、そのクエリの次回のメモリ同期ポイントで有効になります。
@@ -334,9 +322,7 @@ CREATE WORKLOAD testing IN user SETTINGS precedence = 2
 
 system ワークロードの優先順位は 0 (default) であり、production、staging、testing の各ワークロードより高いことにも注意してください。ただし、これらは兄弟ワークロードではありません。最小共通祖先は ワークロード all であり、その 2 つの子はいずれも同じ優先順位を持ちます。そのため、保留中の system ワークロードはそれらのいずれも追い出すことができず、逆も同様です。これにより、system の処理は簡単には追い出されないようになっています。
 
-<div id="query_scheduling">
-  ## クエリスロットのスケジューリング
-</div>
+## クエリスロットのスケジューリング {#query_scheduling}
 
 ワークロードでクエリスロットのスケジューリングを有効にするには、QUERY リソースを作成し、同時実行クエリ数または 1 秒あたりのクエリ数の上限を設定します。
 
@@ -355,21 +341,15 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   ブロックされたクエリは、すべての制約が満たされるまで無期限に待機し、`SHOW PROCESSLIST` には表示されません。
 </Note>
 
-<div id="workload_entity_storage">
-  ## ワークロードとリソースの保存
-</div>
+## ワークロードとリソースの保存 {#workload_entity_storage}
 
 `CREATE WORKLOAD` および `CREATE RESOURCE` クエリ形式の、すべてのワークロードとリソースの定義は、`workload_path` のディスク上、または `workload_zookeeper_path` の ZooKeeper に永続的に保存されます。ノード間の整合性を確保するには、ZooKeeper ストレージの使用を推奨します。あるいは、ディスクストレージとあわせて `ON CLUSTER` 句を使用することもできます。
 
-<div id="config_based_workloads">
-  ## 設定ベースのワークロードとリソース
-</div>
+## 設定ベースのワークロードとリソース {#config_based_workloads}
 
 SQL ベースの定義に加えて、ワークロードとリソースはサーバーの設定ファイルで事前定義することもできます。これは、Cloud 環境では一部の制限がインフラストラクチャによって規定される一方で、別の制限は顧客が変更できる場合に有用です。設定ベースのエンティティは SQL で定義されたものよりも優先され、SQL コマンドで変更または削除することはできません。
 
-<div id="config_based_workloads_format">
-  ### Configuration のフォーマット
-</div>
+### Configuration のフォーマット {#config_based_workloads_format}
 
 ```xml
 <clickhouse>
@@ -385,9 +365,7 @@ SQL ベースの定義に加えて、ワークロードとリソースはサー�
 
 この設定では、`CREATE WORKLOAD` 文および `CREATE RESOURCE` 文と同じ SQL 構文を使用します。すべてのクエリは有効である必要があります。
 
-<div id="config_based_workloads_usage_recommendations">
-  ### 使用時の推奨事項
-</div>
+### 使用時の推奨事項 {#config_based_workloads_usage_recommendations}
 
 Cloud 環境では、一般的な構成として次のようなものが考えられます。
 
@@ -400,9 +378,7 @@ Cloud 環境では、一般的な構成として次のようなものが考え�
 
 もう 1 つのユースケースとして、異種混在クラスター内のノードごとに異なる設定を用意する方法があります。
 
-<div id="strict_resource_access">
-  ## 厳格なリソースアクセス
-</div>
+## 厳格なリソースアクセス {#strict_resource_access}
 
 すべてのクエリにリソーススケジューリングポリシーを確実に適用するためのサーバー設定として、`throw_on_unknown_workload` があります。これを `true` に設定すると、すべてのクエリで有効な `workload` クエリ設定の指定が必須になり、指定しない場合は `RESOURCE_ACCESS_DENIED` 例外が発生します。これを `false` に設定すると、そのようなクエリはリソーススケジューラを使用せず、つまり任意の `RESOURCE` に無制限にアクセスできます。クエリ設定 `use_concurrency_control = 0` を指定すると、クエリは CPU スケジューラを回避し、CPU を無制限に使用できます。CPU スケジューリングを強制するには、`use_concurrency_control` を読み取り専用の定数値として維持する設定制約を作成してください。
 
@@ -410,9 +386,7 @@ Cloud 環境では、一般的な構成として次のようなものが考え�
   `CREATE WORKLOAD default` を実行していない限り、`throw_on_unknown_workload` を `true` に設定しないでください。起動中に `workload` が明示的に設定されていないクエリが実行されると、サーバーの起動時に問題が発生する可能性があります。
 </Note>
 
-<div id="hierarchy">
-  ### スケジューリングノードの階層
-</div>
+### スケジューリングノードの階層 {#hierarchy}
 
 スケジューリングサブシステムの観点では、各リソースはスケジューリングノードの階層として表現されます。ClickHouse は、WORKLOAD と RESOURCE の定義に基づいて、必要なスケジューリングノードをすべて自動的に作成します。スケジューリングノードは低レベルの実装詳細であり、[system.scheduler](/ja/reference/system-tables/scheduler) テーブルを通じて参照できます。
 
@@ -462,9 +436,7 @@ graph TD
 * `precedence_allocation` - 静的な優先順位に基づいてエビクションを実施します (値が小さいほど優先順位が高くなります) 。優先順位の高い保留中の割り当ては、優先順位の低い割り当てをエビクションします。子ノードでは `precedence` を指定する必要があります (デフォルトは 0) 。
 * `queue` - 実行中および保留中の割り当てを保持できる階層のリーフです。
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [system.scheduler](/ja/reference/system-tables/scheduler)
 * [system.workloads](/ja/reference/system-tables/workloads)
