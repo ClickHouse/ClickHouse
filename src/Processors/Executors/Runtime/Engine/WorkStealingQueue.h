@@ -11,11 +11,14 @@ namespace DB
 class WorkStealingQueue
 {
 public:
-    void push(Task task);
-    Task pop();
+    void pushBack(Task task);
+    void pushFront(Task task);
+    Task popFront();
+    Task popBack();
 
-    size_t takeFront(WorkStealingQueue & victim, size_t max_to_take);
-    size_t takeBack(WorkStealingQueue & victim, size_t max_to_take);
+    size_t takeFirst(WorkStealingQueue & victim, size_t max_to_take);
+    size_t takeLast(WorkStealingQueue & victim, size_t max_to_take);
+    size_t takeAll(WorkStealingQueue & victim);
 
     bool empty() const;
     size_t size() const;

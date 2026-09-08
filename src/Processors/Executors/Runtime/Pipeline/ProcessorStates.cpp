@@ -98,19 +98,22 @@ void ProcessorStates::forEachProcessor(const std::function<void(IProcessor &, Pr
         f(*processor, states.at(processor.get()));
 }
 
-void ProcessorStates::add(ProcessorState & requester, const Processors & to_add)
+std::vector<ProcessorState *> ProcessorStates::add(ProcessorState & requester, const Processors & to_add)
 {
     std::lock_guard lock(mutex);
 
+    std::vector<ProcessorState *> added;
     for (const auto & processor : to_add)
     {
-        addState(states, processor.get());
+        added.push_back(&addState(states, processor.get()));
         processors->push_back(processor);
     }
 
     connectPorts(states, requester);
-    for (const auto & processor : to_add)
-        connectPorts(states, states.at(processor.get()));
+    for (auto * state : added)
+        connectPorts(states, *state);
+
+    return added;
 }
 
 void ProcessorStates::remove(const Processors & to_remove)

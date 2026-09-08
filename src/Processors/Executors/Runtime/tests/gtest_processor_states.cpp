@@ -106,7 +106,9 @@ TEST(ProcessorStates, AddWiresTheGroupAndTheRequester)
 
     auto sink = std::make_shared<Sink>();
     connect(source->output(), sink->input());
-    states.add(source_state, {sink});
+    auto added = states.add(source_state, {sink});
+    ASSERT_EQ(1u, added.size());
+    EXPECT_EQ(sink.get(), added.front()->processor);
 
     EXPECT_EQ((Processors{source, sink}), *processors);
     EXPECT_THROW(states.add(source_state, {sink}), Exception);

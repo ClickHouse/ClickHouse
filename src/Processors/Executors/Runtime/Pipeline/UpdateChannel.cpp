@@ -42,6 +42,15 @@ bool UpdateChannel<PortT>::isConnected() const
 }
 
 template <class PortT>
+ProcessorState & UpdateChannel<PortT>::getOwner() const
+{
+    if (!isConnected())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Update channel is not connected");
+
+    return *owner;
+}
+
+template <class PortT>
 void UpdateChannel<PortT>::notifyChanges()
 {
     if (!owner || already_notified)

@@ -33,7 +33,7 @@ public:
     ExecutingPipeline(std::shared_ptr<Processors> processors_, QueryStatusPtr process_list_element_, const StepWallClockRegistry * wall_clocks_);
 
     std::vector<ProcessorState *> sinks();
-    IProcessor::CancelReason addProcessors(ProcessorState & requester, const Processors & added);
+    std::vector<ProcessorState *> addProcessors(ProcessorState & requester, const Processors & to_add);
 
     void submitForRemoval(Processors group);
     void recordAsFinished(IProcessor & processor);

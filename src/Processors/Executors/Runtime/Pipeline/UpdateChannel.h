@@ -18,6 +18,7 @@ public:
     void connect(ProcessorState & owner_, PortT & port_);
     void disconnect();
     bool isConnected() const;
+    ProcessorState & getOwner() const;
 
     void notifyChanges();
     void resetNotified();

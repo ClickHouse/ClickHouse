@@ -102,16 +102,16 @@ std::vector<ProcessorState *> ExecutingPipeline::sinks()
     return result;
 }
 
-IProcessor::CancelReason ExecutingPipeline::addProcessors(ProcessorState & requester, const Processors & added)
+std::vector<ProcessorState *> ExecutingPipeline::addProcessors(ProcessorState & requester, const Processors & to_add)
 {
-    states.add(requester, added);
+    auto added = states.add(requester, to_add);
 
     const auto reason = cancel_reason.load();
     if (reason != IProcessor::CancelReason::NotCancelled)
-        for (const auto & processor : added)
+        for (const auto & processor : to_add)
             processor->cancel(reason);
 
-    return reason;
+    return added;
 }
 
 void ExecutingPipeline::submitForRemoval(Processors group)

@@ -20,7 +20,7 @@ class TaskScheduler
         WorkStealingQueue queue;
     };
 
-    std::optional<Task> popOwn(GuardedQueue & own);
+    std::optional<Task> takeFromLocal(GuardedQueue & own);
     std::optional<Task> takeFromGlobal(GuardedQueue & own);
     std::optional<Task> steal(size_t worker_id);
     std::optional<Task> keepAndPopFirst(GuardedQueue & own, WorkStealingQueue & taken);
@@ -30,6 +30,7 @@ public:
 
     void push(Task task, size_t worker_id);
     void push(Task task);
+    void push(AsyncTask task);
 
     std::optional<Task> tryPop(size_t worker_id);
     size_t poll(size_t worker_id, int timeout_ms);

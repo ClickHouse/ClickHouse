@@ -6,6 +6,7 @@
 #include <atomic>
 #include <thread>
 #include <vector>
+#include <unistd.h>
 
 using namespace DB;
 
@@ -78,6 +79,50 @@ TEST(WorkersCoordinator, LastIdleWorkerDetectsTheFinish)
     EXPECT_FALSE(first_result);
     EXPECT_TRUE(f.coordinator.stopped());
 }
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+TEST(WorkersCoordinator, OneIdleWorkerBlocksInThePollerAndTheNextOneSleeps)
+{
+    Fixture f(2, 1);
+    f.coordinator.enter(0);
+    f.coordinator.enter(1);
+
+    int fds[2];
+    ASSERT_EQ(0, ::pipe(fds));
+    f.scheduler.push(AsyncTask{.state = &f.states[0], .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
+
+    bool polling_result = false;
+    std::thread polling([&] { polling_result = f.coordinator.wait(0); });
+    while (f.coordinator.idle() < 1)
+        std::this_thread::yield();
+
+    bool sleeping_result = false;
+    std::thread sleeping([&] { sleeping_result = f.coordinator.wait(1); });
+    while (f.coordinator.idle() < 2)
+        std::this_thread::yield();
+
+    char byte = 0;
+    ASSERT_EQ(1, ::write(fds[1], &byte, 1));
+    polling.join();
+    EXPECT_TRUE(polling_result);
+    EXPECT_EQ(1u, f.coordinator.idle());
+    EXPECT_EQ(2u, f.scheduler.size());
+
+    auto popped = f.scheduler.tryPop(0);
+    ASSERT_TRUE(popped);
+    EXPECT_EQ(&f.states[0], popped->state);
+    EXPECT_EQ(Task::Kind::AsyncReady, popped->kind);
+
+    f.coordinator.wakeOne();
+    sleeping.join();
+
+    EXPECT_TRUE(sleeping_result);
+    EXPECT_FALSE(f.coordinator.stopped());
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+#endif
 
 TEST(WorkersCoordinator, WakeOneWakesAnIdleWorkerThatThenSteals)
 {

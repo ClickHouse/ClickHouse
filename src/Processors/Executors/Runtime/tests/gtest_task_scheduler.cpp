@@ -37,16 +37,6 @@ struct Fixture
     }
 };
 
-class AsyncProcessor final : public IProcessor
-{
-public:
-    String getName() const override { return "Async"; }
-    Status prepare() override { return Status::Finished; }
-    void onAsyncJobReady() override { ++ready_calls; }
-
-    size_t ready_calls = 0;
-};
-
 }
 
 TEST(TaskScheduler, OwnQueueIsPoppedInPushOrder)
@@ -107,25 +97,58 @@ TEST(TaskScheduler, DrainHandsTheQueueToTheGlobalQueue)
 }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-TEST(TaskScheduler, PollTurnsFiredProcessorsIntoWorkTasks)
+TEST(TaskScheduler, FiredFdBecomesAsyncReadyInFrontAndWorkAtTheBack)
 {
-    Fixture f(1, 1);
-    AsyncProcessor processor;
-    f.states[0].processor = &processor;
+    Fixture f(1, 2);
 
     int fds[2];
     ASSERT_EQ(0, ::pipe(fds));
-    f.poller.add(f.states[0], fds[0]);
+    f.scheduler.push(AsyncTask{.state = &f.states[0], .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
+    EXPECT_EQ(1u, f.poller.pending());
     EXPECT_FALSE(f.scheduler.tryPop(0));
+
+    f.scheduler.push(f.task(1), 0);
+
+    char byte = 0;
+    ASSERT_EQ(1, ::write(fds[1], &byte, 1));
+    EXPECT_EQ(1u, f.scheduler.poll(0, 0));
+    EXPECT_EQ(0u, f.poller.pending());
+    EXPECT_EQ(3u, f.scheduler.size());
+
+    auto first = f.scheduler.tryPop(0);
+    ASSERT_TRUE(first);
+    EXPECT_EQ(&f.states[0], first->state);
+    EXPECT_EQ(Task::Kind::AsyncReady, first->kind);
+
+    EXPECT_EQ(1u, f.popIndex(0));
+
+    auto last = f.scheduler.tryPop(0);
+    ASSERT_TRUE(last);
+    EXPECT_EQ(&f.states[0], last->state);
+    EXPECT_EQ(Task::Kind::Work, last->kind);
+    EXPECT_FALSE(f.scheduler.tryPop(0));
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+#endif
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+TEST(TaskScheduler, TryPopPollsWhenTheQueuesAreEmpty)
+{
+    Fixture f(1, 1);
+
+    int fds[2];
+    ASSERT_EQ(0, ::pipe(fds));
+    f.scheduler.push(AsyncTask{.state = &f.states[0], .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
 
     char byte = 0;
     ASSERT_EQ(1, ::write(fds[1], &byte, 1));
 
     auto popped = f.scheduler.tryPop(0);
     ASSERT_TRUE(popped);
-    EXPECT_EQ(&f.states[0], popped->state);
-    EXPECT_EQ(Task::Kind::Work, popped->kind);
-    EXPECT_EQ(1u, processor.ready_calls);
+    EXPECT_EQ(Task::Kind::AsyncReady, popped->kind);
+    EXPECT_EQ(1u, f.scheduler.size());
     EXPECT_EQ(0u, f.poller.pending());
 
     ::close(fds[0]);

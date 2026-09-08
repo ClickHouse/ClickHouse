@@ -409,6 +409,8 @@ private:
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
     friend class ExecutingGraph;
+    /// For all of the above
+    friend class Worker;
 
     std::string processor_description;
 

@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -19,7 +20,7 @@ public:
     ProcessorState & get(const IProcessor & processor);
     void forEachProcessor(const std::function<void(IProcessor &, ProcessorState &)> & f);
 
-    void add(ProcessorState & requester, const Processors & to_add);
+    std::vector<ProcessorState *> add(ProcessorState & requester, const Processors & to_add);
     void remove(const Processors & to_remove);
 
     String dump() const;
