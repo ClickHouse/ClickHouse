@@ -1274,18 +1274,34 @@ def test_create_namespace_conflict_is_not_retried(started_cluster):
             )
         )
 
+    # The conflict handler is the only place logging this, and the namespace name is unique to
+    # this test, so the line proves that the `409` was really answered and consumed once. Without
+    # it the request counts below could stay within their bounds simply because the conflicting
+    # `POST /namespaces` was never sent.
+    conflicts_consumed = int(
+        node.query(
+            f"SELECT count() FROM system.text_log "
+            f"WHERE message LIKE '%already exists, skipping creation%' AND value1 = '{root_namespace}'"
+        )
+    )
+    assert conflicts_consumed == 1, (
+        f"expected exactly one consumed 'namespace already exists' conflict for "
+        f"'{root_namespace}', got {conflicts_consumed}"
+    )
+
     control_requests = requests_sent(f"{test_ref}_control")
     conflict_requests = requests_sent(f"{test_ref}_conflict")
     assert control_requests > 0, (
         "expected the HTTP requests to the REST catalog to be attributed to the CREATE query"
     )
     # Both CREATEs send exactly one namespace request: the control one a `GET` that answers
-    # `200`, the other a `POST` that answers `409`. Retrying the `409` would add
-    # `http_max_tries - 1` requests on top.
-    assert conflict_requests - control_requests < max_tries - 1, (
-        f"the 409 'namespace already exists' response is being retried instead of being treated "
-        f"as non-retriable: {conflict_requests} requests with the conflicting namespace creation "
-        f"against {control_requests} without it, http_max_tries={max_tries}"
+    # `200`, the other a `POST` that answers `409`. So the expected difference is zero, and the
+    # bounds below only leave room for an unrelated transient retry. Retrying the `409` would
+    # add `http_max_tries - 1` requests on top of the control query.
+    assert control_requests - 1 <= conflict_requests <= control_requests + 1, (
+        f"the 409 'namespace already exists' response is not handled in a single attempt: "
+        f"{conflict_requests} requests with the conflicting namespace creation against "
+        f"{control_requests} without it, http_max_tries={max_tries}"
     )
 
 
