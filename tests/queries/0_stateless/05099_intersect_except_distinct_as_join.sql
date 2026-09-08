@@ -59,7 +59,7 @@ SELECT 'inside IN and a CTE';
 SELECT count() FROM t_set_left WHERE a IN (SELECT a FROM t_set_left INTERSECT DISTINCT SELECT a FROM t_set_right);
 WITH both AS (SELECT a FROM t_set_left INTERSECT DISTINCT SELECT a FROM t_set_right) SELECT count(), min(a), max(a) FROM both;
 -- The rewritten CTE keeps its CTE name and flags, so the query tree dump and the rebuilt AST refer to it by name.
-SELECT explain FROM (EXPLAIN QUERY TREE dump_ast = 1 WITH both AS MATERIALIZED (SELECT a FROM t_set_left INTERSECT DISTINCT SELECT a FROM t_set_right) SELECT count() FROM both)
+SELECT explain FROM (EXPLAIN QUERY TREE dump_ast = 1 WITH both AS MATERIALIZED (SELECT a FROM t_set_left INTERSECT DISTINCT SELECT a FROM t_set_right) SELECT count() FROM both SETTINGS enable_materialized_cte = 1)
 WHERE explain LIKE '%cte_name%' OR explain LIKE '%both AS%';
 
 SELECT 'ALL modes keep the set-operation step';
