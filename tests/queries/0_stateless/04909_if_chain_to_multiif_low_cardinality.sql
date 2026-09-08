@@ -39,3 +39,39 @@ SELECT 'nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 
 SET optimize_if_chain_to_multiif = 0;
 SELECT toTypeName(if(number = 0, 'a', if(number = 1, 'b', 'c'))) FROM numbers(1);
 SELECT toTypeName(multiIf(number = 0, 'a', number = 1, 'b', 'c')) FROM numbers(1);
+
+-- The result type must not depend on `enable_analyzer`. The legacy AST optimizer
+-- (`OptimizeIfChainsVisitor`) rewrites the same `if` chains, but purely syntactically: the synthesized
+-- `multiIf` is resolved from the query settings and would return `LowCardinality(String)`, while the `if`
+-- chain returns plain `String`. The legacy rewrite is therefore disabled while
+-- `optimize_if_transform_const_strings_to_lowcardinality` is enabled.
+SET enable_analyzer = 0;
+SET optimize_if_transform_strings_to_enum = 0;
+
+SELECT 'old analyzer, multiIf absent, optimize_if_transform_const_strings_to_lowcardinality = 1';
+SET optimize_if_chain_to_multiif = 1;
+SET optimize_if_transform_const_strings_to_lowcardinality = 1;
+SELECT countIf(explain LIKE '%multiIf%') > 0
+FROM (EXPLAIN SYNTAX SELECT if(number = 0, 'a', if(number = 1, 'b', 'c')) FROM numbers(1));
+
+SELECT 'old analyzer, multiIf present, optimize_if_transform_const_strings_to_lowcardinality = 0';
+SET optimize_if_transform_const_strings_to_lowcardinality = 0;
+SELECT countIf(explain LIKE '%multiIf%') > 0
+FROM (EXPLAIN SYNTAX SELECT if(number = 0, 'a', if(number = 1, 'b', 'c')) FROM numbers(1));
+
+SELECT 'old analyzer, nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 1';
+SET optimize_if_transform_const_strings_to_lowcardinality = 1;
+SELECT toTypeName(if(number = 0, 'a', if(number = 1, 'b', 'c'))) FROM numbers(1);
+SELECT toTypeName(multiIf(number = 0, 'a', number = 1, 'b', 'c')) FROM numbers(1);
+SELECT toTypeName(if(number = 0, 'a', if(number = 1, NULL, 'c'))) FROM numbers(1);
+
+SELECT 'old analyzer, nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 0';
+SET optimize_if_chain_to_multiif = 0;
+SELECT toTypeName(if(number = 0, 'a', if(number = 1, 'b', 'c'))) FROM numbers(1);
+SELECT toTypeName(multiIf(number = 0, 'a', number = 1, 'b', 'c')) FROM numbers(1);
+SELECT toTypeName(if(number = 0, 'a', if(number = 1, NULL, 'c'))) FROM numbers(1);
+
+SELECT 'old analyzer, result values, optimize_if_transform_const_strings_to_lowcardinality = 1';
+SET optimize_if_chain_to_multiif = 1;
+SELECT number, if(number = 0, 'a', if(number = 1, 'b', 'c')) AS x, toTypeName(x) FROM numbers(3) ORDER BY number;
+SELECT number, if(number = 0, 'a', if(number = 1, NULL, 'c')) AS x, toTypeName(x) FROM numbers(3) ORDER BY number;

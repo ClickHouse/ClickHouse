@@ -5231,6 +5231,8 @@ The optimization is not applied when the whole expression is constant (constant 
 All the result branches have to be constants, so a nested `if` chain such as `if(cond1, 'a', if(cond2, 'b', 'c'))` keeps plain `String`: the else-branch of the outer `if` is another `if`, not a constant. Write it as `multiIf(cond1, 'a', cond2, 'b', 'c')` to get `LowCardinality(String)`.
 
 This setting has no effect while `optimize_if_transform_strings_to_enum` is enabled: the `Enum` rewrite takes precedence, and the result stays `String` (or `Nullable(String)`) even for the explicit `multiIf` form above.
+
+While this setting is enabled, `optimize_if_chain_to_multiif` does not rewrite `if` chains with the old analyzer (`enable_analyzer = 0`). That rewrite is purely syntactic there, so it would turn the plain `String` of an `if` chain into the `LowCardinality(String)` of a `multiIf` and make the result type depend on `enable_analyzer`.
 )", 0) \
     DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.

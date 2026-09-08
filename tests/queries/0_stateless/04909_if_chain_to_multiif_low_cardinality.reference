@@ -15,3 +15,22 @@ LowCardinality(String)
 nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 0
 String
 LowCardinality(String)
+old analyzer, multiIf absent, optimize_if_transform_const_strings_to_lowcardinality = 1
+0
+old analyzer, multiIf present, optimize_if_transform_const_strings_to_lowcardinality = 0
+1
+old analyzer, nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 1
+String
+LowCardinality(String)
+Nullable(String)
+old analyzer, nested `if` chain vs explicit `multiIf`, optimize_if_chain_to_multiif = 0
+String
+LowCardinality(String)
+Nullable(String)
+old analyzer, result values, optimize_if_transform_const_strings_to_lowcardinality = 1
+0	a	String
+1	b	String
+2	c	String
+0	a	Nullable(String)
+1	\N	Nullable(String)
+2	c	Nullable(String)
