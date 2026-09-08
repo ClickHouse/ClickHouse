@@ -31,6 +31,13 @@
 # replica's worker holds the database mutex. `DETACH DATABASE` joins the second replica's worker
 # thread, after which the first replica's worker is the only thread that can pause, making the
 # wait and the blocked rename deterministic.
+#
+# `SYSTEM DROP DATABASE REPLICA` itself must run asynchronously: after it has written the dummy
+# entry, `InterpreterSystemQuery::dropReplica` still reads the database name for its log message,
+# which takes the same database mutex. If the worker reaches the pause point first (it usually does
+# not, but it did in CI), the trigger query blocks on the paused worker, and a synchronous call
+# would never return to disable the failpoint: a deadlock. Started in the background, the query is
+# simply waited for after the failpoint is released.
 
 # Keep server-side warnings/errors (an authentication failure is logged at `error`) out of the
 # captured client output, so the probe below reports the query outcome and nothing else. This has
@@ -63,6 +70,24 @@ probe() {
     fi
 }
 
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FAILPOINT" 2>/dev/null ||:
+    # The second replica was already removed from ZooKeeper; attaching marks it as probably dropped,
+    # and the drop then only removes it locally.
+    $CLICKHOUSE_CLIENT -q "ATTACH DATABASE $DB_SECOND" 2>/dev/null ||:
+    $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB_SECOND SYNC" 2>/dev/null ||:
+    $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB_RENAMED SYNC" 2>/dev/null ||:
+    $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB SYNC" 2>/dev/null ||:
+    $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS $COLL" 2>/dev/null ||:
+}
+trap cleanup EXIT
+
+# The pause point is server-wide. If a previous run of this test was killed while it was armed (the
+# `trap` above does not run when the test runner kills the process group on a timeout), every later
+# cluster build on this server would pause forever, so release it before doing anything else.
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FAILPOINT"
+
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS $COLL"
 $CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION $COLL AS cluster_username = 'default', cluster_secret = 'secret_${CLICKHOUSE_TEST_UNIQUE_NAME}'"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $DB ENGINE = Replicated('$ZK_PATH', 's1', 'r1') SETTINGS collection_name = '$COLL'"
@@ -78,8 +103,10 @@ $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FAILPOINT"
 
 # Removing the (inactive) second replica writes a dummy entry to the DDL log; the first replica's
 # worker reacts to it by force-rebuilding the cached cluster and pauses at the failpoint right
-# after fetching the database name, holding the database mutex.
-$CLICKHOUSE_CLIENT -q "SYSTEM DROP DATABASE REPLICA 's1|r2' FROM DATABASE $DB"
+# after fetching the database name, holding the database mutex. The query may then block on that
+# mutex itself (see the header), so it runs in the background and is waited for after the release.
+$CLICKHOUSE_CLIENT -q "SYSTEM DROP DATABASE REPLICA 's1|r2' FROM DATABASE $DB" &
+drop_replica_pid=$!
 
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FAILPOINT PAUSE"
 
@@ -104,16 +131,9 @@ echo "rename observed=$rename_observed"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FAILPOINT"
 
+wait $drop_replica_pid
 wait $rename_pid
 
 # The rename must have invalidated the cluster the worker published with the old name; this probe
 # rebuilds it with the new name.
 probe after-rename "$DB_RENAMED"
-
-# The second replica was already removed from ZooKeeper; attaching marks it as probably dropped,
-# and the drop then only removes it locally.
-$CLICKHOUSE_CLIENT -q "ATTACH DATABASE $DB_SECOND"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB_SECOND SYNC"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB_RENAMED SYNC"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB SYNC"
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS $COLL"
