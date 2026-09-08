@@ -466,6 +466,10 @@ public:
         return false;
     }
 
+    /// Whether the parameters belong to the state's identity: they are then printed both in the state
+    /// type and in the name that travels with a serialized state. Default true.
+    virtual bool areParametersPartOfState() const { return true; }
+
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
     // because they don't respect the window frame, or need to be notified when
