@@ -2525,7 +2525,12 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
 {
     /// Here we actually need storage snapshot of all nested tables.
     /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
-    return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
+    /// A child's row policy is only applied when its rows are actually read, so counting one from
+    /// metadata would return rows the policy hides.
+    return traverseTablesUntil([&](const auto & table)
+    {
+        return !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
+    }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
