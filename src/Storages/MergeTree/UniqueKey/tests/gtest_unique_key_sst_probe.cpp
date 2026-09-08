@@ -6,6 +6,7 @@
 
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
 
 #include <Common/ProfileEvents.h>
 
