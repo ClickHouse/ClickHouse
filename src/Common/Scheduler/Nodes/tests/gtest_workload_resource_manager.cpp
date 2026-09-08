@@ -2,6 +2,8 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <future>
+#include <thread>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -29,6 +31,10 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
+#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 
 #include <base/scope_guard.h>
 
@@ -64,8 +70,15 @@ namespace DB::ErrorCodes
 using namespace DB;
 namespace ProfileEvents
 {
+    extern const Event ConcurrencyControlWaitMicroseconds;
     extern const Event ConcurrencyControlUpscales;
     extern const Event ConcurrencyControlDownscales;
+}
+
+namespace DB::FailPoints
+{
+    extern const char cpu_lease_before_wait_publication[];
+    extern const char cpu_lease_after_wait_publication[];
 }
 
 namespace CurrentMetrics
@@ -1548,6 +1561,173 @@ private:
         return ProfileEvents::global_counters[event];
     }
 };
+
+#if USE_LIBFIU
+namespace
+{
+bool waitForPublicationPause(const String & name)
+{
+    auto waiter = std::async(std::launch::async, [&name] { FailPointInjection::waitForPause(name); });
+    if (waiter.wait_for(std::chrono::seconds(30)) != std::future_status::ready)
+    {
+        FailPointInjection::disableFailPoint(name);
+        waiter.wait();
+        return false;
+    }
+    waiter.get();
+    return true;
+}
+
+class WaitPublicationQueue : public FifoQueue
+{
+public:
+    explicit WaitPublicationQueue(EventQueue & event_queue_) : FifoQueue(event_queue_)
+    {}
+
+    bool cancelRequest(ResourceRequest * request) override
+    {
+        const bool canceled = FifoQueue::cancelRequest(request);
+        cancellation.set_value(canceled);
+        return canceled;
+    }
+
+    std::promise<bool> cancellation;
+};
+
+void checkWaitPublicationAgainstFree(bool fail_request)
+{
+    EventQueue event_queue;
+    WaitPublicationQueue queue(event_queue);
+    auto cancellation = queue.cancellation.get_future();
+    std::shared_ptr<CPULeaseAllocation> allocation;
+    ThreadGroupPtr group;
+    std::exception_ptr creation_exception;
+    std::thread creator([&]
+    {
+        try
+        {
+            DB::ThreadStatus thread_status;
+            group = std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0);
+            CurrentThread::attachToGroupIfDetached(group);
+            SCOPE_EXIT({ CurrentThread::detachFromGroupIfNotDetached(); });
+            allocation = std::make_shared<CPULeaseAllocation>(
+                1, ResourceLink{&queue}, ResourceLink{&queue}, CPULeaseSettings{});
+        }
+        catch (...)
+        {
+            creation_exception = std::current_exception();
+        }
+    });
+    creator.join();
+    ASSERT_FALSE(creation_exception);
+    ASSERT_TRUE(allocation);
+    const auto before = group->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds];
+    std::weak_ptr<ThreadGroup> weak_group = group;
+    group.reset();
+
+    /// A positive input distinguishes one publication from an omitted publication.
+    /// This clock check does not coordinate the racing threads.
+    Stopwatch measured_wait;
+    while (measured_wait.elapsedMicroseconds() == 0)
+        std::this_thread::yield();
+
+    FailPointInjection::enableFailPoint(FailPoints::cpu_lease_before_wait_publication);
+    FailPointInjection::enableFailPoint(FailPoints::cpu_lease_after_wait_publication);
+    std::exception_ptr callback_exception;
+    std::promise<UInt64> freed_value;
+    auto freed = freed_value.get_future();
+    std::thread callback;
+    std::thread cleanup;
+    SCOPE_EXIT({
+        FailPointInjection::disableFailPoint(FailPoints::cpu_lease_before_wait_publication);
+        FailPointInjection::disableFailPoint(FailPoints::cpu_lease_after_wait_publication);
+        if (callback.joinable())
+            callback.join();
+        if (cleanup.joinable())
+            cleanup.join();
+    });
+    callback = std::thread([&]
+    {
+        try
+        {
+            if (fail_request)
+                queue.purgeQueue();
+            else
+            {
+                auto [request, unused] = queue.dequeueRequest();
+                if (!request)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected an enqueued CPU lease request");
+                request->execute();
+            }
+        }
+        catch (...)
+        {
+            callback_exception = std::current_exception();
+            FailPointInjection::disableFailPoint(FailPoints::cpu_lease_before_wait_publication);
+            FailPointInjection::disableFailPoint(FailPoints::cpu_lease_after_wait_publication);
+        }
+    });
+    ASSERT_TRUE(waitForPublicationPause(FailPoints::cpu_lease_before_wait_publication));
+    ASSERT_FALSE(weak_group.expired());
+    EXPECT_EQ(weak_group.lock()->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds], before);
+
+    cleanup = std::thread([owner = std::move(allocation), &freed_value, &weak_group]() mutable
+    {
+        try
+        {
+            owner->free();
+            EXPECT_FALSE(owner->tryAcquire());
+            auto retained_group = weak_group.lock();
+            if (!retained_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "CPU lease released query counters before cleanup completed");
+            freed_value.set_value(retained_group->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds]);
+            retained_group.reset();
+            owner.reset();
+        }
+        catch (...)
+        {
+            freed_value.set_exception(std::current_exception());
+        }
+    });
+    /// The timeout only bounds a broken test; the observed queue callback fixes the interleaving.
+    ASSERT_EQ(cancellation.wait_for(std::chrono::seconds(30)), std::future_status::ready);
+    EXPECT_FALSE(cancellation.get()) << "The callback already detached this request from its queue";
+    EXPECT_EQ(freed.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+
+    FailPointInjection::disableFailPoint(FailPoints::cpu_lease_before_wait_publication);
+    ASSERT_TRUE(waitForPublicationPause(FailPoints::cpu_lease_after_wait_publication));
+    ASSERT_FALSE(weak_group.expired());
+    const auto published = weak_group.lock()->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds];
+    EXPECT_GT(published, before);
+    EXPECT_EQ(freed.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+    FailPointInjection::disableFailPoint(FailPoints::cpu_lease_after_wait_publication);
+
+    callback.join();
+    cleanup.join();
+    ASSERT_FALSE(callback_exception);
+    EXPECT_EQ(freed.get(), published) << "Cancellation must not publish the captured timer again";
+    EXPECT_TRUE(weak_group.expired()) << "The creator and allocation have both released the query counters";
+}
+}
+#endif
+
+TEST(SchedulerWorkloadResourceManager, CPULeaseWaitPublicationRacesFreeOnGrant)
+{
+#if USE_LIBFIU
+    checkWaitPublicationAgainstFree(false);
+#else
+    GTEST_SKIP() << "Requires pausable failpoints";
+#endif
+}
+
+TEST(SchedulerWorkloadResourceManager, CPULeaseWaitPublicationRacesFreeOnFailure)
+{
+#if USE_LIBFIU
+    checkWaitPublicationAgainstFree(true);
+#else
+    GTEST_SKIP() << "Requires pausable failpoints";
+#endif
+}
 
 TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingPreemption)
 {

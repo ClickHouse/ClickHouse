@@ -2,8 +2,8 @@
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ProfileEventsNonAllocatingEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -53,6 +53,12 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char cpu_lease_before_wait_publication[];
+    extern const char cpu_lease_after_wait_publication[];
+}
+
 namespace ErrorCodes
 {
     extern const int INVALID_SCHEDULER_NODE;
@@ -81,8 +87,7 @@ public:
     ~PendingWaitTime()
     {
         if (elapsed_microseconds)
-            counters->incrementNonAllocating(
-                ProfileEvents::nonAllocatingEvent<ProfileEvents::ConcurrencyControlWaitMicroseconds>(), *elapsed_microseconds);
+            counters->increment(ProfileEvents::ConcurrencyControlWaitMicroseconds, *elapsed_microseconds);
     }
 
 private:
@@ -446,7 +451,11 @@ void CPULeaseAllocation::publishWaitTime(std::unique_lock<std::mutex> & lock)
         PendingWaitTime wait_time;
         wait_time.capture(wait_timer, wait_thread_group, wait_counters);
         lock.unlock();
+        fiu_do_on(FailPoints::cpu_lease_before_wait_publication,
+            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::cpu_lease_before_wait_publication););
     }
+    fiu_do_on(FailPoints::cpu_lease_after_wait_publication,
+        FailPointInjection::notifyPauseAndWaitForResume(FailPoints::cpu_lease_after_wait_publication););
     lock.lock();
 }
 

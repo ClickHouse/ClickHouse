@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Common/VariableContext.h>
 #include <Common/Stopwatch.h>
 #include <Common/CacheLine.h>
@@ -36,7 +38,6 @@ namespace ProfileEvents
     using AlignedCounters = std::unique_ptr<Count[], AlignedCountersDeleter>;
 
     class Counters;
-    class NonAllocatingEvent;
 
     /// Counters - how many times each event happened
     extern Counters global_counters;
@@ -73,7 +74,8 @@ namespace ProfileEvents
     private:
         /// Per-CPU: `cpus * per_cpu_stride` cells, cell for CPU `c`/event `e` at `c * per_cpu_stride + e`
         /// (stride rounds `num_counters` up to keep rows on separate cache lines). An out-of-range CPU
-        /// falls back to row 0. Otherwise just `num_counters` cells indexed by event.
+        /// falls back to row 0. Single rows contain `num_counters` cells, possibly split between
+        /// `counters` and `tail_holder`.
         Count * counters = nullptr;
         /// 0 → no per-CPU. Set once (static init flips it for `global_counters`, ctor for `User`)
         /// and only grows the view over the same zeroed storage, so relaxed loads suffice; atomic
@@ -81,6 +83,11 @@ namespace ProfileEvents
         /// with the flip.
         std::atomic<uint32_t> cpus = 0;
         AlignedCounters counters_holder;
+#if USE_JEMALLOC
+        /// `Thread` and `Process` rows can have an eagerly allocated tail to avoid rounding the
+        /// entire row to a larger allocator size class. All cells exist before publication.
+        AlignedCounters tail_holder;
+#endif
 
         /// Used to propagate increments.
         /// Requires acquire-release:
@@ -118,19 +125,12 @@ namespace ProfileEvents
         friend struct ProfileEventsPerCPUInitializer;
 
         Counters(Counters && src) noexcept;
-#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
-        ~Counters();
-#endif
 
         double getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset = false);
 
         Count operator[] (Event event) const { return load(event); }
 
         void increment(Event event, Count amount = 1);
-
-        /// The event must have reserved backing at every parent. Retains ordinary tracing.
-        /// Debug allocation checks enforce the contract where supported.
-        void incrementNonAllocating(NonAllocatingEvent event, Count amount = 1) noexcept;
         void incrementNoTrace(Event event, Count amount = 1);
         void incrementSignalSafe(Event event, Count amount = 1);
 
