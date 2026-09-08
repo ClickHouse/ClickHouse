@@ -325,7 +325,9 @@ class FuzzerLogParser:
             error_lines and re.search(r"\w+Sanitizer: CHECK failed:", error_lines[0])
         )
         # keep all lines before next log line
-        for i, line in enumerate(error_lines):
+        # Skip the matched line itself: a pattern with a leading `.*` keeps the record's
+        # own "] {id} <Level>" prefix, which this guard would otherwise match.
+        for i, line in enumerate(error_lines[1:], start=1):
             if "] {" in line and "} <" in line or line.startswith("    #"):
                 # it's a new log line or sanitizer frame - break
                 error_lines = error_lines[:i]
