@@ -856,44 +856,67 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
     addToEncodingStats(s, header);
 }
 
-void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
+void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolded_data, const WriteOptions & options)
 {
     /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
+    const size_t num_blocks = unfolded_data.size() / 8;
 
-    if (hashes.empty())
+    if (num_blocks == 0)
         return;
 
-    static constexpr UInt32 salt[8] = {
-        0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
-
-    /// There appear to be undocumented requirements:
-    ///  * number of blocks must be a power of two,
-    ///  * bloom filter size must be at most 128 MiB.
-    /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
-    /// requires this.
-    double requested_num_blocks = static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256;
-    size_t num_blocks = 1;
-    while (static_cast<double>(num_blocks) < requested_num_blocks)
+    /// The implied false positive probability (fpp) from settings can be approximated by f = (1 - e^(-k /c))^k, see http://tfk.mit.edu/pdf/bloom.pdf
+    /// Fold down the bloom filter (i.e. merge 2^fold_count neighboring blocks) as many times as possible without exceeding that implied fpp.
+    /// This requires the fpp of the concrete data in the current unfolded filter which can be calculated from its
+    /// average block fill rate and the fact that each membership check compares 8 bits in the filter as fill_rate ^ 8.
+    /// The below then uses the fact that the file rate after folding two independant blocks comes out to 1 - (1-avg_fill_rate)^2.
+    const double fpp = std::pow(1 - std::exp(-8 * (1 / options.bloom_filter_bits_per_value)), 8);
+    size_t total_set_bits = 0;
+    for (size_t i = 0; i < num_blocks * 8; ++i)
     {
-        if (num_blocks >= 4 * 1024 * 1024)
-            return;
-        num_blocks *= 2;
+        total_set_bits += std::popcount(unfolded_data[i]);
     }
+
     PODArray<UInt32> & data = indexes.bloom_filter_data;
-    data.reserve_exact(num_blocks * 8);
-    data.resize_fill(num_blocks * 8);
-    for (const auto & cell : hashes)
+    data = unfolded_data;
+
+    const double fill_rate = static_cast<double>(total_set_bits) / (static_cast<double>(num_blocks) * 256);
+    const int max_folds = std::countr_zero(num_blocks);
+    double one_minus_fill_rate = 1.0 - fill_rate;
+    UInt32 folds = 0;
+
+    for (int i = 0; i < max_folds; ++i)
     {
-        size_t h = cell.key;
-        size_t block_idx = ((h >> 32) * num_blocks) >> 32;
-        chassert(block_idx < num_blocks);
-        UInt32 x = UInt32(h); // overflow to take the lower 32 bits
-        for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+        one_minus_fill_rate = one_minus_fill_rate * one_minus_fill_rate;
+        if (const double f_k = 1.0 - one_minus_fill_rate; std::pow(f_k, 8) > fpp)
         {
-            UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
-            size_t bit_idx = y >> 27;
-            data[block_idx * 8 + word_idx] |= 1u << bit_idx;
+            break;
         }
+        folds++;
+    }
+
+    const UInt32 group_size = 1u << folds;
+    if (folds > 0)
+    {
+        const size_t new_blocks = num_blocks >> folds;
+        for (size_t i = 0; i < new_blocks; ++i)
+        {
+            const size_t dst_index = i * 8;
+            const auto * src = &data[dst_index * group_size];
+            auto * dst = &data[dst_index];
+            if (dst_index != 0)
+            {
+                memcpy(dst, src, 8 * sizeof(UInt32));
+            }
+            for (UInt32 j = 1; j < group_size; ++j)
+            {
+                const auto * s = src + (j * 8);
+                for (int w = 0; w < 8; ++w)
+                {
+                    dst[w] |= s[w];
+                }
+            }
+        }
+        data.resize(new_blocks * 8);
     }
 
     /// Fill out the paperwork.
@@ -972,12 +995,37 @@ void writeColumnImpl(
     PODArray<char> encoded;
     PODArray<char> compressed_maybe;
 
-    /// Hash set to deduplicate the values before calculating bloom filter size.
+    /// Possibly oversized bloom filter that assumes all elements are unique and that will be folded to a smaller size
+    /// later on if possible.
     /// Possible future optimization: if using dictionary encoding, take already-deduplicated values
     /// from the dictionary instead.
-    std::optional<HashSet<UInt64, TrivialHash>> hashes_for_bloom_filter;
+    std::optional<PODArray<UInt32>> bloom_data;
     if (options.write_bloom_filter)
-        hashes_for_bloom_filter.emplace(); // allocates memory for initial size
+    {
+        /// There appear to be undocumented requirements:
+        ///  * number of blocks must be a power of two,
+        ///  * bloom filter size must be at most 128 MiB.
+        /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
+        /// requires this.
+        /// Start from a bloom filter sized under the assumption that all values are unique.
+        const double requested_num_blocks = static_cast<double>(num_values) * options.bloom_filter_bits_per_value / 256;
+        size_t num_blocks = 1;
+        while (static_cast<double>(num_blocks) < requested_num_blocks)
+        {
+            if (num_blocks >= 4 * 1024 * 1024)
+            {
+                num_blocks = 0;
+                break;
+            }
+            num_blocks *= 2;
+        }
+        if (num_blocks > 0)
+        {
+            bloom_data.emplace();
+            bloom_data->reserve_exact(num_blocks * 8);
+            bloom_data->resize_fill(num_blocks * 8);
+        }
+    }
 
     /// Start of current page.
     size_t def_offset = 0; // index in def and rep
@@ -1167,12 +1215,15 @@ void writeColumnImpl(
                 for (size_t i = 0; i < data_count; ++i)
                     page_statistics.add(converted[i]);
 
-            if (hashes_for_bloom_filter.has_value())
+            if (bloom_data.has_value())
             {
 /// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
 /// so any actual use triggers this warning.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
+                auto & bd = *bloom_data;
+                const size_t num_blocks = bd.size() / 8;
+
                 for (size_t i = 0; i < data_count; ++i)
                 {
                     UInt64 h = 0;
@@ -1186,7 +1237,17 @@ void writeColumnImpl(
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
                         h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
-                    hashes_for_bloom_filter->insert(h);
+                    static constexpr UInt32 salt[8] = {
+                        0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U,};
+                    const size_t block_idx = ((h >> 32) * num_blocks) >> 32;
+                    chassert(block_idx < num_blocks);
+                    const UInt32 x = UInt32(h); // overflow to take the lower 32 bits
+                    for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+                    {
+                        const UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
+                        const size_t bit_idx = y >> 27;
+                        bd[block_idx * 8 + word_idx] |= 1u << bit_idx;
+                    }
                 }
 #pragma clang diagnostic pop
             }
@@ -1270,8 +1331,10 @@ void writeColumnImpl(
         addToEncodingsUsed(s, encoding);
     }
 
-    if (hashes_for_bloom_filter.has_value())
-        makeBloomFilter(*hashes_for_bloom_filter, s.indexes, options);
+    if (bloom_data.has_value())
+    {
+        finishBloomFilter(s.indexes, *std::move(bloom_data), options);
+    }
 }
 
 }
