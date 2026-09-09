@@ -678,46 +678,73 @@ try
 
         async_metrics.stop();
 
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
+        auto is_keeper_tcp_server = [](const ProtocolServerAdapter & server)
+        {
+            const auto & port_name = server.getPortName();
+            return port_name == "keeper_server.tcp_port" || port_name == "keeper_server.tcp_port_secure";
+        };
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
-        size_t current_connections = 0;
+        size_t keeper_tcp_connections = 0;
+        size_t keeper_http_connections = 0;
         for (auto & server : *servers)
         {
             server.stop();
-            current_connections += server.currentConnections();
+            if (is_keeper_tcp_server(server))
+                keeper_tcp_connections += server.currentConnections();
+            else
+                keeper_http_connections += server.currentConnections();
         }
 
+        /// Keeper TCP handlers need dispatcher shutdown to release pending session-ID waits, but
+        /// HTTP handlers need live Keeper state until they finish. Stop all listeners and close
+        /// the TCP sockets first, then drain the HTTP handlers before tearing Keeper down.
         KeeperTCPHandler::closeAllConnections();
 
-        /// Complete session-ID waiters after the Raft commit thread is stopped, before waiting
-        /// for the corresponding TCP handlers to exit. Queue accounting is finalized after
-        /// the handlers exit.
+        if (keeper_http_connections)
+        {
+            LOG_INFO(log, "Closed all Keeper HTTP listening sockets. Waiting for {} outstanding connections.", keeper_http_connections);
+            keeper_http_connections = waitServersToFinish(
+                *servers,
+                servers_lock,
+                config().getInt("shutdown_wait_unfinished", 5),
+                [&](const auto & server) { return !is_keeper_tcp_server(server); });
+
+            if (keeper_http_connections)
+            {
+                LOG_INFO(log, "Closed connections to Keeper HTTP servers. But {} remain. Will shutdown forcefully.", keeper_http_connections);
+                safeExit(0);
+            }
+        }
+
+        global_context->signalKeeperDispatcherShutdown();
         global_context->shutdownKeeperDispatcherBeforeConnectionsFinish();
 
-        if (current_connections)
-            LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
+        if (keeper_tcp_connections)
+            LOG_INFO(log, "Closed all Keeper TCP listening sockets. Waiting for {} outstanding connections.", keeper_tcp_connections);
         else
-            LOG_INFO(log, "Closed all listening sockets.");
+            LOG_INFO(log, "Closed all Keeper listening sockets.");
 
-        if (current_connections > 0)
-            current_connections = waitServersToFinish(*servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
+        if (keeper_tcp_connections > 0)
+            keeper_tcp_connections = waitServersToFinish(
+                *servers,
+                servers_lock,
+                config().getInt("shutdown_wait_unfinished", 5),
+                is_keeper_tcp_server);
 
-        if (current_connections)
-            LOG_INFO(log, "Closed connections to Keeper. But {} remain. Probably some users cannot finish their connections after context shutdown.", current_connections);
+        if (keeper_tcp_connections)
+            LOG_INFO(log, "Closed Keeper TCP connections. But {} remain.", keeper_tcp_connections);
         else
-            LOG_INFO(log, "Closed connections to Keeper.");
+            LOG_INFO(log, "Closed Keeper TCP connections.");
 
-        global_context->shutdownKeeperDispatcherAfterConnectionsFinish(current_connections == 0);
+        global_context->shutdownKeeperDispatcherAfterConnectionsFinish(keeper_tcp_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
 
         LOG_DEBUG(log, "Destroyed global context.");
 
-        if (current_connections)
+        if (keeper_tcp_connections)
         {
             LOG_INFO(log, "Will shutdown forcefully.");
             safeExit(0);

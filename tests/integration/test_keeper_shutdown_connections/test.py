@@ -1,3 +1,4 @@
+import socket
 import struct
 
 import pytest
@@ -76,6 +77,46 @@ def test_idle_connection_does_not_delay_shutdown(started_cluster):
         assert node.contains_in_log(
             "Will not wait for unique parts to be fetched because we don't have any unique parts"
         )
+    finally:
+        client.close()
+        if node.get_process_pid("clickhouse server") is not None:
+            node.stop_clickhouse(kill=True)
+        node.start_clickhouse()
+
+
+def test_http_control_request_finishes_before_keeper_shutdown(started_cluster):
+    client = socket.create_connection((node.ip_address, 9182), timeout=5)
+    client.settimeout(10)
+    request_body = b"value"
+    request = (
+        b"POST /api/v1/storage/shutdown_http_request HTTP/1.1\r\n"
+        b"Host: node\r\n"
+        b"Connection: close\r\n"
+        b"Expect: 100-continue\r\n"
+        + f"Content-Length: {len(request_body)}\r\n\r\n".encode()
+    )
+    client.sendall(request)
+    assert client.recv(4096).startswith(b"HTTP/1.1 100 Continue")
+    client.sendall(request_body[:-1])
+
+    clickhouse_pid = node.get_process_pid("clickhouse server")
+    assert clickhouse_pid is not None
+    node.exec_in_container(
+        ["bash", "-c", f"kill -TERM {clickhouse_pid}"], user="root"
+    )
+
+    try:
+        node.wait_for_log_line(
+            "Closed all Keeper HTTP-control listening sockets. Waiting for 1 outstanding connections."
+        )
+
+        client.sendall(request_body[-1:])
+        response = bytearray()
+        while data := client.recv(4096):
+            response.extend(data)
+        assert response.startswith(b"HTTP/1.1 201 Created")
+
+        node.wait_start_failed(30)
     finally:
         client.close()
         if node.get_process_pid("clickhouse server") is not None:
