@@ -16,12 +16,6 @@ public:
 
     String getName() const override { return "StreamingExchangeSerializingTransform"; }
 
-    /// The pipeline header of a stream that carries packets: one `String` column.
-    static const SharedHeader & serializedStreamHeader();
-
-    /// Whether a stream with this pipeline header carries packets.
-    static bool isSerializedStream(const Block & header);
-
 protected:
     void transform(Chunk & chunk) override;
 };

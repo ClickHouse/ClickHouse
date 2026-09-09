@@ -8,20 +8,21 @@
 namespace DB
 {
 
-const SharedHeader & StreamingExchangeSerializingTransform::serializedStreamHeader()
+namespace
+{
+
+/// The pipeline header of the packets: one `String` column.
+const SharedHeader & packetStreamHeader()
 {
     static const SharedHeader header = std::make_shared<const Block>(
         Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "__streaming_exchange_packet")});
     return header;
 }
 
-bool StreamingExchangeSerializingTransform::isSerializedStream(const Block & header)
-{
-    return blocksHaveEqualStructure(header, *serializedStreamHeader());
 }
 
 StreamingExchangeSerializingTransform::StreamingExchangeSerializingTransform(SharedHeader input_header)
-    : ISimpleTransform(std::move(input_header), serializedStreamHeader(), /*skip_empty_chunks_=*/ false)
+    : ISimpleTransform(std::move(input_header), packetStreamHeader(), /*skip_empty_chunks_=*/ false)
 {
 }
 

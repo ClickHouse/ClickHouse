@@ -354,7 +354,9 @@ void StreamingExchangeSink::consume(Chunk chunk)
     {
         /// A packet is sent from its own column, which the sinks of the other destinations of a
         /// broadcast share. Data the sink serialized itself came earlier and goes out first.
-        chassert(chunk.getNumRows() == 1);
+        if (chunk.getNumRows() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Exchange stream {} expects one packet per chunk, got a chunk with {} rows", stream_name, chunk.getNumRows());
         flushSerializedData();
         enqueueBuffer(SendBuffer{chunk.getColumns().front()});
     }

@@ -45,6 +45,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     auto & pipeline = *pipelines.front();
 
     const String bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
+    bool input_is_serialized = false;
 
     /// Cannot have multiple sinks writing to the same file concurrently. Merge-sort rather than plain
     /// resize(1) when order must be preserved, since `GatherReceiveStep` merge-sorts assuming each bucket's
@@ -73,10 +74,12 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     else
     {
         /// Serialize on every stream ahead of the merge into the single sink; otherwise the sink
-        /// would serialize everything alone.
+        /// would serialize everything alone. The sink is told whether it gets packets.
         pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
         {
-            return settings.exchange_lookup->createSerializer(header, exchange_id);
+            auto transform = settings.exchange_lookup->createSerializer(header, exchange_id);
+            input_is_serialized |= transform != nullptr;
+            return transform;
         });
         pipeline.resize(1);
     }
@@ -84,7 +87,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"));
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"), input_is_serialized);
     });
 
     return std::move(pipelines.front());
