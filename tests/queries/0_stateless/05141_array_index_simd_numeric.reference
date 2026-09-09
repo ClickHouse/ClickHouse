@@ -1,0 +1,16 @@
+UInt8	1	1	0	1	64	0
+UInt16	1	1	0	1	64	0
+UInt32	1	1	0	1	64	0
+UInt64	1	1	0	1	64	0
+UInt8 tail	1	65	0	0
+UInt16 tail	1	65	0	0
+UInt32 tail	1	65	0	0
+UInt64 tail	1	65	0	0
+UInt8 threshold	1	63	1	64	0	0	1	1
+UInt16 threshold	1	30	1	32	0	0	1	1
+UInt32 threshold	1	14	1	16	0	0	1	1
+UInt64 threshold	1	6	1	8	0	0	1	1
+UInt16 lane equality	0	0	1	1
+UInt32 lane equality	0	0	1	1
+UInt64 lane equality	0	0	1	1
+UInt32 duplicate SIMD	17	17
