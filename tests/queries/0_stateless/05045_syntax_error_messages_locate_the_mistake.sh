@@ -24,6 +24,9 @@ run "SELECT count(* FROM numbers(10)"
 run "SELECT (1, 2"
 run "SELECT [1, 2"
 run "SELECT ((1)"
+# The parser stops at the end of the query, where there is nothing to show, so the excerpt starts
+# at the innermost bracket that is never closed instead.
+run "SELECT (1, 2;"
 # Two brackets are left open at once.
 run "SELECT x FROM (SELECT arrayMap(y -> y, [1]"
 

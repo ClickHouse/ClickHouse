@@ -5,13 +5,15 @@ Syntax error: failed at position 68 (FROM): FROM numbers(10)) t3) t2) t1. Unmatc
 --- SELECT count(* FROM numbers(10)
 Syntax error: failed at position 16 (FROM): FROM numbers(10). Unmatched parentheses: '(' at position 13 is never closed. (SYNTAX_ERROR)
 --- SELECT (1, 2
-Syntax error: failed at position 13 (end of query): . Unmatched parentheses: '(' at position 8 is never closed. (SYNTAX_ERROR)
+Syntax error: failed at position 13 (end of query): (1, 2. Unmatched parentheses: '(' at position 8 is never closed. (SYNTAX_ERROR)
 --- SELECT [1, 2
-Syntax error: failed at position 13 (end of query): . Unmatched parentheses: '[' at position 8 is never closed. (SYNTAX_ERROR)
+Syntax error: failed at position 13 (end of query): [1, 2. Unmatched parentheses: '[' at position 8 is never closed. (SYNTAX_ERROR)
 --- SELECT ((1)
-Syntax error: failed at position 12 (end of query): . Unmatched parentheses: '(' at position 8 is never closed. (SYNTAX_ERROR)
+Syntax error: failed at position 12 (end of query): ((1). Unmatched parentheses: '(' at position 8 is never closed. (SYNTAX_ERROR)
+--- SELECT (1, 2;
+Syntax error: failed at position 13 (end of query): (1, 2;. Unmatched parentheses: '(' at position 8 is never closed. (SYNTAX_ERROR)
 --- SELECT x FROM (SELECT arrayMap(y -> y, [1]
-Syntax error: failed at position 43 (end of query): . Unmatched parentheses: '(' at position 15, '(' at position 31 are never closed. (SYNTAX_ERROR)
+Syntax error: failed at position 43 (end of query): (y -> y, [1]. Unmatched parentheses: '(' at position 15, '(' at position 31 are never closed. (SYNTAX_ERROR)
 
 === a closing bracket that does not close anything names what it fails to match
 --- SELECT 1)

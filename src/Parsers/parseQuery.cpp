@@ -354,7 +354,20 @@ std::string getUnmatchedParenthesesErrorMessage(
     {
         /// Without highlighting only a fragment of the query is printed, starting from the first passed
         /// position. Show the text around the mistake rather than around the outermost bracket.
-        writeQueryAroundTheError(out, begin, end, hilite, &error_token, 1);
+        ///
+        /// When the parser stopped at the end of the query (or at the `;` that ends the statement), as in
+        ///   SELECT (1, 2
+        /// there is nothing after the error position to show, so the excerpt would be empty. In that case
+        /// start it at the innermost bracket that is never closed: it is the one nearest to the mistake,
+        /// and the excerpt then covers everything from that bracket to the end of the statement.
+        const bool nothing_after_error_position
+            = error_token.type == TokenType::EndOfStream || error_token.type == TokenType::Semicolon;
+
+        const Token & excerpt_begin = nothing_after_error_position && !closing_bracket_is_unmatched
+            ? unmatched_parens.back()
+            : error_token;
+
+        writeQueryAroundTheError(out, begin, end, hilite, &excerpt_begin, 1);
     }
 
     out << "Unmatched parentheses: ";
