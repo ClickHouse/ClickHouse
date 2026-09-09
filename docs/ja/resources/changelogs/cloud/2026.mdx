@@ -1,16 +1,40 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Cloud 変更履歴 - 2026'
-description: '各 ClickHouse Cloud リリースの新機能を紹介する ClickHouse Cloud 変更履歴'
+title: 'Cloud changelog - 2026'
+description: '各 ClickHouse Cloud リリースの新機能を説明する ClickHouse Cloud changelog'
 doc_type: 'changelog'
-keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Cloud の変更']
+keywords: ['changelog', 'リリースノート', '更新', '新機能', 'Cloud の変更']
 rss: true
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 この ClickHouse Cloud changelog に加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility) ページもご覧ください。
+
+<Update label="2026年8月17日">
+  今週の更新では、プラットフォームの対応範囲を拡大し、運用の可視性を向上させました。Managed Postgres は一部のデザインパートナー向けに GCP で利用可能になり、ClickStack リソースは公式 Terraform プロバイダーで管理できるようになりました。また、新しい請求通知により、クレジットの期限切れやサービス中断の前に早期通知を受け取れるようになりました。さらに、ClickHouse Agents のトレーシングを改善し、SAML サインインもよりスムーズになりました。
+
+  ### Managed Postgres が GCP で利用可能に
+
+  [ClickHouse Cloud Managed Postgres](/ja/products/managed-postgres/overview) が、すべてのパブリック GCP リージョンで一部のデザインパートナー向けに利用可能になりました。最初のプライベートリージョンは `us-west1` です。これにより、GCP 上で構築するお客様にも Managed Postgres を提供します。プライベートプレビューは 2026-08 を予定しています。
+
+  ### Terraform で ClickStack リソースを管理
+
+  ClickStack のサポートが、公式 [`ClickHouse/clickhouse` Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha) バージョン 3.25.0 でベータ提供されるようになりました。チームは、標準の `terraform plan` および `terraform apply` ワークフローを使用して、ダッシュボード、アラート、ログソース、保存済み検索、接続、webhook を作成、更新、インポート、削除できます。このインテグレーションは、Managed ClickStack とセルフホストのデプロイメントの両方をサポートします。
+
+  ### クレジットと支払いに関する新しい請求通知
+
+  請求通知は ClickHouse Cloud Notification Center で管理され、コンソール、メール、Slack を通じて配信されます。前払いまたはトライアルのクレジットがまもなく期限切れになる、または使い切られる場合に加え、クレジットの追加、支払い方法の変更、アカウントが未払い猶予期間に入った際にも事前通知を受け取れます。これにより、サービスが中断される前に、更新、クレジットの追加、支払いに関する問題の解決により多くの時間を確保できます。
+
+  ### ClickHouse Agents から Langfuse セッションのトレースを開く
+
+  組織管理者は、[ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents/index) のチャットから対応する Langfuse セッションを直接開き、会話全体のトレースを確認できるようになりました。これにより、エージェントの動作を調査し、複数ステップの実行をデバッグしやすくなります。この改善は、新しく作成されたチャットで パブリックベータ として利用可能です。
+
+  ### SAML リダイレクトによる重複アカウントの防止
+
+  組織で SAML が設定されている状態で、ユーザーが Google または Microsoft を使用してサインインしようとすると、ClickHouse Cloud は正しい SAML サインインフローにリダイレクトするようになりました。これにより、既存のアカウントにアクセスするつもりだったユーザーが、誤って別の組織を作成することを防げます。
+</Update>
 
 <Update label="2026年7月13日">
   今週の更新には、通常の HTTPS 経由での sticky レプリカルーティング、請求期間 の開始日のカスタマイズ、オブジェクトストレージ ClickPipes 向けの新しい初期ロード制御が含まれます。

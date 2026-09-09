@@ -288,13 +288,16 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
         auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
-        for (const auto & [name, value] : query_settings)
+        if (query_settings)
         {
-            key_column.insertData(name.data(), name.size());
-            value_column.insertData(value.data(), value.size());
+            query_settings->forEach([&](std::string_view name, std::string_view value)
+            {
+                key_column.insertData(name.data(), name.size());
+                value_column.insertData(value.data(), value.size());
+            });
         }
 
-        offsets.push_back(offsets.back() + query_settings.size());
+        offsets.push_back(offsets.back() + (query_settings ? query_settings->size() : 0));
     }
 
     {
@@ -397,7 +400,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.getClientHostName().data(), client_info.getClientHostName().size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_agent.data(), client_info.client_agent.size());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);

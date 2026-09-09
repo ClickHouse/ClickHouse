@@ -1,0 +1,22 @@
+-- memory-efficient branch, several merge threads
+1
+-- memory-efficient branch, single merge thread
+1	0
+-- non-memory-efficient branch
+1	0
+-- ungrouped value then TOTALS row, both 90
+90
+
+90
+-- same query without WITH TOTALS, still 90
+90
+-- grouped: 1/30, 2/60, then a 0/90 TOTALS row
+1	30
+2	60
+
+0	90
+-- ground truth: the same three copies with no Merge and no Distributed
+1	30
+2	60
+
+0	90
