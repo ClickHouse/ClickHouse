@@ -336,4 +336,17 @@ def test_store_directory_of_an_unsynced_write_is_persisted_later():
 
     node.query("DROP RESOURCE pd_enabled")
     node.query("DROP RESOURCE pd_disabled")
+
+    # The same holds when only part of the path is there, which is what an operator's `mkdir -p`
+    # of the parents leaves behind: the store directory is created here, but the entries of the
+    # directories above it are no more persisted than in the case above.
+    node.exec_in_container(["bash", "-c", f"rm -rf {WORKLOAD_ROOT}"])
+    node.exec_in_container(["bash", "-c", f"mkdir -p {WORKLOAD_DIR}/.."])
+    _, dir_sync = _run("CREATE RESOURCE pd_partial (WRITE DISK pd_partial_disk)", 1)
+    assert dir_sync >= 4, (
+        f"only {dir_sync} directory syncs, so an ancestor this call found rather than created "
+        "was skipped"
+    )
+
+    node.query("DROP RESOURCE pd_partial")
     node.restart_clickhouse()

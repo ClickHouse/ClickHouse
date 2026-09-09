@@ -7,6 +7,7 @@
 #include <Common/Stopwatch.h>
 #include <fcntl.h> // O_RDWR
 
+#include <algorithm>
 #include <filesystem>
 #include <utility>
 #include <vector>
@@ -157,18 +158,21 @@ void removeDirectories(const std::vector<fs::path> & dirs)
     }
 }
 
-/// `dir` and its ancestors down from `root`, deepest first. Just `dir` when `root` does not
-/// contain it: with no directory known to predate the store there is nothing to stop the walk.
-std::vector<fs::path> pathDownFrom(const fs::path & dir, const fs::path & root)
+/// The components of `dir` that lie below `root`, shallowest first. Empty when `root` does not
+/// contain `dir`: with no directory known to predate the store, nothing bounds such a walk.
+std::vector<fs::path> componentsBelow(const fs::path & dir, const fs::path & root)
 {
     std::vector<fs::path> result;
     for (fs::path p = dir; p != p.parent_path(); p = p.parent_path())
     {
-        result.push_back(p);
-        if (p.parent_path() == root)
+        if (p == root)
+        {
+            std::reverse(result.begin(), result.end());
             return result;
+        }
+        result.push_back(p);
     }
-    return {dir};
+    return {};
 }
 
 }
@@ -200,7 +204,6 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
     /// below. A single create returning false without an error is one that appeared in between,
     /// so it belongs to whoever created it.
     std::vector<fs::path> created;
-    bool created_leaf = false;
     for (auto it = missing.rbegin(); it != missing.rend(); ++it)
     {
         std::error_code create_ec;
@@ -214,29 +217,29 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
             return;
         }
         if (is_new)
-        {
             created.push_back(*it);
-            created_leaf = (*it == normalized);
-        }
     }
     ec.clear();
 
     try
     {
-        /// Persist each new component in its parent, shallowest first, so a directory only becomes
-        /// durably visible after the one containing it.
-        for (const auto & new_directory : created)
-            syncParentOf(new_directory);
-
-        /// A directory that was already there may come from a write that ran with fsync_metadata
-        /// disabled, so its entry was never persisted. Persist it here: an object committed inside
-        /// it is only as durable as the directory holding it, and as the ones holding that.
-        if (!created_leaf)
+        /// A component that was already there may come from a write that ran with fsync_metadata
+        /// disabled, or from an operator's mkdir, so its entry is not known to be persisted
+        /// either. An object committed in the store is only as durable as every directory
+        /// holding it, so the whole path below `root` is persisted, not only what was created.
+        auto to_persist = componentsBelow(normalized, root);
+        if (to_persist.empty())
         {
-            const auto chain = pathDownFrom(normalized, root);
-            for (auto it = chain.rbegin(); it != chain.rend(); ++it)
-                syncParentOf(*it);
+            /// Nothing bounds the walk, so persist only what is known to be owed here: the
+            /// components this call created, and `dir`'s own entry when it was already there.
+            to_persist = created;
+            if (to_persist.empty())
+                to_persist.push_back(normalized);
         }
+
+        /// Shallowest first, so a directory only becomes durably visible after the one holding it.
+        for (const auto & directory : to_persist)
+            syncParentOf(directory);
     }
     catch (...)
     {

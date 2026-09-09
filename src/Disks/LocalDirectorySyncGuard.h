@@ -56,9 +56,10 @@ private:
 /// A file's own fsync does not persist its directory entry, which is why the directory holding
 /// it is synced separately after any create, rename or remove inside it.
 /// `existing_root` is a directory `dir` lives under that no create reaching here makes (the
-/// server's data path). For a `dir` that was already there, its ancestors' entries are persisted
-/// down from `existing_root`; nothing above it is opened, and a root not containing `dir`
-/// persists `dir`'s own entry alone.
+/// server's data path). Every component between the two has its entry persisted, whoever created
+/// it, since one left by a write that ran without `fsync` is not durable either. Nothing above
+/// `existing_root` is opened, and a root not containing `dir` persists only what this call
+/// created plus `dir`'s own entry.
 void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec, const String & existing_root = {});
 
 /// Same, but reports a failure to create the directory by throwing instead of through `ec`.
