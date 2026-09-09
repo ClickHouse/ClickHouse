@@ -10,7 +10,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
-#include <base/scope_guard.h>
 
 #include <ranges>
 
@@ -243,19 +242,6 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
     if (pipeline.profile_processors || pipeline.trace_processors || clock)
         execution_time_watch.emplace();
 
-    SCOPE_EXIT({
-        if (execution_time_watch)
-        {
-            const UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
-            processor.elapsed_ns += elapsed_ns;
-            if (span)
-                span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
-        }
-
-        if (clock)
-            clock->onLeave();
-    });
-
     try
     {
         if (processor.isSpillable() && CurrentThread::getGroup())
@@ -287,6 +273,17 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
         throw exception;
     }
 
+    if (execution_time_watch)
+    {
+        const UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
+        processor.elapsed_ns += elapsed_ns;
+        if (span)
+            span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
+    }
+
+    if (clock)
+        clock->onLeave();
+
     scheduler.push(Task{.state = &state, .kind = Task::Kind::Prepare}, worker_id);
 }
 
@@ -304,18 +301,14 @@ void Worker::runUpdatePipeline(ProcessorState & requester)
         if (!processor->getQueryPlanStep())
             processor->inheritQueryPlanStepFromParent(*requester.processor, requester.processor->getQueryPlanStepGroup());
 
-    auto added = pipeline.addProcessors(requester, update.to_add);
-    auto reconnected = pipeline.reconnectProcessors(update.to_reconnect);
+    auto updated = pipeline.updateProcessors(requester, update.to_add, update.to_reconnect);
     if (!update.to_remove.empty())
         pipeline.submitForRemoval(std::move(update.to_remove));
 
     if (pipeline.cancelled())
         return;
 
-    for (auto * state : added | std::views::reverse)
-        notifyOwner(*state);
-
-    for (auto * state : reconnected | std::views::reverse)
+    for (auto * state : updated | std::views::reverse)
         notifyOwner(*state);
 
     scheduler.push(Task{.state = &requester, .kind = Task::Kind::Prepare}, worker_id);

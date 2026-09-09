@@ -33,8 +33,7 @@ public:
     ExecutingPipeline(std::shared_ptr<Processors> processors_, QueryStatusPtr process_list_element_, const StepWallClockRegistry * wall_clocks_);
 
     std::vector<ProcessorState *> sinks();
-    std::vector<ProcessorState *> addProcessors(ProcessorState & requester, const Processors & to_add);
-    std::vector<ProcessorState *> reconnectProcessors(const Processors & to_reconnect);
+    std::vector<ProcessorState *> updateProcessors(ProcessorState & requester, const Processors & to_add, const Processors & to_reconnect);
 
     void submitForRemoval(Processors group);
     void recordAsFinished(IProcessor & processor);

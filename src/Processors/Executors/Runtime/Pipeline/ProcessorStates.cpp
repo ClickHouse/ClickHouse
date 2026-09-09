@@ -69,18 +69,15 @@ void connectPorts(const std::unordered_map<const IProcessor *, ProcessorState> &
 }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-void checkEveryConnectedPortHasAChannel(std::unordered_map<const IProcessor *, ProcessorState> & states)
+void checkNeighboursHaveChannels(ProcessorState & state)
 {
-    for (auto & [processor, state] : states)
-    {
-        for (auto & input : state.processor->getInputs())
-            if (input.isConnected() && !input.getUpdateChannel().isConnected())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected input port from a pipeline update that did not list it in to_reconnect", describeProcessor(processor));
+    for (auto & input : state.processor->getInputs())
+        if (input.isConnected() && !input.getOutputPort().getUpdateChannel().isConnected())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected output port from a pipeline update that did not list it in to_reconnect", describeProcessor(&input.getOutputPort().getProcessor()));
 
-        for (auto & output : state.processor->getOutputs())
-            if (output.isConnected() && !output.getUpdateChannel().isConnected())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected output port from a pipeline update that did not list it in to_reconnect", describeProcessor(processor));
-    }
+    for (auto & output : state.processor->getOutputs())
+        if (output.isConnected() && !output.getInputPort().getUpdateChannel().isConnected())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected input port from a pipeline update that did not list it in to_reconnect", describeProcessor(&output.getInputPort().getProcessor()));
 }
 #endif
 
@@ -114,44 +111,37 @@ void ProcessorStates::forEachProcessor(const std::function<void(IProcessor &, Pr
         f(*processor, states.at(processor.get()));
 }
 
-std::vector<ProcessorState *> ProcessorStates::add(ProcessorState & requester, const Processors & to_add)
+std::vector<ProcessorState *> ProcessorStates::update(ProcessorState & requester, const Processors & to_add, const Processors & to_reconnect)
 {
     std::lock_guard lock(mutex);
 
-    std::vector<ProcessorState *> added;
-    for (const auto & processor : to_add)
-    {
-        added.push_back(&addState(states, processor.get()));
-        processors->push_back(processor);
-    }
-
-    connectPorts(states, requester);
-    for (auto * state : added)
-        connectPorts(states, *state);
-
-    return added;
-}
-
-std::vector<ProcessorState *> ProcessorStates::reconnect(const Processors & to_reconnect)
-{
-    std::lock_guard lock(mutex);
-
-    std::vector<ProcessorState *> reconnected;
+    std::vector<ProcessorState *> updated;
     for (const auto & processor : to_reconnect)
     {
         auto it = states.find(processor.get());
         if (it == states.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} listed in to_reconnect does not exist in pipeline", processor->getName());
 
-        connectPorts(states, it->second);
-        reconnected.push_back(&it->second);
+        updated.push_back(&it->second);
     }
 
+    for (const auto & processor : to_add)
+    {
+        updated.push_back(&addState(states, processor.get()));
+        processors->push_back(processor);
+    }
+
+    connectPorts(states, requester);
+    for (auto * state : updated)
+        connectPorts(states, *state);
+
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    checkEveryConnectedPortHasAChannel(states);
+    checkNeighboursHaveChannels(requester);
+    for (auto * state : updated)
+        checkNeighboursHaveChannels(*state);
 #endif
 
-    return reconnected;
+    return updated;
 }
 
 void ProcessorStates::remove(const Processors & to_remove)
