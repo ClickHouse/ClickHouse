@@ -7,3 +7,4 @@ Int64	UInt64
 ['UInt8','UInt8']
 String	2023-10-29 02:30:00
 String	abc
+Tuple(Int64, UInt64)

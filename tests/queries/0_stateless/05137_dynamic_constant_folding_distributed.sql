@@ -80,4 +80,12 @@ SELECT DISTINCT dynamicType(c), c FROM (
     FROM remote('127.0.0.1', system.one))
 SETTINGS cast_string_to_dynamic_use_inference = 0;
 
+-- A `Dynamic` whose active member is a `tuple` of `Dynamic`s is only partly left alone: the tuple's
+-- members are named one level down while the outer member type declines, so the shard rebuilds
+-- `Tuple(Int64, UInt64)` where master rebuilt `Tuple(UInt8, UInt8)` and the initiator held
+-- `Tuple(Dynamic, Dynamic)`. The cell records that state; it is not an invariant to preserve.
+SELECT DISTINCT dynamicType(c) FROM (
+    SELECT materialize(CAST(tuple(1::Int64::Dynamic, 2::UInt64::Dynamic) AS Dynamic)) AS c
+    FROM remote('127.0.0.1', system.one));
+
 DROP TABLE t_dynamic_const_fold;
