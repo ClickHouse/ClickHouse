@@ -8,7 +8,6 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
-#include <Columns/IColumn_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
 

@@ -5,7 +5,6 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <Columns/IColumn_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace Poco::Util

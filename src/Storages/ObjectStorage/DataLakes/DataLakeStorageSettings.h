@@ -6,7 +6,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <Columns/IColumn_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/unit.h>
 
