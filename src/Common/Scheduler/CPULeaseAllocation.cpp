@@ -117,7 +117,7 @@ void CPULeaseAllocation::Lease::unpark()
 
 bool CPULeaseAllocation::Lease::isParkingEnabled() const
 {
-    return parent ? parent->settings.parking_enabled : false;
+    return parent ? (parent->settings.parking_enabled && parent->parking_supported) : false;
 }
 
 void CPULeaseAllocation::Lease::reset()
@@ -199,7 +199,13 @@ bool CPULeaseAllocation::RequestChain::cancel(std::unique_lock<std::mutex> & loc
             wait_cancel = false;
         }
         else
+        {
             enqueued = false;
+            // Give back the master-slot bit that enqueue() consumed (mirrors finish()); otherwise
+            // the replacement request for a canceled master renewal would be sent to the worker queue.
+            if (head->is_master_slot)
+                request_master_slot = true;
+        }
         return canceled;
     }
     return false;
@@ -218,6 +224,9 @@ void CPULeaseAllocation::RequestChain::scheduled()
 CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
+    // Parking gives back a single scalar quantum, which is only correct when master and worker
+    // threads share one resource; disable it when they use different resource links.
+    , parking_supported(!(master_link_ && worker_link_ && master_link_ != worker_link_))
     , log(getLogger("CPULeaseAllocation"))
     , threads(max_threads)
     , requests(this, max_threads, master_link_, worker_link_)
@@ -687,13 +696,15 @@ bool CPULeaseAllocation::renew(Lease & lease)
 
     // Check if we need to decrease number of running threads (i.e. `acquired`).
     // We want number of `acquired` slots to be less than number of `allocated` slots.
-    // Difference `allocated - acquired` equals `granted`. But we allow `granted == -1` for two reasons:
+    // Difference `allocated - acquired` equals `granted`. Parked threads are still leased but not
+    // running, so add `parked_count` back to measure the running overcommit (`allocated - running`)
+    // rather than counting the parked debt. But we allow the result `== -1` for two reasons:
     //  1. To avoid preemption of master thread just after start.
     //     `acquire()` provides acquired slot "in credit" before it's granted to avoid delay.
     //  2. To avoid preemption of the last thread and allow 100% utilization with one "background" resource request.
     //     Otherwise every lease renewal leads to preemption of the last thread.
     // When requested, but not granted resource is consumed we have to do preemption (even for master thread).
-    if (granted + static_cast<Int64>(requests.hasEnqueued()) < 0 || consumed_ns >= requested_ns)
+    if (granted + static_cast<Int64>(threads.parked_count) + static_cast<Int64>(requests.hasEnqueued()) < 0 || consumed_ns >= requested_ns)
     {
         // Check if preemption is needed
         size_t thread_num = lease.slot_id;
