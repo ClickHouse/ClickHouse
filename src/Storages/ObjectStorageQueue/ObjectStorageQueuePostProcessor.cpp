@@ -7,6 +7,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
+#include <IO/ReadBufferFromS3.h>
 #include <IO/ReadSettings.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/copyS3File.h>
@@ -505,18 +506,22 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             /*version_id=*/{},
                             /*with_metadata=*/true,
                             /*with_tags=*/false);
+                        /// Everything below must describe the generation this HEAD saw: the provenance a later
+                        /// attempt matches against, the tags, and the copied bytes. Empty on unversioned buckets.
+                        const String source_version_id = move_if_none_match.empty() ? String{} : source_info.version_id;
                         /// A guarded move re-uploads the object, so the tags are read explicitly rather than through
                         /// the `HeadObject` tag count, which restricted credentials do not get to see.
                         std::optional<ObjectAttributes> source_tags;
                         if (!move_if_none_match.empty() && settings.after_processing_move_preserve_tags)
-                            source_tags = S3::getObjectTags(*src_client, src_bucket, object_from.remote_path);
+                            source_tags = S3::getObjectTags(
+                                *src_client, src_bucket, object_from.remote_path, source_version_id);
                         const auto provenance = move_if_none_match.empty() ? std::optional<ObjectAttributes>{}
                                                                            : makeMoveProvenance(
                                                                                  source_info.metadata,
                                                                                  object_from.remote_path,
                                                                                  source_info.etag,
                                                                                  source_info.last_modification_time,
-                                                                                 source_info.version_id);
+                                                                                 source_version_id);
 
                         LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, source_info.size, dst_uri.bucket);
                         try
@@ -533,10 +538,18 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 /*read_settings=*/read_settings_to_use,
                                 BlobStorageLogWriter::create(object_storage->getDiskName()),
                                 scheduler,
-                                /*fallback_file_reader=*/[&] { return s3_storage->readObject(object_from, read_settings_to_use); },
+                                /*fallback_file_reader=*/[&]() -> std::unique_ptr<SeekableReadBuffer>
+                                {
+                                    if (source_version_id.empty())
+                                        return s3_storage->readObject(object_from, read_settings_to_use);
+                                    return std::make_unique<ReadBufferFromS3>(
+                                        src_client, src_bucket, object_from.remote_path, source_version_id,
+                                        s3_settings->request_settings, read_settings_to_use);
+                                },
                                 /*object_metadata=*/provenance,
                                 S3CopyFileSettings{
                                     .if_none_match = move_if_none_match,
+                                    .source_version_id = source_version_id,
                                     .source_headers = move_if_none_match.empty() ? std::optional<S3::ObjectHeaders>{}
                                                                                  : std::optional<S3::ObjectHeaders>{source_info.headers},
                                     .source_tags = std::move(source_tags)});

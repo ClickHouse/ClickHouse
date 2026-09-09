@@ -24,6 +24,9 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 struct S3CopyFileSettings
 {
     String if_none_match;
+    /// Pins every read of the source to one generation; empty on unversioned buckets.
+    /// The caller's `fallback_file_reader` must pin the same version.
+    String source_version_id;
     std::optional<S3::ObjectHeaders> source_headers;
     std::optional<ObjectAttributes> source_tags;
 };

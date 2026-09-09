@@ -86,6 +86,15 @@ namespace
             || error.GetExceptionName() == "PreconditionFailed";
     }
 
+    /// `CopySource` is where S3 takes the source version, so a pinned copy carries it here.
+    String makeCopySource(const String & bucket, const String & key, const String & version_id)
+    {
+        String copy_source = bucket + "/" + key;
+        if (!version_id.empty())
+            copy_source += "?versionId=" + version_id;
+        return copy_source;
+    }
+
     /// Format tags for `PutObject` and `CreateMultipartUpload`.
     String urlEncodeTagSet(const ObjectAttributes & tags)
     {
@@ -798,7 +807,7 @@ namespace
 
         void fillCopyRequest(S3::CopyObjectRequest & request)
         {
-            request.SetCopySource(src_bucket + "/" + src_key);
+            request.SetCopySource(makeCopySource(src_bucket, src_key, copy_settings.source_version_id));
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
 
@@ -916,7 +925,7 @@ namespace
             auto request = std::make_unique<S3::UploadPartCopyRequest>();
 
             /// Make a copy request to copy a part.
-            request->SetCopySource(src_bucket + "/" + src_key);
+            request->SetCopySource(makeCopySource(src_bucket, src_key, copy_settings.source_version_id));
             request->SetBucket(dest_bucket);
             request->SetKey(dest_key);
             request->SetUploadId(multipart_upload_id);

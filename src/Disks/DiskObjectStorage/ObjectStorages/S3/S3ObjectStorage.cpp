@@ -696,11 +696,14 @@ void S3ObjectStorage::copyObject( // NOLINT
     const auto [dest_bucket, dest_key] = splitBucketAndKey(object_to.remote_path);
     auto source_info
         = S3::getObjectInfo(*current_client, src_bucket, src_key, /*version_id=*/{}, /*with_metadata=*/false, /*with_tags=*/false);
+    /// Everything below must describe the generation this HEAD saw, so a same-key re-upload cannot
+    /// mix another version's bytes into a guarded copy. Empty on unversioned buckets.
+    const String source_version_id = guarded_copy ? source_info.version_id : String{};
     /// A guarded copy re-uploads the object, so the tags are read explicitly rather than through the
     /// `HeadObject` tag count, which restricted credentials do not get to see.
     std::optional<ObjectAttributes> source_tags;
     if (guarded_copy && write_settings.object_storage_copy_preserve_source_tags)
-        source_tags = S3::getObjectTags(*current_client, src_bucket, src_key);
+        source_tags = S3::getObjectTags(*current_client, src_bucket, src_key, source_version_id);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
@@ -716,10 +719,18 @@ void S3ObjectStorage::copyObject( // NOLINT
         read_settings_to_use,
         BlobStorageLogWriter::create(disk_name),
         scheduler,
-        [&, this] { return readObject(object_from, read_settings_to_use); },
+        [&, this]() -> std::unique_ptr<SeekableReadBuffer>
+        {
+            if (source_version_id.empty())
+                return readObject(object_from, read_settings_to_use);
+            return std::make_unique<ReadBufferFromS3>(
+                current_client, src_bucket, src_key, source_version_id,
+                settings_ptr->request_settings, read_settings_to_use);
+        },
         object_to_attributes,
         S3CopyFileSettings{
             .if_none_match = write_settings.object_storage_write_if_none_match,
+            .source_version_id = source_version_id,
             .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
                                            : std::optional<S3::ObjectHeaders>{},
             .source_tags = std::move(source_tags)});
