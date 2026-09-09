@@ -286,9 +286,17 @@ protected:
 private:
     /// Which of a database's tables the query can still be about. A table's settings are hundreds of
     /// rows, so answering `WHERE table = ...` by reading every table and discarding the rest is not
-    /// affordable - and that is the query `SHOW TABLE SETTINGS` generates. Listing the names is far
-    /// cheaper than opening the tables, so the names are filtered first and the iterator is then
-    /// asked only for what survived.
+    /// affordable - and that is the query `SHOW TABLE SETTINGS` generates. So the names are filtered
+    /// first and the real iterator is then asked only for what survived.
+    ///
+    /// The names must come from `getLightweightTablesIterator`, not `getTablesIterator`: for an
+    /// external database the latter is already the storage-resolving path - `DatabaseRemote` calls
+    /// `fetchTable` per listed table and `DatabaseDataLake` calls `tryGetTableImpl` per readable
+    /// catalog table - so listing names through it would open every table in the database just to
+    /// learn its name, and then open the survivor a second time. It also propagates failures, which
+    /// would let one unrelated unresolvable table fail a single-table lookup. The lightweight
+    /// iterator lists names only, and both databases apply the filter this returns before resolving
+    /// anything, so only the surviving tables are ever opened.
     IDatabase::FilterByNameFunction tablesAllowedIn(const String & database_name) const
     {
         if (!table_filter)
@@ -296,10 +304,10 @@ private:
 
         auto database_column = ColumnString::create();
         auto table_column = ColumnString::create();
-        for (auto it = databases_cursor.getDatabase()->getTablesIterator(context); it->isValid(); it->next())
+        for (const auto & table_details : databases_cursor.getDatabase()->getLightweightTablesIterator(context))
         {
             database_column->insert(database_name);
-            table_column->insert(it->name());
+            table_column->insert(table_details.name);
         }
 
         Block block
