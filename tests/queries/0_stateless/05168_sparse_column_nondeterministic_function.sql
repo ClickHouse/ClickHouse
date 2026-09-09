@@ -6,7 +6,10 @@
 
 DROP TABLE IF EXISTS t_sparse_nondeterministic;
 
-CREATE TABLE t_sparse_nondeterministic (id UInt64, s UInt64) ENGINE = MergeTree ORDER BY id;
+-- The ratio is pinned: the harness randomizes it, and the column has to be stored sparse for this
+-- test to exercise the sparse path at all.
+CREATE TABLE t_sparse_nondeterministic (id UInt64, s UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9;
 
 INSERT INTO t_sparse_nondeterministic SELECT number, if(number % 100 = 0, number + 1, 0) FROM numbers(100000);
 
