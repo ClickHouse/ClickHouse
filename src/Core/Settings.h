@@ -171,6 +171,10 @@ struct Settings
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.
     bool hasSettingsChangedByCompatibility() const;
 
+    /// Whether `name` holds a value the `compatibility` setting derived for it rather than one a request
+    /// assigned. False for a name this class does not own: only its own settings can be derived.
+    bool isChangedByCompatibility(std::string_view name) const;
+
     /// Reset settings whose value was set only by the `compatibility` setting back to their defaults (and forget
     /// they were compatibility-derived). Used before transmitting settings so the receiver re-derives them from
     /// `compatibility` itself instead of being forced to the sender's derived values.

@@ -1393,16 +1393,16 @@ arrow::Status ArrowFlightServer::DoAction(
                 {
                     if (std::holds_alternative<std::monostate>(value))
                     {
-                        /// std::monostate means "reset to default" (SET setting = DEFAULT).
-                        query_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
-                        session_context->resetSettingsToDefaultValue({setting});
+                        /// std::monostate means "reset to default" (SET setting = DEFAULT). The value it lands
+                        /// on follows the `compatibility` of the context it resets, which the call checks.
+                        session_context->applySettingsChangesAndResets({}, {setting}, SettingSource::QUERY);
                     }
                     else
                     {
                         auto string_value = std::visit(to_string_value, value);
                         SettingChange change{setting, Field{string_value}};
                         query_context->checkSettingsConstraints(change, SettingSource::QUERY);
-                        session_context->setSetting(setting, string_value);
+                        session_context->applySettingsChangesAndResets(SettingsChanges{change}, {}, SettingSource::QUERY);
                     }
                 }
                 catch (DB::Exception & e)

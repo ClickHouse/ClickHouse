@@ -3595,6 +3595,46 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     applySettingsChangesWithLock(changes, lock);
 }
 
+void Context::applySettingsChangesAndResets(const SettingsChanges & changes, const std::vector<String> & names_to_reset, SettingSource source)
+{
+    std::lock_guard lock(mutex);
+    /// A value nobody named can only be refused by a declared constraint, and only a `compatibility`
+    /// change, a `profile` that can carry one, or a reset writes one. Copying the settings is what the undo
+    /// costs, on a path every query takes, so it is worth not paying for it.
+    const bool can_derive_a_forbidden_value
+        = (!names_to_reset.empty() || changes.tryGet("compatibility") != nullptr || changes.tryGet("profile") != nullptr)
+        && !getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.empty();
+    if (!can_derive_a_forbidden_value)
+    {
+        /// The reset check runs before the changes, as it did when it was the caller's to make: it also
+        /// enforces readonly mode, which the statement's own changes can enter.
+        checkSettingsConstraintsForSettingsResetWithLock(names_to_reset, source);
+        applySettingsChangesWithLock(changes, lock);
+        resetSettingsToDefaultValueWithLock(names_to_reset, lock);
+        return;
+    }
+
+    /// Which values a `compatibility` change derives is only known once it is applied, and a violation must
+    /// not leave them in place, so keep what it takes to undo everything the statement did.
+    Settings settings_before = *settings;
+    auto profiles_before = settings_constraints_and_current_profiles;
+    try
+    {
+        applySettingsChangesWithLock(changes, lock);
+        /// After the statement's own changes: the value a reset lands on follows the `compatibility` in
+        /// force once they are applied, which is not the one the statement was parsed under.
+        checkSettingsConstraintsForSettingsResetWithLock(names_to_reset, source);
+        resetSettingsToDefaultValueWithLock(names_to_reset, lock);
+        checkCompatibilityDerivedSettingsWithLock(settings_before, source);
+    }
+    catch (...)
+    {
+        *settings = std::move(settings_before);
+        settings_constraints_and_current_profiles = std::move(profiles_before);
+        throw;
+    }
+}
+
 void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
@@ -3658,11 +3698,10 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
+void Context::checkSettingsConstraintsForSettingsResetWithLock(const std::vector<String> & names, SettingSource source) const
 {
     if (names.empty())
         return;
-    SharedLockGuard lock(mutex);
     /// The value a reset lands on is the one an active `compatibility` implies for the setting, so
     /// perform the resets on a copy and read the outcome off it.
     Settings after_reset = *settings;
@@ -3690,11 +3729,10 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
     checkMergeTreeSettingsConstraintsWithLock(merge_tree_settings, changes);
 }
 
-void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
+void Context::resetSettingsToDefaultValueWithLock(const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock)
 {
     if (names.empty())
         return;
-    std::lock_guard lock(mutex);
     for (const String & name : names)
         settings->setDefaultValue(name);
     settings->reapplyCompatibility();
@@ -3703,6 +3741,24 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
     applySettingsQuirks(*settings);
     adjustSettingsForMakeDistributedPlan(*settings);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
+}
+
+void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
+{
+    if (names.empty())
+        return;
+    std::lock_guard lock(mutex);
+    resetSettingsToDefaultValueWithLock(names, lock);
+}
+
+void Context::checkCompatibilityDerivedSettingsWithLock(const Settings & settings_before, SettingSource source) const
+{
+    if (!settings->hasSettingsChangedByCompatibility())
+        return;
+    const auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
+    if (constraints_and_profiles->constraints.empty())
+        return;
+    constraints_and_profiles->constraints.checkCompatibilityDerivedValues(*settings, settings_before, source);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const

@@ -1,6 +1,7 @@
 the probe values differ from their declared defaults under compatibility 26.7
 enable_group_by_top_k_optimization	1
 input_format_read_datetime_number_as_raw_value	1
+merge_tree_min_bytes_per_read_stream	1
 SET name = DEFAULT
 1
 SET name = DEFAULT after the setting was assigned explicitly
@@ -17,9 +18,35 @@ a reset that lands on a value the profile forbids is rejected
 SETTING_CONSTRAINT_VIOLATION
 1
 a merge_tree_-prefixed name that Settings owns is checked against its derived value too
-1
 SETTING_CONSTRAINT_VIOLATION
 65536
+the reset rides along in the statement that activates compatibility
+SETTING_CONSTRAINT_VIOLATION
+1
+
+and the same statement is accepted when its compatibility moves the reset onto an allowed value
+1
+26.8
+a query-level compatibility override does not decide what the session reset lands on
+SETTING_CONSTRAINT_VIOLATION
+1
+a reset that lands on the same value still leaves the setting under the constraint
+SETTING_CONSTRAINT_VIOLATION
+1
+
+control: without that reset the profile value keeps compatibility away from the setting
+1
+26.7
+a compatibility change is refused when it derives a value the profile forbids, with no reset at all
+SETTING_CONSTRAINT_VIOLATION
+65536
+
+the same refusal when compatibility arrives as a query setting rather than a statement
+SETTING_CONSTRAINT_VIOLATION
+SETTING_CONSTRAINT_VIOLATION
+a value the profile itself derived at login does not fail the statements that follow
+0
+1
 resetting a CONST compatibility is still rejected
 SETTING_CONSTRAINT_VIOLATION
 26.7

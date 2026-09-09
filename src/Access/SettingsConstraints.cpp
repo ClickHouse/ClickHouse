@@ -296,6 +296,28 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
     }
 }
 
+void SettingsConstraints::checkCompatibilityDerivedValues(const Settings & current_settings, const Settings & settings_before, SettingSource source) const
+{
+    /// Walk the constraints rather than the derived settings: an old `compatibility` value derives
+    /// hundreds of settings, while a profile constrains a handful.
+    for (const auto & [name, constraint] : constraints)
+    {
+        if (!current_settings.isChangedByCompatibility(name))
+            continue;
+
+        /// A profile that carries a `compatibility` of its own derives settings when it is applied at login,
+        /// where the constraints are deliberately not checked. Such a value is not what this request did.
+        const Field value = current_settings.get(name);
+        if (value == settings_before.get(name))
+            continue;
+
+        /// The derived value is already in place, so the regular check would see a change that keeps the
+        /// current value and permit it. Here the value itself is what has to satisfy the constraint.
+        SettingChange change{name, value};
+        Checker(constraint, Settings::resolveName).check(change, value, THROW_ON_VIOLATION, source);
+    }
+}
+
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
 {
     checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);

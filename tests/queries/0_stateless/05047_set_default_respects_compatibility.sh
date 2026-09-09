@@ -25,9 +25,11 @@ R=merge_tree_min_bytes_per_read_stream
 USER_MIN="u_min_05047_${CLICKHOUSE_DATABASE}"
 USER_CONST="u_const_05047_${CLICKHOUSE_DATABASE}"
 USER_STREAM="u_stream_05047_${CLICKHOUSE_DATABASE}"
+USER_LOGIN="u_login_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_MIN="p_min_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_CONST="p_const_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_STREAM="p_stream_05047_${CLICKHOUSE_DATABASE}"
+PROFILE_LOGIN="p_login_05047_${CLICKHOUSE_DATABASE}"
 
 BASE_URL="${CLICKHOUSE_URL%%\?*}"
 session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}_$$_$1"; }
@@ -35,20 +37,22 @@ user_session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}
 # `system.settings` is read at execution time, so it also reports a reset made by the same statement.
 read_setting() { ${CLICKHOUSE_CURL} -sS "$1" -d "SELECT value FROM system.settings WHERE name = '$2'"; }
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MIN} SETTINGS ${Q} = 1 MIN 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_CONST} SETTINGS compatibility = '26.7' CONST"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_STREAM} SETTINGS ${R} MIN 1"
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_LOGIN} SETTINGS compatibility = '26.7', ${Q} MIN 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MIN} SETTINGS PROFILE '${PROFILE_MIN}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_CONST} SETTINGS PROFILE '${PROFILE_CONST}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_STREAM} SETTINGS PROFILE '${PROFILE_STREAM}'"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_LOGIN} SETTINGS PROFILE '${PROFILE_LOGIN}'"
 
 echo 'the probe values differ from their declared defaults under compatibility 26.7'
 # If either 26.8 history row is ever dropped, this fails loudly instead of leaving the arms below vacuous.
 U=$(session_url a0)
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
-${CLICKHOUSE_CURL} -sS "$U" -d "SELECT name, value != default FROM system.settings WHERE name IN ('${P}', '${Q}') ORDER BY name"
+${CLICKHOUSE_CURL} -sS "$U" -d "SELECT name, value != default FROM system.settings WHERE name IN ('${P}', '${Q}', '${R}') ORDER BY name"
 
 echo 'SET name = DEFAULT'
 U=$(session_url a1)
@@ -97,13 +101,78 @@ read_setting "$U" "${Q}"
 echo 'a merge_tree_-prefixed name that Settings owns is checked against its derived value too'
 # The prefix alone does not say which class owns the name, so a prefix test would read the declared
 # 65536 here instead of the derived 0 and let the reset escape the constraint. The assignment keeps
-# the setting changed, so the reset is the only route to 0. The first read arms the arm.
+# the setting changed, so `compatibility` leaves it alone and the reset is the only route to 0.
 U=$(user_session_url a7 "${USER_STREAM}")
-${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
-${CLICKHOUSE_CURL} -sS "$U" -d "SELECT value != default FROM system.settings WHERE name = '${R}'"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET ${R} = 65536"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET ${R} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
 read_setting "$U" "${R}"
+
+echo 'the reset rides along in the statement that activates compatibility'
+# The value the reset lands on follows the `compatibility` the same statement carries, which the check
+# before the statement cannot see. The refusal comes from the derived value instead, and the empty
+# `compatibility` read afterwards is what shows the statement was undone rather than half applied.
+U=$(user_session_url a8 "${USER_MIN}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7', ${Q} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+read_setting "$U" compatibility
+
+echo 'and the same statement is accepted when its compatibility moves the reset onto an allowed value'
+# The other direction of the arm above: the reset lands on 1 under the 26.8 the statement carries, which is
+# what a direct assignment of 1 is allowed to do, so the statement has to go through.
+U=$(user_session_url a8f "${USER_MIN}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.8', ${Q} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+read_setting "$U" compatibility
+
+echo 'a query-level compatibility override does not decide what the session reset lands on'
+# The reset target is the session, at 26.7; under the query`s own 26.8 the setting would land on the
+# allowed 1. Reading the session value afterwards is what proves which of the two was used.
+U=$(user_session_url a8b "${USER_MIN}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "${U}&compatibility=26.8" -d "SET ${Q} = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+
+echo 'a reset that lands on the same value still leaves the setting under the constraint'
+# That reset is allowed: it lands on 1. It also clears `changed`, so `compatibility` may now derive the
+# setting, and the derived 0 has to be refused just as an assignment of 0 is - with the setting and the
+# `compatibility` that would have derived it both left as they were.
+U=$(user_session_url a8c "${USER_MIN}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${Q} = DEFAULT"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+read_setting "$U" compatibility
+
+echo 'control: without that reset the profile value keeps compatibility away from the setting'
+U=$(user_session_url a8d "${USER_MIN}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+read_setting "$U" "${Q}"
+read_setting "$U" compatibility
+
+echo 'a compatibility change is refused when it derives a value the profile forbids, with no reset at all'
+# The profile constrains the setting without assigning it, so `compatibility` is free to derive it.
+U=$(user_session_url a8e "${USER_STREAM}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${R}"
+read_setting "$U" compatibility
+
+echo 'the same refusal when compatibility arrives as a query setting rather than a statement'
+# Two more carriers of a `compatibility` that derives a forbidden value, neither of them a `SET`: the HTTP
+# URL, which applies it to the query context, and the native protocol, where the client sends it along with
+# the query. Both reject the query rather than running it with the value the profile forbids.
+${CLICKHOUSE_CURL} -sS "$(user_session_url a13 "${USER_STREAM}")&compatibility=26.7" -d "SELECT 1" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+${CLICKHOUSE_CLIENT} --user "${USER_STREAM}" --compatibility 26.7 -q "SELECT 1" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+
+echo 'a value the profile itself derived at login does not fail the statements that follow'
+# The profile carries both a `compatibility` and a constraint on a setting that version moves, so login
+# derives a value the constraint forbids - and a profile is applied without checking the constraints. Only
+# what a statement moves is that statement`s to answer for, or every later statement would fail.
+U=$(user_session_url a12 "${USER_LOGIN}")
+read_setting "$U" "${Q}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET max_threads = DEFAULT" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+${CLICKHOUSE_CURL} -sS "$U" -d "SELECT 1"
 
 echo 'resetting a CONST compatibility is still rejected'
 U=$(user_session_url a9 "${USER_CONST}")
@@ -134,5 +203,5 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = ''"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET make_distributed_plan = 0"
 read_setting "$U" compile_expressions
 
-${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}"
+${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}"
