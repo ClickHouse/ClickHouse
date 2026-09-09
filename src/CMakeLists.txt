@@ -1074,5 +1074,5 @@ if (ENABLE_FILC)
         Functions/FunctionsNumericIndexedVector.cpp
         Functions/FunctionsRound.cpp
         Functions/if.cpp
-        DIRECTORY Functions PROPERTIES COMPILE_OPTIONS "-O0")
+        PROPERTIES COMPILE_OPTIONS "-O0")
 endif ()
