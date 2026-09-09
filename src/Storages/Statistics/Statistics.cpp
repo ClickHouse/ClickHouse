@@ -23,12 +23,25 @@
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
 #include "config.h" /// USE_DATASKETCHES
 
 namespace DB
 {
+
+UInt64 getStatisticsSeed(std::string_view part_name, std::string_view column_name)
+{
+    static constexpr std::string_view domain = "ClickHouse.MergeTree.Statistics.v1";
+    SipHash hash;
+    hash.update(domain.data(), domain.size());
+    hash.update(static_cast<UInt64>(part_name.size()));
+    hash.update(part_name.data(), part_name.size());
+    hash.update(static_cast<UInt64>(column_name.size()));
+    hash.update(column_name.data(), column_name.size());
+    return hash.get64();
+}
 
 namespace ErrorCodes
 {
@@ -177,8 +190,9 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, UInt64 random_seed_)
     : stats_desc(stats_desc_)
+    , random_seed(random_seed_)
 {
 }
 
@@ -240,7 +254,12 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
 {
-    return MergeTreeStatisticsFactory::instance().get(stats_desc);
+    return cloneEmpty(random_seed);
+}
+
+std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty(UInt64 random_seed_) const
+{
+    return MergeTreeStatisticsFactory::instance().get(stats_desc, random_seed_);
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -591,7 +610,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     }
 }
 
-std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
+std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type, UInt64 random_seed)
 {
     UInt16 version_raw{};
     readIntBinary(version_raw, buf);
@@ -642,7 +661,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
         UInt64 rows_value = 0;
         readIntBinary(rows_value, buf);
 
-        auto result = std::make_shared<ColumnStatistics>(stats_desc);
+        auto result = std::make_shared<ColumnStatistics>(stats_desc, random_seed);
         result->rows = rows_value;
 
         for (size_t i = 0; i < static_cast<size_t>(StatisticsType::Max); ++i)
@@ -662,7 +681,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                 continue;
             }
 
-            if (auto stat_ptr = factory.tryCreateSingle(type, data_type))
+            if (auto stat_ptr = factory.tryCreateSingle(type, data_type, random_seed))
             {
                 /// Track bytes consumed so we can detect a per-stat parser drift and either pad the
                 /// remainder or refuse to continue on overrun (which would corrupt the next stat).
@@ -715,7 +734,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     }
     stats_desc.types_to_desc = factory.get(stat_types, data_type);
 
-    auto result = factory.get(stats_desc);
+    auto result = factory.get(stats_desc, random_seed);
     readIntBinary(result->rows, buf);
 
     for (const auto & [_, desc] : result->stats)
@@ -736,14 +755,14 @@ String ColumnStatistics::getNameForLogs() const
     return ret;
 }
 
-ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
+ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns, std::string_view part_name)
 {
     const auto & factory = MergeTreeStatisticsFactory::instance();
 
     for (const auto & column : columns)
     {
         if (!column.statistics.empty())
-            emplace(column.name, factory.get(column));
+            emplace(column.name, factory.get(column, getStatisticsSeed(part_name, column.name)));
     }
 }
 
@@ -824,6 +843,16 @@ void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Crea
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics creator type {} is not unique", stats_type);
 }
 
+void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, CreatorWithoutSeed creator)
+{
+    registerCreator(
+        stats_type,
+        [creator_without_seed = std::move(creator)](const SingleStatisticsDescription & stats, const DataTypePtr & data_type, UInt64)
+        {
+            return creator_without_seed(stats, data_type);
+        });
+}
+
 void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Validator validator)
 {
     if (!validators.emplace(stats_type, std::move(validator)).second)
@@ -902,14 +931,14 @@ MergeTreeStatisticsFactory::cloneWithSupportedStatistics(const ColumnStatisticsD
     return result;
 }
 
-ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
+ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc, UInt64 random_seed) const
 {
-    return get(column_desc.statistics);
+    return get(column_desc.statistics, random_seed);
 }
 
-ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats_desc) const
+ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats_desc, UInt64 random_seed) const
 {
-    auto column_stat = std::make_shared<ColumnStatistics>(stats_desc);
+    auto column_stat = std::make_shared<ColumnStatistics>(stats_desc, random_seed);
 
     for (const auto & [type, desc] : stats_desc.types_to_desc)
     {
@@ -920,7 +949,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
                 "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'histogram', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
 
-        auto stat_ptr = (it->second)(desc, stats_desc.data_type);
+        auto stat_ptr = (it->second)(desc, stats_desc.data_type, random_seed);
         column_stat->stats[type] = stat_ptr;
     }
 
@@ -952,7 +981,7 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
     return result;
 }
 
-StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const
+StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, const DataTypePtr & data_type, UInt64 random_seed) const
 {
     auto vit = validators.find(type);
     if (vit == validators.end())
@@ -968,7 +997,7 @@ StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, c
     if (cit == creators.end())
         return nullptr;
 
-    return cit->second(desc, data_type);
+    return cit->second(desc, data_type, random_seed);
 }
 
 static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsFromString(const String & str)

@@ -12,6 +12,9 @@ namespace DB
 constexpr std::string_view STATS_FILE_PREFIX = "statistics_";
 constexpr std::string_view STATS_FILE_SUFFIX = ".stats";
 
+/// Returns a stable, domain-separated seed for one statistic in a data part.
+UInt64 getStatisticsSeed(std::string_view part_name, std::string_view column_name);
+
 /// Version of the per-column statistics file format stored inside statistics.packed (or legacy statistics_<col>.stats).
 /// When adding a new version, bump the latest value and add a comment describing what changed.
 enum class StatisticsFileVersion : UInt16
@@ -119,10 +122,10 @@ class ColumnStatistics
 {
 public:
     using StatsMap = std::map<StatisticsType, StatisticsPtr>;
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
+    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, UInt64 random_seed_ = 0);
 
     void serialize(WriteBuffer & buf) const;
-    static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
+    static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type, UInt64 random_seed = 0);
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
@@ -164,12 +167,14 @@ public:
     const StatsMap & getStats() const { return stats; }
     bool structureEquals(const ColumnStatistics & other) const;
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
+    std::shared_ptr<ColumnStatistics> cloneEmpty(UInt64 random_seed_) const;
 
 private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
+    UInt64 random_seed = 0;
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
@@ -181,7 +186,7 @@ public:
     using Base = std::map<String, ColumnStatisticsPtr>;
     using Base::Base;
 
-    explicit ColumnsStatistics(const ColumnsDescription & columns);
+    explicit ColumnsStatistics(const ColumnsDescription & columns, std::string_view part_name = {});
     ColumnsStatistics cloneEmpty() const;
 
     void build(const Block & block);
@@ -206,18 +211,20 @@ public:
     ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
-    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
+    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type, UInt64 random_seed)>;
+    using CreatorWithoutSeed = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
-    ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
-    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
+    ColumnStatisticsPtr get(const ColumnDescription & column_desc, UInt64 random_seed = 0) const;
+    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc, UInt64 random_seed = 0) const;
     ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
     /// Create a single statistics object by type. Returns `nullptr` if the type is unknown
     /// or unsupported for `data_type`. Used by the V4 deserializer to instantiate statistics
     /// types one at a time (and to silently skip types the current build doesn't know about).
-    StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
+    StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type, UInt64 random_seed = 0) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);
+    void registerCreator(StatisticsType type, CreatorWithoutSeed creator);
 
 protected:
     MergeTreeStatisticsFactory();

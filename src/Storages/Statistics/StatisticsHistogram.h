@@ -8,6 +8,8 @@
 
 #include <kll_sketch.hpp>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -18,7 +20,7 @@ public:
     static constexpr UInt64 MAX_BUCKETS = 1024;
     static constexpr UInt64 DEFAULT_BUCKETS_FOR_DESERIALIZATION = 128;
 
-    explicit StatisticsHistogram(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
+    explicit StatisticsHistogram(const SingleStatisticsDescription & description, const DataTypePtr & data_type_, UInt64 random_seed = 0);
 
     void build(const ColumnPtr & column) override;
     void merge(const StatisticsPtr & other_stats) override;
@@ -43,6 +45,18 @@ public:
     static UInt64 getBucketCountFromDescription(const SingleStatisticsDescription & description, bool require_parameter);
 
 private:
+    class RandomBitGenerator
+    {
+    public:
+        explicit RandomBitGenerator(UInt64 state_) : state(state_) {}
+
+        bool operator()();
+        UInt64 getState() const { return state; }
+
+    private:
+        UInt64 state;
+    };
+
     using Sketch = datasketches::kll_sketch<Float64>;
 
     static UInt16 getSketchK(UInt64 buckets);
@@ -55,15 +69,17 @@ private:
     DataTypePtr data_type;
     String data_type_name;
     UInt64 bucket_count;
+    RandomBitGenerator random_bit_generator;
     Sketch sketch;
     UInt64 non_null_count = 0;
     UInt64 nan_count = 0;
     UInt64 negative_inf_count = 0;
     UInt64 positive_inf_count = 0;
-    /// Exact finite bounds are stored outside KLL because compacted retained items may omit them.
+    /// Exact finite bounds are tracked explicitly while building and restored from native KLL state.
     std::optional<Float64> finite_min;
     std::optional<Float64> finite_max;
 
+    mutable std::mutex cache_mutex;
     mutable bool cache_valid = false;
     mutable std::vector<Float64> bucket_bounds;
     mutable std::vector<Float64> counts_less;
@@ -71,7 +87,8 @@ private:
 };
 
 bool histogramStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
-StatisticsPtr histogramStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+StatisticsPtr histogramStatisticsCreator(
+    const SingleStatisticsDescription & description, const DataTypePtr & data_type, UInt64 random_seed);
 
 }
 

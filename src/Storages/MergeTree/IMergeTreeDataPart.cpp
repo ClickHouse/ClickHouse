@@ -1355,7 +1355,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
             });
 
-            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            auto column_stat
+                = ColumnStatistics::deserialize(compressed_buf, column_desc->type, getStatisticsSeed(name, column_desc->name));
             if (column_stat)
                 result.emplace(column_desc->name, std::move(column_stat));
         }
@@ -1397,7 +1398,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
             });
 
-            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            auto column_stat
+                = ColumnStatistics::deserialize(compressed_buf, column_desc->type, getStatisticsSeed(name, column_desc->name));
             if (column_stat)
                 result.emplace(column_desc->name, std::move(column_stat));
         }

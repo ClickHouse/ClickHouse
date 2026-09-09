@@ -1074,7 +1074,8 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
-static ColumnsStatistics getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
+static ColumnsStatistics getStatisticsToRecalculate(
+    const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats, std::string_view part_name)
 {
     ColumnsStatistics stats_to_recalc;
     const auto & stats_factory = MergeTreeStatisticsFactory::instance();
@@ -1084,7 +1085,7 @@ static ColumnsStatistics getStatisticsToRecalculate(const StorageMetadataPtr & m
     {
         /// A mutation already in the queue must drain rather than retry forever.
         if (!col_desc.statistics.empty() && columns.hasPhysical(col_desc.name) && materialized_stats.contains(col_desc.name))
-            stats_to_recalc.emplace(col_desc.name, stats_factory.get(col_desc));
+            stats_to_recalc.emplace(col_desc.name, stats_factory.get(col_desc, getStatisticsSeed(part_name, col_desc.name)));
     }
     return stats_to_recalc;
 }
@@ -2718,7 +2719,8 @@ private:
         const bool has_block_columns = new_part_columns.contains(BlockNumberColumn::name) && new_part_columns.contains(BlockOffsetColumn::name);
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
         ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings(), has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
-        ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
+        ctx->all_gathered_data.statistics
+            = ColumnsStatistics(ctx->metadata_snapshot->getColumns(), ctx->new_data_part->name);
 
         MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
@@ -4123,7 +4125,8 @@ bool MutateTask::prepare()
                 projections_to_skip.emplace_back(&projection);
         }
 
-        ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);
+        ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(
+            ctx->metadata_snapshot, ctx->materialized_statistics, ctx->new_data_part->name);
 
         auto all_indices_to_recalc = ctx->indices_to_recalc;
         all_indices_to_recalc.insert(ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());

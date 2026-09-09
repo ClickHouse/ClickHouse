@@ -840,7 +840,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
     {
-        global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
+        global_ctx->gathered_data.statistics
+            = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns(), global_ctx->new_data_part->name);
     }
 
     if (global_ctx->merge_may_reduce_rows)
@@ -888,7 +889,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 auto it = part_statistics.find(column_name);
 
                 if (it == part_statistics.end() || !column_stats->structureEquals(*it->second))
-                    global_ctx->statistics_to_build_by_part[part->name].emplace(column_name, column_stats->cloneEmpty());
+                    global_ctx->statistics_to_build_by_part[part->name].emplace(
+                        column_name, column_stats->cloneEmpty(getStatisticsSeed(part->name, column_name)));
                 else
                     column_stats->merge(it->second);
             }

@@ -836,7 +836,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
             const auto & all_columns = metadata_snapshot->getColumns();
-            statistics = ColumnsStatistics(all_columns);
+            statistics = ColumnsStatistics(all_columns, part_name);
             /// A non-physical column is never present in a written block, so `build` below would
             /// reject it. Every other absence stays an error.
             std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });

@@ -33,8 +33,10 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-constexpr UInt8 HISTOGRAM_PAYLOAD_VERSION = 1;
+constexpr UInt8 HISTOGRAM_PAYLOAD_VERSION_V1 = 1;
+constexpr UInt8 HISTOGRAM_PAYLOAD_VERSION_V2 = 2;
 constexpr UInt64 MAX_RETAINED_ITEMS = 65536;
+constexpr UInt64 MAX_SERIALIZED_SKETCH_SIZE = 1ULL << 20;
 
 Float64 clampCount(Float64 value, Float64 upper_bound)
 {
@@ -76,17 +78,30 @@ UInt16 StatisticsHistogram::getSketchK(UInt64 buckets)
     return static_cast<UInt16>(std::max<UInt64>(buckets, datasketches::kll_constants::DEFAULT_K));
 }
 
-StatisticsHistogram::StatisticsHistogram(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
+bool StatisticsHistogram::RandomBitGenerator::operator()()
+{
+    state += 0x9e3779b97f4a7c15ULL;
+    UInt64 value = state;
+    value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+    value ^= value >> 31;
+    return value >> 63;
+}
+
+StatisticsHistogram::StatisticsHistogram(
+    const SingleStatisticsDescription & description, const DataTypePtr & data_type_, UInt64 random_seed)
     : IStatistics(description)
     , data_type(removeLowCardinalityAndNullable(data_type_))
     , data_type_name(data_type_->getName())
     , bucket_count(getBucketCountFromDescription(description, false))
+    , random_bit_generator(random_seed ^ (bucket_count * 0x9e3779b97f4a7c15ULL))
     , sketch(getSketchK(bucket_count))
 {
 }
 
 void StatisticsHistogram::invalidateCache()
 {
+    std::lock_guard lock(cache_mutex);
     cache_valid = false;
     bucket_bounds.clear();
     counts_less.clear();
@@ -122,7 +137,7 @@ void StatisticsHistogram::build(const ColumnPtr & column)
             ++positive_inf_count;
         else
         {
-            sketch.update(value);
+            sketch.update(value, random_bit_generator);
             finite_min = finite_min ? std::min(*finite_min, value) : value;
             finite_max = finite_max ? std::max(*finite_max, value) : value;
         }
@@ -136,7 +151,7 @@ void StatisticsHistogram::merge(const StatisticsPtr & other_stats)
     if (!other || data_type_name != other->data_type_name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge incompatible histogram statistics");
 
-    sketch.merge(other->sketch);
+    sketch.merge(other->sketch, random_bit_generator);
     bucket_count = std::min(bucket_count, other->bucket_count);
     non_null_count += other->non_null_count;
     nan_count += other->nan_count;
@@ -151,7 +166,9 @@ void StatisticsHistogram::merge(const StatisticsPtr & other_stats)
 
 void StatisticsHistogram::serialize(WriteBuffer & buf)
 {
-    writeBinary(HISTOGRAM_PAYLOAD_VERSION, buf);
+    std::lock_guard lock(cache_mutex);
+
+    writeBinary(HISTOGRAM_PAYLOAD_VERSION_V2, buf);
     writeVarUInt(bucket_count, buf);
     writeVarUInt(non_null_count, buf);
     writeVarUInt(nan_count, buf);
@@ -166,25 +183,21 @@ void StatisticsHistogram::serialize(WriteBuffer & buf)
         writeBinary(*finite_max, buf);
     }
 
-    /// A heterogeneous merge may keep the accumulator's larger configured k
-    /// while KLL records the smaller source k only as internal min_k. Persist
-    /// the conservative k implied by the surviving bucket resolution.
-    writeVarUInt(getSketchK(bucket_count), buf);
-    const auto sorted_view = sketch.get_sorted_view();
-    writeVarUInt(sorted_view.size(), buf);
-    for (auto it = sorted_view.begin(); it != sorted_view.end(); ++it)
-    {
-        const auto item = *it;
-        writeBinary(item.first, buf);
-        writeVarUInt(it.get_weight(), buf);
-    }
+    writeBinary(random_bit_generator.getState(), buf);
+
+    /// Native KLL serialization preserves retained levels and weights exactly. Sort level zero
+    /// first so serialization is canonical and cannot depend on whether a query built KLL's lazy view.
+    [[maybe_unused]] const auto sorted_view = sketch.get_sorted_view();
+    const auto bytes = sketch.serialize();
+    writeVarUInt(bytes.size(), buf);
+    buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
 }
 
 void StatisticsHistogram::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
     UInt8 payload_version = 0;
     readBinary(payload_version, buf);
-    if (payload_version != HISTOGRAM_PAYLOAD_VERSION)
+    if (payload_version != HISTOGRAM_PAYLOAD_VERSION_V1 && payload_version != HISTOGRAM_PAYLOAD_VERSION_V2)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS, "Unsupported histogram statistics payload version {}", static_cast<UInt64>(payload_version));
 
@@ -219,33 +232,76 @@ void StatisticsHistogram::deserialize(ReadBuffer & buf, StatisticsFileVersion /*
         finite_max.reset();
     }
 
-    UInt64 stored_k = 0;
-    readVarUInt(stored_k, buf);
-    if (stored_k < datasketches::kll_constants::MIN_K || stored_k > datasketches::kll_constants::MAX_K)
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Invalid histogram KLL parameter {}", stored_k);
-
-    UInt64 retained_items = 0;
-    readVarUInt(retained_items, buf);
-    if (retained_items > MAX_RETAINED_ITEMS)
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram KLL has too many retained items: {}", retained_items);
-
     bucket_count = stored_bucket_count;
-    if (stored_k != getSketchK(bucket_count))
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram KLL parameter {} does not match {} buckets", stored_k, bucket_count);
-
     if (nan_count > non_null_count || negative_inf_count > non_null_count - nan_count
         || positive_inf_count > non_null_count - nan_count - negative_inf_count)
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram row-count invariant is violated");
     const UInt64 special_count = nan_count + negative_inf_count + positive_inf_count;
     const UInt64 expected_finite_count = non_null_count - special_count;
+    if (expected_finite_count > datasketches::kll_constants::MAX_N)
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram finite row count is too large: {}", expected_finite_count);
     if ((expected_finite_count != 0) != static_cast<bool>(has_finite_values))
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram finite bounds do not match its row count");
 
-    const UInt64 max_retained_for_state = expected_finite_count == 0
-        ? 0
-        : static_cast<UInt64>(Sketch::get_max_serialized_size_bytes(getSketchK(MAX_BUCKETS), expected_finite_count) / sizeof(Float64));
-    if (retained_items > max_retained_for_state)
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram KLL retained-item count is inconsistent with k and row count");
+    if (payload_version == HISTOGRAM_PAYLOAD_VERSION_V2)
+    {
+        UInt64 stored_random_state = 0;
+        readBinary(stored_random_state, buf);
+
+        UInt64 serialized_size = 0;
+        readVarUInt(serialized_size, buf);
+        if (serialized_size > MAX_SERIALIZED_SKETCH_SIZE)
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Serialized histogram KLL is too large: {}", serialized_size);
+
+        Sketch::vector_bytes bytes;
+        bytes.resize(serialized_size);
+        buf.readStrict(reinterpret_cast<char *>(bytes.data()), serialized_size);
+
+        Sketch restored;
+        try
+        {
+            restored = Sketch::deserialize(bytes.data(), bytes.size());
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot deserialize histogram KLL: {}", e.what());
+        }
+
+        if (restored.get_k() < getSketchK(bucket_count) || restored.get_k() > getSketchK(MAX_BUCKETS))
+            throw Exception(
+                ErrorCodes::ILLEGAL_STATISTICS,
+                "Histogram KLL parameter {} is inconsistent with {} buckets",
+                restored.get_k(),
+                bucket_count);
+        if (restored.get_n() != expected_finite_count)
+            throw Exception(
+                ErrorCodes::ILLEGAL_STATISTICS,
+                "Histogram row-count invariant is violated: expected {}, native sketch {}",
+                expected_finite_count,
+                restored.get_n());
+        if (expected_finite_count != 0
+            && (!std::isfinite(restored.get_min_item()) || !std::isfinite(restored.get_max_item())
+                || restored.get_min_item() < *finite_min || restored.get_max_item() > *finite_max))
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram KLL finite bounds are inconsistent");
+
+        sketch = std::move(restored);
+        random_bit_generator = RandomBitGenerator(stored_random_state);
+        invalidateCache();
+        return;
+    }
+
+    /// Legacy V1 stored only a weighted sorted view, so this is necessarily a one-time
+    /// approximation. Caller-owned randomness makes migration deterministic, and all subsequent
+    /// writes use V2 native KLL state.
+    UInt64 stored_k = 0;
+    readVarUInt(stored_k, buf);
+    if (stored_k != getSketchK(bucket_count))
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram KLL parameter {} does not match {} buckets", stored_k, bucket_count);
+
+    UInt64 retained_items = 0;
+    readVarUInt(retained_items, buf);
+    if (retained_items > MAX_RETAINED_ITEMS || retained_items > expected_finite_count)
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram KLL has an invalid retained-item count: {}", retained_items);
 
     std::map<UInt64, std::vector<Float64>> items_by_weight;
     UInt64 restored_finite_count = 0;
@@ -268,16 +324,16 @@ void StatisticsHistogram::deserialize(ReadBuffer & buf, StatisticsFileVersion /*
     {
         Sketch weighted(static_cast<UInt16>(stored_k));
         for (const Float64 value : values)
-            weighted.update(value);
+            weighted.update(value, random_bit_generator);
 
         UInt64 represented_weight = 1;
         while (represented_weight < weight)
         {
             Sketch copy(weighted);
-            weighted.merge(copy);
+            weighted.merge(copy, random_bit_generator);
             represented_weight *= 2;
         }
-        sketch.merge(weighted);
+        sketch.merge(weighted, random_bit_generator);
     }
 
     if (restored_finite_count != expected_finite_count || sketch.get_n() != expected_finite_count)
@@ -292,6 +348,7 @@ void StatisticsHistogram::deserialize(ReadBuffer & buf, StatisticsFileVersion /*
 
 void StatisticsHistogram::buildCache() const
 {
+    std::lock_guard lock(cache_mutex);
     if (cache_valid)
         return;
 
@@ -381,6 +438,9 @@ std::optional<Float64> StatisticsHistogram::estimateEqual(const Field & val) con
     if (finite_rows == 0)
         return 0.0;
 
+    /// KLL lazily initializes its sorted view in const rank queries. Build it under the
+    /// histogram cache mutex before concurrent estimator reads can reach those methods.
+    buildCache();
     const Float64 finite_rows_as_float = static_cast<Float64>(finite_rows);
     const Float64 mass
         = clampCount((sketch.get_rank(*converted, true) - sketch.get_rank(*converted, false)) * finite_rows_as_float, finite_rows_as_float);
@@ -472,9 +532,10 @@ bool histogramStatisticsValidator(const SingleStatisticsDescription & descriptio
     return inner_type->isValueRepresentedByNumber();
 }
 
-StatisticsPtr histogramStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+StatisticsPtr histogramStatisticsCreator(
+    const SingleStatisticsDescription & description, const DataTypePtr & data_type, UInt64 random_seed)
 {
-    return std::make_shared<StatisticsHistogram>(description, data_type);
+    return std::make_shared<StatisticsHistogram>(description, data_type, random_seed);
 }
 
 }

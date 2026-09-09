@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <map>
 #include <memory>
 
 #include <Common/ProfileEvents.h>
@@ -57,7 +58,7 @@ using BuildTextIndexTransformPtr = std::shared_ptr<BuildTextIndexTransform>;
 
 class BuildStatisticsTransform;
 using BuildStatisticsTransformPtr = std::shared_ptr<BuildStatisticsTransform>;
-using BuildStatisticsTransformMap = std::unordered_map<String, BuildStatisticsTransformPtr>;
+using BuildStatisticsTransformMap = std::map<String, BuildStatisticsTransformPtr>;
 
 /**
  * Overview of the merge algorithm
