@@ -117,7 +117,7 @@ protected:
     DiskPtr metadata_disk_ptr;
 
 private:
-    bool shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const;
+    bool shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;
     void loadTableLazy(
         ContextMutablePtr local_context,
         const QualifiedTableName & name,
