@@ -249,15 +249,17 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// The generated SQL relies on `AS MATERIALIZED` (see SQLSubqueryType::MATERIALIZED_TABLE), which takes effect only with `enable_materialized_cte`.
-    /// Enable it unless the user set it explicitly.
+    /// Isolate the settings required by generated PromQL from the request context: `AS MATERIALIZED`
+    /// (SQLSubqueryType::MATERIALIZED_TABLE) has effect only with `enable_materialized_cte` enabled.
+    auto query_context = Context::createCopy(getContext());
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        getContext()->setSetting("enable_materialized_cte", true);
+        query_context->setSetting("enable_materialized_cte", true);
 
     /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
-    getContext()->setSetting("allow_experimental_analyzer", true);
+    query_context->setSetting("allow_experimental_analyzer", true);
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     try
     {
@@ -429,10 +431,18 @@ bool PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
         return writeQueryResponseInstantVectorBlockWithHistograms(response, result_block, first);
     }
 
+    /// The hoisted timestamp below reads row 0, which does not exist in an empty block.
+    if (result_block.rows() == 0)
+        return false;
+
     const auto & timestamp_column = result_block.getByName(TimeSeriesColumnNames::Timestamp).column;
     auto timestamp_data_type = result_block.getByName(TimeSeriesColumnNames::Timestamp).type;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
     const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
+
+    WriteBufferFromOwnString timestamp_buffer;
+    writeTimestamp(timestamp_buffer, timestamp_column->getInt(0), timestamp_scale);
+    const std::string_view timestamp_text = timestamp_buffer.stringView();
 
     bool need_comma = !first;
     bool emitted_any = false;
@@ -454,8 +464,7 @@ bool PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
         writeString("\"value\":[", response);
 
         // Write timestamp
-        DateTime64 timestamp = timestamp_column->getInt(i);
-        writeTimestamp(response, timestamp, timestamp_scale);
+        writeString(timestamp_text, response);
 
         writeString(",", response);
 
@@ -666,9 +675,11 @@ void PrometheusHTTPProtocolAPI::writeHistogram(WriteBuffer & response, const His
             return custom_values_data.getFloat64(custom_values_begin + uidx);
         };
 
+        /// Custom buckets are (lower, upper] throughout, so every one of them uses rule 0 - including
+        /// the first, whose lower bound is -Inf and therefore cannot be inclusive.
         const auto positive_buckets = expandHistogramSpans(*payload.positive_spans, *payload.positive_values, row_index);
         for (const auto & bucket : positive_buckets)
-            add_bucket(bucket.index == 0 ? 3 : 0, custom_bound(bucket.index - 1), custom_bound(bucket.index), bucket.count);
+            add_bucket(0, custom_bound(bucket.index - 1), custom_bound(bucket.index), bucket.count);
     }
     else
     {

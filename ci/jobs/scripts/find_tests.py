@@ -82,6 +82,7 @@ class Targeting:
         "ci/defs/job_configs.py",
         "ci/jobs/functional_tests.py",
         "ci/jobs/scripts/clickhouse_proc.py",
+        "ci/jobs/scripts/log_cluster.py",
         "ci/jobs/scripts/find_tests.py",
         "ci/jobs/scripts/functional_tests_results.py",
         "ci/jobs/scripts/log_export.py",

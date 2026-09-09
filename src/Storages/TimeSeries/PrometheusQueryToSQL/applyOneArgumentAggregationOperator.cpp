@@ -84,17 +84,22 @@ namespace
 
             {"count",
              {
-                [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr & scalar_data_type) -> ASTPtr
                 {
                     /// countForEach is special: it returns UInt64 and not Nullable: if all the inputs at any specific position are NULLs,
                     /// countForEach produces 0 at this position instead of NULL. So we need to convert it to NULL with arrayMap.
+                    /// Cast to the scalar type: a subquery like `rate(count(m)[5m:1m])` feeds this grid into a
+                    /// `timeSeries*ToGrid` aggregate, which accepts only floats.
                     return makeASTFunction(
-                        "arrayMap",
+                        "CAST",
                         makeASTFunction(
-                            "lambda",
-                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
-                            makeASTFunction("nullIf", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u))),
-                        makeASTFunction("countForEach", std::move(v)));
+                            "arrayMap",
+                            makeASTFunction(
+                                "lambda",
+                                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                                makeASTFunction("nullIf", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u))),
+                            makeASTFunction("countForEach", std::move(v))),
+                        make_intrusive<ASTLiteral>("Array(Nullable(" + scalar_data_type->getName() + "))"));
                 },
             }},
 

@@ -23,12 +23,13 @@ INSERT INTO ts_nh (metric_name, tags, time_series) VALUES
 
 -- The `histograms` outer column carries one tuple per sample:
 -- (timestamp, flags, schema, zero_threshold, count, sum, zero_count, positive_spans, positive_values,
---  negative_spans, negative_values, custom_values). flags = 16 is the stale-marker bit.
+--  negative_spans, negative_values, custom_values, count_int, zero_count_int,
+--  positive_values_int, negative_values_int). flags = 16 is the stale-marker bit.
 INSERT INTO ts_nh (metric_name, tags, histograms) VALUES
-    ('pure_hist', map('job', 'b'), [(toDateTime64(110, 3), 0, 0, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], [])]),
-    ('mixed_float_newer', map('job', 'c'), [(toDateTime64(100, 3), 0, 0, 0.001, 5, 7.5, 1, [(0, 1)], [4], [], [], [])]),
-    ('mixed_hist_newer', map('job', 'd'), [(toDateTime64(110, 3), 0, 0, 0.001, 7, 11.5, 0, [(0, 2)], [4, 3], [], [], [])]),
-    ('stale_hist', map('job', 'e'), [(toDateTime64(110, 3), 16, 0, 0.001, 9, 9, 0, [(0, 1)], [9], [], [], [])]);
+    ('pure_hist', map('job', 'b'), [(toDateTime64(110, 3), 0, 0, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], [], 10, 2, [3, 2, 3], [])]),
+    ('mixed_float_newer', map('job', 'c'), [(toDateTime64(100, 3), 0, 0, 0.001, 5, 7.5, 1, [(0, 1)], [4], [], [], [], 5, 1, [4], [])]),
+    ('mixed_hist_newer', map('job', 'd'), [(toDateTime64(110, 3), 0, 0, 0.001, 7, 11.5, 0, [(0, 2)], [4, 3], [], [], [], 7, 0, [4, 3], [])]),
+    ('stale_hist', map('job', 'e'), [(toDateTime64(110, 3), 16, 0, 0.001, 9, 9, 0, [(0, 1)], [9], [], [], [], 9, 0, [9], [])]);
 
 SELECT '-- pure-float series: the float sample wins, histogram is NULL';
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh', 'pure_float', 120);

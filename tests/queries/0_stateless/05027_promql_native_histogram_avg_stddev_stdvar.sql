@@ -20,7 +20,7 @@ CREATE TABLE ts_nh_stats ENGINE = TimeSeries SETTINGS store_native_histograms = 
 -- variance = (2*(1.5-2.625)^2 + 6*(3-2.625)^2)/8 = (2*1.265625 + 6*0.140625)/8 = 3.375/8 = 0.421875;
 -- stddev = sqrt(0.421875).
 INSERT INTO ts_nh_stats (metric_name, tags, histograms) VALUES
-    ('h', map('job', 'e2e'), [(toDateTime64(110, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.])]);
+    ('h', map('job', 'e2e'), [(toDateTime64(110, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.], 8, 0, [0, 2, 6], [])]);
 
 SELECT '-- histogram_avg';
 SELECT tags, timestamp, value FROM prometheusQuery('ts_nh_stats', 'histogram_avg(h)', 120);

@@ -196,4 +196,14 @@ UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query)
     return TimeSeriesSettings{}[TimeSeriesSetting::recent_samples_ttl_seconds];
 }
 
+bool getTimeSeriesSettingStoreNativeHistograms(const ASTCreateQuery & query)
+{
+    if (query.storage && query.storage->settings)
+    {
+        if (const auto * value = query.storage->settings->changes.tryGet("store_native_histograms"))
+            return SettingFieldBool{*value}.value;
+    }
+    return TimeSeriesSettings{}[TimeSeriesSetting::store_native_histograms];
+}
+
 }

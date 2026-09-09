@@ -79,10 +79,11 @@ namespace ErrorCodes
 namespace
 {
     /// All target kinds of a TimeSeries table.
-    /// The RecentSamples target is optional: it's enabled by the `recent_samples_ttl_seconds` setting.
-    constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
+    /// The RecentSamples and Histograms targets are optional: they are enabled by the
+    /// `recent_samples_ttl_seconds` / `store_native_histograms` settings respectively.
+    constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Histograms, ViewTarget::Tags, ViewTarget::Metrics};
     }
 
     /// Whether the create query defines inner columns for the specified target.
@@ -656,9 +657,9 @@ namespace
 
         for (auto inner_table_kind : getTargetKinds())
         {
-            /// Prealpha tables predate the recent samples table, so there is nothing to upgrade for it,
-            /// and no RECENT SAMPLES target should be added to an old table's definition.
-            if (inner_table_kind == ViewTarget::RecentSamples)
+            /// Prealpha tables predate the recent samples and histograms tables, so there is nothing
+            /// to upgrade for them, and no such target should be added to an old table's definition.
+            if (inner_table_kind == ViewTarget::RecentSamples || inner_table_kind == ViewTarget::Histograms)
                 continue;
             if (hasTargetTableID(create_query, inner_table_kind))
                 continue;
@@ -861,8 +862,8 @@ namespace
             case ViewTarget::RecentSamples:
             case ViewTarget::Histograms:
             {
-                /// The recent samples and histograms tables get the same generated engine as the samples table;
-                /// recent samples become partitioned and TTL'd later (see applyInnerEnginePartitionBy and applyRecentSamplesTTL).
+                /// The recent samples and histograms tables get the same generated engine as the samples table; recent
+                /// samples become partitioned and TTL'd later (see applyInnerEnginePartitionBy and applyRecentSamplesTTL).
                 auto engine = makeASTFunction(fmt::format("{}MergeTree", getInnerEngineFamilyPrefix(target_kind, context)));
                 engine->setNoEmptyArgs(false);
                 storage->set(storage->engine, engine);
@@ -1211,13 +1212,22 @@ namespace
             as_create_query = normalized;
         }
 
-        /// Copy settings from the other table.
-        if (as_create_query->storage && as_create_query->storage->settings
-            && (!create_query.storage || !create_query.storage->settings))
+        /// Copy settings from the other table. Settings are merged by name: a setting written in this query wins.
+        if (as_create_query->storage && as_create_query->storage->settings)
         {
             if (!create_query.storage)
                 create_query.set(create_query.storage, make_intrusive<ASTStorage>());
-            create_query.storage->set(create_query.storage->settings, as_create_query->storage->settings->clone());
+
+            auto merged_settings = boost::static_pointer_cast<ASTSetQuery>(as_create_query->storage->settings->clone());
+            if (create_query.storage->settings)
+            {
+                /// A `name = DEFAULT` reset is a mention of the setting too, so the value of the other table
+                /// is not inherited for it. The reset itself is not kept: an absent setting means the default.
+                for (const auto & name : create_query.storage->settings->default_settings)
+                    merged_settings->changes.removeSetting(name);
+                merged_settings->changes.setSettings(create_query.storage->settings->changes);
+            }
+            create_query.storage->set(create_query.storage->settings, merged_settings);
         }
 
         /// Copy outer column from the other table.
@@ -1228,10 +1238,7 @@ namespace
         }
 
         /// Copy inner columns and inner engines from the other table.
-        constexpr auto base_kinds = getTargetKinds();
-        std::vector<ViewTarget::Kind> kinds_with_histograms(base_kinds.begin(), base_kinds.end());
-        kinds_with_histograms.push_back(ViewTarget::Histograms);
-        for (auto kind : kinds_with_histograms)
+        for (auto kind : getTargetKinds())
         {
             if (!hasInnerColumns(create_query, kind))
             {
@@ -1361,15 +1368,15 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         ViewTarget::Kind prev_inner_kind{};
         const ASTStorage * prev_inner_engine = nullptr;
 
-        constexpr auto base_kinds = getTargetKinds();
-        std::vector<ViewTarget::Kind> kinds(base_kinds.begin(), base_kinds.end());
-        if (hasHistogramsTarget(create_query, settings))
-            kinds.push_back(ViewTarget::Histograms);
-
-        for (auto kind : kinds)
+        for (auto kind : getTargetKinds())
         {
             /// The recent samples target is on by default and disabled by an explicit `recent_samples_ttl_seconds = 0`.
             if ((kind == ViewTarget::RecentSamples) && !recent_samples_enabled)
+                continue;
+
+            /// The histograms target is off by default and enabled by an explicit HISTOGRAMS clause
+            /// or the `store_native_histograms` setting.
+            if ((kind == ViewTarget::Histograms) && !hasHistogramsTarget(create_query, settings))
                 continue;
 
             if (hasTargetTableID(create_query, kind))

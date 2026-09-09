@@ -8,8 +8,10 @@
 #include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
+#include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <cstddef>
 #include <memory>
@@ -60,6 +62,9 @@ private:
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
+
+/// Only columns whose `CODEC` overrides the part's default; resolved once per read task.
+using ColumnCodecByName = UnorderedMapWithMemoryTracking<String, CompressionCodecPtr>;
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
@@ -118,6 +123,8 @@ public:
         const NameSet & partially_read_columns,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
+        const ColumnCodecByName & column_codecs,
+        const CompressionCodecPtr & default_codec,
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
 

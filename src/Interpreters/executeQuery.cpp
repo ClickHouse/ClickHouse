@@ -3501,12 +3501,20 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ContextMutablePtr fuzz_session_context;
         ContextMutablePtr fuzz_context;
 
-        auto reset_transactions = [&]()
+        /// Everything this iteration owes once the query is over, on either outcome: the fuzzer state
+        /// it has to report the result to, and the transactions it has to release.
+        auto finish_iteration = [&](bool succeeded)
         {
             if (fuzz_context)
                 fuzz_context->setCurrentTransaction(NO_TRANSACTION_PTR);
             if (fuzz_session_context)
                 fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+            if (!succeeded)
+            {
+                auto [fuzzer, lock] = getGlobalASTFuzzer();
+                fuzzer->notifyQueryFailed(fuzzed_ast);
+            }
         };
 
         try
@@ -3650,17 +3658,15 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                 }
             }
 
-            reset_transactions();
+            finish_iteration(/*succeeded=*/true);
             base_ast = fuzzed_ast;
         }
         catch (const Exception & e)
         {
-            reset_transactions();
+            finish_iteration(/*succeeded=*/false);
             if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                 throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
-            auto [fuzzer, lock] = getGlobalASTFuzzer();
-            fuzzer->notifyQueryFailed(fuzzed_ast);
         }
     }
 }

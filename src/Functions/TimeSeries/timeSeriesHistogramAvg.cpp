@@ -50,7 +50,7 @@ elements of its payload tuple (see `getTimeSeriesHistogramPayloadTupleType`), mi
     {
         "Example",
         R"(
-SELECT timeSeriesHistogramAvg((0, 0, 0., 12., 30.5, 1., [], [], [], [], [])::Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64))) AS avg
+SELECT timeSeriesHistogramAvg((0, 0, 0., 12., 30.5, 1., [], [], [], [], [], 12, 1, [], [])::Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64))) AS avg
         )",
         R"(
 ┌─avg────────────────┐
