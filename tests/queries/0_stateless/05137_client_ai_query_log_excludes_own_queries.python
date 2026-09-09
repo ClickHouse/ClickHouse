@@ -55,9 +55,17 @@ FINAL_ANSWER = "MOCK-DONE"
 USER_QUERY_MARKER = "user-typed-4f2a9c"
 USER_QUERY = f"SELECT '{USER_QUERY_MARKER}' AS marker"
 
-# `system.documentation` is only ever read by the agent (the `consult_documentation` tool and the
-# `help` command), so it identifies the agent's internal traffic in the log.
-AGENT_QUERY_PATTERN = "%system.documentation%"
+# `arrayStringConcat` and `engine FROM system.tables` come from the two tools the agent is made to
+# call - the documentation lookup and `list_tables` - and appear in no query this test types, so
+# they identify the agent's own traffic in the log. A table name would not do: this test searches
+# the log for `system.documentation` and `system.tables`, and those searches are queries of the
+# user, so their own rows would come back as the agent's.
+AGENT_QUERY_TOKENS = ["arrayStringConcat", "engine FROM system.tables"]
+
+# The same two markers for SQL, with the literals split so that a query looking for one does not
+# match the row it leaves in the log itself.
+AGENT_QUERY_LIKE = "concat('%arrayString', 'Concat%')"
+USER_QUERY_LIKE = "concat('%user-typed-', '4f2a9c%')"
 
 # What the mock provider asks for. The first turn exercises the tools that run internally; a
 # second turn, if the session has one, reads the log back - by then the queries of the first turn
@@ -112,10 +120,10 @@ PROBE_SENTINEL = "PROBE-9b71c4"
 READY_SENTINEL = "READY-2c8fd1"
 READY_QUERY = (
     "SELECT 'READY' || '-2c8fd1: '"
-    " || toString(countIf(query LIKE '{agent}'))"
-    " || ' ' || toString(countIf(query LIKE '%{user}%'))"
+    " || toString(countIf(query LIKE {agent}))"
+    " || ' ' || toString(countIf(query LIKE {user}))"
     " FROM system.user_query_log WHERE type != 'QueryStart' FORMAT TSVRaw"
-).format(agent=AGENT_QUERY_PATTERN, user=USER_QUERY_MARKER)
+).format(agent=AGENT_QUERY_LIKE, user=USER_QUERY_LIKE)
 
 # How many times the flush is repeated while waiting for those rows. A flush is synchronous for
 # what is already queued, so one is normally enough; the retries are what makes the wait a wait.
@@ -125,8 +133,8 @@ READY_ATTEMPTS = 10
 # a statement to type.
 WAIT_FOR_THE_LOG = object()
 PROBE_QUERY = (
-    "WITH query LIKE '{agent}' AS is_agent_internal, "
-    "query LIKE '%{user}%' AS is_user_typed, "
+    "WITH query LIKE {agent} AS is_agent_internal, "
+    "query LIKE {user} AS is_user_typed, "
     "log_comment = 'clickhouse-ai-agent' AS has_log_comment_marker, "
     "startsWith(query_id, 'clickhouse-ai-agent-') AS has_query_id_marker "
     "SELECT 'PROBE' || '-9b71c4:'"
@@ -135,7 +143,7 @@ PROBE_QUERY = (
     " || ' ' || if(countIf(is_agent_internal AND NOT has_query_id_marker) = 0, 'yes', 'no')"
     " || ' ' || if(countIf(is_user_typed AND (has_log_comment_marker OR has_query_id_marker)) = 0, 'yes', 'no')"
     " FROM system.user_query_log WHERE type != 'QueryStart' FORMAT TSVRaw"
-).format(agent=AGENT_QUERY_PATTERN, user=USER_QUERY_MARKER)
+).format(agent=AGENT_QUERY_LIKE, user=USER_QUERY_LIKE)
 
 # The last request the mock provider received: it carries the results of every tool call and the
 # tools the agent offered for the call.
@@ -521,8 +529,9 @@ def main():
             print("user_query_is_returned: yes")
         else:
             print(f"user_query_is_returned: no, the read returned {history[:2000]!r}")
-        if "system.documentation" in history or "system.tables" in history:
-            print(f"assistant_queries_are_returned: yes, in {history[:2000]}")
+        returned = [token for token in AGENT_QUERY_TOKENS if token in history]
+        if returned:
+            print(f"assistant_queries_are_returned: {returned}, in {history[:2000]}")
         else:
             print("assistant_queries_are_returned: no")
     finally:
