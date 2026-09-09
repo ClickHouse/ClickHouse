@@ -199,7 +199,8 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;
     CREATE TABLE t_est_w (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 8192, index_granularity_bytes = '128Ki', min_bytes_for_wide_part = 0,
-                 merge_max_block_size = 8192, merge_max_block_size_bytes = '10Mi';
+                 merge_max_block_size = 8192, merge_max_block_size_bytes = '10Mi',
+                 use_const_adaptive_granularity = 0;
     CREATE TABLE t_real_w AS t_est_w;
     ALTER TABLE t_real_w ADD PROJECTION p_w (SELECT a, b, s ORDER BY b);
     -- narrow rows carry the low part of the key, wide rows the high part
@@ -219,7 +220,7 @@ for w in "b >= 4000" "b < 2000"; do
     real=$($CLICKHOUSE_CLIENT -q "
         EXPLAIN indexes = 1 SELECT a, s FROM t_real_w WHERE ${w} SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_w';
     " | grep -oE 'Granules: [0-9]+' | head -1 | awk '{print $2}')
-    # a whole-part average would report a couple of marks here, the real read touches sixteen
+    # a whole-part average would be several times out on the wide half of the key
     echo "${w}: within a granule of the real count: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 ))"
 done
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;"

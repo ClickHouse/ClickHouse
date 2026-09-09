@@ -52,6 +52,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsBool use_const_adaptive_granularity;
 }
 
 namespace
@@ -312,7 +313,12 @@ MarkRanges pruneSyntheticProjectionPart(
     /// the key order. Which of the two a part got is not recorded, so read it off the merge level.
     /// ponytail: heuristic. It is exact at both ends and can miss where a part was written some third
     /// way (a partial merge, a rebuilt projection); the margin below carries what it can miss by.
-    const bool granules_follow_row_width = data.row_bytes.size() == data.rows && parent_part->info.level > 0;
+    /// a constant granularity object pins every block to the same granule size, only an adaptive one
+    /// lets the writer resize per block, so follow `createMergeTreeIndexGranularity` on which it gets
+    const bool granularity_varies_per_block = part_type == MergeTreeDataPartType::Compact
+        || !mt_settings[MergeTreeSetting::use_const_adaptive_granularity];
+    const bool granules_follow_row_width
+        = data.row_bytes.size() == data.rows && parent_part->info.level > 0 && granularity_varies_per_block;
 
     std::vector<size_t> mark_rows;
     if (granules_follow_row_width)
