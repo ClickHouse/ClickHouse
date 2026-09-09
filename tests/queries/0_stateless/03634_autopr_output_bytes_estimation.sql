@@ -66,13 +66,18 @@ SYSTEM FLUSH LOGS query_log;
 -- what the estimator reported while it serialized the sampled states into a `NullWriteBuffer`
 -- instead of into the `CompressedWriteBuffer` wrapped around it, overshooting the actually
 -- transferred bytes by ~2.45x for this query (see the history of this value in git blame). With
--- the estimator fixed, the estimate returns to a compressed figure - the value below is the one
--- the `ZSTD(3)` default produces, the tolerance of the check being 2.5x.
+-- the estimator fixed, the estimate returns to a compressed figure. The value below is measured on
+-- a local server with this dataset (51.5 M) divided by the local-vs-CI bias this test shows for the
+-- two values master calibrated in CI under the same default codec (`query_43` measures 38.4 M
+-- locally against 22 M in CI, `query_12` 6.2 M against 2.64 M), so it sits in the middle of the
+-- 22..29 M the two factors bracket. With the check's tolerance of 2.5x it covers 10..62 M, which
+-- includes both the unscaled local figure and the 23722663 this test recorded while the default
+-- codec was still `LZ4`.
 WITH
     -- `query_12` (index 2) and `query_43` (index 10) are recalibrated for the `ZSTD(3)` default:
     -- the estimator serializes the output with `getDefaultCodec`, and these two outputs
     -- (an aggregation state and the `URL` column) compress about 3x better than under `LZ4`.
-    [3, 195461, 2640000, 1100491, 2, 16885, 42323, 9434, 15000000, 203701090, 22000000/*, 641835*/] AS expected_bytes,
+    [3, 195461, 2640000, 1100491, 2, 16885, 42323, 9434, 25000000, 203701090, 22000000/*, 641835*/] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM
