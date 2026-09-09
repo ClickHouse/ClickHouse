@@ -166,6 +166,13 @@ def main():
         if name != "numbers"  # too slow
     )
 
+    # Drop the productions whose source list is empty instead of failing on them.
+    if not FUNCTIONS:
+        del EXPRESSION["function()"]
+        del QUERY_SELECT["SELECT function()"]
+    if not TABLE_FUNCTIONS:
+        del QUERY_SELECT["SELECT table_function()"]
+
     for _ in range(int(os.environ.get("SQL_FUZZY_LINES", 100))):
         print(one_of(QUERY_SELECT) + ";")
 
