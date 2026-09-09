@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 
 namespace DB
@@ -14,20 +15,25 @@ namespace DB
 class ProcessorLock
 {
 public:
-    /// Unlock fails if a notification arrived since the snapshot, then the owner runs another round.
-    uint64_t snapshot() const;
-    bool tryUnlock(uint64_t snapshot);
-    bool tryLock();
+    enum class Status : uint8_t
+    {
+        Idle,
+        Executing,
+        Finished,
+    };
 
-    /// Unlocked, and no `tryLock` succeeds again.
-    bool isFinished() const;
+    std::unique_lock<std::mutex> lockRound();
+
+    /// Decisions are made under the round lock; `isFinished` is a lock-free look.
+    Status status() const;
+    void setExecuting();
+    void setIdle();
     void finish();
-
-    /// Counts a pushed hint; the notifier then calls `tryLock` to see who runs `prepare`.
-    void notify();
+    bool isFinished() const;
 
 private:
-    std::atomic<uint64_t> word{0};
+    std::mutex mutex;
+    std::atomic<Status> value{Status::Idle};
 };
 
 struct ProcessorState
