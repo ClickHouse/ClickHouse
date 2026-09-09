@@ -17,6 +17,9 @@ SET max_threads = 8;
 SET allow_distinct_partitions_independently = 1;
 SET force_distinct_partitions_independently = 1;
 SET query_plan_join_shard_by_pk_ranges = 1;
+-- The JOIN sharding looks through `Distinct` steps but not through aggregation, so keep the final
+-- `DISTINCT` from being replaced by aggregation.
+SET query_plan_convert_distinct_to_aggregation = 0;
 
 -- JOIN sharding by primary-key ranges applies only to plain hash / concurrent hash / full sorting merge
 -- joins over unmodified MergeTree reads, so disable the features that would wrap or reshape them.
