@@ -114,8 +114,6 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
@@ -268,6 +266,11 @@ public:
     UInt64 getNumberOfDefaultRows() const override
     {
         return getIndexes().getNumberOfDefaultRows();
+    }
+
+    bool hasOnlyTypeDefaults() const override
+    {
+        return getIndexes().hasOnlyTypeDefaults();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
