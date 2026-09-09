@@ -16,7 +16,7 @@ void StreamingExchangeSerializingTransform::transform(Chunk & chunk)
     StreamingExchangeProtocol::writeDataPacket(chunk, getInputPort().getSharedHeader(), buffer);
 
     auto packet = std::make_shared<SerializedExchangePacket>();
-    packet->bytes = std::move(buffer.str());
+    packet->bytes = std::make_shared<const String>(std::move(buffer.str()));
 
     /// The new chunk carries only the packet; the aggregation info, if any, is inside it.
     Chunk result(Columns{}, chunk.getNumRows());

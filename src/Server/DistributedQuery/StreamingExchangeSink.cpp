@@ -105,7 +105,7 @@ void StreamingExchangeSink::sendToSocket()
             /// `markNoMoreDataNeeded` clears `send_queue`, so we can't be in this loop.
             chassert(!no_more_data_needed);
 
-            const String & buffer = send_queue.front();
+            const String & buffer = *send_queue.front();
             size_t bytes_to_send = buffer.size() - send_position;
             /// Saturate at INT_MAX: a plain cast would wrap negative for buffers > 2 GiB, after
             /// which Poco's wrapper short-circuits without ever calling ::send.
@@ -164,17 +164,17 @@ void StreamingExchangeSink::flushSerializedData()
     if (out->count() == 0)
         return;
 
-    String data = std::move(out->str());
+    auto data = std::make_shared<const String>(std::move(out->str()));
     out = std::make_shared<WriteBufferFromOwnString>();
     enqueueBuffer(std::move(data));
 }
 
-void StreamingExchangeSink::enqueueBuffer(String buffer)
+void StreamingExchangeSink::enqueueBuffer(std::shared_ptr<const String> buffer)
 {
-    if (buffer.empty())
+    if (!buffer || buffer->empty())
         return;
 
-    send_queue_bytes += buffer.size();
+    send_queue_bytes += buffer->size();
     send_queue.push_back(std::move(buffer));
 }
 
@@ -345,11 +345,11 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     if (auto packet = chunk.getChunkInfos().extract<SerializedExchangePacket>())
     {
-        /// A packet serialized upstream by `StreamingExchangeSerializingTransform` is sent from its
-        /// own buffer. The transform made the packet for this chunk alone, so the bytes can be taken.
-        /// Data the sink serialized itself came earlier and must go out first.
+        /// A packet from `StreamingExchangeSerializingTransform` is sent from its own buffer, which
+        /// the sinks of the other destinations of a broadcast may share. Data the sink serialized
+        /// itself came earlier and goes out first.
         flushSerializedData();
-        enqueueBuffer(std::move(packet->bytes));
+        enqueueBuffer(packet->bytes);
     }
     else
         StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out);

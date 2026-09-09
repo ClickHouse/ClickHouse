@@ -10,6 +10,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BroadcastSendStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
@@ -310,4 +311,25 @@ TEST(ShuffleExchangeParallelism, SortedGatherSerializesAfterTheMerge)
     EXPECT_EQ(stats.serializers, 0u);
     EXPECT_EQ(stats.sinks, 1u);
     EXPECT_EQ(stats.rows_in_sinks, total_rows);
+}
+
+/// A broadcast sends the same rows to every destination. The serialization must run once per
+/// stream, not once per destination: with 8 streams and 3 destinations there are 8 serializers,
+/// every sink receives all rows, and the copies for the destinations share the packets.
+TEST(ShuffleExchangeParallelism, BroadcastSerializesOncePerStream)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr size_t buckets = 3;
+    auto context = Context::createCopy(getContext().context);
+    auto settings = makeSettings(context, streams);
+    auto header = makeHeader();
+
+    BroadcastSendStep broadcast(header, "exchange_0", buckets);
+    auto stats = runSendingStep(broadcast, streams, header, settings);
+
+    expectSpreadOverStreams(stats);
+    EXPECT_EQ(stats.serializers, streams);
+    EXPECT_EQ(stats.sinks, buckets);
+    EXPECT_EQ(stats.rows_in_sinks, total_rows * buckets);
 }

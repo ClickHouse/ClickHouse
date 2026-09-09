@@ -60,7 +60,7 @@ private:
     void flushSerializedData();
 
     /// Append a ready buffer to `send_queue`.
-    void enqueueBuffer(String buffer);
+    void enqueueBuffer(std::shared_ptr<const String> buffer);
 
     /// Extract socket from future connection
     void extractSocket();
@@ -82,7 +82,7 @@ private:
 
     /// Ready buffers in send order: packets that arrived serialized and the flushed contents of
     /// `out`. The front buffer is being written to the socket, `send_position` bytes of it are sent.
-    DequeWithMemoryTracking<String> send_queue;
+    DequeWithMemoryTracking<std::shared_ptr<const String>> send_queue;
     size_t send_position = 0;
     /// Bytes in `send_queue` that are not sent yet.
     size_t send_queue_bytes = 0;

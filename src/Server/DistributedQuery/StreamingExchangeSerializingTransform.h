@@ -6,11 +6,12 @@
 namespace DB
 {
 
-/// One ready-to-send exchange data packet. It travels attached to a chunk that has no columns
-/// and the row count of the serialized data, and `StreamingExchangeSink` sends the bytes as they are.
+/// One ready-to-send exchange data packet, attached to a chunk that has no columns and the row
+/// count of the serialized data. `StreamingExchangeSink` sends the bytes as they are. The bytes are
+/// shared because a broadcast copies the chunk once per destination.
 struct SerializedExchangePacket : public ChunkInfoCloneable<SerializedExchangePacket>
 {
-    String bytes;
+    std::shared_ptr<const String> bytes;
 };
 
 /// Serializes and compresses data chunks into exchange packets. The send steps put one on every
