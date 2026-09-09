@@ -5,10 +5,12 @@
 #include <Core/QualifiedTableName.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/IStoragePolicy.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 
@@ -185,7 +187,13 @@ private:
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
     /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
-    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
+    /// Refuses the conversion, before removing anything, when the removal would change which parts the
+    /// table loads as active.
+    static void clearTransactionMetadata(
+        const String & relative_data_path,
+        const StoragePolicyPtr & storage_policy,
+        MergeTreeDataFormatVersion fallback_format_version,
+        ContextPtr local_context);
 
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
 #if CLICKHOUSE_CLOUD
