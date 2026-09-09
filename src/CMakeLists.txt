@@ -1063,10 +1063,16 @@ endif()
 
 if (ENABLE_FILC)
     # Avoid the measured optimizer bottlenecks in these large translation units.
-    set_source_files_properties(Core/Settings.cpp Interpreters/Aggregator.cpp PROPERTIES COMPILE_OPTIONS "-O0")
     set_source_files_properties(
+        Core/Settings.cpp
+        DataTypes/Serializations/SerializationMap.cpp
+        Interpreters/Aggregator.cpp
+        PROPERTIES COMPILE_OPTIONS "-O0")
+    set_source_files_properties(
+        Functions/FunctionsConversion.cpp
         Functions/FunctionsConversion_reg.cpp
         Functions/FunctionsNumericIndexedVector.cpp
         Functions/FunctionsRound.cpp
+        Functions/if.cpp
         DIRECTORY Functions PROPERTIES COMPILE_OPTIONS "-O0")
 endif ()
