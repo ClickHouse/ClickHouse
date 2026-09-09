@@ -7,36 +7,36 @@
       "versionId": "a372f4e7d54d9b799344f85fa77a6c684c792c8951b74039b53becd67db973b4",
       "translations": {
         "ja": {
-          "updatedAt": "2026-09-09T07:08:51.473Z",
+          "updatedAt": "2026-09-09T10:28:53.419Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-09T07:08:52.265Z",
+          "updatedAt": "2026-09-09T10:28:53.987Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-09T07:08:52.442Z",
+          "updatedAt": "2026-09-09T10:28:54.134Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-09T07:08:51.190Z",
+          "updatedAt": "2026-09-09T10:28:53.276Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-09T07:08:52.643Z",
+          "updatedAt": "2026-09-09T10:28:54.275Z",
           "fileName": "docs.json",
-          "postProcessHash": "9725454df24b393b8483092c6cab6e80b91d3f454a4354d81fb5d885108b167d"
+          "postProcessHash": "d39c714e500f7dd9b9b2128424b8a6ed1201b96b4444089137ae4ae7e08a5883"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-09T07:08:51.907Z",
+          "updatedAt": "2026-09-09T10:28:53.701Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-09T07:08:51.681Z",
+          "updatedAt": "2026-09-09T10:28:53.561Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-09T07:08:52.090Z",
+          "updatedAt": "2026-09-09T10:28:53.846Z",
           "fileName": "docs.json"
         }
       },
@@ -138135,6 +138135,53 @@
         }
       },
       "fileName": "integrations/clickpipes/postgres/source/managed-postgres.mdx"
+    },
+    {
+      "fileId": "a20e9cf0733c3aa8ea6e0ed169ef79bbf3b8e2889155acc18adcb44f8729024c",
+      "versionId": "cad15e0f548d94038867575f2fcd89b1390b06808ee729b7c1a0a16826865d15",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-09-09T10:28:57.664Z",
+          "fileName": "ko/clickstack/demo-days/2026/2026-08-28.mdx",
+          "postProcessHash": "b77018ee114b3668fdb8741b8b4d9f47ac2dbdb9d60e84e14dc40c8691456622"
+        },
+        "ja": {
+          "updatedAt": "2026-09-09T10:28:57.664Z",
+          "fileName": "ja/clickstack/demo-days/2026/2026-08-28.mdx",
+          "postProcessHash": "6f3cd21eb31f5de189de2d53fb73d88ab1d6bdd4acb5e154587fff8ccabe6958"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-09T10:28:57.664Z",
+          "fileName": "pt-BR/clickstack/demo-days/2026/2026-08-28.mdx",
+          "postProcessHash": "67687278b806c078afd1169f027d8bb4077de358469f2a6e45adf4850a9b02ed"
+        },
+        "es": {
+          "updatedAt": "2026-09-09T10:28:57.665Z",
+          "fileName": "es/clickstack/demo-days/2026/2026-08-28.mdx",
+          "postProcessHash": "2b9dd741f8e1a94c7bb2943a722c61b8d0bb05e9f0ed354d4bbe588bb8ee280f"
+        },
+        "ru": {
+          "updatedAt": "2026-09-09T10:28:57.665Z",
+          "fileName": "ru/clickstack/demo-days/2026/2026-08-28.mdx",
+          "postProcessHash": "6b892fec7e3aabbac0e10f8118d8f6cb5ec6fdc21d201a9d0f4d8664448548e4"
+        },
+        "fr": {
+          "updatedAt": "2026-09-09T10:28:57.665Z",
+          "fileName": "fr/clickstack/demo-days/2026/2026-08-28.mdx",
+          "postProcessHash": "171d885816698ea13d724cf3eac22ac04d346a04479679d45e2c8510677326d8"
+        },
+        "zh": {
+          "updatedAt": "2026-09-09T10:28:57.666Z",
+          "fileName": "zh/clickstack/demo-days/2026/2026-08-28.mdx",
+          "postProcessHash": "f70cf5eb4be9fb60db25e4c7d09346246a8117d29b39c0ac0b1d3e06467e2a84"
+        },
+        "ar": {
+          "updatedAt": "2026-09-09T10:28:57.666Z",
+          "fileName": "ar/clickstack/demo-days/2026/2026-08-28.mdx",
+          "postProcessHash": "5a9d3a2eb011d527bc8fe21d9b9e3bbea11cfc10b6a0a24da958f59c0a77f6e5"
+        }
+      },
+      "fileName": "clickstack/demo-days/2026/2026-08-28.mdx"
     }
   ]
 }

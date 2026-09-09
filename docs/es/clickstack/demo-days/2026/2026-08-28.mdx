@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-28
+title: 'Demo days - 2026-08-28'
+sidebarTitle: '2026-08-28'
+description: 'ClickStack demo days del 2026-08-28'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Variables de dashboard en PromQL y Lucene {#dashboard-variables-in-promql-and-lucene}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/q5pP20p4nY4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las variables de dashboard ya funcionan en los gráficos de PromQL, con autocomplete para las referencias a variables y advertencias cuando faltan variables o cuando el uso no está soportado, como ocurre con macros o referencias que requieren comillas. Junto al panel de generated SQL existente aparece una vista previa del PromQL generado, que muestra la consulta con las selecciones actuales ya sustituidas.
+
+Las variables de Lucene ahora admiten coincidencias exactas. Antes, `ServiceName:$service` se expandía a `ServiceName:("add" OR "cart")`. Una coincidencia de field de Lucene sin comillas es una coincidencia por substring, de modo que esto acaba siendo `ServiceName ILIKE '%add%' OR ServiceName ILIKE '%cart%'`. Podías seleccionar dos services y recibir cuatro.
+
+Si se entrecomilla la variable, `ServiceName:"$service"`, ahora se expande a `(ServiceName:"add" OR ServiceName:"cart")`, coincidiendo exactamente con cada valor seleccionado. Esto sigue el comportamiento ya existente para coincidencias de field entrecomilladas sin variables. El autocomplete también sugiere la forma entrecomillada.
+
+Al hacer drill-down desde el tooltip de un gráfico o desde una fila de una table hacia la página de Búsqueda, ahora las variables y las macros se expanden antes de navegar. La página de Búsqueda no interpreta variables, así que pasar un `$service` sin procesar antes producía resultados incorrectos o un error de consulta. Las macros sin selección se expanden a `(1=1)`. Queda un poco feo en el campo `WHERE` de la página de Búsqueda, pero mantiene la consulta válida.
+
+Las selecciones de filtros ahora se identifican con clave por nombre de variable y no por expression. Dos filtros que usan la misma expression, como `ServiceName` procedente de distintas sources, ya no comparten una selección.
+
+Pulsar Escape mientras se edita un filtro ahora pide confirmación antes de descartar los cambios, tal como sugirió Brandon. Antes, intentar cerrar un tooltip podía hacer perder toda la edición.
+
+Las variables de dashboard llegaron a production esta semana. El toggle de la feature ya no existe y la [documentación pública](https://clickhouse.com/docs/clickstack/features/dashboards/overview#dashboard-variables) cubre las formas de referencia y las macros.
+
+**PR relacionados:** [#2994](https://github.com/hyperdxio/hyperdx/pull/2994) sustituir variables en gráficos de PromQL, [#2995](https://github.com/hyperdxio/hyperdx/pull/2995) añadir completions para variables de PromQL, [#2997](https://github.com/hyperdxio/hyperdx/pull/2997) mostrar advertencias por uso inválido de variables de PromQL, [#2998](https://github.com/hyperdxio/hyperdx/pull/2998) añadir vista previa del PromQL generado, [#2987](https://github.com/hyperdxio/hyperdx/pull/2987) distribuir referencias a variables de Lucene con exact match, [#3008](https://github.com/hyperdxio/hyperdx/pull/3008) expandir variables antes de navegar a la página de Búsqueda mediante drill-down, [#2963](https://github.com/hyperdxio/hyperdx/pull/2963) aceptar valores de filtro de dashboard identificados por variable, [#2964](https://github.com/hyperdxio/hyperdx/pull/2964) persistir y leer el state de filtros identificados por variable, [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) confirmar antes de descartar cambios sin guardar al cerrar el editor de filtros, [#3009](https://github.com/hyperdxio/hyperdx/pull/3009) eliminar el toggle de la feature de variables de dashboard
+
+## Span links, en ambas direcciones {#span-links-in-both-directions}
+
+*Demo por [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tdK9JU6unoE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Los span links ya se podían visualizar desde hace tiempo, pero solo desde el lado del consumer. Cada enlace aparecía como una acción &quot;Open trace&quot;, sin forma de partir de un span producer para encontrar los spans que lo enlazan. Un usuario lo solicitó en un issue de GitHub.
+
+La sección Span Links ahora muestra el nombre, el service, la duración y el timestamp de cada span de destino. Así resulta más fácil elegir entre varios enlaces sin tener que abrirlos uno por uno. &quot;Open trace&quot; sigue siendo el fallback cuando no se encuentra el span de destino.
+
+Una nueva sección &quot;Linked from&quot; enumera los spans que enlazan con el span actual. Ahora puedes seguir el enlace de un consumer hasta su producer y ver el consumer listado allí.
+
+Al seguir un enlace hacia el span anterior en la ruta de navegación, vuelves a esa entry, de modo que desplazarse entre dos spans enlazados no acumula duplicados. Si hay otras entries entre ellos, la navegación añade una nueva entry como de costumbre.
+
+El lookup inverso busca filas cuyos span links contengan el span ID seleccionado y luego comprueba que el trace ID coincida. Los lookups por trace ID se benefician del índice bloom filter de esa columna, pero el lookup inverso requiere un scan y puede resultar más lento en tablas de traces mayores que las de la demo. Si eso llega a ser un problema, podemos añadir un índice sobre el span ID del enlace, tal como sugieren los comments del code.
+
+**PRs relacionados:** [#3011](https://github.com/hyperdxio/hyperdx/pull/3011) añade span links inversos y muestra el detalle de los span links
+
+## Observabilidad de LLM lista para usar {#llm-observability-out-of-the-box}
+
+*Demo por [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/m49DZ5cuI64" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Muchos equipos ya envían telemetría de LLM y de agentes de programación a ClickStack, pero no había soporte específico para ella: sin renderizado de chat, sin seguimiento de tokens ni de costos, ni analítica de modelos.
+
+Ahora hay un dashboard de LLM junto a los presets existentes de ClickHouse, Kubernetes y servicios. Cubre el uso de tokens, el costo, las llamadas a modelos, las llamadas a herramientas, los cache hits y los tiempos de respuesta, con un desglose por usuario cuando existe un atributo de usuario.
+
+Lee los traces y logs que ya tienes en tiempo de consulta, sin necesidad de un esquema fijo, tablas dedicadas ni procesamiento en el momento de la ingesta. Se admite telemetría que use convenciones comunes, OpenLLMetry u OpenInference, incluidos datos de los SDK de OpenAI y Anthropic, el AI SDK de Vercel, LangChain, Claude Code y opencode. Esto también funciona con la telemetría que ya hayas recopilado.
+
+Una vista de latencia sitúa los spans relacionados con IA en la parte superior, lo que facilita localizar una llamada lenta a un modelo sin tener que recorrer el resto del trace.
+
+La vista de sesiones agrupa los spans por conversación. Abre una sesión para ver sus spans y luego selecciona uno para consultar los detalles, incluido el prompt si se registró. Esto ayuda a depurar la ejecución de un agente, y puedes buscar en los logs con el mismo filtro de sesión.
+
+El alcance es deliberadamente más reducido que el de una herramienta dedicada de observabilidad de LLM como Langfuse, que además admite evaluaciones y mucho más. Esto cubre las necesidades habituales de monitoreo, como tasas de error, costo, tokens y latencia, aprovechando la telemetría que ya está en ClickStack.
+
+**PR relacionados:** [#2990](https://github.com/hyperdxio/hyperdx/pull/2990) Dashboard de observabilidad de LLM, vista de chat de spans y sesiones
+
+## Explorar métricas en el editor de gráficos {#browsing-metrics-in-the-chart-editor}
+
+*Demo por [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/TkFa6Zzq23o" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Elegir una métrica implicaba buscar en una lista plana de hasta 3.000 nombres por tipo. El autocompletado resulta útil si ya se sabe más o menos qué se busca, pero la posibilidad de explorar el catálogo ha surgido varias veces en los comentarios de los usuarios.
+
+Un control «Browse metrics», situado junto al selector de métricas, abre ahora un explorador con el catálogo a la izquierda y los detalles de la métrica seleccionada a la derecha. Los nombres de las métricas se dividen por puntos y guiones bajos para formar un árbol. Los segmentos con un único elemento hijo se agrupan en uno solo para evitar clics innecesarios. Las columnas `Metric`, `Type` y `Unit` se mantienen alineadas en todos los niveles. Puede buscar en todo el catálogo o cambiar a una lista plana.
+
+Antes, la unidad, la descripción y las etiquetas solo estaban disponibles tras seleccionar una métrica, en un panel contraído debajo de la fila de la serie. El panel de detalles permite consultar esta información antes de elegir, de modo que pueda ver qué emite su implementación y por qué etiquetas puede agrupar. Haga clic en «Use metric» para aplicar su elección a la serie que está editando.
+
+Por ahora está en un lugar discreto, mientras se consolida.
+
+**PR relacionados:** [#3000](https://github.com/hyperdxio/hyperdx/pull/3000) añade un explorador de métricas al editor de gráficos, [#3025](https://github.com/hyperdxio/hyperdx/pull/3025) transmite los nombres de las métricas desde el índice primary (abierto), [#3054](https://github.com/hyperdxio/hyperdx/pull/3054) mejoras de experiencia de usuario en el desplegable de métricas
+
+## Volumen de logs para consultas en SQL sin procesar en Grafana {#log-volume-for-raw-sql-queries-in-grafana}
+
+*Demo por [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/uehh44q56yE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Un pequeño cambio visual que dio más trabajo del esperado.
+
+En Grafana, las consultas de logs creadas en el query builder muestran un histograma de volumen sobre los resultados porque el plugin sabe qué columnas usar. Esa misma consulta en el SQL Editor no mostraba histograma, ya que el plugin no podía saber qué columnas habías seleccionado. En Explore, en cambio, obtenías el histograma de Grafana basado en filas, limitado por el `LIMIT` de la consulta y sin respetar el rango de tiempo seleccionado.
+
+Ahora el plugin elimina el `ORDER BY` y el `LIMIT` finales, envuelve tu SQL como una tabla derivada y agrega sobre todo el rango de tiempo. Quitar el `LIMIT` es clave aquí: dejarlo restringiría el conteo a las filas devueltas por la consulta original.
+
+El histograma refleja tus filtros de SQL y se actualiza cuando cambias el rango de tiempo. Esto funciona tanto con el SQL que escribes tú mismo como con las consultas abiertas mediante &quot;Edit as SQL&quot; en el query builder.
+
+Es probable que todavía haya casos límite en los que el query rewrite no funcione.
+
+**PR relacionados:** [grafana/clickhouse-datasource#2141](https://github.com/grafana/clickhouse-datasource/pull/2141) mostrar el volumen de logs para consultas del SQL Editor (abierto)
+
+## Canales de notificación en las páginas de alertas {#notification-channels-on-the-alerts-pages}
+
+*Demo por [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Gr-QkVVWam8" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Una alerta puede notificar hasta diez webhooks, pero la lista de alertas y el encabezado de detalle solo mostraban el primero, etiquetado como «Webhook» en lugar de mostrar su nombre. Ambos seguían leyendo el campo heredado de canal único.
+
+El envío a varios destinos funcionaba, pero la visualización daba la impresión de que los canales adicionales no se habían guardado.
+
+La lista y el encabezado de detalle ahora muestran todos los canales configurados por su nombre. Agregar y eliminar canales también resulta más sencillo, incluidas las integraciones de webhooks e incident.io. El tiempo de notificación se registra por destino, de modo que puedes identificar una integración lenta.
+
+Los canales configurados ahora reciben la notificación directamente. Antes se convertían en menciones de webhook que se añadían al cuerpo del mensaje, lo que podía provocar la pérdida de notificaciones: si el cuerpo ya contenía suficientes menciones improvisadas para alcanzar el límite por evento, los canales configurados de la alerta se omitían.
+
+Con los controles adicionales, la página estaba quedando sobrecargada. Las acciones de fila, incluidas las de exportación y Terraform, ahora se agrupan en un único menú.
+
+**PR relacionados:** [#3001](https://github.com/hyperdxio/hyperdx/pull/3001) mostrar todos los destinos de notificación en las páginas de alertas, [#2991](https://github.com/hyperdxio/hyperdx/pull/2991) mostrar todos los canales de notificación en la línea de resumen, [#2984](https://github.com/hyperdxio/hyperdx/pull/2984) notificar directamente a los canales configurados, no mediante cadenas de menciones, [#2961](https://github.com/hyperdxio/hyperdx/pull/2961) evitar que las menciones fallidas consuman slots de notificación, [#3003](https://github.com/hyperdxio/hyperdx/pull/3003) atribuir el tiempo de notificación de la alerta a cada destino, [#3002](https://github.com/hyperdxio/hyperdx/pull/3002) dar a cada fila de la página de alertas los mismos controles finales, [#3016](https://github.com/hyperdxio/hyperdx/pull/3016) consolidar el encabezado de detalle de la alerta en el menú de fila compartido
+
+## Renderizado de decenas de miles de alertas {#rendering-1000s-alerts}
+
+*Demo por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/P9BPD9yoElo" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+La evaluación de alertas se ha probado con 16 000 alertas concurrentes y responde bien. Sin embargo, abrir la página de alertas con esa cantidad hacía que dejara de funcionar.
+
+La lista ahora está virtualizada y puede renderizar 16 000 alertas. La carga sigue siendo lenta porque todas las alertas se obtienen y se filtran del lado del cliente. Se está trabajando en la paginación para solucionarlo.
+
+El cambio también incluye un script para generar y eliminar grandes cantidades de alertas en MongoDB, lo que facilita probar la página a esta escala de forma local.
+
+**PR relacionados:** [#3012](https://github.com/hyperdxio/hyperdx/pull/3012) virtualizar la lista de la página de alertas
+
+## Ocultar las API keys tras una opción para revelarlas {#hiding-api-keys-behind-a-reveal}
+
+*Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/MNXABmTVEkE" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Las credenciales se mostraban en texto plano en toda la aplicación. La configuración del equipo mostraba la API key de ingesta completa, y los fragmentos de instalación de MCP incluían la clave de acceso personal en el comando. Ambas quedaban expuestas fácilmente al compartir pantalla o en una captura.
+
+Ahora las claves se enmascaran de forma predeterminada, con un control para revelarlas cuando haga falta. Un componente compartido se encarga de ello para la clave de ingesta, la clave de acceso personal y los fragmentos de instalación de MCP, incluidos los aportados por la comunidad.
+
+Al copiar sigues obteniendo el valor real, por lo que no necesitas revelar una clave para copiarla. Este mismo cambio llegará al onboarding de ClickStack Cloud.
+
+**PR relacionados:** [#2988](https://github.com/hyperdxio/hyperdx/pull/2988) enmascarar secretos en los fragmentos de instalación de API key y MCP con un RevealSnippet compartido
+
+## Notas de lanzamiento en el producto {#release-notes-in-the-product}
+
+*Demo por [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/4vrzXy8JwZY" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+El panel «What&#39;s new» del menú de ayuda se basaba en los conjuntos de cambios de cada PR y seleccionaba las entradas con el prefijo `feat:`. Por eso, la v2.36.0 mostraba tres veces las variables de dashboard, pero omitía las fórmulas y el trabajo sobre alertas, que eran los cambios principales del lanzamiento.
+
+Ahora lee el archivo `CHANGELOG.md` de la raíz, que se redacta y se revisa como parte del PR de lanzamiento. El generador de lanzamientos también aporta el titular de cada lanzamiento en el panel. Debajo aparecen los breaking changes, las nuevas funcionalidades, las correcciones de errores y las mejoras, con enlaces al changelog.
+
+El botón de ayuda ahora brilla cuando hay notas de lanzamiento sin leer, mediante un SVG animado sin JavaScript.
+
+El seguimiento de las notas sin leer también necesitaba arreglo. Usaba la versión de build de la aplicación, por lo que las implementaciones que incluían un SHA corto de git o un número de build de CI activaban el brillo en cada despliegue, incluso sin un nuevo lanzamiento. Ahora usa la última versión de lanzamiento del changelog.
+
+El formato de las notas de lanzamiento también está cambiando, así que cabe esperar que aparezca más de ese contenido en el panel.
+
+**PR relacionados:** [#2993](https://github.com/hyperdxio/hyperdx/pull/2993) construir «What&#39;s new» a partir de las notas de lanzamiento generadas, [#3042](https://github.com/hyperdxio/hyperdx/pull/3042) vincular el brillo de What&#39;s new al lanzamiento y no al build, [#3007](https://github.com/hyperdxio/hyperdx/pull/3007) advertir de forma diferenciada cuando falla una consulta de marcador de lanzamiento
