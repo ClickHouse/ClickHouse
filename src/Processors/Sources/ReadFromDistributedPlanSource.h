@@ -22,11 +22,13 @@ public:
         SharedHeader header_,
         const UUID & unique_query_id_,
         DistributedQueryPlan distributed_query_plan_,
-        TaskToHostMapPtr task_to_host_map_)
+        TaskToHostMapPtr task_to_host_map_,
+        DistributedQueryCancellationPtr cancellation_)
         : ISource(std::move(header_))
         , unique_query_id(unique_query_id_)
         , distributed_query_plan(std::move(distributed_query_plan_))
         , task_to_host_map(std::move(task_to_host_map_))
+        , cancellation(std::move(cancellation_))
     {
     }
 
@@ -57,14 +59,10 @@ private:
     bool started = false;
     bool cleaned_up = false;
 
-    /// Set from `onCancel` (and observed by the executor) to stop remote work promptly. The executor
-    /// also records a failing task's exception here, so `tryGenerate` can tell a plain cancellation
-    /// from a failure and report the latter.
-    DistributedQueryCancellationPtr cancellation = std::make_shared<DistributedQueryCancellation>();
-
-    /// The executor notifies this every time a task reaches a terminal state, and `onCancel` notifies
-    /// it too, so a parked source wakes as soon as `execute` can make progress.
-    StageWakeupPtr stage_wakeup = std::make_shared<WakeupFd>();
+    /// Set from `onCancel` (and observed by the executor) to stop remote work promptly. Records the
+    /// failures of the tasks and of the source reading the result, so `tryGenerate` reports the
+    /// query's failure instead of a plain cancellation. Its wakeup wakes a parked source at once.
+    const DistributedQueryCancellationPtr cancellation;
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// This source only dispatches the plan's stages and waits for them; the query result arrives
