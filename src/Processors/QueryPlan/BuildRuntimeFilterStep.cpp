@@ -114,7 +114,8 @@ public:
                   geometry,
                   /// No stats-sized bloom growth for a transported partial: its serialized state must
                   /// match the plan's geometry on every receiving task.
-                  /*distinct_keys_hint_=*/std::nullopt))
+                  /*distinct_keys_hint_=*/std::nullopt,
+                  /*distinct_keys_hint_matches_filter_key_=*/false))
     {
         if (!filter_column_target_type->equals(*filter_column_original_type))
             cast_to_target_type = createInternalCast(
@@ -252,7 +253,8 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     RuntimeFilterGeometry geometry_,
     bool allow_to_use_not_exact_filter_,
     bool track_key_range_,
-    std::optional<UInt64> distinct_keys_hint_)
+    std::optional<UInt64> distinct_keys_hint_,
+    bool distinct_keys_hint_matches_filter_key_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , filter_column_name(std::move(filter_column_name_))
     , filter_column_type(filter_column_type_)
@@ -262,6 +264,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
     , track_key_range(track_key_range_)
     , distinct_keys_hint(distinct_keys_hint_)
+    , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
 {
     if (!geometry.bloom_filter_bytes)
         geometry.bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
@@ -329,6 +332,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             allow_to_use_not_exact_filter,
             track_key_range,
             distinct_keys_hint,
+            distinct_keys_hint_matches_filter_key,
             query_context);
     });
 }

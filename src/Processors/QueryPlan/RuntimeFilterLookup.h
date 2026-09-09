@@ -71,7 +71,7 @@ public:
     /// Usage statistics
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
-    void setFullyDisabled() { is_fully_disabled = true; }
+    void markKeySetDropped() { key_set_dropped = true; }
 
     Float64 getPassRatioThresholdForDisabling() const { return pass_ratio_threshold_for_disabling; }
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
@@ -113,7 +113,9 @@ protected:
     /// How many rows should be skipped before trying to re-enable the filter after it was disabled due to
     /// low percentage of filtered rows
     mutable std::atomic<Int64> rows_to_skip = 0;
-    std::atomic<bool> is_fully_disabled = false;
+    /// The filter gave up on its key set (too many keys or a saturated bloom filter): it passes all rows and
+    /// only keeps tracking the key-range envelope.
+    std::atomic<bool> key_set_dropped = false;
 
     /// Key-range envelope tracking (see updateRange/getRecordedKeyRanges).
     bool index_analysis_enabled = false;
@@ -291,7 +293,8 @@ public:
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
         const RuntimeFilterGeometry & geometry_,
-        std::optional<UInt64> distinct_keys_hint_);
+        std::optional<UInt64> distinct_keys_hint_,
+        bool distinct_keys_hint_matches_filter_key_);
 
     void insert(ColumnPtr values) override;
 
@@ -317,6 +320,10 @@ private:
     void insertIntoBloomFilter(ColumnPtr values);
     void switchToBloomFilter();
 
+    /// Marks the filter as passing all rows. Also releases the exact values collected so far: they are
+    /// only a part of the build-side keys, and `getRecordedKeyValues` must not present them as all of them.
+    void dropKeySet();
+
     /// Disables bloom filter if it is likely to have bad selectivity
     void checkBloomFilterWorthiness();
 
@@ -329,6 +336,8 @@ private:
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
     const std::optional<UInt64> distinct_keys_hint;
+    /// Is the filter key the whole join key? If yes, then `distinct_keys_hint` represents this entire's filter's distinct keys.
+    const bool distinct_keys_hint_matches_filter_key;
 
     BloomFilterPtr bloom_filter;
     /// Guards against inserts after `serialize` already captured the state: they would be silently

@@ -55,7 +55,11 @@ RuntimeFilterGeometry makeGeometry(UInt64 bloom_bytes = BLOOM_BYTES)
 std::unique_ptr<ApproximateRuntimeFilter> makeFilter(size_t filters_to_merge = 0)
 {
     return std::make_unique<ApproximateRuntimeFilter>(
-        filters_to_merge, std::make_shared<DataTypeUInt64>(), makeGeometry(), /*distinct_keys_hint_=*/std::nullopt);
+        filters_to_merge,
+        std::make_shared<DataTypeUInt64>(),
+        makeGeometry(),
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
 }
 
 ColumnPtr makeColumn(UInt64 from, UInt64 to)
@@ -188,7 +192,9 @@ TEST(RuntimeFilterSerialization, RoundTripLowCardinalityExactValues)
     const auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     const UInt64 bytes_limit = 1 << 20;
     auto make_lc_filter = [&]
-    { return std::make_unique<ApproximateRuntimeFilter>(0, lc_type, makeGeometry(bytes_limit), /*distinct_keys_hint_=*/std::nullopt); };
+    { return std::make_unique<ApproximateRuntimeFilter>(
+          0, lc_type, makeGeometry(bytes_limit), /*distinct_keys_hint_=*/std::nullopt,
+          /*distinct_keys_hint_matches_filter_key_=*/false); };
     auto make_lc_column = [&](UInt64 from, UInt64 to)
     {
         auto column = lc_type->createColumn();
@@ -349,7 +355,10 @@ TEST(RuntimeFilterSerialization, SenderBoundsExactStateByKeyBytes)
     /// The hash table buffer alone undercounts string keys (their bytes live outside it), so the
     /// exact-phase byte budget must also count the actual key bytes: 10 strings of 2 KiB blow the
     /// 4 KiB budget and the state degrades to a bloom filter even though the row count is tiny.
-    ApproximateRuntimeFilter filter(0, stringType(), makeGeometry(), /*distinct_keys_hint_=*/std::nullopt);
+    ApproximateRuntimeFilter filter(
+        0, stringType(), makeGeometry(),
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
     filter.insert(makeStringColumn(10, 2048));
 
     EXPECT_TRUE(isBloomState(serializeToString(filter)));
@@ -370,7 +379,10 @@ TEST(RuntimeFilterSerialization, LongTypeNameFitsTheExactStateBound)
     const UInt64 bytes_limit = 1 << 20;
     ASSERT_GT(enum_type->getName().size(), bytes_limit + 64 * 1024);
 
-    ApproximateRuntimeFilter filter(0, enum_type, makeGeometry(bytes_limit), /*distinct_keys_hint_=*/std::nullopt);
+    ApproximateRuntimeFilter filter(
+        0, enum_type, makeGeometry(bytes_limit),
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
     auto column = enum_type->createColumn();
     for (Int16 i = 0; i < 10; ++i)
         column->insert(i);
@@ -391,7 +403,10 @@ TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
     auto relaxed_geometry = makeGeometry();
     relaxed_geometry.exact_bytes_limit = 1 << 20;
 
-    ApproximateRuntimeFilter big(0, stringType(), relaxed_geometry, /*distinct_keys_hint_=*/std::nullopt);
+    ApproximateRuntimeFilter big(
+        0, stringType(), relaxed_geometry,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
     big.insert(makeStringColumn(10, 20 * 1024));
     const String state = serializeToString(big);
     EXPECT_FALSE(isBloomState(state));
@@ -437,9 +452,15 @@ TEST(RuntimeFilterSerialization, ShortStringKeysStayExactUpToTheRaisedRowBound)
         return found;
     };
 
-    ApproximateRuntimeFilter part1(0, stringType(), geometry, /*distinct_keys_hint_=*/std::nullopt);
+    ApproximateRuntimeFilter part1(
+        0, stringType(), geometry,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
     part1.insert(makeShortStringColumn(0, 10000));
-    ApproximateRuntimeFilter part2(0, stringType(), geometry, /*distinct_keys_hint_=*/std::nullopt);
+    ApproximateRuntimeFilter part2(
+        0, stringType(), geometry,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
     part2.insert(makeShortStringColumn(10000, 20000));
 
     const String state1 = serializeToString(part1);
@@ -469,7 +490,10 @@ TEST(RuntimeFilterSerialization, LongStringKeysStillDegradeAtTheByteCap)
     auto geometry = makeGeometry(/*bloom_bytes=*/512 * 1024);
     geometry.exact_values_limit = 20000;
 
-    ApproximateRuntimeFilter filter(0, stringType(), geometry, /*distinct_keys_hint_=*/std::nullopt);
+    ApproximateRuntimeFilter filter(
+        0, stringType(), geometry,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
     filter.insert(makeStringColumn(20000, 200));
 
     const String state = serializeToString(filter);

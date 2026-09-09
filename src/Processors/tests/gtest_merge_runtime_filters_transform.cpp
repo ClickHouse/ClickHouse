@@ -64,7 +64,10 @@ SharedHeader dataHeader()
 
 String makePartialBlob(UInt64 from, UInt64 to, const RuntimeFilterGeometry & geometry = testGeometry())
 {
-    ApproximateRuntimeFilter filter(0, std::make_shared<DataTypeUInt64>(), geometry, /*distinct_keys_hint_=*/std::nullopt);
+    ApproximateRuntimeFilter filter(
+        0, std::make_shared<DataTypeUInt64>(), geometry,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
     auto column = ColumnUInt64::create();
     for (UInt64 i = from; i < to; ++i)
         column->insertValue(i);

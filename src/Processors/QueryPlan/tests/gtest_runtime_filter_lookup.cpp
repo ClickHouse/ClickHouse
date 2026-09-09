@@ -25,7 +25,11 @@ RuntimeFilterGeometry testGeometry()
 UniqueRuntimeFilterPtr makePartial(size_t filters_to_merge)
 {
     return std::make_unique<ApproximateRuntimeFilter>(
-        filters_to_merge, std::make_shared<DataTypeUInt64>(), testGeometry(), /*distinct_keys_hint_=*/std::nullopt);
+        filters_to_merge,
+        std::make_shared<DataTypeUInt64>(),
+        testGeometry(),
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
 }
 
 }

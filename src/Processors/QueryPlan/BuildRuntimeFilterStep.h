@@ -22,7 +22,8 @@ public:
         RuntimeFilterGeometry geometry_,
         bool allow_to_use_not_exact_filter_,
         bool track_key_range_,
-        std::optional<UInt64> distinct_keys_hint_ = std::nullopt);
+        std::optional<UInt64> distinct_keys_hint_ = std::nullopt,
+        bool distinct_keys_hint_matches_filter_key_ = false);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -117,6 +118,9 @@ private:
     /// Row estimate stamped before the plan is cut; consumed only by the initiator when sizing the
     /// exact phase. Not serialized.
     std::optional<UInt64> estimated_build_rows;
+
+    /// Whether the filter key is the whole join key, so that the hint counts this filter's distinct keys.
+    bool distinct_keys_hint_matches_filter_key;
 };
 
 }

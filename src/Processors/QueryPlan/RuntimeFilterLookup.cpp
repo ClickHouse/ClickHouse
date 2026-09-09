@@ -20,6 +20,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
@@ -37,6 +38,7 @@ namespace ProfileEvents
     extern const Event RuntimeFilterRowsChecked;
     extern const Event RuntimeFilterRowsPassed;
     extern const Event RuntimeFilterRowsSkipped;
+    extern const Event RuntimeFilterBloomFilterBuildsSkipped;
 }
 
 namespace DB
@@ -151,7 +153,7 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 
 bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
 {
-    if (is_fully_disabled)
+    if (key_set_dropped)
     {
         stats.rows_skipped += next_block_rows;
         stats.blocks_skipped++;
@@ -315,7 +317,7 @@ void ExactContainsRuntimeFilter::finishInsertImpl()
     if (isFull())
     {
         /// Some keys were dropped so we cannot filter by partial set of keys
-        setFullyDisabled();
+        markKeySetDropped();
         releaseExactValues();
     }
 }
@@ -347,7 +349,8 @@ ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     size_t filters_to_merge_,
     const DataTypePtr & filter_column_target_type_,
     const RuntimeFilterGeometry & geometry_,
-    std::optional<UInt64> distinct_keys_hint_)
+    std::optional<UInt64> distinct_keys_hint_,
+    bool distinct_keys_hint_matches_filter_key_)
     : RuntimeFilterBase(
           filters_to_merge_,
           filter_column_target_type_,
@@ -359,6 +362,7 @@ ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     , bloom_filter_hash_functions(geometry_.bloom_filter_hash_functions)
     , max_ratio_of_set_bits_in_bloom_filter(geometry_.max_ratio_of_set_bits_in_bloom_filter)
     , distinct_keys_hint(distinct_keys_hint_)
+    , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
     , bloom_filter(nullptr)
 {}
 
@@ -368,6 +372,13 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
     if (state_serialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after its state was serialized");
+
+    if (key_set_dropped)
+    {
+        /// The exact values or the bloom filter were dropped. Only update the minimum-maximum value envelope.
+        updateRange(*values);
+        return;
+    }
 
     if (bloom_filter)
     {
@@ -389,6 +400,10 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
 
 void ApproximateRuntimeFilter::finishInsertImpl()
 {
+    /// `dropKeySet` released the exact values that `Base::finishInsertImpl` would finish.
+    if (key_set_dropped)
+        return;
+
     if (bloom_filter)
     {
         checkBloomFilterWorthiness();
@@ -410,14 +425,22 @@ void ApproximateRuntimeFilter::merge(const IRuntimeFilter * source)
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    if (source_typed->bloom_filter)
+    /// We can only merge the min-max value envelopes.
+    if (source_typed->key_set_dropped)
+        dropKeySet();
+
+    if (!key_set_dropped)
     {
-        switchToBloomFilter();
-        mergeBloomFilters(*bloom_filter, *source_typed->bloom_filter);
-    }
-    else
-    {
-        insert(source_typed->getValuesColumn());
+        if (source_typed->bloom_filter)
+        {
+            switchToBloomFilter();
+            if (!key_set_dropped)
+                mergeBloomFilters(*bloom_filter, *source_typed->bloom_filter);
+        }
+        else
+        {
+            insert(source_typed->getValuesColumn());
+        }
     }
     /// Also merge the source's envelope (bloom mode loses source values).
     mergeRange(*source);
@@ -546,7 +569,11 @@ std::unique_ptr<ApproximateRuntimeFilter> ApproximateRuntimeFilter::deserialize(
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed runtime filter state");
 
     auto filter = std::make_unique<ApproximateRuntimeFilter>(
-        filters_to_merge_, filter_column_target_type_, geometry_, /*distinct_keys_hint_=*/std::nullopt);
+        filters_to_merge_,
+        filter_column_target_type_,
+        geometry_,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
 
     if (has_bloom_filter)
     {
@@ -633,12 +660,42 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     /// settings-sized bloom.
     UInt64 grown_bloom_filter_bytes = bloom_filter_bytes;
     if (distinct_keys_hint)
+    {
         grown_bloom_filter_bytes = growBloomFilterBytes(
             *distinct_keys_hint, bloom_filter_hash_functions, bloom_filter_bytes, max_ratio_of_set_bits_in_bloom_filter);
+
+        /// The filter size is capped (`MAX_STATS_SIZED_BLOOM_FILTER_BYTES`), so a build side with more distinct keys is discarded by
+        /// `checkBloomFilterWorthiness`. With the hint we can predict that in advance: the expected fill rate of a filter of `bits` bits
+        /// after `keys * hashes` bit inserts is `1 - exp(-keys * hashes / bits)`, see
+        /// https://en.wikipedia.org/wiki/Bloom_filter#Probability_of_false_positives.
+        ///
+        /// The hint may be stale and overstate the current key count, so the build is skipped only if the least
+        /// key count consistent with the hint saturates the filter.
+        if (distinct_keys_hint_matches_filter_key)
+        {
+            double least_distinct_keys = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
+            double predicted_fill_rate = -std::expm1(
+                -static_cast<double>(bloom_filter_hash_functions) * least_distinct_keys
+                / (static_cast<double>(grown_bloom_filter_bytes) * 8.0));
+            if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
+            {
+                ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
+                dropKeySet();
+                return;
+            }
+        }
+    }
 
     bloom_filter = std::make_unique<BloomFilter>(grown_bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());
 
+    releaseExactValues();
+}
+
+void ApproximateRuntimeFilter::dropKeySet()
+{
+    markKeySetDropped();
+    bloom_filter.reset();
     releaseExactValues();
 }
 
@@ -651,7 +708,7 @@ void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
         set_bits += std::popcount(word);
     /// If too many bits are set then it is likely that the filter will not filter out much
     if (static_cast<double>(set_bits) > max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits))
-        setFullyDisabled();
+        markKeySetDropped();
 }
 
 SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(

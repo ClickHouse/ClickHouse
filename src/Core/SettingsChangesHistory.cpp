@@ -62,6 +62,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_lower_array_join_function", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."},
             {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
             {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
+            {"enable_join_runtime_filters", true, true, "The JOIN runtime filters became a Production tier feature."},
+            {"join_runtime_filter_exact_values_limit", 10000, 10000, "The JOIN runtime filters became a Production tier feature."},
+            {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "The JOIN runtime filters became a Production tier feature."},
+            {"join_runtime_bloom_filter_hash_functions", 3, 3, "The JOIN runtime filters became a Production tier feature."},
+            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "The JOIN runtime filters became a Production tier feature."},
+            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "The JOIN runtime filters became a Production tier feature."},
+            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "The JOIN runtime filters became a Production tier feature."},
+            {"join_runtime_filter_min_probe_rows", 1000, 1000, "The JOIN runtime filters became a Production tier feature."},
+            {"enable_join_runtime_filters_index_analysis", false, false, "The JOIN runtime filters became a Production tier feature."},
             {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"enable_join_key_only_hash_tables", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."},
@@ -88,6 +97,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"type_json_skip_null_typed_paths", false, false, "New setting to treat NULL values in typed JSON paths as absent"},
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
+            {"query_plan_derive_not_null_filters_from_joins", false, true, "New setting to derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
+            {"query_plan_allow_derived_not_null_filters_execution", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be executed."},
+            {"query_plan_max_selectivity_for_not_null_filters_execution", 0.7, 0.7, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."}
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
