@@ -1253,13 +1253,20 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             if (auto target = versionHintTargetName(hint_content))
             {
                 const bool version_numbered = isVersionHintCommitScheme(*target);
-                auto has = [&](auto && predicate) { return std::any_of(metadata_files.begin(), metadata_files.end(),
-                    [&](const String & p) { return predicate(String(std::filesystem::path(p).filename())); }); };
+                bool scheme_present = false;
+                bool target_present = false;
+                for (const auto & path : metadata_files)
+                {
+                    String name = std::filesystem::path(path).filename();
+                    if (isVersionHintCommitScheme(name) == version_numbered)
+                        scheme_present = true;
+                    if (name == *target)
+                        target_present = true;
+                }
                 /// A bare version number may address a compressed spelling of the name, so the
                 /// scheme is what has to be present, not the exact name. A hint naming a file
                 /// directly declares nothing unless that file is really there.
-                if (has([&](const String & name) { return isVersionHintCommitScheme(name) == version_numbered; })
-                    && (version_numbered || has([&](const String & name) { return name == *target; })))
+                if (scheme_present && (version_numbered || target_present))
                     own_scheme_is_version_numbered = version_numbered;
             }
         }
