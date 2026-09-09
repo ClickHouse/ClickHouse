@@ -151,7 +151,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS | 54481 | Log, ProfileEvents, TableColumns | Server may wrap [`Log`](#log), [`ProfileEvents`](#profileevents), and [`TableColumns`](#tablecolumns) packet bodies in the [compression frame](/reference/interfaces/specs/NativeFormat#compression-frame). At this version all three bodies travel through the same optionally-compressed output path, which becomes a real compression frame only when the query has `compression = true`. Clients that never enable compression on outgoing Query packets see no wire change. |
 | REPLICATED_SERIALIZATION        | 54482   | Block (Column)         | Server may emit columns with kind_stack `0x04 = REPLICATED` — a dictionary-style compact form for repeated values — see [kind_stack and sparse encoding](/reference/interfaces/specs/NativeFormat#kind-stack-and-sparse-encoding). Below this version the writer expanded such columns before sending. Decoded via index lookup (`elements[indexes[i]]` per row); leaf types plus `Nullable`/`Array`/`Tuple`/`Map`/`Nested`/`LowCardinality` inners supported. |
 | NULLABLE_SPARSE_SERIALIZATION   | 54483   | Block (Column)         | Composes sparse serialization with `Nullable(T)`. Below this version the writer expanded sparse for Nullable columns before sending; at v54483+ the wire data is sparse-over-Nullable. See [kind_stack and sparse encoding](/reference/interfaces/specs/NativeFormat#kind-stack-and-sparse-encoding). |
-| PROGRESS_IN_ASYNC_INSERT        | 54484   | Progress (INSERT)      | On an **asynchronous** INSERT (`async_insert = 1`), once the insert is flushed the server sends an extra [`Progress`](#progress) packet, then the insert's `ProfileEvents`, before `EndOfStream`. `ProfileTraces` may be interleaved when trace delivery is enabled at revision `54493`+. Gated on the *negotiated* version ≥ 54484; below it the server omits this trailing Progress. The Progress wire format is unchanged — only the emission is new. In practice the increment carries the elapsed time; the written-row counters are reported via the accompanying ProfileEvents. A client that already drains interleaved Progress needs no format change, only to tolerate one more packet. |
+| PROGRESS_IN_ASYNC_INSERT        | 54484   | Progress (INSERT)      | For rows accepted by the **asynchronous** `INSERT` queue (`async_insert = 1`), the server sends an extra [`Progress`](#progress) packet after queueing, waiting for the flush first only if `wait_for_async_insert = 1`. This precedes the insert's `ProfileEvents` and `EndOfStream`. `ProfileTraces` may be interleaved when trace delivery is enabled at revision `54493`+. Gated on the *negotiated* version ≥ 54484; below it the server omits this trailing `Progress`. The `Progress` wire format is unchanged — only the emission is new. In practice the increment carries the elapsed time. Accompanying `ProfileEvents` report the submitting query's counters, such as `AsyncInsertQuery` and `AsyncInsertBytes`, not the separate flush's write totals. With `wait_for_async_insert = 0`, the response does not confirm that the queued rows have been written. A client that already drains interleaved `Progress` needs no format change, only to tolerate one more packet. |
 | CLIENT_AGENT_IN_CLIENT_INFO     | 54485   | ClientInfo             | Adds a trailing `client_agent` `String` to ClientInfo. The canonical client auto-detects an agent identifier from its environment (for example `claude-code`, `cursor`, `gemini-cli`, or the value of the `AGENT` variable); an external client with nothing detected sends an empty string. Required once negotiated version ≥ 54485 — omitting it desynchronizes the rest of the Query packet. |
 | INTERNAL_QUERY_FLAG             | 54486   | ClientInfo             | Adds a trailing `is_internal` `UInt8` to ClientInfo. `1` for a server-internal query (not user-issued), propagated to remote queries so their `system.query_log` rows are labeled internal; external clients send `0`. Required once negotiated version ≥ 54486 — omitting it desynchronizes the rest of the Query packet. |
 | INTERSERVER_CURRENT_ROLES       | 54488   | ClientInfo             | Adds a trailing `current_roles` optional String list to ClientInfo (`[UInt8 present]` then, if `1`, `[VarUInt count][String]*count`), and, for inter-server queries, extends the `auth_hash` to cover the serialized list. Carries the initiator's active (enabled) role names so a secondary node scopes row policies the same way instead of falling back to the user's default roles. Only populated for inter-server queries and only when `push_external_roles_in_interserver_queries = 1`; external clients send `0` (absent). Required once negotiated version ≥ 54488 — omitting the presence byte desynchronizes the rest of the Query packet. |
@@ -377,9 +377,9 @@ The `num_rows == 0` case trips up new implementations. A zero-row block is a bou
 
 ### INSERT phase {#insert-phase}
 
-The INSERT phase is the [Query phase](#query-phase) with two extra exchanges. The client submits an `INSERT` statement; the server replies with a **schema block** describing the target table; the client streams Data packets with the rows, then the empty Data marker; the server finishes with `EndOfStream` or `Exception`.
+For an `INSERT` with client-supplied rows, the client submits the statement and terminates the external-table input phase; the server replies with a **schema block** describing the target table; the client streams `Data` packets with the rows, then a second empty `Data` marker; the server finishes with `EndOfStream` or `Exception`.
 
-Starting from `READY`, the SQL is an `INSERT` of the form `INSERT INTO <table> [(<cols>)] VALUES` — with no inline `VALUES (...)` literal, since the row data flows through Data packets. The flow:
+Starting from `READY`, the SQL is an `INSERT` of the form `INSERT INTO <table> [(<cols>)] VALUES` — with no inline `VALUES (...)` literal, since the row data flows through `Data` packets. The following flow covers a direct streamed `INSERT` without external tables, as sent by `clickhouse-client`:
 
 ```mermaid
 sequenceDiagram
@@ -388,37 +388,47 @@ sequenceDiagram
     participant S as Server
 
     C->>S: Query packet (INSERT body)
-    C->>S: External-table Data packets (0 or more)
-    Note over C,S: No empty Data marker here —<br/>it would end the row stream before it starts
-    opt metadata before schema
-        S->>C: TableColumns / Progress / ProfileInfo / Log / ProfileEvents / ProfileTraces
+    C->>S: Empty Data marker — end of external-table input
+    opt logs before schema
+        S->>C: Log
     end
-    S->>C: Data packet — schema block (columns, 0 rows)
-    Note over C,S: Schema block is the contract:<br/>rows sent next must match these column shapes
-    loop one or more blocks
-        C->>S: Data packet (rows N)
-        opt interleaved metadata
-            S->>C: Log / ProfileEvents / ProfileTraces
+    alt error before schema
+        opt pending profile traces
+            S->>C: ProfileTraces — final drain
         end
+        S->>C: Exception
+    else ready to receive rows
+        opt column-default metadata enabled and supported
+            S->>C: TableColumns
+        end
+        S->>C: Data packet — schema block (columns, 0 rows)
+        Note over C,S: Rows sent next must match the schema
+        loop row blocks
+            C->>S: Data packet (rows N)
+            opt interleaved metadata
+                S->>C: Log / ProfileEvents / ProfileTraces
+            end
+        end
+        C->>S: Empty Data marker — end of insertion rows
+        loop trailing metadata
+            S->>C: Progress / Log / ProfileEvents / ProfileTraces
+        end
+        S->>C: EndOfStream (success) or Exception (failure)
     end
-    C->>S: Data packet — empty block (0 rows), end-of-input terminator
-    opt async_insert = 1 and negotiated_version ≥ 54484
-        S->>C: trailing Progress
-    end
-    loop until EndOfStream or Exception
-        S->>C: Progress / ProfileInfo / Log / ProfileEvents / ProfileTraces
-    end
-    S->>C: EndOfStream
 ```
 
-1. The client sends [`Query`](#query) with `body` set to the INSERT SQL.
-2. The client sends any external tables (rare for INSERT). Unlike the [Query phase](#query-phase), it does **not** send an empty Data marker here. The `INSERT` `Query` packet is sent with pending data, so the empty end-of-data block is deferred to step 5; sending it before the schema block would make the server read it as the end of the row stream, finish the INSERT with no rows, and then parse the first real row packet as a stray top-level packet.
-3. The client drains metadata packets (`TableColumns`, `Progress`, `ProfileInfo`, `Log`, `ProfileEvents`, and `ProfileTraces`) until it reads the schema `Data` packet — a Block with 0 rows but full column structure (names and types). The schema block is the contract: the rows the client sends next must match these column shapes. A `ProfileTraces` block is auxiliary metadata, not the insertion schema.
+1. The client sends [`Query`](#query) with `body` set to the `INSERT` SQL.
+2. The client sends an empty `Data` packet (`table_name = ""`, 0 columns, 0 rows) to terminate the external-table phase, just as in the [Query phase](#query-phase). This marker is separate from the one that terminates insertion rows in step 5. The server finishes reading external tables before preparing the insertion schema.
+3. The client reads `Log` packets and an optional [`TableColumns`](#tablecolumns) packet until it receives the schema `Data` packet — a block with 0 rows but full column structure (names and types). `Progress`, `ProfileInfo`, and `ProfileEvents` are not emitted on this pre-schema success path. If setup fails, the server may drain `ProfileTraces` before an `Exception` without sending a schema. Only the schema `Data` packet permits row upload; a trace block is auxiliary metadata, not the insertion schema.
 4. The client sends data block(s). For each block it writes `VarUInt(ClientPacket::Data = 2)`, then `String("")` for the empty external-table name, then the Block. Column types must align with the schema block's columns by position. The server may send interleaved `Log`, `ProfileEvents`, and `ProfileTraces` packets while the client uploads rows.
 5. The client sends the end-of-input terminator: a Data packet with an empty Block (0 columns, 0 rows).
-6. The client drains the response stream, including `Progress`, `ProfileInfo`, `Log`, `ProfileEvents`, and `ProfileTraces`, until `EndOfStream` (success) or `Exception` (failure). The final trace drain can emit additional `ProfileTraces` packets before the terminal packet. Trace delivery requires revision `54493`+ and `send_profile_traces = 1`; see [ProfileTraces](#profiletraces) for its bounded-drain and cancellation behavior.
+6. The client drains the response stream, including `Progress`, `Log`, `ProfileEvents`, and `ProfileTraces`, until `EndOfStream` (success) or `Exception` (failure). `ProfileInfo` is not part of this direct streamed `INSERT` response. The final trace drain can emit additional `ProfileTraces` packets before the terminal packet. Trace delivery requires revision `54493`+ and `send_profile_traces = 1`; see [ProfileTraces](#profiletraces) for its bounded-drain and cancellation behavior. An exception during upload can terminate the response before the client reaches step 5.
 
-**Asynchronous INSERT (v54484+).** When the query carries `async_insert = 1`, the server queues the rows and flushes them as part of a batch. At negotiated version ≥ 54484 (`PROGRESS_IN_ASYNC_INSERT`), once the flush completes the server emits an extra [`Progress`](#progress) packet before the insert's `ProfileEvents` and `EndOfStream`. `ProfileTraces` packets may be interleaved with this metadata and emitted by the final drain. Below 54484 the server skips that trailing `Progress`. The packet is an ordinary `Progress`; because the server resets the query pipeline before folding in the write counts, the increment in practice carries only the elapsed time, and the written-row and byte stats reach the client via the accompanying `ProfileEvents`. A client that already drains interleaved `Progress` in step 6 needs only to accept one more packet.
+The external-table phase is distinct from insertion-row upload. `clickhouse-client` sends no external-table blocks for this direct `INSERT` form. A client that does send nonempty external-table blocks can receive `Log`, `ProfileEvents`, and `ProfileTraces` while the server reads them, before the insertion schema is prepared.
+
+An `INSERT` supplied through the [`input`](/sql-reference/table-functions/input) table function also receives an input-schema block. Its initializer can additionally send [`TimezoneUpdate`](#timezoneupdate) immediately after that block at revision `54464`+. An `INSERT ... SELECT` without client-supplied input uses the ordinary [query phase](#query-phase), not this row-upload exchange.
+
+**Asynchronous `INSERT` (v54484+).** For rows accepted by the asynchronous insert queue (`async_insert = 1`), the server emits an extra [`Progress`](#progress) packet at negotiated version ≥ 54484 (`PROGRESS_IN_ASYNC_INSERT`) before the insert's `ProfileEvents` and `EndOfStream`. With `wait_for_async_insert = 1`, this happens after the flush completes; with `wait_for_async_insert = 0`, it happens after queueing without waiting for the flush. `ProfileTraces` packets may be interleaved with this metadata and emitted by the final drain. Below 54484 the server skips that trailing `Progress`. The packet is an ordinary `Progress`; because the server resets the query pipeline before folding in the write counts, the increment in practice carries only the elapsed time. Accompanying `ProfileEvents` report the submitting query's counters, including queueing counters such as `AsyncInsertQuery` and `AsyncInsertBytes`, not the separate flush's write totals. With `wait_for_async_insert = 0`, neither these packets nor `EndOfStream` confirm that the queued rows have been written. A client that already drains interleaved `Progress` in step 6 needs only to accept one more packet.
 
 The connection returns to `READY` on `EndOfStream` or a handled `Exception`. Protocol violations and I/O errors terminate it.
 
@@ -1117,10 +1127,10 @@ The `*_native_*` settings are the exception: they change the bytes inside native
 
 **Cancel** — a client-initiated packet (type 3) that aborts a running query. Not specified in detail on this page.
 
-**End-of-client-data marker** — an empty Data packet (0 columns, 0 rows) the client sends to close an input stream. Its position differs by query kind:
+**End-of-client-data marker** — an empty `Data` packet (0 columns, 0 rows) the client sends to close an input stream:
 
 - **Normal query (`SELECT`, etc.):** sent after the Query packet and any external-table Data packets to signal "no more external data". The server then begins executing.
-- **`INSERT`:** the client does **not** send a pre-schema marker. The server sends the schema block first, the client streams its row Data blocks, and only then sends the empty Data packet to terminate the row stream. Sending an empty marker before the schema block would be read as an immediate end-of-rows and lose the data.
+- **`INSERT` with client-supplied rows:** one marker terminates the external-table phase before the schema block; a second terminates the insertion-row stream after the schema and row `Data` blocks. See the [INSERT phase](#insert-phase).
 
 **Feature** — a wire-format change introduced in a specific protocol version. Active when the negotiated version is at or above the feature's version. See [versioning and feature gates](#versioning-and-feature-gates).
 
