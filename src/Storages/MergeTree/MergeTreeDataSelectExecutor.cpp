@@ -173,7 +173,7 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
         /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
         /// NaN is not usable here: `containsRange` would be true where the NaN falsifies it. Such a
         /// column falls back to the whole universe.
-        if (i < primary_key.data_types.size() && typeMayHideNaN(primary_key.data_types[i]))
+        if (i < primary_key.data_types.size() && KeyCondition::typeMayHideNaN(primary_key.data_types[i]))
             continue;
 
         auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);

@@ -581,25 +581,6 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
     return need_inversion ? makeASTOperator("not", cloned_node) : cloned_node;
 }
 
-bool typeMayHideNaN(const DataTypePtr & type)
-{
-    if (!type)
-        return false;
-
-    const auto unwrapped = removeLowCardinalityAndNullable(type);
-    if (WhichDataType(unwrapped).isFloat())
-        return true;
-
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
-    {
-        for (const auto & element : tuple->getElements())
-            if (typeMayHideNaN(element))
-                return true;
-    }
-
-    return false;
-}
-
 /// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN:
 /// `not(NaN > c)` is true while `NaN <= c` is false. `=` / `!=` do stay complements under NaN and are
 /// covered only to keep one rule for every comparison. A finite float constant is safe.
@@ -612,7 +593,7 @@ static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawCons
 
     for (const auto * child : children)
     {
-        if (!typeMayHideNaN(child->result_type))
+        if (!KeyCondition::typeMayHideNaN(child->result_type))
             continue;
 
         /// Non-constant: could be NaN at runtime, must not invert.
@@ -1617,33 +1598,22 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
-/// A packed `Tuple` key keeps the mapped set column as a `ColumnTuple`, so an extracted element is a
-/// tuple rather than a top-level NaN.
-static bool fieldMayContainNaN(const Field & field)
+bool KeyCondition::typeMayHideNaN(const DataTypePtr & type)
 {
-    if (field.isNaN())
+    if (!type)
+        return false;
+
+    const auto unwrapped = removeLowCardinalityAndNullable(type);
+    if (WhichDataType(unwrapped).isFloat())
         return true;
 
-    if (field.getType() == Field::Types::Tuple)
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
     {
-        for (const auto & element : field.safeGet<Tuple>())
-            if (fieldMayContainNaN(element))
+        for (const auto & element : tuple->getElements())
+            if (typeMayHideNaN(element))
                 return true;
     }
 
-    return false;
-}
-
-/// Whether any element of an already-materialized set column is a NaN.
-static bool columnContainsNaN(const IColumn & column)
-{
-    Field field;
-    for (size_t i = 0, size = column.size(); i < size; ++i)
-    {
-        column.get(i, field);
-        if (fieldMayContainNaN(field))
-            return true;
-    }
     return false;
 }
 
@@ -1652,6 +1622,20 @@ void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
     auto column_may_hide_nan = [&key_types](size_t key_column)
     {
         return key_column < key_types.size() && typeMayHideNaN(key_types[key_column]);
+    };
+
+    /// A packed `Tuple` key keeps the mapped set column as a `ColumnTuple`, so an element can carry the
+    /// NaN nested rather than at the top level.
+    auto set_column_contains_nan = [](const IColumn & column)
+    {
+        Field field;
+        for (size_t i = 0, size = column.size(); i < size; ++i)
+        {
+            column.get(i, field);
+            if (anyFieldSatisfies(field, isNaNField))
+                return true;
+        }
+        return false;
     };
 
     for (auto & element : rpn)
@@ -1695,7 +1679,7 @@ void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
 
                     /// `ordered_set[i]` belongs to `mapping[i]`: the constructor sorts `indexes_mapping`
                     /// and then indexes the set elements through it, so `tuple_index` is not a position here.
-                    if (!mapping[i].functions.empty() || columnContainsNaN(*ordered_set[i]))
+                    if (!mapping[i].functions.empty() || set_column_contains_nan(*ordered_set[i]))
                     {
                         element.function = RPNElement::FUNCTION_UNKNOWN;
                         relax = false;

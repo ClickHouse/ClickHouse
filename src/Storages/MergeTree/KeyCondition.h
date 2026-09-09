@@ -55,12 +55,6 @@ struct DeterministicKeyTransformDag
     String input_name;
 };
 
-/// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show, and
-/// whose ordering comparisons are therefore all false rather than complementary. `Tuple` qualifies, per
-/// element. An `Array`/`Map` bound hides a NaN too (opposite `nan_direction_hint` per bound in
-/// `ColumnArray::getExtremes`), but their comparison orders it, so it can also make a predicate true.
-bool typeMayHideNaN(const DataTypePtr & type);
-
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -468,6 +462,12 @@ public:
     /// on a given regular expression. Such an atom is relaxed unless the regular
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
+
+    /// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show, and
+    /// whose ordering comparisons are therefore all false rather than complementary. `Tuple` qualifies, per
+    /// element. An `Array`/`Map` bound hides a NaN too (opposite `nan_direction_hint` per bound in
+    /// `ColumnArray::getExtremes`), but their comparison orders it, so it can also make a predicate true.
+    static bool typeMayHideNaN(const DataTypePtr & type);
 
     /// Weaken the atoms over a `typeMayHideNaN` key column. Only for a condition evaluated against a
     /// `getExtremes`-derived hyperrectangle, and only before `alwaysUnknownOrTrue()`. A hidden NaN satisfies
