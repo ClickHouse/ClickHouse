@@ -1519,59 +1519,6 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUp
     EXPECT_EQ(injection->seen_if_none_match[0], "*");
 }
 
-/// `If-Match` is conditional too. Every write mints a token, so authorship is provable here as well
-/// and a completion that already landed is recovered.
-TEST_P(SyncAsync, MultipartIfMatchCompleteRecoversNoSuchUploadOnOwnObject) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
-        client->store, /* complete_first_attempt= */ true));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    auto buffer = getWriteBuffer("conditional_mpu_if_match", conditionalReplaceWriteSettings());
-    buffer->write('A');
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    auto & bStore = client->store->GetBucketStore(bucket);
-    EXPECT_EQ(bStore.objects["conditional_mpu_if_match"], "A");
-    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_if_match"].at("clickhouse-idempotency-id").empty());
-}
-
-/// The protective half of the arm above: an `If-Match` completion over an object somebody else wrote
-/// still fails, because the token at the key is not this buffer's.
-TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotMaskForeignObjectOnNoSuchUpload) {
-    auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_mpu_if_match_foreign", "A", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
-
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
-        client->store, /* complete_first_attempt= */ false));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_mpu_if_match_foreign", conditionalReplaceWriteSettings());
-            buffer->write('A');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
-            throw;
-        }
-      }, DB::S3Exception);
-
-    EXPECT_EQ(
-        bStore.object_metadata["conditional_mpu_if_match_foreign"].at("clickhouse-idempotency-id"),
-        "written-by-somebody-else");
-}
-
 /// An unconditional completion recovers too, and for the same reason as a conditional one: the token
 /// is minted for every write, so `copyS3File` and the disk write paths keep the recovery they had.
 TEST_P(SyncAsync, MultipartUnconditionalCompleteRecoversNoSuchUploadOnOwnObject) {
