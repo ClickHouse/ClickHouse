@@ -396,7 +396,7 @@ for endpoint in info.endpoints:
 
 All data is transferred in Apache Arrow IPC format. Only the `Arrow` format is supported — specifying other ClickHouse formats (e.g., `FORMAT JSON`, `FORMAT CSV`) results in an error.
 
-ClickHouse data types are mapped to Arrow types during serialization. A type with no Arrow equivalent, such as `JSON`, `Dynamic`, `QBit` or `AggregateFunction`, is handled according to the setting [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format#output_format_arrow_unsupported_types):
+ClickHouse data types are mapped to Arrow types during serialization. A type with no Arrow equivalent, such as `JSON`, `Dynamic`, `QBit` or `AggregateFunction`, is handled according to the setting [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format):
 
 | Value              | Behavior                                                                                          |
 |--------------------|---------------------------------------------------------------------------------------------------|
