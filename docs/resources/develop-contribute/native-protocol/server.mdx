@@ -25,7 +25,7 @@ keywords: ['native protocol', 'tcp protocol', 'client-server', 'protocol specifi
 | 14    | [ProfileEvents](#profile-events) | Packet with profile events from server                          |
 | 19    | [`ProfileTraces`](/reference/interfaces/specs/NativeProtocol#profiletraces) | Sampled query stacks and delivery status; revision `54493`+ with `send_profile_traces = 1` |
 
-The `Data`, `Totals`, `Extremes`, and `ProfileTraces` block bodies can be compressed. The current [native protocol specification](/reference/interfaces/specs/NativeProtocol) defines the revision gates and interleaving rules.
+The `Data`, `Totals`, `Extremes`, and `ProfileTraces` block bodies follow the query's compression flag. `Log` and `ProfileEvents` do so from revision `54481`; below that revision their block bodies are uncompressed. The packet-type code and `table_name` string remain outside the compressed block body. See the [compression frame specification](/reference/interfaces/specs/NativeFormat#compression-frame) and the current [native protocol specification](/reference/interfaces/specs/NativeProtocol) for the revision gates and interleaving rules.
 
 ## Hello {#hello}
 
@@ -99,7 +99,7 @@ No packet body.
 **Data block** with server log.
 
 <Tip>
-Encoded as **data block** of columns, but is never compressed.
+Encoded as a `Native` block of columns. Below revision `54481` the block is uncompressed; from `54481` it follows the query's compression flag. See the canonical [`Log` packet specification](/reference/interfaces/specs/NativeProtocol#log).
 </Tip>
 
 | column     | type     |
@@ -118,7 +118,7 @@ Encoded as **data block** of columns, but is never compressed.
 **Data block** with profile events.
 
 <Tip>
-Encoded as **data block** of columns, but is never compressed.
+Encoded as a `Native` block of columns. Below revision `54481` the block is uncompressed; from `54481` it follows the query's compression flag. See the canonical [`ProfileEvents` packet specification](/reference/interfaces/specs/NativeProtocol#profileevents).
 
 The `value` type is `UInt64` or `Int64`, depending on server revision.
 </Tip>
