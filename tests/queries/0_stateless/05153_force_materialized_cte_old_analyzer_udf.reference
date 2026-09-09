@@ -1,0 +1,2 @@
+materialized CTE from a SQL UDF body is rejected
+rejected before the CTE body is resolved
