@@ -190,6 +190,15 @@ namespace DB
     /// `ColumnVariant` (hence `ColumnDynamic`) and `ColumnQBit` throw `NOT_IMPLEMENTED`, and
     /// `ColumnAggregateFunction` returns the `AggregateDataPtr` itself, so the export would carry heap
     /// addresses instead of aggregate states.
+    /// Whether an opaque column carries the value's text form. `text` mode asks for it, except for an
+    /// aggregate state: `SerializationAggregateFunction::serializeText` writes the raw state bytes, which
+    /// are not text, so it is serialized as binary in either mode.
+    static bool opaqueValueIsText(const CHColumnToArrowColumn::Settings & settings, const DataTypePtr & column_type)
+    {
+        return settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT
+            && !WhichDataType(column_type).isAggregateFunction();
+    }
+
     template <typename Builder>
     static void appendOpaqueColumnData(
         Builder & builder,
@@ -234,20 +243,20 @@ namespace DB
         size_t start,
         size_t end)
     {
-        /// Dispatch on the builder `getArrowType` asked for rather than re-deriving the mode, so the payload
-        /// cannot disagree with the declared type: a `utf8` column is only chosen for a value with a text
-        /// form, and everything else - an aggregate state in either mode included - gets `binary`.
-        /// `arrow::StringBuilder` does derive from `arrow::BinaryBuilder`, but they cannot be conflated
-        /// here: `assert_cast` compares typeid exactly, so casting one to the other aborts in a debug or
-        /// sanitizer build.
+        /// A text payload lands in a `utf8` column only when a `String` column would too (see
+        /// `getArrowType`), so it can reach either builder and the two questions are asked separately.
+        /// Cast to the builder that was actually created: `arrow::StringBuilder` does derive from
+        /// `arrow::BinaryBuilder`, but `assert_cast` compares typeid exactly, so casting one to the other
+        /// aborts in a debug or sanitizer build.
+        const bool as_text = opaqueValueIsText(settings, column_type);
         if (array_builder->type()->id() == arrow::Type::STRING)
             appendOpaqueColumnData(
                 assert_cast<arrow::StringBuilder &>(*array_builder),
-                write_column, column_type, null_bytemap, format_name, settings, /*as_text=*/true, start, end);
+                write_column, column_type, null_bytemap, format_name, settings, as_text, start, end);
         else
             appendOpaqueColumnData(
                 assert_cast<arrow::BinaryBuilder &>(*array_builder),
-                write_column, column_type, null_bytemap, format_name, settings, /*as_text=*/false, start, end);
+                write_column, column_type, null_bytemap, format_name, settings, as_text, start, end);
     }
 
     /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
@@ -1855,14 +1864,13 @@ namespace DB
             throw Exception(ErrorCodes::UNKNOWN_TYPE,
                 "The type '{}' of a column '{}' is not supported for conversion into {} data format.",
                 column_type->getName(), column_name, format_name);
-        /// One serialized value per row: `serializeText` into a `utf8` column, `serializeBinary` into a
-        /// `binary` one. See `fillArrowArrayWithOpaqueColumnData`. An aggregate state is the exception:
-        /// `SerializationAggregateFunction::serializeText` writes the raw state bytes, which are not text,
-        /// so it goes into a `binary` column in either mode - an Arrow `utf8` column must hold valid UTF-8.
+        /// One serialized value per row, as `utf8` or `binary`; see `fillArrowArrayWithOpaqueColumnData`.
+        /// A text payload uses the Arrow type a `String` column uses, and follows the same setting, so that
+        /// `output_format_arrow_string_as_string = 0` keeps every column of this output free of unvalidated
+        /// UTF-8 rather than only the real `String` ones.
         if (out_opaque_type_name)
             *out_opaque_type_name = column_type->getName();
-        if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT
-            && !WhichDataType(column_type).isAggregateFunction())
+        if (opaqueValueIsText(settings, column_type) && settings.output_string_as_string)
             return arrow::utf8();
         return arrow::binary();
     }

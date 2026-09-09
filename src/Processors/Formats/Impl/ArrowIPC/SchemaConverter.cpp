@@ -764,10 +764,14 @@ buildField(
                     {
                         /// An aggregate state is written as `Binary` even in `text` mode:
                         /// `SerializationAggregateFunction::serializeText` writes the raw state bytes, which
-                        /// are not text, and an Arrow `Utf8` column must hold valid UTF-8.
+                        /// are not text, and an Arrow `Utf8` column must hold valid UTF-8. A text payload
+                        /// otherwise uses the Arrow type a `String` column uses, and follows the same
+                        /// setting, so that `output_format_arrow_string_as_string = 0` keeps every column of
+                        /// this output free of unvalidated UTF-8 rather than only the real `String` ones.
                         const bool as_utf8
                             = settings.arrow.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT
-                            && !which.isAggregateFunction();
+                            && !which.isAggregateFunction()
+                            && settings.arrow.output_string_as_string;
                         if (as_utf8)
                         {
                             type_type = flatbuf::Type_Utf8;

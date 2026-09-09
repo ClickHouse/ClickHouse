@@ -36,6 +36,9 @@ map/binary	x	map<binary, uint8>	None	None
 map/binary	x.entries	struct<key: binary not null, value: uint8 not null>	None	None
 map/binary	x.entries.key	binary	clickhouse.opaque	JSON
 map/binary	x.entries.value	uint8	None	None
+=== text payload under output_format_arrow_string_as_string ===
+string_as_string=1	string	clickhouse.opaque	{"a":1}
+string_as_string=0	binary	clickhouse.opaque	{"a":1}
 === AggregateFunction round-trip ===
 text	128
 binary	128

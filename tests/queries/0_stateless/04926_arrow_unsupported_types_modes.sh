@@ -98,6 +98,26 @@ for label in ["json/text", "json/binary", "aggregate/text", "aggregate/binary", 
         dump(label, f, f.name)
 PY
 
+# A text payload is declared `utf8`, the Arrow type a `String` column uses, and follows the same setting: a
+# `Dynamic` holding a `String` is only as valid UTF-8 as that string is, exactly like a `String` column, so
+# `output_format_arrow_string_as_string = 0` drops the claim for both while keeping the payload text.
+echo "=== text payload under output_format_arrow_string_as_string ==="
+${CLICKHOUSE_LOCAL} --multiquery --query "
+    $(insert "SELECT '{\"a\":1}'::JSON AS x" "${DATA_FILE}.utf8_on"  "output_format_arrow_unsupported_types = 'text', output_format_arrow_string_as_string = 1")
+    $(insert "SELECT '{\"a\":1}'::JSON AS x" "${DATA_FILE}.utf8_off" "output_format_arrow_unsupported_types = 'text', output_format_arrow_string_as_string = 0")"
+python3 - "${DATA_FILE}" <<'PY'
+import sys
+import pyarrow as pa
+
+for label, suffix in [("string_as_string=1", "utf8_on"), ("string_as_string=0", "utf8_off")]:
+    with pa.OSFile(f"{sys.argv[1]}.{suffix}", "rb") as source:
+        table = pa.ipc.open_stream(source).read_all()
+    field = table.schema.field("x")
+    metadata = {key.decode(): value.decode() for key, value in (field.metadata or {}).items()}
+    print(label, field.type, metadata.get("ARROW:extension:name"),
+          table.column("x").cast(pa.binary()).to_pylist()[0].decode(), sep="\t")
+PY
+
 # An aggregate state written in either mode is the encoding `RowBinary` uses, so it deserializes back into
 # the original `AggregateFunction` type.
 echo "=== AggregateFunction round-trip ==="
