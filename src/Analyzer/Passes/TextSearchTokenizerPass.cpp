@@ -6,15 +6,18 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -35,8 +38,49 @@ struct Resolution
     /// `expression` with every column substituted by what it reads, so its AST column name can be
     /// compared with an index definition, and the table those columns come from.
     QueryTreeNodePtr expression;
-    const TableNode * table = nullptr;
+    StoragePtr storage;
 };
+
+/// A table function reads a table too: `remote()` is a `Distributed` storage, whose indexes are reachable.
+StoragePtr getSourceStorage(const IQueryTreeNode & source)
+{
+    if (const auto * table_node = source.as<TableNode>())
+        return table_node->getStorage();
+
+    if (const auto * table_function_node = source.as<TableFunctionNode>())
+        return table_function_node->getStorage();
+
+    return nullptr;
+}
+
+/// The metadata carrying the index definitions of `storage`. A `Distributed` table has none of its own:
+/// the indexes live on the shards' local table, which the initiator can reach only by name. Resolving it
+/// there is what makes a predicate the initiator evaluates itself agree with the shard-local scans.
+StorageMetadataHandle getIndexMetadata(const StoragePtr & storage, const ContextPtr & context)
+{
+    auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    if (!metadata->getSecondaryIndices().empty())
+        return metadata;
+
+    const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
+    if (!distributed)
+        return metadata;
+
+    const auto remote_database = distributed->getRemoteDatabaseName();
+    const auto remote_table = distributed->getRemoteTableName();
+    if (remote_database.empty() || remote_table.empty())
+        return metadata;
+
+    auto local_id = context->tryResolveStorageID(StorageID{remote_database, remote_table});
+    if (!local_id)
+        return metadata;
+
+    auto local_table = DatabaseCatalog::instance().tryGetTable(local_id, context);
+    if (!local_table || local_table.get() == storage.get())
+        return metadata;
+
+    return local_table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+}
 
 Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, size_t & substitutions);
 
@@ -83,7 +127,7 @@ const IQueryTreeNode * findAgreedUnionProjection(const UnionNode & union_node, s
             return nullptr;
 
         const auto name = indexExpressionName(*resolution.expression);
-        const auto * storage = resolution.table->getStorage().get();
+        const auto * storage = resolution.storage.get();
 
         if (!agreed)
         {
@@ -141,7 +185,7 @@ const IQueryTreeNode * findProjection(const IQueryTreeNode & source, const Strin
 Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, size_t & substitutions)
 {
     auto resolved = expression->clone();
-    const TableNode * table = nullptr;
+    StoragePtr storage;
     bool failed = false;
 
     auto visit = [&](QueryTreeNodePtr & current, auto & self) -> void
@@ -172,16 +216,16 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, size_t & s
         if (source->as<LambdaArgumentsNode>())
             return;
 
-        if (const auto * column_table = source->as<TableNode>())
+        if (auto column_storage = getSourceStorage(*source))
         {
             /// Compare storages, not nodes: the two scans of `t UNION ALL t`, and the two sides of a
             /// self-join, are distinct table nodes carrying the same indexes.
-            if (table && table->getStorage().get() != column_table->getStorage().get())
+            if (storage && storage.get() != column_storage.get())
             {
                 failed = true;
                 return;
             }
-            table = column_table;
+            storage = column_storage;
 
             /// An ALIAS column stands for an expression, and that is what the index is defined on.
             if (!column_node->hasExpression())
@@ -210,10 +254,10 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, size_t & s
     };
     visit(resolved, visit);
 
-    if (failed || !table)
+    if (failed || !storage)
         return {};
 
-    return {resolved, table};
+    return {resolved, storage};
 }
 
 /// The names one indexed expression can be read through, the carriers MergeTreeIndexConditionText also
@@ -273,23 +317,24 @@ public:
 
 private:
     /// Constructing a tokenizer can load a dictionary, so ask each index at most once.
-    std::map<std::pair<const TableNode *, String>, String> tokenizer_cache;
+    std::map<std::pair<const IStorage *, String>, String> tokenizer_cache;
 
     /// The tokenizer of the text index defined on `expression`, empty when there is none.
     String findTextIndexTokenizer(const QueryTreeNodePtr & expression)
     {
         size_t substitutions = 0;
-        auto [resolved, table_node] = resolveToTableColumns(expression, substitutions);
+        auto [resolved, storage] = resolveToTableColumns(expression, substitutions);
         if (!resolved)
             return {};
 
-        const auto & indices = table_node->getStorageSnapshot()->metadata->getSecondaryIndices();
+        const auto metadata = getIndexMetadata(storage, getContext());
+        const auto & indices = metadata->getSecondaryIndices();
         if (indices.empty())
             return {};
 
         /// `IndexDescription::column_names` are the AST column names of the index expression, so the same
         /// serialization matches an expression index (`lower(s)`, `mapValues(m)`) as well as a plain column.
-        auto key = std::make_pair(table_node, indexExpressionName(*resolved));
+        auto key = std::make_pair(storage.get(), indexExpressionName(*resolved));
 
         auto [it, inserted] = tokenizer_cache.try_emplace(key);
         if (!inserted)

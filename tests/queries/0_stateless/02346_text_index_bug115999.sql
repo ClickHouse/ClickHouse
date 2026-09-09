@@ -348,4 +348,32 @@ WHERE hasAnyTokens(tags, ['alpha beta']);
 SELECT count() FROM t_115999_union WHERE hasAnyTokens(tags, ['alpha beta']);
 
 DROP TABLE t_115999_union;
+
+-- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
+-- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
+SELECT 'a Distributed haystack, predicate on the initiator';
+CREATE TABLE t_115999_local
+(
+    id UInt64,
+    group_id UInt64,
+    tags Array(String),
+    INDEX idx_tags tags TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE t_115999_dist AS t_115999_local
+ENGINE = Distributed('default', currentDatabase(), t_115999_local, rand());
+
+INSERT INTO t_115999_local VALUES (1, 1, ['alpha beta']), (2, 2, ['gamma delta']);
+
+SELECT d.id FROM t_115999_dist AS d INNER JOIN t_115999_side AS b ON d.group_id = b.group_id
+WHERE hasAnyTokens(d.tags, ['alpha beta']) OR b.category = 'nonexistent' ORDER BY d.id;
+SELECT r.id FROM remote('127.0.0.1', currentDatabase(), t_115999_local) AS r
+INNER JOIN t_115999_side AS b ON r.group_id = b.group_id
+WHERE hasAnyTokens(r.tags, ['alpha beta']) OR b.category = 'nonexistent' ORDER BY r.id;
+SELECT id FROM t_115999_local WHERE hasAnyTokens(tags, ['alpha beta']) ORDER BY id;
+
+DROP TABLE t_115999_dist;
+DROP TABLE t_115999_local;
 DROP TABLE t_115999_side;

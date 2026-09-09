@@ -71,3 +71,7 @@ a higher-order indexed expression above the JOIN
 a UNION ALL between the scan and the predicate
 2
 1
+a Distributed haystack, predicate on the initiator
+1
+1
+1
