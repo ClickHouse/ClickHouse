@@ -220,12 +220,22 @@ static_assert(sizeof(ColDescriptor) == COL_DESC_BYTES);
 // or overrun a buffer sized off the wrapped (small) count instead of the real (large) one.
 // Call this at every point that narrows a real element/row count into the uint32_t path, so
 // the failure mode is a clear exception instead of silent frame corruption.
+//
+// The bound is UINT32_MAX - 1, not UINT32_MAX, and that exclusion is load-bearing. Every count
+// narrowed here is subsequently used as the `num_rows` of a (sub-)column, and the String and
+// Array branches size their offsets area as `(num_rows + 1u) * sizeof(uint64_t)` in uint32_t
+// arithmetic, which wraps to 0 at exactly UINT32_MAX - under-sizing the frame, so writeColData
+// then writes the offsets and payload past the reserved buffer. `ColumnBinaryOutputFormat`
+// applies the same `>= UINT32_MAX` bound to the top-level block; a nested count has to honour
+// it too, because it is not bounded by the block's row count. A LowCardinality dictionary is
+// the reachable case: `ColumnUnique` reserves leading special slots, so its size can exceed the
+// number of rows in the block that produced it.
 inline uint32_t checkFitsUint32(uint64_t value, const char * what)
 {
-    if (value > std::numeric_limits<uint32_t>::max())
+    if (value >= std::numeric_limits<uint32_t>::max())
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: {} ({}) exceeds the maximum representable element count ({})",
-            what, value, std::numeric_limits<uint32_t>::max());
+            what, value, std::numeric_limits<uint32_t>::max() - 1);
     return static_cast<uint32_t>(value);
 }
 
