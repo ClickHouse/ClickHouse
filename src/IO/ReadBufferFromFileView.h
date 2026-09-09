@@ -23,6 +23,7 @@ public:
     String getFileName() const override { return file_name; }
 
     void prefetch(Priority priority) override;
+    size_t prefetchBufferSize() override;
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
 

@@ -34,6 +34,8 @@ public:
 
     void prefetch(Priority priority) override;
 
+    size_t prefetchBufferSize() override;
+
 private:
     bool nextImpl() override;
 

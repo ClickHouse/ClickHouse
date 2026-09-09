@@ -18,6 +18,9 @@ using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 class MMappedFileCache;
 using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
 
+class MergeTreePrefetchBudget;
+using MergeTreePrefetchBudgetPtr = std::shared_ptr<MergeTreePrefetchBudget>;
+
 struct SelectQueryInfo;
 
 class PackedFilesWriter;
@@ -74,6 +77,8 @@ struct MergeTreeReaderSettings
     UInt64 merge_tree_coarse_index_granularity = 8;
     UInt64 merge_tree_generic_exclusion_search_max_steps = 0;
     size_t filesystem_prefetches_limit = 0;
+    /// Shared by the readers of one read step; null on paths that do not bound prefetches.
+    MergeTreePrefetchBudgetPtr prefetch_budget;
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
     /// If true, compress marks into the in-memory representation one block at a time

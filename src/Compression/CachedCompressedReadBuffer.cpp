@@ -35,6 +35,14 @@ void CachedCompressedReadBuffer::prefetch(Priority priority)
 }
 
 
+size_t CachedCompressedReadBuffer::prefetchBufferSize()
+{
+    /// `file_in` is created lazily, and callers ask for the size before the first prefetch.
+    initInput();
+    return file_in->prefetchBufferSize();
+}
+
+
 bool CachedCompressedReadBuffer::nextImpl()
 {
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.

@@ -262,6 +262,16 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
+bool MergeTreeReaderStream::tryReservePrefetchBuffer()
+{
+    if (!settings.prefetch_budget || prefetch_slot)
+        return true;
+
+    prefetch_slot = settings.prefetch_budget->tryReserve(
+        settings.prefetch_budget, getDataBuffer()->prefetchBufferSize());
+    return static_cast<bool>(prefetch_slot);
+}
+
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count

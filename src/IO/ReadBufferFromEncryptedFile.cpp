@@ -275,6 +275,11 @@ void ReadBufferFromEncryptedFile::prefetch(Priority priority)
     in->prefetch(priority);
 }
 
+size_t ReadBufferFromEncryptedFile::prefetchBufferSize()
+{
+    return in->prefetchBufferSize();
+}
+
 }
 
 #endif

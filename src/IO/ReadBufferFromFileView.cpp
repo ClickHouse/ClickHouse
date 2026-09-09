@@ -33,6 +33,12 @@ void ReadBufferFromFileView::prefetch(Priority priority)
     executeWithOriginalBuffer([&]{ impl->prefetch(priority); });
 }
 
+size_t ReadBufferFromFileView::prefetchBufferSize()
+{
+    /// A size query touches no buffer state, so it needs no `executeWithOriginalBuffer`.
+    return impl->prefetchBufferSize();
+}
+
 void ReadBufferFromFileView::setReadUntilPosition(size_t position)
 {
     read_until_position = left_bound + position;

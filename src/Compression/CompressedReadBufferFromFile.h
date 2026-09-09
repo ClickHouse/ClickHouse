@@ -47,6 +47,8 @@ private:
 
     void prefetch(Priority priority) override;
 
+    size_t prefetchBufferSize() override;
+
 public:
     explicit CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 

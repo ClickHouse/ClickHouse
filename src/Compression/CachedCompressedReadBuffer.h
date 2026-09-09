@@ -37,6 +37,8 @@ private:
 
     void prefetch(Priority priority) override;
 
+    size_t prefetchBufferSize() override;
+
     /// Passed into file_in.
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type {};

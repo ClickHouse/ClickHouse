@@ -67,6 +67,12 @@ void CompressedReadBufferFromFile::prefetch(Priority priority)
 }
 
 
+size_t CompressedReadBufferFromFile::prefetchBufferSize()
+{
+    return file_in.prefetchBufferSize();
+}
+
+
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
     /// Nothing to do if we already at required position

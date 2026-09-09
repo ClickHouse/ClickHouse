@@ -65,6 +65,8 @@ public:
 
     void prefetch(Priority priority) override;
 
+    size_t prefetchBufferSize() override { return internal_buffer.size(); }
+
     int getFD() const
     {
         return fd;

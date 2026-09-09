@@ -46,6 +46,9 @@ public:
 
     void prefetch(Priority priority) override;
 
+    /// The page cache holds prefetched data in its own cells, so prefetch() allocates nothing there.
+    size_t prefetchBufferSize() override { return use_page_cache ? 0 : buffer_size; }
+
     void setReadUntilPosition(size_t position) override; /// [..., position).
 
     void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }

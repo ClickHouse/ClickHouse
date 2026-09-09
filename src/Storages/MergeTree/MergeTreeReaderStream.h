@@ -4,6 +4,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreePrefetchBudget.h>
 
 
 namespace DB
@@ -58,6 +59,12 @@ public:
     void adjustRightMark(size_t right_mark);
     ReadBuffer * getDataBuffer();
 
+    /// Reserves capacity for this stream's prefetch buffer against the read step's budget, held
+    /// until the stream dies. True (already reserved, or no budget on this path) means a prefetch
+    /// may be issued. A stream needs one reservation however many times it is prefetched:
+    /// consuming a prefetch moves the allocation into the read buffer rather than freeing it.
+    bool tryReservePrefetchBuffer();
+
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
     virtual size_t getRightOffset(size_t right_mark) = 0;
@@ -78,6 +85,9 @@ private:
     ReadBuffer * data_buffer = nullptr;
     ReadBufferFromFileBase * plain_file_buffer = nullptr;
     CompressedReadBufferBase * compressed_data_buffer = nullptr;
+    /// Declared before `read_buffer_holder` so that member teardown destroys the buffer this
+    /// reservation accounts for BEFORE giving its capacity back. Do not move this declaration.
+    MergeTreePrefetchSlot prefetch_slot;
     std::unique_ptr<ReadBuffer> read_buffer_holder;
 
     bool initialized = false;

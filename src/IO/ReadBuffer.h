@@ -198,6 +198,10 @@ public:
       */
     virtual void prefetch(Priority) {}
 
+    /// Bytes prefetch() would allocate to hold the prefetched data; 0 when it allocates nothing.
+    /// Every override of prefetch() that allocates or forwards must override this too.
+    virtual size_t prefetchBufferSize() { return 0; }
+
     /// Wait until reading more data from this buffer is expected to complete without blocking.
     /// The default implementation keeps the previous behavior for buffers that cannot expose readiness.
     virtual bool poll(size_t /* timeout_microseconds */) { return true; }

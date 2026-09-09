@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/MergeTreePrefetchBudget.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -39,6 +40,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
+    extern const SettingsNonZeroUInt64 filesystem_prefetch_max_memory_usage;
 }
 
 namespace MergeTreeSetting
@@ -152,8 +154,12 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
 
 MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
 {
+    const auto & settings = context->getSettingsRef();
     auto result = createFromContext(context);
     result.read_in_order = query_info.input_order_info != nullptr;
+    /// One budget per read step, shared by every reader the step creates.
+    result.prefetch_budget = std::make_shared<MergeTreePrefetchBudget>(
+        settings[Setting::filesystem_prefetches_limit], settings[Setting::filesystem_prefetch_max_memory_usage]);
     return result;
 }
 
