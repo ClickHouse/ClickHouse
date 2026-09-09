@@ -40,7 +40,9 @@ struct JoinOperator
     /// holds genuine post-join predicates with different semantics, and apart from `expression`, so
     /// that the hash-table statistics cache key (`calculateJoinStepCacheKeyContribution`, which
     /// hashes only the equalities left in `expression`) reflects the keys actually inserted into
-    /// the hash table. `serialize` writes them back into the ON expression, so a deserialized plan
+    /// the hash table. The join-output statistics key is derived separately and does hash them (see
+    /// `deriveCacheKeysForNewJoin`), because they change the join result even though they leave the
+    /// hash table alone. `serialize` writes them back into the ON expression, so a deserialized plan
     /// keys the hash table on every equality: the optimization does not cross a serialization
     /// boundary, but no condition is ever lost.
     std::vector<JoinActionRef> probe_conditions = {};

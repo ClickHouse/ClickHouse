@@ -250,6 +250,15 @@ struct RuntimeHashStatisticsContext
             condition.getNode()->updateHash(output_hash);
         }
 
+        /// The equalities `demoteHighNdvKeysToProbe` moved out of `expression` are not covered by
+        /// `calculateJoinStepCacheKeyContribution` either, which by design hashes only the keys the
+        /// hash table is built on. They still filter the join output, so two joins over the same
+        /// subtrees that keep the same key subset but probe on different extra equalities must not
+        /// share a match-count hint - that hint drives the row-store decision in
+        /// `chooseJoinAlgorithm`, and reusing it would size the decision on unrelated fanout.
+        for (const auto & condition : join_operator.probe_conditions)
+            condition.getNode()->updateHash(output_hash);
+
         return {right_key, output_hash.get64()};
     }
 };
