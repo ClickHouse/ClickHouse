@@ -98,7 +98,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
             {"query_plan_derive_not_null_filters_from_joins", false, true, "New setting to derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
             {"query_plan_allow_derived_not_null_filters_execution", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be executed."},
-            {"query_plan_max_selectivity_for_not_null_filters_execution", 0.7, 0.7, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."}
+            {"query_plan_max_selectivity_for_not_null_filters_execution", 0.7, 0.7, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."},
+            {"optimize_aggregation_in_order_limit", true, true, "The `LIMIT` push-down into aggregation-in-order now requires the `ORDER BY` to match the full `GROUP BY` sort description; a strict prefix returned incomplete aggregate values when a group spanned several parts (https://github.com/ClickHouse/ClickHouse/issues/116849). The previous value is deliberately equal to the new one so that `compatibility` with 26.7 or 26.8 does not restore the incorrect prefix push-down."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
@@ -238,7 +239,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"skip_unavailable_shards_mode", "unavailable_or_table_missing", "unavailable_or_table_missing", "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled. The default matches the historical behavior: a shard whose table is missing is treated as unavailable."},
             {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
             {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
-            {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` matches the full `GROUP BY` sort description."},
+            {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
             {"explain_query_plan_default", "legacy", "pretty", "From 26.7, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `legacy` to restore the pre-26.7 output."},
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"use_partition_minmax_for_primary_key_pruning", false, true, "New setting to use the part's partition minmax to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key."},
