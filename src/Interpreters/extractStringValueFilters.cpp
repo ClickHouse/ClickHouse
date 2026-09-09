@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -17,7 +18,18 @@ namespace
 {
 
 using Condition = StringValueFilter::Condition;
-using ConditionsByColumn = std::unordered_map<String, std::vector<Condition>>;
+
+/// Conditions extracted for one column, together with the set of DAG nodes that are allowed to read
+/// this column: the nodes of the extracted predicates that reference it directly.
+/// Any other reader of the column would observe the empty string substituted by the scan before the
+/// filter has rejected the row, so the optimization must be disabled for such a column.
+struct ColumnCandidate
+{
+    std::vector<Condition> conditions;
+    std::unordered_set<const ActionsDAG::Node *> allowed_readers;
+};
+
+using ConditionsByColumn = std::unordered_map<String, ColumnCandidate>;
 
 /// Too many conditions would make checking values too expensive.
 constexpr size_t MAX_CONDITIONS_PER_COLUMN = 8;
@@ -229,8 +241,9 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
         if (conditions.empty())
             return;
 
-        auto & column_conditions = res[*column_name];
-        column_conditions.insert(column_conditions.end(), conditions.begin(), conditions.end());
+        auto & candidate = res[*column_name];
+        candidate.conditions.insert(candidate.conditions.end(), conditions.begin(), conditions.end());
+        candidate.allowed_readers.insert(atom);
     }
     else if (name == "startsWith" || name == "endsWith")
     {
@@ -243,14 +256,20 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
             return;
 
         auto type = name == "startsWith" ? Condition::Type::Prefix : Condition::Type::Suffix;
-        res[*column_name].push_back({type, std::move(*needle)});
+        auto & candidate = res[*column_name];
+        candidate.conditions.push_back({type, std::move(*needle)});
+        candidate.allowed_readers.insert(atom);
     }
     else if (name == "position")
     {
         /// A `position` result used directly as a condition means it must be non-zero,
         /// i.e. the needle must be present in the value.
         if (auto position = tryGetPosition(atom))
-            res[position->first].push_back({Condition::Type::Substring, std::move(position->second)});
+        {
+            auto & candidate = res[position->first];
+            candidate.conditions.push_back({Condition::Type::Substring, std::move(position->second)});
+            candidate.allowed_readers.insert(skipAliases(atom));
+        }
     }
     else if (name == "equals" || name == "notEquals" || name == "greater" || name == "less" || name == "greaterOrEquals" || name == "lessOrEquals")
     {
@@ -266,7 +285,9 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
                 auto needle = tryGetConstString(atom->children[1 - column_pos]);
                 if (column_name && needle && !needle->empty())
                 {
-                    res[*column_name].push_back({Condition::Type::Equals, std::move(*needle)});
+                    auto & candidate = res[*column_name];
+                    candidate.conditions.push_back({Condition::Type::Equals, std::move(*needle)});
+                    candidate.allowed_readers.insert(atom);
                     return;
                 }
             }
@@ -286,7 +307,11 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
             Field constant = (*constant_node->column)[0];
             auto result_at_zero = evaluatePositionComparisonAtZero(name, constant, position_pos == 0);
             if (result_at_zero && !*result_at_zero)
-                res[position->first].push_back({Condition::Type::Substring, std::move(position->second)});
+            {
+                auto & candidate = res[position->first];
+                candidate.conditions.push_back({Condition::Type::Substring, std::move(position->second)});
+                candidate.allowed_readers.insert(skipAliases(atom->children[position_pos]));
+            }
             return;
         }
     }
@@ -331,9 +356,42 @@ StringValueFiltersPtr extractStringValueFilters(const ActionsDAG & filter_dag, c
     for (const auto * atom : atoms)
         tryExtractConditionsFromAtom(atom, conditions_by_column);
 
-    auto filters = std::make_shared<StringValueFilters>();
-    for (auto & [column_name, conditions] : conditions_by_column)
+    if (conditions_by_column.empty())
+        return nullptr;
+
+    /// The scan substitutes an empty string for every value that does not match the extracted
+    /// conditions, and the row is rejected only after the whole filter expression has been evaluated.
+    /// Therefore the optimization is correct only if nothing else in this expression reads the column:
+    /// any other expression on the same column would be evaluated on the substituted empty string,
+    /// which can change the observable behavior, e.g. `PREWHERE throwIf(length(s) = 0) AND s LIKE '%needle%'`
+    /// would start throwing on rows that the `LIKE` rejects.
+    /// Note that reading the column itself (an output of the expression) is fine: those values are
+    /// observed only for the rows that passed the filter, and for them nothing was substituted.
+    for (const auto & node : filter_dag.getNodes())
     {
+        /// Aliases are transparent: the consumer of the alias is checked instead.
+        if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+            continue;
+
+        for (const auto * child : node.children)
+        {
+            const auto * input = skipAliases(child);
+            if (input->type != ActionsDAG::ActionType::INPUT)
+                continue;
+
+            auto it = conditions_by_column.find(input->result_name);
+            if (it != conditions_by_column.end() && !it->second.allowed_readers.contains(&node))
+                it->second.conditions.clear();
+        }
+    }
+
+    auto filters = std::make_shared<StringValueFilters>();
+    for (auto & [column_name, candidate] : conditions_by_column)
+    {
+        auto & conditions = candidate.conditions;
+        if (conditions.empty())
+            continue;
+
         /// Prefer longer needles: they are more selective and cheaper to check.
         std::stable_sort(
             conditions.begin(), conditions.end(),
