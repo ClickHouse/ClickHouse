@@ -116,6 +116,32 @@ Para la resta de tuplas: [tupleMinus](/es/reference/functions/regular-functions/
 
 `a ILIKE b` – La función `ilike(a, b)`.
 
+<div id="match-function">
+  ### función match
+</div>
+
+`a REGEXP b` – La función `match(a, b)`.
+
+`a ~ b` – La función `match(a, b)` (coincidencia con expresiones regulares al estilo de PostgreSQL).
+
+<div id="notmatch-function">
+  ### Función notMatch
+</div>
+
+`a !~ b` – La función `notMatch(a, b)` (comprueba que `a` no coincide con la expresión regular `b`).
+
+<div id="matchcaseinsensitive-function">
+  ### función matchCaseInsensitive
+</div>
+
+`a ~* b` – La función `matchCaseInsensitive(a, b)` (coincidencia con una expresión regular sin distinguir entre mayúsculas y minúsculas).
+
+<div id="notmatchcaseinsensitive-function">
+  ### función notMatchCaseInsensitive
+</div>
+
+`a !~* b`: la función `notMatchCaseInsensitive(a, b)` (comprueba que `a` no coincida con la expresión regular `b`, sin distinguir entre mayúsculas y minúsculas).
+
 <div id="between-function">
   ### Función BETWEEN
 </div>
