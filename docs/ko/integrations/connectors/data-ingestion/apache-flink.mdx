@@ -10,7 +10,7 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -147,7 +147,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
     ```java
     public static void main(String[] args) {
         // ClickHouseClient 구성
-        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
         // ElementConverter 생성
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -161,7 +161,7 @@ flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
                 MAX_BATCH_SIZE_IN_BYTES,
                 MAX_TIME_IN_BUFFER_MS,
                 MAX_RECORD_SIZE_IN_BYTES,
-                clientConfig
+                clickHouseClientConfig
         );
 
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -243,7 +243,7 @@ ClickHouse Sink를 간편하게 시작할 수 있도록 Maven 기반 예시를 �
         "insert_deduplicate", "1"
     );
 
-    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
+    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
         url,
         username,
         password,
@@ -351,7 +351,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clientConfig
+        clickHouseClientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```
@@ -451,15 +451,15 @@ ClickHouse에 쓰는 동안 커넥터의 처리량이 작업의 병렬성(Flink 
 
 [//]: # "- 테이블이 `Replicated*MergeTree` 테이블 엔진을 사용하는 경우:"
 
-[//]: # "  1. 서버 세션 설정 `insert_deduplicate=1`이 적용되어 있는지 확인하십시오 (필요한 경우 설정 방법은 위의 [예시](#client-options)를 참조하십시오). `insert_deduplicate`는 복제된 테이블에서 기본적으로 활성화되어 있습니다."
+[//]: # "  1. 서버 session 설정 `insert_deduplicate=1`이 적용되어 있는지 확인하십시오 (필요한 경우 설정 방법은 위의 [예시](#client-options)를 참조하십시오). `insert_deduplicate`는 복제된 테이블에서 기본적으로 활성화되어 있습니다."
 
-[//]: # "  2. 필요하면 `MergeTree` 테이블 설정 [`replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) 또는 [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 중 하나 또는 둘 다 늘리십시오."
+[//]: # "  2. 필요하면 `MergeTree` 테이블 설정 [`replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window) 또는 [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds) 중 하나 또는 둘 다 늘리십시오."
 
-[//]: # "- 테이블이 비복제 `*MergeTree` 테이블 엔진을 사용하는 경우 `MergeTree` 테이블 설정 [`non_replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)를 늘리십시오."
+[//]: # "- 테이블이 비복제 `*MergeTree` 테이블 엔진을 사용하는 경우 `MergeTree` 테이블 설정 [`non_replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window)를 늘리십시오."
 
 [//]: #
 
-[//]: # "_참고 1: 이 해결 방법은 [동기 삽입](https://clickhouse.com/docs/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default)을 전제로 하며, 이는 Flink 커넥터와 함께 사용할 때 권장됩니다. 서버 세션 설정이 `async_insert=0`인지 확인하십시오._"
+[//]: # "_참고 1: 이 해결 방법은 [동기 삽입](https://clickhouse.com/docs/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default)을 전제로 하며, 이는 Flink 커넥터와 함께 사용할 때 권장됩니다. 서버 session 설정이 `async_insert=0`인지 확인하십시오._"
 
 [//]: #
 
