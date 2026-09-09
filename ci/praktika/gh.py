@@ -31,6 +31,9 @@ def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
 
 
 class GH:
+    # This run's object, cached for the lifetime of the process (see
+    # get_workflow_run), so reading a second field costs no second request.
+    _workflow_run: Optional[dict] = None
 
     @dataclasses.dataclass
     class GHIssue:
@@ -572,6 +575,30 @@ class GH:
         return ""
 
     @classmethod
+    def _json_loads_paginated(cls, output):
+        """Parse the output of a ``gh api --paginate`` call into a single list.
+
+        ``gh api --paginate`` prints one JSON document per page, so on a
+        resource with more than one page the output is a concatenation of
+        several documents and ``json.loads`` fails with ``Extra data``. Decode
+        the documents one after another and concatenate them, which also
+        handles the single-page case unchanged.
+        """
+        decoder = json.JSONDecoder()
+        result = []
+        position = 0
+        while position < len(output):
+            if output[position].isspace():
+                position += 1
+                continue
+            page, position = decoder.raw_decode(output, position)
+            if isinstance(page, list):
+                result.extend(page)
+            else:
+                result.append(page)
+        return result
+
+    @classmethod
     def _gh_graphql_json(cls, query, variables, verbose=False):
         """Run a GraphQL query via ``gh api graphql`` and return parsed JSON."""
         parts = [f"gh api graphql -f query={shlex.quote(query)}"]
@@ -931,7 +958,7 @@ class GH:
         output = cls.get_output_with_retries(cmd_list, verbose=verbose)
         if output:
             try:
-                for comment in json.loads(output):
+                for comment in cls._json_loads_paginated(output):
                     if TAG_START in comment["body"] and TAG_END in comment["body"]:
                         comment_id = comment["id"]
                         if verbose:
@@ -1002,7 +1029,7 @@ class GH:
             )
             return False
         try:
-            comments = json.loads(output)
+            comments = cls._json_loads_paginated(output)
         except json.JSONDecodeError as e:
             print(
                 f"WARNING: failed to parse gh api response as JSON ({e}); "
@@ -1323,7 +1350,7 @@ class GH:
             print("ERROR: Failed to fetch commit statuses")
             return None
         try:
-            statuses_list = json.loads(output)
+            statuses_list = cls._json_loads_paginated(output)
         except json.JSONDecodeError as ex:
             print(f"ERROR: Failed to parse commit statuses: {ex}")
             return None
@@ -1591,6 +1618,42 @@ class GH:
         cls.print_log_in_group(
             "GITHUB_EVENT", Shell.get_output("cat $GITHUB_EVENT_PATH")
         )
+
+    @classmethod
+    def get_workflow_run(cls, refresh=False) -> dict:
+        """This workflow run's object, fetched once per process.
+
+        Holds what the runner environment and the event payload do not: the
+        run's own timestamps, its attempt number and its check suite. Pass
+        `refresh=True` for the fields that move while the run goes on
+        (`status`, `conclusion`, `updated_at`, `run_started_at`); the cached
+        copy is a snapshot taken at the first call.
+        """
+        run = cls._workflow_run
+        if run is None or refresh:
+            env = _Environment.get()
+            run = json.loads(
+                cls.get_output_with_retries(
+                    f"gh api repos/{env.REPOSITORY}/actions/runs/{env.RUN_ID}",
+                    verbose=True,
+                    strict=True,
+                )
+            )
+            cls._workflow_run = run
+        return run
+
+    @classmethod
+    def get_workflow_run_created_at(cls):
+        """`created_at` of this workflow run: when its event created the run.
+
+        A rerun starts a new attempt and moves `run_started_at`, leaving
+        `created_at` at the first start, so this is the run's own timestamp
+        rather than the latest attempt's. It comes from the API because
+        nothing else has it: the runner environment carries only `RUN_ID`,
+        `RUN_NUMBER` and `RUN_ATTEMPT`, and the `schedule` and
+        `workflow_dispatch` payloads hold no timestamp at all.
+        """
+        return cls.get_workflow_run()["created_at"]
 
     @dataclasses.dataclass
     class ResultSummaryForGH:
