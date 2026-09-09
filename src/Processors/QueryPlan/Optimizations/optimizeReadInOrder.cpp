@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -16,6 +17,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -296,9 +298,48 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
         dag = expression.clone();
 }
 
+/// A join preserves the SQL `LIMIT` above it as a bound on how many rows have to be read from the
+/// left side when every left row produces at least one output row and the join keeps the left order:
+/// then the `N`-th output row cannot appear later than the `N`-th left row, so a `LIMIT N` still lets
+/// the read stop early. `LEFT ANY` and `LEFT ALL` joins qualify. `INNER`, `SEMI` and `ANTI` joins can
+/// drop left rows, and an algorithm that reorders or buffers the left stream (grace hash join,
+/// partial merge join, spilling) breaks the correspondence, so there the output `LIMIT` says nothing
+/// about how much of the left side has to be read.
+bool joinPreservesLeftSideLimit(const IJoin & join)
+{
+    const auto & table_join = join.getTableJoin();
+    const auto strictness = table_join.strictness();
+    return isLeft(table_join.kind())
+        && (strictness == JoinStrictness::Any || strictness == JoinStrictness::All)
+        && join.preservesLeftBlockOrder()
+        && !join.hasDelayedBlocks();
+}
+
+bool joinPreservesLeftSideLimit(const IQueryPlanStep & step)
+{
+    if (const auto * join_step = typeid_cast<const JoinStep *>(&step))
+    {
+        /// With swapped streams the plan's first child is the right (build) side of the join,
+        /// so the left-side reasoning above does not apply to the subtree we descend into.
+        if (join_step->swap_streams)
+            return false;
+        return joinPreservesLeftSideLimit(*join_step->getJoin());
+    }
+
+    if (const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(&step))
+        return joinPreservesLeftSideLimit(*filled_join_step->getJoin());
+
+    return false;
+}
+
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(
+    const QueryPlan::Node & node,
+    std::optional<ActionsDAG> & dag,
+    FixedColumns & fixed_columns,
+    size_t & limit,
+    size_t * query_limit = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -328,17 +369,28 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
     if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
     {
+        /// A join can drop rows of the left side, so the hard read limit, which is pushed all the
+        /// way down into the reading step, must not survive it.
         limit = 0;
+        /// The soft `query_limit` (used for the primary-key-selectivity guard and for sizing the
+        /// first read task) does survive a join that preserves the left-side bound: there a
+        /// `LIMIT N` above the join still stops the read after at most `N` left rows.
+        if (query_limit && !joinPreservesLeftSideLimit(*step))
+            *query_limit = 0;
     }
 
     if (node.children.empty())
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, query_limit);
 
+    /// A preliminary DISTINCT can swallow an arbitrarily long prefix of the input while
+    /// producing few rows, so the SQL `LIMIT` above it no longer bounds the read either.
     if (typeid_cast<const DistinctStep *>(step))
     {
         limit = 0;
+        if (query_limit)
+            *query_limit = 0;
     }
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
@@ -346,8 +398,13 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
         const auto & actions = expression->getExpression();
 
         /// Should ignore limit because arrayJoin() can reduce the number of rows in case of empty array.
+        /// For the same reason the SQL `LIMIT` no longer bounds the read.
         if (actions.hasArrayJoin())
+        {
             limit = 0;
+            if (query_limit)
+                *query_limit = 0;
+        }
 
         appendExpression(dag, actions);
     }
@@ -366,8 +423,13 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
+        /// A non-LEFT ARRAY JOIN also stops the SQL `LIMIT` from bounding the read.
         if (!array_join->isLeft())
+        {
             limit = 0;
+            if (query_limit)
+                *query_limit = 0;
+        }
 
         if (dag)
         {
@@ -1221,7 +1283,8 @@ InputOrderInfoPtr buildInputOrderInfo(
     bool & apply_virtual_row,
     ReadFromMergeTree *& virtual_row_reader,
     QueryPlan::Node & node,
-    const QueryPlanOptimizationSettings & optimization_settings)
+    const QueryPlanOptimizationSettings & optimization_settings,
+    bool limit_reads_till_end)
 {
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
@@ -1234,11 +1297,23 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
-    const size_t query_limit = limit;
+    /// A SQL `LIMIT` remains useful for the first read task and the PK-selectivity guard even
+    /// when a filter prevents pushing it to the read step. Cardinality-reducing steps are
+    /// different: a non-limit-preserving join can discard left rows, and a preliminary DISTINCT,
+    /// `arrayJoin` or non-LEFT `ARRAY JOIN` can consume an arbitrary prefix of the input, so
+    /// the output limit does not bound the read there.
+    /// ... and only while the `LIMIT` is allowed to stop its input early. A `LIMIT` that must read
+    /// till the end (`exact_rows_before_limit`, or the `WITH TOTALS` cases behind
+    /// `limitAlwaysReadsTillEnd`) consumes the whole stream regardless of its numeric bound, so it
+    /// neither bounds the read nor justifies keeping a poorly-selective in-order plan: there
+    /// read-in-order serializes a full scan, which is exactly what the PK-selectivity guard exists
+    /// to avoid. `SortingStep` keeps that semantic bit separate from `getLimit`, hence the
+    /// `limit_reads_till_end` flag derived from the plan (see `limitReadsTillEnd`).
+    size_t query_limit = limit_reads_till_end ? 0 : limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    buildSortingDAG(node, dag, fixed_columns, limit, &query_limit);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1293,10 +1368,25 @@ InputOrderInfoPtr buildInputOrderInfo(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit,
-                query_limit);
+                query_limit,
+                /* apply_pk_selectivity_check */ true);
 
             if (!can_read)
+            {
+                /// The virtual row conversion installed above belongs to this in-order plan only.
+                /// The read step can still be switched to an in-order read afterwards, because
+                /// `optimizeDistinctInOrder` and `optimizeAggregationInOrder` do not apply the
+                /// PK-selectivity guard. It would then emit virtual rows while the sort above stays
+                /// a full sort, whose `MergingSortedTransform` is built without virtual row
+                /// conversions and so compares the raw primary-key names of the announced boundary
+                /// against the query's sort description. Drop the conversion instead.
+                if (uses_virtual_row)
+                {
+                    reading->resetVirtualRowConversions();
+                    virtual_row_reader = nullptr;
+                }
                 return nullptr;
+            }
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1314,7 +1404,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit, /* apply_pk_selectivity_check */ true);
             if (!can_read)
                 return nullptr;
 
@@ -1368,6 +1458,16 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
 
+    /// `AggregatingStep` requests read-in-order to enable the streaming aggregation
+    /// algorithm (memory bound), not to skip a separate sort. The PK-selectivity guard
+    /// in `requestReadingInOrder` therefore must not fire here — disabling read-in-order
+    /// would silently change the algorithm to batched aggregation and can cause
+    /// `MEMORY_LIMIT_EXCEEDED` for queries that explicitly enabled the streaming path
+    /// (e.g. `optimize_aggregation_in_order = 1`). `query_limit` is irrelevant for
+    /// this path since the PK guard is skipped and there is no SQL `LIMIT` on aggregation;
+    /// pass the conservative default.
+    constexpr size_t query_limit = 0;
+
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
         /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
@@ -1385,7 +1485,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                query_limit);
             if (!can_read)
                 return {};
         }
@@ -1408,7 +1509,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit);
             if (!can_read)
                 return {};
         }
@@ -1488,6 +1589,12 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     const auto & keys = distinct.getColumnNames();
     size_t limit = 0;
 
+    /// `DistinctStep` requests read-in-order to enable streaming `DISTINCT` (memory bound),
+    /// not to skip a separate sort. Like `optimizeAggregationInOrder`, the PK-selectivity
+    /// guard in `requestReadingInOrder` must not fire here. `query_limit` is therefore
+    /// irrelevant; pass the conservative default.
+    constexpr size_t query_limit = 0;
+
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
@@ -1513,7 +1620,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
-            order_info.input_order->limit))
+            order_info.input_order->limit,
+            query_limit))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1530,7 +1638,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
             return {};
 
-        if (!merge->requestReadingInOrder(order_info.input_order))
+        if (!merge->requestReadingInOrder(order_info.input_order, query_limit))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1677,7 +1785,30 @@ bool wouldReadInOrderBeUseful(
     return order_info.input_order != nullptr;
 }
 
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+/// Whether the `LIMIT` this sort feeds is forbidden to stop its input early, so that the numeric
+/// bound does not shorten the read. That is the case for `exact_rows_before_limit` (the rows before
+/// the `LIMIT` must be counted exactly) and for the `WITH TOTALS` shapes handled by
+/// `limitAlwaysReadsTillEnd`, both of which build the `LimitStep` with `always_read_till_end`.
+/// A `SortingStep` built for such a query carries the same bit (see `addMergeSortingStep`).
+static bool limitReadsTillEnd(const SortingStep & sorting, const Stack & stack)
+{
+    if (sorting.alwaysReadTillEnd())
+        return true;
+
+    for (const auto & frame : stack)
+    {
+        if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()); limit && limit->alwaysReadTillEnd())
+            return true;
+    }
+
+    return false;
+}
+
+void optimizeReadInOrder(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const Stack & stack)
 {
     if (node.children.size() != 1)
         return;
@@ -1685,6 +1816,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     auto * sorting = typeid_cast<SortingStep *>(node.step.get());
     if (!sorting)
         return;
+
+    const bool limit_reads_till_end = limitReadsTillEnd(*sorting, stack);
 
     //std::cerr << "---- optimizeReadInOrder found sorting" << std::endl;
 
@@ -1721,7 +1854,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         for (auto * child : union_node->children)
         {
             ReadFromMergeTree * child_virtual_row_reader = nullptr;
-            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, child_virtual_row_reader, *child, optimization_settings));
+            infos.push_back(buildInputOrderInfo(
+                *sorting, apply_virtual_row, child_virtual_row_reader, *child, optimization_settings, limit_reads_till_end));
             if (child_virtual_row_reader)
                 virtual_row_readers.push_back(child_virtual_row_reader);
 
@@ -1788,7 +1922,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         union_step->disableNarrowing();
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
+    else if (auto order_info = buildInputOrderInfo(
+                 *sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings, limit_reads_till_end))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
@@ -1948,13 +2083,22 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
             query_info.syntax_analyzer_result);
 
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+    const UInt64 sort_limit = InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : sort_limit;
 
     auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
 
     if (order_info)
     {
-        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        /// No PK-selectivity guard here: this pass runs only on the legacy planner path
+        /// (`query_plan_read_in_order = 0`, old analyzer), which `read_in_order_max_primary_key_ratio`
+        /// documents as keeping the previous read-in-order behavior regardless of primary key
+        /// selectivity. The guard would also be dead code here anyway: it needs a filter that reached
+        /// index analysis, and any filter step above the read step breaks the
+        /// `WindowStep <- SortingStep <- [Expression] <- ReadFromMergeTree` pattern matched above.
+        bool can_read = read_from_merge_tree->requestReadingInOrder(
+            order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, sort_limit,
+            /* apply_pk_selectivity_check */ false);
         if (!can_read)
             return 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);

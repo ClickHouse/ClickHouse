@@ -678,6 +678,23 @@ std::optional<String> optimizeUseNormalProjections(
     auto storage_snapshot = reading->getStorageSnapshot();
     auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
 
+    /// Whether the projection's own index analysis (`merge_tree_projection_select_result_ptr`,
+    /// computed above from `query.filter_node`) ran with an actual filter. Recorded before
+    /// `splitAndFillPrewhereInfo` below consumes `query.dag`, and propagated to the projection
+    /// reading step so the read-in-order PK-selectivity guard can tell a filtered read whose
+    /// primary key pruned nothing from a plain full scan.
+    ///
+    /// On the base-table path the equivalent bit is computed in `ReadFromMergeTree::applyFilters`
+    /// only after filters deferred after FINAL (`apply_prewhere_after_final` /
+    /// `apply_row_policy_after_final`) are stripped from index analysis. No such stripping is
+    /// needed here: filter deferral exists only for FINAL reads (every writer of
+    /// `deferred_row_level_filter` / `deferred_prewhere_info` is gated on `isQueryWithFinal`),
+    /// and `canUseProjectionForReadingStep` has already rejected FINAL reads for this rewrite,
+    /// so on this path the raw `query.filter_node` coincides with the deferred-stripped bit.
+    /// The assertion keeps that reasoning honest if projections ever learn to serve FINAL.
+    chassert(!reading->isQueryWithFinal());
+    const bool projection_index_analysis_had_filter = query.filter_node != nullptr;
+
     /// Enables PREWHERE on projections to improve read efficiency and leverage query condition cache.
     if (query.dag && query.filter_node)
     {
@@ -705,6 +722,12 @@ std::optional<String> optimizeUseNormalProjections(
         best_candidate->merge_tree_projection_select_result_ptr,
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
+
+    if (auto * projection_reading_merge_tree = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+    {
+        projection_reading_merge_tree->setIndexAnalysisHadFilter(projection_index_analysis_had_filter);
+        projection_reading_merge_tree->copyJoinRuntimeFiltersForIndexAnalysis(*reading);
+    }
 
     /// `tryOptimizeTopK` runs in the first optimization pass, so this rewrite can replace a read that
     /// is already stamped for TopK filtering. Carry the stamp and the query condition cache gate over,

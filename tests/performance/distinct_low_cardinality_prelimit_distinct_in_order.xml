@@ -1,4 +1,9 @@
 <test>
+    <settings>
+        <!-- This test relies on read-in-order for DISTINCT-in-order optimization -->
+        <read_in_order_max_primary_key_ratio>1.0</read_in_order_max_primary_key_ratio>
+    </settings>
+
     <substitutions>
         <substitution>
             <name>cardinality</name>

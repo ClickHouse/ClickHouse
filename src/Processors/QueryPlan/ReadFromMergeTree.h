@@ -172,6 +172,7 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        bool row_limits_were_checked = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -193,6 +194,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , row_limits_were_checked(other.row_limits_were_checked)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -213,6 +215,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , row_limits_were_checked(other.row_limits_were_checked)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -357,7 +360,22 @@ public:
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+    /// `query_limit` is the SQL `LIMIT` value (0 if the query has no `LIMIT`). It is used both for
+    /// sizing the first read task (smaller first task when there is a `LIMIT` combined with a
+    /// filter) and to decide whether to disable read-in-order on poor primary key selectivity.
+    /// `apply_pk_selectivity_check` enables the runtime PK-selectivity guard that disables
+    /// read-in-order when it is used purely to avoid a separate sort and the index does not reduce
+    /// the granule count enough. It must stay `false` for `optimizeAggregationInOrder` and
+    /// `optimizeDistinctInOrder` — those paths request read-in-order for streaming algorithm
+    /// reasons (memory bound), and disabling it can cause `MEMORY_LIMIT_EXCEEDED`. It must also stay
+    /// `false` for `tryReuseStorageOrderingForWindowFunctions`, which runs only on the legacy planner
+    /// path that `read_in_order_max_primary_key_ratio` documents as unaffected by the guard.
+    /// `check_only` performs the PK-selectivity check without committing any state. It returns the
+    /// same boolean that a full call would, but does not switch the step to read-in-order. This is
+    /// used by `ReadFromMerge::requestReadingInOrder` to verify all children would accept before
+    /// applying, so we never end up with some children in `read_in_order` while the parent falls
+    /// back to full sort (mixing row-limit semantics across siblings).
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0, bool apply_pk_selectivity_check = false, bool check_only = false);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
@@ -391,6 +409,12 @@ public:
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+
+    /// A projection reading step is built by `readFromParts` with an already-computed analysis
+    /// result, so `applyFilters` — which is what normally records this — never runs on it.
+    /// `optimizeUseNormalProjection` calls this to tell the read-in-order PK-selectivity guard
+    /// whether the projection's own index analysis saw a filter.
+    void setIndexAnalysisHadFilter(bool value) { index_analysis_had_filter = value; }
 
     const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
@@ -490,6 +514,14 @@ public:
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
     }
 
+    /// Keep read-time join runtime-filter pruning when a normal projection replaces this step.
+    /// These descriptors are registered after the step is constructed, so the projection reader
+    /// cannot receive them through its constructor.
+    void copyJoinRuntimeFiltersForIndexAnalysis(const ReadFromMergeTree & replaced_step)
+    {
+        join_runtime_filters_for_index_analysis = replaced_step.join_runtime_filters_for_index_analysis;
+    }
+
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
@@ -560,14 +592,22 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
-    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
-    /// only the optimization is lost); propagating it there is a follow-up.
+    /// optimization. Carried by clones and normal-projection rewrites, but intentionally not
+    /// serialized because runtime filters are local to the initiating query pipeline.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
     PrewhereInfoPtr deferred_prewhere_info;
+
+    /// Whether primary key / skip index analysis ran with an actual (non-deferred) filter.
+    /// Deferred filters (FINAL with `apply_prewhere_after_final` / `apply_row_policy_after_final`)
+    /// are excluded from index analysis, so they never reduce the selected mark count. The
+    /// read-in-order PK-selectivity guard in `requestReadingInOrder` relies on this to avoid
+    /// misfiring on what is effectively a full scan. It mirrors the deferred-stripped filter DAG
+    /// passed to `buildIndexes` (`query_info.filter_actions_dag` still carries deferred filters).
+    bool index_analysis_had_filter = false;
+
     bool skip_partition_pruning = false;
 
     LoggerPtr log;
@@ -690,6 +730,12 @@ private:
     void updateSortDescription();
 
     bool supportsSkipIndexesOnDataRead() const;
+
+    /// True when `initializePipeline` may install a `MergeTreeSkipIndexReader`, i.e. when range
+    /// pruning happens during the read itself and `AnalysisResult::selected_marks` is only the
+    /// pre-pruning mark count. Used by the read-in-order PK-selectivity guard, which must not
+    /// judge the size of the read from a count it knows to be an upper bound.
+    bool mayPruneRangesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;

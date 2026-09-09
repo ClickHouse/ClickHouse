@@ -437,7 +437,7 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             if (optimization_settings.read_in_order && !make_distributed_plan)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+                optimizeReadInOrder(frame_node, nodes, optimization_settings, stack);
 
             if (optimization_settings.distinct_in_order && !make_distributed_plan)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
@@ -561,7 +561,7 @@ void optimizeTreeSecondPass(
             /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
             /// `FinishSorting` first.
             if (optimization_settings.read_in_order && !cascades_active)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+                optimizeReadInOrder(frame_node, nodes, optimization_settings, stack);
 
             /// After `optimizeReadInOrder`: a window sorting converted to `FinishSorting` (see
             /// `query_plan_reuse_storage_ordering_for_window_functions`) merges to a single stream and
