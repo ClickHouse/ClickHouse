@@ -330,10 +330,23 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         std::vector<StoragePtr> buffered_tables;
         for (const auto & database : current_databases)
         {
-            for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+            /// Only user databases: enumerating a predefined one can materialize a lazily created
+            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
+            if (isPredefinedDatabase(database.first))
+                continue;
+
+            try
             {
-                ++total_tables;
-                buffered_tables.push_back(it->table());
+                for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+                {
+                    ++total_tables;
+                    buffered_tables.push_back(it->table());
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
             }
         }
 
