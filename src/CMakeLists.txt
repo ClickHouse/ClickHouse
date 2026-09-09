@@ -1070,9 +1070,11 @@ if (ENABLE_FILC)
         PROPERTIES COMPILE_OPTIONS "-O0")
     set_source_files_properties(
         Functions/FunctionsConversion.cpp
-        Functions/FunctionsConversion_reg.cpp
-        Functions/FunctionsNumericIndexedVector.cpp
-        Functions/FunctionsRound.cpp
         Functions/if.cpp
         PROPERTIES COMPILE_OPTIONS "-O0")
+    set_source_files_properties(
+        FunctionsConversion_reg.cpp
+        FunctionsNumericIndexedVector.cpp
+        FunctionsRound.cpp
+        DIRECTORY Functions PROPERTIES COMPILE_OPTIONS "-O0")
 endif ()
