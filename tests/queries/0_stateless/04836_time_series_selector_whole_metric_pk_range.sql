@@ -9,7 +9,9 @@
 -- excluded from primary-key index analysis (`use_index_for_in_with_subqueries_max_values = 1`): index
 -- analysis then works on the continuous range instead of running a generic exclusion search with the
 -- whole set. The `id IN <set>` condition always stays in the WHERE, so the returned rows never change.
--- The range conditions contain the max-UUID literal, which is used below to detect the emission.
+-- The range conditions contain the max-UUID literal. The checks below look for it in the
+-- `Condition:` line of `EXPLAIN indexes = 1`, that is, in what primary-key index analysis actually
+-- received, rather than anywhere in the plan text.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -36,14 +38,14 @@ SELECT '-- whole-metric selector: same rows as a filtered read, and the WHERE ca
 SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000)));
 
 SELECT '-- whole-metric-by-data selector (a matcher every series passes): the range is still emitted';
 
 SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo{env=~".*"}', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo{env=~".*"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo{env=~".*"}', 0, 1000)));
 
 SELECT '-- partial-metric selector (a matcher filters some series out): falls back to the id set only';
 
@@ -51,14 +53,14 @@ SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo{env="prod"}',
 SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo{env!=""}', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo{env="prod"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo{env="prod"}', 0, 1000)));
 
 SELECT '-- regex matcher on the metric name: falls back';
 
 SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, '{__name__=~"foo|bar", env="dev"}', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, '{__name__=~"foo|bar"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, '{__name__=~"foo|bar"}', 0, 1000)));
 
 SELECT '-- selector with no series in the time range: empty result either way';
 
@@ -89,7 +91,7 @@ INSERT INTO ts_plain (metric_name, tags, time_series) VALUES
 SELECT timestamp, value FROM timeSeriesSelector(ts_plain, 'foo', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_plain, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_plain, 'foo', 0, 1000)));
 
 SELECT '-- custom id generator: no structural guarantee, no id range, same results';
 
@@ -103,7 +105,7 @@ INSERT INTO ts_custom_gen (metric_name, tags, time_series) VALUES
 SELECT timestamp, value FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000)));
 
 SELECT '-- id_generator changed after ingestion: old series ids are outside the range, the probe detects them and falls back';
 
@@ -123,7 +125,7 @@ INSERT INTO ts_altered_gen (metric_name, tags, time_series) VALUES
 SELECT timestamp, value FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000)));
 
 SELECT '-- Tuple(UInt64, UInt64) id layout: the range is emitted with the max-UInt64 literal';
 
@@ -136,7 +138,7 @@ INSERT INTO ts_u64 (metric_name, tags, time_series) VALUES
 SELECT timestamp, value FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%18446744073709551615%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000)));
 
 DROP TABLE ts_u64;
 DROP TABLE ts_altered_gen;
