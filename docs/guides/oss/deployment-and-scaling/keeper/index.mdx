@@ -707,7 +707,13 @@ Also, all the snapshot files will be moved from `snapshot_local` and `snapshot_s
 To minimize the amount of data read from disk, Keeper caches log entries in memory.
 If requests are large, log entries will take too much memory so the amount of cached logs is capped.
 The limit for the latest logs cache is controlled by:
-- `latest_logs_cache_size_threshold` - total size of latest logs stored in cache
+- `latest_logs_cache_size_threshold` - memory held by the cached latest logs
+
+The threshold counts the memory a cached entry really occupies, not just the size of the log entry
+itself: every cached entry also carries the objects that keep it reachable, and its allocation is
+rounded up to an allocator size class. For small entries that overhead is several times the entry,
+so the number of entries the cache holds can be much lower than dividing the threshold by the entry
+size suggests. `KeeperLatestLogsCacheSize` reports the same quantity the threshold bounds.
 
 If the default value is too big, you can reduce the memory usage by reducing this config.
 
