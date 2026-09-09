@@ -14,16 +14,18 @@ namespace DB
 
 class TaskScheduler
 {
-    struct GlobalState
+    struct alignas(128) GlobalState
     {
         std::mutex mutex;
         WorkStealingQueue queue;
+        std::atomic<size_t> queue_size = 0;
     };
 
-    struct LocalState
+    struct alignas(128) LocalState
     {
         std::mutex mutex;
         WorkStealingQueue queue;
+        std::atomic<size_t> queue_size = 0;
 
         size_t pops_count = 0;
         size_t lifo_used_count = 0;
@@ -32,6 +34,7 @@ class TaskScheduler
     using LocalStates = std::vector<LocalState>;
 
     void pushToLocalQueue(LocalState & own, Task task);
+    void pushToGlobalQueue(Task task);
     void offloadToGlobalQueue(LocalState & own);
     std::optional<Task> takeFromLocal(LocalState & own);
     std::optional<Task> takeFromGlobal();
@@ -48,6 +51,7 @@ public:
     size_t poll(size_t worker_id, int timeout_ms);
     void drain(size_t worker_id);
 
+    bool hasTasksForOthers(size_t worker_id) const;
     size_t queued() const;
     size_t total() const;
 
@@ -55,8 +59,6 @@ private:
     Poller & poller;
     GlobalState global;
     LocalStates local;
-    std::atomic<size_t> queued_count = 0;
-    std::atomic<size_t> total_count = 0;
 };
 
 }
