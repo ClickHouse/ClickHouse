@@ -561,7 +561,7 @@ TEST(AIAgent, HistoryIsTrimmedWhenTheModelTextItselfIsOversized)
     const auto & last = harness.transport->conversations.back();
     bool saw_cut_notice = false;
     for (const auto & message : last)
-        if (message.role == ai::kMessageRoleAssistant && message.get_text().find("This text was cut here") != String::npos)
+        if (message.role == ai::kMessageRoleAssistant && message.get_text().contains("This text was cut here"))
             saw_cut_notice = true;
     EXPECT_TRUE(saw_cut_notice);
     EXPECT_NE(last.back().get_text().find("and now?"), String::npos);

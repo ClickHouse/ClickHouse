@@ -350,17 +350,17 @@ ai::JsonValue AIAgent::truncateOversizedToolCallArguments(ai::JsonValue argument
     if (!arguments.is_object())
         return arguments;
 
-    for (auto it = arguments.begin(); it != arguments.end(); ++it)
+    for (auto & argument : arguments)
     {
-        if (!it->is_string())
+        if (!argument.is_string())
             continue;
-        auto text = it->get<std::string>();
+        auto text = argument.get<std::string>();
         if (text.size() <= max_assistant_step_bytes)
             continue;
         const size_t original_size = text.size();
         truncateToUTF8Boundary(text, max_assistant_step_bytes);
         const size_t kept = text.size();
-        *it = text + fmt::format(ARGUMENT_CUT_NOTICE, original_size - kept, original_size);
+        argument = text + fmt::format(ARGUMENT_CUT_NOTICE, original_size - kept, original_size);
     }
     return arguments;
 }
