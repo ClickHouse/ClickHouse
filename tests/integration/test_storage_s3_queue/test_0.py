@@ -839,6 +839,10 @@ def test_move_retry_recognizes_committed_copy(
         move_to_bucket=destination,
     )
 
+    # The destination the retry finds is the copy the interrupted attempt committed, not another
+    # object's: recognizing it is what must not be counted as a collision.
+    collisions_before = move_collisions(node)
+
     node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_move_copy")
     try:
         create_mv(node, table_name, f"{table_name}_dst")
@@ -854,6 +858,8 @@ def test_move_retry_recognizes_committed_copy(
         )
     finally:
         node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+
+    assert move_collisions(node) == collisions_before
 
     if not is_s3:
         metadata = (
