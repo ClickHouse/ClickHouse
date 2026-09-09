@@ -44,6 +44,9 @@ struct TemporaryDataMetrics
     std::optional<ProfileEvents::Event> bytes_compressed = {};
     std::optional<ProfileEvents::Event> bytes_uncompressed = {};
     std::optional<ProfileEvents::Event> num_files = {};
+
+    /// Name of the operator that owns this temporary data
+    std::string_view spilled_to_disk_operator = {};
 };
 
 struct TemporaryDataOnDiskSettings
@@ -245,6 +248,10 @@ private:
 
     Stat stat;
     TemporaryDataMetrics metrics;
+
+    /// Whether `spilled_to_disk` of `system.query_log` has already been told about this buffer.
+    /// Only touched while writing, which a single thread does at a time.
+    bool reported_spilled_to_disk = false;
 };
 
 

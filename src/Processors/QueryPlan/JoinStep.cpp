@@ -2,6 +2,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -29,6 +30,22 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The algorithm to report in `system.query_log.used_join_algorithms`.
+///
+/// `full_sorting_merge` and `parallel_full_sorting_merge` both build a `FullSortingMergeJoin`, so the join
+/// object alone cannot tell which one runs.
+std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
+{
+    if (!use_sharding)
+        return join.getAlgorithm();
+
+    const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join);
+    if (full_sorting_merge_join && full_sorting_merge_join->isParallel())
+        return toString(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+
+    return join.getAlgorithm();
+}
 
 std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
 {
@@ -152,6 +169,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
     /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
+
+    QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
+
     if (!use_sharding)
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
@@ -464,6 +484,8 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    QueryExecutionCounters::addExecutedJoin(*join);
+
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())
     {
