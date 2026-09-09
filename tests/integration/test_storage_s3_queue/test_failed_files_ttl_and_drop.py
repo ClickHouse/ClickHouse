@@ -5,6 +5,7 @@ import time
 import uuid
 
 import pytest
+from kazoo.exceptions import NodeExistsError
 
 from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
@@ -754,8 +755,14 @@ def test_drop_failed_files_on_cluster_concurrent(started_cluster):
     for i in range(num_failing_files):
         put_s3_file_content(started_cluster, f"{files_path}/failed_{i}.csv", invalid_csv)
 
-    # Only one replica needs to consume, so each file fails once.
-    create_mv(node1, table_name, dst_table_name)
+    # Both replicas must be active consumers: a replica only registers itself in
+    # `<keeper_path>/registry` while it has attached views (see `registerActive` in
+    # StorageObjectStorageQueue), and only registered replicas take part in the hash
+    # ring. With a view on one replica only, the other never becomes a participant
+    # and never populates its own cache, so the post-drop cache assertion below
+    # would be vacuous for it.
+    for node in (node1, node2):
+        create_mv(node, table_name, dst_table_name)
 
     def failed_znodes():
         result = node1.query(
@@ -785,15 +792,49 @@ def test_drop_failed_files_on_cluster_concurrent(started_cluster):
         lambda: failed_znodes() >= num_failing_files
     ), f"expected {num_failing_files} failed znodes, got {failed_znodes()}"
 
-    # Both replicas must have observed the failures in their own cache first,
-    # otherwise "cache is empty afterwards" would prove nothing on the replica
-    # that never populated it.
+    # The failures must be visible in the replicas' caches before dropping,
+    # otherwise "cache is empty afterwards" would prove nothing.
+    #
+    # Why this sums the two caches instead of requiring each replica to reach
+    # `num_failing_files` on its own: `create_table` turns on
+    # `enable_hash_ring_filtering` by default, so in Unordered mode
+    # `filterOutForProcessor` hands each file to exactly one replica, and only the
+    # replica that claimed a file records `Failed` for it. No replica ever sees all
+    # of them, so a per-replica `>= num_failing_files` precondition cannot hold at
+    # all. Disabling the hash ring does not fix that either: the unconditional
+    # already-processed/already-failed filter runs before a file is ever claimed and
+    # never touches the cache, so the second replica still records nothing for files
+    # the first one failed.
+    #
+    # Why it does not even require "at least one cached on each replica": the ring is
+    # a *consistent* hash ring, so it gives no lower bound on any single replica's
+    # share. With 5 files over 2 replicas an all-to-one split (5/0 or 0/5) has
+    # probability 2 * 0.5**5 = 1/16, about 6.25%, and that is a floor rather than an
+    # estimate - a replica whose registry view is still empty processes everything,
+    # which biases the split further toward lopsided. So "at least one each" would be
+    # a test that fails roughly one run in sixteen.
+    #
+    # The weakness this accepts in exchange: the summed form never fails spuriously,
+    # but in the ~3% of runs where the split is all-to-one *and* the replica holding
+    # the entries is the one that wins the `cleanup_lock` race, the loser's
+    # `reconcileFailedFilesCache` has nothing to remove and the post-drop assertions
+    # below pass without proving anything. That gap is closed deterministically by
+    # `test_drop_failed_files_loser_reconciles_cache`, not by tightening this
+    # precondition - please do not "fix" it back into a flaky one.
+    #
+    # What must hold here is that every failure is cached by whichever replica owned
+    # the file, i.e. the two caches together account for all of them.
     assert wait_for(
-        lambda: cached_failed(node1) >= num_failing_files
-    ), f"instance cache not populated: {cached_failed(node1)}"
-    assert wait_for(
-        lambda: cached_failed(node2) >= num_failing_files
-    ), f"instance2 cache not populated: {cached_failed(node2)}"
+        lambda: cached_failed(node1) + cached_failed(node2) >= num_failing_files
+    ), (
+        f"caches not populated: instance={cached_failed(node1)}, "
+        f"instance2={cached_failed(node2)}, failed znodes={failed_znodes()}"
+    )
+    logging.debug(
+        "Failed entries cached before drop: instance=%s, instance2=%s",
+        cached_failed(node1),
+        cached_failed(node2),
+    )
 
     # Both replicas issue the ON CLUSTER drop at the same time. The barrier makes
     # the overlap deterministic without depending on sleep timing.
@@ -801,7 +842,9 @@ def test_drop_failed_files_on_cluster_concurrent(started_cluster):
     barrier = threading.Barrier(2)
 
     def run(node):
-        barrier.wait()
+        # Bounded: if the other thread never arrives, the barrier breaks and this
+        # raises instead of blocking the pool's shutdown forever.
+        barrier.wait(timeout=60)
         return node.query(query)
 
     errors = []
@@ -836,4 +879,167 @@ def test_drop_failed_files_on_cluster_concurrent(started_cluster):
     # Cleanup
     for node in (node1, node2):
         node.query(f"DROP TABLE IF EXISTS {table_name}")
-    node1.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+        node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
+def test_drop_failed_files_loser_reconciles_cache(started_cluster):
+    """The replica that loses the `cleanup_lock` race must still reconcile its own
+    `local_file_statuses`, so no stale `Failed` entries survive in
+    `system.s3queue_metadata_cache`.
+
+    `test_drop_failed_files_on_cluster_concurrent` covers the realistic ON CLUSTER
+    shape, but it cannot guarantee that the replica which loses the race is the one
+    holding cached entries - and reconciling an empty cache is a silent no-op, so
+    that test can pass without ever proving this path. This test removes the race
+    entirely and drives the loser branch directly:
+
+      1. one replica fails every file, so its cache definitely holds the entries;
+      2. its materialized view is dropped, so nothing can re-fail the files and
+         repopulate `/failed` behind our back;
+      3. the test itself takes `<keeper_path>/cleanup_lock` with the winner's own
+         marker value `manual_drop_failed`, so `dropFailedFiles` finds the lock held
+         and takes the loser branch (`EphemeralNodeHolder::tryCreate` fails ->
+         `waitForConcurrentDropToComplete`);
+      4. the test then plays the winner by hand: it deletes the `/failed` children
+         and only then releases the lock, which is the order the protocol expects -
+         releasing first would make the loser's verification find terminal nodes
+         still present and raise `KEEPER_EXCEPTION`;
+      5. the loser must return normally, and its cache must come back empty.
+
+    The final assertion is the point of the test. With `failed_files_ttl_sec = 0` and
+    `tracked_files_limit = 0` the periodic sweep never touches `/failed` and never
+    calls `reconcileFailedFilesCache` itself, and the view is gone so nothing else
+    writes to the cache. An empty cache is therefore attributable to exactly one
+    thing: the loser's own `verifyCleanupSucceeded` -> `reconcileFailedFilesCache` ->
+    `removeStaleFailedCacheEntries` having actually run and removed all five entries.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_drop_failed_loser_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+    num_failing_files = 5
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,  # fail terminally on the first attempt
+            # Keep the periodic sweep away from /failed, so the only thing that can
+            # empty the cache is the drop command's own reconciliation.
+            "failed_files_ttl_sec": 0,
+            "tracked_files_limit": 0,
+        },
+    )
+
+    invalid_csv = b"not,valid,numbers\n"
+    for i in range(num_failing_files):
+        put_s3_file_content(started_cluster, f"{files_path}/failed_{i}.csv", invalid_csv)
+
+    create_mv(node, table_name, dst_table_name)
+
+    def failed_znodes():
+        result = node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    def cached_failed():
+        return int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_metadata_cache "
+                f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
+            ).strip()
+        )
+
+    def wait_for(predicate, timeout_sec=120):
+        """Poll for a state instead of sleeping on a fixed schedule."""
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.5)
+        return False
+
+    assert wait_for(
+        lambda: failed_znodes() >= num_failing_files
+    ), f"expected {num_failing_files} failed znodes, got {failed_znodes()}"
+    assert wait_for(
+        lambda: cached_failed() >= num_failing_files
+    ), f"cache not populated: {cached_failed()}"
+
+    # Stop consuming before touching Keeper. Once the /failed nodes are deleted the
+    # files become eligible again, and a re-failure landing between the deletion and
+    # the loser's verification would make it find terminal nodes and raise. Dropping
+    # the view takes `dependencies_count` to zero so `threadFunc` stops entering
+    # `streamToViews` at all; it does not clear `local_file_statuses`, so the five
+    # cached Failed entries stay exactly where they are.
+    node.query(f"DROP TABLE {mv_name}")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Hold the lock with the winner's marker value. The background cleanup sweep
+    # briefly takes and releases this same lock, so retry until it is ours.
+    def take_cleanup_lock():
+        try:
+            zk.create(cleanup_lock_path, b"manual_drop_failed", ephemeral=True)
+            return True
+        except NodeExistsError:
+            return False
+
+    assert wait_for(
+        take_cleanup_lock, timeout_sec=60
+    ), "could not acquire cleanup_lock for the test"
+
+    drop_result = {}
+
+    def run_drop():
+        try:
+            node.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}")
+        except Exception as e:  # noqa: BLE001 - reported through the assertion below
+            drop_result["error"] = e
+
+    drop_thread = threading.Thread(target=run_drop)
+    drop_thread.start()
+    try:
+        # Wait until the command has actually taken the loser branch. Releasing the
+        # lock before this point would let it win the lock and do the deleting
+        # itself, which is the path this test is not about.
+        waiting_message = (
+            f"{keeper_path}): Another replica is executing "
+            f"SYSTEM DROP S3QUEUE FAILED FILES"
+        )
+        assert wait_for(
+            lambda: node.contains_in_log(waiting_message)
+        ), "drop command did not reach the loser branch"
+
+        # Play the winner: delete the terminal /failed nodes first, release the lock
+        # second. The loser polls the lock every 100ms and verifies /failed on the
+        # first poll that finds it gone.
+        for child in zk.get_children(failed_path):
+            zk.delete(f"{failed_path}/{child}")
+        logging.debug("Deleted %s /failed children as the winner would", num_failing_files)
+        zk.delete(cleanup_lock_path)
+    finally:
+        drop_thread.join(timeout=300)
+
+    assert not drop_thread.is_alive(), "drop command did not return after the lock was released"
+    # The loser is expected to succeed: the command is idempotent for concurrent
+    # execution, so an exception here is a failure rather than an accepted outcome.
+    assert "error" not in drop_result, f"loser replica raised: {drop_result.get('error')}"
+
+    assert failed_znodes() == 0, f"failed znodes remain: {failed_znodes()}"
+    # The assertion this test exists for: the loser reconciled its own cache.
+    assert cached_failed() == 0, f"loser still caches Failed entries: {cached_failed()}"
+
+    # Cleanup
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
