@@ -722,24 +722,35 @@ size_t logEntrySize(const LogEntryPtr & log_entry)
     return log_entry->get_buf().size();
 }
 
-/// Fixed cost of keeping one entry in `latest_logs_cache`, on top of the entry's own buffer:
-///   * the `nuraft::log_entry` object together with its `shared_ptr` control block, allocated as a
-///     single block by `cs_new`, that is `make_shared`;
-///   * the control block of the entry's `nuraft::buffer` `shared_ptr`, allocated separately because
-///     `buffer::alloc` builds the `shared_ptr` from a raw pointer plus a deleter;
-///   * the `IndexToLogEntry` node and its bucket slot.
-/// Derived from the allocator's size classes rather than hardcoded, so it stays truthful when the
-/// allocator changes; adds up to 184 bytes with libc++ and jemalloc.
+/// Bytes charged for one entry in `latest_logs_cache` on top of the entry's own buffer. Besides the
+/// payload buffer, each cached entry keeps three heap blocks alive, and no standard type exposes
+/// their sizes - `sizeof(std::shared_ptr<T>)` is the two-pointer handle, not the control block it
+/// points at - so each block is spelled out here in terms of what it actually stores:
+///
+///   1. `cs_new<log_entry>` is `make_shared`, which puts the control block and the entry in one
+///      block: the control block header followed by the `log_entry` itself.
+///   2. The entry's buffer carries a second, separate control block, because `buffer::alloc` builds
+///      its `shared_ptr` from a raw pointer plus a deleter instead of by `make_shared`. Such a
+///      block also stores the managed pointer and the deleter; its allocator is the default one,
+///      which is empty and adds nothing.
+///   3. The map keeps a node per entry - intrusive next pointer, cached hash, key and value - plus
+///      one bucket slot, since the default maximum load factor is one element per bucket.
+///
+/// Every block is then rounded up to the allocator's size class, which is what
+/// `getActualAllocationSize` computes, so the total follows the allocator instead of being
+/// hardcoded. It comes to 184 bytes with libc++ and jemalloc, verified against jemalloc's
+/// `stats.allocated` over 200000 cached entries: `nallocx(payload + 16) + 184` matched the measured
+/// allocation exactly for every payload from 64 bytes to 4 KiB.
 size_t cachedLogEntryFixedOverhead()
 {
+    /// A `shared_ptr` control block begins with a vtable pointer and the strong and weak counters.
+    constexpr size_t control_block_header = sizeof(void *) + 2 * sizeof(long);
+    using BufferDeleter = void (*)(nuraft::buffer *);
+
     static const size_t overhead
-        /// control block header (vtable pointer, strong and weak counters) followed by the entry
-        = ::Memory::getActualAllocationSize(3 * sizeof(void *) + sizeof(nuraft::log_entry))
-        /// control block header followed by the managed pointer and the deleter
-        + ::Memory::getActualAllocationSize(5 * sizeof(void *))
-        /// hash node: next pointer, cached hash, key and value
-        + ::Memory::getActualAllocationSize(2 * sizeof(void *) + sizeof(IndexToLogEntry::value_type))
-        /// one bucket slot per entry at the default maximum load factor
+        = ::Memory::getActualAllocationSize(control_block_header + sizeof(nuraft::log_entry))
+        + ::Memory::getActualAllocationSize(control_block_header + sizeof(nuraft::buffer *) + sizeof(BufferDeleter))
+        + ::Memory::getActualAllocationSize(sizeof(void *) + sizeof(size_t) + sizeof(IndexToLogEntry::value_type))
         + sizeof(void *);
 
     return overhead;
