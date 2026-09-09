@@ -239,7 +239,9 @@ catch (...)
 static ALWAYS_INLINE bool readFilteredStringValue(
     ColumnString::Chars & data, size_t & offset, ReadBuffer & istr, size_t size, const StringValueFilter & filter)
 {
-    if (istr.position() + size <= istr.buffer().end())
+    /// Note: `istr.available()` instead of `istr.position() + size <= istr.buffer().end()`,
+    /// because the buffer may be empty and its pointers null, and offsetting a null pointer is UB.
+    if (size <= istr.available())
     {
         /// The value is fully in the buffer: check it in place and copy only if it matches.
         bool matched = filter.match(istr.position(), size);
