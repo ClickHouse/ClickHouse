@@ -92,9 +92,9 @@ public:
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
     const RuntimeFilterConfig & getConfig() const { return config; }
-    void setFullyDisabled() { is_fully_disabled = true; }
+    void markKeySetDropped() { key_set_dropped = true; }
 
-    /// Checks if a block of rows should be skipped because this filter was disabled.
+    /// Checks if a block should bypass the filter because its key set was dropped or evaluation is temporarily throttled.
     bool shouldSkip(size_t next_block_rows) const;
 
 private:
@@ -105,7 +105,7 @@ private:
     mutable RuntimeFilterStats stats;
 
     mutable detail::RuntimeFilterSkipBudget skip_budget;
-    std::atomic<bool> is_fully_disabled = false;
+    std::atomic<bool> key_set_dropped = false;
 };
 
 template <bool negate>
@@ -204,7 +204,8 @@ public:
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_hash_functions_,
         Float64 max_ratio_of_set_bits_in_bloom_filter_,
-        std::optional<UInt64> distinct_keys_hint_);
+        std::optional<UInt64> distinct_keys_hint_,
+        bool distinct_keys_hint_matches_filter_key_);
 
     void insert(ColumnPtr values);
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
@@ -216,10 +217,14 @@ public:
 
 private:
     using ExactFilter = ExactSetRuntimeFilter<false>;
-    using Filter = std::variant<ExactFilter, ApproximateSetRuntimeFilter>;
+    struct KeySetDropped
+    {
+    };
+    using Filter = std::variant<ExactFilter, ApproximateSetRuntimeFilter, KeySetDropped>;
 
     void insert(ColumnPtr values, Filter & filter);
-    ApproximateSetRuntimeFilter & switchToApproximateFilter(Filter & filter);
+    void dropKeySet(Filter & filter);
+    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
 
     /// Disables approximate filter if it is likely to have bad selectivity.
     void checkApproximateFilterWorthiness(
@@ -230,6 +235,8 @@ private:
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
     const std::optional<UInt64> distinct_keys_hint;
+    /// Whether the hint counts distinct values of this complete filter key, rather than only providing an upper bound.
+    const bool distinct_keys_hint_matches_filter_key;
 
     Filter filter;
 };

@@ -123,7 +123,8 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
             /*exact_values_limit_=*/1,
             /*bloom_filter_hash_functions_=*/3,
             /*max_ratio_of_set_bits_in_bloom_filter_=*/1.0,
-            /*distinct_keys_hint=*/std::nullopt));
+            /*distinct_keys_hint=*/std::nullopt,
+            /*distinct_keys_hint_matches_filter_key_=*/false));
 
     EXPECT_EQ(filter.getFilterColumnTargetType(), type);
     filter.enableIndexAnalysis();
@@ -140,6 +141,51 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
     expectMask(filter.find(makeUInt64ColumnWithType({1, 3, 5}, type)), {1, 1, 1});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 3);
     EXPECT_EQ(filter.getStats().rows_passed.load(), 3);
+}
+
+TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedRange)
+{
+    const auto type = makeUInt64Type();
+    RuntimeFilter destination(
+        /*filters_to_merge_=*/1,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(
+            type,
+            /*bytes_limit_=*/1_KiB,
+            /*exact_values_limit_=*/1,
+            /*bloom_filter_hash_functions_=*/3,
+            /*max_ratio_of_set_bits_in_bloom_filter_=*/0.05,
+            /*distinct_keys_hint_=*/2'000'000,
+            /*distinct_keys_hint_matches_filter_key_=*/true));
+    destination.enableIndexAnalysis();
+    destination.insert(makeUInt64Column({1}));
+
+    RuntimeFilter source(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(
+            type,
+            /*bytes_limit_=*/1_KiB,
+            /*exact_values_limit_=*/1,
+            /*bloom_filter_hash_functions_=*/3,
+            /*max_ratio_of_set_bits_in_bloom_filter_=*/0.05,
+            /*distinct_keys_hint_=*/2'000'000,
+            /*distinct_keys_hint_matches_filter_key_=*/true));
+    source.enableIndexAnalysis();
+    source.insert(makeUInt64Column({3, 5}));
+    source.finishInsert();
+
+    destination.merge(source);
+    destination.finishInsert();
+
+    EXPECT_FALSE(destination.getRecordedKeyValues());
+    auto range = destination.getRecordedKeyRanges();
+    ASSERT_TRUE(range);
+    EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
+    EXPECT_EQ(range->right.safeGet<UInt64>(), 5);
+    expectMask(destination.find(makeUInt64ColumnWithType({2, 4}, type)), {1, 1});
+    EXPECT_EQ(destination.getStats().rows_checked.load(), 0);
+    EXPECT_EQ(destination.getStats().rows_skipped.load(), 2);
 }
 
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
@@ -424,12 +470,16 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
 {
     const auto type = makeUInt64Type();
     RuntimeFilter destination(
-        /*filters_to_merge_=*/1, makeRuntimeFilterConfig(), RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt));
+        /*filters_to_merge_=*/1,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
     destination.enableIndexAnalysis();
     destination.insert(makeUInt64Column({3, 7}));
 
     RuntimeFilter source(
-        /*filters_to_merge_=*/0, makeRuntimeFilterConfig(), RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt));
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
     source.enableIndexAnalysis();
     source.insert(makeUInt64Column({1, 9}));
     source.finishInsert();

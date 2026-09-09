@@ -19,6 +19,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
@@ -35,6 +36,7 @@ namespace ProfileEvents
     extern const Event RuntimeFilterRowsChecked;
     extern const Event RuntimeFilterRowsPassed;
     extern const Event RuntimeFilterRowsSkipped;
+    extern const Event RuntimeFilterBloomFilterBuildsSkipped;
 }
 
 namespace DB
@@ -142,7 +144,7 @@ void RuntimeFilterEvaluationState::recordSkippedBlock(size_t rows_skipped) const
 
 bool RuntimeFilterEvaluationState::shouldSkip(size_t next_block_rows) const
 {
-    if (!is_fully_disabled.load() && !skip_budget.consume(next_block_rows))
+    if (!key_set_dropped.load() && !skip_budget.consume(next_block_rows))
         return false;
 
     recordSkippedBlock(next_block_rows);
@@ -364,7 +366,7 @@ void ExactSetRuntimeFilter<negate>::finishInsert(RuntimeFilterEvaluationState & 
         if (isFull())
         {
             /// Some keys were dropped so we cannot filter by a partial set of keys.
-            evaluation_state.setFullyDisabled();
+            evaluation_state.markKeySetDropped();
             releaseExactValues();
         }
     }
@@ -519,11 +521,13 @@ AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_hash_functions_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
-    std::optional<UInt64> distinct_keys_hint_)
+    std::optional<UInt64> distinct_keys_hint_,
+    bool distinct_keys_hint_matches_filter_key_)
     : filter_column_target_type(filter_column_target_type_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , distinct_keys_hint(distinct_keys_hint_)
+    , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
     , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, bytes_limit_, exact_values_limit_)
 {
 }
@@ -535,19 +539,22 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 {
+    if (std::holds_alternative<KeySetDropped>(filter_))
+        return;
+
     if (auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter_))
     {
         approximate_filter->insert(std::move(values));
         return;
     }
 
-    auto & exact_filter = std::get<ExactFilter>(filter_);
-    if (exact_filter.isFull())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected 'full' state of AdaptiveSetRuntimeFilter");
+    auto * exact_filter = std::get_if<ExactFilter>(&filter_);
+    if (!exact_filter || exact_filter->isFull())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
 
-    exact_filter.insert(std::move(values));
+    exact_filter->insert(std::move(values));
 
-    if (exact_filter.isFull())
+    if (exact_filter->isFull())
         switchToApproximateFilter(filter_);
 }
 
@@ -558,6 +565,7 @@ void AdaptiveSetRuntimeFilter::finishInsert(RuntimeFilterEvaluationState & evalu
             [](ExactFilter & exact_filter) { exact_filter.finishInsert(); },
             [&](ApproximateSetRuntimeFilter & approximate_filter)
             { checkApproximateFilterWorthiness(evaluation_state, approximate_filter); },
+            [&](KeySetDropped &) { evaluation_state.markKeySetDropped(); },
         },
         filter);
 }
@@ -584,6 +592,11 @@ ColumnPtr AdaptiveSetRuntimeFilter::find(const ColumnWithTypeAndName & values, s
             [&](const ExactFilter & exact_filter) -> ColumnPtr { return exact_filter.find(values, rows_passed); },
             [&](const ApproximateSetRuntimeFilter & approximate_filter) -> ColumnPtr
             { return approximate_filter.find(values, rows_passed); },
+            [&](const KeySetDropped &) -> ColumnPtr
+            {
+                rows_passed = values.column->size();
+                return DataTypeUInt8().createColumnConst(values.column->size(), true);
+            },
         },
         filter);
 }
@@ -602,17 +615,25 @@ void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source
             [&](const ExactFilter & source_exact_filter) { insert(source_exact_filter.getValuesColumn(), filter); },
             [&](const ApproximateSetRuntimeFilter & source_approximate_filter)
             {
-                auto & destination_approximate_filter = switchToApproximateFilter(filter);
-                destination_approximate_filter.mergeFrom(source_approximate_filter);
+                if (auto * destination_approximate_filter = switchToApproximateFilter(filter))
+                    destination_approximate_filter->mergeFrom(source_approximate_filter);
             },
+            [&](const KeySetDropped &) { dropKeySet(filter); },
         },
         source.filter);
 }
 
-ApproximateSetRuntimeFilter & AdaptiveSetRuntimeFilter::switchToApproximateFilter(Filter & filter_)
+void AdaptiveSetRuntimeFilter::dropKeySet(Filter & filter_)
+{
+    filter_.emplace<KeySetDropped>();
+}
+
+ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilter(Filter & filter_)
 {
     if (auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter_))
-        return *approximate_filter;
+        return approximate_filter;
+    if (std::holds_alternative<KeySetDropped>(filter_))
+        return nullptr;
 
     auto * exact_filter = std::get_if<ExactFilter>(&filter_);
     if (!exact_filter)
@@ -621,19 +642,38 @@ ApproximateSetRuntimeFilter & AdaptiveSetRuntimeFilter::switchToApproximateFilte
     UInt64 bytes_limit = exact_filter->getBytesLimit();
 
     if (distinct_keys_hint)
+    {
         bytes_limit
             = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, bytes_limit, max_ratio_of_set_bits_in_bloom_filter);
 
+        /// The filter size is capped, so a build side with more distinct keys would produce a Bloom filter
+        /// that `checkApproximateFilterWorthiness` discards. Predict that fill rate before constructing it.
+        if (distinct_keys_hint_matches_filter_key)
+        {
+            const double least_distinct_keys
+                = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
+            const double predicted_fill_rate = -std::expm1(
+                -static_cast<double>(bloom_filter_hash_functions) * least_distinct_keys
+                / (static_cast<double>(bytes_limit) * 8.0));
+            if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
+            {
+                ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
+                dropKeySet(filter_);
+                return nullptr;
+            }
+        }
+    }
+
     auto & approximate_filter = filter_.emplace<ApproximateSetRuntimeFilter>(bytes_limit, bloom_filter_hash_functions);
     approximate_filter.insert(values);
-    return approximate_filter;
+    return &approximate_filter;
 }
 
 void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
     RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter) const
 {
     if (!approximate_filter.isWorthUsing(max_ratio_of_set_bits_in_bloom_filter))
-        evaluation_state.setFullyDisabled();
+        evaluation_state.markKeySetDropped();
 }
 
 SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
