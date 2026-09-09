@@ -484,6 +484,17 @@ namespace Net
         void useRecvThrottlerBudget(int rc);
         /// Checks the return code `rc` and updates recv throttler budget.
 
+        bool emulatedDontWaitWouldBlock(int flags, int mode);
+        /// Reproduces the per-call contract of `MSG_DONTWAIT` where the platform has no such
+        /// flag - see `MSG_DONTWAIT` in SocketDefs.h. Returns true, with the platform's
+        /// would-block error already set, when the caller asked not to wait and the socket is
+        /// not ready; the caller must then report the would-block result instead of issuing the
+        /// syscall, which would block because the socket itself is still in blocking mode.
+        ///
+        /// Returns false when there is nothing to emulate: the flag was not requested, the
+        /// socket is nonblocking anyway, the socket is ready, or the platform honours the flag
+        /// itself, which is the case everywhere except Windows.
+
     protected:
         SocketImpl(const SocketImpl &);
         SocketImpl & operator=(const SocketImpl &);

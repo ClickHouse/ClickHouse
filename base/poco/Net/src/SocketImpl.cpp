@@ -266,6 +266,42 @@ void SocketImpl::shutdown()
 }
 
 
+bool SocketImpl::emulatedDontWaitWouldBlock([[maybe_unused]] int flags, [[maybe_unused]] int mode)
+{
+#if defined(POCO_MSG_DONTWAIT_IS_EMULATED)
+	/// Winsock has no per-call nonblocking flag: whether a call blocks is a property of the
+	/// socket, set with `ioctlsocket(FIONBIO)`. `MSG_DONTWAIT` is therefore stripped before every
+	/// syscall (`stripEmulatedSocketFlags`), and without the check below that would silently turn
+	/// a "do not wait" call into a blocking one. Instead ask, with a zero timeout, whether the
+	/// socket is ready, and report the would-block case exactly as the platform would - the same
+	/// shape as `connectionOpen` above and `DB::Socket::peek`.
+	///
+	/// Flipping the socket to nonblocking around the call would be exact rather than
+	/// approximate, but it mutates state shared with every other user of the same socket,
+	/// including one already parked in a blocking call on another thread. Readiness can in
+	/// principle be lost between the poll and the syscall if a second thread drains the socket
+	/// first, which no caller of `MSG_DONTWAIT` does - it exists to serve one reader or writer
+	/// that does not want to wait.
+	if ((flags & MSG_DONTWAIT) == 0)
+		return false;
+
+	/// A socket Winsock already considers nonblocking needs no emulation: the syscall returns
+	/// `WSAEWOULDBLOCK` by itself.
+	if (!_blocking)
+		return false;
+
+	Poco::Timespan noWait(0);
+	if (pollImpl(noWait, mode))
+		return false;
+
+	WSASetLastError(WSAEWOULDBLOCK);
+	return true;
+#else
+	return false;
+#endif
+}
+
+
 /// Socket I/O functions (sendBytes, receiveBytes, sendTo, receiveFrom) use poll()
 /// with manual timeout tracking before each syscall to handle EINTR correctly.
 ///
@@ -299,9 +335,17 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_SNDTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, stripEmulatedSocketFlags(flags));
-		if (rc < 0)
+		if (emulatedDontWaitWouldBlock(flags, SELECT_WRITE))
+		{
+			rc = -1;
 			err = lastError();
+		}
+		else
+		{
+			rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, stripEmulatedSocketFlags(flags));
+			if (rc < 0)
+				err = lastError();
+		}
 		if (blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
@@ -349,9 +393,17 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_RCVTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, stripEmulatedSocketFlags(flags));
-		if (rc < 0)
+		if (emulatedDontWaitWouldBlock(flags, SELECT_READ))
+		{
+			rc = -1;
 			err = lastError();
+		}
+		else
+		{
+			rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, stripEmulatedSocketFlags(flags));
+			if (rc < 0)
+				err = lastError();
+		}
 		if (blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
@@ -397,9 +449,17 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_SNDTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::sendto(_sockfd, reinterpret_cast<const char*>(buffer), length, stripEmulatedSocketFlags(flags), address.addr(), address.length());
-		if (rc < 0)
+		if (emulatedDontWaitWouldBlock(flags, SELECT_WRITE))
+		{
+			rc = -1;
 			err = lastError();
+		}
+		else
+		{
+			rc = ::sendto(_sockfd, reinterpret_cast<const char*>(buffer), length, stripEmulatedSocketFlags(flags), address.addr(), address.length());
+			if (rc < 0)
+				err = lastError();
+		}
 		if (_blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
@@ -441,9 +501,17 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_RCVTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::recvfrom(_sockfd, reinterpret_cast<char*>(buffer), length, stripEmulatedSocketFlags(flags), pSA, &saLen);
-		if (rc < 0)
+		if (emulatedDontWaitWouldBlock(flags, SELECT_READ))
+		{
+			rc = -1;
 			err = lastError();
+		}
+		else
+		{
+			rc = ::recvfrom(_sockfd, reinterpret_cast<char*>(buffer), length, stripEmulatedSocketFlags(flags), pSA, &saLen);
+			if (rc < 0)
+				err = lastError();
+		}
 		if (_blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
