@@ -96,6 +96,13 @@ std::optional<IColumn::Filter> DistinctLowCardinalityFilter::buildMaskIfApplicab
 
     auto [mask, new_indices_count] = buildMask(*lc, num_rows);
     lc_optimization_controller.update(num_rows, new_indices_count);
+
+    if (!lc_optimization_controller.isEnabled())
+    {
+        dictionaries_state.reset();
+        total_byte_count = 0;
+    }
+
     return std::optional<IColumn::Filter>(std::move(mask));
 }
 

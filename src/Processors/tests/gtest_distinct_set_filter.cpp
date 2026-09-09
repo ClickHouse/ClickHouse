@@ -418,6 +418,101 @@ ColumnPtr makeLowCardinalityColumnWithLargeDictionary(const DataTypePtr & lc_typ
 
 }
 
+TEST(DistinctLowCardinalityFilter, ReleasesDisabledDictionaryState)
+{
+    MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query);
+        thread_status.untracked_memory_limit = 0;
+        const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+        const size_t dictionary_size = 200000;
+        const Columns dictionaries{
+            makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 6),
+            makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size + 1, 6)};
+        DistinctLowCardinalityFilter filter;
+        for (size_t i = 0; i < 4; ++i)
+        {
+            const auto column = dictionaries[i % dictionaries.size()]->cut(i, 1);
+            const auto mask = filter.buildMaskIfApplicable(*column, 1);
+            ASSERT_TRUE(mask.has_value());
+            ASSERT_EQ(mask->size(), 1);
+            EXPECT_EQ((*mask)[0], 1);
+        }
+
+        const auto column = dictionaries.front()->cut(4, 1);
+        const size_t bitmap_bytes = filter.getTotalByteCount();
+        ASSERT_GE(bitmap_bytes, 2 * dictionary_size);
+        const auto memory_before = query.get();
+        const auto mask = filter.buildMaskIfApplicable(*column, 1);
+        const auto memory_after = query.get();
+        ASSERT_TRUE(mask.has_value());
+        ASSERT_EQ(mask->size(), 1);
+        EXPECT_EQ((*mask)[0], 1);
+        EXPECT_EQ(filter.getTotalByteCount(), 0);
+        EXPECT_LE(
+            memory_after, memory_before - static_cast<Int64>(bitmap_bytes) + static_cast<Int64>(mask->allocated_bytes()));
+        EXPECT_FALSE(filter.buildMaskIfApplicable(*dictionaries.front(), 6).has_value());
+        EXPECT_EQ(filter.getTotalByteCount(), 0);
+    }).join();
+}
+
+TEST(DistinctLowCardinalityFilter, RetainsUsefulDictionaryState)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const auto dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 100, 2);
+    const auto repeated = dictionary->cut(0, 1);
+    DistinctLowCardinalityFilter filter;
+    for (size_t i = 0; i < 6; ++i)
+    {
+        const auto mask = filter.buildMaskIfApplicable(*repeated, 1);
+        ASSERT_TRUE(mask.has_value());
+        EXPECT_EQ(mask->size(), i == 0 ? 1 : 0);
+        EXPECT_GE(filter.getTotalByteCount(), 100);
+    }
+    const auto next = dictionary->cut(1, 1);
+    const auto mask = filter.buildMaskIfApplicable(*next, 1);
+    ASSERT_TRUE(mask.has_value());
+    ASSERT_EQ(mask->size(), 1);
+    EXPECT_EQ((*mask)[0], 1);
+}
+
+TEST(DistinctSetFilterSemantics, DisabledLowCardinalityStateDoesNotConsumeByteLimit)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const Block header = {ColumnWithTypeAndName(type, "k")};
+    const size_t dictionary_size = 200000;
+    const auto small_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, 4, 4);
+    const auto large_dictionary = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 6);
+    for (const bool require_extractable_keys : {false, true})
+    {
+        SCOPED_TRACE(require_extractable_keys);
+        for (const auto overflow_mode : {OverflowMode::THROW, OverflowMode::BREAK})
+        {
+            SCOPED_TRACE(static_cast<int>(overflow_mode));
+            const SizeLimits limits(/*max_rows=*/ 0, /*max_bytes=*/ dictionary_size / 2, overflow_mode);
+            DistinctSetFilter filter(header, {}, limits, /*skip_null_keys_=*/ false, require_extractable_keys);
+            for (size_t i = 0; i < 4; ++i)
+                ASSERT_EQ(filter.filter(Chunk({small_dictionary->cut(i, 1)}, 1)).getNumRows(), 1);
+
+            /// The fifth chunk disables the bitmap while the hash set retains all previously seen keys.
+            auto result = filter.filter(Chunk({large_dictionary->cut(3, 2)}, 2));
+            ASSERT_EQ(result.getNumRows(), 1);
+            EXPECT_EQ((*result.getColumns().front())[0].safeGet<String>(), "4");
+            EXPECT_LT(filter.getTotalByteCount(), limits.max_bytes);
+            EXPECT_FALSE(filter.isLimitReached());
+
+            result = filter.filter(Chunk({large_dictionary}, 6));
+            ASSERT_EQ(result.getNumRows(), 1);
+            EXPECT_EQ((*result.getColumns().front())[0].safeGet<String>(), "5");
+            EXPECT_EQ(filter.getTotalRowCount(), 6);
+            EXPECT_LT(filter.getTotalByteCount(), limits.max_bytes);
+            EXPECT_FALSE(filter.isLimitReached());
+        }
+    }
+}
+
 TEST(DistinctSetFilterSemantics, LowCardinalityBitmapsCountTowardsTheByteSize)
 {
     /// The `LowCardinality` fast path keeps a bitmap of the seen indices per dictionary. Its size is that
