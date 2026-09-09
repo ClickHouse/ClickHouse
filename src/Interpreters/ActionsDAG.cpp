@@ -3086,6 +3086,9 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
                 /// expanded row. Keep such an expression on the side of the `ARRAY JOIN` where it was written.
                 if (isNonDeterministicOrStateful(*cur.node))
                     depend_on_array_join = true;
+                /// A lambda is not a column: it cannot be carried through the step, so it stays with its caller.
+                if (WhichDataType(cur.node->result_type).isFunction())
+                    depend_on_array_join = true;
 
                 for (const auto * child : cur.node->children)
                 {
