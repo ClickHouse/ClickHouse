@@ -133,6 +133,9 @@ for transport in ("native", "HTTP"):
                 samples = [sample for sample in samples if sample["trace_type"] not in {"Dropped", "Incomplete"}]
                 unsupported = {sample["trace_type"] for sample in samples} - allowed_types
                 assert not unsupported, sorted(unsupported)
+                for sample in samples:
+                    if sample["trace_type"] in {"CPU", "Real"}:
+                        assert int(sample["size"]) == 0, sample
                 assert all(sample["query_id"] for sample in samples), samples
                 if remote:
                     samples = [sample for sample in samples if sample["query_id"] != query_id]
