@@ -927,12 +927,25 @@ def assert_s3_cancelled(node, table, request, broken_s3, request_kind):
 
 @pytest.mark.parametrize(
     "storage_policy",
-    ["broken_s3_long_retries_always_multi_part", "encrypted_broken_s3_long_retries_always_multi_part"],
+    [
+        "broken_s3_long_retries_always_multi_part",
+        "encrypted_broken_s3_long_retries_always_multi_part",
+        "cached_broken_s3_long_retries_always_multi_part",
+    ],
 )
 def test_cancelling_vertical_multipart_merge_stops_s3_retries(
     s3_cancellation, broken_s3, storage_policy
 ):
     node, table = s3_cancellation
+    cached_policy = storage_policy == "cached_broken_s3_long_retries_always_multi_part"
+    if cached_policy:
+        assert (
+            node.query(
+                "SELECT value FROM system.settings "
+                "WHERE name = 'enable_filesystem_cache_on_write_operations'"
+            ).strip()
+            == "1"
+        )
     node.query(
         f"CREATE TABLE {table} (key UInt32, value String, extra String) "
         "ENGINE=MergeTree ORDER BY key "
@@ -940,10 +953,26 @@ def test_cancelling_vertical_multipart_merge_stops_s3_retries(
         "vertical_merge_algorithm_min_rows_to_activate=0, "
         "vertical_merge_algorithm_min_columns_to_activate=0"
     )
+    if cached_policy:
+        assert (
+            node.query(
+                "SELECT cache_on_write_operations FROM system.filesystem_cache_settings "
+                "WHERE cache_name = 'cached_broken_s3_long_retries_always_multi_part'"
+            ).strip()
+            == "1"
+        )
     node.query(f"SYSTEM STOP MERGES {table}")
     for offset in (0, 10000):
         node.query(f"INSERT INTO {table} SELECT number + {offset}, toString(number), toString(number) FROM numbers(10000)")
 
+    cache_write_bytes_before = None
+    if cached_policy:
+        cache_write_bytes_before = int(
+            node.query(
+                "SELECT coalesce(any(value), 0) FROM system.events "
+                "WHERE event = 'CachedWriteBufferCacheWriteBytes'"
+            )
+        )
     broken_s3.reset()
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_at_part_upload(action="internal_error", count=10000)
@@ -955,6 +984,17 @@ def test_cancelling_vertical_multipart_merge_stops_s3_retries(
         "1",
     )
     wait_for_s3_request(broken_s3, "part_upload")
+    if cached_policy:
+        wait_condition(
+            lambda: int(
+                node.query(
+                    "SELECT coalesce(any(value), 0) FROM system.events "
+                    "WHERE event = 'CachedWriteBufferCacheWriteBytes'"
+                )
+            ),
+            lambda cache_write_bytes: cache_write_bytes > cache_write_bytes_before,
+            max_attempts=100,
+        )
     assert_s3_cancelled(node, table, request, broken_s3, "part_upload")
     assert broken_s3.get_request_counts()["abort_multipart_upload"] == 0
 

@@ -86,6 +86,14 @@
                 <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
                 <persistent_removal_log>true</persistent_removal_log>
             </broken_s3_long_retries_always_multi_part>
+            <cached_broken_s3_long_retries_always_multi_part>
+                <type>cache</type>
+                <disk>broken_s3_long_retries_always_multi_part</disk>
+                <path>/cached_broken_s3_long_retries_always_multi_part/</path>
+                <max_size>1000000000</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <skip_access_check>true</skip_access_check>
+            </cached_broken_s3_long_retries_always_multi_part>
             <encrypted_broken_s3_long_retries_always_multi_part>
                 <type>encrypted</type>
                 <disk>broken_s3_long_retries_always_multi_part</disk>
@@ -221,6 +229,13 @@
                     </main>
                 </volumes>
             </broken_s3_long_retries_always_multi_part>
+            <cached_broken_s3_long_retries_always_multi_part>
+                <volumes>
+                    <main>
+                        <disk>cached_broken_s3_long_retries_always_multi_part</disk>
+                    </main>
+                </volumes>
+            </cached_broken_s3_long_retries_always_multi_part>
             <encrypted_broken_s3_long_retries_always_multi_part>
                 <volumes>
                     <main>

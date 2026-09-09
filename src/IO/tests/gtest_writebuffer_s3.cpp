@@ -24,6 +24,7 @@
 #include <aws/s3/S3Errors.h>
 
 #include <IO/WriteBufferFromS3.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/S3Common.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
@@ -995,6 +996,7 @@ namespace
 enum class PostUploadCheck
 {
     UploadExists,
+    DecoratedUploadExists,
     UploadSize,
     CopyExists,
 };
@@ -1058,7 +1060,9 @@ TEST_P(PostUploadCancellation, StopsVerification)
         }
         else
         {
-            auto buffer = getWriteBuffer();
+            std::unique_ptr<WriteBufferFromFileBase> buffer = getWriteBuffer();
+            if (GetParam() == PostUploadCheck::DecoratedUploadExists)
+                buffer = std::make_unique<WriteBufferFromFileDecorator>(std::move(buffer));
             buffer->setCancellationHook(cancel);
             buffer->write('x');
             buffer->finalize();
@@ -1073,12 +1077,17 @@ TEST_P(PostUploadCancellation, StopsVerification)
 }
 
 INSTANTIATE_TEST_SUITE_P(S3, PostUploadCancellation,
-    ::testing::Values(PostUploadCheck::UploadExists, PostUploadCheck::UploadSize, PostUploadCheck::CopyExists),
+    ::testing::Values(
+        PostUploadCheck::UploadExists,
+        PostUploadCheck::DecoratedUploadExists,
+        PostUploadCheck::UploadSize,
+        PostUploadCheck::CopyExists),
     [](const ::testing::TestParamInfo<PostUploadCheck> & info_param)
     {
         switch (info_param.param)
         {
             case PostUploadCheck::UploadExists: return "UploadExists";
+            case PostUploadCheck::DecoratedUploadExists: return "DecoratedUploadExists";
             case PostUploadCheck::UploadSize: return "UploadSize";
             case PostUploadCheck::CopyExists: return "CopyExists";
         }

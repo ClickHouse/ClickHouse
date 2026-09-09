@@ -17,6 +17,8 @@ public:
 
     std::string getFileName() const override;
 
+    void setCancellationHook(std::function<void()> cancellation_hook) override;
+
     void preFinalize() override;
 
     const WriteBuffer & getImpl() const { return *impl; }
