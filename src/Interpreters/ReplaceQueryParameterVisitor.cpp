@@ -9,9 +9,11 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
@@ -43,6 +45,27 @@ namespace ErrorCodes
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
     checkStackSize();
+
+    if (auto * explain_query = ast->as<ASTExplainQuery>();
+        explain_query && explain_query->getKind() == ASTExplainQuery::FormattedQuery)
+    {
+        /// preserve params in source and actions of `EXPLAIN TEXT`
+        /// only outer output options belong to the executing formatting request
+        for (auto member : ASTQueryWithOutput::output_option_members)
+        {
+            auto & output_option = explain_query->*member;
+            if (!output_option)
+                continue;
+
+            ASTPtr substituted = output_option;
+            visit(substituted);
+
+            if (substituted != output_option)
+                explain_query->setOrReplace(output_option, substituted);
+        }
+        return;
+    }
+
     resolveParameterizedAlias(ast);
 
     if (ast->as<ASTQueryParameter>())

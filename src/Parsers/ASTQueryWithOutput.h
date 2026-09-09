@@ -67,6 +67,9 @@ public:
 
     bool hasOutputOptions() const;
 
+    /// Reorder output-option children in order used by `formatImpl`.
+    void normalizeOutputOptions();
+
     /// NOTE: call this helper at the end of the clone() method of descendant class.
     void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
 

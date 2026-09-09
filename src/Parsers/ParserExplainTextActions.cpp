@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 
 #include <Parsers/ParserExplainTextActions.h>
@@ -16,6 +17,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
 
 namespace
 {
@@ -206,9 +211,10 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
         pos = candidate;
 
         ASTPtr candidate_actions;
-        const bool parsed_actions = actions_parser.parse(pos, candidate_actions, expected)
-                                    && canFollowExplainTextActions(*pos);
-        const auto actions_end = pos;
+        const bool parsed_actions = actions_parser.parse(pos, candidate_actions, expected);
+        const bool valid_actions_end = parsed_actions && canFollowExplainTextActions(*pos);
+        const bool missing_comma = parsed_actions && isActionLeadingToken(*pos);
+        auto actions_end = pos;
 
         /// Return to the source beginning and charge the candidate
         /// against the shared parser backtrack budget.
@@ -216,7 +222,7 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
         rewind.backtracks = pos.backtracks;
         pos = rewind;
 
-        if (!parsed_actions)
+        if (!valid_actions_end && !missing_comma)
             continue;
 
         const char * prefix_end = candidate->begin;
@@ -233,6 +239,13 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
 
         if (!parsed_query)
             continue;
+
+        /// confirm a complete source prefix then diagnose a missing separator
+        if (missing_comma)
+        {
+            const auto & unexpected_token = *actions_end;
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(unexpected_token.begin, unexpected_token.size()));
+        }
 
         auto committed_end = actions_end;
         committed_end.backtracks = std::max(committed_end.backtracks, pos.backtracks);

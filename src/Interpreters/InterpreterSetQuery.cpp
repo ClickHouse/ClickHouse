@@ -260,6 +260,10 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     }
     else if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {
+        /// outer settings already applied through `ASTQueryWithOutput` above
+        /// `EXPLAIN TEXT` only formats its source, source settings must remain unapplied.
+        if (explain_query->getKind() == ASTExplainQuery::FormattedQuery)
+            return;
         if (explain_query->settings_ast)
             InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
 

@@ -19,6 +19,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -102,6 +106,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             ++pos;
 
+            /// actions are optional. upon failing the parser restores `pos` while keeping
+            /// diagnostics for improper action leading input in `expected`.
             ParserExplainTextActions actions_parser;
             actions_parser.parse(pos, actions, expected);
         }
