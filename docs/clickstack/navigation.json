@@ -270,7 +270,8 @@
         "clickstack/integration-partners/index",
         "clickstack/integration-partners/bindplane",
         "clickstack/integration-partners/bitdrift",
-        "clickstack/integration-partners/odigos"
+        "clickstack/integration-partners/odigos",
+        "clickstack/integration-partners/telflo"
       ]
     },
     {

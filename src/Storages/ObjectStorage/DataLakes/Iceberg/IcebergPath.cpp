@@ -24,6 +24,22 @@ std::string_view trimTrailingSlashes(std::string_view str)
 }
 }
 
+String toIcebergURIScheme(const String & storage_type_name)
+{
+    if (storage_type_name == "local")
+        return "file";
+    return storage_type_name;
+}
+
+String makeIcebergLocationURI(const String & storage_type_name, const String & authority, const String & path)
+{
+    String uri = toIcebergURIScheme(storage_type_name) + "://" + authority;
+    if (!authority.empty() || !path.starts_with('/'))
+        uri += '/';
+    uri += path;
+    return uri;
+}
+
 BlobStorageDescription BlobStorageDescription::fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration)
 {
     return {
