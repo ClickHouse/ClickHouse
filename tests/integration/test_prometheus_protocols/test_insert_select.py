@@ -10,7 +10,10 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    user_configs=["configs/allow_experimental_time_series_table.xml"],
+    user_configs=[
+        "configs/allow_experimental_time_series_table.xml",
+        "configs/select_join_settings.xml",
+    ],
 )
 
 
