@@ -95,6 +95,11 @@ namespace FailPoints
     /// refresh is already in flight cancels the local refresh before giving up coordination,
     /// instead of leaving Keeper thinking the refresh is still running.
     extern const char refresh_mv_force_scheduling_feature_flags_missing[];
+    /// Pauses the refresh thread after the executor is published to execution.executor and
+    /// executor_mutex is released, but before it starts, so a test can cancel a refresh that has a
+    /// live executor to interrupt. This is the refresh (BackgroundSchedulePool) thread, not a
+    /// pipeline worker: no IProcessor::work() frame exists yet, so nothing waits inside work().
+    extern const char refresh_mv_pause_after_executor_published[];
     /// Pauses the refresh thread after the insert pipeline finished but before the target-table
     /// exchange, so a test can deterministically hit the post-insert window where the executor is
     /// already gone and only the interrupt_execution flag can stop the exchange.
@@ -1389,6 +1394,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     std::unique_lock exec_lock(execution.executor_mutex);
                     execution.executor = nullptr;
                 });
+
+                FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_after_executor_published);
 
                 executor.execute();
 

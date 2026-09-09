@@ -197,6 +197,7 @@ static struct InitFiu
     REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
     REGULAR(refresh_mv_force_coordination_version_conflict) \
     REGULAR(refresh_mv_force_coordination_running_znode_lost) \
+    PAUSEABLE_ONCE(refresh_mv_pause_after_executor_published) \
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
     REGULAR(refresh_mv_skip_execution) \
