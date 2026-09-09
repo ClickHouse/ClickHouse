@@ -1,4 +1,5 @@
 #include <Processors/Executors/Runtime/Engine/WorkersCoordinator.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -8,11 +9,6 @@ WorkersCoordinator::WorkersCoordinator(TaskScheduler & scheduler_, Poller & poll
     , poller(poller_)
     , is_registered(max_workers, false)
 {
-}
-
-size_t WorkersCoordinator::idleLocked() const
-{
-    return sleeping_count + polling_count;
 }
 
 bool WorkersCoordinator::allIdle(size_t idle_workers) const
@@ -57,7 +53,7 @@ void WorkersCoordinator::leave(size_t worker_id)
     --registered_workers;
     scheduler.drain(worker_id);
 
-    if (allIdle(idleLocked()))
+    if (allIdle(idle_count))
         stopLocked();
     else
         wakeOneLocked();
@@ -70,10 +66,14 @@ bool WorkersCoordinator::wait(size_t worker_id)
     if (is_stopped)
         return false;
 
+    /// Counted as idle before the recheck, so a pusher that does not see us idle has pushed a task we see.
+    ++idle_count;
+    SCOPE_EXIT(--idle_count);
+
     if (scheduler.queued() > 0)
         return true;
 
-    if (allIdle(idleLocked() + 1))
+    if (allIdle(idle_count))
     {
         stopLocked();
         return false;
@@ -121,7 +121,7 @@ bool WorkersCoordinator::stopped() const
 
 size_t WorkersCoordinator::idle() const
 {
-    return sleeping_count + polling_count;
+    return idle_count;
 }
 
 size_t WorkersCoordinator::registered() const

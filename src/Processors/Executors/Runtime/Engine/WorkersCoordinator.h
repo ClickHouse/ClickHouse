@@ -13,7 +13,6 @@ namespace DB
 
 class WorkersCoordinator
 {
-    size_t idleLocked() const;
     bool allIdle(size_t idle_workers) const;
     void wakeOneLocked();
     void stopLocked();
@@ -41,6 +40,7 @@ private:
     std::condition_variable have_work;
     std::vector<bool> is_registered;
     std::atomic<size_t> registered_workers = 0;
+    std::atomic<size_t> idle_count = 0;
     std::atomic<size_t> sleeping_count = 0;
     std::atomic<size_t> polling_count = 0;
     std::atomic_bool is_stopped = false;
