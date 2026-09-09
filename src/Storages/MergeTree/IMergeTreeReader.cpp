@@ -120,17 +120,15 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     chassert(columns.size() == getColumns().size());
 
     const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
-    if (!loaded_part_info)
-    {
-        /// A borrowed part is read without the metadata that the constant virtual columns are made of,
-        /// and its reader is never asked for them.
-        if (typeid_cast<const BorrowedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get()))
-            return;
+    /// A borrowed part is read without the metadata that most of the constant virtual columns are made of,
+    /// but the persistent virtual columns that are not stored in the part still have to get their constant
+    /// value, which is derived from the part name alone.
+    const bool is_borrowed_part = !loaded_part_info
+        && typeid_cast<const BorrowedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get()) != nullptr;
 
+    if (!loaded_part_info && !is_borrowed_part)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
-    }
 
-    const auto & data_part = loaded_part_info->getDataPart();
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
@@ -161,8 +159,10 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
             field = field_it->second;
+        else if (loaded_part_info)
+            field = getFieldForConstVirtualColumn(it->name, *loaded_part_info->getDataPart());
         else
-            field = getFieldForConstVirtualColumn(it->name, *data_part);
+            field = getFieldForConstVirtualColumnOfBorrowedPart(it->name, data_part_info_for_read->getPartInfo());
 
         columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
     }
