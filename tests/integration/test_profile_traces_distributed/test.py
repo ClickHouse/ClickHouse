@@ -11,7 +11,7 @@ import requests
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-coordinator = cluster.add_instance("coordinator")
+coordinator = cluster.add_instance("coordinator", stay_alive=True)
 middle = cluster.add_instance("middle", user_configs=["configs/delay.xml"])
 leaf = cluster.add_instance("leaf")
 nodes = (coordinator, middle, leaf)
@@ -277,15 +277,18 @@ def test_nested_cancellation(transport):
 def test_hedged_replica_change():
     if coordinator.is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests do not support TSan")
-    before = int(coordinator.query("SELECT sum(value) FROM system.events WHERE event = 'HedgedRequestsChangeReplica'"))
     delay_file = "/etc/clickhouse-server/users.d/delay.xml"
-    middle.replace_config(
-        delay_file,
-        "<clickhouse><profiles><default><sleep_in_send_data_ms>5000</sleep_in_send_data_ms></default></profiles></clickhouse>",
-    )
-    middle.query("SYSTEM RELOAD USERS")
     try:
-        assert middle.http_query("SELECT getSetting('sleep_in_send_data_ms')").strip() == "5000"
+        middle.replace_config(
+            delay_file,
+            "<clickhouse><profiles><default><sleep_after_receiving_query_ms>5000</sleep_after_receiving_query_ms></default></profiles></clickhouse>",
+        )
+        middle.http_query("SYSTEM RELOAD USERS", method="POST")
+        assert middle.http_query("SELECT getSetting('sleep_after_receiving_query_ms')").strip() == "5000"
+        # `TCPHandler` caches the delay per connection. `SYSTEM DROP CONNECTIONS CACHE`
+        # clears only HTTP pools, so restart to renew the coordinator's native connections.
+        coordinator.restart_clickhouse()
+        before = int(coordinator.query("SELECT sum(value) FROM system.events WHERE event = 'HedgedRequestsChangeReplica'"))
         check_success(
             "HTTP",
             remote("middle|leaf", WORKLOAD),
@@ -304,6 +307,7 @@ def test_hedged_replica_change():
     finally:
         middle.replace_config(
             delay_file,
-            "<clickhouse><profiles><default><sleep_in_send_data_ms>0</sleep_in_send_data_ms></default></profiles></clickhouse>",
+            "<clickhouse><profiles><default><sleep_after_receiving_query_ms>0</sleep_after_receiving_query_ms></default></profiles></clickhouse>",
         )
-        middle.query("SYSTEM RELOAD USERS")
+        middle.http_query("SYSTEM RELOAD USERS", method="POST")
+        coordinator.restart_clickhouse()

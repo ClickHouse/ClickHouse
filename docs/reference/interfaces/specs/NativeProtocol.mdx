@@ -773,7 +773,7 @@ The envelope is a packet-type `VarUInt` of `19`, an empty `table_name` binary st
 | 5 | `event_time_microseconds` | `UInt64` | Sample timestamp in microseconds since the Unix epoch. |
 | 6 | `trace` | `Array(UInt64)` | Normalized instruction addresses, ordered from the leaf frame outward. |
 | 7 | `symbols` | `Array(String)` | Symbol corresponding to each address; an empty string denotes an unresolved frame. |
-| 8 | `size` | `Int64` | Allocation or deallocation size for memory samples; zero for time samples; positive loss delta for `Dropped`. |
+| 8 | `size` | `Int64` | Allocation size for `Memory`; signed allocation/deallocation size for `MemorySample`; total tracked usage at a new peak for `MemoryPeak` (all in bytes); zero for `CPU` and `Real`; positive loss delta for `Dropped`. |
 
 Delivery status rows use empty `trace` and `symbols` arrays and zero `thread_id` and `event_time_microseconds`. `Dropped` reports a positive delta in the number of samples discarded by bounded queues or by a collector flush timeout. Add these deltas across the response; each delta saturates at `9223372036854775807`, which denotes a lower bound. `Incomplete` has `size = 0` and reports that a collector flush timed out, so additional losses cannot be quantified. Status rows count towards the 1024-row batch limit and can be sent without any samples.
 

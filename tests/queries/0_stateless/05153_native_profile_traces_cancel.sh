@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 python3 - "$CLICKHOUSE_CLIENT" <<'PY'
+import json
 import shlex
 import signal
 import subprocess
@@ -91,7 +92,14 @@ try:
         elapsed = time.monotonic() - started
         assert elapsed < 5, f"native cancellation waited for trace collector: {elapsed:.2f}s"
         assert process.returncode == 0 and not stdout, (process.returncode, stdout, stderr)
-        assert not any(line.startswith('{"host_name":') for line in stderr.splitlines()), stderr
+        # The global profiler can send samples before `Cancel`, even when the query's timers are disabled.
+        samples = [json.loads(line) for line in stderr.splitlines() if line.startswith("{")]
+        assert enabled or not samples, samples
+        for sample in samples:
+            assert sample["query_id"] == query_id, sample
+            trace_type = sample["trace_type"]
+            assert trace_type != "Incomplete", ("cancellation flushed the trace collector", sample)
+            assert trace_type in {"CPU", "Real", "Memory", "MemorySample", "MemoryPeak", "Dropped"}, sample
         assert control(f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'") == "0"
         assert control("SELECT 1") == "1"
         print(f"send_profile_traces={enabled}: cancellation does not wait for the collector")
