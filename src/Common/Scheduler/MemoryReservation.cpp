@@ -200,20 +200,20 @@ ResourceCost MemoryReservation::getTotalReclaimable()
     return reclaimable_total;
 }
 
-void MemoryReservation::updateReclaimable(const ISpillable * spillable, ResourceCost bytes)
+void MemoryReservation::updateReclaimable(const ISpillable * spillable, ResourceCost total_bytes)
 {
-    if (bytes < min_bytes_to_spill)
-        bytes = 0;
+    if (total_bytes < min_bytes_to_spill)
+        total_bytes = 0;
 
     ResourceCost total = 0;
     {
         std::lock_guard lock(mutex);
         auto & entry = reclaimable[spillable];
-        if (entry == bytes)
+        if (entry == total_bytes)
             return;
-        ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, std::max<ResourceCost>(bytes - entry, 0));
-        reclaimable_total = reclaimable_total - entry + bytes;
-        entry = bytes;
+        ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, std::max<ResourceCost>(total_bytes - entry, 0));
+        reclaimable_total = reclaimable_total - entry + total_bytes;
+        entry = total_bytes;
 
         if (reported_reclaimable != 0 && reclaimable_total != 0
             && std::abs(reclaimable_total - reported_reclaimable) * RECLAIMABLE_REPORT_RATIO < reported_reclaimable)

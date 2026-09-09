@@ -63,7 +63,7 @@ public:
     ResourceCost getTotalReclaimable();
     /// Reclaimable memory of the query's spillable processors, keyed by the object that owns the
     /// state so that processors sharing it are counted once.
-    void updateReclaimable(const ISpillable * spillable, ResourceCost bytes);
+    void updateReclaimable(const ISpillable * spillable, ResourceCost total_bytes);
     void removeReclaimable(const ISpillable * spillable);
 
     [[nodiscard]] ResourceCost takeSpillRequest(const ISpillable * spillable, ResourceCost spillable_bytes);
