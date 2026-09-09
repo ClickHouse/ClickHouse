@@ -290,13 +290,13 @@ SELECT toDate32(toTime('00:99:12'));
 SELECT toDate32(toTime('23:99:12'));
 SELECT toDate32(toTime('999:99:99'));
 
--- Conversion from Time64 to Date32 (result is always zero)
+-- Conversion from Time64 to Date32
 SELECT toDate32(toTime64('00:99:12', 2));
 SELECT toDate32(toTime64('23:99:12', 2));
 SELECT toDate32(toTime64('999:99:99', 2));
 
 
--- Conversion from Time64 to Date (result is always zero)
+-- Conversion from Time64 to Date
 SELECT toDate(toTime64('00:99:12', 2));
 SELECT toDate(toTime64('23:99:12', 2));
 SELECT toDate(toTime64('999:99:99', 2));

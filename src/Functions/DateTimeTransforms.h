@@ -3033,7 +3033,44 @@ struct Transformer
                 {
                     using FromValueType = typename FromTypeVector::value_type;
                     bool is_valid_input = false;
-                    if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                    if constexpr (std::is_same_v<FromType, DataTypeTime64> || std::is_same_v<FromType, DataTypeTime>)
+                    {
+                        /// `Time` and `Time64` are timezone-unaware counts of seconds of a clock reading
+                        /// (scaled, for `Time64`). Widening an exact `Time` value to `Time64(0)` must not
+                        /// change the outcome of an accurate cast, so both share the same checks.
+                        Int64 seconds = 0;
+                        bool has_whole_seconds = true;
+
+                        if constexpr (std::is_same_v<FromType, DataTypeTime64>)
+                        {
+                            const Int64 scale_multiplier = transform.getScaleMultiplier();
+                            const Int64 value = vec_from[i].value;
+
+                            /// `Time64` is a scaled integer. An accurate conversion to a whole-second type
+                            /// must not discard a fractional part before applying the target range check.
+                            has_whole_seconds = value % scale_multiplier == 0;
+                            seconds = value / scale_multiplier;
+                        }
+                        else
+                        {
+                            seconds = static_cast<Int64>(vec_from[i]);
+                        }
+
+                        if (has_whole_seconds)
+                        {
+                            if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                                is_valid_input = seconds >= -MAX_TIME_TIMESTAMP && seconds <= MAX_TIME_TIMESTAMP;
+                            else if constexpr (std::is_same_v<ToType, DataTypeDate>)
+                                is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL)
+                                    && seconds % DATE_SECONDS_PER_DAY == 0;
+                            else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
+                                is_valid_input = seconds >= static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM) * DATE_SECONDS_PER_DAY
+                                    && seconds <= MAX_DATE32_TIMESTAMP && seconds % DATE_SECONDS_PER_DAY == 0;
+                            else
+                                is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
+                        }
+                    }
+                    else if constexpr (std::is_same_v<ToType, DataTypeTime>)
                     {
                         /// `Time` is a signed count of seconds of a clock reading within
                         /// `[-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]`, so it cannot share the unsigned `DateTime`
