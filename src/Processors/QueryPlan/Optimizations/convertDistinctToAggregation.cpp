@@ -123,7 +123,10 @@ bool tryConvertDistinctToAggregation(
     QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
     const auto & distinct = assert_cast<const DistinctStep &>(*node.step);
-    if (distinct.isPreliminary() || distinct.getLimitHint() != 0)
+
+    /// A final `DISTINCT` over partition-disjoint streams deduplicates each stream on its own and never
+    /// merges them, so it is already parallel and has no single-threaded merge to replace.
+    if (distinct.isPreliminary() || distinct.getLimitHint() != 0 || distinct.skipsStreamMerging())
         return false;
 
     const auto & limits = distinct.getSetSizeLimits();

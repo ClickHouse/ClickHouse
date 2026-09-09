@@ -356,7 +356,8 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// Global input ordering is checked separately by `applyOrder`.
 std::unordered_set<const QueryPlan::Node *> collectDistinctToAggregationCandidates(const QueryPlan::Node & root);
 
-/// Replace an unordered final `DISTINCT` with aggregation over its nonconstant keys.
+/// Replace an unordered final `DISTINCT` with aggregation over its nonconstant keys. Stream disjointness
+/// must have been applied already: a `DISTINCT` deduplicating disjoint streams independently is left alone.
 bool tryConvertDistinctToAggregation(
     QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
 

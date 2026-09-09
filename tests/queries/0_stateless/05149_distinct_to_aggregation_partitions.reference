@@ -1,0 +1,13 @@
+Distinct (DISTINCT)
+Skip stream merging: 1
+Distinct (Preliminary DISTINCT)
+1000	499500
+Aggregating (DISTINCT)
+Distinct (Preliminary DISTINCT)
+1000	499500
+Aggregating (DISTINCT)
+Distinct (Preliminary DISTINCT)
+1000	499500
+Aggregating (DISTINCT)
+Distinct (Preliminary DISTINCT)
+10000	49995000
