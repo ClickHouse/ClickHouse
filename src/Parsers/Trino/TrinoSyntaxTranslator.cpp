@@ -882,43 +882,78 @@ private:
         return true;
     }
 
+    /// True for a token that can start a query body: a SELECT, a VALUES list or
+    /// the `TABLE t` shorthand (rewritten into a SELECT later).
+    bool isQueryBodyStart(size_t idx) const
+    {
+        return isKeywordAt(idx, "SELECT") || isKeywordAt(idx, "VALUES") || isKeywordAt(idx, "TABLE");
+    }
+
+    /// Finds the first query body at the top nesting level at or after `from`,
+    /// so that a wrapper such as `EXPLAIN ...` or `INSERT INTO t (columns)` is
+    /// skipped. Returns `tokens.size()` when there is none.
+    size_t findQueryBodyStart(size_t from) const
+    {
+        size_t depth = 0;
+        for (size_t j = from; j < tokens.size(); ++j)
+        {
+            TokenType type = tokens[j].type;
+            if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+                ++depth;
+            else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+            {
+                if (depth > 0)
+                    --depth;
+            }
+            else if (depth == 0 && isQueryBodyStart(j))
+                return j;
+        }
+        return tokens.size();
+    }
+
     /// Detects a query of the form `<set operation> ORDER BY/LIMIT/OFFSET/FETCH ...`
-    /// (optionally preceded by a WITH clause). Sets `body_begin` to the start of
+    /// (optionally preceded by a WITH clause, and optionally wrapped into
+    /// `EXPLAIN ...` or `INSERT INTO t ...`). Sets `body_begin` to the start of
     /// the set operation and `clause_begin` to the first trailing clause.
     bool findTrailingClauseAfterSetOperation(size_t & body_begin, size_t & clause_begin) const
     {
         if (tokens.empty())
             return false;
 
+        /// Statement wrappers whose query body is a set operation of its own:
+        /// the trailing clauses still belong to the whole set operation there.
         size_t begin = 0;
-        if (tokenIsKeyword(tokens[0], "WITH"))
+        if (tokenIsKeyword(tokens[0], "EXPLAIN") || tokenIsKeyword(tokens[0], "INSERT"))
         {
-            /// The body is the first top-level SELECT or VALUES after the CTE list
-            /// (the CTE definitions themselves are inside parentheses).
-            size_t depth = 0;
-            bool found = false;
-            for (size_t j = 1; j < tokens.size(); ++j)
+            /// `WITH` is not a body start on its own: an `EXPLAIN WITH x AS (...) SELECT`
+            /// is handled by the `WITH` branch below, from the position of the `WITH`.
+            size_t body = findQueryBodyStart(1);
+            size_t with = tokens.size();
+            for (size_t j = 1; j < body && j < tokens.size(); ++j)
             {
-                TokenType type = tokens[j].type;
-                if (type == TokenType::OpeningRoundBracket)
-                    ++depth;
-                else if (type == TokenType::ClosingRoundBracket)
+                if (tokens[j].type == TokenType::OpeningRoundBracket || tokens[j].type == TokenType::OpeningSquareBracket)
+                    break;
+                if (tokenIsKeyword(tokens[j], "WITH"))
                 {
-                    if (depth > 0)
-                        --depth;
-                }
-                else if (depth == 0 && (tokenIsKeyword(tokens[j], "SELECT") || tokenIsKeyword(tokens[j], "VALUES")))
-                {
-                    begin = j;
-                    found = true;
+                    with = j;
                     break;
                 }
             }
-            if (!found)
+            begin = std::min(body, with);
+            if (begin == tokens.size())
                 return false;
         }
-        else if (!(tokenIsKeyword(tokens[0], "SELECT") || tokenIsKeyword(tokens[0], "VALUES")
-                   || tokens[0].type == TokenType::OpeningRoundBracket))
+
+        if (tokenIsKeyword(tokens[begin], "WITH"))
+        {
+            /// The body is the first top-level SELECT, VALUES or TABLE after the CTE
+            /// list (the CTE definitions themselves are inside parentheses).
+            size_t body = findQueryBodyStart(begin + 1);
+            if (body == tokens.size())
+                return false;
+            begin = body;
+        }
+        else if (!(isQueryBodyStart(begin) || tokens[begin].type == TokenType::OpeningRoundBracket))
             return false;
 
         size_t depth = 0;

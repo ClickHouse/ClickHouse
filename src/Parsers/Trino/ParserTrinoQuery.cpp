@@ -4,6 +4,7 @@
 #include <Parsers/Lexer.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/Trino/TrinoFunctionMapper.h>
 #include <Parsers/Trino/TrinoSyntaxTranslator.h>
 #include <Parsers/parseQuery.h>
@@ -30,6 +31,19 @@ bool tokenIsKeyword(const Token & token, std::string_view keyword)
     return strncasecmp(token.begin, keyword.data(), keyword.size()) == 0;
 }
 
+/// Looks `offset` tokens ahead of `pos` without moving it.
+bool isKeywordAt(const IParser::Pos & pos, size_t offset, std::string_view keyword)
+{
+    IParser::Pos lookahead = pos;
+    for (size_t i = 0; i < offset; ++i)
+    {
+        if (!lookahead.isValid())
+            return false;
+        ++lookahead;
+    }
+    return lookahead.isValid() && tokenIsKeyword(*lookahead, keyword);
+}
+
 }
 
 bool ParserTrinoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -38,9 +52,23 @@ bool ParserTrinoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// that settings like `dialect` can be changed. This is checked before the
     /// feature gate so users can recover from misconfigured profiles
     /// (e.g. `SET dialect = 'clickhouse'`).
-    ParserSetQuery set_p;
-    if (set_p.parse(pos, node, expected))
-        return true;
+    /// `SET ROLE` / `SET DEFAULT ROLE` have to be tried first, the same way
+    /// `ParserQuery` does it, because `ParserSetQuery` would otherwise read
+    /// `SET ROLE x` as an assignment to a setting named `ROLE`. The Trino
+    /// `SET SESSION name = value` form is left to the translation below, which
+    /// rewrites it into a plain `SET name = value`; `ParserSetQuery` would
+    /// otherwise read `SESSION` as the name of a `Bool` setting.
+    if (!(tokenIsKeyword(*pos, "SET") && isKeywordAt(pos, 1, "SESSION")))
+    {
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+        ParserSetRoleQuery set_role_p;
+        if (set_role_p.parse(pos, node, expected))
+            return true;
+#endif
+        ParserSetQuery set_p;
+        if (set_p.parse(pos, node, expected))
+            return true;
+    }
 
     if (!feature_enabled)
         throw Exception(
@@ -127,7 +155,7 @@ bool ParserTrinoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (delegate_to_standard_parser)
     {
         pos = statement_begin;
-        ParserQuery standard_parser(raw_end);
+        ParserQuery standard_parser(raw_end, allow_settings_after_format_in_insert, implicit_select);
         if (!standard_parser.parse(pos, node, expected))
             return false;
         mapTrinoFunctions(node);
@@ -144,7 +172,7 @@ bool ParserTrinoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// already advanced `pos` to the end of the statement).
         const char * query_begin = begin;
         String error_message;
-        ParserQuery standard_parser(statement_end);
+        ParserQuery standard_parser(statement_end, allow_settings_after_format_in_insert, implicit_select);
         node = tryParseQuery(
             standard_parser,
             query_begin,
@@ -165,7 +193,7 @@ bool ParserTrinoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     const char * translated_begin = translated->data();
     const char * const translated_end = translated->data() + translated->size();
-    ParserQuery standard_parser(translated_end);
+    ParserQuery standard_parser(translated_end, allow_settings_after_format_in_insert, implicit_select);
     String error_message;
     node = tryParseQuery(
         standard_parser,

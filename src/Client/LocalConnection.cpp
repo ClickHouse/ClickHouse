@@ -379,7 +379,7 @@ void LocalConnection::sendQuery(
             else if (dialect == Dialect::promql)
                 parser = std::make_unique<ParserPrometheusQuery>(state->promql_database, state->promql_table, state->promql_evaluation_time);
             else if (dialect == Dialect::trino)
-                parser = std::make_unique<ParserTrinoQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, end, state->allow_experimental_trino_dialect);
+                parser = std::make_unique<ParserTrinoQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, end, state->allow_experimental_trino_dialect, state->allow_settings_after_format_in_insert, state->implicit_select);
             else
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 

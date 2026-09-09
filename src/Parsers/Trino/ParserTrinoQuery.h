@@ -19,10 +19,12 @@ namespace DB
   * ClickHouse functions that are not Trino names remain accessible, so the
   * dialect can be mixed with native functions when needed.
   *
-  * SET queries are handled by the standard parser before the feature gate so
-  * that settings like `dialect` can always be changed back, even when
-  * `allow_experimental_trino_dialect` is off (recovery from misconfigured
-  * profiles). INSERT statements with inline data (VALUES or FORMAT) are
+  * Plain `SET` and `SET ROLE` queries are handled by the standard parser before
+  * the feature gate so that settings like `dialect` can always be changed back,
+  * even when `allow_experimental_trino_dialect` is off (recovery from
+  * misconfigured profiles). The Trino `SET SESSION ...` form is excluded from
+  * this shortcut: it is rewritten by the translator instead.
+  * INSERT statements with inline data (VALUES or FORMAT) are
   * delegated to the standard parser as-is, because the data section must keep
   * pointing into the original query buffer.
   */
@@ -34,6 +36,8 @@ private:
     size_t max_parser_backtracks;
     const char * raw_end;
     bool feature_enabled;
+    bool allow_settings_after_format_in_insert;
+    bool implicit_select;
 
 public:
     ParserTrinoQuery(
@@ -41,12 +45,16 @@ public:
         size_t max_parser_depth_,
         size_t max_parser_backtracks_,
         const char * raw_end_,
-        bool feature_enabled_)
+        bool feature_enabled_,
+        bool allow_settings_after_format_in_insert_ = false,
+        bool implicit_select_ = false)
         : max_query_size(max_query_size_)
         , max_parser_depth(max_parser_depth_)
         , max_parser_backtracks(max_parser_backtracks_)
         , raw_end(raw_end_)
         , feature_enabled(feature_enabled_)
+        , allow_settings_after_format_in_insert(allow_settings_after_format_in_insert_)
+        , implicit_select(implicit_select_)
     {
     }
 

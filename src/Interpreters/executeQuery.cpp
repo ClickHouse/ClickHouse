@@ -2354,7 +2354,9 @@ static BlockIO executeQueryImpl(
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks],
                 end,
-                settings[Setting::allow_experimental_trino_dialect]);
+                settings[Setting::allow_experimental_trino_dialect],
+                settings[Setting::allow_settings_after_format_in_insert],
+                settings[Setting::implicit_select]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             /// Settings that align the query semantics with Trino: outer joins
