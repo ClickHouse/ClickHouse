@@ -7,11 +7,11 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
-#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Functions/IFunction.h>
 
@@ -40,7 +40,9 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
-static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
+static SortingProperty applyOrder(
+    QueryPlan::Node * parent, QueryPlan::Nodes & nodes, SortingProperty * properties,
+    const QueryPlanOptimizationSettings & optimization_settings, bool can_convert_distinct)
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
@@ -74,6 +76,10 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         {
             distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
+
+        if (can_convert_distinct && properties->sort_scope != SortingProperty::SortScope::Global
+            && tryConvertDistinctToAggregation(*parent, nodes, optimization_settings))
+            return {};
 
         /// Distinct never breaks global order
         if (properties->sort_scope == SortingProperty::SortScope::Global)
@@ -189,8 +195,12 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     return {};
 }
 
-void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    const auto distinct_to_aggregation_candidates = optimization_settings.convert_distinct_to_aggregation
+        ? collectDistinctToAggregationCandidates(root)
+        : std::unordered_set<const QueryPlan::Node *>{};
+
     Stack stack;
     stack.push_back({.node = &root});
 
@@ -214,7 +224,9 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
         stack.pop_back();
 
         auto it = properties.begin() + (properties.size() - node->children.size());
-        auto property = applyOrder(node, (it == properties.end()) ? nullptr : &*it, optimization_settings);
+        auto property = applyOrder(
+            node, nodes, (it == properties.end()) ? nullptr : &*it, optimization_settings,
+            distinct_to_aggregation_candidates.contains(node));
         properties.erase(it, properties.end());
         properties.push_back(std::move(property));
     }

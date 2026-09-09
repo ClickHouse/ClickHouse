@@ -30,6 +30,9 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// Whether the source has a row limit from its arguments or limit pushdown.
+    bool hasExplicitRowLimit() const;
+
 private:
     Pipe makePipe();
 

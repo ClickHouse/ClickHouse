@@ -828,7 +828,7 @@ void optimizeTreeSecondPass(
             optimization_settings.force_projection_name);
 
     /// Trying to reuse sorting property for other steps.
-    applyOrder(optimization_settings, root);
+    applyOrder(optimization_settings, root, nodes);
 
     /// Push LIMIT into aggregation-in-order when ORDER BY matches GROUP BY.
     /// Must run after applyOrder, which converts SortingStep to FinishSorting.

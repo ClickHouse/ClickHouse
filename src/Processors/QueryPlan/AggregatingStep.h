@@ -120,7 +120,8 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override
     {
-        return sort_description_for_merging.empty() && !explicit_sorting_required_for_aggregation_in_order;
+        return sort_description_for_merging.empty() && !explicit_sorting_required_for_aggregation_in_order
+            && params.max_bytes_to_group_by == 0 && params.limit_errors == Aggregator::Params::LimitErrors{};
     }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);

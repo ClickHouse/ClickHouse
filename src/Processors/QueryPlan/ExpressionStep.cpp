@@ -11,6 +11,9 @@
 #include <Common/JSONBuilder.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <string_view>
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -71,6 +74,34 @@ ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_da
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
 {
+}
+
+bool ExpressionStep::hasIdenticalDuplicateOutputColumns() const
+{
+    /// Repeated outputs of one DAG node carry the same values, including through aliases.
+    /// Comparing names or empty header columns alone cannot establish that equality.
+    const auto & outputs = actions_dag.getOutputs();
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> column_sources;
+    for (const auto * output : outputs)
+    {
+        const auto * source = output;
+        while (source->type == ActionsDAG::ActionType::ALIAS)
+            source = source->children.front();
+
+        const auto [it, inserted] = column_sources.emplace(output->result_name, source);
+        if (!inserted && it->second != source)
+            return false;
+    }
+
+    /// Inputs not consumed by the DAG follow its outputs. The expression does not establish
+    /// their equality with other output columns.
+    const auto & header = *output_header;
+    for (size_t i = outputs.size(); i < header.columns(); ++i)
+    {
+        if (!column_sources.emplace(header.getByPosition(i).name, nullptr).second)
+            return false;
+    }
+    return true;
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
