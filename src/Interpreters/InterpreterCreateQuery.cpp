@@ -2252,6 +2252,20 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
+        /// The replaced table is dropped after the swap, under an internal temporary name that grants
+        /// cannot cover, so check the drop privilege for its kind here, on its real name. Master runs
+        /// this inside the rename's `DDLGuard`s via `setPreSwapCheck`, which this branch does not have.
+        const StorageID table_to_replace_id{create.getDatabase(), table_to_replace_name};
+        if (auto to_drop = DatabaseCatalog::instance().tryGetTable(table_to_replace_id, current_context))
+        {
+            AccessType drop_access = AccessType::DROP_TABLE;
+            if (to_drop->isView())
+                drop_access = AccessType::DROP_VIEW;
+            else if (to_drop->isDictionary())
+                drop_access = AccessType::DROP_DICTIONARY;
+            current_context->checkAccess(drop_access, table_to_replace_id);
+        }
+
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
         interpreter_rename.execute();
         renamed = true;
@@ -2262,6 +2276,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
             if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
                 ast_drop->is_dictionary = replaced->isDictionary();
+
+            /// The check before the rename already authorized this drop against the replaced table's
+            /// real name. The temporary name cannot be covered by grants, so skip the check on it.
+            ast_drop->no_access_check = true;
 
             /// Target table was replaced with new one, drop old table
             auto drop_context = make_drop_context();
