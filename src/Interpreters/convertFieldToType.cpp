@@ -506,7 +506,18 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
             const auto scale = date_time64_type.getScale();
-            const Int64 whole = applyVisitor(FieldVisitorConvertToNumber<Int64>(), src);
+
+            /// `FieldVisitorConvertToNumber<Int64>` is a raw cast for a `UInt64` carrier, so a bound above
+            /// `Int64` maximum would silently become a negative number of seconds and then match an unrelated
+            /// stored value. Range-check it first, like the `Date` and `DateTime` branches above do.
+            Int64 whole = 0;
+            if (src.getType() == Field::Types::UInt64)
+            {
+                if (!accurate::convertNumeric<UInt64, Int64, true>(src.safeGet<UInt64>(), whole))
+                    return {};
+            }
+            else
+                whole = applyVisitor(FieldVisitorConvertToNumber<Int64>(), src);
 
             /// Scaling the seconds up to ticks can overflow the `Int64` storage of the column. Such a value is
             /// not representable at all, so return Null ("cannot convert") like the `Date`, `Date32` and

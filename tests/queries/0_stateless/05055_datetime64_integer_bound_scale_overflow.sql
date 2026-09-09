@@ -25,3 +25,16 @@ SELECT count() FROM t_d64_seconds WHERE d64 IN (253402300800);
 SELECT count() FROM t_d64_seconds WHERE d64 IN (253402300799);
 
 DROP TABLE t_d64_seconds;
+
+-- A bound above the maximum of `Int64` is not a number of seconds any `DateTime64` column can hold. It must be
+-- rejected instead of being wrapped around into a negative tick count, which would make it match an unrelated
+-- row - the one storing exactly that negative value.
+
+DROP TABLE IF EXISTS t_d64_wraparound;
+CREATE TABLE t_d64_wraparound (d64 DateTime64(0, 'UTC')) ENGINE = MergeTree ORDER BY d64;
+INSERT INTO t_d64_wraparound VALUES (-9223372036854775808);
+
+SELECT count() FROM t_d64_wraparound WHERE d64 IN (9223372036854775808);
+SELECT count() FROM t_d64_wraparound WHERE d64 IN (-9223372036854775808);
+
+DROP TABLE t_d64_wraparound;

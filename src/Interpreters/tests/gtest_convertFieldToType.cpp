@@ -473,4 +473,12 @@ TEST(ConvertFieldToTypeStrictness, OutOfRangeDateTime64Integers)
         Field(DecimalField<DateTime64>(DateTime64(1000000000), 9)));
     EXPECT_TRUE(convertFieldToType(Field(Int64(253402300799)), *nanoseconds_type).isNull());
     EXPECT_TRUE(convertFieldToType(Field(UInt64(253402300799)), *nanoseconds_type).isNull());
+
+    /// A `UInt64` bound above `Int64` maximum is not a number of seconds any column can hold; it must not be
+    /// wrapped around into a negative tick count (which would match a row storing that negative value).
+    EXPECT_EQ(
+        convertFieldToType(Field(UInt64(9223372036854775807ULL)), *seconds_type),
+        Field(DecimalField<DateTime64>(DateTime64(9223372036854775807LL), 0)));
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(9223372036854775808ULL)), *seconds_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(18446744073709551615ULL)), *seconds_type).isNull());
 }
