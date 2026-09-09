@@ -78,7 +78,7 @@ TEST(ExecutingPipeline, CancelIsStickyAndReachesAddedProcessors)
     auto another_sink = std::make_shared<Sink>();
     connect(another_source->output(), another_sink->input());
     ProcessorState & requester = chain.sink->input().getUpdateChannel().getOwner();
-    EXPECT_EQ(2u, pipeline.addProcessors(requester, {another_source, another_sink}).size());
+    EXPECT_EQ(2u, pipeline.updateProcessors(requester, {another_source, another_sink}, {}).size());
     EXPECT_TRUE(another_source->isCancelled());
     EXPECT_TRUE(another_sink->isCancelled());
     EXPECT_EQ(4u, chain.processors->size());

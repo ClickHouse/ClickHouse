@@ -87,7 +87,7 @@ TEST(ProcessorStates, WiresBothEndsAndKeepsTheSharedList)
     EXPECT_FALSE(states.dump().empty());
 }
 
-TEST(ProcessorStates, AddWiresTheGroupAndTheRequester)
+TEST(ProcessorStates, UpdateWiresTheGroupAndTheRequester)
 {
     auto source = std::make_shared<Source>();
     auto processors = std::make_shared<Processors>(Processors{source});
@@ -97,13 +97,11 @@ TEST(ProcessorStates, AddWiresTheGroupAndTheRequester)
 
     auto sink = std::make_shared<Sink>();
     connect(source->output(), sink->input());
-    auto added = states.add(source_state, {sink});
-    ASSERT_EQ(1u, added.size());
-    EXPECT_EQ(sink.get(), added.front()->processor);
-
+    auto updated = states.update(source_state, {sink}, {});
     EXPECT_EQ((Processors{source, sink}), *processors);
 
     ProcessorState & sink_state = states.get(*sink);
+    EXPECT_EQ((std::vector<ProcessorState *>{&sink_state}), updated);
     EXPECT_EQ(&source_state, &source->output().getUpdateChannel().getOwner());
     EXPECT_EQ(&sink_state, &sink->input().getUpdateChannel().getOwner());
 
@@ -119,7 +117,7 @@ TEST(ProcessorStates, AddWiresTheGroupAndTheRequester)
     EXPECT_TRUE(hint_outputs.empty());
 }
 
-TEST(ProcessorStates, ReconnectWiresNewPortsOfAListedProcessor)
+TEST(ProcessorStates, UpdateWiresNewPortsOfAListedProcessor)
 {
     auto requester = std::make_shared<Source>();
     auto collector = std::make_shared<Collector>();
@@ -132,17 +130,10 @@ TEST(ProcessorStates, ReconnectWiresNewPortsOfAListedProcessor)
     InputPort & new_input = collector->addInput();
     connect(spill->output(), new_input);
 
-    auto added = states.add(requester_state, {spill});
-    ASSERT_EQ(1u, added.size());
-    EXPECT_EQ(spill.get(), added.front()->processor);
-    EXPECT_FALSE(new_input.getUpdateChannel().isConnected());
-
-    auto reconnected = states.reconnect({collector});
-    ASSERT_EQ(1u, reconnected.size());
-    EXPECT_EQ(&collector_state, reconnected.front());
-
+    auto updated = states.update(requester_state, {spill}, {collector});
+    EXPECT_EQ((std::vector<ProcessorState *>{&collector_state, &states.get(*spill)}), updated);
     EXPECT_EQ(&collector_state, &new_input.getUpdateChannel().getOwner());
-    EXPECT_EQ(added.front(), &spill->output().getUpdateChannel().getOwner());
+    EXPECT_EQ(&states.get(*spill), &spill->output().getUpdateChannel().getOwner());
 
     IProcessor::UpdatedInputPorts hint_inputs;
     IProcessor::UpdatedOutputPorts hint_outputs;
@@ -150,7 +141,7 @@ TEST(ProcessorStates, ReconnectWiresNewPortsOfAListedProcessor)
     EXPECT_EQ(std::vector<InputPort *>{&new_input}, hint_inputs);
     EXPECT_TRUE(hint_outputs.empty());
 
-    states.reconnect({collector});
+    states.update(requester_state, {}, {collector});
     collector_state.incoming_updates.drain(hint_inputs, hint_outputs);
     EXPECT_TRUE(hint_inputs.empty());
     EXPECT_TRUE(hint_outputs.empty());
