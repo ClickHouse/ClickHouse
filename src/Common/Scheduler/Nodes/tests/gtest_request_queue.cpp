@@ -488,7 +488,7 @@ TEST(RequestQueue, Purge)
     Fixture f(SchedulerAlgorithm::Fair);
     auto * a = f.makeQuery();
     auto * r1 = f.enqueue(1, a);
-    auto * r2 = f.enqueue(2, nullptr);
+    auto * r2 = f.enqueue(2, a); // a fair leaf requires a non-null context (never-null invariant)
     f.queue->purgeQueue();
     EXPECT_EQ(r1->failed_count, 1);
     EXPECT_EQ(r2->failed_count, 1);
