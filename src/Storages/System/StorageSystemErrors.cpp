@@ -59,16 +59,17 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         }
     };
 
-    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+    for (const auto code : ErrorCodes::getCodes())
     {
-        const auto & error = ErrorCodes::values[i].get();
-        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
+        std::string_view name = ErrorCodes::getName(code);
 
+        /// Custom error codes have no name, and are not shown here.
         if (name.empty())
             continue;
 
-        add_row(name, i, error.local,  /* remote= */ false);
-        add_row(name, i, error.remote, /* remote= */ true);
+        const auto & error = ErrorCodes::values[code].get();
+        add_row(name, code, error.local, /* remote= */ false);
+        add_row(name, code, error.remote, /* remote= */ true);
     }
 }
 
