@@ -105,8 +105,10 @@ IMergingAlgorithm::Status DistinctSortedAlgorithm::merge()
         size_t skipped_rows = batch_size;
         if (flags[first_row] == 0)
         {
-            /// Ordinary chunks are internally unique, so only the first row can repeat a prior key.
-            skipped_rows = !last_key.empty() && last_key.hasEqualSortColumnsWith(current_key);
+            /// Ordinary chunks are internally unique, so only the first row can repeat a prior key,
+            /// and only when switching chunks. Source refills compare against the saved boundary key.
+            skipped_rows = !last_key.empty() && last_key.sort_columns != current_key.sort_columns
+                && last_key.hasEqualSortColumnsWith(current_key);
         }
 
         /// The queue cannot pass a key while another input still has that key pending. Remembering the
