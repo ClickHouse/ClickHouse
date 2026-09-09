@@ -43,7 +43,7 @@ namespace
 inline void
 readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    const auto overflow = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
+    const auto overflow = settings.throwOnDateTimeOverflow()
         ? DateTimeOverflow::Report
         : DateTimeOverflow::Saturate;
     switch (settings.date_time_input_format)
@@ -65,7 +65,7 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    const auto overflow = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
+    const auto overflow = settings.throwOnDateTimeOverflow()
         ? DateTimeOverflow::Report
         : DateTimeOverflow::Saturate;
     bool res = false;
@@ -187,11 +187,11 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        readDateTimeAsRawValue(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+        readDateTimeAsRawValue(x, istr, !settings.throwOnDateTimeOverflow());
     }
     else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
     {
-        readDateTimeAsNumber(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+        readDateTimeAsNumber(x, istr, !settings.throwOnDateTimeOverflow());
     }
 
     /// It's important to do this at the end - for exception safety.
@@ -208,12 +208,12 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        if (!tryReadDateTimeAsRawValue(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
+        if (!tryReadDateTimeAsRawValue(x, istr, !settings.throwOnDateTimeOverflow()))
             return false;
     }
     else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
     {
-        if (!tryReadDateTimeAsNumber(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
+        if (!tryReadDateTimeAsNumber(x, istr, !settings.throwOnDateTimeOverflow()))
             return false;
     }
 
@@ -240,11 +240,11 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        readDateTimeAsRawValue(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+        readDateTimeAsRawValue(x, istr, !settings.throwOnDateTimeOverflow());
     }
     else
     {
-        readDateTimeAsNumber(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+        readDateTimeAsNumber(x, istr, !settings.throwOnDateTimeOverflow());
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
@@ -260,12 +260,12 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     }
     else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        if (!tryReadDateTimeAsRawValue(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
+        if (!tryReadDateTimeAsRawValue(x, istr, !settings.throwOnDateTimeOverflow()))
             return false;
     }
     else
     {
-        if (!tryReadDateTimeAsNumber(x, istr, settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw))
+        if (!tryReadDateTimeAsNumber(x, istr, !settings.throwOnDateTimeOverflow()))
             return false;
     }
 
