@@ -14,3 +14,8 @@ after GRANT SELECT:
 URL
 -- copy_of_function_src:
 Proxy
+without SHOW COLUMNS:
+-- local_src:
+necessary to have the grant SHOW COLUMNS ON db.local_src
+-- url_src:
+necessary to have the grant SHOW COLUMNS ON db.url_src

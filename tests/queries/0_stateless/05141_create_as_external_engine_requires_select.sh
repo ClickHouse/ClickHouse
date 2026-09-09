@@ -8,15 +8,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 user="user_${CLICKHOUSE_DATABASE}"
+blind="blind_${CLICKHOUSE_DATABASE}"
 db="${CLICKHOUSE_DATABASE}"
 
 # The URLs are never contacted, only the definitions are copied.
 ${CLICKHOUSE_CLIENT} -q "
-    DROP USER IF EXISTS ${user};
-    CREATE USER ${user};
-    GRANT CREATE TABLE ON ${db}.* TO ${user};
-    GRANT TABLE ENGINE ON MergeTree TO ${user};
-    GRANT URL ON *.* TO ${user};
+    DROP USER IF EXISTS ${user}, ${blind};
+    CREATE USER ${user}, ${blind};
+    GRANT CREATE TABLE ON ${db}.* TO ${user}, ${blind};
+    GRANT TABLE ENGINE ON MergeTree TO ${user}, ${blind};
+    GRANT URL ON *.* TO ${user}, ${blind};
 
     CREATE TABLE ${db}.local_src (id UInt64) ENGINE = MergeTree ORDER BY id;
     CREATE TABLE ${db}.url_src (id UInt64) ENGINE = URL('http://user:password@127.0.0.1:1/', 'CSV');
@@ -56,4 +57,13 @@ ${CLICKHOUSE_CLIENT} -q "
 try_copy url_src
 try_copy function_src
 
-${CLICKHOUSE_CLIENT} -q "DROP USER ${user}"
+# A user who may not see the source at all is told so, whether or not the definition holds credentials.
+echo "without SHOW COLUMNS:"
+for src in local_src url_src
+do
+    echo "-- ${src}:"
+    ${CLICKHOUSE_CLIENT} --user "${blind}" -q "CREATE TABLE ${db}.blind_copy AS ${db}.${src}" 2>&1 \
+        | grep -oE "necessary to have the grant [A-Z ]+ ON ${db}\.[a-z_]+" | head -n 1 | sed "s/${db}/db/"
+done
+
+${CLICKHOUSE_CLIENT} -q "DROP USER ${user}, ${blind}"
