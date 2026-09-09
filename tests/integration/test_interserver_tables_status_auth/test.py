@@ -30,7 +30,10 @@ USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
 # A type name no other test can produce, so the log assertions below cannot be crossed.
 BOGUS_TYPE = "NoSuchTypeGroeneAI"
 BOGUS_TYPE_READ = f"Unknown data type family: {BOGUS_TYPE}"
-DATA_REJECTED = "Unexpected packet Data received from client"
+# An interserver connection is unauthenticated until its `Query` packet, so a `Data` packet arriving
+# before then is reported as an authentication failure (an ordinary client gets
+# `UNEXPECTED_PACKET_FROM_CLIENT`); matching that wording also proves interserver mode was reached.
+DATA_REJECTED = "Unexpected data packet received before interserver authentication"
 
 
 @pytest.fixture(scope="module")
@@ -244,7 +247,7 @@ def test_data_packet_before_query_is_not_deserialized(started_cluster):
     )
     assert (
         after_rejected > before_rejected
-    ), "the Data packet was not rejected with UNEXPECTED_PACKET_FROM_CLIENT"
+    ), "the Data packet was not rejected before interserver authentication"
 
     # The block above shows no type was constructed; this one shows no payload byte was
     # needed at all. The write side is closed right after the packet type, so a handler
