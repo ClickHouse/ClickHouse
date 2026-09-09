@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTDataType.h>
@@ -68,12 +69,14 @@ const ASTPtr & getSimpleAggregateFunctionStorageTypeAST(const ASTDataType & ast)
     return arguments->children[1];
 }
 
-/// Array is transparent for codec paths. Nested is not.
-DataTypePtr getTransparentArrayElement(const DataTypePtr & type)
+/// Return the nested type of a transparent wrapper. Nested is deliberately not transparent.
+DataTypePtr getTransparentNestedType(const DataTypePtr & type)
 {
     /// Nested uses DataTypeArray too, but its named fields are separate columns.
     if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()); array && !isNested(type))
         return array->getNestedType();
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return nullable->getNestedType();
     return {};
 }
 
@@ -120,6 +123,13 @@ void forEachTupleElement(
         if (!array_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Array AST corresponds to non-Array type {}", logical_type->getName());
         forEachTupleElement(getOnlyTypeArgument(data_type_ast, "Array"), array_type->getNestedType(), path, visitor);
+    }
+    else if (data_type_ast.name == "Nullable")
+    {
+        const auto * nullable_type = typeid_cast<const DataTypeNullable *>(logical_type.get());
+        if (!nullable_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Nullable AST corresponds to non-Nullable type {}", logical_type->getName());
+        forEachTupleElement(getOnlyTypeArgument(data_type_ast, "Nullable"), nullable_type->getNestedType(), path, visitor);
     }
     else if (data_type_ast.name == "SimpleAggregateFunction")
     {
@@ -185,7 +195,7 @@ CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath &
     CodecPath result;
     for (const auto & segment : input)
     {
-        while (auto nested = getTransparentArrayElement(current))
+        while (auto nested = getTransparentNestedType(current))
             current = std::move(nested);
 
         const auto * tuple = typeid_cast<const DataTypeTuple *>(current.get());
@@ -250,11 +260,20 @@ ColumnCodecDescription codecDescriptionFromAST(
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings)
 {
+    return codecDescriptionFromAST(declaration, logical_type, logical_type, settings);
+}
+
+ColumnCodecDescription codecDescriptionFromAST(
+    const ASTColumnDeclaration & declaration,
+    const DataTypePtr & declared_type,
+    const DataTypePtr & resulting_type,
+    const CodecValidationSettings & settings)
+{
     ColumnCodecDescription result;
     if (auto root = declaration.getCodec())
         result.setRoot(root);
 
-    for (const auto & [path, operation] : tupleElementCodecPatchFromAST(declaration, logical_type))
+    for (const auto & [path, operation] : tupleElementCodecPatchFromAST(declaration, declared_type))
     {
         if (operation.kind == ColumnCodecPatchKind::Remove)
             throw Exception(
@@ -262,7 +281,7 @@ ColumnCodecDescription codecDescriptionFromAST(
                 "REMOVE CODEC on a Tuple element is allowed only in ALTER TABLE ... MODIFY COLUMN");
         result.set(path, operation.codec);
     }
-    return validateColumnCodecDescription(result, logical_type, settings);
+    return validateColumnCodecDescription(result, resulting_type, settings);
 }
 
 void applyCodecDescriptionToAST(

@@ -38,6 +38,14 @@ ColumnCodecDescription codecDescriptionFromAST(
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings);
 
+/// Read codec declarations against the explicitly declared type, then validate them against
+/// the resulting type. The types differ when NULL handling adds an outer Nullable wrapper.
+ColumnCodecDescription codecDescriptionFromAST(
+    const ASTColumnDeclaration & declaration,
+    const DataTypePtr & declared_type,
+    const DataTypePtr & resulting_type,
+    const CodecValidationSettings & settings);
+
 void applyCodecDescriptionToAST(
     ASTColumnDeclaration & declaration,
     const DataTypePtr & logical_type,

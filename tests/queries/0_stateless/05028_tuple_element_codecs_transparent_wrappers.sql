@@ -2,6 +2,9 @@
 -- no-random-merge-tree-settings: this test checks codecs in Wide-part stream headers.
 
 DROP TABLE IF EXISTS t_tuple_codec_transparent_wrappers;
+DROP TABLE IF EXISTS t_tuple_codec_nullable_wrappers;
+DROP TABLE IF EXISTS t_tuple_codec_null_modifier;
+DROP TABLE IF EXISTS t_tuple_codec_default_nullable;
 
 SET enable_tuple_element_codecs = 1;
 
@@ -111,3 +114,153 @@ SELECT count(), sum(length(array_value)), sum(length(aggregate_value))
 FROM t_tuple_codec_transparent_wrappers;
 
 DROP TABLE t_tuple_codec_transparent_wrappers;
+
+SET enable_tuple_element_codecs = 1;
+SET enable_nullable_tuple_type = 1;
+
+CREATE TABLE t_tuple_codec_nullable_wrappers
+(
+    key UInt64,
+    top Nullable(Tuple(
+        id UInt64 CODEC(Delta, LZ4),
+        text String
+    )) CODEC(ZSTD(1)),
+    nested Tuple(
+        record Nullable(Tuple(
+            id UInt64 CODEC(T64, LZ4),
+            text String
+        )) CODEC(ZSTD(1))
+    ),
+    array_value Array(Nullable(Tuple(
+        id UInt64 CODEC(Delta, LZ4),
+        text String
+    ))) CODEC(ZSTD(1))
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_compress_block_size = 0;
+
+INSERT INTO t_tuple_codec_nullable_wrappers VALUES
+    (1, (10, 'top'), tuple((20, 'nested')), [(30, 'array'), NULL]),
+    (2, NULL, tuple(NULL), []);
+
+SELECT
+    position(create_table_query, 'Nullable(Tuple(id UInt64 CODEC(Delta(8), LZ4)') > 0,
+    position(create_table_query, 'record Nullable(Tuple(id UInt64 CODEC(T64, LZ4)') > 0,
+    position(create_table_query, 'record Nullable(Tuple(id UInt64 CODEC(T64, LZ4), text String)) CODEC(ZSTD(1))') > 0,
+    position(create_table_query, 'Array(Nullable(Tuple(id UInt64 CODEC(Delta(8), LZ4)') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_nullable_wrappers';
+
+SELECT
+    countIf(column = 'top' AND endsWith(substream, '.null') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0,
+    countIf(column = 'top' AND endsWith(substream, '%2Eid') AND arrayExists(x -> startsWith(x, 'Delta('), mapKeys(codec_block_counts))) > 0,
+    countIf(column = 'nested' AND endsWith(substream, '%2Erecord.null') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0,
+    countIf(column = 'nested' AND endsWith(substream, '%2Erecord%2Eid') AND mapContains(codec_block_counts, 'T64, LZ4')) > 0,
+    countIf(column = 'array_value' AND endsWith(substream, '.size0') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0,
+    countIf(column = 'array_value' AND endsWith(substream, '.null') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0,
+    countIf(column = 'array_value' AND endsWith(substream, '%2Eid') AND arrayExists(x -> startsWith(x, 'Delta('), mapKeys(codec_block_counts))) > 0
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_nullable_wrappers);
+
+SELECT
+    count(),
+    countIf(top IS NULL),
+    sum(ifNull(top.id, 0)),
+    countIf(nested.record IS NULL),
+    sum(ifNull(nested.record.id, 0)),
+    sum(length(array_value))
+FROM t_tuple_codec_nullable_wrappers;
+
+ALTER TABLE t_tuple_codec_nullable_wrappers
+    MODIFY COLUMN top Nullable(Tuple(
+        id UInt64 CODEC(ZSTD(2)),
+        text String
+    )) CODEC(ZSTD(1));
+
+ALTER TABLE t_tuple_codec_nullable_wrappers
+    MODIFY COLUMN nested Tuple(
+        record Nullable(Tuple(
+            id UInt64 REMOVE CODEC,
+            text String
+        ))
+    );
+
+SELECT
+    position(create_table_query, 'Nullable(Tuple(id UInt64 CODEC(ZSTD(2))') > 0,
+    position(create_table_query, 'record Nullable(Tuple(id UInt64 CODEC') = 0,
+    position(create_table_query, 'record Nullable(Tuple(id UInt64, text String)) CODEC(ZSTD(1))') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_nullable_wrappers';
+
+CREATE TABLE t_tuple_codec_null_modifier
+(
+    value Tuple(id UInt64 CODEC(LZ4), text String) NULL
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO t_tuple_codec_null_modifier VALUES (NULL), ((1, 'one'));
+
+SELECT
+    type = 'Nullable(Tuple(id UInt64, text String))',
+    position(
+        (SELECT create_table_query FROM system.tables
+         WHERE database = currentDatabase() AND name = 't_tuple_codec_null_modifier'),
+        'id UInt64 CODEC(LZ4)') > 0
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_tuple_codec_null_modifier' AND name = 'value';
+
+ALTER TABLE t_tuple_codec_null_modifier
+    MODIFY COLUMN value Tuple(id UInt64 CODEC(ZSTD(2)), text String) NULL;
+
+SELECT position(create_table_query, 'id UInt64 CODEC(ZSTD(2))') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_null_modifier';
+
+ALTER TABLE t_tuple_codec_null_modifier
+    MODIFY COLUMN value Tuple(id UInt64 REMOVE CODEC, text String) NULL;
+
+SELECT position(create_table_query, 'id UInt64 CODEC') = 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_null_modifier';
+
+ALTER TABLE t_tuple_codec_null_modifier
+    ADD COLUMN added Tuple(id UInt64 CODEC(T64, LZ4), text String) NULL;
+
+SELECT
+    type = 'Nullable(Tuple(id UInt64, text String))',
+    position(
+        (SELECT create_table_query FROM system.tables
+         WHERE database = currentDatabase() AND name = 't_tuple_codec_null_modifier'),
+        'Nullable(Tuple(id UInt64 CODEC(T64, LZ4)') > 0
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_tuple_codec_null_modifier' AND name = 'added';
+
+SET data_type_default_nullable = 1;
+CREATE TABLE t_tuple_codec_default_nullable
+(
+    value Tuple(id UInt64 CODEC(LZ4), text String)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+SET data_type_default_nullable = 0;
+
+SELECT
+    type = 'Nullable(Tuple(id UInt64, text String))',
+    position(
+        (SELECT create_table_query FROM system.tables
+         WHERE database = currentDatabase() AND name = 't_tuple_codec_default_nullable'),
+        'id UInt64 CODEC(LZ4)') > 0
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_tuple_codec_default_nullable' AND name = 'value';
+
+DETACH TABLE t_tuple_codec_nullable_wrappers;
+SET enable_tuple_element_codecs = 0;
+ATTACH TABLE t_tuple_codec_nullable_wrappers;
+
+SELECT count() FROM t_tuple_codec_nullable_wrappers;
+
+DROP TABLE t_tuple_codec_nullable_wrappers;
+DROP TABLE t_tuple_codec_null_modifier;
+DROP TABLE t_tuple_codec_default_nullable;
+SET enable_nullable_tuple_type = 0;

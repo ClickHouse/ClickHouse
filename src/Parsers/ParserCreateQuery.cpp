@@ -2795,7 +2795,7 @@ The codec after the closing parenthesis belongs to the whole `payload` column. A
 
 An explicit `CODEC(Default)` on an element selects the part's default codec instead of inheriting the column codec.
 
-Element codecs are also supported for nested `Tuple` types and for a `Tuple` reached through `Array` or `SimpleAggregateFunction`. These wrappers do not add a name to the codec path. For example:
+Element codecs are also supported for nested `Tuple` types and for a `Tuple` reached through `Array`, `Nullable`, or `SimpleAggregateFunction`. These wrappers do not add a name to the codec path. For example:
 
 ```sql
 CREATE TABLE tuple_array_codec_example
@@ -2808,6 +2808,8 @@ CREATE TABLE tuple_array_codec_example
 ENGINE = MergeTree
 ORDER BY tuple();
 ```
+
+For `Nullable(Tuple(...))`, the null map uses the column codec or part default, while streams below the Tuple elements use their element codecs. The same behavior applies when a column-level `NULL` modifier or `data_type_default_nullable` adds the outer Nullable wrapper. The usual `enable_nullable_tuple_type` requirement still applies.
 
 To add or change an element codec, use `MODIFY COLUMN` and restate the type of the owning top-level column:
 
@@ -2843,8 +2845,7 @@ The following limitations apply:
 
 - Tuple element codecs are currently supported by the `MergeTree` engine family.
 - Element declarations are accepted only in stored column definitions, not in general type expressions such as `CAST`.
-- `Array` and `SimpleAggregateFunction` are the supported transparent wrappers. Declarations below other wrappers, including `Map`, `Nullable`, `LowCardinality`, `Nested`, and typed `JSON`, are rejected.
-- A column-level `NULL` modifier and `data_type_default_nullable` cannot wrap a column that has Tuple element codec declarations.
+- `Array`, `Nullable`, and `SimpleAggregateFunction` are the supported transparent wrappers. Declarations below other wrappers, including `Map`, `LowCardinality`, `Nested`, and typed `JSON`, are rejected.
 - The `Quantized` codec cannot be assigned to a Tuple element.
 - There is no dotted codec target or `MODIFY SUBCOLUMN` syntax. Alter the owning top-level column instead.
 

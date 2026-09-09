@@ -8,8 +8,6 @@ DROP TABLE IF EXISTS t_tuple_codec_quantized;
 DROP TABLE IF EXISTS t_tuple_codec_alias;
 DROP TABLE IF EXISTS t_tuple_codec_log;
 DROP TABLE IF EXISTS t_tuple_codec_nested_control;
-DROP TABLE IF EXISTS t_tuple_codec_nullable;
-DROP TABLE IF EXISTS t_tuple_codec_default_nullable;
 DROP TABLE IF EXISTS t_tuple_codec_shadowed_structural;
 
 SET enable_tuple_element_codecs = 1;
@@ -95,33 +93,6 @@ CREATE TABLE t_tuple_codec_alias
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-
--- Tuple-element policies cannot cross an outer Nullable wrapper yet.
-CREATE TABLE t_tuple_codec_nullable
-(
-    value Tuple(id UInt64 CODEC(LZ4), text String) NULL
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE t_tuple_codec_nullable
-(
-    value Tuple(id UInt64, text String)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-ALTER TABLE t_tuple_codec_nullable
-    MODIFY COLUMN value Tuple(id UInt64 CODEC(LZ4), text String) NULL; -- { serverError BAD_ARGUMENTS }
-DROP TABLE t_tuple_codec_nullable;
-
-SET data_type_default_nullable = 1;
-CREATE TABLE t_tuple_codec_default_nullable
-(
-    value Tuple(id UInt64 CODEC(LZ4), text String)
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-SET data_type_default_nullable = 0;
 
 -- A declaration shadowed on all value streams still controls Array offsets.
 CREATE TABLE t_tuple_codec_shadowed_structural

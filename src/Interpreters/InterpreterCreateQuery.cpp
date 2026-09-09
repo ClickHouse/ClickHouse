@@ -782,16 +782,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (auto comment = col_decl.getComment())
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
-        /// Tuple codec paths belong to the declared type. Column-level NULL handling happens later
-        /// and must not make AST-to-type traversal pair a Tuple AST with Nullable(Tuple(...)).
+        /// Extract Tuple codec paths against the declared type so the AST and type shapes match.
+        /// Validate against the final type so an outer Nullable added by NULL handling is included.
         const auto declared_type = col_decl.getType()
             ? DataTypeFactory::instance().get(col_decl.getType())
             : column.type;
-        column.codec = codecDescriptionFromAST(col_decl, declared_type, codec_validation_settings);
-        if (column.codec.hasSubcolumns() && !declared_type->isNullable() && column.type->isNullable())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Tuple-element CODEC declarations are not supported when NULL or data_type_default_nullable wraps the column type in Nullable");
+        column.codec = codecDescriptionFromAST(col_decl, declared_type, column.type, codec_validation_settings);
         /// The setting controls new metadata only. Existing metadata must load without the setting.
         if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && column.codec.hasSubcolumns()
             && !context_->getSettingsRef()[Setting::enable_tuple_element_codecs])

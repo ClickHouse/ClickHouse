@@ -214,11 +214,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             const auto & codec_type = declared_data_type ? declared_data_type : command.data_type;
             const auto declared_codec = codecDescriptionFromAST(
-                ast_col_decl, codec_type, CodecValidationSettings::trusted());
-            if (declared_codec.hasSubcolumns() && !codec_type->isNullable() && command.data_type->isNullable())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Tuple-element CODEC declarations are not supported when NULL wraps the column type in Nullable");
+                ast_col_decl, codec_type, command.data_type, CodecValidationSettings::trusted());
             for (const auto & [path, codec] : declared_codec.getCodecs())
                 command.codec_patch.emplace(path, ColumnCodecPatchOperation{ColumnCodecPatchKind::Set, codec});
             if (!command.codec_patch.empty() && ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
@@ -300,14 +296,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.getTTL();
 
         if (command.data_type)
-        {
             command.codec_patch = tupleElementCodecPatchFromAST(ast_col_decl, declared_data_type);
-            if (!command.codec_patch.empty()
-                && !declared_data_type->isNullable() && command.data_type->isNullable())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Tuple-element CODEC operations are not supported when NULL wraps the column type in Nullable");
-        }
 
         if (ast_col_decl.getCodec())
         {

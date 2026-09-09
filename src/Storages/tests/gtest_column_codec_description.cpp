@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include <Core/NamesAndTypes.h>
 #include <Core/Defines.h>
+#include <Core/NamesAndTypes.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
@@ -165,6 +165,73 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
     EXPECT_FALSE(removal_operation->getCodec());
     EXPECT_EQ(removal->formatWithSecretsOneLine(), "`c` Tuple(id UInt64 REMOVE CODEC, text String)");
     EXPECT_EQ(removal->clone()->getTreeHash(false), removal->getTreeHash(false));
+}
+
+TEST(ColumnCodecDescription, NullableIsTransparentForTupleCodecPaths)
+{
+    const auto parsed = parseColumnDeclaration(
+        "payload Array(Nullable(Tuple(id UInt64 CODEC(ZSTD(3)), text String))) CODEC(LZ4)");
+    const auto & declaration = parsed->as<ASTColumnDeclaration &>();
+    const auto logical_type = DataTypeFactory::instance().get(declaration.getType());
+
+    const auto codec = codecDescriptionFromAST(declaration, logical_type, CodecValidationSettings::trusted());
+    ASSERT_EQ(codec.getCodecs().size(), 2);
+    EXPECT_EQ(codec.getCodecs().at(CodecPath{})->formatWithSecretsOneLine(), "CODEC(LZ4)");
+    EXPECT_EQ(codec.getCodecs().at(CodecPath{"id"})->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
+    EXPECT_EQ(canonicalizeCodecPath(logical_type, CodecPath{"id"}), CodecPath{"id"});
+
+    ASTColumnDeclaration restored;
+    restored.name = declaration.name;
+    restored.setType(dataTypeToAST(logical_type));
+    applyCodecDescriptionToAST(restored, logical_type, codec);
+    EXPECT_EQ(restored.formatWithSecretsOneLine(), declaration.formatWithSecretsOneLine());
+}
+
+TEST(ColumnCodecDescription, ImplicitOuterNullableIsValidatedAgainstResultingType)
+{
+    const auto parsed = parseColumnDeclaration(
+        "payload Tuple(id UInt64 CODEC(ZSTD(3)), text String) CODEC(LZ4)");
+    const auto & declaration = parsed->as<ASTColumnDeclaration &>();
+    const auto declared_type = DataTypeFactory::instance().get(declaration.getType());
+    const auto resulting_type = DataTypeFactory::instance().get("Nullable(Tuple(id UInt64, text String))");
+
+    const auto codec = codecDescriptionFromAST(
+        declaration, declared_type, resulting_type, CodecValidationSettings::trusted());
+    const ColumnCodecResolver resolver(
+        codec,
+        resulting_type,
+        NameAndTypePair(declaration.name, resulting_type),
+        nullptr);
+
+    bool found_null_map = false;
+    bool found_id_value = false;
+    resulting_type->getDefaultSerialization()->enumerateStreams(
+        [&](const ISerialization::SubstreamPath & path)
+        {
+            if (path.empty())
+                return;
+
+            const auto stream = classifyCodecStream(path);
+            const auto resolved = resolver.resolve(path);
+            if (path.back().type == ISerialization::Substream::NullMap)
+            {
+                found_null_map = true;
+                EXPECT_TRUE(stream.structural);
+                EXPECT_TRUE(stream.logical_path.empty());
+                ASSERT_TRUE(resolved.codec);
+                EXPECT_EQ(resolved.codec->formatWithSecretsOneLine(), "CODEC(LZ4)");
+            }
+            else if (!stream.structural && stream.logical_path == CodecPath{"id"})
+            {
+                found_id_value = true;
+                ASSERT_TRUE(resolved.codec);
+                EXPECT_EQ(resolved.codec->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
+            }
+        },
+        resulting_type);
+
+    EXPECT_TRUE(found_null_map);
+    EXPECT_TRUE(found_id_value);
 }
 
 TEST(ColumnCodecDescription, OrdinaryTupleHasNoCodecOperations)

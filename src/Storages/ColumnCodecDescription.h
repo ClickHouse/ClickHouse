@@ -6,11 +6,10 @@
 #include <map>
 #include <vector>
 
-/** Codecs are storage metadata for a column. One column can produce many storage streams,
-  * and Tuple elements can choose different codecs.
+/** One column can produce many storage streams,
+  * and Tuple elements can have different codecs.
   *
-  * This file defines codecs for the whole column and for tuple-element paths.
-  * This metadata is not part of IDataType identity or column values.
+  * Defines codecs for the whole column and for tuple-element paths.
   */
 namespace DB
 {
