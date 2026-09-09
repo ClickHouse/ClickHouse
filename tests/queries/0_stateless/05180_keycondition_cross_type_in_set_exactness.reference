@@ -13,3 +13,5 @@ control DateTime key, other-timezone element, IN answer	1
 control DateTime key, other-timezone element, NOT IN answer	1
 control LowCardinality(String) key, String element, prunes	1
 control LowCardinality(String) key, String element, answer	1
+control Tuple(UInt8) key, Tuple(Bool) element, declines	1	1
+control Tuple(LowCardinality(String)) key, Tuple(String) element, prunes	1	1

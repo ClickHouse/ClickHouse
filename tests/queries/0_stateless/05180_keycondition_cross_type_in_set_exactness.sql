@@ -65,6 +65,22 @@ INSERT INTO k_lowcard VALUES ('a'), ('b');
 CREATE TABLE k_lowcard_mem (s LowCardinality(String)) ENGINE = Memory;
 INSERT INTO k_lowcard_mem SELECT * FROM k_lowcard;
 
+DROP TABLE IF EXISTS k_tuple_bool;
+DROP TABLE IF EXISTS k_tuple_bool_mem;
+CREATE TABLE k_tuple_bool (tup Tuple(UInt8)) ENGINE = MergeTree ORDER BY tup PARTITION BY tup
+    SETTINGS add_minmax_index_for_numeric_columns = 0;
+INSERT INTO k_tuple_bool VALUES ((0)), ((1)), ((5));
+CREATE TABLE k_tuple_bool_mem (tup Tuple(UInt8)) ENGINE = Memory;
+INSERT INTO k_tuple_bool_mem SELECT * FROM k_tuple_bool;
+
+DROP TABLE IF EXISTS k_tuple_lc;
+DROP TABLE IF EXISTS k_tuple_lc_mem;
+CREATE TABLE k_tuple_lc (tup Tuple(LowCardinality(String))) ENGINE = MergeTree ORDER BY tup PARTITION BY tup
+    SETTINGS add_minmax_index_for_numeric_columns = 0;
+INSERT INTO k_tuple_lc VALUES (('a')), (('b'));
+CREATE TABLE k_tuple_lc_mem (tup Tuple(LowCardinality(String))) ENGINE = Memory;
+INSERT INTO k_tuple_lc_mem SELECT * FROM k_tuple_lc;
+
 SELECT 'UInt64 key, String element, NOT IN',
        (SELECT groupArray(k) FROM (SELECT k FROM k_uint64 WHERE k NOT IN (SELECT '01') ORDER BY k))
      = (SELECT groupArray(k) FROM (SELECT k FROM k_uint64_mem WHERE k NOT IN (SELECT '01') ORDER BY k));
@@ -123,3 +139,23 @@ WHERE explain ILIKE '%Parts: 1/2%';
 SELECT 'control LowCardinality(String) key, String element, answer',
        (SELECT groupArray(s) FROM (SELECT s FROM k_lowcard WHERE s IN (SELECT 'a') ORDER BY s))
      = (SELECT groupArray(s) FROM (SELECT s FROM k_lowcard_mem WHERE s IN (SELECT 'a') ORDER BY s));
+
+-- The two composite cells below reach the type check recursively, where `Tuple`'s own `equals` cannot: it
+-- ignores custom names and compares a nested `LowCardinality` as itself. Nested inside a `Tuple`, `Bool`
+-- relabels the element without clamping the stored integer the way a top-level `Bool` cast does, so this
+-- pair converts losslessly both ways and no row is dropped whether or not the atom is built.
+SELECT 'control Tuple(UInt8) key, Tuple(Bool) element, declines',
+       (SELECT count() > 0
+        FROM (EXPLAIN indexes = 1 SELECT sum(tup.1) FROM k_tuple_bool WHERE tup IN (SELECT CAST(tuple(5), 'Tuple(Bool)')))
+        WHERE explain ILIKE '%Parts: 3/3%') AS declines,
+       (SELECT groupArray(tup) FROM (SELECT tup FROM k_tuple_bool WHERE tup IN (SELECT CAST(tuple(5), 'Tuple(Bool)')) ORDER BY tup))
+     = (SELECT groupArray(tup) FROM (SELECT tup FROM k_tuple_bool_mem WHERE tup IN (SELECT CAST(tuple(5), 'Tuple(Bool)')) ORDER BY tup)) AS answer;
+
+-- An outer-only strip would decline this one, because `LowCardinality(String)` and `String` are not
+-- `equals`-equal, so it pins the pruning the recursive strip buys.
+SELECT 'control Tuple(LowCardinality(String)) key, Tuple(String) element, prunes',
+       (SELECT count() > 0
+        FROM (EXPLAIN indexes = 1 SELECT sum(length(tup.1)) FROM k_tuple_lc WHERE tup IN (SELECT CAST(tuple('a'), 'Tuple(String)')))
+        WHERE explain ILIKE '%Parts: 1/2%') AS prunes,
+       (SELECT groupArray(tup) FROM (SELECT tup FROM k_tuple_lc WHERE tup IN (SELECT CAST(tuple('a'), 'Tuple(String)')) ORDER BY tup))
+     = (SELECT groupArray(tup) FROM (SELECT tup FROM k_tuple_lc_mem WHERE tup IN (SELECT CAST(tuple('a'), 'Tuple(String)')) ORDER BY tup)) AS answer;
