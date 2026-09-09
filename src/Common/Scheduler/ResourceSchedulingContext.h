@@ -120,11 +120,8 @@ public:
 
     /// Shared by requests issued outside any query/thread group, so schedulers can assume every
     /// request carries a context. Never destroyed: leaf destructors erase from it, possibly at exit.
-    static ResourceSchedulingContext & anonymous()
-    {
-        static ResourceSchedulingContext * instance = new ResourceSchedulingContext(0, 1.0, 1.0, 0.0, 0.0, 0.0, 0);
-        return *instance;
-    }
+    /// Defined out of line to keep a single instance across shared libraries.
+    static ResourceSchedulingContext & anonymous();
 
 private:
     std::mutex mutex;
