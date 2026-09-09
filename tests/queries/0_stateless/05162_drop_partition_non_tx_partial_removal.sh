@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_drop_partition_partial SETTINGS async_inser
 tx 1 "BEGIN TRANSACTION"
 tx 1 "INSERT INTO t_drop_partition_partial SETTINGS async_insert = 0 VALUES (2)"
 
-$CLICKHOUSE_CLIENT -q "ALTER TABLE t_drop_partition_partial DROP PARTITION ALL" 2>&1 | grep -c -F "SERIALIZATION_ERROR"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_drop_partition_partial DROP PARTITION ALL" 2>&1 | grep -o -F "SERIALIZATION_ERROR" | head -1
 
 tx 1 "COMMIT"
 

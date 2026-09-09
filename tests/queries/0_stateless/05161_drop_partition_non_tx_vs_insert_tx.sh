@@ -22,14 +22,14 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_drop_partition_non_tx (x UInt64) ENGINE = 
 # Case 1: DROP PARTITION over a part whose creating transaction is still running.
 tx 1 "BEGIN TRANSACTION"
 tx 1 "INSERT INTO t_drop_partition_non_tx SETTINGS async_insert = 0 VALUES (1)"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE t_drop_partition_non_tx DROP PARTITION ALL" 2>&1 | grep -c -F "SERIALIZATION_ERROR"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_drop_partition_non_tx DROP PARTITION ALL" 2>&1 | grep -o -F "SERIALIZATION_ERROR" | head -1
 tx 1 "ROLLBACK"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t_drop_partition_non_tx"
 
 # Case 2: DETACH PARTITION goes through the same non-transactional removal path.
 tx 2 "BEGIN TRANSACTION"
 tx 2 "INSERT INTO t_drop_partition_non_tx SETTINGS async_insert = 0 VALUES (2)"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE t_drop_partition_non_tx DETACH PARTITION ALL" 2>&1 | grep -c -F "SERIALIZATION_ERROR"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_drop_partition_non_tx DETACH PARTITION ALL" 2>&1 | grep -o -F "SERIALIZATION_ERROR" | head -1
 tx 2 "COMMIT"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t_drop_partition_non_tx"
 
