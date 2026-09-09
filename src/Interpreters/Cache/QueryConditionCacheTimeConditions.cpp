@@ -28,17 +28,23 @@ namespace
 constexpr std::array<Int64, 7> grid_ladder = {86400, 21600, 3600, 600, 60, 10, 1};
 
 /// Choose the grid step for a constant: the largest ladder step not exceeding the distance between
-/// the constant and the current time, multiplied by the configured factor and capped at one day.
+/// the constant and the current time, multiplied by the configured factor and clamped to the ladder.
 /// This bounds the rounding error relative to the time window the query looks at, and makes the
 /// derived boundary (and hence the cache key) rotate roughly once per the same fraction of the window.
 std::optional<Int64> chooseGridStep(Int64 constant_seconds, double grid_factor, time_t current_time)
 {
+    if (!(grid_factor > 0.0)) /// Also rejects NaN. A non-positive factor disables the derivation.
+        return std::nullopt;
+
     double distance = std::abs(static_cast<double>(current_time) - static_cast<double>(constant_seconds));
     distance = std::max(distance, 1.0);
     double target = distance * grid_factor;
-    if (!(target >= 1.0)) /// Also rejects NaN.
-        return std::nullopt;
-    target = std::min(target, static_cast<double>(grid_ladder.front()));
+    /// A small factor, or a constant close to the current time, can ask for a step below the finest
+    /// ladder step. Clamp to that step instead of dropping the condition: rounding onto the one
+    /// second grid is the identity for whole-second constants, so a constant that is already aligned
+    /// (`today()`, `toStartOfHour(now())`) still derives the same condition in both directions and
+    /// stays reusable, which is exactly what a fine grid is supposed to give.
+    target = std::clamp(target, static_cast<double>(grid_ladder.back()), static_cast<double>(grid_ladder.front()));
     for (Int64 step : grid_ladder)
         if (static_cast<double>(step) <= target)
             return step;

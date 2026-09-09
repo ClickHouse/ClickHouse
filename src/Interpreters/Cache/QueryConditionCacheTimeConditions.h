@@ -25,7 +25,8 @@ namespace DB
 ///                                          time >= '2026-08-10 00:00:00'  (rounded up)
 ///
 /// The grid step is proportional to the distance between the constant and the current time
-/// (10 days above), multiplied by a configured factor and capped at one day. All queries whose
+/// (10 days above), multiplied by a configured factor and clamped to the range from one second to
+/// one day. All queries whose
 /// constants land in the same grid cell derive the same condition and therefore the same cache key,
 /// which balances cache usefulness against staleness of the boundary: the derived boundary lags the
 /// real one by at most one grid step, and the key naturally rotates once per grid step.
@@ -69,7 +70,7 @@ struct DeterministicTimeCondition
 ///     constants of non-temporal types, non-deterministic constants outside of monotone comparison
 ///     positions (only AND, OR, NOT and comparisons of a deterministic expression with a constant
 ///     are understood), or non-deterministic functions, or
-///   * `grid_factor` is not positive, or the resulting grid step would be below one second.
+///   * `grid_factor` is not positive (which disables the derivation).
 ///
 /// `current_time` is only used to choose the grid step; it does not affect soundness, only the
 /// likelihood that independent derivations (e.g. the write side of one query and the read side of a
