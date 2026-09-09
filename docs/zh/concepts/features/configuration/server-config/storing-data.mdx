@@ -406,11 +406,13 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 元数据文件，而是将元数据存储在 S3 中。
 不同于 `s3_plain` 磁盘类型，`s3_plain_rewritable` 允许执行合并，
 并支持 `INSERT` 操作。
-不支持[变更](/zh/reference/statements/alter/index#mutations)和表的复制。
+不支持表的复制。
+仅当磁盘配置了 `enable_hard_links` 时才支持[变更](/zh/reference/statements/alter/index#mutations)和 `ALTER` 操作，
+参见下文。
 
 这种磁盘类型的一个适用场景是非复制的 `MergeTree` 表。虽然
 `s3` 磁盘类型也适用于非复制的 `MergeTree` 表，但如果你不需要该表的本地元数据，
-并且可以接受受限的操作集，则可以选择
+则可以选择
 `s3_plain_rewritable` 磁盘类型。例如，它对
 系统表就可能很有用。
 
@@ -438,6 +440,24 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 自 `24.5` 起，可以使用 `plain_rewritable` 元数据类型来配置任何对象存储磁盘
 (`s3`、`azure`、`local`) 。
+
+#### plain rewritable 磁盘上的硬链接 {#plain-rewritable-hard-links}
+
+`MergeTree` 表的 `ALTER` 操作和变更 (mutation) 不会复制文件，而是通过硬链接在某个分片与其变更后的后继分片之间共享未改变的文件。`enable_hard_links` 设置 (默认为 `0`) 允许使用 `plain_rewritable` 元数据的磁盘创建真正的硬链接，从而解锁以下操作：
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>1</enable_hard_links>
+</s3_plain_rewritable>
+```
+
+硬链接会让目录的元数据显式列出其中的文件，并附带存储这些文件的对象键，从而使某个文件可以引用存储在另一个目录前缀下的对象。启用前请注意以下几点：
+
+* 低于 `26.9` 的服务器无法读取这种形式的目录。包含此类目录的磁盘在降级后将无法读取，也无法与较旧的服务器共享。从未创建过硬链接的目录仍保持原有布局，因此在首次创建硬链接的操作 (变更、`ALTER`、`FREEZE` 或 Backup) 发生之前，较旧的服务器仍可读取该磁盘。重新关闭该设置不会将已有目录转换回原有布局。
+* 当某个对象的最后一个链接被移除时，其删除分两步进行：先重写目录的元数据，然后再删除该对象。如果服务器在这两步之间被终止，该对象会遗留在存储桶中且不再被任何内容引用，需要手动删除。
 
 ### 使用 Azure Blob 存储 {#azure-blob-storage}
 

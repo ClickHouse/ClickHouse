@@ -415,13 +415,14 @@ Assim como o tipo de disco `s3_plain`, ele não requer armazenamento adicional p
 arquivos de metadados. Em vez disso, os metadados são armazenados no S3.
 Ao contrário do tipo de disco `s3_plain`, o `s3_plain_rewritable` permite executar mesclagens
 e oferece suporte a operações `INSERT`.
-[Mutações](/pt-BR/reference/statements/alter/index#mutations) e a replicação de tabelas não são suportadas.
+A replicação de tabelas não é suportada.
+[Mutações](/pt-BR/reference/statements/alter/index#mutations) e operações `ALTER`
+são suportadas apenas se o disco for configurado com `enable_hard_links`, veja abaixo.
 
 Um caso de uso desse tipo de disco é em tabelas `MergeTree` não replicadas. Embora
 o tipo de disco `s3` seja adequado para tabelas `MergeTree` não replicadas, você pode optar
 pelo tipo de disco `s3_plain_rewritable` se não precisar de metadados locais
-para a tabela e estiver disposto a aceitar um conjunto limitado de operações. Isso pode
-ser útil, por exemplo, para tabelas de sistema.
+para a tabela. Isso pode ser útil, por exemplo, para tabelas de sistema.
 
 Configuração:
 
@@ -447,6 +448,28 @@ Configuração:
 
 A partir da versão `24.5`, é possível configurar qualquer disco de armazenamento de objetos
 (`s3`, `azure`, `local`) com o tipo de metadados `plain_rewritable`.
+
+#### Hard links em discos plain rewritable {#plain-rewritable-hard-links}
+
+Operações `ALTER` e mutações de uma tabela `MergeTree` compartilham os arquivos inalterados
+entre uma parte e seu sucessor alterado por meio de hard links, em vez de copiá-los.
+A configuração `enable_hard_links` (`0` por padrão) permite que um disco com metadado
+`plain_rewritable` crie hard links reais, o que habilita estas
+operações:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>1</enable_hard_links>
+</s3_plain_rewritable>
+```
+
+Um hard link faz com que os metadados de um diretório listem seus arquivos explicitamente, junto com as chaves dos objetos que os armazenam, de modo que um arquivo possa referenciar um objeto armazenado sob o prefixo de outro diretório. Considere o seguinte antes de habilitá-lo:
+
+* Servidores anteriores à versão `26.9` não conseguem ler um diretório nesse formato. Um disco que contenha tais diretórios deixa de ser legível após um downgrade e não pode ser compartilhado com servidores mais antigos. Diretórios que nunca tiveram hard links mantêm o layout anterior, portanto um disco continua legível por servidores mais antigos até a primeira operação que cria um hard link — uma mutation, um `ALTER`, um `FREEZE` ou um backup. Desativar a configuração novamente não reverte os diretórios existentes.
+* Um objeto cujo último link é removido é excluído em duas etapas: primeiro os metadados do diretório são regravados e, em seguida, o objeto é excluído. Se o servidor for interrompido nesse intervalo, o objeto permanece no bucket sem ser referenciado por nada e precisa ser excluído manualmente.
 
 ### Usando o Azure Blob Storage {#azure-blob-storage}
 

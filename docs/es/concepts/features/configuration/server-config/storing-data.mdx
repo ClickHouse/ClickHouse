@@ -408,20 +408,21 @@ Configuración:
 </s3_plain>
 ```
 
-### Uso de almacenamiento S3 simple reescribible {#s3-plain-rewritable-storage}
+### Uso de almacenamiento S3 plain rewritable {#s3-plain-rewritable-storage}
 
 Se introdujo un nuevo tipo de disco `s3_plain_rewritable` en `24.4`.
 Al igual que el tipo de disco `s3_plain`, no requiere almacenamiento adicional para
 los archivos de metadatos. En su lugar, los metadatos se almacenan en S3.
 A diferencia del tipo de disco `s3_plain`, `s3_plain_rewritable` permite ejecutar merges
 y admite operaciones `INSERT`.
-No se admiten las [mutaciones](/es/reference/statements/alter/index#mutations) ni la replicación de tablas.
+No se admite la replicación de tablas.
+Las [mutaciones](/es/reference/statements/alter/index#mutations) y las operaciones `ALTER`
+solo se admiten si el disco está configurado con `enable_hard_links`, véase más abajo.
 
 Un caso de uso de este tipo de disco es en tablas `MergeTree` no replicadas. Aunque
 el tipo de disco `s3` es adecuado para tablas `MergeTree` no replicadas, puede optar
 por el tipo de disco `s3_plain_rewritable` si no necesita metadatos locales
-para la tabla y está dispuesto a aceptar un conjunto limitado de operaciones. Esto puede
-resultar útil, por ejemplo, para las tablas del sistema.
+para la tabla. Esto puede resultar útil, por ejemplo, para las tablas del sistema.
 
 Configuración:
 
@@ -447,6 +448,28 @@ es igual a
 
 A partir de la versión `24.5`, es posible configurar cualquier disco de almacenamiento de objetos
 (`s3`, `azure`, `local`) con el tipo de metadatos `plain_rewritable`.
+
+#### Enlaces físicos en discos plain rewritable {#plain-rewritable-hard-links}
+
+Las operaciones `ALTER` y las mutaciones de una tabla `MergeTree` comparten los archivos
+que no han cambiado entre una parte y su sucesor mutado mediante enlaces físicos, en lugar de copiarlos.
+El ajuste `enable_hard_links` (`0` de forma predeterminada) permite que un disco con
+metadatos `plain_rewritable` cree enlaces físicos reales, lo que habilita estas
+operaciones:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>1</enable_hard_links>
+</s3_plain_rewritable>
+```
+
+Un enlace físico hace que los metadatos de un directorio enumeren sus archivos de forma explícita, junto con las claves de los objetos que los almacenan, de modo que un archivo puede hacer referencia a un objeto almacenado bajo el prefijo de otro directorio. Ten en cuenta lo siguiente antes de habilitarlo:
+
+* Los servidores anteriores a `26.9` no pueden leer un directorio con este formato. Un disco que contenga directorios de este tipo deja de ser legible tras un downgrade y no puede compartirse con servidores más antiguos. Los directorios que nunca tuvieron enlaces físicos conservan el layout anterior, por lo que un disco sigue siendo legible para servidores más antiguos hasta la primera operación que cree un enlace físico: una mutación, un `ALTER`, un `FREEZE` o un backup. Volver a desactivar la configuración no revierte los directorios existentes.
+* Un objeto cuyo último enlace se elimina se borra en dos pasos: primero se reescriben los metadatos del directorio y después se elimina el objeto. Si el servidor se detiene de forma abrupta entre ambos pasos, el objeto queda en el bucket sin que nada lo referencie, por lo que hay que eliminarlo manualmente.
 
 ### Uso de Azure Blob Storage {#azure-blob-storage}
 

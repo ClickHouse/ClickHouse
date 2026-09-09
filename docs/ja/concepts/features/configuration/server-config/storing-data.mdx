@@ -413,9 +413,10 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 新しいディスクタイプ `s3_plain_rewritable` は `24.4` で導入されました。
 `s3_plain` ディスクタイプと同様に、メタデータファイル用の追加ストレージは必要ありません。代わりに、メタデータは S3 に保存されます。
 `s3_plain` ディスクタイプとは異なり、`s3_plain_rewritable` ではマージを実行でき、`INSERT` 操作もサポートされます。
-[Mutations](/ja/reference/statements/alter/index#mutations) とテーブルのレプリケーションはサポートされていません。
+テーブルのレプリケーションはサポートされていません。
+[Mutations](/ja/reference/statements/alter/index#mutations) と `ALTER` 操作は、ディスクが `enable_hard_links` で設定されている場合にのみサポートされます。詳細は以下を参照してください。
 
-このディスクタイプのユースケースの 1 つは、非レプリケートの `MergeTree` テーブルです。`s3` ディスクタイプも非レプリケートの `MergeTree` テーブルに適していますが、テーブルのローカルメタデータが不要で、利用できる操作が限られていても問題ない場合は、`s3_plain_rewritable` ディスクタイプを選択できます。たとえば、システムテーブルで有用です。
+このディスクタイプのユースケースの 1 つは、非レプリケートの `MergeTree` テーブルです。`s3` ディスクタイプも非レプリケートの `MergeTree` テーブルに適していますが、テーブルのローカルメタデータが不要な場合は、`s3_plain_rewritable` ディスクタイプを選択できます。たとえば、システムテーブルで有用です。
 
 設定:
 
@@ -441,6 +442,24 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 `24.5` 以降では、`plain_rewritable` メタデータタイプを使用して任意のオブジェクトストレージディスク
 (`s3`、`azure`、`local`) を設定できます。
+
+#### plain rewritable ディスク上のハードリンク {#plain-rewritable-hard-links}
+
+`MergeTree` テーブルの `ALTER` 操作および mutation では、変更されないファイルを パーツ とその mutate 後の後続 パーツ の間でコピーするのではなく、ハードリンクで共有します。`enable_hard_links` 設定 (デフォルトは `0`) により、`plain_rewritable` メタデータを持つディスクで実際のハードリンクを作成できるようになり、次の操作がロック解除されます:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>1</enable_hard_links>
+</s3_plain_rewritable>
+```
+
+ハードリンクを使用すると、ディレクトリのメタデータにそのファイル一覧が、それらを格納するオブジェクトのキーとともに明示的に記録されます。これにより、あるファイルが別のディレクトリのプレフィックス配下に格納されたオブジェクトを参照できるようになります。有効化する前に、以下の点を検討してください。
+
+* `26.9` より古いサーバーは、この形式のディレクトリを読み取れません。そのようなディレクトリを含むディスクは、ダウングレード後に読み取れなくなり、古いサーバーと共有することもできません。ハードリンクを一度も持たなかったディレクトリは以前のレイアウトを維持するため、ハードリンクを作成する最初の操作(mutation、`ALTER`、`FREEZE`、バックアップ)が行われるまでは、ディスクは古いサーバーからも読み取り可能な状態を保ちます。設定を再度オフにしても、既存のディレクトリが元の形式に戻ることはありません。
+* 最後のリンクが削除されたオブジェクトは、2段階で削除されます。まずディレクトリのメタデータが書き換えられ、その後にオブジェクトが削除されます。この途中でサーバーが強制終了された場合、オブジェクトはバケット内に残り、どこからも参照されない状態になるため、手動で削除する必要があります。
 
 ### Azure Blob Storage の使用 {#azure-blob-storage}
 
