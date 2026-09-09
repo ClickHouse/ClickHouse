@@ -2968,6 +2968,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                         : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
                     : "REPLACE TABLE"));
 
+        /// The `_tmp_replace_<...>` name below has no `namespace.table` form, and `doCreateTable` is
+        /// called with `engine_user_specified=false`, so this path cannot serve a `DataLakeCatalog`.
+        chassert(!database->isDatalakeCatalog());
+
         /// For a plain create the final name must not already exist (as an active table, as a dictionary, or
         /// reserved by a detached table). Check it up front, before the create-only validations below (table
         /// name length, cyclic dependencies) and before authorizing or running the populating SELECT, so that
