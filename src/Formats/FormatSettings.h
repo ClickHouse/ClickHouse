@@ -56,6 +56,9 @@ struct FormatSettings
 
     bool allow_special_serialization_kinds = false;
 
+    /// Infers a number, not a `String`, for an integer with leading zeros
+    bool allow_number_leading_zeros = false;
+
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";

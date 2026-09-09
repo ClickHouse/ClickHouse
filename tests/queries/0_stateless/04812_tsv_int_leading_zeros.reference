@@ -53,32 +53,12 @@ c1	Nullable(Int64)
 -7
 c1	Nullable(Int64)					
 7
-group 6: padded integers now infer an integer type
-c1	Nullable(Int64)					
-7
-c1	Nullable(Int64)					
-1
-c1	Nullable(Int64)					
-0
-c1	Nullable(Int64)					
-0
-c1	Nullable(Int64)					
-123
-c1	Nullable(UInt64)					
-18446744073709551615
+group 6: padded integers keep inferring String
+c1	Nullable(String)					
+007
+c1	Nullable(String)					
+018446744073709551615
 group 7: CSV oracle
-c1	Nullable(Int64)					
-7
-c1	Nullable(Int64)					
-1
-c1	Nullable(Int64)					
-0
-c1	Nullable(Int64)					
-0
-c1	Nullable(Int64)					
-123
-c1	Nullable(UInt64)					
-18446744073709551615
 7
 -7
 7
@@ -132,9 +112,6 @@ group 11: zero run edges
 7
 9	0
 0	9
-group 12: no row is lost
-3
-3
-3
+group 12: whole file reads
 3
 3

@@ -413,26 +413,12 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
         has_plus = true;
     }
 
-    /// Without this a lone '+' would fall through to the digit loop, which reads nothing and returns
-    /// zero. The throw is out of line: constructing it here reserves a 72-byte frame on every call.
+    /// Without this a lone '+' would fall through to the digit loop, which reads nothing and returns zero.
     if (has_plus && !is_digit()) [[unlikely]]
     {
         if constexpr (throw_exception)
             throwNumberWithoutDigits();
         return ReturnType(false);
-    }
-
-    if (*buf.position() == '0') /// There are many zeros in real datasets.
-    {
-        do
-            ++buf.position();
-        while (!buf.eof() && *buf.position() == '0');
-
-        if (!is_digit())
-        {
-            x = 0;
-            return ReturnType(true);
-        }
     }
 
     while (!buf.eof())

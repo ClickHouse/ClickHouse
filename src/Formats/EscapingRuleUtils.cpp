@@ -340,6 +340,12 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
 
             auto type = tryInferDataTypeForSingleField(field, format_settings);
 
+            /// A leading zero carries information in these formats (zip codes, phone numbers), so a
+            /// zero-padded integer stays a `String`. `allow_number_leading_zeros` (hive) opts out.
+            if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
+                && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
+                return std::make_shared<DataTypeString>();
+
             if (!type)
                 return std::make_shared<DataTypeString>();
             return type;
