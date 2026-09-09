@@ -116,7 +116,7 @@ namespace
         /// Identifies this upload among all writers to `dest_key`. Sent as custom object metadata, so
         /// a completion this helper has to send again can recognise the object its earlier attempt
         /// wrote and tell it apart from an object that was already there.
-        const String write_token = getRandomASCIIString(32);
+        const String idempotency_id = getRandomASCIIString(IDEMPOTENCY_ID_LENGTH);
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -144,9 +144,9 @@ namespace
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
 
-            /// Metadata set here lands on the completed object, so a HEAD after completion sees the token.
+            /// Metadata set here lands on the completed object, so a HEAD after completion sees the id.
             auto metadata = object_metadata.value_or(ObjectAttributes{});
-            metadata[WRITE_TOKEN_METADATA_KEY] = write_token;
+            metadata[IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
@@ -239,7 +239,7 @@ namespace
                 /// object, means this completion was sent again after it had succeeded. Anything we
                 /// cannot prove we wrote is a pre-existing object and must still throw.
                 if (error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
-                    && isObjectWrittenWithToken(*client_ptr, dest_bucket, dest_key, write_token, log))
+                    && isObjectWrittenWithIdempotencyId(*client_ptr, dest_bucket, dest_key, idempotency_id, log))
                 {
                     LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     /// The attempt that completed the upload reported an error, so nothing has

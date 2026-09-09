@@ -556,7 +556,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     /// A NO_SUCH_UPLOAD is reported as it is. This layer sees only the part list, so it cannot tell an
     /// upload that was aborted from one whose completion succeeded and lost its response, and an object
     /// at the key proves neither. The writer knows which object is its own and resolves it there, see
-    /// `isObjectWrittenWithToken`, and calls `composeObjectAfterMultipartUpload` once it concludes the
+    /// `isObjectWrittenWithIdempotencyId`, and calls `composeObjectAfterMultipartUpload` once it concludes the
     /// upload is complete -- by either route, which is why this cannot be keyed on `outcome` here.
 
     if (outcome.IsSuccess())

@@ -220,7 +220,7 @@ public:
     ///
     /// `CompleteMultipartUpload` calls it for a completion that reported success. A caller that
     /// concludes the upload completed despite an error -- an earlier attempt whose response was lost,
-    /// recognised by its write token -- must call it itself, because no outcome here says so.
+    /// recognised by its idempotency id -- must call it itself, because no outcome here says so.
     void composeObjectAfterMultipartUpload(const String & bucket, const String & key) const;
 
     Model::UploadPartOutcome UploadPart(UploadPartRequest & request) const;

@@ -116,7 +116,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , write_token(getRandomASCIIString(32))
+    , idempotency_id(write_settings.object_storage_write_if_none_match.empty() ? "" : getRandomASCIIString(IDEMPOTENCY_ID_LENGTH))
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -417,8 +417,14 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Metadata set here lands on the completed object, so a HEAD after completion sees the token.
-    req.SetMetadata(metadataWithWriteToken());
+    /// A multipart completion can come back as NO_SUCH_UPLOAD after an earlier attempt of it had
+    /// succeeded, and only the id tells that apart from an upload that was really aborted over an
+    /// object somebody else wrote. So every multipart upload carries one, conditional or not.
+    if (idempotency_id.empty())
+        idempotency_id = getRandomASCIIString(IDEMPOTENCY_ID_LENGTH);
+
+    /// Metadata set here lands on the completed object, so a HEAD after completion sees the id.
+    req.SetMetadata(*metadataWithIdempotencyId());
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
@@ -737,12 +743,8 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    /// Only a conditional PUT can come back as 412 and have to recognise its own object. An ordinary
-    /// PUT would carry the token for nothing, on every object ClickHouse writes.
-    if (isConditionalWrite())
-        req.SetMetadata(metadataWithWriteToken());
-    else if (object_metadata.has_value())
-        req.SetMetadata(*object_metadata);
+    if (auto metadata = metadataWithIdempotencyId())
+        req.SetMetadata(*metadata);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
@@ -760,22 +762,19 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     return req;
 }
 
-bool WriteBufferFromS3::isConditionalWrite() const
+std::optional<ObjectAttributes> WriteBufferFromS3::metadataWithIdempotencyId() const
 {
-    return !write_settings.object_storage_write_if_none_match.empty()
-        || !write_settings.object_storage_write_if_match.empty();
-}
+    if (idempotency_id.empty())
+        return object_metadata;
 
-ObjectAttributes WriteBufferFromS3::metadataWithWriteToken() const
-{
     auto metadata = object_metadata.value_or(ObjectAttributes{});
-    metadata[WRITE_TOKEN_METADATA_KEY] = write_token;
+    metadata[IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
     return metadata;
 }
 
 bool WriteBufferFromS3::isObjectWrittenByThisBuffer() const
 {
-    return isObjectWrittenWithToken(*client_ptr, bucket, key, write_token, log);
+    return isObjectWrittenWithIdempotencyId(*client_ptr, bucket, key, idempotency_id, log);
 }
 
 void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data)

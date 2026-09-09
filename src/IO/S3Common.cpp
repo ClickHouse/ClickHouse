@@ -51,22 +51,22 @@ bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
         || error.GetExceptionName() == "InvalidPartOrder";
 }
 
-bool isObjectWrittenWithToken(
-    const S3::Client & client, const String & bucket, const String & key, const String & write_token, LoggerPtr log)
+bool isObjectWrittenWithIdempotencyId(
+    const S3::Client & client, const String & bucket, const String & key, const String & idempotency_id, LoggerPtr log)
 {
-    if (write_token.empty())
+    if (idempotency_id.empty())
         return false;
 
     try
     {
         auto info = S3::getObjectInfoIfExists(client, bucket, key, /* version_id = */ {}, /* with_metadata = */ true);
-        auto it = info.metadata.find(WRITE_TOKEN_METADATA_KEY);
-        return it != info.metadata.end() && it->second == write_token;
+        auto it = info.metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+        return it != info.metadata.end() && it->second == idempotency_id;
     }
     catch (...)
     {
         /// Report the original write error rather than a confusing read error.
-        tryLogCurrentException(log, "Failed to verify the write token of " + key);
+        tryLogCurrentException(log, "Failed to verify the idempotency id of " + key);
         return false;
     }
 }

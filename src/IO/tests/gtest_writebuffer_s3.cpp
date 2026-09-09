@@ -1173,17 +1173,17 @@ TEST_P(SyncAsync, SinglepartConditionalPutRetryAfterLostResponse) {
 
     /// Both attempts carried the same token, and it is the one stored with the object.
     ASSERT_EQ(injection->seen_metadata.size(), 2u);
-    const auto token = injection->seen_metadata[0].at("clickhouse-write-token");
+    const auto token = injection->seen_metadata[0].at("clickhouse-idempotency-id");
     EXPECT_FALSE(token.empty());
-    EXPECT_EQ(injection->seen_metadata[1].at("clickhouse-write-token"), token);
-    EXPECT_EQ(bStore.object_metadata["conditional_put_lost_response"].at("clickhouse-write-token"), token);
+    EXPECT_EQ(injection->seen_metadata[1].at("clickhouse-idempotency-id"), token);
+    EXPECT_EQ(bStore.object_metadata["conditional_put_lost_response"].at("clickhouse-idempotency-id"), token);
 }
 
 /// A 412 caused by an object this request did NOT write must still fail. The pre-existing object is
 /// byte-identical to the payload on purpose, so a byte or size comparison would wrongly accept it.
 TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
     auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_put_foreign", "1", {{"clickhouse-write-token", "written-by-somebody-else"}});
+    bStore.PutObject("conditional_put_foreign", "1", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
 
     auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
     setInjectionModel(injection);
@@ -1207,7 +1207,7 @@ TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
 
     /// The foreign object is untouched, and the PUT really was conditional.
     EXPECT_EQ(bStore.objects["conditional_put_foreign"], "1");
-    EXPECT_EQ(bStore.object_metadata["conditional_put_foreign"].at("clickhouse-write-token"), "written-by-somebody-else");
+    EXPECT_EQ(bStore.object_metadata["conditional_put_foreign"].at("clickhouse-idempotency-id"), "written-by-somebody-else");
     ASSERT_FALSE(injection->seen_if_none_match.empty());
     EXPECT_EQ(injection->seen_if_none_match[0], "*");
 }
@@ -1238,7 +1238,7 @@ TEST_P(SyncAsync, SinglepartPutWithoutIfNoneMatchStillThrows) {
     /// The request was not conditional, no token was stamped, and no HEAD looked one up.
     ASSERT_FALSE(injection->seen_metadata.empty());
     for (const auto & metadata : injection->seen_metadata)
-        EXPECT_FALSE(metadata.contains("clickhouse-write-token"));
+        EXPECT_FALSE(metadata.contains("clickhouse-idempotency-id"));
     for (const auto & if_none_match : injection->seen_if_none_match)
         EXPECT_TRUE(if_none_match.empty());
     EXPECT_EQ(client->counters.headObject, 0u);
@@ -1260,7 +1260,7 @@ TEST_P(SyncAsync, SinglepartConditionalPutKeepsCallerMetadata) {
 
     ASSERT_FALSE(injection->seen_metadata.empty());
     EXPECT_EQ(injection->seen_metadata[0].at("caller-key"), "caller-value");
-    EXPECT_FALSE(injection->seen_metadata[0].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(injection->seen_metadata[0].at("clickhouse-idempotency-id").empty());
 }
 
 /// A 412 must not be accepted on an object carrying no token at all -- a pre-Fix or non-ClickHouse
@@ -1368,14 +1368,14 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_mpu_lost_response"], "A");
-    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_lost_response"].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_lost_response"].at("clickhouse-idempotency-id").empty());
 }
 
 /// The multipart twin of the foreign-object arm: a 412 on a completion whose object somebody else
 /// wrote must still fail. The pre-existing object is byte-identical on purpose.
 TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
     auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_mpu_foreign", "A", {{"clickhouse-write-token", "written-by-somebody-else"}});
+    bStore.PutObject("conditional_mpu_foreign", "A", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
 
     auto injection = std::make_shared<MockS3::CompleteMPUPreconditionFailedInjection>();
     setInjectionModel(injection);
@@ -1400,11 +1400,11 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
       }, DB::S3Exception);
 
     EXPECT_EQ(bStore.objects["conditional_mpu_foreign"], "A");
-    EXPECT_EQ(bStore.object_metadata["conditional_mpu_foreign"].at("clickhouse-write-token"), "written-by-somebody-else");
+    EXPECT_EQ(bStore.object_metadata["conditional_mpu_foreign"].at("clickhouse-idempotency-id"), "written-by-somebody-else");
 
     /// CreateMultipartUpload carried a token, so the guard had something to compare and rejected it.
     ASSERT_FALSE(injection->seen_create_metadata.empty());
-    EXPECT_FALSE(injection->seen_create_metadata[0].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(injection->seen_create_metadata[0].at("clickhouse-idempotency-id").empty());
 }
 
 /// The other door into the same replay: a completion that already landed can come back as
@@ -1428,14 +1428,14 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRecoversNoSuchUploadOnOwnObject) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_mpu_no_such_upload"], "A");
-    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_no_such_upload"].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_no_such_upload"].at("clickhouse-idempotency-id").empty());
 }
 
 /// The same `NO_SUCH_UPLOAD` over an object somebody else wrote must still fail: existence at the key
 /// is not authorship, and reporting success would let a conditional create silently lose its payload.
 TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUpload) {
     auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_mpu_no_such_upload_foreign", "A", {{"clickhouse-write-token", "written-by-somebody-else"}});
+    bStore.PutObject("conditional_mpu_no_such_upload_foreign", "A", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
 
     auto injection = std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ false);
@@ -1462,7 +1462,7 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUp
 
     EXPECT_EQ(bStore.objects["conditional_mpu_no_such_upload_foreign"], "A");
     EXPECT_EQ(
-        bStore.object_metadata["conditional_mpu_no_such_upload_foreign"].at("clickhouse-write-token"),
+        bStore.object_metadata["conditional_mpu_no_such_upload_foreign"].at("clickhouse-idempotency-id"),
         "written-by-somebody-else");
     ASSERT_FALSE(injection->seen_if_none_match.empty());
     EXPECT_EQ(injection->seen_if_none_match[0], "*");
@@ -1485,14 +1485,14 @@ TEST_P(SyncAsync, MultipartIfMatchCompleteRecoversNoSuchUploadOnOwnObject) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_mpu_if_match"], "A");
-    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_if_match"].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_if_match"].at("clickhouse-idempotency-id").empty());
 }
 
 /// The protective half of the arm above: an `If-Match` completion over an object somebody else wrote
 /// still fails, because the token at the key is not this buffer's.
 TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotMaskForeignObjectOnNoSuchUpload) {
     auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_mpu_if_match_foreign", "A", {{"clickhouse-write-token", "written-by-somebody-else"}});
+    bStore.PutObject("conditional_mpu_if_match_foreign", "A", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
 
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ false));
@@ -1517,7 +1517,7 @@ TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotMaskForeignObjectOnNoSuchUpload
       }, DB::S3Exception);
 
     EXPECT_EQ(
-        bStore.object_metadata["conditional_mpu_if_match_foreign"].at("clickhouse-write-token"),
+        bStore.object_metadata["conditional_mpu_if_match_foreign"].at("clickhouse-idempotency-id"),
         "written-by-somebody-else");
 }
 
@@ -1542,7 +1542,7 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteRecoversNoSuchUploadOnOwnObject)
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload"], "A");
-    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].at("clickhouse-idempotency-id").empty());
 }
 
 /// The reported data loss, at the layer where it happens. An unconditional write to a key that already
@@ -1577,7 +1577,7 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteDoesNotMaskForeignObjectOnNoSuch
 
     /// The object at the key is untouched: it is the prior one, and it carries no token of ours.
     EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload_foreign"], "OLD");
-    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload_foreign"].contains("clickhouse-write-token"));
+    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload_foreign"].contains("clickhouse-idempotency-id"));
 }
 
 /// A transient MinIO `InvalidPart` on CompleteMultipartUpload must be retried, not surfaced as a

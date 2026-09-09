@@ -34,20 +34,26 @@ struct Settings;
 /// InvalidPartOrder are not in the typed S3Errors enum, so the SDK leaves GetErrorType() == UNKNOWN
 /// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD means the
 /// upload id is gone and retrying cannot bring it back, so it is not retried here; the writer
-/// resolves it with `isObjectWrittenWithToken`.
+/// resolves it with `isObjectWrittenWithIdempotencyId`.
 bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error);
 
-/// Custom object metadata key carrying the writer's token, see `isObjectWrittenWithToken`.
-static constexpr auto WRITE_TOKEN_METADATA_KEY = "clickhouse-write-token";
+/// Custom object metadata key carrying the writer's idempotency id, see `isObjectWrittenWithIdempotencyId`.
+static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
 
-/// True only if the object at `key` carries `write_token`, i.e. the caller is the one who wrote it.
+/// `getRandomASCIIString` draws from 26 letters, so this is about 103 bits. The id only has to be
+/// unique among the writers that race for one key, and it is spent from the object's user-metadata
+/// budget, which S3 caps at 2 KB for the whole object.
+static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
+
+/// True only if the object at `key` carries `idempotency_id`, i.e. the caller is the one who wrote it.
 ///
-/// A writer stamps a unique token on the object it creates, so a request it has to send again can
-/// tell its own result apart from an object that was already at the key. An absent object, an absent
-/// or foreign token, and a failed HEAD all give false: the caller then reports its original error
-/// rather than acknowledging a write it cannot prove.
-bool isObjectWrittenWithToken(
-    const S3::Client & client, const String & bucket, const String & key, const String & write_token, LoggerPtr log);
+/// A writer stamps an id unique to itself on the object it creates. That makes a request it has to
+/// send again idempotent: it can recognise the result of its own earlier attempt and tell it apart
+/// from an object that was already at the key. An absent object, an absent or foreign id, and a
+/// failed HEAD all give false, so the caller reports its original error rather than acknowledging a
+/// write it cannot prove.
+bool isObjectWrittenWithIdempotencyId(
+    const S3::Client & client, const String & bucket, const String & key, const String & idempotency_id, LoggerPtr log);
 
 class S3Exception : public Exception
 {

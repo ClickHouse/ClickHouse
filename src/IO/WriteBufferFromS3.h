@@ -79,14 +79,12 @@ private:
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
-    bool isConditionalWrite() const;
+    /// `object_metadata` with `idempotency_id` merged in, or `object_metadata` alone when this write
+    /// mints none.
+    std::optional<ObjectAttributes> metadataWithIdempotencyId() const;
 
-    /// `object_metadata` with `write_token` merged in. Sent by the writes that may later have to
-    /// recognise their own object: every multipart create, and a conditional single-part PUT.
-    ObjectAttributes metadataWithWriteToken() const;
-
-    /// True only if the object stored under `key` carries this buffer's `write_token`, i.e. this
-    /// buffer wrote it. Absent object, absent or foreign token, or a failed HEAD all give false.
+    /// True only if the object stored under `key` carries this buffer's `idempotency_id`, i.e. this
+    /// buffer wrote it. Absent object, absent or foreign id, or a failed HEAD all give false.
     bool isObjectWrittenByThisBuffer() const;
 
     /// Returns true if not a single byte was written to the buffer
@@ -98,10 +96,14 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
-    /// Identifies this buffer among all writers to `key`. Sent as custom object metadata by the
-    /// writes listed on `metadataWithWriteToken`, so a request this buffer has to send again can
-    /// recognise the object its earlier attempt wrote and tell it apart from one already there.
-    const String write_token;
+    /// Identifies this buffer among all writers to `key`. Sent as custom object metadata, so a
+    /// request this buffer has to send again can recognise the object its earlier attempt wrote and
+    /// tell it apart from one already there. Empty when nothing will read it back, which keeps the
+    /// id off the objects of ordinary single-part writes and keeps their error path free of a
+    /// HEAD. Minted for a create-if-absent write in the constructor, and for every multipart upload
+    /// in `createMultipartUpload`; both run on the thread that owns this buffer, before any part is
+    /// scheduled, and every reader runs on that thread too.
+    String idempotency_id;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
