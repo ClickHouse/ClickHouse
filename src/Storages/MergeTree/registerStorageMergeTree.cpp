@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -10,6 +11,7 @@
 
 #include <Compression/CompressionFactory.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/NestedUtils.h>
 #include <Core/Settings.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -685,6 +687,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
+    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+
     if (is_extended_storage_def)
     {
         ASTPtr partition_by_key;
@@ -803,6 +807,35 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             "UNIQUE KEY column `{}` must be a physical (stored) column; "
                             "ALIAS and EPHEMERAL columns are not allowed",
                             name);
+                    /// A subcolumn (`c.null`, `c.size0`, `c.1`, ...) is absent from the stored block
+                    /// yet resolvable by `getKeyFromAST`, and lives in an index `has` does not search.
+                    /// `!has(name)` comes before `hasSubcolumn`: a stored column may be named after
+                    /// another column's subcolumn, and a flattened `Nested` member is itself a stored
+                    /// column. Gated on fresh definitions so an already-created table stays
+                    /// attachable, hence droppable.
+                    if (is_fresh_definition && !metadata.columns.has(name)
+                        && metadata.columns.hasSubcolumn(GetColumnsOptions::All, name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY column `{}` is a subcolumn; UNIQUE KEY must name whole "
+                            "stored columns",
+                            name);
+                    /// A virtual column's subcolumn (`_partition_value.1`) is in neither index above:
+                    /// the virtual lookup is exact-name, and the subcolumn index holds only subcolumns
+                    /// of `metadata.columns`. `getKeyFromAST` sees virtuals, so it does resolve one.
+                    /// Every dot position is tried: the subcolumn can itself have one.
+                    if (is_fresh_definition && !metadata.columns.has(name))
+                    {
+                        for (const auto & [parent, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name))
+                        {
+                            auto virtual_parent = metadata.virtuals.tryGet(
+                                String(parent), VirtualsKind::All, VirtualsMaterializationPlace::All);
+                            if (virtual_parent && virtual_parent->type->tryGetSubcolumnType(subcolumn))
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "UNIQUE KEY columns must be real stored columns; "
+                                    "virtual columns such as `{}` are not allowed",
+                                    parent);
+                        }
+                    }
                 };
 
                 const auto * as_function = uk_ast->as<ASTFunction>();
@@ -858,14 +891,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
-        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
-        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
-        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-
         /// Previously validated definitions must stay loadable even if the current strictness settings
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:
         /// otherwise a strict session could attach a TTL that `CREATE TABLE` rejects, and the first
@@ -895,21 +920,34 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
+        /// What this query changes from the settings the server has in effect, which already include the
+        /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
+        /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.
+        if (is_fresh_definition)
+            args.getLocalContext()->checkMergeTreeSettingsConstraints(
+                initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+
+        /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
+        /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
+        /// such as `index_granularity = 0` that the same `CREATE` refuses, and the table is created broken.
+        if (is_fresh_definition && args.mode > LoadingStrictnessLevel::CREATE)
+        {
+            context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+            storage_settings->sanityCheck(
+                context->getMergeMutateExecutor()->getMaxTasksCount(), context->wasBackgroundPoolAutoLowered());
+        }
+
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-        {
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
-        }
 
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
         /// could slip in through `SETTINGS default_compression_codec = ...`.
         /// For freshly introduced definitions (`is_fresh_definition` above) the merged value (explicit or
         /// inherited from the current `<merge_tree>` config defaults) is checked against
-        /// the codec gate (`validateCodecString` handles the per-tier `enable_<family>_codec` settings and the
-        /// `allow_experimental_codecs` umbrella). For stored definitions values written in the stored
+        /// the codec gate (`validateCodecString` handles the per-family `enable_<family>_codec` settings).
+        /// For stored definitions, values written in the stored
         /// `SETTINGS` clause were already gated when they were introduced and are exempt, so existing tables
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
@@ -1024,7 +1062,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    auto projection = ProjectionDescription::getProjectionFromAST(
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -1105,7 +1144,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
             (*storage_settings)[MergeTreeSetting::index_granularity] = ast->value.safeGet<UInt64>();
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            /// The old syntax states `index_granularity` as an engine argument instead of a setting
+            if (is_fresh_definition)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field((*storage_settings)[MergeTreeSetting::index_granularity]));
@@ -1772,7 +1812,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
 |--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
 | [equals (=, ==)](/reference/functions/regular-functions/comparison-functions#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
+| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [like](/reference/functions/regular-functions/string-search-functions#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [notLike](/reference/functions/regular-functions/string-search-functions#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [match](/reference/functions/regular-functions/string-search-functions#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
@@ -1782,7 +1822,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
+| [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [less (`<`)](/reference/functions/regular-functions/comparison-functions#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
 | [greater (`>`)](/reference/functions/regular-functions/comparison-functions#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
 | [lessOrEquals (`<=`)](/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |

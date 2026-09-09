@@ -398,8 +398,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
         {
-            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
-            return src;
+            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type,
+            /// but only a value that fits `UInt32` is representable: range-check it, or the column
+            /// insertion downstream truncates it modulo 2^32 and an exact `IN` constant matches an
+            /// unrelated row - `dt IN (toUInt64(4294967296))` matched the epoch row.
+            return convertNumericType<UInt32>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
@@ -841,7 +844,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", src.getTypeName(), agg_func_type->getName());
 
         const auto & name = src.safeGet<AggregateFunctionStateData>().name;
-        if (agg_func_type->getName() != name)
+        if (agg_func_type->getName() != name
+            && !DataTypeAggregateFunction::nameMatchesState(name, agg_func_type->getFunction(), agg_func_type->getVersion()))
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", name, agg_func_type->getName());
 
         return src;
