@@ -40,8 +40,8 @@ inline std::string_view stripTrailingZeros(std::string_view value)
 
 /// Rewrites every `String` value reachable in `column` into its canonical form, recursing through
 /// `Const`, `Nullable` and `Tuple` — matching `zeroPaddedStringComparison`.
-/// Apply to both operands after a cast to their common type, which strips all '\0' from FixedString
-/// but leaves one '\0' at the end of a String.
+/// Apply to both operands after a cast to their common type, which strips all trailing '\0' from
+/// FixedString but leaves String untouched.
 ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePtr & type);
 
 /// As above, for the elements of an array column: `hasAny`/`hasAll` compare elements of their two
