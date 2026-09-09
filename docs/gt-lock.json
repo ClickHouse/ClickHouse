@@ -7,36 +7,36 @@
       "versionId": "a372f4e7d54d9b799344f85fa77a6c684c792c8951b74039b53becd67db973b4",
       "translations": {
         "ja": {
-          "updatedAt": "2026-09-09T19:33:12.958Z",
+          "updatedAt": "2026-09-09T19:44:32.801Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-09T19:33:13.563Z",
+          "updatedAt": "2026-09-09T19:44:33.319Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-09T19:33:13.719Z",
+          "updatedAt": "2026-09-09T19:44:33.447Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-09T19:33:12.775Z",
+          "updatedAt": "2026-09-09T19:44:32.661Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-09T19:33:13.867Z",
+          "updatedAt": "2026-09-09T19:44:33.581Z",
           "fileName": "docs.json",
           "postProcessHash": "f07d8f7452f70e9a869365bb490fda10d57c3654a431fa77949df04dff8ede02"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-09T19:33:13.258Z",
+          "updatedAt": "2026-09-09T19:44:33.060Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-09T19:33:13.103Z",
+          "updatedAt": "2026-09-09T19:44:32.935Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-09T19:33:13.406Z",
+          "updatedAt": "2026-09-09T19:44:33.190Z",
           "fileName": "docs.json"
         }
       },
@@ -20825,51 +20825,50 @@
     },
     {
       "fileId": "86915d8add98f0d1cda04ab70c279e5b4c5aead44c64ba38c5580ee3674d5c87",
-      "versionId": "9d4f63df291f6dba68f2f208d1a5d7290e491fea4f32d41925853b7f275265d2",
+      "versionId": "6aa59d2df3a61b6d8604602cabe32f4f3990037adc73b00d0a5067b8f8a821c3",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.108Z",
-          "fileName": "es/reference/system-tables/dashboards.mdx",
-          "postProcessHash": "8ea68b9427332cb7d65f927c89bb670a6522397af0184265451b06792950f5a6"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.108Z",
-          "fileName": "ja/reference/system-tables/dashboards.mdx",
-          "postProcessHash": "37fbeb2a92acaaec4e06f4fb5f5f434148b5d4c3888966c608fc19596d9268a2"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.108Z",
-          "fileName": "ko/reference/system-tables/dashboards.mdx",
-          "postProcessHash": "e654059d02c13c6964785a04833d37d0b37aa0e3985129e7e37734d9991b288e"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.108Z",
-          "fileName": "pt-BR/reference/system-tables/dashboards.mdx",
-          "postProcessHash": "28d488de68f3ad74e561761f3c1616b62169b2e0611036f1565c6968a4964423"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.109Z",
-          "fileName": "ru/reference/system-tables/dashboards.mdx",
-          "postProcessHash": "255c1cda59deca960c82a6cdb9cb7b1a51b2052cfe47d1d032a417b262fdb2db"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.109Z",
+          "updatedAt": "2026-09-09T19:44:37.190Z",
           "fileName": "zh/reference/system-tables/dashboards.mdx",
-          "postProcessHash": "6cfe4c1b0e97f7f89f2cf80394d2814d919d3b5ffd39facc647c0bc39fa40cd2"
+          "postProcessHash": "28c873b71c6f1b1887b03bc475e0ea79e1f4572542fc8d31e086f9bf615b1870"
+        },
+        "es": {
+          "updatedAt": "2026-09-09T19:44:37.191Z",
+          "fileName": "es/reference/system-tables/dashboards.mdx",
+          "postProcessHash": "f29fac7013605c69189700bed787325f4004e52fe220c254aafb8fdc98c28647"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.109Z",
+          "updatedAt": "2026-09-09T19:44:37.191Z",
           "fileName": "ar/reference/system-tables/dashboards.mdx",
-          "postProcessHash": "d5b9cc18b5f94150795eca146b4f17d0ebe589e7201ca846db14c0a81c4abff0"
+          "postProcessHash": "2378869984ba27973bc45e8d0a39145279c1e187a66081559e11d449660d9c36"
+        },
+        "ko": {
+          "updatedAt": "2026-09-09T19:44:37.192Z",
+          "fileName": "ko/reference/system-tables/dashboards.mdx",
+          "postProcessHash": "be1f9b3bcbad2af47a70914b30ec1fa1e22b85eb7373ea480338f637e9ed03e1"
+        },
+        "ru": {
+          "updatedAt": "2026-09-09T19:44:37.192Z",
+          "fileName": "ru/reference/system-tables/dashboards.mdx",
+          "postProcessHash": "f1af9e27c91fc0db716f9a9aeb21fa6beab5b2b597b31b8002ef4323f905ac2c"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-09T19:44:37.193Z",
+          "fileName": "pt-BR/reference/system-tables/dashboards.mdx",
+          "postProcessHash": "f95063980900f4e3c59f2739da39e057ff17446ef33c9039ea0d19dc814314a1"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.109Z",
+          "updatedAt": "2026-09-09T19:44:37.193Z",
           "fileName": "fr/reference/system-tables/dashboards.mdx",
-          "postProcessHash": "0c5417ac6208bfdf7797abe3762e6abc55550cc02c8d4580a5eb1133e679d380"
+          "postProcessHash": "3b1d8d764d7287b17a98548173464d938fc91d409757c2da3d2204a9c58a2790"
+        },
+        "ja": {
+          "updatedAt": "2026-09-09T19:44:37.193Z",
+          "fileName": "ja/reference/system-tables/dashboards.mdx",
+          "postProcessHash": "8a8f83cc55fb3a33cb28fa07f1e65d9473e8c9b84454c0e88da835349edc8d3e"
         }
       },
-      "fileName": "reference/system-tables/dashboards.mdx",
-      "staged": false
+      "fileName": "reference/system-tables/dashboards.mdx"
     },
     {
       "fileId": "72b3e8e54672f3e640ca2f5d1d5c5b36146b438a976f96da9c34be36aefb7bb2",
@@ -41796,51 +41795,50 @@
     },
     {
       "fileId": "52b1100e32fdef17945c04d6f8495f8707dace586d3ebb22230fb324737e562a",
-      "versionId": "2c7557b9998c200e8f17162fc995e2358bdc0558f35e7ef55a367c311c5d305b",
+      "versionId": "e3c2c081caf5fef60d7ea0817585deec8101f762dd3fe260580d06f1fcd4e02a",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:06.634Z",
+          "updatedAt": "2026-09-09T19:44:37.194Z",
           "fileName": "es/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "f9b16fbe15248e11983a415fd8364f5693cfa2a791df32f8788e5cdc470e8d75"
+          "postProcessHash": "aa6931c4dbcb2e3de59872e35fcede204308b067736da816147e8d0459beced0"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:06.634Z",
+          "updatedAt": "2026-09-09T19:44:37.195Z",
           "fileName": "ja/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "3e1a85865c7b860833762a2f4ee3b6aeb1a84629cbb244d1131bf3c0920864e9"
+          "postProcessHash": "5302dddfce97306599371804b95551e81913fe92187eb99b1df911928c40147a"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.634Z",
+          "updatedAt": "2026-09-09T19:44:37.195Z",
           "fileName": "ko/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "829b2438a8800e436d52a7a09d77c8b59ba9f6342a87fc6c8041aa2d22964d67"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.634Z",
-          "fileName": "pt-BR/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "5306d9bce08313aa428afe609dedf2cc263c101ba636056b20ce875964f6a868"
+          "postProcessHash": "97fcec06d4ddcd69a2be0c9b07d944fcd55c8469fd0427ecde843a191d1470ff"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.635Z",
+          "updatedAt": "2026-09-09T19:44:37.196Z",
           "fileName": "ru/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "b3b76290b51c41ffa89c058e96a147ac13b207f37f142fcfc67c0d84d7db0402"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.635Z",
-          "fileName": "zh/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "0d688c955e296926c84e1c6ff0a88f60a5afb95de9ff829a86f640ff46430709"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.635Z",
-          "fileName": "ar/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "7746d6041650045b1e7630e58b681cda79ff6e82b38b8dd1551628ae825d7532"
+          "postProcessHash": "40254a8ab8a98d6b64ef1464f4d42eddf1be1915f73d377e3c4127c532d577b1"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.635Z",
+          "updatedAt": "2026-09-09T19:44:37.197Z",
           "fileName": "fr/integrations/language-clients/java/jdbc.mdx",
-          "postProcessHash": "03362955ac396e604a008faa486e6e93103b26d7ea5ad1eb17bced86a7a8d078"
+          "postProcessHash": "fe4c0aee6c042eb3942df99625a6a1c3010a454c01959b0d4b8be2760a2a8993"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-09T19:44:37.197Z",
+          "fileName": "pt-BR/integrations/language-clients/java/jdbc.mdx",
+          "postProcessHash": "5711e910c0cade619ba686bc2a5bb4796bf814367882e773c19ea5b884edf3b2"
+        },
+        "zh": {
+          "updatedAt": "2026-09-09T19:44:37.198Z",
+          "fileName": "zh/integrations/language-clients/java/jdbc.mdx",
+          "postProcessHash": "2ae9a3c264ad9177c47ad7af086aca1b1e0d07ec3d91a43c43670afec5f2fa65"
+        },
+        "ar": {
+          "updatedAt": "2026-09-09T19:44:37.199Z",
+          "fileName": "ar/integrations/language-clients/java/jdbc.mdx",
+          "postProcessHash": "04f098a67e885a510f1cb2163bd5a6cef50fef8f49e7df93b020565dd33bcfa0"
         }
       },
-      "fileName": "integrations/language-clients/java/jdbc.mdx",
-      "staged": false
+      "fileName": "integrations/language-clients/java/jdbc.mdx"
     },
     {
       "fileId": "2af2c0ce65ead334f4160897b55626ae1b3e2edf2f355585a0fcbaeb68f1c7b6",
