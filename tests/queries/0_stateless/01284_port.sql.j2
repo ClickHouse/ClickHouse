@@ -18,6 +18,10 @@ select 'default-port';
 select port{{ suffix }}('http://127.0.0.1/', toUInt16(80));
 select port{{ suffix }}('http://foobar.com/', toUInt16(80));
 
+select 'query-fragment';
+select port{{ suffix }}('http://foobar.com:8080?x=1');
+select port{{ suffix }}('http://foobar.com:8080#fragment');
+
 -- unsupported
 /* ILLEGAL_TYPE_OF_ARGUMENT */ select port(toFixedString('', 1)); -- { serverError 43 }
 /* ILLEGAL_TYPE_OF_ARGUMENT */ select port{{ suffix }}('', 1); -- { serverError 43 }
