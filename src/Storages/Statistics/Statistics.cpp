@@ -37,9 +37,11 @@ UInt64 getStatisticsSeed(std::string_view part_name, std::string_view column_nam
     SipHash hash;
     hash.update(domain.data(), domain.size());
     hash.update(static_cast<UInt64>(part_name.size()));
-    hash.update(part_name.data(), part_name.size());
+    if (!part_name.empty())
+        hash.update(part_name.data(), part_name.size());
     hash.update(static_cast<UInt64>(column_name.size()));
-    hash.update(column_name.data(), column_name.size());
+    if (!column_name.empty())
+        hash.update(column_name.data(), column_name.size());
     return hash.get64();
 }
 
