@@ -9,6 +9,7 @@
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -17,6 +18,7 @@
 #include <barrier>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <thread>
 
 namespace DB
@@ -147,8 +149,14 @@ TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
     auto query_context = Context::createCopy(getContext().context);
     query_context->makeQueryContext();
     query_context->setRuntimeFilterLookup(lookup);
-    ThreadStatus thread_status;
-    CurrentThread::attachToGroup(std::make_shared<ThreadGroup>(query_context, 0));
+
+    /// Some unit-test configurations initialize MainThreadStatus before this test, while others
+    /// leave current_thread unset. Reuse the existing status when present instead of replacing it.
+    std::optional<ThreadStatus> thread_status;
+    if (!CurrentThread::isInitialized())
+        thread_status.emplace();
+    auto thread_group = std::make_shared<ThreadGroup>(query_context, 0);
+    ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::UNKNOWN, /*allow_existing_group=*/true);
 
     const auto id_type = std::make_shared<DataTypeString>();
     ColumnsWithTypeAndName arguments{
