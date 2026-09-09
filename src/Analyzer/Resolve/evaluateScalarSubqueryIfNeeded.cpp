@@ -26,6 +26,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
@@ -37,6 +38,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char scalar_subquery_before_cardinality_check[];
+}
 
 namespace ErrorCodes
 {
@@ -305,8 +311,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                if (auto cancel_cb = context->hasQueryContext() ? context->getQueryContext()->getInteractiveCancelCallback() : nullptr)
-                    executor->setCancelCallback(ExecutorCancellation::finishPartialResult(std::move(cancel_cb)), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+                auto query_context = context->hasQueryContext() ? context->getQueryContext() : nullptr;
+                if (auto cancel_cb = query_context ? query_context->getInteractiveCancelCallback() : nullptr)
+                    executor->setCancelCallback(
+                        ExecutorCancellation::cancelQuery(std::move(cancel_cb), std::move(query_context)),
+                        std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
                 while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }
@@ -347,6 +356,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             {
                 if (chunk.getNumRows() != 1)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+                if (context->getCurrentQueryId().starts_with("scalar_subquery_cardinality_cancel_"))
+                    FailPointInjection::pauseFailPoint(FailPoints::scalar_subquery_before_cardinality_check);
 
                 Chunk tmp_chunk;
                 while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))

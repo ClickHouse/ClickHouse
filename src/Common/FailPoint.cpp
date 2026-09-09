@@ -146,6 +146,7 @@ static struct InitFiu
     REGULAR(dummy_failpoint) \
     ONCE(query_status_cancel_with_injected_exception) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
+    PAUSEABLE(scalar_subquery_before_cardinality_check) \
     REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(merge_tree_read_pool_pause_after_cancel) \
     PAUSEABLE_ONCE(merge_tree_reader_pause_before_report_broken) \

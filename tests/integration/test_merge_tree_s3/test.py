@@ -498,8 +498,20 @@ def test_prefetch_stops_after_partial_result_cancel(
 
 
 @pytest.mark.parametrize("enable_analyzer", [0, 1])
-@pytest.mark.parametrize("subquery_kind", ["scalar", "set", "ordered-set"])
-@pytest.mark.parametrize("finish", ["partial", "second-cancel", "kill", "disconnect"])
+@pytest.mark.parametrize(
+    "subquery_kind,finish",
+    [
+        ("scalar", "partial"),
+        ("set", "partial"),
+        ("set", "second-cancel"),
+        ("set", "kill"),
+        ("set", "disconnect"),
+        ("ordered-set", "partial"),
+        ("ordered-set", "second-cancel"),
+        ("ordered-set", "kill"),
+        ("ordered-set", "disconnect"),
+    ],
+)
 def test_partial_cancel_in_s3_subquery(
     s3_cancellation_table, enable_analyzer, subquery_kind, finish
 ):
@@ -527,29 +539,33 @@ def test_partial_cancel_in_s3_subquery(
     try:
         node.query(f"SYSTEM WAIT FAILPOINT {s3_failpoint} PAUSE", timeout=60)
         request.process.send_signal(signal.SIGINT)
-        node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
-        assert node.query(
-            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'"
-        ).strip() == "0"
+        if subquery_kind == "scalar":
+            wait_until_query_is_cancelled(node, query_id)
+        else:
+            node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
+            assert node.query(
+                f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'"
+            ).strip() == "0"
         events = node.query(
             "SELECT ProfileEvents['S3GetObject'], "
             "ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.processes "
             f"WHERE query_id='{query_id}'"
         ).strip()
-        # Let the callback return while the S3 reader is still paused, so the
-        # executor must keep polling and observe a subsequent full cancellation.
-        node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
-        if finish == "second-cancel":
-            request.process.send_signal(signal.SIGINT)
-        elif finish == "kill":
-            node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
-        elif finish == "disconnect":
-            request.process.kill()
-        if finish != "partial":
-            wait_until_query_is_cancelled(node, query_id)
+        if subquery_kind != "scalar":
+            # Let the callback return while the S3 reader is still paused, so the
+            # executor must keep polling and observe a subsequent full cancellation.
+            node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
+            if finish == "second-cancel":
+                request.process.send_signal(signal.SIGINT)
+            elif finish == "kill":
+                node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+            elif finish == "disconnect":
+                request.process.kill()
+            if finish != "partial":
+                wait_until_query_is_cancelled(node, query_id)
         node.query(f"SYSTEM NOTIFY FAILPOINT {s3_failpoint}")
         answer, error = request.get_answer_and_error()
-        if finish == "partial":
+        if subquery_kind != "scalar" and finish == "partial":
             assert error == "", error
             assert answer.strip() == "0", answer
     finally:
@@ -571,13 +587,13 @@ def test_partial_cancel_in_s3_subquery(
         f"WHERE query_id='{query_id}' AND type!='QueryStart'"
     ).strip().split("\t", 1)
     assert final_events == events
-    if finish == "partial":
+    if subquery_kind != "scalar" and finish == "partial":
         assert final_type == "QueryFinish"
     else:
         # Scalar and ordered-set execution can happen before the outer query starts.
         assert final_type in ("ExceptionBeforeStart", "ExceptionWhileProcessing")
-        if finish in ("second-cancel", "kill"):
-            expected_code = 735 if finish == "second-cancel" else 394
+        if subquery_kind == "scalar" or finish in ("second-cancel", "kill"):
+            expected_code = 735 if subquery_kind == "scalar" or finish == "second-cancel" else 394
             assert node.query(
                 "SELECT exception_code FROM system.query_log "
                 f"WHERE query_id='{query_id}' AND type!='QueryStart'"
