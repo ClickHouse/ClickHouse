@@ -1288,6 +1288,22 @@ bool limitAlwaysReadsTillEnd(
     return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
 }
 
+/// LIMIT BY can be pushed into the sorted-stream pipeline before the final merge, so a direct
+/// WITH TOTALS query must drain its input even when it has ORDER BY. The final LIMIT has a weaker
+/// condition because sorting itself may already consume the full input before LIMIT runs.
+bool limitByAlwaysReadsTillEnd(
+    const QueryAnalysisResult & query_analysis_result, const Settings & settings, const QueryNode & query_node)
+{
+    if (settings[Setting::exact_rows_before_limit]
+        && (query_node.hasLimit() || query_node.hasLimitAfter() || query_node.hasLimitUntil()))
+        return true;
+
+    if (query_node.isGroupByWithTotals())
+        return true;
+
+    return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
+}
+
 void addDistinctStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
@@ -1513,8 +1529,13 @@ void addLimitByStep(
     QueryPlan & query_plan,
     const LimitByAnalysisResult & limit_by_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const QueryNode & query_node,
     bool do_not_skip_offset)
 {
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+    const bool always_read_till_end = limitByAlwaysReadsTillEnd(query_analysis_result, settings, query_node);
+
     /// Constness of LIMIT BY limit is validated during query analysis stage
     UInt64 limit_by_length = query_analysis_result.limit_by_length;
     UInt64 limit_by_offset = query_analysis_result.limit_by_offset;
@@ -1539,7 +1560,8 @@ void addLimitByStep(
     if (!is_limit_negative && !is_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
-        auto step = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names);
+        auto step = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names, always_read_till_end);
         query_plan.addStep(std::move(step));
     }
     else if (is_limit_negative && is_offset_negative)
@@ -1556,7 +1578,7 @@ void addLimitByStep(
         if (limit_by_offset > 0)
         {
             auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names, always_read_till_end);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
@@ -1571,7 +1593,8 @@ void addLimitByStep(
         auto step1 = std::make_unique<NegativeLimitByStep>(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
         query_plan.addStep(std::move(step1));
-        auto step2 = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
+        auto step2 = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_by_length, 0, column_names, always_read_till_end);
         query_plan.addStep(std::move(step2));
     }
 }
@@ -1805,7 +1828,13 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
-        addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, true /*do_not_skip_offset*/);
+        addLimitByStep(
+            query_plan,
+            limit_by_analysis_result,
+            query_analysis_result,
+            planner_context,
+            query_node,
+            true /*do_not_skip_offset*/);
     }
 
     /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
@@ -3138,7 +3167,13 @@ void Planner::buildPlanForQueryNode()
                 select_query_options,
                 "Before LIMIT BY",
                 useful_sets);
-            addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
+            addLimitByStep(
+                query_plan,
+                limit_by_analysis_result,
+                query_analysis_result,
+                planner_context,
+                query_node,
+                false /*do_not_skip_offset*/);
         }
 
         /// WITH FILL / INTERPOLATE must run only on the finalizing node, over the merged stream,

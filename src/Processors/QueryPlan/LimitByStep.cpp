@@ -4,12 +4,20 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/Exception.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <limits>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 static ITransformingStep::Traits getTraits()
 {
@@ -28,11 +36,12 @@ static ITransformingStep::Traits getTraits()
 
 LimitByStep::LimitByStep(
     const SharedHeader & input_header_,
-    size_t group_length_, size_t group_offset_, Names columns_)
+    size_t group_length_, size_t group_offset_, Names columns_, bool always_read_till_end_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , group_length(group_length_)
     , group_offset(group_offset_)
     , columns(std::move(columns_))
+    , always_read_till_end(always_read_till_end_)
 {
 }
 
@@ -61,7 +70,8 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, sorted_columns_descr);
+                return std::make_shared<LimitBySortedStreamTransform>(
+                    header, group_length, group_offset, sorted_columns_descr, always_read_till_end);
             });
         return;
     }
@@ -82,7 +92,8 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<LimitBySortedStreamTransform>(header, prefilter_length, 0, sorted_columns_descr);
+                return std::make_shared<LimitBySortedStreamTransform>(
+                    header, prefilter_length, 0, sorted_columns_descr, always_read_till_end);
             });
 
         /// Now we need to dedup. If LIMIT 1 BY ..., that means the same key can exist in multiple streams but in the final output that key can only appear once.
@@ -97,7 +108,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
+                return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns, always_read_till_end);
             });
         return;
     }
@@ -125,9 +136,10 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 return nullptr;
 
             if (!sorted_columns_descr.empty())
-                return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, sorted_columns_descr);
+                return std::make_shared<LimitBySortedStreamTransform>(
+                    header, group_length, group_offset, sorted_columns_descr, always_read_till_end);
 
-            return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
+            return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns, always_read_till_end);
         });
 }
 
@@ -155,6 +167,8 @@ void LimitByStep::describeActions(FormatSettings & settings) const
 
     settings.out << prefix << "Length " << group_length << '\n';
     settings.out << prefix << "Offset " << group_offset << '\n';
+    if (always_read_till_end)
+        settings.out << prefix << "Reads all data\n";
     if (skip_stream_merging)
         settings.out << prefix << "Skip stream merging: 1\n";
 }
@@ -168,12 +182,26 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
     map.add("Length", group_length);
     map.add("Offset", group_offset);
+    map.add("Reads All Data", always_read_till_end);
     if (skip_stream_merging)
         map.add("Skip stream merging", true);
 }
 
 void LimitByStep::serialize(Serialization & ctx) const
 {
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END && always_read_till_end)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "LimitByStep with always_read_till_end requires query plan serialization version >= {}, but the plan is serialized at version {}",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END,
+            ctx.version);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END)
+    {
+        UInt8 flags = always_read_till_end ? 1 : 0;
+        writeIntBinary(flags, ctx.out);
+    }
+
     writeVarUInt(group_length, ctx.out);
     writeVarUInt(group_offset, ctx.out);
 
@@ -185,6 +213,14 @@ void LimitByStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 {
+    UInt8 flags = 0;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END)
+    {
+        readIntBinary(flags, ctx.in);
+        if (flags & ~UInt8(1))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "LimitByStep: unsupported flags={} in this version", static_cast<size_t>(flags));
+    }
+
     UInt64 group_length = 0;
     UInt64 group_offset = 0;
 
@@ -197,7 +233,8 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
     for (auto & column : columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
+    return std::make_unique<LimitByStep>(
+        ctx.input_headers.front(), group_length, group_offset, std::move(columns), bool(flags & 1));
 }
 
 void LimitByStep::applyOrder(const SortDescription & sort_description)
