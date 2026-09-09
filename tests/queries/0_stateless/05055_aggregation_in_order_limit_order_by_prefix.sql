@@ -17,31 +17,26 @@ INSERT INTO t_agg_in_order_limit_prefix SELECT 1, number, 1 FROM numbers(4, 17);
 
 -- Ground truth: sum(x) is 10 for groups with b in 1..3 and 11 for groups with b in 4..20.
 -- All groups tie on `a`, so any three groups are a legal answer; assert that every
--- returned group carries its complete aggregate value.
-SELECT count()
-FROM
-(
-    SELECT a, b, sum(x) AS s
-    FROM t_agg_in_order_limit_prefix
-    GROUP BY a, b
-    ORDER BY a
-    LIMIT 3
-    SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1
-)
-WHERE s != if(b <= 3, 10, 11);
+-- returned group carries its complete aggregate value. The check is done in the
+-- projection on purpose: wrapping the query into a subquery changes the plan
+-- (the aggregation is no longer executed in order), which hides the bug. The block
+-- settings are pinned because tiny blocks also hide it.
+SELECT sum(x) = if(b <= 3, 10, 11)
+FROM t_agg_in_order_limit_prefix
+GROUP BY a, b
+ORDER BY a
+LIMIT 3
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
 
 -- Same with OFFSET.
-SELECT count()
-FROM
-(
-    SELECT a, b, sum(x) AS s
-    FROM t_agg_in_order_limit_prefix
-    GROUP BY a, b
-    ORDER BY a
-    LIMIT 3 OFFSET 2
-    SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1
-)
-WHERE s != if(b <= 3, 10, 11);
+SELECT sum(x) = if(b <= 3, 10, 11)
+FROM t_agg_in_order_limit_prefix
+GROUP BY a, b
+ORDER BY a
+LIMIT 3 OFFSET 2
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
 
 -- The full-key `ORDER BY` still admits the push-down and stays correct.
 SELECT a, b, sum(x)
