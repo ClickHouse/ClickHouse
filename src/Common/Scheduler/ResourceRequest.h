@@ -81,11 +81,9 @@ public:
         /// `scheduling.cost` so it is never stale for schedulers that ignore it.
         ResourceCost charge{};
 
-        /// Non-owning link to the per-query scheduling context shared by all of a query's requests.
-        /// Set by the producer just before `enqueueRequest()` and cleared by `reset()`; requests
-        /// issued outside a query or background group get one shared anonymous context, so it is never
-        /// null while in the queue. The owner (the query's `ThreadGroup`, or the static anonymous
-        /// context) outlives the request, so this raw pointer never dangles in the queue.
+        /// Non-owning pointer to the query's scheduling context, which the classifier stamped onto the
+        /// link and which is copied here just before `enqueueRequest()` (cleared by `reset()`). The
+        /// classifier owns it for the query's lifetime, so it never dangles while the request is queued.
         ResourceSchedulingContext * context = nullptr;
 
         /// Ordering key for `fair` / `las`, constant while the request is in the intrusive ordered
@@ -97,6 +95,11 @@ public:
         /// The `priority` query setting (`UInt64`) is mapped in at enqueue (priority `0` sorts last);
         /// an integer key avoids the precision loss of routing it through the `double` half of `key`.
         Priority priority;
+
+        /// Set at enqueue iff the leaf's scheduler tracks per-query service (`fair`/`las`); gates the
+        /// cost-correction feed in `ResourceGuard::finish()`, so a non-accounting leaf (`fifo`/
+        /// `priority`) never accumulates a correction it would never drain.
+        bool tracks_cost = false;
     } scheduling;
 
     /// Scheduler nodes to be notified on consumption finish
@@ -125,6 +128,7 @@ public:
         scheduling.context = nullptr;
         scheduling.key = {0.0, 0};
         scheduling.priority = {};
+        scheduling.tracks_cost = false;
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 

@@ -108,14 +108,15 @@ public:
             state = Finished;
             if (estimated_cost != real_cost_)
                 link_.queue->adjustBudget(estimated_cost, real_cost_);
-            // Feed the per-query schedulers (`fair`/`las`) the real-vs-estimate error so their
-            // per-query service tracks real cost, not the enqueue estimate. Accumulated here (on the
-            // consumer thread, hence atomic) and folded into the query's NEXT request charge at
-            // push/pop — it never rewrites an already-assigned key. `link_.queue` is the same leaf
-            // the algorithms key the per-query state by.
-            scheduling.context->getResourceState(link_.queue).cost_correction.fetch_add(
-                static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost),
-                std::memory_order_relaxed);
+            // Feed `fair`/`las` the real-vs-estimate error so per-query service tracks real cost, not
+            // the enqueue estimate — but only when the leaf's scheduler drains it (tagged at enqueue).
+            // A non-accounting leaf (`fifo`/`priority`) would otherwise accumulate a correction it
+            // never drains and dump it on a later swap to `fair`/`las`. Folded into the query's NEXT
+            // request charge at push/pop; never rewrites an assigned key.
+            if (scheduling.tracks_cost)
+                scheduling.context->getResourceState(link_.queue).cost_correction.fetch_add(
+                    static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost),
+                    std::memory_order_relaxed);
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);

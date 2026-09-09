@@ -528,6 +528,9 @@ public:
                 "Workload limit `max_waiting_queries` has been reached: {} of {}", total_requests, max_queued);
         }
 
+        // Tag whether this leaf's scheduler tracks per-query service, so ResourceGuard::finish()
+        // only feeds a cost-correction that `fair`/`las` will actually drain.
+        request->scheduling.tracks_cost = algorithm == SchedulerAlgorithm::Fair || algorithm == SchedulerAlgorithm::Las;
         algo->push(request);
         queue_cost += request->cost;
         bool was_empty = total_requests == 0;

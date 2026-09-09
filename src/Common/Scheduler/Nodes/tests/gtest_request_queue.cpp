@@ -604,3 +604,20 @@ TEST(RequestQueue, FairCancelReturnsConsumedCorrection)
     ASSERT_NE(req, nullptr);
     EXPECT_EQ(f.attainedOf(a), 101);                    // 1 (cost) + 100 (returned correction)
 }
+
+/// Only accounting schedulers (`fair`/`las`) tag their requests as cost-tracking at enqueue;
+/// `fifo`/`priority` do not, so ResourceGuard::finish() never feeds them a cost-correction they
+/// would never drain (and would dump on a later scheduler swap).
+TEST(RequestQueue, CostCorrectionTrackedOnlyByAccountingSchedulers)
+{
+    auto tags_cost = [](SchedulerAlgorithm algo)
+    {
+        Fixture f(algo);
+        auto * q = f.makeQuery();
+        return f.enqueue(1, q)->scheduling.tracks_cost;
+    };
+    EXPECT_FALSE(tags_cost(SchedulerAlgorithm::Fifo));
+    EXPECT_FALSE(tags_cost(SchedulerAlgorithm::Priority));
+    EXPECT_TRUE(tags_cost(SchedulerAlgorithm::Fair));
+    EXPECT_TRUE(tags_cost(SchedulerAlgorithm::Las));
+}
