@@ -51,10 +51,21 @@ starts 8-byte aligned and can be read in place.
 Each `ColDescriptor` is exactly 40 bytes and contains five `uint64` fields (all byte offsets are absolute from the start of the frame):
 
 - `type` (8 bytes) — column type identifier (see below)
-- `null_offset` (8 bytes) — absolute offset to the `u8[num_rows]` null map (0 if not nullable; 1 = null, 0 = non-null)
-- `offsets_offset` (8 bytes) — absolute offset to the `uint64[num_rows+1]` offsets array (for `COL_BYTES` columns; 0 otherwise)
+- `null_offset` (8 bytes) — absolute offset to a per-row side array, or `0` when the column has none
+- `offsets_offset` (8 bytes) — absolute offset to a second per-row side array, or `0` when the column has none
 - `data_offset` (8 bytes) — absolute offset to the column data block
 - `data_size` (8 bytes) — size of the data block in bytes
+
+`data_offset` and `data_size` always mean the same thing, but what the two side arrays hold depends on the
+column type. A reader must dispatch on `type` before interpreting them:
+
+| Type | `null_offset` | `offsets_offset` |
+|------|---------------|------------------|
+| any type with `COL_IS_NULLABLE` | `u8[num_rows]` null map (`1` = null, `0` = non-null) | as below |
+| `COL_BYTES` | null map or `0` | `uint64[num_rows+1]` string offsets |
+| `COL_VARIANT` | `u8[num_rows]` global discriminators, `0xFF` for a null row | `uint32[num_rows]` position of the row within its sub-column |
+| `COL_LOWCARD` | `0` (unused; nullability is carried by the dictionary's reserved slot 0) | `index[num_rows]`, each `index_elem_width` bytes wide |
+| `COL_COMPLEX`, fixed-width types | null map or `0` | `0` (an `Array`'s own offsets live at the start of its data block) |
 
 Base column types:
 
@@ -72,6 +83,18 @@ Modifier flags (OR'd onto the base type):
 
 - `COL_IS_NULLABLE` (`0x20`) — nullable column; `null_offset` carries a `u8[num_rows]` null map
 - `COL_IS_CONST` (`0x80`) — constant column; only 1 row of data is stored; the reader replicates it to the full row count
+
+`COL_VARIANT` and `COL_LOWCARD` describe their contents with nested descriptors, so their data blocks carry a
+small header. All offsets inside these headers are absolute from the start of the frame, exactly like the ones
+in the descriptor table, and each header is 4-byte aligned.
+
+A `COL_VARIANT` data block holds a `uint32` count `K` of sub-variants that are actually present, then `K`
+records of a `uint8` global discriminator, 3 padding bytes and a 40-byte `ColDescriptor` for that sub-variant's
+sub-column, then the sub-column data those descriptors point at. An absent sub-variant gets no record.
+
+A `COL_LOWCARD` data block holds a `uint32` dictionary row count, a `uint8` index element width, 3 padding
+bytes and a 40-byte `ColDescriptor` for the dictionary sub-column, then the dictionary data. The index array
+itself is at `offsets_offset`, not in the data block.
 
 Because the entire frame is laid out contiguously, a well-formed `data_offset`/`data_size` pair for `COL_BYTES` always starts at byte `0` of the data block and covers it exactly, with no gaps.
 
