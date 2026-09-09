@@ -5,8 +5,8 @@
 #include <base/arithmeticOverflow.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -64,19 +64,6 @@ void addNullSource(Pipe & pipe, SharedHeader header)
 namespace
 {
 
-bool astContainsArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
-            return true;
-    return false;
-}
-
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
     /// Reject negative, fractional, and zero limits for pushdown
@@ -103,7 +90,10 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// already an array-join operation, regardless of what its expressions contain).
     /// Both forms must reject pushdown.
     /// The function may sit in any clause, e.g. only in WHERE through a WITH alias, and still multiply the rows.
-    if (astContainsArrayJoinFunction(query_info.query))
+    /// `expressionContainsArrayJoin` resolves the function name to its canonical one, so the
+    /// case-insensitive `unnest` alias is caught even when `normalize_function_names` is disabled,
+    /// and it also descends into the bodies of SQL UDFs.
+    if (expressionContainsArrayJoin(query_info.query))
         return false;
     if (query.arrayJoinExpressionList().first)
         return false;

@@ -1,0 +1,20 @@
+unnest, not normalized
+3
+4
+5
+unnest, normalized
+3
+4
+5
+UNNEST, not normalized
+3
+4
+5
+arrayJoin
+3
+4
+5
+generate_series
+3
+4
+5
