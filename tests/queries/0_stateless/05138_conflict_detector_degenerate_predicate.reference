@@ -1,0 +1,6 @@
+noopt	1	1	1
+greedy	1	1	1
+dpsub	1	1	1
+cdc	1	1	1
+cda	1	1	1
+cross cdc	2
