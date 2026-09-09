@@ -115,6 +115,16 @@ SELECT 'UInt64 lane equality',
     has(materialize(arrayMap(x -> toUInt64(72057594037927937), range(64))), toUInt64(72057594037927937)),
     indexOf(materialize(arrayMap(x -> toUInt64(72057594037927937), range(64))), toUInt64(72057594037927937));
 
+SELECT 'Unsigned max SIMD',
+    has(materialize(arrayMap(x -> if(x = 40, toUInt8(255), toUInt8(x)), range(64))), toUInt8(255)),
+    indexOf(materialize(arrayMap(x -> if(x = 40, toUInt8(255), toUInt8(x)), range(64))), toUInt8(255)),
+    has(materialize(arrayMap(x -> if(x = 20, toUInt16(65535), toUInt16(x)), range(32))), toUInt16(65535)),
+    indexOf(materialize(arrayMap(x -> if(x = 20, toUInt16(65535), toUInt16(x)), range(32))), toUInt16(65535)),
+    has(materialize(arrayMap(x -> if(x = 12, toUInt32(4294967295), toUInt32(x)), range(32))), toUInt32(4294967295)),
+    indexOf(materialize(arrayMap(x -> if(x = 12, toUInt32(4294967295), toUInt32(x)), range(32))), toUInt32(4294967295)),
+    has(materialize(arrayMap(x -> if(x = 8, toUInt64('18446744073709551615'), toUInt64(x)), range(32))), toUInt64('18446744073709551615')),
+    indexOf(materialize(arrayMap(x -> if(x = 8, toUInt64('18446744073709551615'), toUInt64(x)), range(32))), toUInt64('18446744073709551615'));
+
 SELECT 'UInt32 duplicate SIMD',
     indexOf(
         materialize(arrayMap(x -> if(x = 16 OR x = 20, toUInt32(777), toUInt32(x)), range(64))),
