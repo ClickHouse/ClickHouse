@@ -100,11 +100,6 @@ public:
 
     MemorySpillSchedulerPtr memory_spill_scheduler;
 
-    /// Per-query scheduling context shared by all resource requests of this query, used by
-    /// query-aware scheduler leaves. Created only for real queries (`createForQuery`); left null
-    /// for background thread groups (merges/mutations/etc.) so their requests stay anonymous.
-    ResourceSchedulingContextPtr scheduling_context;
-
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -293,9 +288,6 @@ public:
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
-
-    /// Non-owning per-query scheduling context of this thread's group (null if none / background).
-    ResourceSchedulingContext * getResourceSchedulingContext() const;
 
     void setQueryId(std::string && new_query_id) noexcept;
     void clearQueryId() noexcept;

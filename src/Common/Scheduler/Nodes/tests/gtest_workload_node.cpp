@@ -5,6 +5,7 @@
 
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
 #include <Common/Priority.h>
@@ -462,7 +463,11 @@ TEST(SchedulerTimeSharedWorkloadNode, ResourceGuardException)
     t.enqueue(all, {10, 10}); // enqueue reqeuests to be canceled
 
     std::atomic<bool> request_enqueued{false};
-    std::thread consumer([link = all->getLink(), &request_enqueued]
+    // Production links carry the query's scheduling context (stamped by the classifier); mirror that.
+    auto sched_context = std::make_shared<ResourceSchedulingContext>(0, 1.0, 1.0, 0.0, 0.0, 0.0, 0);
+    ResourceLink guard_link = all->getLink();
+    guard_link.scheduling_context = sched_context.get();
+    std::thread consumer([link = guard_link, &request_enqueued]
     {
         bool caught = false;
         try

@@ -51,11 +51,6 @@ ResourceGuard::Request & ResourceGuard::Request::local(const Metrics * metrics)
     return instance;
 }
 
-void ResourceGuard::Request::captureSchedulingContext()
-{
-    scheduling.context = CurrentThread::getResourceSchedulingContext();
-}
-
 namespace ErrorCodes
 {
     extern const int RESOURCE_ACCESS_DENIED;

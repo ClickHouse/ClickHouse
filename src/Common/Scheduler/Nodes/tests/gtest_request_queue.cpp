@@ -589,24 +589,6 @@ TEST(RequestQueue, FairUsesSchedulingCostNotBudgetAdjustedCost)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 12, 22}));
 }
 
-/// The process-lifetime anonymous context must not keep a destroyed leaf's state: otherwise a queue
-/// later allocated at the same address would inherit stale scheduling state (and each dead leaf would
-/// leak one entry). ~RequestQueue erases its own entry.
-TEST(RequestQueue, AnonymousContextErasesLeafStateOnDestroy)
-{
-    auto & anon = ResourceSchedulingContext::anonymous();
-    const void * leaf = nullptr;
-    {
-        EventQueue ev;
-        RequestQueue q(ev, SchedulerNodeInfo{}, SchedulerAlgorithm::Fair, CostUnit::IOByte);
-        leaf = &q;
-        anon.getResourceState(leaf).vruntime = 123.0; // as if an anonymous-flow request had run here
-    }
-    // Leaf destroyed: re-fetching by the (now freed) address value returns fresh zero state, proving
-    // the stale entry was erased rather than left to be inherited by a reused address.
-    EXPECT_EQ(anon.getResourceState(leaf).vruntime, 0.0);
-}
-
 /// A `fair` request charges its corrected cost at push(), consuming the shared cost_correction. If it
 /// is cancelled before it pops, that consumed correction must return to the context — otherwise the
 /// query re-enters lighter than the resource it actually ran.

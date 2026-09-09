@@ -64,10 +64,6 @@ public:
     /// Group to which belongs current thread
     static ThreadGroupPtr getGroup();
 
-    /// Non-owning per-query scheduling context of the current thread's query (null if none, e.g. on
-    /// background threads). Used by IO producers to tag resource requests with their query identity.
-    static ResourceSchedulingContext * getResourceSchedulingContext();
-
     /// MemoryTracker for user that owns current thread if any
     static MemoryTracker * getUserMemoryTracker();
 

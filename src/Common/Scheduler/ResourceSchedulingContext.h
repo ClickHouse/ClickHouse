@@ -110,19 +110,6 @@ public:
         return per_resource[leaf];
     }
 
-    /// Drop this leaf's state. Called when a leaf is destroyed so the process-lifetime `anonymous()`
-    /// context does not keep stale state for a freed (and possibly later reused) leaf address.
-    void eraseResourceState(const void * leaf)
-    {
-        std::lock_guard lock(mutex);
-        per_resource.erase(leaf);
-    }
-
-    /// Shared by requests issued outside any query/thread group, so schedulers can assume every
-    /// request carries a context. Never destroyed: leaf destructors erase from it, possibly at exit.
-    /// Defined out of line to keep a single instance across shared libraries.
-    static ResourceSchedulingContext & anonymous();
-
 private:
     std::mutex mutex;
     std::unordered_map<const void *, ResourceState> per_resource;

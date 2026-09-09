@@ -1,4 +1,6 @@
 #include <Common/Scheduler/WorkloadResourceManager.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
+#include <Common/Stopwatch.h>
 
 #include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
 #include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
@@ -381,6 +383,16 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
 
 WorkloadResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
     : settings(settings_)
+    // One context per classifier (i.e. per query), built from the query's scheduling settings; get()
+    // stamps it onto every link so the query-aware schedulers always have it.
+    , scheduling_context(std::make_shared<ResourceSchedulingContext>(
+          clock_gettime_ns(),
+          settings.weight,
+          settings.weight_lowering_factor,
+          settings.weight_lowering_age_seconds,
+          settings.weight_lowering_cpu_seconds,
+          settings.weight_lowering_io_bytes,
+          settings.priority))
 {
 }
 
@@ -444,7 +456,9 @@ ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_na
     std::unique_lock lock{mutex};
     if (auto iter = attachments.find(resource_name); iter != attachments.end())
     {
-        return iter->second.link;
+        ResourceLink link = iter->second.link;
+        link.scheduling_context = scheduling_context.get();
+        return link;
     }
     else
     {

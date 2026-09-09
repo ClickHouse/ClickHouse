@@ -7,6 +7,7 @@
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/setThreadName.h>
@@ -280,6 +281,8 @@ private:
 
     private:
         const ClassifierSettings settings;
+        /// Per-query scheduling context, stamped by get() onto every link this classifier hands out.
+        const ResourceSchedulingContextPtr scheduling_context;
         WorkloadResourceManager * resource_manager{};
         mutable std::mutex mutex;
         struct Attachment

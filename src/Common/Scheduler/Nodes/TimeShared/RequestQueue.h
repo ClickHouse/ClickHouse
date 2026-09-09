@@ -508,9 +508,6 @@ public:
     ~RequestQueue() override
     {
         purgeQueue();
-        // Drop our entry from the process-lifetime anonymous context so a queue later reusing this
-        // address does not inherit stale scheduling state.
-        ResourceSchedulingContext::anonymous().eraseResourceState(this);
     }
 
     // Distinct type (parallels AllocationQueue's "allocation_queue"); the node's basename in the
