@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/UUID.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
@@ -85,6 +86,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int QUERY_IS_TOO_LARGE;
 }
 
@@ -92,6 +94,7 @@ namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
+extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 extern const DatabaseMetadataDiskSettingsUInt64 max_rows;
 }
 
@@ -137,6 +140,8 @@ DatabaseOrdinary::DatabaseOrdinary(
         metadata_disk_ptr = getContext()->getDisk(database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value);
     else
         metadata_disk_ptr = getContext()->getDatabaseDisk();
+
+    max_tables = database_metadata_disk_settings[DatabaseMetadataDiskSetting::max_tables].value;
 
     /// Publish the `max_rows` limit, read by the ATTACH and INSERT checks.
     const UInt64 max_rows_setting = database_metadata_disk_settings[DatabaseMetadataDiskSetting::max_rows].value;
@@ -231,18 +236,14 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)
 {
-    fs::path data_path;
-    if (!tableStarted)
-    {
-        auto create_query = tryGetCreateTableQuery(name, getContext());
-        data_path = getTableDataPath(create_query->as<ASTCreateQuery &>());
-    }
-    else
-        data_path = getTableDataPath(name);
+    return fs::path(getTableDataPath(create_query)) / CONVERT_TO_REPLICATED_FLAG_NAME;
+}
 
-    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME);
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_name)
+{
+    return fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME;
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -265,7 +266,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
 
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -416,7 +417,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
     chassert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
-    if (shouldLazyLoad(query, mode))
+    if (shouldLazyLoad(query, name, mode))
     {
         loadTableLazy(local_context, name, ast, mode);
         return;
@@ -467,7 +468,16 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
-bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const
+/// These engines run their ingestion in a background job that only `startup` starts.
+static bool isPushSourceEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> push_source_engines
+        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
+
+    return push_source_engines.contains(engine_name);
+}
+
+bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
         return false;
@@ -483,6 +493,21 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
 
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
+        return false;
+
+    /// A push source starts the background job that feeds its materialized views in its own `startup`,
+    /// which the lazy stand-in never calls: nothing reads such a table directly, so the consumer would
+    /// never start and the ingestion would stall silently until the table is read by hand. Load it
+    /// eagerly, as views are - but only when it really has a materialized view to feed, so that an
+    /// unused source table still costs nothing to load.
+    ///
+    /// `TablesLoader` publishes the view dependencies of everything it is about to load into
+    /// `DatabaseCatalog` before it creates the loading jobs, so the graph is already complete here,
+    /// and it also holds the views of the databases that were loaded earlier. A view created later
+    /// resolves its source table, and that materializes and starts up the stand-in on the spot,
+    /// through `StorageProxy::getStorageSnapshot`.
+    if (query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name)
+        && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
         return false;
 
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
@@ -567,7 +592,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table);
 
     auto storage_disks = table->getStoragePolicy()->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
@@ -784,30 +809,42 @@ void DatabaseOrdinary::applySettingsChanges(const SettingsChanges & settings_cha
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::applySettingsChanges");
 
-    /// Only `Atomic`/`Ordinary` populate these settings; `Replicated` keeps metadata in ZooKeeper.
+    /// This override supersedes `DatabaseOnDisk::applySettingsChanges` for `Atomic`/`Ordinary`,
+    /// because `max_rows` lives next to `database_metadata_disk_settings` here. Only these two
+    /// engines populate the settings; `Replicated` keeps metadata in ZooKeeper.
     if (getEngineName() != "Atomic" && getEngineName() != "Ordinary")
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
+            ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER DATABASE ... MODIFY SETTING is not supported for the {} database engine", getEngineName());
 
-    for (const auto & change : settings_changes)
-        if (change.name != "max_rows")
+    /// Validate and normalize the whole list before persisting or applying anything.
+    SettingsChanges normalized_changes = settings_changes;
+    for (auto & change : normalized_changes)
+    {
+        if (change.name != "max_rows" && change.name != "max_tables")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Database engine {} does not support altering setting `{}`; only `max_rows` can be altered",
+                "Database engine {} does not support altering setting `{}`; only `max_rows` and `max_tables` can be altered",
                 getEngineName(), change.name);
+        /// The value arrives from the parser as an untyped literal. Convert it to the setting's type
+        /// the same way `SETTINGS max_rows = ...` is converted at CREATE time, letting conversion
+        /// errors (e.g. `CANNOT_CONVERT_TYPE`) propagate so both paths report the same error.
+        change.value = SettingFieldUInt64(change.value).value;
+    }
 
-    /// Validate/convert on a copy first (type-checks, e.g. rejects a negative `max_rows`) so nothing
-    /// is mutated if the change is invalid or the guard below fails.
+    /// Validate/convert on a copy first so nothing is mutated if the change is invalid or the
+    /// guard below fails.
     DatabaseMetadataDiskSettings validated = database_metadata_disk_settings;
-    validated.applyChanges(settings_changes);
+    validated.applyChanges(normalized_changes);
     const UInt64 new_max_rows = validated[DatabaseMetadataDiskSetting::max_rows].value;
+    const UInt64 new_max_tables = validated[DatabaseMetadataDiskSetting::max_tables].value;
     checkMaxRowsNotLazy(new_max_rows, database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]);
 
     /// Persist to disk first, then publish in memory, so a write failure leaves them consistent.
-    modifySettingsMetadata(settings_changes, query_context);
-    database_metadata_disk_settings.applyChanges(settings_changes);
+    modifySettingsMetadata(normalized_changes, query_context);
+    database_metadata_disk_settings.applyChanges(normalized_changes);
     max_rows.store(new_max_rows, std::memory_order_relaxed);
+    max_tables.store(new_max_tables, std::memory_order_relaxed);
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
