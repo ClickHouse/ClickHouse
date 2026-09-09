@@ -102,7 +102,10 @@ DataTypePtr AggregateFunctionTuple::getStateType() const
     std::optional<size_t> version;
     for (const auto & func : nested_functions)
     {
-        const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(func->getStateType().get());
+        /// `getStateType` returns a fresh `DataTypePtr` by value, so it has to be held in a named
+        /// variable - a temporary would be destroyed at the end of the full expression.
+        const DataTypePtr nested_state_type = func->getStateType();
+        const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(nested_state_type.get());
         if (!nested_state)
             continue;
         if (auto nested_version = nested_state->getVersionIfExplicit())
