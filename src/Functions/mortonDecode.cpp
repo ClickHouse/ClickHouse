@@ -185,9 +185,9 @@ namespace morton_compress
 {
 
 /// The bits of a morton code that belong to field 0 of an ND-dimensional code. Every bit
-/// position congruent to 0 mod ND counts, including positions at or above ND*FieldBits:
-/// MortonNDLutDecoder folds those into the low fields too, so stopping at FieldBits would
-/// decode codes with the top bits set differently from the decoder this one stands in for.
+/// position congruent to 0 mod ND counts, including those at or above `ND*FieldBits`:
+/// `MortonNDLutDecoder` folds those into the low fields too, so stopping at `FieldBits`
+/// would decode top-bit-set codes differently from the decoder this one stands in for.
 constexpr UInt64 fieldMask(size_t dimensions)
 {
     UInt64 m = 0;
@@ -196,7 +196,7 @@ constexpr UInt64 fieldMask(size_t dimensions)
     return m;
 }
 
-/// Per-step "bits to move" masks of a parallel-suffix bit compress over fieldMask().
+/// Per-step "bits to move" masks of a parallel-suffix bit compress over `fieldMask`.
 /// A zero mask marks a step that moves nothing: the bit at position i*ND travels i*(ND-1)
 /// places, so which steps drop out follows ND-1 and the longest travel, not the field width.
 constexpr std::array<UInt64, 6> moveMasks(size_t dimensions)
@@ -263,8 +263,8 @@ struct MortonNDCompressDecoder
 };
 
 /// Both decoders are GF(2)-linear bit maps, so agreement on the 64 single-bit codes implies
-/// agreement on every 64-bit code. Checked at compile time, so a change to fieldMask,
-/// moveMasks or the dimension list cannot silently alter what mortonDecode returns.
+/// agreement on every 64-bit code. Checked at compile time, so a change to `fieldMask`,
+/// `moveMasks` or the dimension list cannot silently alter what `mortonDecode` returns.
 template <size_t Dimensions, size_t FieldBits>
 constexpr bool compressMatchesLut()
 {
@@ -291,9 +291,9 @@ static_assert(compressMatchesLut<5, 12>());
 static_assert(compressMatchesLut<6, 10>());
 static_assert(compressMatchesLut<7, 9>());
 
-/// AArch64 has no pdep/pext, so it reaches this arm rather than the BMI2 one below. The
-/// compress decoder wins there at every dimension except 4 and 8, where the lookup table's
-/// one shared load amortises over enough output fields to stay ahead.
+/// AArch64 has no pdep/pext, so it reaches this arm rather than the BMI2 one below. Which
+/// dimensions use the compress decoder is a measured list, not a derived one: at 4 and 8 it
+/// did not beat `MortonNDLutDecoder`, so those two keep the table.
 template <size_t Dimensions>
 constexpr bool use_compress_decoder =
 #if defined(__aarch64__)

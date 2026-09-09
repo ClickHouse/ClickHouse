@@ -149,7 +149,7 @@ SELECT mortonEncode((1,1,1,1,1,1,1,1,1), number, 2, 3, 4, 5, 6, 7, 8, 9) FROM nu
 SELECT mortonDecode((1,1,1,1,1,1,1,1,1), number) FROM numbers(2); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- The ratio-mask form is the second consumer of the per-dimension decoders, through
--- FunctionMortonDecode::shrink(). Cover every ratio, staying inside each one's domain.
+-- `FunctionMortonDecode::shrink`. Cover every ratio, staying inside each one's domain.
 SELECT '----- SHRINK RATIO 2..8 -----';
 select count() from (select number as n from numbers(50000))
 where mortonDecode(tuple(2), mortonEncode(tuple(2), n % 4294967296)) != tuple(n % 4294967296);
