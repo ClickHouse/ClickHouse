@@ -14,10 +14,11 @@ namespace DB
 
 /// Per-query scheduling context shared by all `ResourceRequest`s that one query emits.
 ///
-/// Created once per query or background activity (on its `ThreadGroup`, from the settings), owned
-/// by a `shared_ptr` for that lifetime. Every request carries a non-owning raw pointer to it
-/// (`ResourceRequest::scheduling.context`); requests issued outside any group share one static
-/// anonymous context, so the pointer is never null.
+/// Created once per query (or background activity) by the workload `Classifier` from the query's
+/// scheduling settings and owned by the classifier for that lifetime. The classifier stamps a
+/// non-owning pointer to it onto every `ResourceLink` it hands out, and request tagging copies that
+/// onto `ResourceRequest::scheduling.context`. A request only reaches an accounting leaf through a
+/// classifier link, so the `fair`/`las` schedulers can assume the pointer is set.
 ///
 /// It holds (1) immutable per-query configuration used by the `fair` scheduler to adjust the
 /// query's weight as it runs, and (2) mutable per-resource scheduling state (attained cost,

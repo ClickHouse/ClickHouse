@@ -98,7 +98,7 @@ TEST(RequestQueue, FifoOrder)
     auto * q1 = f.makeQuery();
     auto * q2 = f.makeQuery();
     f.enqueue(1, q1);
-    f.enqueue(2, nullptr); // anonymous
+    f.enqueue(2, nullptr); // no query context (fifo never dereferences it)
     f.enqueue(3, q2);
     f.enqueue(4, q1);
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4}));
