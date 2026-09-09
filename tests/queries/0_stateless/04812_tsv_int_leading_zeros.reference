@@ -53,6 +53,8 @@ c1	Nullable(Int64)
 -7
 c1	Nullable(Int64)					
 7
+c1	Nullable(Int64)					
+7
 group 6: padded integers keep inferring String
 c1	Nullable(String)					
 007

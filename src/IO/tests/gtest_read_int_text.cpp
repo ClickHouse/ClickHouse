@@ -165,12 +165,9 @@ TEST(ReadIntTextTest, readIntTextUnsafeRejectsPlusWithoutDigits)
 
 TEST(ReadIntTextTest, readIntTextUnsafeLeavesMinusToTheCaller)
 {
-    /// `TabSeparatedRowInputFormat.cpp:500` documents that a field of just a minus sign reads as zero
-    /// for signed types, so the '-' branch requires no digit. Every case asserts the value AND that
-    /// something is left unread: the remainder is what the format layer then refuses, so a value-only
-    /// assertion would not distinguish "stopped after the sign" from "consumed the whole field". A
-    /// second sign is never consumed either, because the sign branches are mutually exclusive -- were
-    /// the '+' of "-+7" taken as a sign, the value would be -7 rather than 0 with "+7" left unread.
+    /// `TabSeparated` documents that a field of just a minus sign reads as zero for signed types, so the
+    /// '-' branch requires no digit. Each case asserts the value AND that something is left unread: the
+    /// remainder is what the format layer refuses, and a value-only assertion would not see it.
     for (const auto * text : {"-\t1", "-\n", "-x", "- ", "--", "-+", "-+7", "--7", "-+0", "-+007"})
         EXPECT_EQ(readUnsafeOutcome<Int64>(text), std::make_tuple(ErrorCodes::OK, Int64(0), false))
             << "input: " << text;

@@ -69,16 +69,21 @@ SELECT * FROM format(CSV, 'a Int64', '++7\n'); -- { serverError CANNOT_PARSE_NUM
 
 -- 5. The load-bearing carrier, with no explicit structure: inference typed these `Int64` both before and
 -- after, so pairing DESC with the read is what asserts that inference and the reader now agree rather
--- than merely that a read works.
+-- than merely that a read works. A sign before the zeros is the spelling group 6's guard does not reach,
+-- so these keep inferring a number and the padding is not kept, exactly as `CSV` does for them.
 SELECT 'group 5: inference and the reader agree';
 DESC format(TSV, '-007');
 SELECT * FROM format(TSV, '-007');
+DESC format(TSV, '+007');
+SELECT * FROM format(TSV, '+007');
 DESC format(TSV, '+7');
 SELECT * FROM format(TSV, '+7');
 
 -- 6. Schema inference is deliberately not changed: a leading zero is significant in these formats, so a
--- zero-padded field keeps inferring `String` even though the reader can now read it as a number. Pinned
--- here so a future reader change cannot move it silently.
+-- field that starts with one and infers an integer keeps inferring `String`, even though the reader can
+-- now read it as a number. The guard tests the first character and the inferred type, so it reaches
+-- neither a sign (group 5) nor a zero-leading float (group 10). Pinned here so a future reader change
+-- cannot move it silently.
 SELECT 'group 6: padded integers keep inferring String';
 DESC format(TSV, '007');
 SELECT * FROM format(TSV, '007');
