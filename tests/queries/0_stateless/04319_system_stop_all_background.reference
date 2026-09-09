@@ -3,8 +3,17 @@
 <2b: start resumes the stopped view>	1
 <3: cancel interrupts current refresh but keeps schedule>	0	1
 <4: refresh triggers out-of-schedule refresh>	43
-<4b: refresh while stopped is deferred>	0	Disabled
-<4b: deferred refresh fires on start>	44
+<4b: refresh while stopped runs now>	1
+<4b: three refreshes run three times>	4
+<4b: refresh while paused runs now>	5
+<4b: nothing pending after start>	5	Scheduled
+<4c: queued refresh runs after pause>	10	Disabled
+<4d: failed refresh while stopped is reported>	1	Disabled
+<4e: stop cancels only the running refresh>	20	Disabled
+<4f: refresh runs after create or replace>	1	Scheduled
+<4g: wait is silent about a cancelled refresh>	Disabled
+<4h: stale scheduled failure not reported after stop>	1	Disabled
+<4i: wait is silent after cancel>	1
 <5: refresh all background refreshes all views>	1	1
 <6: stop all background disables all>	2	2
 <7: pause all background disables all>	2	2

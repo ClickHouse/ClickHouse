@@ -153,6 +153,8 @@ public:
     /// Called at most once.
     void startup();
     void finalizeRestoreFromBackup();
+    /// Call after CREATE OR REPLACE committed the view under its final name. Resumes refreshing unless `stay_stopped`.
+    void finalizeCreateOrReplace(bool stay_stopped);
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     /// Ok to call multiple times, including in parallel.
     /// Ok to call even if startup() wasn't called or failed.
@@ -286,7 +288,7 @@ private:
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
         /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
-        /// `out_of_schedule_refresh_requested`, etc.
+        /// `out_of_schedule_refreshes_requested`, etc.
         std::atomic_bool interrupt_execution {false};
         CompletedPipelineExecutor * executor = nullptr;
         /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
@@ -310,12 +312,19 @@ private:
     struct SchedulingState
     {
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW or SYSTEM PAUSE VIEW.
-        /// We shouldn't start new refreshes, but pre-existing refresh attempt may keep going.
+        /// We shouldn't start new scheduled refreshes, but pre-existing refresh attempt may keep going.
         bool stop_requested = false;
+        /// The view is not ready to refresh yet (restore from backup, CREATE OR REPLACE).
+        bool not_ready = false;
+        /// The table is shutting down (DROP/DETACH/server stop). Unlike `stop_requested`, blocks even
+        /// SYSTEM REFRESH VIEW, so a request racing with shutdown can't start a refresh.
+        bool shutdown_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
-        /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
-        bool out_of_schedule_refresh_requested = false;
+        /// Decremented when the refresh starts.
+        UInt64 out_of_schedule_refreshes_requested = 0;
+        /// Whether the last completed attempt was an out-of-schedule refresh (SYSTEM REFRESH VIEW).
+        bool last_refresh_was_out_of_schedule = false;
 
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.
@@ -385,7 +394,7 @@ private:
     /// It runs whenever anything changes (e.g. znodes change, or refresh completes, or retry timer fires).
     /// It looks at the state of everything and decides what needs to be done.
     /// Public methods just provide inputs for the doScheduling()'s decisions
-    /// (e.g. stop_requested, out_of_schedule_refresh_requested), they don't do anything significant themselves.
+    /// (e.g. stop_requested, out_of_schedule_refreshes_requested), they don't do anything significant themselves.
     /// If is_shutdown, both background tasks were stopped, and we only need to write to zookeeper
     /// to reflect that this replica is not running a refresh anymore.
     ///
