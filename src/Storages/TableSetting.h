@@ -25,7 +25,17 @@ enum class TableSettingOrigin : uint8_t
     Definition,       /// the table's own SETTINGS clause, whether from CREATE or a later ALTER
     NamedCollection,  /// a named collection referenced in the engine arguments
     SharedMetadata,   /// replicated table metadata, e.g. Keeper for S3Queue and AzureQueue
-    Runtime,          /// adjusted by the engine while it runs, and not written back to its settings
+    /// Adjusted by the engine while it runs, and not written back to its settings.
+    ///
+    /// ⚠️ Reserved: nothing reports this yet. It exists because a value that drifts at run time is
+    /// the case `SHOW CREATE TABLE` fundamentally cannot serve - the AST is only rewritten by DDL -
+    /// and so is a large part of why this surface exists at all. The first intended producer is
+    /// https://github.com/ClickHouse/ClickHouse/pull/116522, which halves `StorageKafka`'s
+    /// `kafka_max_block_size` after a memory limit error and computes the effective value at the use
+    /// site rather than storing it. That pull request is not merged, so the value is kept unused
+    /// rather than added later: appending it afterwards would have to take a number out of step with
+    /// the order below, which is the order these are applied in.
+    Runtime,
     Other,            /// the engine does not report an origin for this setting
 };
 
