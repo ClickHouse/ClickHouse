@@ -126,7 +126,8 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
         size_t skipped_rows = 0;
         if constexpr (merge_mode == Mode::MergeUniqueChunks)
         {
-            if (last_emitted_cursor)
+            /// Only a different input chunk can repeat the last emitted key.
+            if (last_emitted_cursor && last_emitted_cursor != current.impl)
             {
                 using Cursor = std::decay_t<decltype(current)>;
                 const Cursor previous(last_emitted_cursor);
