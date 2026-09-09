@@ -4875,7 +4875,7 @@ def test_global_leader_election_default_and_detached_tables_on_rename(started_cl
         # The detached view cannot carry the guard, whatever the default is: rename it.
         node.query(f"RENAME DATABASE {view_db} TO {view_db}_new")
         detached = node.query(
-            f"SELECT name FROM system.detached_tables WHERE database = '{view_db}_new'"
+            f"SELECT table FROM system.detached_tables WHERE database = '{view_db}_new'"
         ).strip()
         assert detached == "v", (
             f"The renamed database did not keep its detached view, got: {detached}"
