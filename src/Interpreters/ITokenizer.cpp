@@ -58,6 +58,16 @@ bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __
     return code_points == n;
 }
 
+/// The length of the lexical unit of a `LIKE` pattern that starts at `pos`: a backslash escapes the
+/// character after it, so the two form one unit.
+static size_t lexicalUnitLengthInStringLike(const char * data, size_t length, size_t pos)
+{
+    if (data[pos] == '\\' && pos + 1 < length)
+        return 1 + UTF8::seqLength(static_cast<UInt8>(data[pos + 1]));
+
+    return UTF8::seqLength(static_cast<UInt8>(data[pos]));
+}
+
 bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
 {
     token.clear();
@@ -100,7 +110,11 @@ bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t 
 
         if (code_points == n)
         {
-            pos += UTF8::seqLength(static_cast<UInt8>(data[pos]));
+            /// The next n-gram restarts one lexical unit later. Advancing by a single code point can
+            /// land inside a `\\` pair, and the re-parse from there pairs the remaining backslashes
+            /// differently and consumes a genuine `%` wildcard as an escaped literal - which requires
+            /// an n-gram containing `%` that no matching row has to contain, so the granule is pruned.
+            pos += lexicalUnitLengthInStringLike(data, length, pos);
             return true;
         }
     }
