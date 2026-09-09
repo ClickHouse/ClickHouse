@@ -323,8 +323,6 @@ bool subqueryReferencesIdentifier(const QueryTreeNodePtr & node, const String & 
     return subqueryReferencesIdentifier(node, name, BoundNames{});
 }
 
-
-
 /// Every name that occurs as an identifier, a lambda argument, or an alias anywhere in the
 /// subtree. A name outside of this set cannot capture anything in it and cannot be captured
 /// by it, so it is safe to use as the argument name of a synthesized lambda.
