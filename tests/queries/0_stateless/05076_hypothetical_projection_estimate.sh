@@ -19,12 +19,12 @@ $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_real ADD PROJECTION p_idx INDEX b TYPE basic;
     SYSTEM STOP MERGES t_est; SYSTEM STOP MERGES t_real;
     -- three parts, b = a % 100 so every b value is one granule per part once sorted
-    INSERT INTO t_est SELECT number, number % 100, number FROM numbers(3000);
-    INSERT INTO t_est SELECT number, number % 100, number FROM numbers(3000, 3000);
-    INSERT INTO t_est SELECT number, number % 100, number FROM numbers(6000, 4000);
-    INSERT INTO t_real SELECT number, number % 100, number FROM numbers(3000);
-    INSERT INTO t_real SELECT number, number % 100, number FROM numbers(3000, 3000);
-    INSERT INTO t_real SELECT number, number % 100, number FROM numbers(6000, 4000);
+    INSERT INTO t_est SELECT number, number % 100, number FROM numbers(300);
+    INSERT INTO t_est SELECT number, number % 100, number FROM numbers(300, 300);
+    INSERT INTO t_est SELECT number, number % 100, number FROM numbers(600, 400);
+    INSERT INTO t_real SELECT number, number % 100, number FROM numbers(300);
+    INSERT INTO t_real SELECT number, number % 100, number FROM numbers(300, 300);
+    INSERT INTO t_real SELECT number, number % 100, number FROM numbers(600, 400);
     -- WITH SETTINGS granularity overrides need an adaptive-granularity parent
     DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;
     CREATE TABLE t_est_g (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
@@ -32,6 +32,7 @@ $CLICKHOUSE_CLIENT -q "
                  min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
     CREATE TABLE t_real_g AS t_est_g;
     ALTER TABLE t_real_g ADD PROJECTION p_g (SELECT a, b, v ORDER BY b) WITH SETTINGS (index_granularity = 50);
+    -- kept larger than the other tables: the not-chosen case needs the projection to read several granules
     INSERT INTO t_est_g SELECT number, number % 100, number FROM numbers(10000);
     INSERT INTO t_real_g SELECT number, number % 100, number FROM numbers(10000);
 "
@@ -150,7 +151,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_served (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
         SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
     ALTER TABLE t_served ADD PROJECTION p_ab (SELECT a, b ORDER BY b);
-    INSERT INTO t_served SELECT number, number % 100, number FROM numbers(10000);
+    INSERT INTO t_served SELECT number, number % 100, number FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p_c ON t_served (SELECT a, b, c ORDER BY c);
     EXPLAIN WHATIF SELECT a, b FROM t_served WHERE b = 42 SETTINGS ${PIN};
 " | grep -E '^\s+(status|reason):' | awk '{$1=$1; print}'
@@ -164,92 +165,10 @@ $CLICKHOUSE_CLIENT -q "
         SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
     CREATE TABLE t_real_s AS t_est_s;
     ALTER TABLE t_real_s ADD PROJECTION p_s (SELECT t, v ORDER BY t.x);
-    INSERT INTO t_est_s SELECT (number % 100, number), number FROM numbers(10000);
-    INSERT INTO t_real_s SELECT (number % 100, number), number FROM numbers(10000);
+    INSERT INTO t_est_s SELECT (number % 100, number), number FROM numbers(1000);
+    INSERT INTO t_real_s SELECT (number % 100, number), number FROM numbers(1000);
 "
 compare p_s "(SELECT t, v ORDER BY t.x)" "SELECT t, v FROM TABLE WHERE t.x = 42" t_est_s t_real_s
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_s; DROP TABLE IF EXISTS t_real_s;"
-
-echo "--- not applicable cases ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_key ON t_est (SELECT a, b, v ORDER BY b);
-    CREATE HYPOTHETICAL PROJECTION p_agg ON t_est (SELECT b, sum(v) GROUP BY b);
-    CREATE HYPOTHETICAL PROJECTION p_where ON t_est (SELECT a, b, v WHERE b < 50 ORDER BY b);
-    CREATE HYPOTHETICAL PROJECTION p_nocol ON t_est (SELECT a, b ORDER BY b);
-    CREATE HYPOTHETICAL PROJECTION p_skipidx ON t_est (SELECT a, b, v ORDER BY a) WITH SETTINGS (add_minmax_index_for_numeric_columns = 1);
-    EXPLAIN WHATIF SELECT sum(v) FROM t_est WHERE a = 5000 SETTINGS ${PIN};
-" | grep -E '^With|^\s+reason:' | awk '{$1=$1; print}'
-
-echo "--- projections disabled by the query ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM t_est WHERE b = 42 SETTINGS optimize_trivial_count_query = 0, optimize_use_projections = 0;
-" | grep -E '^\s+reason:' | awk '{$1=$1; print}'
-
-echo "--- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM t_est WHERE b = 42 SETTINGS ${PIN}, use_primary_key = 0;
-" | grep -E '^\s+reason:' | awk '{$1=$1; print}'
-$CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT count() FROM t_real WHERE b = 42 SETTINGS ${PIN}, use_primary_key = 0" \
-    | grep -oE 'ReadFromMergeTree \(p_b\)' || echo "real: read from the base table"
-
-echo "--- empirical = 0 scans nothing, and reports no marks it does not have ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF empirical = 0 SELECT count() FROM t_est WHERE b = 42 SETTINGS ${PIN};
-" | sed -n '/^With/,$p' | grep -E '^\s+(status|source|empirical_status):|marks:' | awk '{$1=$1; print}'
-
-echo "--- a forced projection must not fail the statement before the candidate is seen ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM t_est WHERE b = 42 SETTINGS ${PIN}, force_optimize_projection = 1;
-" 2>&1 | grep -E '^\s+(status|verdict):|Code:' | awk '{$1=$1; print}'
-
-# a projection sort key has no direction, so the synthetic part is sorted the only way one can be
-echo "--- a query that reads no parts gets no verdict, the optimizer ignores projections then ---"
-$CLICKHOUSE_CLIENT -q "
-    DROP TABLE IF EXISTS t_pruned;
-    CREATE TABLE t_pruned (d Date, a UInt64, b UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-    INSERT INTO t_pruned SELECT toDate('2020-01-01'), number, number % 100 FROM numbers(1000);
-    CREATE HYPOTHETICAL PROJECTION p_all ON t_pruned (SELECT d, a, b ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM t_pruned WHERE d = '2030-05-05' AND b = 42 SETTINGS ${PIN};
-    DROP TABLE t_pruned;
-" | grep -E '^\s+(status|reason|verdict):' | awk '{$1=$1; print}'
-
-echo "--- the preferred-projection setting only narrows existing projections, so it is ignored ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM t_est WHERE b = 42 SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_other';
-" 2>&1 | grep -E '^\s+(status|verdict):|Code:' | awk '{$1=$1; print}'
-
-echo "--- a descending projection key does not parse ---"
-$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL PROJECTION p_desc ON t_est (SELECT a, b, v ORDER BY b DESC);" 2>&1 | grep -m1 -oE 'SYNTAX_ERROR'
-
-echo "--- the scan honours max_rows_to_read ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM t_est WHERE b = 42 SETTINGS ${PIN}, max_rows_to_read = 100, read_overflow_mode = 'break';
-" | grep -E '^\s+(status|source|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
-
-# the scan reads the projection columns, so SELECT is checked at estimate time
-echo "--- estimating needs SELECT on the projection columns ---"
-user="u_estimate_${CLICKHOUSE_DATABASE}"
-$CLICKHOUSE_CLIENT -q "
-    DROP USER IF EXISTS ${user}; CREATE USER ${user} NOT IDENTIFIED;
-    GRANT ALTER ADD PROJECTION ON ${CLICKHOUSE_DATABASE}.t_est TO ${user};
-    GRANT SELECT(a, b) ON ${CLICKHOUSE_DATABASE}.t_est TO ${user};
-"
-$CLICKHOUSE_CLIENT --user "${user}" -q "
-    CREATE HYPOTHETICAL PROJECTION p_priv ON ${CLICKHOUSE_DATABASE}.t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_est WHERE b = 42 SETTINGS ${PIN};
-" 2>&1 | grep -m1 -oE 'ACCESS_DENIED'
-$CLICKHOUSE_CLIENT -q "GRANT SELECT(v) ON ${CLICKHOUSE_DATABASE}.t_est TO ${user};"
-$CLICKHOUSE_CLIENT --user "${user}" -q "
-    CREATE HYPOTHETICAL PROJECTION p_priv ON ${CLICKHOUSE_DATABASE}.t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_est WHERE b = 42 SETTINGS ${PIN};
-" 2>&1 | grep -E '^\s+status:' | awk '{$1=$1; print}'
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real; DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;"

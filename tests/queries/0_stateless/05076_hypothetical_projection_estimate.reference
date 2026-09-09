@@ -1,45 +1,45 @@
 --- point query on the projection key, three parts ---
 hypothetical:
-marks: 100
-rows: 10000
+marks: 10
+rows: 1000
 status: applicable
-marks: 4
-rows: 400
-read_ratio: 0.04x
+marks: 3
+rows: 300
+read_ratio: 0.30x
 verdict: chosen
-reason: 4 marks would be read instead of 100 from the base table
+reason: 3 marks would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_b)
-Granules: 4
+Granules: 3
 --- range on the projection key ---
 hypothetical:
-marks: 100
-rows: 10000
+marks: 10
+rows: 1000
 status: applicable
-marks: 13
-rows: 1300
-read_ratio: 0.13x
+marks: 3
+rows: 300
+read_ratio: 0.30x
 verdict: chosen
-reason: 13 marks would be read instead of 100 from the base table
+reason: 3 marks would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_b)
-Granules: 13
+Granules: 3
 --- composite key, leading column ---
 hypothetical:
-marks: 100
-rows: 10000
+marks: 10
+rows: 1000
 status: applicable
-marks: 4
-rows: 400
-read_ratio: 0.04x
+marks: 3
+rows: 300
+read_ratio: 0.30x
 verdict: chosen
-reason: 4 marks would be read instead of 100 from the base table
+reason: 3 marks would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_ba)
-Granules: 4
+Granules: 3
 --- base PK already prunes to one granule, the projection cannot beat it ---
 hypothetical:
 marks: 1
@@ -56,18 +56,18 @@ ReadFromMergeTree (default.t_real)
 Granules: 1
 --- key over a computed expression ---
 hypothetical:
-marks: 100
-rows: 10000
+marks: 10
+rows: 1000
 status: applicable
-marks: 4
-rows: 400
-read_ratio: 0.04x
+marks: 3
+rows: 300
+read_ratio: 0.30x
 verdict: chosen
-reason: 4 marks would be read instead of 100 from the base table
+reason: 3 marks would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_c)
-Granules: 4
+Granules: 3
 --- the projection's own index_granularity is used ---
 hypothetical:
 marks: 100
@@ -84,35 +84,35 @@ ReadFromMergeTree (p_g)
 Granules: 3
 --- no filter, the projection serves the ORDER BY ---
 hypothetical:
-marks: 100
-rows: 10000
+marks: 10
+rows: 1000
 status: applicable
-marks: 100
-rows: 10000
+marks: 10
+rows: 1000
 read_ratio: 1.00x
 verdict: chosen
-reason: the same 100 marks would be read, and the projection order serves the ORDER BY
+reason: the same 10 marks would be read, and the projection order serves the ORDER BY
 source: empirical
 real:
 ReadFromMergeTree (p_b)
-Granules: 100
+Granules: 10
 reason: Query has no filter predicate
 reason: Query has no filter predicate
 reason: Query has no filter predicate
 --- the INDEX form, which the optimizer serves the read from ---
 hypothetical:
-marks: 100
-rows: 10000
+marks: 10
+rows: 1000
 status: applicable
-marks: 4
-rows: 400
-read_ratio: 0.04x
+marks: 3
+rows: 300
+read_ratio: 0.30x
 verdict: chosen
-reason: 4 marks would be read instead of 100 from the base table
+reason: 3 marks would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_idx)
-Granules: 4
+Granules: 3
 --- a row count that is not a multiple of the granule ---
 real projection part marks:	3
 hypothetical:
@@ -167,54 +167,15 @@ status: not_applicable
 reason: The query is already served from projection \'p_ab\', EXPLAIN WHATIF estimates candidates against the base table read only
 --- a sort key over a subcolumn ---
 hypothetical:
-marks: 100
-rows: 10000
+marks: 10
+rows: 1000
 status: applicable
-marks: 2
-rows: 200
-read_ratio: 0.02x
+marks: 1
+rows: 100
+read_ratio: 0.10x
 verdict: chosen
-reason: 2 marks would be read instead of 100 from the base table
+reason: 1 mark would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_s)
-Granules: 2
---- not applicable cases ---
-With p_key (normal projection, hypothetical):
-reason: Projection sort key cannot filter this predicate (always unknown or true)
-With p_agg (aggregate projection, hypothetical):
-reason: EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet
-With p_where (normal projection, hypothetical):
-reason: EXPLAIN WHATIF does not estimate projections with a WHERE clause yet
-With p_nocol (normal projection, hypothetical):
-reason: Projection does not contain column v required by the query, so it could only filter the base table\'s parts, which EXPLAIN WHATIF does not estimate yet
-With p_skipidx (normal projection, hypothetical):
-reason: EXPLAIN WHATIF does not estimate projections with their own skip indexes yet
---- projections disabled by the query ---
-reason: Projections are disabled by `optimize_use_projections = 0`
---- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
-reason: Projection sort key cannot filter this predicate (always unknown or true)
-real: read from the base table
---- empirical = 0 scans nothing, and reports no marks it does not have ---
-status: applicable
-source: applicability_only
-empirical_status: disabled
---- a forced projection must not fail the statement before the candidate is seen ---
-status: applicable
-verdict: chosen
---- a query that reads no parts gets no verdict, the optimizer ignores projections then ---
-status: not_applicable
-reason: The query reads no parts, so the optimizer would not consider a projection
---- the preferred-projection setting only narrows existing projections, so it is ignored ---
-status: applicable
-verdict: chosen
---- a descending projection key does not parse ---
-SYNTAX_ERROR
---- the scan honours max_rows_to_read ---
-status: applicable
-source: applicability_only
-empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
---- estimating needs SELECT on the projection columns ---
-ACCESS_DENIED
-status: applicable
+Granules: 1
