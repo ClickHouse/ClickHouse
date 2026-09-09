@@ -672,7 +672,7 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
         }
     }
 
-    bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
+    bloom_filter = std::make_unique<RuntimeBloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());
 
     releaseExactValues();
