@@ -1940,6 +1940,41 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     return std::max(marks, min_marks);
 }
 
+/// Whether a real NULL is nested somewhere in `field`. A `Tuple`, `Array` or `Map` key value holds its
+/// NULLs inside, where `Field::isNull` does not see them - and where it would answer true for the
+/// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
+static bool fieldHasNullInside(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Null:
+            return !field.isPositiveInfinity() && !field.isNegativeInfinity();
+        case Field::Types::Tuple:
+        {
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Array:
+        {
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Map:
+        {
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 /// If @exact_ranges is not null, fill it with ranges containing marks of fully matched records.
@@ -2190,6 +2225,30 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         };
     }
 
+    /// A key value that holds a NULL nested in a `Tuple` is not comparable in `Field` order the way the
+    /// key column is stored: `Field` orders `Null` below every value, while the key stores NULLs last.
+    /// Where a granule spans the boundary between non-NULL and NULL values, the two marks then come out
+    /// in the wrong order, the granule looks empty, and it is skipped together with the matching rows it
+    /// holds. Only such a pair is replaced - by the extremes of its own sides, which claim nothing about
+    /// the column. A pair that is still ordered keeps its exact bounds, because for it `Field` order and
+    /// the key's order agree on everything the range algebra asks. Returns whether the pair was
+    /// replaced: a replaced pair no longer stands for the equal boundaries `equal_boundaries_mask`
+    /// reports.
+    auto repair_boundary_pair = [&key_order](size_t column, FieldRef & left, FieldRef & right)
+    {
+        if (!fieldHasNullInside(left) && !fieldHasNullInside(right))
+            return false;
+
+        /// Boundaries follow the storage order of the column, so they ascend unless the column does not.
+        const bool ordered = key_order.isReversed(column) ? !(left < right) : !(right < left);
+        if (ordered)
+            return false;
+
+        left = key_order.physicalStartExtreme(column);
+        right = key_order.physicalEndExtreme(column);
+        return true;
+    };
+
     /// For index columns that are also covered by the part's partition minmax index, use minmax bounds
     /// instead of (-inf, +inf). The same bounds are consulted by the full and the sparse key representation.
     /// Indexed by full primary key position (not by sparse position), so the sparse path can look up the
@@ -2275,6 +2334,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         const size_t key_col = used_key_indices[sparse_pos];
                         create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
                         create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
+                        if (unlikely(repair_boundary_pair(key_col, sparse_key_left[sparse_pos], sparse_key_right[sparse_pos]))
+                            && key_col < equal_boundaries_mask.size())
+                            equal_boundaries_mask[key_col] = false;
                     }
                 }
 
@@ -2316,6 +2378,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         create_field_ref(range.begin, i, index_left[i]);
                         create_field_ref(range.end, i, index_right[i]);
+                        repair_boundary_pair(i, index_left[i], index_right[i]);
                     }
                     else
                     {
