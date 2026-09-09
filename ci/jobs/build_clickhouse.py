@@ -106,7 +106,8 @@ def parse_args():
 
 def run_shell_with_output(name, command, **kwargs):
     print(f"\n>>>> {name}\n")
-    Shell.check(command, verbose=True, **kwargs)
+    kwargs["verbose"] = True
+    Shell.check(command, **kwargs)
     print(f"\n<<<< {name}\n")
 
 
