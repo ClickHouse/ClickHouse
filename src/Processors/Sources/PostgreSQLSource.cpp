@@ -304,7 +304,8 @@ void PostgreSQLSource<T>::onCancel() noexcept
             connection_holder->setBroken();
             LOG_DEBUG(getLogger("PostgreSQLSource"), "Shut the connection down to interrupt the read");
         }
-        /// No transport of our own to take away: ask the server, which only helps while the COPY starts.
+        /// A connection handed in with the transaction stays in use by its owner, so it is not ours to take
+        /// away. Ask the server instead, which only helps while the COPY is starting.
         else if (!started.load() && tx_snapshot->conn().is_open())
         {
             finalize(tx_snapshot, nullptr);
