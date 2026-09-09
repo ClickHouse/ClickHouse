@@ -22,6 +22,7 @@ import pty
 import re
 import select
 import shlex
+import shutil
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -340,6 +341,14 @@ def run_session(session, plan, turns, const_log_comment, probe, debug_log_fd):
     server = HTTPServer(("127.0.0.1", 0), make_handler(plan))
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
+    # A fresh storage directory for every run. `clickhouse-local` keeps no metadata for its
+    # `system` database, so a `system.query_log` left on disk by an earlier run of this test cannot
+    # be attached again and its creation fails instead - and then everything the two sessions
+    # assert about the query log is asserted about a table that is not there. The flaky check runs
+    # a test many times in one `CLICKHOUSE_TMP`, which is where this showed up.
+    db_path = os.path.join(os.environ["CLICKHOUSE_TMP"], f"05137_local_db_{session}")
+    shutil.rmtree(db_path, ignore_errors=True)
+
     base = shlex.split(os.environ["CLICKHOUSE_LOCAL"])
     argv = base + [
         "--config-file",
@@ -350,7 +359,7 @@ def run_session(session, plan, turns, const_log_comment, probe, debug_log_fd):
         # is right to keep it, and it has no business in what is asserted here.
         "--disable_suggestion",
         "--path",
-        os.path.join(os.environ["CLICKHOUSE_TMP"], f"05137_local_db_{session}"),
+        db_path,
     ]
 
     child_pid, master = pty.fork()
@@ -451,8 +460,14 @@ def main():
             f"{'yes' if 'read_query_log' in offered_tools(second) else 'no'}"
         )
 
+        # What the read returned is printed when it is not what was expected: the tool answers an
+        # error the same way it answers a result, so a bare `no` says nothing about whether the
+        # query of the user was filtered out or the read never worked.
         history = tool_results(second).get("call_read_query_log", "")
-        print(f"user_query_is_returned: {'yes' if USER_QUERY_MARKER in history else 'no'}")
+        if USER_QUERY_MARKER in history:
+            print("user_query_is_returned: yes")
+        else:
+            print(f"user_query_is_returned: no, the read returned {history[:2000]!r}")
         if "system.documentation" in history or "system.tables" in history:
             print(f"assistant_queries_are_returned: yes, in {history[:2000]}")
         else:
