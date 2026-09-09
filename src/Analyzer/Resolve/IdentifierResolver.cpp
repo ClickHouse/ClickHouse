@@ -1147,37 +1147,56 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
     return JoinTableSide::Left;
 }
 
-/** A qualifier that is the alias of one table expression and merely the table name of another refers to
-  * the alias: an alias replaces the table name of the table expression it is given to, which is how the
-  * old analyzer and other SQL implementations read it. Returns the side the qualifier is an alias of, or
-  * nothing when it is an alias of both sides or of neither.
+/** A qualifier that is the alias of one table expression and the table name of another refers to the
+  * alias: an alias replaces the table name of the table expression it is given to, which is how the old
+  * analyzer and other SQL implementations read it. Returns the side the qualifier is an alias of, or
+  * nothing unless exactly one side is qualified by an alias and the other by a table name.
   *
   * Example: `SELECT t1.rev FROM t0 AS t1 INNER JOIN t2 ON ... INNER JOIN t1 AS right_1 ON ...`, where
   * `t1` is at once the alias of `t0` and the name of the third table of the query. Without the
   * precedence the two readings are equally good and the identifier is reported as ambiguous.
+  *
+  * Any other pair of readings - a column of a subquery that is literally named `b.id`, two tables of the
+  * same name in different databases, ... - is left alone, ambiguous as before.
   */
 static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
     const QueryTreeNodePtr & left_resolved_identifier,
     const QueryTreeNodePtr & right_resolved_identifier,
     const std::string & qualifier)
 {
-    auto resolved_by_alias = [&](const QueryTreeNodePtr & resolved_identifier)
+    auto get_column_source = [](const QueryTreeNodePtr & resolved_identifier) -> QueryTreeNodePtr
     {
         const auto * column = resolved_identifier->as<ColumnNode>();
-        if (!column)
-            return false;
+        return column ? column->getColumnSource() : nullptr;
+    };
 
-        const auto & source = column->getColumnSource();
+    auto resolved_by_alias = [&](const QueryTreeNodePtr & source)
+    {
         return source && source->hasAlias() && source->getAlias() == qualifier;
     };
 
-    const bool left_by_alias = resolved_by_alias(left_resolved_identifier);
-    const bool right_by_alias = resolved_by_alias(right_resolved_identifier);
+    auto resolved_by_table_name = [&](const QueryTreeNodePtr & source)
+    {
+        const auto * table_node = source ? source->as<TableNode>() : nullptr;
+        if (!table_node)
+            return false;
 
-    if (left_by_alias == right_by_alias)
-        return {};
+        const auto & table_name
+            = table_node->isTemporaryTable() ? table_node->getTemporaryTableName() : table_node->getStorageID().table_name;
 
-    return left_by_alias ? JoinTableSide::Left : JoinTableSide::Right;
+        return table_name == qualifier;
+    };
+
+    auto left_source = get_column_source(left_resolved_identifier);
+    auto right_source = get_column_source(right_resolved_identifier);
+
+    if (resolved_by_alias(left_source) && resolved_by_table_name(right_source))
+        return JoinTableSide::Left;
+
+    if (resolved_by_alias(right_source) && resolved_by_table_name(left_source))
+        return JoinTableSide::Right;
+
+    return {};
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
@@ -1723,7 +1742,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                      : choseSideByQualifierAliasFromJoin(
                          left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier.front()))
         {
-            resolved_side = *qualifier_alias_side;
+            resolved_side = qualifier_alias_side;
             resolved_identifier = (resolved_side == JoinTableSide::Left) ? left_resolved_identifier : right_resolved_identifier;
         }
         else if (identifier_lookup.identifier.isShort()
