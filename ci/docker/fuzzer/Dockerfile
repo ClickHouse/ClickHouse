@@ -37,7 +37,7 @@ RUN arch="$(uname -m)" \
     && rm -rf awscliv2.zip aws
 
 COPY requirements.txt /
-RUN python3.13 -m pip install --ignore-installed --no-cache-dir -r /requirements.txt
+RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
 
 COPY * /
 
