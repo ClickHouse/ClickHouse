@@ -1,5 +1,7 @@
 #include <Analyzer/TableFunctionNode.h>
 
+#include <Analyzer/Identifier.h>
+
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
@@ -8,6 +10,7 @@
 #include <IO/Operators.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -160,6 +163,18 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     auto table_function_ast = make_intrusive<ASTFunction>();
 
     table_function_ast->name = table_function_name;
+
+    /// An unqualified parameterized-view name re-resolves against the receiving server's default
+    /// database, so qualify it from `storage_id`. Only a 2-part result is resolvable as a
+    /// parameterized view, so a dotted database name is left alone.
+    if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+        storage_view && storage_view->isParameterizedView() && storage_id.hasDatabase()
+        && Identifier{table_function_name}.getPartsSize() == 1)
+    {
+        const auto database_name = storage_id.getDatabaseName();
+        if (Identifier{database_name}.getPartsSize() == 1)
+            table_function_ast->name = database_name + "." + storage_id.getTableName();
+    }
 
     const auto & arguments = getArguments();
     table_function_ast->children.push_back(arguments.toAST(options));

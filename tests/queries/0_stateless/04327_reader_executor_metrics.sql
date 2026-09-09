@@ -1,8 +1,10 @@
--- Tags: no-distributed-cache, no-encrypted-storage
+-- Tags: no-distributed-cache, no-encrypted-storage, no-parallel-replicas
 -- Like 04316, the executor falls back on the distributed cache and decryption
 -- (which can't be disabled from the test), so its metrics would not be emitted on
 -- those storage configs. Skip them; the test still runs on local disk and plain
 -- object storage where the executor engages.
+--   no-parallel-replicas: the counters are incremented on whichever replica reads the
+--   mark, so the initiator's `query_log` row does not carry them.
 --
 -- Checks that the experimental ReaderExecutor emits its observability metrics.
 -- Reads a MergeTree table with `use_reader_executor = 1` and verifies, via the
@@ -58,7 +60,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['ReaderExecutorSourceRequests'] > 0,
     ProfileEvents['ReaderExecutorBytesFromSource'] > 0,
-    ProfileEvents['ReaderExecutorRequestedBytes'] = ProfileEvents['ReaderExecutorBytesFromSource'],
+    ProfileEvents['ReaderExecutorDeliveredBytes'] = ProfileEvents['ReaderExecutorBytesFromSource'],
     ProfileEvents['ReaderExecutorWorkMicroseconds'] > 0,
     ProfileEvents['ReaderExecutorModeledCostMicroseconds'] >= 30000 * ProfileEvents['ReaderExecutorSourceRequests'],
     ProfileEvents['ReaderExecutorCacheGetRequests'] = 0,
