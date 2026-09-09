@@ -101,7 +101,7 @@ void OracleFixture::armDropsForCreate(const std::string & sql)
         return;
     for (const auto & name : allocated)
     {
-        if (armed.contains(name) || sql.find(name) == std::string::npos)
+        if (armed.contains(name) || !sql.contains(name))
             continue;
         armed.insert(name);
         created.push_back(name);
