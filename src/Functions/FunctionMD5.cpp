@@ -16,7 +16,6 @@
 #include <base/IPv4andIPv6.h>
 #include <base/unaligned.h>
 
-#include <Common/ProfileEvents.h>
 #include <Common/TargetSpecific.h>
 
 #include "config.h"
@@ -45,12 +44,6 @@
 #else
 #define USE_MD5_AARCH64_ASIMD 0
 #endif
-
-namespace ProfileEvents
-{
-extern const Event MD5GroupedRows;
-extern const Event MD5GroupingDeclinedRows;
-}
 
 namespace
 {
@@ -124,6 +117,16 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
         return std::make_shared<DataTypeFixedString>(MD5_DIGEST_LEN);
     }
+};
+
+
+/// How many rows were hashed in each order. Digests are the same whichever order ran, so this is the
+/// only way to observe which one did. Rows the decline budget hands to the in-order path without
+/// scoring them are in neither count.
+struct MD5GroupingCounts
+{
+    size_t grouped = 0;
+    size_t declined = 0;
 };
 
 
@@ -558,7 +561,7 @@ DECLARE_MD5_TARGET_CODE(
 
     /// Batch process `ColumnString` data, grouping each window's rows by MD5 block count.
     template <typename Ops>
-    static void md5BatchColumnStringGrouped(
+    static MD5GroupingCounts md5BatchColumnStringGrouped(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnFixedString::Chars & chars_to,
@@ -577,6 +580,7 @@ DECLARE_MD5_TARGET_CODE(
         /// Each grouped batch's largest true block count, accumulated as rows are placed.
         size_t batch_max_grouped[MD5_GROUP_WINDOW / N2];
 
+        MD5GroupingCounts counts;
         size_t grouped_windows = 0;
         size_t declined_windows = 0;
 
@@ -586,7 +590,7 @@ DECLARE_MD5_TARGET_CODE(
             {
                 const size_t rest = input_rows_count - window_base;
                 md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, window_base, rest);
-                return;
+                return counts;
             }
 
             const size_t window_rows = std::min(MD5_GROUP_WINDOW, input_rows_count - window_base);
@@ -620,7 +624,7 @@ DECLARE_MD5_TARGET_CODE(
             if (!md5GroupingWorthIt(work_in_order, md5CappedGroupedWork(histogram, N2), window_rows, N2))
             {
                 ++declined_windows;
-                ProfileEvents::increment(ProfileEvents::MD5GroupingDeclinedRows, window_rows);
+                counts.declined += window_rows;
                 md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, window_base, window_rows);
                 continue;
             }
@@ -651,12 +655,12 @@ DECLARE_MD5_TARGET_CODE(
             if (!md5GroupingWorthIt(work_in_order, work_grouped, window_rows, N2))
             {
                 ++declined_windows;
-                ProfileEvents::increment(ProfileEvents::MD5GroupingDeclinedRows, window_rows);
+                counts.declined += window_rows;
                 md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, window_base, window_rows);
                 continue;
             }
             ++grouped_windows;
-            ProfileEvents::increment(ProfileEvents::MD5GroupedRows, window_rows);
+            counts.grouped += window_rows;
 
             for (size_t off = 0; off < window_rows; off += N2)
             {
@@ -688,20 +692,23 @@ DECLARE_MD5_TARGET_CODE(
                         MD5_DIGEST_LEN);
             }
         }
+
+        return counts;
     }
 
     /// Batch process `ColumnString` data using multi-buffer MD5.
     template <typename Ops>
-    static void md5BatchColumnString(
+    static MD5GroupingCounts md5BatchColumnString(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnFixedString::Chars & chars_to,
         size_t input_rows_count)
     {
         if (md5GroupingPays<Ops>(offsets, input_rows_count))
-            md5BatchColumnStringGrouped<Ops>(data, offsets, chars_to, input_rows_count);
-        else
-            md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, 0, input_rows_count);
+            return md5BatchColumnStringGrouped<Ops>(data, offsets, chars_to, input_rows_count);
+
+        md5BatchColumnStringInOrder<Ops>(data, offsets, chars_to, 0, input_rows_count);
+        return {};
     }
 
     /// Batch process ColumnFixedString / ColumnIPv6 data (uniform row length).

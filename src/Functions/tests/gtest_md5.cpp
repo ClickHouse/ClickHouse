@@ -134,9 +134,9 @@ struct ScalarMD5Trait
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
 
-    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    static auto computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
     {
-        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
+        return DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
     }
 };
 
@@ -154,9 +154,9 @@ struct AVX2MD5Trait
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
 
-    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    static auto computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
     {
-        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
+        return DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
     }
 };
 
@@ -180,9 +180,9 @@ struct AVX512MD5Trait
         DB::TargetSpecific::x86_64_v4::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
 
-    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    static auto computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
     {
-        DB::TargetSpecific::x86_64_v4::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
+        return DB::TargetSpecific::x86_64_v4::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
     }
 };
 
@@ -202,9 +202,9 @@ struct ASIMDMD5Trait
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
 
-    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    static auto computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
     {
-        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
+        return DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
     }
 };
 
@@ -510,7 +510,7 @@ std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
 }
 
 /// Digests are the same whichever order the rows are hashed in, so which order ran is only visible
-/// through these counters. Asserting them is what makes a test notice grouping silently stopping.
+/// through the returned counts. Asserting them is what makes a test notice grouping silently stopping.
 template <typename Trait>
 void checkColumnMD5(ColumnShape shape, size_t rows, size_t expect_grouped, size_t expect_declined)
 {
@@ -520,17 +520,12 @@ void checkColumnMD5(ColumnShape shape, size_t rows, size_t expect_grouped, size_
     for (const auto & s : inputs)
         col->insertData(s.data(), s.size());
 
-    const ProfileEvents::Count grouped_before = ProfileEvents::global_counters[ProfileEvents::MD5GroupedRows];
-    const ProfileEvents::Count declined_before = ProfileEvents::global_counters[ProfileEvents::MD5GroupingDeclinedRows];
-
     FixedChars digests;
     digests.resize(rows * 16);
-    Trait::computeColumn(col->getChars(), col->getOffsets(), digests, rows);
+    const auto counts = Trait::computeColumn(col->getChars(), col->getOffsets(), digests, rows);
 
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MD5GroupedRows] - grouped_before, expect_grouped)
-        << "rows hashed in grouped order";
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MD5GroupingDeclinedRows] - declined_before, expect_declined)
-        << "rows admitted by the column screen and then hashed in column order";
+    EXPECT_EQ(counts.grouped, expect_grouped) << "rows hashed in grouped order";
+    EXPECT_EQ(counts.declined, expect_declined) << "rows admitted by the column screen and then hashed in column order";
 
     for (size_t i = 0; i < rows; ++i)
     {
