@@ -71,8 +71,13 @@ public:
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
 
+    /// Element type of the result array. It is `ValueType` for most functions, but e.g. the `ts_of_*` functions
+    /// return timestamps in seconds as `Float64` regardless of the value type.
+    using ResultType = typename Traits::ResultType;
+
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
-    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecValueType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecResultType = ColumnVectorOrDecimal<ResultType>;
 
     using Bucket = typename Traits::Bucket;
 
@@ -151,7 +156,7 @@ public:
         else
         {
             const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+            const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
             add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
         }
     }
@@ -182,7 +187,7 @@ public:
             flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
         const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+        const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
         const TimestampType * timestamp_data = timestamp_column.getData().data();
         const ValueType * value_data = value_column.getData().data();
 
@@ -302,7 +307,10 @@ public:
         if (buckets_size > bucket_count)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more buckets than expected");
 
-        data(place)->buckets.reserve(buckets_size);
+        /// `bucket_count` is derived from the function parameters and a huge window makes it enormous, so the
+        /// number of buckets is only reserved up to a bound and the map grows while the buckets are read. That way
+        /// a corrupted count fails with an end-of-buffer error instead of allocating memory for the claimed number.
+        data(place)->buckets.reserve(std::min(buckets_size, MAX_BUCKETS_TO_RESERVE));
 
         for (size_t i = 0; i < buckets_size; ++i)
         {
@@ -394,7 +402,7 @@ protected:
         data_to.resize(old_size + grid_size);
         nulls_to.resize(old_size + grid_size);
 
-        ValueType * values = data_to.data() + old_size;
+        ResultType * values = data_to.data() + old_size;
         UInt8 * nulls = nulls_to.data() + old_size;
 
         const auto & buckets = data(place)->buckets;
@@ -488,7 +496,7 @@ private:
 
     static DataTypePtr createResultType()
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ValueType>>()));
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ResultType>>()));
     }
 
     /// Upper bound on the number of grid points (the output array length) for a single grid.
@@ -513,6 +521,9 @@ private:
     /// The serialized state is the set of buckets, so the format version is defined by the traits
     /// (which define the bucket type).
     static constexpr UInt16 FORMAT_VERSION = Traits::FORMAT_VERSION;
+
+    /// How many buckets `deserialize` reserves before reading the data. Bigger states grow while they are read.
+    static constexpr size_t MAX_BUCKETS_TO_RESERVE = 4096;
 
     /// Validates and normalizes the grid step. For a single-point grid (`start == end`) the step is irrelevant, so it
     /// is normalized to 0 (making each window a single bucket); otherwise it must be positive.
@@ -1142,7 +1153,7 @@ private:
         {
             /// Each row holds a single sample.
             const TimestampType * timestamp_data = typeid_cast<const ColVecType &>(*columns[0]).getData().data();
-            const ValueType * value_data = typeid_cast<const ColVecResultType &>(*columns[1]).getData().data();
+            const ValueType * value_data = typeid_cast<const ColVecValueType &>(*columns[1]).getData().data();
 
             if (!flags_data)
                 addMany(place, timestamp_data, value_data, row_begin, row_end);
@@ -1169,7 +1180,7 @@ private:
             timestamp_offsets = array_column.getOffsets().data();
             value_offsets = timestamp_offsets;
             timestamp_data = typeid_cast<const ColVecType &>(tuple_column.getColumn(0)).getData().data();
-            value_data = typeid_cast<const ColVecResultType &>(tuple_column.getColumn(1)).getData().data();
+            value_data = typeid_cast<const ColVecValueType &>(tuple_column.getColumn(1)).getData().data();
         }
         else
         {
@@ -1179,7 +1190,7 @@ private:
             timestamp_offsets = timestamp_array_column.getOffsets().data();
             value_offsets = value_array_column.getOffsets().data();
             timestamp_data = typeid_cast<const ColVecType &>(timestamp_array_column.getData()).getData().data();
-            value_data = typeid_cast<const ColVecResultType &>(value_array_column.getData()).getData().data();
+            value_data = typeid_cast<const ColVecValueType &>(value_array_column.getData()).getData().data();
         }
 
         size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
@@ -1259,7 +1270,7 @@ private:
     }
 
     /// Stores the window's result value (or NULL when there is no result) at grid point `grid_index`.
-    void storeGridResult(size_t grid_index, const std::optional<ValueType> & result, ValueType * values, UInt8 * nulls) const
+    void storeGridResult(size_t grid_index, const std::optional<ResultType> & result, ResultType * values, UInt8 * nulls) const
     {
         chassert(grid_index < grid_size);
         if (result)
@@ -1269,7 +1280,7 @@ private:
         }
         else
         {
-            values[grid_index] = ValueType{};
+            values[grid_index] = ResultType{};
             nulls[grid_index] = 1;
         }
     }
