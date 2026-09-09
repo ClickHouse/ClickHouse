@@ -1238,7 +1238,7 @@ class CHServer:
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
                 --binary {perf_left}/clickhouse {perf_right}/clickhouse \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
-                {runs_arg} --max-queries {max_queries} \
+                {runs_arg} --max-queries {max_queries} --soft-max-queries \
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
                 {test_file}",
@@ -2245,13 +2245,10 @@ def main():
                         entry.unlink()
 
         def run_tests():
-            # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
             for test in test_files:
-                max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=max_queries,
+                    max_queries=10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
