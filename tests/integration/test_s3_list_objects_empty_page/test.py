@@ -153,3 +153,44 @@ def test_empty_listing_page_does_not_create_intersecting_parts(start_cluster):
     assert not node.contains_in_log("intersects next part")
 
     node.query("DROP TABLE test_intersecting SYNC")
+
+
+def test_empty_listing_page_is_logged(start_cluster):
+    """The empty page is legal and now handled, so nothing about it is visible from the outside.
+
+    It is also indistinguishable from a listing that under-reports, which is how #109751 was
+    reached twice. Following the token has to leave a trace, or a recurrence is again only
+    reconstructible from the object store's own access logs.
+    """
+    node = cluster.instances["node"]
+
+    node.query("DROP TABLE IF EXISTS test_logged_page SYNC")
+    node.query(
+        f"""
+        CREATE TABLE test_logged_page (key Int32, value String)
+        ENGINE = MergeTree()
+        ORDER BY key
+        SETTINGS disk = disk(
+            name = disk_logged_page,
+            type = s3_plain_rewritable,
+            endpoint = 'http://resolver:{MOCK_PORT}/root/logged/',
+            access_key_id = minio,
+            secret_access_key = 'ClickHouse_Minio_P@ssw0rd')
+        """
+    )
+    node.query(
+        f"INSERT INTO test_logged_page SELECT number, toString(number) FROM numbers({NUM_ROWS})"
+    )
+
+    node.rotate_logs()
+    node.stop_clickhouse()
+    control_mock("arm")
+    node.start_clickhouse()
+
+    assert int(node.query("SELECT count() FROM test_logged_page")) == NUM_ROWS
+    assert node.contains_in_log(
+        "Listing returned an empty page while reporting more to come"
+    )
+
+    control_mock("disarm")
+    node.query("DROP TABLE test_logged_page SYNC")
