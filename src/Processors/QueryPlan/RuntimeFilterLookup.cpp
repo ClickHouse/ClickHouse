@@ -194,7 +194,10 @@ ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 namespace
 {
 /// A block is one cache line: 512 bits, eight words. The block is selected by the first hash, the
-/// `k` bit positions inside it are nine bits of the second hash each (so `k <= 7`).
+/// `k` bit positions inside it are nine bits of the second hash each (so `k <= 7`), taken from the
+/// most significant bits down: for the fixed-size keys the second hash is a single multiplication of
+/// the first one, whose high bits depend on all bits of the multiplicand, while its low bits would
+/// repeat the block index.
 constexpr size_t RUNTIME_BLOOM_BLOCK_WORDS = 8;
 constexpr size_t RUNTIME_BLOOM_BLOCK_BITS = RUNTIME_BLOOM_BLOCK_WORDS * 64;
 
@@ -204,7 +207,7 @@ ALWAYS_INLINE void forEachBlockBit(UInt64 hash2, size_t hashes, F && f)
     const size_t count = compile_time_hashes != 0 ? compile_time_hashes : hashes;
     for (size_t i = 0; i < count; ++i)
     {
-        const size_t pos = (hash2 >> (9 * i)) & (RUNTIME_BLOOM_BLOCK_BITS - 1);
+        const size_t pos = (hash2 >> (64 - 9 * (i + 1))) & (RUNTIME_BLOOM_BLOCK_BITS - 1);
         f(pos / 64, 1ULL << (pos % 64));
     }
 }
@@ -281,9 +284,10 @@ namespace
 {
 /// The runtime filter lives for one query, so its hash need not match the persisted bloom filter
 /// indexes. Keys of 1, 2, 4 or 8 bytes (the usual join keys) take a 64-bit mixer instead of two
-/// CityHash calls over the bytes: a few multiplications per key rather than a full hash. Longer
-/// keys keep CityHash. The choice depends only on the byte length, so the build and the probe side
-/// of a filter always agree.
+/// CityHash calls over the bytes: a few multiplications per key rather than a full hash. The second
+/// hash is one more multiplication of the first: the blocked filter reads its bit positions from the
+/// high bits of the product, which mix all bits of the first hash. Longer keys keep CityHash. The
+/// choice depends only on the byte length, so the build and the probe side of a filter always agree.
 ALWAYS_INLINE UInt64 mix64(UInt64 h)
 {
     h ^= h >> 33;
@@ -299,7 +303,8 @@ ALWAYS_INLINE BloomFilterHashPair hashFixedKey(const char * data, UInt64 seed)
 {
     UInt64 value = 0;
     memcpy(&value, data, value_size);
-    return {mix64(value ^ seed), mix64(value + (seed * 0x9E3779B97F4A7C15ULL | 1))};
+    const UInt64 hash1 = mix64(value ^ seed);
+    return {hash1, hash1 * 0x9E3779B97F4A7C15ULL};
 }
 
 ALWAYS_INLINE BloomFilterHashPair computeRuntimeHashPair(const char * data, size_t len, UInt64 seed)
