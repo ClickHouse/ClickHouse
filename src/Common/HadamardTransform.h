@@ -11,9 +11,12 @@
 #include <numbers>
 #include <string_view>
 #include <type_traits>
-
 #if defined(__aarch64__)
 #include <arm_neon.h>
+#endif
+
+#if defined(__AVX2__)
+#include <immintrin.h>
 #endif
 
 /// Shared (randomized) Hadamard transform kernels: a portable scalar fast Walsh-Hadamard transform, an exact Kronecker
@@ -418,10 +421,13 @@ inline void kroneckerNeon(float * a, size_t blocks, size_t m, const HmMasks<floa
     fwhtBlocksNeon(a, blocks, m);
 }
 
+#endif
+
 enum class FwhtKernel
 {
     Scalar,
     Neon,
+    Avx2,
 };
 
 /// Read the kernel choice once from CLICKHOUSE_RHT_KERNEL (default: NEON on AArch64).
@@ -433,14 +439,105 @@ inline FwhtKernel selectKernel()
         {
             if (std::string_view(env) == "scalar")
                 return FwhtKernel::Scalar;
+#if defined(__aarch64__)
             if (std::string_view(env) == "neon")
                 return FwhtKernel::Neon;
+#endif
+#if defined(__AVX2__)
+            if (std::string_view(env) == "avx2")
+                return FwhtKernel::Avx2;
+#endif
         }
+#if defined(__aarch64__)
         return FwhtKernel::Neon;
+#elif defined(__AVX2__)
+        return FwhtKernel::Avx2;
+#else
+        return FwhtKernel::Scalar;
+#endif
     }();
     return kernel;
 }
 
+#if defined(__AVX2__)
+
+inline __m256 eightPointWHTAvx2(__m256 v)
+{
+    // h = 1
+    __m256 swap1 = _mm256_permute_ps(v, 0xB1);
+    __m256 v1 = _mm256_blend_ps(_mm256_add_ps(v, swap1), _mm256_sub_ps(swap1, v), 0XAA);
+
+    // h = 2
+    __m256 swap2 = _mm256_permute_ps(v1, 0x4E);
+    __m256 v2 = _mm256_blend_ps(_mm256_add_ps(v1, swap2), _mm256_sub_ps(swap2, v1), 0xCC);
+
+    // h = 4
+    __m256 swap4 = _mm256_permute2f128_ps(v2, v2, 0x01);
+    return _mm256_blend_ps(_mm256_add_ps(v2, swap4), _mm256_sub_ps(swap4, v2), 0xF0);
+}
+
+inline void fwhtAvx2(float * a, size_t m)
+{
+    // use half of the total 16 vector registers
+    constexpr size_t vectors_per_block = 8;
+    // 256 bits (8 floats) per vector registers. 64 floats in total.
+    constexpr size_t block = vectors_per_block * 8;
+
+    if (m < block)
+    {
+        fwhtScalar(a, m);
+        return;
+    }
+
+    // -------------------------------------------------------------
+    // Stage 1: Batch load data over h = 1, 2, 4
+    // instruction-level: 8 x 256-bit _mm256_loadu_ps instructions.
+    // Physical Level: 256 bytes over 4 cachelines (64 bytes each).
+    // -------------------------------------------------------------
+    for (size_t i = 0; i < m; i += block)
+    {
+        __m256 v[vectors_per_block];
+        for (size_t t = 0; t < vectors_per_block; ++t)
+            v[t] = eightPointWHTAvx2(_mm256_loadu_ps(a + i + 8 * t));
+
+        // ------------------------------------------------------------
+        // Stage 2: Inter-vector butterflies (h = 8, 16, 32)
+        // ------------------------------------------------------------
+        for (size_t hv = 1; hv < vectors_per_block; hv <<= 1)
+            for (size_t base = 0; base < vectors_per_block; base += (hv << 1))
+                for (size_t t = 0; t < hv; ++t)
+                {
+                    const __m256 x = v[base + t];
+                    const __m256 y = v[base + t + hv];
+                    v[base + t] = _mm256_add_ps(x, y);
+                    v[base + t + hv] = _mm256_sub_ps(x, y);
+                }
+
+        // -------------------------------------------------------------------
+        // Stage 3: Batch store back to memory (256 bytes flused to L1 Cahce)
+        // -------------------------------------------------------------------
+        for (size_t t = 0; t < vectors_per_block; ++t)
+            _mm256_storeu_ps(a + i + 8 * t, v[t]);
+    }
+
+    // -------------------------------------------------------------------
+    // High Stages (h = 64, 128, ... m/2)
+    // Performance optimization: Manually 2x unrolling (j += 16)
+    // -------------------------------------------------------------------
+    for (size_t h = block; h < m; h <<= 1)
+        for (size_t i = 0; i < m; i += (h << 1))
+            for (size_t j = i; j < i + h; j += 16)
+            {
+                const __m256 x0 = _mm256_loadu_ps(a + j);
+                const __m256 x1 = _mm256_loadu_ps(a + j + 8);
+                const __m256 y0 = _mm256_loadu_ps(a + j + h);
+                const __m256 y1 = _mm256_loadu_ps(a + j + h + 8);
+                _mm256_storeu_ps(a + j, _mm256_add_ps(x0, y0));
+                _mm256_storeu_ps(a + j + 8, _mm256_add_ps(x1, y1));
+                _mm256_storeu_ps(a + j + h, _mm256_sub_ps(x0, y0));
+                _mm256_storeu_ps(a + j + h + 8, _mm256_sub_ps(x1, y1));
+            }
+}
 #endif
 
 }

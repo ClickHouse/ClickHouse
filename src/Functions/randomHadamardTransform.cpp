@@ -181,7 +181,7 @@ private:
         auto & result_offsets = result_offsets_column->getData();
         result_offsets.resize(rows);
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__AVX2__)
         [[maybe_unused]] const FwhtKernel kernel = selectKernel();
 #endif
 
@@ -319,6 +319,17 @@ private:
                     }
                     else
                         fwhtScalar(buffer.data(), working_dim);
+#elif defined(__AVX2__)
+                    if constexpr (std::is_same_v<Compute, float>)
+                    {
+                        if (kernel == FwhtKernel::Avx2)
+                            fwhtAvx2(buffer.data(), working_dim);
+                        else
+                            fwhtScalar(buffer.data(), working_dim);
+                    }
+                    else
+                        fwhtScalar(buffer.data(), working_dim);
+
 #else
                     fwhtScalar(buffer.data(), working_dim);
 #endif
