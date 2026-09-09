@@ -1295,8 +1295,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         }
     };
 
-    bool probed_aborted_scan = false;
-
     const auto evaluate_candidate = [&](Int32 candidate)
     {
         evaluated[alpha_index(candidate)] = true;
@@ -1322,17 +1320,18 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             /// whose every sampled position votes one low-precision scale (so the tolerant-vote
             /// fallback above has nothing to add) drops all record of the high-precision
             /// majority the moment its only candidate aborts, and never discovers the wider
-            /// scale that wins. One aborted scan's probes are enough per vector: the strided
-            /// probes sample the population of unrepresentable values, which every abandoned
-            /// prefix of the same vector shares, and any candidate they seed that completes
-            /// keeps probing through the path below. Data with no decimal structure at all
-            /// (where every probe comes back empty and every candidate aborts) pays this
-            /// bounded discovery cost once instead of once per abandoned scale.
-            if (!probed_aborted_scan)
-            {
-                probed_aborted_scan = true;
+            /// scale that wins. Every abort keeps probing until some candidate completes: an
+            /// aborted scan only records the exceptions of the prefix it managed to walk, so a
+            /// scale seeded by one abort can itself abort further into the vector and expose a
+            /// population of unrepresentable values that the earlier prefix never contained -
+            /// the winning scale can be reachable only through that second abort. Probing until
+            /// the reference is filled is still bounded: `considered` admits every scale at most
+            /// once, so the whole vector pays at most one strided probe round per scale in the
+            /// alpha range, and data with no decimal structure at all seeds nothing from an
+            /// empty probe and so runs out of candidates immediately. Once some candidate
+            /// completes, the path below keeps probing on every completed scan.
+            if (!reference_filled)
                 probe_exceptions();
-            }
             return;
         }
 

@@ -3649,6 +3649,43 @@ TEST_F(WallabyTest, RecoversTheWinningScaleFromABudgetAbortedScan)
     EXPECT_LT(wallabyCompressedSize(values), 800u);
 }
 
+TEST_F(WallabyTest, RecoversTheWinningScaleFromASecondBudgetAbortedScan)
+{
+    /// An aborted scan records only the exceptions of the prefix it walked, so the scale it seeds
+    /// can abort further into the vector on a population of values the first prefix never
+    /// contained - and the winner is then reachable only through the *second* abort. Every sampled
+    /// position holds 0.001, so alpha = 3 is the only initial candidate. The first half of the
+    /// unsampled positions holds the constant 0.00100001, which is 1e-8 away from the alpha = 3
+    /// grid - far beyond the 2^32-ULP adjustment threshold at this magnitude - so the alpha = 3
+    /// scan aborts inside that half and seeds alpha = 8 alone. The second half holds 9-decimal
+    /// values whose last digit is never 0, 1 or 9, keeping them at least 2e-9 from the alpha = 8
+    /// grid, so they are hard exceptions of alpha = 8 as well and that scan aborts in turn. The
+    /// winner alpha = 9 is visible only in the exceptions of the second abort: it quantizes the
+    /// whole vector into 1000000..1000010, so 4-bit Frame-of-Reference lanes and no exceptions at
+    /// all. An encoder revision that probed the exceptions of one aborted scan per vector never
+    /// considered alpha = 9 here and fell through to the larger XOR mode: 842 bytes against the
+    /// 541 the decimal mode needs.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024, 0.001);
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (is_sampled_position[i])
+            continue;
+        if (i < values.size() / 2)
+        {
+            values[i] = 0.00100001;
+            continue;
+        }
+        /// Runs of two, so that the vector stays repetitive enough for the XOR mode to be measured
+        /// first and hand the decimal chooser a size to beat tight enough to abort its scans.
+        values[i] = static_cast<Float64>(1000002 + (placed / 2) % 7) / 1e9;
+        ++placed;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 700u);
+}
+
 TEST_F(WallabyTest, FindsTheDeltaCapBehindAnExiledSpike)
 {
     /// The adjacent-delta histogram double-counts a spike: the jump and the return are two wide
