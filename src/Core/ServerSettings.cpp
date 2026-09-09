@@ -1401,7 +1401,6 @@ Threads for cleanup of shared merge tree snapshot cleaner threads. Only availabl
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
 Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
 )", 0) \
-    DECLARE(String, license_file, "", "License file contents for ClickHouse Enterprise Edition", 0) \
     DECLARE(String, license_public_key_for_testing, "", "Licensing demo key, for CI use only", 0) \
     DECLARE(Bool, show_license_expiration_warnings, true, "Show the warning about the upcoming license expiration in system.warnings", 0) \
     DECLARE(NonZeroUInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
@@ -2287,6 +2286,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "library_bridge",
         "odbc_bridge",
         "jdbc_bridge",
+
+        /// The license text. Read directly from the config by the enterprise build and deliberately not
+        /// declared as a server setting: a `ServerSettings` entry is returned verbatim by
+        /// `system.server_settings` and by `getServerSetting`, and no user needs to read the license.
+        "license_file",
 
         /// Sections used in private builds (shared catalog, distributed cache, stateless workers, cloud readiness)
         "shared_database_catalog",
@@ -3640,7 +3644,6 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
-            {"license_file", {context->getLicenseFile(), ChangeableWithoutRestart::Yes}},
             {"show_license_expiration_warnings", {std::to_string(context->getShowLicenseExpirationWarnings()), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
