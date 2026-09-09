@@ -6,6 +6,7 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 #include <Core/Protocol.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -285,7 +286,11 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
 
         SettingsChanges changes = settings.changes();
         for (const auto & change : changes)
-            log_entry.settings.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+        {
+            String value = Settings::valueToStringUtil(change.name, change.value);
+            CoreSettings::maskSettingValue(change.name, change.value, value);
+            log_entry.settings.emplace_back(change.name, value);
+        }
     });
 }
 
