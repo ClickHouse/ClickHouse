@@ -7,6 +7,8 @@
 #include <optional>
 #include <unordered_set>
 
+#include <base/arithmeticOverflow.h>
+
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -22,6 +24,7 @@
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
@@ -70,8 +73,11 @@ namespace
     /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
     /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
     /// but at least it doesn't lead to incorrect results.
+    /// `compensate_rounding` widens the bound as described above; pass false to read the value exactly
+    /// as the manifest declares it.
     template <typename DecimalType>
-    std::optional<DB::Field> deserializeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound)
+    std::optional<DB::Field>
+    deserializeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound, bool compensate_rounding = true)
     {
         using NativeType = typename DecimalType::NativeType;
         using UnsignedType = make_unsigned_t<NativeType>;
@@ -87,13 +93,16 @@ namespace
 
         NativeType unscaled_value = static_cast<NativeType>(unscaled);
 
-        if (scale)
+        if (compensate_rounding && scale)
         {
             NativeType scaler = lower_bound ? -10 : 10;
             for (UInt32 i = 1; i < scale; ++i)
                 scaler *= 10;
 
-            unscaled_value += scaler;
+            /// The bound is stored as raw bytes and is never checked against the declared precision, so
+            /// widening it can leave the type. A value that has no widened form is not a usable bound.
+            if (common::addOverflow(unscaled_value, scaler, unscaled_value))
+                return std::nullopt;
         }
 
         return DB::DecimalField<DecimalType>(unscaled_value, scale);
@@ -101,7 +110,8 @@ namespace
 
     /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
     /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
-    std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
+    std::optional<DB::Field> deserializeFieldFromBinaryRepr(
+        std::string str, DB::DataTypePtr expected_type, bool lower_bound, bool compensate_rounding = true)
     {
         auto non_nullable_type = DB::removeNullable(expected_type);
         auto column = non_nullable_type->createColumn();
@@ -112,13 +122,13 @@ namespace
 
             const UInt32 scale = DB::getDecimalScale(*non_nullable_type);
             if (DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal32>(str, scale, lower_bound);
+                return deserializeDecimalBound<DB::Decimal32>(str, scale, lower_bound, compensate_rounding);
             if (DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal64>(str, scale, lower_bound);
+                return deserializeDecimalBound<DB::Decimal64>(str, scale, lower_bound, compensate_rounding);
             if (DB::checkDecimal<DB::Decimal128>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal128>(str, scale, lower_bound);
+                return deserializeDecimalBound<DB::Decimal128>(str, scale, lower_bound, compensate_rounding);
             if (DB::checkDecimal<DB::Decimal256>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal256>(str, scale, lower_bound);
+                return deserializeDecimalBound<DB::Decimal256>(str, scale, lower_bound, compensate_rounding);
             return std::nullopt;
         }
         else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
@@ -332,7 +342,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    const std::atomic<bool> * stop_flag_)
 {
     insertRowToLogTable(
         context_,
@@ -385,6 +396,10 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
     schema_processor.addIcebergTableSchema(schema_object);
 
+    /// Every entry of this manifest carries one partition value per spec field, including the
+    /// fields skipped below, so this count is the arity its partition tuples must have.
+    const size_t partition_spec_fields_count = partition_specification->size();
+
     PartitionSpecification partition_spec_vec;
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
@@ -434,9 +449,11 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         manifest_schema_id,
         std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec)),
         std::move(partition_key_description),
+        partition_spec_fields_count,
         total_rows,
         std::move(filter_dag_),
-        table_snapshot_schema_id_));
+        table_snapshot_schema_id_,
+        stop_flag_));
 }
 
 ManifestFileIterator::ManifestFileIterator(
@@ -452,9 +469,11 @@ ManifestFileIterator::ManifestFileIterator(
     Int32 manifest_schema_id_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
     std::optional<DB::KeyDescription> partition_key_description_,
+    size_t partition_spec_fields_count_,
     size_t total_rows_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    const std::atomic<bool> * stop_flag_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
     , format_version(format_version_)
@@ -465,8 +484,10 @@ ManifestFileIterator::ManifestFileIterator(
     , manifest_schema_id(manifest_schema_id_)
     , common_partition_specification(std::move(common_partition_specification_))
     , partition_key_description(std::move(partition_key_description_))
+    , partition_spec_fields_count(partition_spec_fields_count_)
     , table_snapshot_schema_id(table_snapshot_schema_id_)
     , total_rows(total_rows_)
+    , stop_flag(stop_flag_)
     , data_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , position_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , equality_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
@@ -480,6 +501,11 @@ ManifestFileIterator::ManifestFileIterator(
     UInt64 next_row_id = *inherited_first_row_id_;
     for (size_t row_index = 0; row_index < total_rows; ++row_index)
     {
+        /// This walk runs before `next` is ever entered, so it must honor the stop flag
+        /// itself; `next` then stops on its first row and the incomplete ids are never read.
+        if (stop_flag && stop_flag->load(std::memory_order_relaxed))
+            return;
+
         const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
         if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status != ManifestEntryStatus::ADDED
             || parsed_entry->parsed_first_row_id.has_value())
@@ -513,6 +539,17 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             std::nullopt);
         return nullptr;
     }
+
+    /// Iceberg requires one partition value per field of the spec the manifest was written with.
+    /// This holds whether or not any of those fields ended up in the partition key.
+    if (parsed_entry->partition_key_value.size() != partition_spec_fields_count)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg manifest partition tuple for file '{}' has {} values but the manifest's partition "
+            "spec defines {} fields",
+            parsed_entry->file_path_key,
+            parsed_entry->partition_key_value.size(),
+            partition_spec_fields_count);
 
     /// Compute inherited/resolved fields
 
@@ -612,7 +649,47 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
+                {
+                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
+                    /// form can still be a value the column holds, so this is not on its own a malformed
+                    /// manifest and stays out of the warning log.
+                    LOG_DEBUG(
+                        getLogger("ManifestFileIterator"),
+                        "Manifest file '{}' declares a bound that cannot be read as a usable range border "
+                        "for column id {} of data file '{}'; skipping min/max pruning for this column",
+                        path_to_manifest_file,
+                        column_id,
+                        parsed_entry->file_path_key.serialize());
                     continue;
+                }
+
+                /// At a non-zero scale the outward shift moves each decimal bound one integral unit, so it
+                /// un-inverts any declared pair no more than `2 * 10^scale` apart. Only the values as
+                /// declared expose that inversion, which is why they are read again here.
+                std::optional<DB::Field> declared_left = left;
+                std::optional<DB::Field> declared_right = right;
+                if (DB::WhichDataType(DB::removeNullable(name_and_type.type)).isDecimal())
+                {
+                    declared_left = deserializeFieldFromBinaryRepr(
+                        left_str, name_and_type.type, true, /*compensate_rounding=*/false);
+                    declared_right = deserializeFieldFromBinaryRepr(
+                        right_str, name_and_type.type, false, /*compensate_rounding=*/false);
+                }
+
+                /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
+                /// range derived from them is safe to prune on. Dropping the column's bounds is therefore
+                /// right where swapping or clamping them would prune on a value nothing vouches for.
+                if (accurateLess(*declared_right, *declared_left))
+                {
+                    LOG_WARNING(
+                        getLogger("ManifestFileIterator"),
+                        "Manifest file '{}' declares a lower bound above the upper bound for column id "
+                        "{} of data file '{}'; skipping min/max pruning for this column",
+                        path_to_manifest_file,
+                        column_id,
+                        parsed_entry->file_path_key.serialize());
+                    continue;
+                }
 
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }
@@ -698,6 +775,11 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::next()
             fully_initialized.store(true);
             return nullptr;
         }
+        /// The data manifest decode tasks pass the stream's stopped flag here, so a cancelled
+        /// query stops decoding mid-manifest. Checked between rows rather than by the caller,
+        /// because a long stretch of pruned rows yields nothing the caller could check on.
+        if (stop_flag && stop_flag->load(std::memory_order_relaxed))
+            return nullptr;
         auto entry = processRow(row_index);
         if (entry)
             return entry;
