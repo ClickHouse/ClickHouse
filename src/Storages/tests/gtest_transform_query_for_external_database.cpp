@@ -262,6 +262,12 @@ TEST(TransformQueryForExternalDatabase, DynamicConstant)
     checkNewAnalyzer(state, {"field"},
           R"(SELECT field FROM test.table WHERE field IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic), CAST(CAST('3', 'Enum8(\'3\' = 4)') AS Dynamic)))",
           R"(SELECT "field" FROM "test"."table" WHERE "field" IN (3, 4))");
+
+    /// `Dynamic(max_types = 0)` keeps every value in the shared binary variant, a second value exit that
+    /// forwards the opt-out on its own, so the external path needs its own case here.
+    checkNewAnalyzer(state, {"field"},
+          R"(SELECT field FROM test.table WHERE field = CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic(max_types = 0)))",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" = 3)");
 }
 
 TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
