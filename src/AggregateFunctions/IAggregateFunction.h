@@ -450,6 +450,18 @@ public:
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
+    /** Whether the function answers the same for the same input. `groupArraySample` without an explicit
+      * seed draws from a thread-local generator for every state it creates, so it does not - and an
+      * expression that runs it (`arrayReduce('groupArraySample(2)', ...)`) must not be presented to the
+      * optimizer as deterministic. Combinators propagate the wrapped function's answer.
+      */
+    virtual bool isDeterministic() const
+    {
+        if (auto nested = getNestedFunction())
+            return nested->isDeterministic();
+        return true;
+    }
+
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 
