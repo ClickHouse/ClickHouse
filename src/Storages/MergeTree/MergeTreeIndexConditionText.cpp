@@ -32,7 +32,6 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
