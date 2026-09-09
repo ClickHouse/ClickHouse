@@ -1263,6 +1263,12 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
             /// The payload is deliberately left unread: nothing consumes it here (the connection
             /// closes with no reply), and in interserver mode the connection is not authenticated
             /// until the Query packet, so reading it would deserialize a peer-chosen type.
+            ///
+            /// Name that case for what it is: an unauthenticated peer, so that `runImpl` answers it
+            /// the way it answers every other interserver authentication failure.
+            if (is_interserver_mode && !is_interserver_authenticated)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Unexpected data packet received before interserver authentication");
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
 
         case Protocol::Client::Ping:
