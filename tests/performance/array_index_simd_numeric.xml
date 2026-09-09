@@ -38,10 +38,10 @@
             u32_16 Array(UInt32),
             u32_24 Array(UInt32),
             u32_32 Array(UInt32),
-            u64_7 Array(UInt64),
-            u64_8 Array(UInt64),
-            u64_12 Array(UInt64),
-            u64_16 Array(UInt64)
+            u64_31 Array(UInt64),
+            u64_32 Array(UInt64),
+            u64_36 Array(UInt64),
+            u64_64 Array(UInt64)
         ) ENGINE = Memory
     </create_query>
     <fill_query>
@@ -64,10 +64,10 @@
             materialize(range(16)::Array(UInt32)),
             materialize(range(24)::Array(UInt32)),
             materialize(range(32)::Array(UInt32)),
-            materialize(range(7)::Array(UInt64)),
-            materialize(range(8)::Array(UInt64)),
-            materialize(range(12)::Array(UInt64)),
-            materialize(range(16)::Array(UInt64))
+            materialize(range(31)::Array(UInt64)),
+            materialize(range(32)::Array(UInt64)),
+            materialize(range(36)::Array(UInt64)),
+            materialize(range(64)::Array(UInt64))
         FROM numbers(20000)
     </fill_query>
 
@@ -123,11 +123,11 @@
     </query>
     <query>
         SELECT sum(
-            has(u64_7, toUInt64(0)) + indexOf(u64_7, toUInt64(6))
-            + has(u64_8, toUInt64(7)) + indexOf(u64_8, toUInt64(7))
-            + has(u64_12, toUInt64('18446744073709551615'))
-            + indexOf(u64_12, toUInt64('18446744073709551615'))
-            + has(u64_16, toUInt64(0)) + indexOf(u64_16, toUInt64(0)))
+            has(u64_31, toUInt64(0)) + indexOf(u64_31, toUInt64(30))
+            + has(u64_32, toUInt64(31)) + indexOf(u64_32, toUInt64(31))
+            + has(u64_36, toUInt64('18446744073709551615'))
+            + indexOf(u64_36, toUInt64('18446744073709551615'))
+            + has(u64_64, toUInt64(0)) + indexOf(u64_64, toUInt64(0)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>

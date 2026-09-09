@@ -195,8 +195,10 @@ public:
             && (std::is_same_v<Initial, UInt8> || std::is_same_v<Initial, UInt16> || std::is_same_v<Initial, UInt32>
                 || std::is_same_v<Initial, UInt64>))
         {
-            /// Keep short-array regressions on the scalar path; the 64-byte minimum amortises vector setup costs.
-            constexpr size_t simd_min_size = 64 / sizeof(Initial);
+            /// Keep short-array regressions on the scalar path. UInt64 needs a larger minimum because one
+            /// AVX2 vector contains only four values and the SIMD helper is out of line.
+            constexpr size_t simd_min_bytes = std::is_same_v<Initial, UInt64> ? 256 : 64;
+            constexpr size_t simd_min_size = simd_min_bytes / sizeof(Initial);
             if (array_size >= simd_min_size)
             {
                 /// Check one vector scalarly so a hit at the beginning does not pay SIMD setup costs.

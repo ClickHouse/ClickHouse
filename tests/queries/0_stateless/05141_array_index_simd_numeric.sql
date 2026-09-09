@@ -88,14 +88,14 @@ SELECT 'UInt32 threshold',
     indexOf(materialize(range(32)::Array(UInt32)), toUInt32(0));
 
 SELECT 'UInt64 threshold',
-    has(materialize(range(7)::Array(UInt64)), toUInt64(0)),
-    indexOf(materialize(range(7)::Array(UInt64)), toUInt64(6)),
-    has(materialize(range(8)::Array(UInt64)), toUInt64(7)),
-    indexOf(materialize(range(8)::Array(UInt64)), toUInt64(7)),
-    has(materialize(range(12)::Array(UInt64)), toUInt64('18446744073709551615')),
-    indexOf(materialize(range(12)::Array(UInt64)), toUInt64('18446744073709551615')),
-    has(materialize(range(16)::Array(UInt64)), toUInt64(0)),
-    indexOf(materialize(range(16)::Array(UInt64)), toUInt64(0));
+    has(materialize(range(31)::Array(UInt64)), toUInt64(0)),
+    indexOf(materialize(range(31)::Array(UInt64)), toUInt64(30)),
+    has(materialize(range(32)::Array(UInt64)), toUInt64(31)),
+    indexOf(materialize(range(32)::Array(UInt64)), toUInt64(31)),
+    has(materialize(range(36)::Array(UInt64)), toUInt64('18446744073709551615')),
+    indexOf(materialize(range(36)::Array(UInt64)), toUInt64('18446744073709551615')),
+    has(materialize(range(64)::Array(UInt64)), toUInt64(0)),
+    indexOf(materialize(range(64)::Array(UInt64)), toUInt64(0));
 
 SELECT 'UInt16 lane equality',
     has(materialize(arrayMap(x -> toUInt16(257), range(64))), toUInt16(1)),
