@@ -284,3 +284,11 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_bad_constraint
   SETTINGS enable_analyzer=1
+42	42
+0	1
+1	2
+2	3
+42	42
+0	0
+1	1
+2	2
