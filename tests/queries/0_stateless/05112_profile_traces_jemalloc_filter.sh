@@ -70,6 +70,8 @@ settings = {
     "jemalloc_enable_profiler": 1,
     "jemalloc_collect_profile_samples_in_trace_log": 1,
     "max_threads": 1,
+    # Keep the `UInt64` source blocks above the memory-sampling threshold.
+    "max_block_size": 65536,
 }
 query = "SELECT number FROM numbers(1000000) ORDER BY number FORMAT Null"
 for transport in ("native", "HTTP"):
