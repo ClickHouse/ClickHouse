@@ -37,6 +37,8 @@ ${CLICKHOUSE_CLIENT} --query "
         AND current_database = currentDatabase() AND query LIKE 'SELECT 1 AS v FROM numbers(2000000) WHERE ${rnd} > 0%'
     ORDER BY event_time_microseconds"
 
+# The result of the Sparse query is not ordered, and the run lengths of `uniq -c` would depend on how the rows are
+# interleaved (parallel replicas produce a different interleaving), so the values are counted order-independently.
 echo "-- A Sparse column survives the round trip through the on-disk cache"
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS t_05025;
@@ -44,7 +46,7 @@ ${CLICKHOUSE_CLIENT} --query "
         SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
     INSERT INTO t_05025 SELECT number, if(number = 500000, 777, 0) FROM numbers(1000000);"
 query_sparse="SELECT s FROM t_05025 SETTINGS ${settings}, max_threads = 1"
-${CLICKHOUSE_CLIENT} --query "${query_sparse}" | uniq -c | sed 's/^ *//'
-${CLICKHOUSE_CLIENT} --query "${query_sparse}, enable_reads_from_query_cache = 0" | uniq -c | sed 's/^ *//'
+${CLICKHOUSE_CLIENT} --query "${query_sparse}" | sort -n | uniq -c | sed 's/^ *//'
+${CLICKHOUSE_CLIENT} --query "${query_sparse}, enable_reads_from_query_cache = 0" | sort -n | uniq -c | sed 's/^ *//'
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05025"

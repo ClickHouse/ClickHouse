@@ -8,9 +8,7 @@
 1	0
 1	1
 -- A Sparse column survives the round trip through the on-disk cache
-500000 0
+999999 0
 1 777
-499999 0
-500000 0
+999999 0
 1 777
-499999 0
