@@ -188,14 +188,20 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::DNSReverseError);
+        ProfileEvents::increment(ProfileEvents::DNSError);
         throw;
     }
 
     /// An empty answer is a failed lookup as well: `c-ares` reports `NXDOMAIN`, `SERVFAIL` and other
     /// non-success statuses by leaving the result set empty rather than by raising an error,
     /// and every caller treats the absence of PTR records as a resolution failure.
+    /// `DNSError` is incremented together with `DNSReverseError` so that it stays the total of all
+    /// resolution failures, forward and reverse, as its description promises.
     if (ptr_records.empty())
+    {
         ProfileEvents::increment(ProfileEvents::DNSReverseError);
+        ProfileEvents::increment(ProfileEvents::DNSError);
+    }
 
     return ptr_records;
 }

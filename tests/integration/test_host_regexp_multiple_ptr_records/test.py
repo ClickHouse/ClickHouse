@@ -119,6 +119,7 @@ def get_reverse_dns_events():
         "DNSReverseRequests",
         "DNSReverseRequestMicroseconds",
         "DNSReverseError",
+        "DNSError",
     ]:
         counters[name] = int(
             ch_server.query(
@@ -159,3 +160,5 @@ def test_reverse_dns_profile_events(started_cluster):
 
     assert after["DNSReverseRequests"] > before["DNSReverseRequests"]
     assert after["DNSReverseError"] > before["DNSReverseError"]
+    # `DNSError` is the total of all resolution failures, so a reverse failure moves it too.
+    assert after["DNSError"] > before["DNSError"]
