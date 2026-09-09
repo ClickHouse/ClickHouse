@@ -2,6 +2,8 @@
 -- transaction and never replicates them, so a disk using it must never schedule the background tasks of
 -- `BlobKillerThread` and `BlobCopierThread`. A disk with the default `local` metadata still runs the killer.
 
+-- The `local` metadata of a disk lives in `disks/<disk name>/`, and a `local` object storage deletes its
+-- own root directory once it becomes empty, so `path` must not be `disks/05136_local_metadata/` here.
 CREATE TABLE t_local_metadata (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
     name = '05136_local_metadata',
