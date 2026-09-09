@@ -1,0 +1,54 @@
+text hasToken String
+1
+text hasToken LowCardinality
+1
+text equals LowCardinality
+1
+text hasToken LowCardinality(Nullable)
+1
+tokenbf hasToken String
+1
+tokenbf hasToken LowCardinality
+1
+ngrambf hasToken String
+1
+ngrambf hasToken LowCardinality
+1
+correctness
+1	500
+mapkey equals String
+1
+mapkey equals LowCardinality
+1
+mapkey in LowCardinality
+1
+mapkey correctness
+1	500
+mapkey tokenbf equals String
+1
+mapkey tokenbf equals LowCardinality
+1
+mapkey tokenbf equals LowCardinality(Nullable)
+1
+mapkey ngrambf equals LowCardinality(Nullable)
+1
+mapkey tokenbf correctness
+1	500
+mapkey tokenbf absent-key empty LC(Nullable)
+1024
+mapkey tokenbf absent-key empty LC(Nullable), subcolumn
+1024
+ngrambf equals LC(FixedString)
+1	500
+text equals LC(FixedString)
+1	500
+mapkey tokenbf absent-key empty LC(FixedString), subcolumn
+1024
+mapkey tokenbf absent-key empty LC(FixedString)
+1024
+tokenbf hasToken LowCardinality(Nullable)
+1
+ngrambf hasToken LowCardinality(Nullable)
+1
+tokenbf hasToken separator needle: String prunes, LowCardinality raises
+0
