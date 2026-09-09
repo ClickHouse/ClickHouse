@@ -160,6 +160,12 @@ if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
     set (COMPILER_SUPPORTS_GZ_ZLIB ON)
 endif ()
 
+# Has to precede block_build_time_checks.cmake. `enable_language(CUDA)` runs CMake's own
+# compiler test through `try_compile`, and `FindCUDAToolkit` reaches `find_package(Threads)`,
+# which probes with `check_c_source_compiles`. Both are blocked below, so CUDA gets enabled
+# here for the same reason `project()` enables C/CXX/ASM before the guard is installed.
+include (cmake/cuda.cmake)
+
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
 # version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
@@ -778,7 +784,16 @@ if (FUZZER)
         if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main" OR target MATCHES ".*isal.*"))
             get_target_property(target_type ${target} TYPE)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
-                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                # Targets compiled with -fno-sanitize=all must never be instrumented:
+                # a later -fsanitize=fuzzer-no-link overrides it and re-enables
+                # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
+                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
+                # runs before any coverage runtime exists, so every executable would
+                # crash at startup.
+                get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
+                if (NOT target_compile_options MATCHES "-fno-sanitize=all")
+                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")

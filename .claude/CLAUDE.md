@@ -152,6 +152,16 @@ When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
+Run the style check locally before you push, and never hand over a change that you have not style-checked. It is the cheapest CI job to reproduce and by far the most common reason an otherwise finished pull request comes back red, which costs a full CI round-trip to learn something a local command answers in a second.
+
+```bash
+pip install -r ci/docker/style-test/requirements.txt
+sudo apt-get install libxml2-utils ripgrep
+
+mkdir -p ci/tmp  # praktika keeps its local state here, the job fails without it
+PYTHONPATH=./ci:. python3 ci/jobs/check_style.py
+```
+
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
 Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
