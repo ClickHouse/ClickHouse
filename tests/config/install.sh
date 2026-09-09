@@ -54,6 +54,17 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+# The helper queries below only read `system.build_options`, so they must not touch the persistent
+# default data directory of `clickhouse-local` in the home: a table persisted there by an unrelated
+# invocation, or a concurrent instance holding the directory, would make the probe fail instead of
+# answering. The `--tmp` option asks for a throwaway directory, but the previous-release binary of
+# the upgrade check does not know it (and defaults to a temporary directory anyway), so ask the
+# binary at hand whether it supports the option.
+LOCAL_TMP_OPTION=""
+if clickhouse local --tmp --query "SELECT 1" > /dev/null 2>&1; then
+    LOCAL_TMP_OPTION="--tmp"
+fi
+
 function check_clickhouse_version()
 {
     local required_version=$1 && shift
@@ -83,11 +94,11 @@ function is_fast_build()
     # system.build_options; the coverage flags are applied per-directory, so they never
     # reach CXX_FLAGS and cannot be probed from there. An unanswerable probe declines,
     # because CXX_FLAGS cannot distinguish a coverage build.
-    if [[ "$(clickhouse local --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
+    if [[ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
         return 1
     fi
     # sanitizers and debug builds are slow
-    [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
 
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
@@ -240,11 +251,11 @@ function is_sanitizer_build()
     # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test for
     # -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on a bad
     # vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
-    [ "$(clickhouse local --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
 }
 function is_memory_sanitizer_build()
 {
-    [ "$(clickhouse local --query "SELECT value LIKE '%-fsanitize=memory%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value LIKE '%-fsanitize=memory%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
 }
 if ! is_memory_sanitizer_build; then
     ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
@@ -275,7 +286,7 @@ fi
 # SSH protocol support (not supported with fasttest or OpenSSL FIPS).
 function is_openssl_fips_build()
 {
-    [ "$(clickhouse local --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
+    [ "$(clickhouse local $LOCAL_TMP_OPTION --query "SELECT value FROM system.build_options where name = 'USE_OPENSSL_FIPS' LIMIT 1")" -eq 1 ]
 }
 if [ "$FAST_TEST" != "1" ] && ! is_openssl_fips_build; then
     ln -sf $SRC_PATH/config.d/ssh.xml $DEST_SERVER_PATH/config.d/
