@@ -1,12 +1,18 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <Common/Exception.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+}
 
 /// Extract the JSON path from a subcolumn name, stripping any `.:\`Type\`` suffix.
 /// For example:
@@ -140,7 +146,17 @@ bool isJSONPathFilterSafe(
     /// Non-nullable type: missing path produces the type's default value.
     /// If comparing to the default, we cannot safely skip the granule.
     /// Convert value_field to the key expression type before comparing.
-    auto converted = convertFieldToType(value_field, *key_expression_type);
+    Field converted;
+    try
+    {
+        converted = convertFieldToType(value_field, *key_expression_type);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
+            throw;
+        return false;
+    }
     if (converted == key_expression_type->getDefault())
         return false;
 
