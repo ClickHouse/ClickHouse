@@ -2999,7 +2999,7 @@ static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
 
 /// Index preparation casts the set values into the key type, while runtime `IN` membership casts the
 /// key into the set type, so a set atom is an exact image of the predicate only when both directions
-/// preserve equality. Everything not admitted below fails closed, floats included.
+/// preserve equality. Everything not admitted below fails closed.
 static bool areTypesCompatibleForInSetIndex(const DataTypePtr & set_element_type, const DataTypePtr & key_column_type)
 {
     /// `LowCardinality` has to be stripped from nested types too, otherwise identical composites differ.
@@ -3015,7 +3015,7 @@ static bool areTypesCompatibleForInSetIndex(const DataTypePtr & set_element_type
 
     const bool both_integers = (key_which.isInt() || key_which.isUInt()) && (set_which.isInt() || set_which.isUInt());
 
-    /// Across widths and signs an accurate cast yields NULL rather than truncating, and the preparer
+    /// Across widths and signs an accurate cast never truncates, and the preparer
     /// already drops the set rows that cast to NULL. A custom name over an integer (`Bool`) instead
     /// installs a cast wrapper that clamps every nonzero value to 1, which is not injective.
     return both_integers && !key_type->hasCustomName() && !set_type->hasCustomName();
