@@ -139,6 +139,9 @@ bool tryConvertDistinctToAggregation(
     if (distinct.isPreliminary() || distinct.getLimitHint() != 0 || distinct.skipsStreamMerging())
         return false;
 
+    if (!distinct.getSortDescription().empty())
+        return false;
+
     const auto & limits = distinct.getSetSizeLimits();
 
     /// Aggregation's producers decide where to stop in `break` mode, whereas the final `DISTINCT`

@@ -141,6 +141,32 @@ TEST(DistinctToAggregation, DeserializedStepUsesOptimizationSettings)
     }
 }
 
+TEST(DistinctToAggregation, PreservesExplicitSortDescription)
+{
+    for (bool distinct_in_order : {false, true})
+    {
+        SCOPED_TRACE(::testing::Message() << "distinct_in_order=" << distinct_in_order);
+        const auto header = makeSourceHeader();
+        SortDescription sort_description;
+        sort_description.emplace_back("k", 1, 1);
+        auto distinct = std::make_unique<DistinctStep>(header, SizeLimits{}, 0, Names{"k"}, false);
+        distinct->applyOrder(sort_description);
+
+        QueryPlan plan;
+        plan.addStep(std::make_unique<ReadNothingStep>(header));
+        plan.addStep(std::move(distinct));
+
+        QueryPlanOptimizationSettings settings(getContext().context);
+        settings.convert_distinct_to_aggregation = true;
+        settings.distinct_in_order = distinct_in_order;
+        QueryPlan::Nodes nodes;
+        QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode(), nodes);
+
+        ASSERT_EQ(plan.getRootNode()->step->getName(), "Distinct");
+        EXPECT_EQ(plan.getRootNode()->step->getSortDescription(), sort_description);
+    }
+}
+
 TEST(DistinctToAggregation, DuplicateColumnsRequireIdenticalValues)
 {
     enum class DuplicateColumns
