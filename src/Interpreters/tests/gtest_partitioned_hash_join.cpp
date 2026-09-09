@@ -878,18 +878,19 @@ TEST(PartitionedHashJoin, RoutesMatchTablePlacement)
 
 TEST(PartitionedHashJoin, TwoThousandLeavesTwoPasses)
 {
-    /// 2048 partitions really executed: the plan is forced above the 1024-per-pass ceiling, so the
-    /// scatter runs two MSB-first passes (6 + 5 bits), and every one of the 2048 owner ranges is filled by
-    /// the wave. One table, exact row conservation, exact results.
+    /// The production ceiling takes 2048 partitions in one pass, so the test forces 1024 per pass: two
+    /// MSB-first passes of 6 + 5 bits, every one of the 2048 owner ranges filled by the wave, one table,
+    /// exact row conservation, exact results.
     constexpr size_t distinct_keys = 1000000;
     BuildOptions options;
     options.partition_bits_for_tests = 11;
+    options.max_fanout_per_pass_for_tests = 1024;
     auto built = buildJoin(distinct_keys, /*duplicates=*/1, options);
 
     const auto stats = built.join->getBuildStats();
     EXPECT_EQ(stats.bits, 11u);
     EXPECT_EQ(stats.partitions, 2048u);
-    ASSERT_EQ(stats.pass_bits.size(), 2u) << "2048 partitions must take two scatter passes under the default ceiling";
+    ASSERT_EQ(stats.pass_bits.size(), 2u) << "2048 partitions must take two scatter passes under a 1024-per-pass ceiling";
     EXPECT_EQ(stats.pass_bits[0] + stats.pass_bits[1], 11u);
     ASSERT_EQ(stats.partition_row_counts.size(), 2048u);
     UInt64 routed = 0;
