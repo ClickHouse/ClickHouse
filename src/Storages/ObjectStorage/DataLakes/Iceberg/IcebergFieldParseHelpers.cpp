@@ -178,6 +178,12 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
     if (non_nullable_type->getTypeId() == TypeIndex::Variant)
         return std::nullopt;
 
+    /// `insertData` of a fixed-size column ignores the length and reads the width of the type, so a
+    /// shorter bound would read past the buffer. Iceberg keeps the bound as written, which for a
+    /// promoted column (`int` -> `long`) is narrower than the column is now.
+    if (non_nullable_type->haveMaximumSizeOfValue() && str.size() < non_nullable_type->getSizeOfValueInMemory())
+        return std::nullopt;
+
     auto column = non_nullable_type->createColumn();
     column->insertData(str.data(), str.length());
     Field result;
