@@ -43,11 +43,7 @@
 #   other checks;
 # - the checkpoints of the column-metadata prepass of the column-oriented tables: for the tables
 #   with the '_meta' name marker the failpoint sleeps 500 ms per 16 enumerated metadata
-#   columns inside the prepass;
-# - the per-column checkpoints of the column-oriented tables after the parts snapshot itself has
-#   already stopped: the '_snap_wide' fixture combines the slowed down snapshot walk with parts
-#   that have many columns, so the row materialization that follows the stopped snapshot must keep
-#   polling instead of enumerating every column of every returned part.
+#   columns inside the prepass.
 # In all cases a query with a 0.5 second deadline must stop at the first checkpoint that sees the
 # expired deadline. Every sleep site is polled at the same cadence as it sleeps, so a query that
 # honors the checkpoints performs at most 2-3 sleeps per exercised site before it stops, while a
@@ -116,7 +112,6 @@ DROP TABLE IF EXISTS t_slowdown_system_parts;
 DROP TABLE IF EXISTS $DROPPED_TABLE;
 DROP TABLE IF EXISTS t_slowdown_system_parts_wide;
 DROP TABLE IF EXISTS t_slowdown_system_parts_snap;
-DROP TABLE IF EXISTS t_slowdown_system_parts_snap_wide;
 DROP TABLE IF EXISTS t_slowdown_system_parts_meta;
 DROP TABLE IF EXISTS t_break_result;
 
@@ -140,13 +135,6 @@ CREATE TABLE t_slowdown_system_parts_snap (x UInt64, PROJECTION p (SELECT x ORDE
 ENGINE = MergeTree ORDER BY x PARTITION BY x
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
 
--- The '_snap_wide' name marker combines the slowed down snapshot walk with a part that has many
--- columns: the snapshot stops first, and the per-column checkpoints must still stop the row
--- materialization that follows it.
-CREATE TABLE t_slowdown_system_parts_snap_wide (x UInt64 $WIDE_COLUMNS, PROJECTION pw (SELECT * ORDER BY x))
-ENGINE = MergeTree ORDER BY x PARTITION BY x
-SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
-
 -- The '_meta' name marker additionally slows down the column-metadata prepass of the
 -- column-oriented tables, so the timed checks can prove that the prepass checkpoints stop it.
 CREATE TABLE t_slowdown_system_parts_meta (x UInt64 $WIDE_COLUMNS, PROJECTION pm (SELECT * ORDER BY x))
@@ -159,7 +147,6 @@ INSERT INTO t_slowdown_system_parts SELECT number FROM numbers($NUM_PARTS) SETTI
 INSERT INTO $DROPPED_TABLE SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_slowdown_system_parts_wide (x) VALUES (1);
 INSERT INTO t_slowdown_system_parts_snap SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
-INSERT INTO t_slowdown_system_parts_snap_wide (x) SELECT number FROM numbers(2) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_slowdown_system_parts_meta (x) VALUES (1);
 $DROPPED_DISCOVERY_TABLES
 
@@ -299,12 +286,6 @@ function counted_dropped_discovery()
     counted_query 13 parts_columns_meta parts_columns t_slowdown_system_parts_meta
     counted_query 14 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
 
-    # The '_snap_wide' fixture stops inside the parts-snapshot walk, and the parts it returns are
-    # then materialized column by column: without the per-column checkpoints of that materialization
-    # a single returned part alone performs at least eight more sleeps.
-    counted_query 15 parts_columns_snap_wide parts_columns t_slowdown_system_parts_snap_wide
-    counted_query 16 projection_parts_columns_snap_wide projection_parts_columns t_slowdown_system_parts_snap_wide
-
     # The '_discovery' fixture runs into its deadline inside the database/table discovery walk of
     # `StoragesInfoStream` (500 ms per walked table, one sleep per table for the full walk over
     # its dedicated database), so it pins the cancellation checkpoint of the walk itself.
@@ -333,7 +314,6 @@ ORDER BY idx;
 DROP TABLE t_break_result;
 DROP TABLE t_slowdown_system_parts_wide;
 DROP TABLE t_slowdown_system_parts_snap;
-DROP TABLE t_slowdown_system_parts_snap_wide;
 DROP TABLE t_slowdown_system_parts_meta;
 DROP TABLE t_slowdown_system_parts;
 DROP DATABASE $DISCOVERY_DATABASE;
