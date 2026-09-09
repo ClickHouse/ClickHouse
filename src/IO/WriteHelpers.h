@@ -583,6 +583,24 @@ inline void writeQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+
+/// Write a PostgreSQL string literal that preserves the input on every
+/// `standard_conforming_strings` setting.
+inline void writeQuotedStringPostgreSQLLossless(std::string_view ref, WriteBuffer & buf)
+{
+    if (ref.find_first_of("\b\f\n\r\t\\") != std::string_view::npos)
+    {
+        writeChar('E', buf);
+        writeChar('\'', buf);
+        writeAnyEscapedString<'\'', true, true>(ref.data(), ref.data() + ref.size(), buf);
+        writeChar('\'', buf);
+    }
+    else
+    {
+        writeQuotedStringPostgreSQL(ref, buf);
+    }
+}
+
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
