@@ -27,8 +27,9 @@
           high_card NDV = 10_000_000 (near-unique)
           low_card  NDV =  1_000_000 (intDiv(number, 10))
 
-        Plain join on both keys; the query opts in to `query_plan_hash_join_subset_keys_auto`
-        explicitly because the setting is off by default. On master / without the
+        Plain join on both keys; the query names `query_plan_hash_join_subset_keys_auto`
+        explicitly so it keeps measuring the optimization even against a reference build
+        where the setting is still off. On master / without the
         setting, both keys go into the hash table (~10M entries). With the setting,
         the join-order optimizer keeps `low_card` as the hash key and evaluates
         `high_card` during the probe. Memory drops ~2x; runtime in the same shape ranges

@@ -6377,8 +6377,8 @@ Enable using collected hash table statistics for cardinality estimation during j
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before join
 )", 0) \
-    DECLARE(Bool, query_plan_hash_join_subset_keys_auto, false, R"(
-Use column statistics to automatically demote high-cardinality JOIN equality keys out of the hash table key set. The hash table is built on the subset of equality keys that reaches a target bucket size; the remaining equalities are evaluated per row during the probe.
+    DECLARE(Bool, query_plan_hash_join_subset_keys_auto, true, R"(
+Use column statistics to automatically demote high-cardinality JOIN equality keys out of the hash table key set. The hash table is built on the subset of equality keys that reaches a target bucket size; the remaining equalities are evaluated per row during the probe. Applies only to a build side of at least `query_plan_hash_join_subset_keys_min_rows` rows whose column statistics are known.
 )", 0) \
     DECLARE(UInt64, query_plan_hash_join_subset_keys_min_rows, 1000000, R"(
 Minimum estimated build-side row count for `query_plan_hash_join_subset_keys_auto` to apply. A small hash table does not benefit from key demotion.
