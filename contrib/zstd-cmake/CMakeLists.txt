@@ -70,7 +70,7 @@ SET(Sources
 )
 
 if (ENABLE_FILC)
-    add_compile_definitions(ZSTD_DISABLE_ASM)
+    add_compile_definitions(ZSTD_DISABLE_ASM ZSTD_NO_INTRINSICS)
 else ()
     list(APPEND Sources "${LIBRARY_DIR}/decompress/huf_decompress_amd64.S")
 endif ()
