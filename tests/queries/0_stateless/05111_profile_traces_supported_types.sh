@@ -101,7 +101,10 @@ for transport in ("native", "HTTP"):
                 "SELECT sum(sipHash64(number)) FROM numbers(1000000000000)",
                 {"query_profiler_cpu_time_period_ns": 10000000,
                  "query_profiler_real_time_period_ns": 100000000,
-                 "max_rows_to_read": 0, "max_execution_time": 2, "timeout_overflow_mode": "break"},
+                 # Let the leaf finish and flush samples before the initiator's deadline.
+                 "max_rows_to_read": 0, "max_execution_time": settings["max_execution_time"] if remote else 2,
+                 "timeout_overflow_mode": "throw" if remote else "break",
+                 "max_execution_time_leaf": 2, "timeout_overflow_mode_leaf": "break"},
                 {"CPU", "Real"},
             ),
             (
