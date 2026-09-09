@@ -562,8 +562,8 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    /// A conditional completion needs no separate guard: the id proves the object is this upload's
-    /// result, which is what an `If-Match` or `If-None-Match` was asking about in the first place.
+    /// A conditional completion needs no separate guard: the id proves the object is this upload's,
+    /// which is what the condition was asking in the first place.
     if (!outcome.IsSuccess()
         && !request.getIdempotencyId().empty()
         && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
@@ -573,11 +573,10 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
                                  .WithKey(key);
         auto check_outcome = HeadObject(check_request);
 
-        /// The upload id is gone, which happens both when an earlier attempt of this completion
-        /// succeeded and lost its response, and when the upload was aborted. An object at the key
-        /// does not tell those apart -- it may be somebody else's, and accepting it would report
-        /// rows as stored that never were. The id this upload stamped on its own object does, and
-        /// the HEAD already carries it, so this costs no extra request.
+        /// The upload id is gone either because an earlier attempt completed and lost its response,
+        /// or because the upload was aborted. An object at the key does not tell those apart -- it
+        /// may be somebody else's, and accepting it would report rows as stored that never were.
+        /// The id this upload stamped does, and it comes back in this same HEAD.
         if (check_outcome.IsSuccess()
             && objectCarriesIdempotencyId(check_outcome.GetResult().GetMetadata(), request.getIdempotencyId()))
         {

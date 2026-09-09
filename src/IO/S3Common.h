@@ -40,9 +40,8 @@ bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error);
 /// True only if the object at `key` carries `idempotency_id`, i.e. the caller wrote it. An absent
 /// object, a foreign id, a failed HEAD, and an empty `idempotency_id` all give false.
 ///
-/// This is the single-part variant, for a `PutObject` answered with 412: it costs its own HEAD.
-/// A multipart completion does not use it -- `Client::CompleteMultipartUpload` reads the id out of
-/// the HEAD it already performs.
+/// For the single-part 412 path, which has no HEAD to reuse. A multipart completion asks the same
+/// question inline, off the `HeadObjectResult` it already holds.
 bool isObjectWrittenWithIdempotencyId(
     const S3::Client & client, const String & bucket, const String & key, const String & idempotency_id, LoggerPtr log);
 

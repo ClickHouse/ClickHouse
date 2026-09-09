@@ -113,8 +113,8 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        /// Identifies this upload among all writers to `dest_key`. Stamped on the object by
-        /// `CreateMultipartUpload` and handed to the completion, which recovers a lost response with it.
+        /// Identifies this upload among all writers to `dest_key`: stamped by `CreateMultipartUpload`,
+        /// handed to the completion to recover a lost response.
         const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
 
         /// Represents a task uploading a single part.

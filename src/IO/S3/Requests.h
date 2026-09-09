@@ -202,10 +202,9 @@ class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMul
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
 
-    /// The id `CreateMultipartUpload` stamped in this object's metadata. Set it and a completion that
-    /// comes back as NO_SUCH_UPLOAD is accepted when, and only when, the object at the key carries it
-    /// -- meaning an earlier attempt of this very upload completed and its response was lost. Left
-    /// empty, the error is reported as it is.
+    /// The id `CreateMultipartUpload` stamped in the object's metadata. Set it and a NO_SUCH_UPLOAD
+    /// is accepted only when the object at the key carries it, i.e. an earlier attempt of this upload
+    /// completed and lost its response. Left empty, the error is reported as it is.
     void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
     const Aws::String & getIdempotencyId() const { return idempotency_id; }
 

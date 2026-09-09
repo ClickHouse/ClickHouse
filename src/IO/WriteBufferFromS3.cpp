@@ -691,9 +691,8 @@ bool WriteBufferFromS3::completeMultipartUpload()
 
         const auto & error = outcome.GetError();
 
-        /// A 412 on our own object means this completion was replayed after it had succeeded. The
-        /// NO_SUCH_UPLOAD case is the same situation reached by a different error, and the client
-        /// resolves it there from the id carried on the request.
+        /// A 412 on our own object means this completion was replayed after it had succeeded.
+        /// NO_SUCH_UPLOAD is the same situation via a different error; the client resolves that one.
         if (error.GetExceptionName() == "PreconditionFailed" && isObjectWrittenByThisBuffer())
         {
             LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write ({}). {}, Parts: {}",
