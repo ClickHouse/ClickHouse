@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <deque>
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
