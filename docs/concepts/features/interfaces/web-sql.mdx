@@ -53,6 +53,9 @@ cell with the `[+]` button that appears under a result. Notebook mode is per tab
 
 ### Limitations {#limitations}
 
-Switching tabs while a query is running discards the running state of that query.
+A query keeps running when you switch away from its tab. Its progress and resource meters keep
+accumulating in the background, and reopening the tab re-adopts that live state, so the meters
+continue from their current values instead of restarting near zero. Closing the tab, and navigating
+back or forward to another history entry, do stop the query.
 
 Only small results are snapshotted for restore. A large result (above the snapshot size limit) or an image result is not persisted: after a tab switch or reload the tab keeps its query but not the rendered result, and re-running the query reproduces it. This applies both to single-query results and to the combined output of a "Run all" (multi-query) run.
