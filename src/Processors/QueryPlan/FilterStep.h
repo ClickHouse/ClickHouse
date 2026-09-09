@@ -101,8 +101,6 @@ struct FilterWire
     ActionsDAG actions_dag;
     String filter_column_name;
     bool remove_filter_column = false;
-    /// Blocks the input pruning that a `FINAL` child depends on.
-    bool prevent_input_removal = false;
     /// The key of the query condition cache: a hash and the condition text. It changes how fast a
     /// later read runs, never which rows the filter emits.
     std::optional<std::pair<UInt64, String>> condition;

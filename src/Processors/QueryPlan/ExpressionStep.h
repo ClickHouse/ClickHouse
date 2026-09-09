@@ -74,8 +74,6 @@ private:
 struct ExpressionWire
 {
     ActionsDAG actions_dag;
-    /// Blocks the input pruning that a `FINAL` child depends on.
-    bool prevent_input_removal = false;
 };
 
 }

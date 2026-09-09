@@ -1044,7 +1044,7 @@ constexpr auto AGGREGATING_MANIFEST = StepManifest<AggregatingStep, AggregatingW
         field("keys", WireFieldClass::Logical, &AggregatingWire::keys),
         field("aggregates", WireFieldClass::Logical, &AggregatingWire::aggregates),
         field("grouping_sets", WireFieldClass::Logical, &AggregatingWire::grouping_sets),
-        field("final", WireFieldClass::Logical, &AggregatingWire::final),
+        field("final", WireFieldClass::Logical, &AggregatingWire::final).notInCacheKey(),
         field("overflow_row", WireFieldClass::Logical, &AggregatingWire::overflow_row),
         field("group_by_use_nulls", WireFieldClass::Logical, &AggregatingWire::group_by_use_nulls),
         field("only_merge", WireFieldClass::Logical, &AggregatingWire::only_merge),
@@ -1216,15 +1216,10 @@ void AggregatingStep::serialize(Serialization & ctx) const
         return;
     }
 
-    AggregatingWire wire = toWire();
-    /// The cache key must be the same for the single-node and the parallel-replicas build of a
-    /// query, which differ only in these two values.
-    if (ctx.for_cache_key)
-    {
-        wire.final = false;
-        wire.hash_table_stats_key = 0;
-    }
-    writeManifestPayload(AGGREGATING_MANIFEST, wire, ctx);
+    /// The cache key must be the same for the single-node and the parallel-replicas build of a query.
+    /// They differ in `final` and `hash_table_stats_key`, both kept out of the cache key by the
+    /// manifest (`final` is marked `notInCacheKey`, `hash_table_stats_key` is a physical field).
+    writeManifestPayload(AGGREGATING_MANIFEST, toWire(), ctx);
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)

@@ -15,7 +15,7 @@ format 1 introduced_in 16
   field keys Logical vector<String>
   field aggregates Logical AggregateDescriptions
   field grouping_sets Logical vector<vector<String>>
-  field final Logical bool
+  field final Logical no-cache-key bool
   field overflow_row Logical bool
   field group_by_use_nulls Logical bool
   field only_merge Logical bool
@@ -109,8 +109,7 @@ format 1 introduced_in 16
 name Expression introduced_in 1 full_digest always logical_digest always
 format 1 introduced_in 16
   field actions_dag Logical ActionsDAG
-  field prevent_input_removal Physical bool
-  initializers 00000000
+  initializers 000000
 name Extremes introduced_in 1 full_digest always logical_digest always
 format 1 introduced_in 16
   initializers 
@@ -119,9 +118,8 @@ format 1 introduced_in 16
   field actions_dag Logical ActionsDAG
   field filter_column_name Logical String
   field remove_filter_column Logical bool
-  field prevent_input_removal Physical bool
   field condition Physical optional<pair<UInt64,String>>
-  initializers 00000000000000
+  initializers 000000000000
 name FractionalLimit introduced_in 1 full_digest always logical_digest always
 format 1 introduced_in 16
   field limit_fraction Logical Float64

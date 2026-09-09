@@ -130,14 +130,13 @@ namespace
 constexpr auto EXPRESSION_MANIFEST = StepManifest<ExpressionStep, ExpressionWire>("Expression")
     .nameIntroducedIn(1)
     .baseFormat(
-        field("actions_dag", WireFieldClass::Logical, &ExpressionWire::actions_dag),
-        field("prevent_input_removal", WireFieldClass::Physical, &ExpressionWire::prevent_input_removal));
+        field("actions_dag", WireFieldClass::Logical, &ExpressionWire::actions_dag));
 
 }
 
 ExpressionWire ExpressionStep::toWire() const
 {
-    return ExpressionWire{actions_dag.clone(), prevent_input_removal};
+    return ExpressionWire{actions_dag.clone()};
 }
 
 QueryPlanStepPtr ExpressionStep::fromWire(ExpressionWire wire, Deserialization & ctx)
@@ -145,10 +144,9 @@ QueryPlanStepPtr ExpressionStep::fromWire(ExpressionWire wire, Deserialization &
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 
-    auto step = std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(wire.actions_dag));
-    if (wire.prevent_input_removal)
-        step->setPreventInputRemoval();
-    return step;
+    /// `prevent_input_removal` is not carried on the wire: it only guides `removeUnusedColumns` during
+    /// optimization, and the plan reaching here is already optimized, so the receiver does not need it.
+    return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(wire.actions_dag));
 }
 
 void ExpressionStep::serialize(Serialization & ctx) const

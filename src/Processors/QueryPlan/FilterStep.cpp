@@ -423,14 +423,13 @@ constexpr auto FILTER_MANIFEST = StepManifest<FilterStep, FilterWire>("Filter")
         field("actions_dag", WireFieldClass::Logical, &FilterWire::actions_dag),
         field("filter_column_name", WireFieldClass::Logical, &FilterWire::filter_column_name),
         field("remove_filter_column", WireFieldClass::Logical, &FilterWire::remove_filter_column),
-        field("prevent_input_removal", WireFieldClass::Physical, &FilterWire::prevent_input_removal),
         field("condition", WireFieldClass::Physical, &FilterWire::condition));
 
 }
 
 FilterWire FilterStep::toWire() const
 {
-    return FilterWire{actions_dag.clone(), filter_column_name, remove_filter_column, prevent_input_removal, condition};
+    return FilterWire{actions_dag.clone(), filter_column_name, remove_filter_column, condition};
 }
 
 QueryPlanStepPtr FilterStep::fromWire(FilterWire wire, Deserialization & ctx)
@@ -440,8 +439,8 @@ QueryPlanStepPtr FilterStep::fromWire(FilterWire wire, Deserialization & ctx)
 
     auto step = std::make_unique<FilterStep>(
         ctx.input_headers.front(), std::move(wire.actions_dag), std::move(wire.filter_column_name), wire.remove_filter_column);
-    if (wire.prevent_input_removal)
-        step->setPreventInputRemoval();
+    /// `prevent_input_removal` is not carried on the wire: it only guides `removeUnusedColumns` during
+    /// optimization, and the plan reaching here is already optimized, so the receiver does not need it.
     if (wire.condition)
         step->setConditionForQueryConditionCache(wire.condition->first, wire.condition->second);
     return step;

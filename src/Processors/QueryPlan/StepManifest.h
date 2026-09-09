@@ -131,6 +131,10 @@ enum class WireFieldClass : UInt8
 };
 
 /// One payload member: its name, its digest class and the wire struct member it lives in.
+/// `in_cache_key` says whether the field takes part in the cache key (the runtime-statistics hash;
+/// see `writeManifestPayload`). A `Logical` field takes part by default; mark it `notInCacheKey` when
+/// it changes the rows but not the statistics the key identifies (a partial-vs-final aggregation, say).
+/// A `Physical` field never takes part, whatever this says.
 template <typename Wire_, typename T>
 struct WireField
 {
@@ -140,6 +144,14 @@ struct WireField
     const char * name;
     WireFieldClass field_class;
     T Wire::* member;
+    bool in_cache_key = true;
+
+    constexpr WireField notInCacheKey() const
+    {
+        auto copy = *this;
+        copy.in_cache_key = false;
+        return copy;
+    }
 };
 
 template <typename Wire, typename T>
@@ -576,7 +588,18 @@ String typeName()
 template <typename Manifest>
 void writeManifestPayload(const Manifest & manifest, const typename Manifest::Wire & wire, IQueryPlanStep::Serialization & ctx)
 {
-    WireDetail::forEach(manifest.fields, [&](const auto & field) { WireEncoding::write(wire.*field.member, ctx); });
+    WireDetail::forEach(manifest.fields, [&](const auto & field)
+    {
+        /// The cache key identifies a step for runtime statistics, so it hashes only the fields that
+        /// affect those statistics: the logical fields that are not marked out, and never a physical
+        /// one. A step that differs from another only in what is skipped here hashes the same, which is
+        /// what lets the single-node and parallel-replicas builds of a query share a statistics entry.
+        /// These bytes are only ever hash input, never read back, so skipping is safe; the real
+        /// transport (`for_cache_key` false) writes every field.
+        if (ctx.for_cache_key && (field.field_class == WireFieldClass::Physical || !field.in_cache_key))
+            return;
+        WireEncoding::write(wire.*field.member, ctx);
+    });
     ctx.step_format_version = 1;
 }
 
@@ -668,6 +691,7 @@ String describeManifest(const Manifest & manifest)
         {
             using Value = typename std::remove_cvref_t<decltype(field)>::Value;
             out << "  field " << field.name << " " << (field.field_class == WireFieldClass::Logical ? "Logical" : "Physical")
+                << (field.in_cache_key ? "" : " no-cache-key")
                 << " " << WireEncoding::typeName<Value>() << "\n";
         });
     }
