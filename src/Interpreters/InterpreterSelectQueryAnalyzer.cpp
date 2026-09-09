@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -172,7 +173,11 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
 template <typename... Args>
 QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
-    const ASTPtr & ast, const ContextMutablePtr & ctx, const SelectQueryOptions & select_options, Args &&... interpreter_args)
+    const ASTPtr & ast,
+    const ContextMutablePtr & ctx,
+    const SelectQueryOptions & select_options,
+    const BuiltSetsByHashPtr & built_sets,
+    Args &&... interpreter_args)
 {
     const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
     if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
@@ -214,6 +219,10 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
     optimization_settings.force_projection_name.clear();
+    /// Adopt the sets the single-node plan already filled.
+    /// Without this the same subqueries are executed a second time
+    /// just to plan a candidate that might be thrown away.
+    reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
     return std::make_unique<QueryPlan>(std::move(plan));
 }
@@ -298,8 +307,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names](
+              const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -321,7 +331,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -335,8 +346,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_](
+              const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, built_sets); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
