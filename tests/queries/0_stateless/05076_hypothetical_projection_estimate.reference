@@ -129,20 +129,20 @@ real:
 ReadFromMergeTree (p_r)
 Granules: 1
 --- Compact parts, where a wide column the projection does not store must not inflate its marks ---
-real projection part marks:	7
+real projection part marks:	5
 hypothetical:
-marks: 19
-rows: 50000
+marks: 89
+rows: 2050
 status: applicable
-marks: 6
-rows: 50000
-read_ratio: 0.32x
+marks: 4
+rows: 2050
+read_ratio: 0.04x
 verdict: chosen
-reason: 6 marks would be read instead of 19 from the base table
+reason: 4 marks would be read instead of 89 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_c)
-Granules: 6
+Granules: 4
 --- a projection that reads more marks than the base table is not chosen ---
 marks: 1
 marks: 3

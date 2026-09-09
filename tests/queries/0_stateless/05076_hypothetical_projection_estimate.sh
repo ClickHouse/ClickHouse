@@ -102,12 +102,13 @@ echo "--- Compact parts, where a wide column the projection does not store must 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;
     CREATE TABLE t_est_c (id UInt64, b UInt64, v UInt64, payload String) ENGINE = MergeTree ORDER BY id
-        SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, use_const_adaptive_granularity = 0,
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 10000, use_const_adaptive_granularity = 0,
                  min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 0;
     CREATE TABLE t_real_c AS t_est_c;
     ALTER TABLE t_real_c ADD PROJECTION p_c (SELECT id, b, v ORDER BY b);
-    INSERT INTO t_est_c SELECT number, number % 1000, number, repeat('x', 4000) FROM numbers(50000);
-    INSERT INTO t_real_c SELECT number, number % 1000, number, repeat('x', 4000) FROM numbers(50000);
+    -- 2050 rows leave a remainder below half a granule, which the compact writer folds into the previous mark
+    INSERT INTO t_est_c SELECT number, number % 1000, number, repeat('x', 400) FROM numbers(2050);
+    INSERT INTO t_real_c SELECT number, number % 1000, number, repeat('x', 400) FROM numbers(2050);
     SELECT 'real projection part marks:', marks FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_real_c' AND active;
 "
 compare p_c "(SELECT id, b, v ORDER BY b)" "SELECT sum(v) FROM TABLE WHERE b >= 0" t_est_c t_real_c
