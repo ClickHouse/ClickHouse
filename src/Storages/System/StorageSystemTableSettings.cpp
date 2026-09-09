@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemTableSettings.h>
+#include <Storages/System/extractTableNameFilter.h>
 
 #include <Access/ContextAccess.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
@@ -129,12 +130,14 @@ public:
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ExpressionActionsPtr table_filter_,
+        TablesFilter tables_filter_,
         ContextPtr context_)
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))
         , table_filter(std::move(table_filter_))
+        , tables_filter(std::move(tables_filter_))
         , context(Context::createCopy(context_))
     {
     }
@@ -304,7 +307,8 @@ private:
 
         auto database_column = ColumnString::create();
         auto table_column = ColumnString::create();
-        for (const auto & table_details : databases_cursor.getDatabase()->getLightweightTablesIterator(context))
+        for (const auto & table_details : databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(
+                 context, /* filter_by_table_name */ {}, /* skip_not_loaded */ false, tables_filter))
         {
             database_column->insert(database_name);
             table_column->insert(table_details.name);
@@ -329,6 +333,7 @@ private:
     UInt64 max_block_size;
     DatabaseTablesCursor databases_cursor;
     ExpressionActionsPtr table_filter;
+    TablesFilter tables_filter;
     ContextPtr context;
     Tables external_tables;
     Tables::const_iterator external_tables_it;
@@ -370,6 +375,7 @@ private:
     const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
     ExpressionActionsPtr table_filter;
+    TablesFilter tables_filter;
 };
 
 void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -396,6 +402,11 @@ void ReadFromSystemTableSettings::applyFilters(ActionDAGNodes added_filter_nodes
     };
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &tables_block, context))
         table_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+
+    /// A namespace-pushdown hint for catalogs that can restrict what they list server-side. The
+    /// table name lives in the `table` column here - `name` is the setting's name - so that is the
+    /// column the hint has to be read from.
+    tables_filter = extractTableNameFilter(filter_actions_dag->getOutputs().at(0), "table");
 }
 
 void StorageSystemTableSettings::readImpl(
@@ -449,7 +460,8 @@ void ReadFromSystemTableSettings::initializePipeline(QueryPipelineBuilder & pipe
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<TableSettingsSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), table_filter, context)));
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases),
+        table_filter, tables_filter, context)));
 }
 
 }
