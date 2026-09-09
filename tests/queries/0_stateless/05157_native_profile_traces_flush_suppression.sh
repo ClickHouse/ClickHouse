@@ -98,8 +98,9 @@ table = "native_trace_flush_" + uuid.uuid4().hex
 control(f"CREATE TABLE {table} (n UInt64, arr Array(UInt64) MATERIALIZED range(n)) ENGINE = Null")
 try:
     # Each `UInt64` array reaches the 65536-byte sampling threshold, before `PODArray` padding.
-    output, samples = execute(f"INSERT INTO {table} (n) FORMAT TSV", "8192\n" * 4096)
+    output, samples = execute(f"INSERT INTO {table} (n) FORMAT TSV", "8192\n" * 256)
     assert not output, output
+    assert any("TCPHandler::processInsertQuery" in symbol for sample in samples for symbol in sample["symbols"]), "missing insertion-handler timer samples"
     assert not socket_samples(samples, "TCPHandler::processInsertQuery"), socket_samples(samples, "TCPHandler::processInsertQuery")[:1]
 finally:
     control(f"DROP TABLE {table}")
@@ -108,7 +109,7 @@ print("native INSERT trace socket sends are excluded from streamed samples")
 # A guard over every socket flush would incorrectly hide ordinary query output.
 output, samples = execute(
     "SELECT number FROM numbers(200000) FORMAT TSV",
-    overrides={"memory_profiler_sample_probability": 0, "max_block_size": 16},
+    overrides={"memory_profiler_sample_probability": 0, "max_block_size": 128},
 )
 rows = output.splitlines()
 assert len(rows) == 200000 and rows[0] == "0" and rows[-1] == "199999"

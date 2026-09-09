@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-msan, no-parallel
 # The sampling query profiler is disabled under MSan.
-# This test flushes the shared `system.trace_log`; concurrent profilers extend that global barrier.
+# Keep other profilers from delaying the query-specific `system.trace_log` witnesses.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -69,9 +69,11 @@ def quote(value):
 
 def wait_for_profile_events(query):
     deadline = time.monotonic() + 20
+    table_exists = False
     while time.monotonic() < deadline:
-        run(client + ["--query", "SYSTEM FLUSH LOGS trace_log"])
-        if run(client + ["--query", query]).stdout.strip() == "1":
+        if not table_exists:
+            table_exists = run(client + ["--query", "EXISTS TABLE system.trace_log"]).stdout.strip() == "1"
+        if table_exists and run(client + ["--query", query]).stdout.strip() == "1":
             return
         time.sleep(0.1)
     raise AssertionError("profile events did not appear in trace_log within 20 seconds")
@@ -151,7 +153,7 @@ for transport in ("native", "HTTP"):
             assert required_types <= types, (transport, remote, sorted(required_types - types))
         witnesses.append((transport, remote, observed_ids))
 
-# One shared flush avoids serializing a separate expensive trace-log flush per sub-test.
+# Wait for these query IDs without waiting for unrelated records in the shared log.
 conditions = []
 for _, _, observed_ids in witnesses:
     ids = ", ".join(quote(value) for value in sorted(observed_ids))
