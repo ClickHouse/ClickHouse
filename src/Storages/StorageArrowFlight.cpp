@@ -246,6 +246,8 @@ public:
             descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
         }
 
+        /// Mirrors `ArrowFlight::arrowConversionSettings`, including which schema settings it does not read
+        /// from the context; see the note there.
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
         /// Without a context there are no settings to read: reject a type with no Arrow mapping rather than

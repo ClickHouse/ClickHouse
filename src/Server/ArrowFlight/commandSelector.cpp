@@ -36,6 +36,13 @@ namespace ArrowFlight
 
 CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & context)
 {
+    /// Note that the remaining schema settings (`output_format_arrow_string_as_string`,
+    /// `output_format_arrow_low_cardinality_as_dictionary`, `output_format_arrow_date_as_uint16`, the
+    /// dictionary index ones and `output_format_arrow_fixed_string_as_fixed_byte_array`) are not read from
+    /// the context, so an Arrow Flight schema can differ from what `FORMAT Arrow` writes for the same
+    /// query - `output_string_as_string` in particular is pinned on, since a Flight SQL client expects
+    /// `utf8` rather than `binary` strings. Deriving them all would change the wire format of every Flight
+    /// response that sets them, so it belongs in its own change rather than here.
     return {
         .output_string_as_string = true,
         .output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef()),
