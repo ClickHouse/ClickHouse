@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-msan
+# Tags: no-msan, no-parallel
 # The sampling query profiler is disabled under MSan.
+# Millisecond sampling can exhaust the shared profiler pipe and delay trace delivery.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

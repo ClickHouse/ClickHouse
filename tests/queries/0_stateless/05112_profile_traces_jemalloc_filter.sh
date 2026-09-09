@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-msan, no-ubsan, no-fasttest, no-debug, no-llvm-coverage
+# Tags: no-tsan, no-asan, no-msan, no-ubsan, no-fasttest, no-debug, no-llvm-coverage, no-parallel
 # These builds do not provide the jemalloc profiler used by this test, as in 03594.
+# This test flushes the shared `system.trace_log`; concurrent profilers extend that global barrier.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
