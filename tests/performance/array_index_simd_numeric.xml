@@ -1,6 +1,6 @@
 <test>
     <!--
-        Focused ceiling test for the exact-type numeric-array search path.
+        Focused ceiling test for the exact-type unsigned-integer-array search path.
 
         The arrays are stored in a Memory table so the timed queries measure the search, not array
         construction. The UInt32 needle keeps the comparison in the same type. The missing-needle
@@ -11,7 +11,8 @@
         have a clear signal, not a representative distribution of array lengths.
 
         The threshold table below covers threshold - 1, threshold, threshold + one vector, and
-        twice the threshold for every supported element width.
+        twice the threshold for every supported element width. Each boundary is a separate timed
+        query so a regression at one size cannot be hidden by a gain at another size.
     -->
     <settings>
         <max_threads>1</max_threads>
@@ -94,40 +95,92 @@
         FORMAT Null
     </query>
 
+    <!-- UInt8: below threshold, threshold, threshold + one vector, twice threshold. -->
     <query>
-        SELECT sum(
-            has(u8_63, toUInt8(0)) + indexOf(u8_63, toUInt8(62))
-            + has(u8_64, toUInt8(63)) + indexOf(u8_64, toUInt8(63))
-            + has(u8_96, toUInt8(255)) + indexOf(u8_96, toUInt8(255))
-            + has(u8_128, toUInt8(0)) + indexOf(u8_128, toUInt8(0)))
+        SELECT sum(has(u8_63, toUInt8(0)) + indexOf(u8_63, toUInt8(62)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u8_64, toUInt8(63)) + indexOf(u8_64, toUInt8(63)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u8_96, toUInt8(255)) + indexOf(u8_96, toUInt8(255)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u8_128, toUInt8(0)) + indexOf(u8_128, toUInt8(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+
+    <!-- UInt16: below threshold, threshold, threshold + one vector, twice threshold. -->
+    <query>
+        SELECT sum(has(u16_31, toUInt16(0)) + indexOf(u16_31, toUInt16(30)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u16_32, toUInt16(31)) + indexOf(u16_32, toUInt16(31)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u16_48, toUInt16(65535)) + indexOf(u16_48, toUInt16(65535)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u16_64, toUInt16(0)) + indexOf(u16_64, toUInt16(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+
+    <!-- UInt32: below threshold, threshold, threshold + one vector, twice threshold. -->
+    <query>
+        SELECT sum(has(u32_15, toUInt32(0)) + indexOf(u32_15, toUInt32(14)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u32_16, toUInt32(15)) + indexOf(u32_16, toUInt32(15)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u32_24, toUInt32(4294967295)) + indexOf(u32_24, toUInt32(4294967295)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u32_32, toUInt32(0)) + indexOf(u32_32, toUInt32(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+
+    <!-- UInt64: below threshold, threshold, threshold + one vector, twice threshold. -->
+    <query>
+        SELECT sum(has(u64_31, toUInt64(0)) + indexOf(u64_31, toUInt64(30)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u64_32, toUInt64(31)) + indexOf(u64_32, toUInt64(31)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
     <query>
         SELECT sum(
-            has(u16_31, toUInt16(0)) + indexOf(u16_31, toUInt16(30))
-            + has(u16_32, toUInt16(31)) + indexOf(u16_32, toUInt16(31))
-            + has(u16_48, toUInt16(65535)) + indexOf(u16_48, toUInt16(65535))
-            + has(u16_64, toUInt16(0)) + indexOf(u16_64, toUInt16(0)))
+            has(u64_36, toUInt64('18446744073709551615'))
+            + indexOf(u64_36, toUInt64('18446744073709551615')))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
     <query>
-        SELECT sum(
-            has(u32_15, toUInt32(0)) + indexOf(u32_15, toUInt32(14))
-            + has(u32_16, toUInt32(15)) + indexOf(u32_16, toUInt32(15))
-            + has(u32_24, toUInt32(4294967295)) + indexOf(u32_24, toUInt32(4294967295))
-            + has(u32_32, toUInt32(0)) + indexOf(u32_32, toUInt32(0)))
-        FROM perf_array_index_simd_thresholds
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(
-            has(u64_31, toUInt64(0)) + indexOf(u64_31, toUInt64(30))
-            + has(u64_32, toUInt64(31)) + indexOf(u64_32, toUInt64(31))
-            + has(u64_36, toUInt64('18446744073709551615'))
-            + indexOf(u64_36, toUInt64('18446744073709551615'))
-            + has(u64_64, toUInt64(0)) + indexOf(u64_64, toUInt64(0)))
+        SELECT sum(has(u64_64, toUInt64(0)) + indexOf(u64_64, toUInt64(0)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
