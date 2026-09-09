@@ -162,6 +162,23 @@ marks: 3
 read_ratio: 1.00x
 verdict: too close to call
 reason: 3 marks against 3 from the base table, and the adaptive-granularity model can miss by up to 1 mark
+--- a baseline already served by a real projection is reported as such ---
+status: not_applicable
+reason: The query is already served from projection \'p_ab\', EXPLAIN WHATIF estimates candidates against the base table read only
+--- a sort key over a subcolumn ---
+hypothetical:
+marks: 100
+rows: 10000
+status: applicable
+marks: 2
+rows: 200
+read_ratio: 0.02x
+verdict: chosen
+reason: 2 marks would be read instead of 100 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_s)
+Granules: 2
 --- not applicable cases ---
 With p_key (normal projection, hypothetical):
 reason: Projection sort key cannot filter this predicate (always unknown or true)

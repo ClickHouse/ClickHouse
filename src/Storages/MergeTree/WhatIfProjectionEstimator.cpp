@@ -197,6 +197,11 @@ bool buildProjectionPart(
         /// the same measure the writer takes of the block it is about to store, before the key
         /// expression adds columns a normal projection recomputes on read instead of storing
         out.bytes += getBlockSizeForGranularity(block);
+        /// `required_columns` drops a subcolumn whose physical column is there, and the writer puts it
+        /// back before executing the key expression (`addSubcolumnsFromSortingKeyAndSkipIndicesExpression`)
+        for (const auto & required : proj_key.expression->getRequiredColumns())
+            if (!block.has(required))
+                block.insert(block.getSubcolumnByName(required));
         proj_key.expression->execute(block);
 
         if (key_columns.empty())
@@ -441,6 +446,15 @@ WhatIfCandidateResult evaluateProjection(
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
 
+    /// answer this before the refresh below: the read step of a baseline served by a projection
+    /// carries that projection's metadata, which a base-table definition would not validate against
+    if (analysis.readFromProjection() && !baseline_parts.empty())
+    {
+        result.not_applicable_reason = "The query is already served from projection '" + baseline_parts.front().data_part->name
+            + "', EXPLAIN WHATIF estimates candidates against the base table read only";
+        return result;
+    }
+
     auto metadata = read_step->getStorageMetadata();
     auto projection = refreshHypotheticalProjection(stored_projection, data, metadata, context, result.not_applicable_reason);
     if (!projection)
@@ -474,13 +488,6 @@ WhatIfCandidateResult evaluateProjection(
     if (baseline_parts.empty())
     {
         result.not_applicable_reason = "The query reads no parts, so the optimizer would not consider a projection";
-        return result;
-    }
-
-    if (analysis.readFromProjection() && !baseline_parts.empty())
-    {
-        result.not_applicable_reason = "The query is already served from projection '" + baseline_parts.front().data_part->name
-            + "', EXPLAIN WHATIF estimates candidates against the base table read only";
         return result;
     }
 

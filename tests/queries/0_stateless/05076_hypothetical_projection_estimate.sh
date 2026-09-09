@@ -142,6 +142,33 @@ $CLICKHOUSE_CLIENT -q "
 " | grep -E '^\s+(marks|read_ratio|verdict|reason):' | awk '{$1=$1; print}'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_a;"
 
+# the read step of such a baseline carries the real projection's metadata, not the table's
+echo "--- a baseline already served by a real projection is reported as such ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_served;
+    CREATE TABLE t_served (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    ALTER TABLE t_served ADD PROJECTION p_ab (SELECT a, b ORDER BY b);
+    INSERT INTO t_served SELECT number, number % 100, number FROM numbers(10000);
+    CREATE HYPOTHETICAL PROJECTION p_c ON t_served (SELECT a, b, c ORDER BY c);
+    EXPLAIN WHATIF SELECT a, b FROM t_served WHERE b = 42 SETTINGS ${PIN};
+" | grep -E '^\s+(status|reason):' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_served;"
+
+# `required_columns` omits a subcolumn whose physical column is present, the key expression still needs it
+echo "--- a sort key over a subcolumn ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_s; DROP TABLE IF EXISTS t_real_s;
+    CREATE TABLE t_est_s (t Tuple(x UInt64, y UInt64), v UInt64) ENGINE = MergeTree ORDER BY v
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    CREATE TABLE t_real_s AS t_est_s;
+    ALTER TABLE t_real_s ADD PROJECTION p_s (SELECT t, v ORDER BY t.x);
+    INSERT INTO t_est_s SELECT (number % 100, number), number FROM numbers(10000);
+    INSERT INTO t_real_s SELECT (number % 100, number), number FROM numbers(10000);
+"
+compare p_s "(SELECT t, v ORDER BY t.x)" "SELECT t, v FROM TABLE WHERE t.x = 42" t_est_s t_real_s
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_s; DROP TABLE IF EXISTS t_real_s;"
+
 echo "--- not applicable cases ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_key ON t_est (SELECT a, b, v ORDER BY b);
