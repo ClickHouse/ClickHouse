@@ -1,0 +1,2 @@
+deterministic filter	Type: INNER
+non deterministic filter	Type: LEFT
