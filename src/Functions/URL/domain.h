@@ -85,6 +85,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         has_open_bracket = true;
         ++pos;
     }
+    Pos bracket_close_pos = nullptr;
     Pos dot_pos = nullptr;
     Pos colon_pos = nullptr;
     bool has_sub_delims = false;
@@ -104,16 +105,13 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case ':':
             if (has_open_bracket)
                 continue;
-            if (!has_at_symbol)
-            {
-                /// userinfo may contain more than one ':' (RFC 3986); until '@' is seen this
-                /// could still be userinfo, so keep only the first ':' as a fallback host:port
-                /// separator instead of stopping here.
-                if (colon_pos == nullptr)
-                    colon_pos = pos;
-                break;
-            }
-            goto done; /// the host itself (outside brackets) has exactly one ':', the port separator
+            /// Whether or not '@' has been seen yet, this ':' might still turn out to be
+            /// followed by a later '@' (e.g. "user@host:80@evil.com"), which would mean it was
+            /// never the port separator at all - keep only the first one as a fallback and keep
+            /// scanning, instead of stopping the scan here.
+            if (colon_pos == nullptr)
+                colon_pos = pos;
+            break;
         case '/': /// end symbols
         case '?':
         case '#':
@@ -157,8 +155,15 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case ']':
             if (has_open_bracket)
             {
+                /// Nothing may follow the closing bracket except a delimiter or end of input.
+                Pos after_bracket = pos + 1;
+                if (after_bracket < end && *after_bracket != ':' && *after_bracket != '/'
+                    && *after_bracket != '?' && *after_bracket != '#')
+                    return std::string_view{};
                 has_end_bracket = true;
-                goto done;
+                has_open_bracket = false; /// the literal is closed; ':' after it is an ordinary port separator
+                bracket_close_pos = pos;
+                break; /// keep scanning: a later '@' (e.g. "user@[::1]:80@evil.com") must still be caught
             }
             [[fallthrough]];
         case ' ': /// restricted symbols in whole URL
@@ -181,21 +186,18 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
 done:
     if (has_sub_delims)
         return std::string_view{};
-    /// A complete IP-literal is the host as it stands, whether or not a userinfo preceded it: it has no
-    /// dot to look for, and the colon that follows it belongs to the port.
-    if (has_open_bracket && has_end_bracket)
+    /// A complete IP-literal is the host as it stands, whether or not a userinfo preceded it: it has
+    /// no dot to look for, and the colon that follows it belongs to the port. The scan kept going
+    /// past the closing bracket (rather than stopping there) so a later '@' would still be caught,
+    /// e.g. "user@[::1]:80@evil.com" - so the host itself ends at the bracket, not at `pos`.
+    if (has_end_bracket)
     {
-        Pos after_bracket = pos + 1;
-        if (after_bracket < end && *after_bracket != ':' && *after_bracket != '/'
-            && *after_bracket != '?' && *after_bracket != '#')
-            return std::string_view{};
         unsigned char ipv6_bytes[IPV6_BINARY_LENGTH];
-        if (!parseIPv6Whole(start_of_host, pos, ipv6_bytes))
+        if (!parseIPv6Whole(start_of_host, bracket_close_pos, ipv6_bytes))
             return std::string_view{};
-        return std::string_view(start_of_host, pos - start_of_host);
+        return std::string_view(start_of_host, bracket_close_pos - start_of_host);
     }
-    if (!has_at_symbol)
-        pos = colon_pos ? colon_pos : pos;
+    pos = colon_pos ? colon_pos : pos;
     return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 

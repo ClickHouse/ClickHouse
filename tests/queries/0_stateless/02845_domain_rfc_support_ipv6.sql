@@ -22,6 +22,10 @@ SELECT domainRFC('http://user:pass:word@[2001:db8::1]:80') FORMAT CSV;
 -- userinfo cannot legally contain a raw '@' (RFC 3986); a second '@' makes the authority
 -- unparseable and must be rejected.
 SELECT domainRFC('http://user@paypal.com@[2001:db8::1]:80') FORMAT CSV;
+-- Same as above, but with an explicit port before the second '@', and with plain, IPv6, and IPv4 hosts.
+SELECT domainRFC('http://user@paypal.com:80@evil.com/') FORMAT CSV;
+SELECT domainRFC('http://user@[::1]:80@evil.com/') FORMAT CSV;
+SELECT domainRFC('http://user@192.168.1.1:80@evil.com/') FORMAT CSV;
 -- Does not conform to the IPv6 format.
 SELECT domainRFC('[2001db81]:80') FORMAT CSV;
 SELECT domainRFC('[20[01:db8::1]:80') FORMAT CSV;
