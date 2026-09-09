@@ -57,7 +57,7 @@ SELECT trimLeft(explain) FROM (
     SETTINGS explain_query_plan_default = 'legacy', query_plan_join_swap_table = 0, join_algorithm = 'partial_merge'
 ) WHERE explain LIKE '%Right Pre Join Actions%' OR explain LIKE '%__table2.k%';
 SELECT l.k, r.k, r.w FROM l LEFT JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
-SELECT l.k, r.k, r.w FROM l LEFT ANY JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+SELECT l.k, r.k FROM l LEFT ANY JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
 SELECT l.k, r.k, r.w FROM l FULL JOIN r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
 SELECT l.k, r.k FROM l LEFT JOIN (SELECT toLowCardinality(k) AS k FROM r) AS r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
 SELECT toTypeName(r.k) FROM l LEFT JOIN (SELECT toLowCardinality(k) AS k FROM r) AS r ON l.k = r.k LIMIT 1 SETTINGS join_algorithm = 'partial_merge';
