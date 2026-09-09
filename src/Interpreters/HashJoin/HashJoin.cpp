@@ -188,7 +188,8 @@ HashJoin::HashJoin(
     size_t reserve_num_,
     const String & instance_id_,
     bool is_concurrent_hash_join_,
-    const HashJoinStatsCollectingParams & stats_collecting_params_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    bool allow_set_maps_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -205,6 +206,7 @@ HashJoin::HashJoin(
     , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
     , is_concurrent_hash_join(is_concurrent_hash_join_)
     , stats_collecting_params(stats_collecting_params_)
+    , allow_set_maps(allow_set_maps_)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -568,7 +570,7 @@ bool HashJoin::preferUseMapsAll() const
 /// result can never contain a value taken from a right row.
 bool HashJoin::canUseSetMaps() const
 {
-    if (!table_join->enableJoinKeyOnlyHashTables())
+    if (!allow_set_maps || !table_join->enableJoinKeyOnlyHashTables())
         return false;
 
     /// A mixed join expression is evaluated against the right rows themselves.

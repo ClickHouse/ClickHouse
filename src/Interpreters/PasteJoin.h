@@ -19,6 +19,8 @@ namespace ErrorCodes
 class PasteJoin : public IJoin
 {
 public:
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     explicit PasteJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_)
         : table_join(table_join_)
         , right_sample_header(right_sample_block_)

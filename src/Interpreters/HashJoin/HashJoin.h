@@ -129,6 +129,8 @@ class HashJoinMethods;
 class HashJoin : public IJoin
 {
 public:
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     HashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block,
@@ -136,7 +138,9 @@ public:
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
         bool is_concurrent_hash_join_ = false,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        /// `PartitionedHashJoin` passes false: its leaf maps have no key-only counterpart.
+        bool allow_set_maps_ = true);
 
     ~HashJoin() override;
 
@@ -164,14 +168,10 @@ public:
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
-    using IJoin::addBlockToJoin;
-
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store = nullptr);
 
     void checkTypesOfKeys(const Block & block) const override;
-
-    using IJoin::joinBlock;
 
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
@@ -626,6 +626,9 @@ public:
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
+    /// Uses a `HashJoin` as its schema delegate and row-store owner while building and probing its
+    /// own partitioned maps, so it needs the access the join methods have.
+    friend class PartitionedHashJoin;
     friend class ConcurrentHashJoin;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -706,6 +709,8 @@ private:
 
     /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
     bool use_set_maps = false;
+    /// False when the owner cannot consume key-only maps, whatever `canUseSetMaps` would otherwise say.
+    const bool allow_set_maps = true;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets

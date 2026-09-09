@@ -98,6 +98,12 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.hits += hash_join_stats->hits;
         res.misses += hash_join_stats->misses;
     }
+    if (auto partitioned_hash_join_stats = getHashTablesStatistics<PartitionedHashJoinEntry>().getCacheStats())
+    {
+        res.entries += partitioned_hash_join_stats->entries;
+        res.hits += partitioned_hash_join_stats->hits;
+        res.misses += partitioned_hash_join_stats->misses;
+    }
     if (auto hash_join_match_stats = getHashTablesStatistics<HashJoinMatchEntry>().getCacheStats())
     {
         res.entries += hash_join_match_stats->entries;
@@ -168,5 +174,6 @@ std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollecting
 
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
+template class HashTablesStatistics<PartitionedHashJoinEntry>;
 template class HashTablesStatistics<HashJoinMatchEntry>;
 }

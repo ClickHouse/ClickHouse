@@ -1,0 +1,8 @@
+-- cold run (no cache entry yet)
+600000	14781120307293298747
+-- warm run (same query structure: reuses the cached per-partition distinct counts)
+600000	14781120307293298747
+-- cold run: never reuses, but the partitioned path did engage
+0	1
+-- warm run: reuses the cached distinct-key counts
+1	1

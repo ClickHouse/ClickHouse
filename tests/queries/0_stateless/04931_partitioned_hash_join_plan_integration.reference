@@ -1,0 +1,38 @@
+-- a runtime filter is planted for partitioned_hash
+1
+-- the partitioned algorithm survives the runtime-filter algorithm pruning
+1
+-- listing both algorithms no longer demotes to parallel_hash when a filter is planted
+1
+-- INNER results are unchanged by the runtime filter
+50000	1077654703081575815
+50000	1077654703081575815
+50000	1077654703081575815
+-- non-joined rows come from parallel sources under partitioned_hash
+1
+-- RIGHT parity across algorithms and stream counts
+200000	13597697861340224949
+200000	13597697861340224949
+200000	13597697861340224949
+200000	13597697861340224949
+200000	13597697861340224949
+-- FULL parity across algorithms and stream counts
+350000	7646823830885997778
+350000	7646823830885997778
+350000	7646823830885997778
+350000	7646823830885997778
+-- RIGHT parity with join_use_nulls
+200000	1077654703081575815
+200000	1077654703081575815
+-- a single leaf still emits every non-joined row
+8	9273065752511075797
+8	9273065752511075797
+-- convert_join_to_in rewrites a qualifying partitioned_hash join
+0
+-- and gives the same rows as the join
+50000	8749975000
+50000	8749975000
+-- with automatic external join the partitioned algorithm stays selected
+1
+-- listing both algorithms still does not demote to parallel_hash when spilling is configured
+1
