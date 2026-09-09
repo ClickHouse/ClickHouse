@@ -211,23 +211,8 @@ std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_r
         static_cast<double>(actual_rows) / static_cast<double>(*estimated_rows));
 }
 
-std::optional<double> actualSelectivity(
-    const JoinSideRows & left_side, const JoinSideRows & right_side,
-    std::optional<UInt64> matched_output_rows, UInt64 output_rows,
-    JoinKind kind, JoinStrictness strictness)
-{
-    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
-    {
-        const auto & preserved = isRight(kind) ? right_side : left_side;
-        if (!preserved.input_rows || !*preserved.input_rows)
-            return std::nullopt;
-        return static_cast<double>(output_rows) / static_cast<double>(*preserved.input_rows);
-    }
-    return cartesianSelectivity(left_side, right_side, matched_output_rows);
-}
-
 void prependEstimationComparison(
-    StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows, JoinKind kind, JoinStrictness strictness)
+    StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
 {
     const JoinEstimation & estimation = join_step.getEstimation();
 
@@ -256,7 +241,7 @@ void prependEstimationComparison(
     MetricGroup selectivity{MetricGroupKey::Selectivity, {}};
     selectivity.metrics.emplace_back(MetricKey::EstimatedNDV, optionalDouble(estimation.selectivity));
     selectivity.metrics.emplace_back(
-        MetricKey::ActualCartesian, optionalDouble(actualSelectivity(left_side, right_side, matched_output_rows, context.io.output_rows, kind, strictness)));
+        MetricKey::ActualCartesian, optionalDouble(cartesianSelectivity(left_side, right_side, matched_output_rows)));
 
     MetricGroup output{MetricGroupKey::Output, {}};
     output.metrics.emplace_back(MetricKey::Estimated, optionalQuantity(estimation.output_rows));
@@ -314,7 +299,7 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
     /// Only a JoinStep passes through the optimizer that assigns the estimation; a filled join has none.
     if (join_step)
     {
-        prependEstimationComparison(report, *join_step, context, matched_output_rows, logical_kind, table_join.strictness());
+        prependEstimationComparison(report, *join_step, context, matched_output_rows);
 
         /// Ad hoc solution since we don't have generic infrastructure for rendering EXPLAIN PLAN
         /// and EXPLAIN ANALYZE at the moment. That is why we pull the part for the collecting the input columns
