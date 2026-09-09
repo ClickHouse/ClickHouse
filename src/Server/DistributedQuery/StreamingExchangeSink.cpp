@@ -94,18 +94,23 @@ void StreamingExchangeSink::sendToSocket()
     if (no_more_data_needed)
         return;
 
-    while (current_send_position_in_buffer < current_send_buffer.size())
+    /// Is there enough serialized data to start sending it to socket?
+    if (out->count() >= FLUSH_BUFFER_TO_SOCKET_THRESHOLD)
+        flushSerializedData();
+
+    while (!send_queue.empty())
     {
         try
         {
-            /// `markNoMoreDataNeeded` clears `current_send_buffer`, so we can't be in this loop.
+            /// `markNoMoreDataNeeded` clears `send_queue`, so we can't be in this loop.
             chassert(!no_more_data_needed);
 
-            size_t bytes_to_send = current_send_buffer.size() - current_send_position_in_buffer;
+            const String & buffer = send_queue.front();
+            size_t bytes_to_send = buffer.size() - send_position;
             /// Saturate at INT_MAX: a plain cast would wrap negative for buffers > 2 GiB, after
             /// which Poco's wrapper short-circuits without ever calling ::send.
             ssize_t sent = socket->sendBytes(
-                current_send_buffer.data() + current_send_position_in_buffer,
+                buffer.data() + send_position,
                 static_cast<int>(std::min<size_t>(bytes_to_send, std::numeric_limits<int>::max())));
             if (sent < 0)
             {
@@ -127,8 +132,14 @@ void StreamingExchangeSink::sendToSocket()
 
             LOG_TEST(log, "Sent {} bytes to exchange stream {}, fd: {}", sent, stream_name, socket->sockfd());
 
-            current_send_position_in_buffer += sent;
+            send_position += sent;
+            send_queue_bytes -= sent;
             total_bytes_sent += sent;
+            if (send_position == buffer.size())
+            {
+                send_queue.pop_front();
+                send_position = 0;
+            }
         }
         catch (const Poco::IOException & e)
         {
@@ -141,32 +152,30 @@ void StreamingExchangeSink::sendToSocket()
             StreamingExchangeProtocol::rethrowSocketException(*socket, "send data to exchange stream " + stream_name);
         }
     }
-
-    /// Is there enough serialized data to start sending it to socket?
-    if (out->count() >= FLUSH_BUFFER_TO_SOCKET_THRESHOLD)
-        tryToSwitchSendBuffer();
 }
 
 bool StreamingExchangeSink::canAddChunk() const
 {
-    const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
-    return (unsent + out->count()) < MAX_PENDING_BYTES;
+    return (send_queue_bytes + out->count()) < MAX_PENDING_BYTES;
 }
 
-void StreamingExchangeSink::tryToSwitchSendBuffer()
+void StreamingExchangeSink::flushSerializedData()
 {
-    /// Check that current_send_buffer has been fully sent to socket
-    if (current_send_position_in_buffer < current_send_buffer.size())
-        return;
-
-    /// Check that new buffer has anything in it
     if (out->count() == 0)
         return;
 
-    out->finalize();
-    current_send_buffer = out->str();
-    current_send_position_in_buffer = 0;
+    String data = std::move(out->str());
     out = std::make_shared<WriteBufferFromOwnString>();
+    enqueueBuffer(std::move(data));
+}
+
+void StreamingExchangeSink::enqueueBuffer(String buffer)
+{
+    if (buffer.empty())
+        return;
+
+    send_queue_bytes += buffer.size();
+    send_queue.push_back(std::move(buffer));
 }
 
 ISink::Status StreamingExchangeSink::prepare()
@@ -200,8 +209,8 @@ ISink::Status StreamingExchangeSink::prepare()
             return Status::Ready;
         }
 
-        /// Need ot flush all remaining data
-        if (current_send_position_in_buffer < current_send_buffer.size() || out->count() > 0)
+        /// Need to flush all remaining data
+        if (hasUnsentBytes())
             return Status::Async;
 
         if (!was_on_finish_called)
@@ -269,11 +278,11 @@ void StreamingExchangeSink::work()
         return;
     }
 
-    /// Send pending data to socket
-    if (current_send_position_in_buffer < current_send_buffer.size() || out->count() > 0)
+    /// Send pending data to socket, also the part of `out` below the flush threshold.
+    if (hasUnsentBytes())
     {
+        flushSerializedData();
         sendToSocket();
-        tryToSwitchSendBuffer();
         return;
     }
 
@@ -334,17 +343,20 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     LOG_TEST(log, "Writing chunk with {} rows to exchange stream {}", chunk.getNumRows(), stream_name);
 
-    /// A chunk serialized upstream by `StreamingExchangeSerializingTransform` is sent as it is.
     if (auto packet = chunk.getChunkInfos().extract<SerializedExchangePacket>())
-        out->write(packet->bytes.data(), packet->bytes.size());
+    {
+        /// A packet serialized upstream by `StreamingExchangeSerializingTransform` is sent from its
+        /// own buffer. The transform made the packet for this chunk alone, so the bytes can be taken.
+        /// Data the sink serialized itself came earlier and must go out first.
+        flushSerializedData();
+        enqueueBuffer(std::move(packet->bytes));
+    }
     else
         StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out);
 
+    /// A packet without rows ends the stream or carries only bucket information: do not hold it back.
     if (chunk.getNumRows() == 0)
-    {
-        /// Just in case, flush buffer to the socket
-        tryToSwitchSendBuffer();
-    }
+        flushSerializedData();
 
     sendToSocket();
 }
@@ -404,12 +416,11 @@ void StreamingExchangeSink::tryReceiveControlPacket()
 
         /// Normal end-of-stream: after the sink sent the final empty chunk, the source consumes it
         /// and closes without sending NoMoreDataNeeded. Treat EOF as benign only with nothing left to send.
-        const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
-        if (!final_chunk_added || unsent > 0 || out->count() > 0)
+        if (!final_chunk_added || send_queue_bytes > 0 || out->count() > 0)
             throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED,
                 "Peer half-closed exchange stream {} without sending NoMoreDataNeeded "
                 "(final_chunk_added={}, unsent={}, out={})",
-                stream_name, final_chunk_added, unsent, out->count());
+                stream_name, final_chunk_added, send_queue_bytes, out->count());
 
         LOG_TRACE(log, "Peer closed exchange stream {} after consuming the final chunk", stream_name);
         markNoMoreDataNeeded();
@@ -420,8 +431,9 @@ void StreamingExchangeSink::markNoMoreDataNeeded()
 {
     no_more_data_needed = true;
     /// Drop pending output: consume() drops new chunks too, no more sends will happen.
-    current_send_buffer.clear();
-    current_send_position_in_buffer = 0;
+    send_queue.clear();
+    send_queue_bytes = 0;
+    send_position = 0;
     out = std::make_shared<WriteBufferFromOwnString>();
 }
 
