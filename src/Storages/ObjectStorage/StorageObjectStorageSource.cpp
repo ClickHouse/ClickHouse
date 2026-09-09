@@ -1434,6 +1434,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return format_filter_info;
         }();
 
+        if (filter_info && filter_info != format_filter_info)
+            filter_info->need_row_numbers = format_filter_info->need_row_numbers;
+
         if (object_info->rows_to_read)
         {
             /// Lazy materialization: read only the specified rows of this file. The set of rows
@@ -1445,6 +1448,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info ? filter_info->row_level_filter : nullptr,
                 filter_info ? filter_info->prewhere_info : nullptr);
             filter_info_with_rows->rows_to_read = object_info->rows_to_read;
+            filter_info_with_rows->need_row_numbers = true;
             filter_info = filter_info_with_rows;
         }
 

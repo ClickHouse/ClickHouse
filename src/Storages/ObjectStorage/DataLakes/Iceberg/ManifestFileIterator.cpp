@@ -260,10 +260,10 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesEligibleFor
 
     for (const auto & file : *data_files)
     {
-        /// Only the Parquet reader provides physical row numbers (ChunkInfoRowNumbers)
+        /// Only Parquet and Vortex readers provide physical row numbers (ChunkInfoRowNumbers)
         /// for the main read and positional re-reads (FormatFilterInfo::rows_to_read)
         /// for the lazy read.
-        if (Poco::toUpper(file->parsed_entry->file_format) != "PARQUET")
+        if (std::string format = Poco::toUpper(file->parsed_entry->file_format); format != "PARQUET" && format != "VORTEX")
             return false;
 
         /// Schema evolution forces reading all physical columns as well.

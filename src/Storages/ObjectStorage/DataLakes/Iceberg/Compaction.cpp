@@ -361,6 +361,8 @@ static void writeDataFiles(
             settings,
             /*num_streams_=*/1);
 
+        auto input_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr);
+        input_format_filter_info->need_row_numbers = delete_file_transform != nullptr;
         auto input_format = FormatFactory::instance().getInput(
             data_file->data_object_info->getFileFormat().value_or(write_format),
             *read_buffer,
@@ -369,7 +371,7 @@ static void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
+            input_format_filter_info,
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);

@@ -160,6 +160,13 @@ struct FFI_VortexScanOptions
     /// The row range `[row_range_begin, row_range_end)`. Both zero means the whole file.
     uint64_t row_range_begin;
     uint64_t row_range_end;
+
+    const uint64_t* row_selection_begin;
+    uint64_t row_selection_len;
+
+    /// If true, prepend a row_idx() column to output
+    bool row_index_column;
+
     /// The number of splits that may be in flight at once: being read, being decoded, or already
     /// handed over and not yet released. 0 selects the default. This is what keeps the scan from
     /// running ahead of the caller; the reads underneath are bounded separately by
