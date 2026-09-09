@@ -61,7 +61,7 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
-bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
+bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     if (!query_context)
         return false;
@@ -71,6 +71,43 @@ bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType acc
         return access->isGranted(access_type, target_database, target_table);
 
     return access->isGranted(access_type, target_database, target_table, column_name);
+}
+
+NameSet StorageAlias::filterColumnsGrantedThroughChain(
+    ContextPtr query_context, AccessType access_type, const Names & column_names) const
+{
+    /// `getInMemoryMetadataPtr` forwards through nested aliases, so a caller reads the metadata of the
+    /// chain's last table, and `read` authorizes every hop by re-entering `read` on each one.
+    NameSet granted(column_names.begin(), column_names.end());
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> authorized;
+    const StorageAlias * alias = this;
+    /// Owns the storage `alias` points into, from the second hop on.
+    StoragePtr alias_holder;
+
+    while (!granted.empty())
+    {
+        std::erase_if(granted, [&](const String & column_name)
+        { return !alias->isDeclaredTargetGranted(query_context, access_type, column_name); });
+        if (granted.empty())
+            break;
+
+        /// A cyclic chain is loadable state, so a repeated name means there is no final table left to
+        /// reach, and every name in the chain is authorized.
+        if (!authorized.emplace(alias->target_database, alias->target_table).second)
+            break;
+
+        alias_holder = alias->tryGetTargetTable();
+        alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
+        if (!alias)
+            break;
+    }
+
+    return granted;
+}
+
+bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
+{
+    return !filterColumnsGrantedThroughChain(query_context, access_type, {column_name}).empty();
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline

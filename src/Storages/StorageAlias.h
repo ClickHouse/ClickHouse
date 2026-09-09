@@ -39,9 +39,18 @@ public:
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
 
-    /// Returns whether the current user has the specified access to the target table or column.
+    /// Returns whether the current user has the specified access to every table this alias resolves
+    /// through, i.e. the whole chain when the target is itself an Alias. For callers that read metadata.
     /// An empty `column_name` represents table-level access.
     bool isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
+
+    /// Same, for the target named in this alias's own definition only. For callers that expose that
+    /// definition and resolve nothing through it.
+    bool isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
+
+    /// Returns the subset of `column_names` the current user has this access to on every table this
+    /// alias resolves through. Resolves the chain once, whatever the grants look like.
+    NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
 
     /// Read from target table
     void read(
