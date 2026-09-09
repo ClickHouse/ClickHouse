@@ -9,6 +9,7 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -17,6 +18,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
+from ci.praktika.gh import GH
 from ci.praktika.git import Git
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -78,12 +80,6 @@ def parse_args() -> argparse.Namespace:
         help="Git reference (branch or commit sha) from which the release was created",
     )
     parser.add_argument(
-        "--release-type",
-        choices=("new", "patch"),
-        default=None,
-        help="The type of release",
-    )
-    parser.add_argument(
         "--assignee",
         type=str,
         default=None,
@@ -104,6 +100,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not make any actual changes, just show what will be done",
     )
+    parser.add_argument(
+        "--max-candidates",
+        type=int,
+        default=8,
+        help="With --ref auto, how many recent commits per release branch to consider",
+    )
     args = parser.parse_args()
 
     # When CLI args are absent, fall back to workflow inputs (CI runs).
@@ -115,8 +117,6 @@ def parse_args() -> argparse.Namespace:
 
     if args.ref is None:
         args.ref = _wi("ref")
-    if args.release_type is None:
-        args.release_type = _wi("type") or None
     if not args.dry_run:
         args.dry_run = _wi("dry-run").lower() == "true"
     if not args.skip_repo:
@@ -127,15 +127,86 @@ def parse_args() -> argparse.Namespace:
         args.assignee = _wi("assignee")
 
     assert args.ref, "ref must be set via --ref or workflow dispatch input 'ref'"
-    assert args.release_type in (
-        "new",
-        "patch",
-    ), "release-type must be 'new' or 'patch'"
 
     return args
 
 
 RELEASE_INFO_FILE = "/tmp/release_info.json"
+
+
+def _branch_version_key(branch: str) -> Tuple[int, ...]:
+    """Numeric `(major, minor, …)` key so release branches order by version, not lexically — otherwise `25.10` sorts before `25.9`."""
+    return tuple(int(part) for part in branch.split("."))
+
+
+def _release_branches() -> List[str]:
+    """Head branches of the open `release`-labeled PRs, version-ascending."""
+    raw = GH.get_output_with_retries(
+        "gh pr list --state open --label release --json headRefName"
+    )
+    if not raw:
+        raise RuntimeError("gh pr list failed for release PRs after retries")
+    return sorted(
+        (pr["headRefName"] for pr in json.loads(raw)), key=_branch_version_key
+    )
+
+
+def _latest_release_tag(branch: str) -> str:
+    out = Shell.get_output(f"git tag -l {shlex.quote(f'v{branch}.*')} --sort=v:refname")
+    tags = [t for t in out.splitlines() if t.strip()]
+    return tags[-1] if tags else ""
+
+
+def _select_patch_dry_run_ref(max_candidates: int) -> str:
+    """Newest release-branch commit a patch dry run can target, or "" if none.
+
+    The newest commit since a branch's latest release tag, minus the
+    post-release version-bump commit — the state prepare() needs for a patch.
+    Newest branch first, up to max_candidates commits per branch. It does NOT
+    require green CI or uploaded artifacts (unlike the real auto-release
+    candidate) because --dry-run --skip-repo publishes nothing.
+    """
+    for branch in reversed(_release_branches()):
+        tag = _latest_release_tag(branch)
+        if not tag or tag.endswith("new"):
+            continue
+        commits = Shell.get_output(
+            f"git rev-list --first-parent {shlex.quote(tag)}..origin/{shlex.quote(branch)}"
+        ).splitlines()
+        # rev-list is newest-first, so commits[-1] is the version-bump commit cut right after the tag; drop it, then take the newest max_candidates.
+        candidates = commits[:-1][:max_candidates]
+        if candidates:
+            print(f"[{branch}] patch dry-run candidate [{candidates[0]}]")
+            return candidates[0]
+    return ""
+
+
+def _select_recovery_dry_run_ref() -> str:
+    """An already-published release tag to rehearse a recovery (re-publish) against, or "" if none."""
+    for branch in reversed(_release_branches()):
+        tag = _latest_release_tag(branch)
+        if tag and not tag.endswith("new"):
+            print(f"[{branch}] recovery dry-run tag [{tag}]")
+            return tag
+    return ""
+
+
+def _select_out_of_order_dry_run_ref() -> str:
+    """A non-tag commit behind a branch's latest release (bump landed) so a patch dry run is out of order, or "" if none."""
+    for branch in reversed(_release_branches()):
+        out = Shell.get_output(f"git tag -l {shlex.quote(f'v{branch}.*')} --sort=v:refname")
+        tags = [t for t in out.splitlines() if t.strip() and not t.endswith("new")]
+        if len(tags) < 2:
+            continue
+        prev, latest = tags[-2], tags[-1]
+        # rev-list prev..latest is newest-first and includes latest at index 0; a commit below it is between two releases and not itself a tag.
+        between = Shell.get_output(
+            f"git rev-list --first-parent {shlex.quote(prev)}..{shlex.quote(latest)}"
+        ).splitlines()[1:]
+        if between:
+            print(f"[{branch}] out-of-order dry-run commit [{between[0]}]")
+            return between[0]
+    return ""
 
 
 def main():
@@ -173,7 +244,11 @@ def main():
     # `.github/workflows` differ from master are not rejected by GitHub's
     # push-time workflow-scope check (which the App token, lacking that scope,
     # cannot pass on a repo this large).
-    os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
+    # A dry run has no SSM access, so use the minted PR token (which the changelog step passes into a container with no host gh session) instead of the robot PAT.
+    if not args.dry_run:
+        os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
+    else:
+        os.environ["GH_TOKEN"] = Shell.get_output("gh auth token", strict=True)
 
     results = []
     ok = True
@@ -217,23 +292,38 @@ def main():
         name="Configure Git Auth for Release Pushes",
         command=[
             # The checkout step authenticates `origin` with the default
-            # GITHUB_TOKEN through an http extraheader. Release pushes (tags,
-            # the new release branch, the version-bump branch) must use the
-            # robot token instead so they carry the right permissions and
-            # trigger downstream workflows such as ReleaseBranchCI. Drop the
-            # extraheader and let gh's credential helper supply $GH_TOKEN.
+            # GITHUB_TOKEN through an http extraheader. Release pushes (the tag,
+            # the changelog/version-bump commit) must use the robot token instead
+            # so they carry the right permissions and trigger downstream workflows
+            # such as ReleaseBranchCI. Drop the extraheader and let gh's
+            # credential helper supply $GH_TOKEN.
             "git config --unset-all http.https://github.com/.extraheader || true",
             "gh auth setup-git",
         ],
         workdir=REPO_PATH,
     )
 
+    # Resolve the patch dry-run sentinel refs now the fetch made every branch/tag local; no candidate is a pass (nothing in that state to rehearse), not a failure.
+    _dry_run_ref_selectors = {
+        "auto": lambda: _select_patch_dry_run_ref(args.max_candidates),
+        "recovery-auto": _select_recovery_dry_run_ref,
+        "out-of-order-auto": _select_out_of_order_dry_run_ref,
+    }
+    if ok and args.ref in _dry_run_ref_selectors:
+        assert args.dry_run, f"--ref {args.ref} is only valid for a dry run"
+        selected = _dry_run_ref_selectors[args.ref]()
+        if not selected:
+            print(f"No commit to {args.ref} patch dry-run; skipping")
+            Result.create_from(results=results, stopwatch=stopwatch).complete_job()
+            return
+        args.ref = selected
+
     # Authenticate to Docker Hub in the setup phase, before any release
     # mutation (tag push, GitHub release, repo export). Pushing docker images
     # is part of the release contract, so a missing/expired registry token must
     # stop the run before partial publication. Gated on the docker phase running
-    # this attempt (patch, not dry-run, docker not skipped).
-    if args.release_type == "patch" and not args.dry_run and not args.skip_docker:
+    # this attempt (not dry-run, docker not skipped).
+    if not args.dry_run and not args.skip_docker:
 
         def docker_login():
             Shell.check(
@@ -250,7 +340,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.skip_repo:
+    if not args.skip_repo:
         # Skipped on dry-run (local convenience).
         if not args.dry_run:
             step(
@@ -280,16 +370,17 @@ def main():
             _write_secret_file(
                 os.path.expanduser("~/.r2_auth_test"), _R2_AUTH_TEST_SECRET.get_value()
             )
-            if not args.dry_run:
-                _write_secret_file(
-                    os.path.expanduser("~/.r2_auth"), _R2_AUTH_PROD_SECRET.get_value()
-                )
+            _write_secret_file(
+                os.path.expanduser("~/.r2_auth"), _R2_AUTH_PROD_SECRET.get_value()
+            )
 
-        step(
-            name="Write R2 Auth Config",
-            command=write_r2_auth,
-            workdir=REPO_PATH,
-        )
+        # The R2 secrets live in SSM, unreachable from an untrusted PR runner; a dry run publishes nothing and skips every package export, so it needs no R2 auth.
+        if not args.dry_run:
+            step(
+                name="Write R2 Auth Config",
+                command=write_r2_auth,
+                workdir=REPO_PATH,
+            )
 
         # Import the signing key into a per-run GNUPGHOME (0700) rather than the
         # runner user's default keyring, and export it so reprepro signing in
@@ -312,17 +403,19 @@ def main():
             finally:
                 os.unlink(key_file)
 
-        step(
-            name="Import GPG Signing Key",
-            command=import_gpg_key,
-            workdir=REPO_PATH,
-        )
+        # The signing key lives in SSM (unreachable from a PR runner) and only reprepro signing in the package export uses it, which a dry run skips.
+        if not args.dry_run:
+            step(
+                name="Import GPG Signing Key",
+                command=import_gpg_key,
+                workdir=REPO_PATH,
+            )
 
     step(
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
+            f" --ref {shlex.quote(args.ref)} --release-type patch"
             f"{' --skip-repo' if args.skip_repo else ''}"
             f"{' --skip-docker' if args.skip_docker else ''}"
             f" {dry_run_flag}".strip()
@@ -341,12 +434,6 @@ def main():
         ) as release_info:
             release_info.push_release_tag(dry_run=args.dry_run)
 
-    def _push_new_release_branch():
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
-        ) as release_info:
-            release_info.push_new_release_branch(dry_run=args.dry_run)
-
     def _bump_version():
         with ReleaseContextManager(
             release_progress=ReleaseProgress.BUMP_VERSION
@@ -355,7 +442,7 @@ def main():
 
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag, so a missing-artifacts run aborts without leaving a tag behind.
-    if args.release_type == "patch" and not args.skip_repo:
+    if not args.skip_repo:
         step(
             name="Download All Release Artifacts",
             command=[
@@ -371,23 +458,9 @@ def main():
         workdir=REPO_PATH,
     )
 
-    if args.release_type == "new":
-        step(
-            name="Push New Release Branch",
-            command=_push_new_release_branch,
-            workdir=REPO_PATH,
-        )
-        # "new" bumps master here (idempotent — it self-checks master's version). "patch" defers its branch bump to the end of the run for recovery-safety; see the deferred step near the end of main.
-        step(
-            name="Bump CH Version and Update Contributors' List",
-            command=_bump_version,
-            workdir=REPO_PATH,
-        )
-
-    # patch generates its changelog and pushes it (with the version bump) to
-    # master, but only when it is not already there so a rerun is idempotent; the
-    # "new" bump self-checks the master version instead. Detection and both uses
-    # of the result live in this one step, so the state stays a local.
+    # Generate the changelog and push it (with the version bump) to master, but
+    # only when it is not already there so a rerun is idempotent. Detection and
+    # both uses of the result live in this one step, so the state stays a local.
     def _push_changelog_to_master():
         if args.dry_run:
             changelog_absent = not release_info.is_tag_pushed
@@ -498,14 +571,13 @@ def main():
         finally:
             shutil.rmtree(backup_dir, ignore_errors=True)
 
-    if args.release_type == "patch":
-        step(
-            name="Bump Changelog and Push to master",
-            command=_push_changelog_to_master,
-            workdir=REPO_PATH,
-        )
+    step(
+        name="Bump Changelog and Push to master",
+        command=_push_changelog_to_master,
+        workdir=REPO_PATH,
+    )
 
-    if args.release_type == "patch" and not args.skip_repo:
+    if not args.skip_repo:
         # Restore the working tree after the changelog/version-bump steps, which
         # dirty it. A no-op on recovery / out-of-order runs (they skip the
         # changelog steps); the always-run "Checkout Back" below is the safety net
@@ -519,16 +591,18 @@ def main():
             workdir=REPO_PATH,
         )
 
-        step(
-            name="Create GH Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
+        # --create-gh-release asserts the packages were downloaded, but a dry-run commit has none in S3 (the download step skipped them) and publishes no release.
+        if not args.dry_run:
+            step(
+                name="Create GH Release",
+                command=[
+                    f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
+                    f" {dry_run_flag}".strip()
+                ],
+                workdir=REPO_PATH,
+            )
 
-    if args.release_type == "patch" and not args.skip_repo:
+    if not args.skip_repo and not args.dry_run:
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
@@ -546,12 +620,7 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if (
-        ok
-        and args.release_type == "patch"
-        and not args.dry_run
-        and not args.skip_docker
-    ):
+    if ok and not args.dry_run and not args.skip_docker:
 
         def _make_docker_build(
             image: str,
@@ -719,12 +788,11 @@ def main():
         ok = False
 
     # Deferred to the end so a rerun before it sees an un-bumped branch and prepare recovers the release; the step self-skips a landed bump (late recovery), so it completes an unfinished bump once and never rewrites a landed one.
-    if args.release_type == "patch":
-        step(
-            name="Bump CH Version and Update Contributors' List",
-            command=_bump_version,
-            workdir=REPO_PATH,
-        )
+    step(
+        name="Bump CH Version and Update Contributors' List",
+        command=_bump_version,
+        workdir=REPO_PATH,
+    )
 
     # Post the final release status — but only when "Prepare Release Info" ran
     # this attempt and produced RELEASE_INFO_FILE. If an early setup step failed
