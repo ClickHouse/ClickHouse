@@ -21,10 +21,15 @@ enum class MergedValueBound : unsigned char
 {
     /// No usable relation (the safe default).
     Unknown,
-    /// max(values) <= merged <= sum(values), and every value is non-negative.
-    /// Holds for `count` and the unsigned-integer `sum` (merged is exactly the sum - with
-    /// wraparound the merged value only falls further below the saturating sum of the partials)
-    /// and `uniqExact` (the size of a union of sets).
+    /// merged <= sum(values), and every value is non-negative. The bound is one-sided on
+    /// purpose: it is the only half the threshold merge consumes (it serves the descending
+    /// order alone), and it is the only half a modular `UInt64` accumulator can promise -
+    /// `count` and the unsigned-integer `sum` merge by wrapping addition, so two partials of
+    /// `2^63` merge to `0`, which is below both of them. The upper half survives the
+    /// wraparound: the modular sum never exceeds the saturating sum of the partials. Also
+    /// declared by `uniqExact` (the size of a union of sets), which cannot wrap in practice.
+    /// Do not add a lower-bound consumer without first splitting off a stronger variant that
+    /// the wrapping accumulators do not advertise.
     Subadditive,
     /// merged == max(values).
     Maximum,

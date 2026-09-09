@@ -139,11 +139,15 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         if (settings.aggregation_top_k_threshold_merge && !description.front().collator)
         {
             const auto bound = aggregate.function->getMergedValueBound();
-            /// The `Subadditive` bound serves only the descending order: for the ascending one
-            /// its threshold (the smallest head) stays at the level of the typical partial value,
-            /// which for near-uniform data never rises above the candidates, so the merge would
-            /// degenerate into visiting every group. The extremum bounds are exact and converge
-            /// right after the candidate heap fills in either direction.
+            /// The `Subadditive` bound serves only the descending order. It is one-sided (see
+            /// `MergedValueBound`): it bounds the merged value from above, which is what the
+            /// descending threshold needs. The ascending order would instead need the lower
+            /// half, which the wrapping `UInt64` accumulators of `count` and `sum` cannot
+            /// promise - and it would not pay off anyway: its threshold (the smallest head)
+            /// stays at the level of the typical partial value, which for near-uniform data
+            /// never rises above the candidates, so the merge would degenerate into visiting
+            /// every group. The extremum bounds are exact and converge right after the
+            /// candidate heap fills in either direction.
             const bool bound_serves_direction = bound == MergedValueBound::Maximum || bound == MergedValueBound::Minimum
                 || (bound == MergedValueBound::Subadditive && !ascending);
             if (bound_serves_direction && isThresholdTopKValueType(bound, aggregate.function->getResultType()))

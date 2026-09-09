@@ -140,6 +140,11 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         const bool values_are_uint64 = top_k.bound == MergedValueBound::Subadditive;
         chassert(order_by_index < params.aggregates_size);
         chassert(!is_simple_count || values_are_uint64);
+        /// `Subadditive` is a one-sided upper bound (see `MergedValueBound`), which serves the
+        /// descending order alone - the ascending order would need the lower half, which the
+        /// modular `UInt64` accumulators of `count` and `sum` do not provide. The plan pass
+        /// never forms such a combination.
+        chassert(!(values_are_uint64 && ascending));
 
         using Table = std::decay_t<decltype(getDataVariant<Method>(merged_data).data.impls[bucket])>;
         using TableKey = std::decay_t<decltype(std::declval<const typename Table::cell_type &>().getKey())>;
@@ -529,9 +534,11 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                     /// The threshold check: can any unseen group still strictly beat the worst
                     /// kept candidate? An unseen group's partial values are bounded by the current
                     /// heads of the lists it may still hide in, so for the descending `Subadditive`
-                    /// bound its merged value is at most the sum of the heads, and otherwise (the
-                    /// exact extremum bounds, and any bound with the ascending order, where the
-                    /// merged value is no better than some partial value) - the best head.
+                    /// bound its merged value is at most the sum of the heads, and for the exact
+                    /// extremum bounds (where the merged value equals one of the partial values)
+                    /// - the best head. `Subadditive` with the ascending order is not formed: the
+                    /// bound is one-sided (see `MergedValueBound`) and the ascending direction
+                    /// would need the half the wrapping `UInt64` accumulators cannot promise.
                     const Candidate & worst = candidates.front();
                     bool can_beat = false;
                     if (additive_descending)
