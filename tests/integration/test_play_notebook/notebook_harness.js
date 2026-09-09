@@ -534,6 +534,13 @@ async function waitForNextPersist(r) {
     return [...r.stores.get('tabs').data.values()];
 }
 
+/// The page keeps the current query in the URL hash as base64 (see `toBase64`/`fromBase64`);
+/// decode it here to assert which cell's query the URL claims.
+function fromBase64Node(hash) {
+    try { return Buffer.from(decodeURIComponent(hash), 'base64').toString('utf8'); }
+    catch (e) { return null; }
+}
+
 /// ----- Assertions ----------------------------------------------------------------------------
 
 let failures = 0;
@@ -1151,6 +1158,118 @@ async function main() {
               out.idle.inFlight === false && out.idle.run_cell === null, out.idle);
         check(scenario, 'once idle the chrome follows the active cell',
               out.idle.chrome_is_b === true, out.idle);
+    }
+
+    /// Contract 4b: deleting the ACTIVE cell must re-own the history entry and the URL from the
+    /// post-delete notebook. Both are read back as AUTHORITATIVE for the tab - `reconcileStartup`
+    /// substitutes the URL query into the saved tab when it matches neither its query nor its
+    /// `lastSavedQuery` (dropping the result with it), and `window.onpopstate` writes the entry's
+    /// query into whatever cell is active - so an entry left describing the deleted cell resurrects
+    /// its query in the surviving cell on the next reload or Back. The deletion must also not push
+    /// a new entry: it is a structural change, not a navigation step.
+    {
+        const scenario = 'delete-active-cell-reowns-history';
+        const r = await runScenario(js, { href: base });
+        const built = await evalJSONAsync(r.sandbox, `
+            const settle = () => new Promise(res => setTimeout(res, 30));
+            const tab = getActiveTab();
+            query_area.value = 'SELECT A';
+            addCell(tab, 'query', tab.cells.length);
+            await settle();
+            query_area.value = 'SELECT B';
+            captureActiveTab();
+            const [a, b] = tab.cells;
+            b.result = { ok: true, data: 'b-result' };
+            /// Give the editor back to A and make the entry + URL authoritative for A's query.
+            await setActiveCell(tab, a.id);
+            await settle();
+            writeHistoryEntry(tab);
+            const before = { entry_query: history.state.query, entries: history.length,
+                             hash: location.hash };
+
+            deleteCell(tab, a);
+            await settle();
+            const after = { entry_query: history.state.query, entries: history.length,
+                            hash: location.hash, url: location.href,
+                            cell_id_is_b: history.state.cellId === b.id,
+                            cells: tab.cells.length,
+                            b_result: b.result ? b.result.data : null };
+            return { before, after, entry: history.state };
+        `);
+        check(scenario, 'the entry described the deleted cell before the delete',
+              built.before.entry_query === 'SELECT A', built.before);
+        check(scenario, 'the delete re-owns the entry from the surviving cell',
+              built.after.entry_query === 'SELECT B' && built.after.cell_id_is_b === true,
+              built.after);
+        check(scenario, 'the delete re-owns the URL hash',
+              built.after.hash !== built.before.hash
+              && fromBase64Node(built.after.hash.slice(1)) === 'SELECT B', built.after);
+        check(scenario, 'the delete pushes no Back target',
+              built.after.entries === built.before.entries, built.after);
+        check(scenario, "the surviving cell's result is not dropped",
+              built.after.b_result === 'b-result', built.after);
+
+        /// A reload through the URL the page is left with must keep the surviving cell intact.
+        const records = await waitForNextPersist(r);
+        const meta = r.stores.get('meta').data.get('state') || null;
+        const reloaded = await runScenario(js, { href: built.after.url, seedTabs: records, seedMeta: meta });
+        const back = evalJSON(reloaded.sandbox, `
+            const tab = getActiveTab();
+            return {
+                queries: tab.cells.map(c => c.query),
+                results: tab.cells.map(c => (c.result && c.result.data) || null),
+            };
+        `);
+        check(scenario, 'a reload keeps the surviving cell\'s query',
+              JSON.stringify(back.queries) === JSON.stringify(['SELECT B']), back);
+        check(scenario, 'a reload keeps the surviving cell\'s result',
+              back.results[0] === 'b-result', back);
+
+        /// A Back to the re-owned entry must restore the surviving cell, not the deleted query.
+        const popped = evalJSON(r.sandbox, `
+            const tab = getActiveTab();
+            window.onpopstate({ state: history.state });
+            return { query: tab.query, cells: tab.cells.length };
+        `);
+        check(scenario, 'a Back to the re-owned entry restores the surviving cell',
+              popped.query === 'SELECT B' && popped.cells === 1, popped);
+
+        /// The last query cell is where the shared editor lives, so it cannot be deleted - the
+        /// header disables the action, and `deleteCell` refuses it for any other caller. A notebook
+        /// of text cells alone would have no query, no parameters and no result to describe.
+        const r2 = await runScenario(js, { href: base });
+        const guarded = await evalJSONAsync(r2.sandbox, `
+            const settle = () => new Promise(res => setTimeout(res, 30));
+            const tab = getActiveTab();
+            query_area.value = 'SELECT ONLY';
+            addCell(tab, 'text', tab.cells.length);
+            await settle();
+            tab.cells[1].text = 'notes';
+            const only = tab.cells[0];
+            await setActiveCell(tab, only.id);
+            await settle();
+            writeHistoryEntry(tab);
+            /// Refused: the notebook keeps its single query cell.
+            deleteCell(tab, only);
+            await settle();
+            const after_query = { shape: tab.cells.map(c => c.type), query: tab.query,
+                                  active: tab.activeCellId === only.id };
+            /// The text cell around it deletes normally, and that is not the active cell, so the
+            /// entry keeps describing the query cell.
+            deleteCell(tab, tab.cells[1]);
+            await settle();
+            return { after_query, shape: tab.cells.map(c => c.type),
+                     entry_query: history.state.query, query: tab.query };
+        `);
+        check(scenario, 'the last query cell cannot be deleted',
+              JSON.stringify(guarded.after_query.shape) === JSON.stringify(['query', 'text'])
+              && guarded.after_query.query === 'SELECT ONLY'
+              && guarded.after_query.active === true, guarded.after_query);
+        check(scenario, 'a text cell beside it still deletes',
+              JSON.stringify(guarded.shape) === JSON.stringify(['query'])
+              && guarded.query === 'SELECT ONLY', guarded);
+        check(scenario, 'deleting an inactive text cell leaves the entry alone',
+              guarded.entry_query === 'SELECT ONLY', guarded);
     }
 
     /// Contract 5: a toggle in a non-active cell also refreshes that cell's serialized copy inside

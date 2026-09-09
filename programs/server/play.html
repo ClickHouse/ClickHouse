@@ -14482,6 +14482,12 @@ function addCell(tab, type, index) {
 function deleteCell(tab, cell) {
     const index = tab.cells.indexOf(cell);
     if (index < 0) return;
+    /// A tab always needs one query cell: it is where the shared editor lives, and everything the
+    /// editor, history, URL and persistence code reads through `tab.<field>` forwards to it (see
+    /// `installCellAccessors`), so a notebook of text cells alone has no query, no parameters and
+    /// no result to describe. The cell header disables `✕` on the last query cell for that reason;
+    /// enforce the same invariant here, so no other caller can reach that state either.
+    if (cell.type === 'query' && tab.cells.filter(c => c.type === 'query').length === 1) return;
     markBootstrapDirty();
     /// Deleting the cell a query is streaming into would leave the run writing to a detached
     /// element: stop it first, exactly as the Stop button would.
@@ -14496,7 +14502,19 @@ function deleteCell(tab, cell) {
             || tab.cells.slice(0, index).reverse().find(c => c.type === 'query');
         tab.activeCellId = next ? next.id : null;
         renderNotebook(tab);
-        activateCellState(tab, activeCell(tab));
+        /// The current history entry and the URL hash still describe the cell just deleted, and
+        /// both are read back as AUTHORITATIVE for the tab: `reconcileStartup` substitutes the URL
+        /// query into the saved tab when it differs from both its query and its `lastSavedQuery`
+        /// (dropping the result with it), and `window.onpopstate` restores the entry's query into
+        /// whatever cell is then active. Deleting the active cell would therefore resurrect its
+        /// query in the surviving cell on the next reload or Back. Re-own the entry from the
+        /// post-delete state, in place - a deletion is a structural change, not a navigation step,
+        /// so it must not push a Back target - once the handover has completed, exactly as
+        /// `setActiveCell` stamps history after its own activation. The invariant above guarantees
+        /// a remaining query cell, so there is always a handover to wait for.
+        activateCellState(tab, activeCell(tab)).then(activated => {
+            if (activated) refreshCurrentHistoryEntry(tab);
+        });
     } else {
         renderNotebook(tab);
     }

@@ -9,7 +9,9 @@ is docked under (the running cell while a run is in flight, not the cell the edi
 checked both on seeded state and by driving a real run through `runCell`), color modes and pinned
 columns persist onto the owning cell's own result snapshot without rewriting another cell's state
 and come back on the next page load, stopping a run repaints the row from the cell that is on
-screen, the history entry keeps every cell's state within a bounded payload, a run whose editor
+screen, deleting the active cell re-owns the history entry and the URL from the surviving cell
+(and the last query cell cannot be deleted at all), the history entry keeps every cell's state
+within a bounded payload, a run whose editor
 handover was superseded launches nothing, and a text cell's Markdown renders (and highlights)
 block quotes, fenced code and link targets the way the page documents while emitting the source's
 own HTML as text rather than DOM.
@@ -50,6 +52,7 @@ SCENARIOS = (
     "markdown-escapes-raw-html",
     "markdown-block-boundaries",
     "notebook-structure-round-trip",
+    "delete-active-cell-reowns-history",
     "stop-after-editor-moved-repaints-chrome",
     "history-entry-keeps-off-active-cell-state",
     "history-payload-is-bounded",
