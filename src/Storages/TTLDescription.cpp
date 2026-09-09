@@ -1374,7 +1374,7 @@ static void checkTTLGroupBySetForAggregateFunctions(
     {
         auto argument_ast = argument->clone();
         auto argument_expression = buildExpressionAndSets(
-            argument_ast, columns, context, nullptr, /*widen_temporal_columns=*/ false).expression;
+            argument_ast, columns, context, /*widen_temporal_columns=*/ false).expression;
         checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ");
     }
 }
