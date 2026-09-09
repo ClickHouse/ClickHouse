@@ -13,12 +13,8 @@
 namespace DB::S3
 {
 
-Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
+Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers)
 {
-    auto headers = Model::CopyObjectRequest::GetRequestSpecificHeaders();
-    if (api_mode != ApiMode::GCS)
-        return headers;
-
     /// GCS supports same headers as S3 but with a prefix x-goog instead of x-amz
     /// we have to replace all the prefixes client set internally
     const auto replace_with_gcs_header = [&](const std::string & amz_header, const std::string & gcs_header)

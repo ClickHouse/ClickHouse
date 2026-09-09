@@ -424,7 +424,8 @@ void WriteBufferFromS3::createMultipartUpload()
         idempotency_id = getRandomASCIIString(IDEMPOTENCY_ID_LENGTH);
 
     /// Metadata set here lands on the completed object, so a HEAD after completion sees the id.
-    req.SetMetadata(*metadataWithIdempotencyId());
+    if (auto metadata = metadataWithIdempotencyId())
+        req.SetMetadata(*metadata);
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.

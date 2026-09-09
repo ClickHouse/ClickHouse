@@ -61,10 +61,24 @@ inline void setChecksumAlgorithm(R & request)
 }
 };
 
+/// GCS accepts the same headers as S3 but under an `x-goog-` prefix, and a request may not mix the
+/// two. Rename what the SDK set before it goes on the wire. An `x-amz-` header left in place is not
+/// rejected but silently ignored, so a header that carries meaning has to be translated or its
+/// meaning is lost. `PocoHTTPClient` performs the mirror translation on the response.
+Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
+
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
 {
 public:
+    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override
+    {
+        auto headers = BaseRequest::GetRequestSpecificHeaders();
+        if (api_mode != ApiMode::GCS)
+            return headers;
+        return translateHeadersToGCS(std::move(headers));
+    }
+
     Aws::Endpoint::EndpointParameters GetEndpointContextParams() const override
     {
         auto params = BaseRequest::GetEndpointContextParams();
@@ -142,11 +156,7 @@ protected:
     bool is_s3express_bucket = false;
 };
 
-class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
-{
-public:
-    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
-};
+using CopyObjectRequest = ExtendedRequest<Model::CopyObjectRequest>;
 
 class HeadObjectRequest: public ExtendedRequest<Model::HeadObjectRequest>
 {
