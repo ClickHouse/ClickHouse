@@ -40,7 +40,11 @@ status: applicable
 verdict: chosen
 --- a descending projection key does not parse ---
 SYNTAX_ERROR
---- the scan honours max_rows_to_read ---
+--- a limit the query respects does not fail the estimate, in either overflow mode ---
+status: applicable
+source: applicability_only
+empirical_status: unsupported
+empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
 status: applicable
 source: applicability_only
 empirical_status: unsupported

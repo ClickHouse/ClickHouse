@@ -135,11 +135,15 @@ $CLICKHOUSE_CLIENT -q "
 echo "--- a descending projection key does not parse ---"
 $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL PROJECTION p_desc ON t_est (SELECT a, b, v ORDER BY b DESC);" 2>&1 | grep -m1 -oE 'SYNTAX_ERROR'
 
-echo "--- the scan honours max_rows_to_read ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM t_est WHERE b = 42 SETTINGS ${PIN}, max_rows_to_read = 100, read_overflow_mode = 'break';
-" | grep -E '^\s+(status|source|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
+# the scan reads whole parts while the query itself is pruned under the limit, so neither overflow
+# mode may fail a statement the user could run
+echo "--- a limit the query respects does not fail the estimate, in either overflow mode ---"
+for mode in throw break; do
+    $CLICKHOUSE_CLIENT -q "
+        CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
+        EXPLAIN WHATIF SELECT count() FROM t_est WHERE a < 100 AND b = 42 SETTINGS ${PIN}, max_rows_to_read = 300, read_overflow_mode = '${mode}';
+    " 2>&1 | grep -E '^\s+(status|source|empirical_status|empirical_reason):|Code:' | awk '{$1=$1; print}'
+done
 
 # the scan reads the projection columns, so SELECT is checked at estimate time
 echo "--- estimating needs SELECT on the projection columns ---"

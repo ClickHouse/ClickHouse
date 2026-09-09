@@ -54,12 +54,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
 
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_ROWS;
-    extern const int TOO_MANY_BYTES;
-}
-
 namespace
 {
 
@@ -212,8 +206,9 @@ bool buildProjectionPart(
 
         total_rows_read += block.rows();
         total_bytes_read += block.bytes();
-        if (!read_limits.check(
-                total_rows_read, total_bytes_read, "rows or bytes to read", ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
+        /// softCheck, so `read_overflow_mode = 'throw'` degrades to `unsupported` like `break` does:
+        /// this scan reads whole parts, and a query the user can still run must stay explainable
+        if (!read_limits.softCheck(total_rows_read, total_bytes_read))
             return false;
 
         /// the key expression and the sort need full columns
