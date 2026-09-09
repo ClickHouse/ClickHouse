@@ -90,6 +90,8 @@ public:
 
     void checkInsertIsAllowed(ContextPtr context) const override { getNested()->checkInsertIsAllowed(context); }
 
+    /// `prepareForDrop` is not forwarded here; only the proxies that hold a nested storage
+    /// (`StorageTableProxy`, `StorageTableFunctionProxy`) forward it, and only once it is resolved.
     void drop() override { getNested()->drop(); }
 
     void truncate(

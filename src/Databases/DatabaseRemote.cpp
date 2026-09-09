@@ -878,7 +878,7 @@ void DatabaseRemote::createTable(ContextPtr, const String & table_name, const St
 }
 
 
-void DatabaseRemote::dropTable(ContextPtr, const String & table_name, bool /* sync */)
+void DatabaseRemote::dropTable(ContextPtr, const String & table_name, bool /* sync */, bool /* if_exists */)
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,

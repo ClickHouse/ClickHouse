@@ -896,6 +896,103 @@ def test_create_gzip_metadata(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_native_create_gzip_metadata(started_cluster):
+    # The engine-less `CREATE TABLE` path does not go through `IcebergMetadata::createInitial`:
+    # `GlueCatalog::createTable` writes and registers the first metadata file itself, and must honour
+    # `iceberg_metadata_compression_method` just like the explicit engine path (`test_create_gzip_metadata`).
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_gzip_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "iceberg_metadata_compression_method": "gzip",
+        },
+    )
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    # The Iceberg spec extension is `gz`, not the `gzip` Content-Encoding token.
+    assert metadata_location.endswith(".gz.metadata.json"), metadata_location
+    assert not metadata_location.endswith(".gzip.metadata.json"), metadata_location
+
+    # The registered file must exist and its contents must really be gzip, not just carry the name.
+    assert metadata_location.startswith("s3://"), metadata_location
+    bucket, _, key = metadata_location[len("s3://") :].partition("/")
+    metadata_bytes = started_cluster.minio_client.get_object(bucket, key).read()
+    assert metadata_bytes[:2] == b"\x1f\x8b", metadata_bytes[:16]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "iceberg_metadata_compression_method": "gzip",
+        },
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_create_table_engine_backend_mismatch_rejected(started_cluster):
+    # Glue has a fixed S3 backend and reopens every table with it, so an explicit Iceberg engine
+    # pinning a different backend must be rejected up front instead of yielding an unreadable table.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_engine_backend_mismatch_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    for engine in [
+        "IcebergAzure('http://acc.blob.core.windows.net/cont/tbl/', 'acc', 'key')",
+        "IcebergLocal('/var/lib/clickhouse/user_files/tbl/')",
+        "IcebergHDFS('hdfs://namenode:9000/tbl/')",
+    ]:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.mismatch` (x String) ENGINE = {engine}",
+            settings={
+                "allow_experimental_database_glue_catalog": 1,
+                "allow_database_glue_catalog": 1,
+            },
+        )
+        assert (
+            "would be reopened with the catalog's storage backend and become unreadable" in error
+        ), error
+        assert "stores tables on S3" in error, error
+
+    # Positive control: the matching S3 engine is accepted.
+    create_clickhouse_glue_table(
+        started_cluster, node, root_namespace, f"{test_ref}_s3", "(x String)"
+    )
+    assert (
+        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{test_ref}_s3`") == "0\n"
+    )
+
+    error = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{test_ref}_generic` (x String) "
+        f"ENGINE = Iceberg('http://minio1:9001/warehouse-glue/{test_ref}_generic/', "
+        f"'{minio_access_key}', '{minio_secret_key}')",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert "generic 'Iceberg' engine is not supported" in error, error
+
+
 def test_schema_evolution(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -978,6 +1075,14 @@ def test_drop_table(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     assert len(catalog.list_tables(root_namespace)) == 1
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
+
+    # ClickHouse's Glue drop only removes the catalog entry and does not delete the data files, so a purge
+    # drop is rejected and the table is left intact.
+    error = node.query_and_get_error(
+        f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS data_lake_delete_data_on_drop = 1"
+    )
+    assert "not supported for the Glue catalog" in error
+    assert len(catalog.list_tables(root_namespace)) == 1
 
     drop_clickhouse_glue_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0

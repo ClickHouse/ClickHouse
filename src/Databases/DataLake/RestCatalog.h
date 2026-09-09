@@ -68,12 +68,20 @@ public:
 
     std::optional<StorageType> getStorageType() const override;
 
+    String getDefaultBaseLocation() const override;
+
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
 
-    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+    bool createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
@@ -86,7 +94,7 @@ public:
 
     bool isTransactional() const override { return true; }
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const override;
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
