@@ -40,19 +40,34 @@ get_counter()
 # `send_logs_level = 'fatal'` suppresses the expected error-level log lines from random
 # mutations that produce valid-but-nonsense queries (see 04256_04250). No `FORMAT Null` on the
 # fuzzed query: the oracle skips queries carrying an explicit FORMAT clause, which would make
-# every assertion below vacuous - discard the output via redirection instead.
+# every assertion below vacuous - the rows a round prints are simply not the line the caller
+# reads back.
 #
-# All rounds of one probe are sent as a single multi-statement invocation. Each statement is
-# still fuzzed and oracle-checked on its own - a batch of three copies of a checkable query
-# moves the counter by three - so this only removes client start-up cost, which is what
-# dominates the run time (see the header).
+# All rounds of one probe are sent as a single multi-statement invocation, and the counter
+# reading taken right after them travels in the same one - it is printed last, so the caller
+# reads it off the tail. A statement's oracle checks run in that statement's own finish
+# callback, so by the time the trailing `system.events` read executes, all three rounds have
+# been checked. Each round is still fuzzed and oracle-checked on its own - a batch of three
+# copies of a checkable query moves the counter by three - so batching only removes client
+# start-up cost, which is what dominates the run time (see the header).
+#
+# The counter cannot come from the client's own `--print-profile-events` output instead:
+# measured, that prints the query's ~75 events but never `ASTFuzzerOracleChecks`, because
+# `QueryOracleChecker` runs from the query's finish callback while `TCPHandler` sends the last
+# `ProfileEvents` packet inside `processOrdinaryQuery`, i.e. before `io.onFinish()`. The
+# increment lands after the client's last packet, so only the server-global counter sees it.
+#
+# `SETTINGS ast_fuzzer_runs = 0` on that trailing read keeps the fuzzer off it. The oracle
+# would skip it in any case - it rejects any query reading `system.*`, which is why reading
+# the counter can never move it - but there is no reason to spend a mutation on it.
 #
 # `--ignore-error` is what keeps the rounds independent of each other. Without it the client
 # abandons the rest of a multi-statement batch as soon as one statement raises
 # (`have_error && !ignore_error` in `ClientBase::executeMultiQuery`), so a first round whose
 # mutation happened to produce an invalid query would silently cancel the two rounds that
 # exist precisely to cover that case, and the probe could pass vacuously off a single unlucky
-# attempt - the very thing the rounds are insurance against.
+# attempt - the very thing the rounds are insurance against. It also lets the trailing counter
+# read still happen when a round raised.
 run_fuzzed_rounds()
 {
     local query="$1"
@@ -64,7 +79,9 @@ run_fuzzed_rounds()
         $query
         $query
         $query
-    " >/dev/null 2>/dev/null
+        SELECT toInt64(sum(value)) FROM system.events
+        WHERE event = 'ASTFuzzerOracleChecks' SETTINGS ast_fuzzer_runs = 0;
+    " 2>/dev/null | tail -n 1
 }
 
 # One probe per spelling: each query names exactly ONE of the aggregates under test, so a
@@ -102,7 +119,7 @@ probe()
     # oracle is off in this run, so it cannot make the check below vacuous, and the counter
     # cannot move - which is also why the `before` snapshot can be taken in the same
     # invocation. Reading it per probe rather than carrying each probe's reading over as the
-    # next one's baseline costs nothing - either way it is three invocations per probe - and
+    # next one's baseline costs nothing - either way it is two invocations per probe - and
     # keeps every probe self-contained, which is worth more now that the probes are spread
     # over two files with positive controls in between.
     if ! before=$($CLICKHOUSE_CLIENT --query "
@@ -114,8 +131,7 @@ probe()
         return
     fi
 
-    run_fuzzed_rounds "SELECT $aggregates FROM oracle_alias_agg WHERE v > 5;"
-    after=$(get_counter)
+    after=$(run_fuzzed_rounds "SELECT $aggregates FROM oracle_alias_agg WHERE v > 5;")
 
     if [[ "$after" -eq "$before" ]]
     then
@@ -176,8 +192,7 @@ positive_control()
     after=$before
     for _ in $(seq 1 10)
     do
-        run_fuzzed_rounds "SELECT $aggregates FROM oracle_alias_agg WHERE v > 5;"
-        after=$(get_counter)
+        after=$(run_fuzzed_rounds "SELECT $aggregates FROM oracle_alias_agg WHERE v > 5;")
         if [[ "$after" -gt "$before" ]]
         then
             break
