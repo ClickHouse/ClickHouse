@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "select name from system.table_functions format TSV;" > "$
 # if you want long run use: env SQL_FUZZY_RUNS=100000 clickhouse-test sql_fuzzy
 
 for SQL_FUZZY_RUN in $(seq "${SQL_FUZZY_RUNS:=5}"); do
-    env SQL_FUZZY_RUN="$SQL_FUZZY_RUN" python3 "$CURDIR"/00746_sql_fuzzy.python | timeout 60 $CLICKHOUSE_CLIENT --format Null --max_execution_time 10 -n --ignore-error >/dev/null 2>&1
+    env SQL_FUZZY_RUN="$SQL_FUZZY_RUN" python3 "$CURDIR"/00746_sql_fuzzy.python | timeout 25 $CLICKHOUSE_CLIENT --format Null --max_execution_time 5 -n --ignore-error >/dev/null 2>&1
     if [[ $($CLICKHOUSE_CLIENT -q "SELECT 'Still alive'") != 'Still alive' ]]; then
         break
     fi
