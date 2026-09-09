@@ -1490,6 +1490,44 @@ TEST_P(CoordinationTest, TestBlockACL)
     }
 }
 
+/// A Keeper snapshot converted from ZooKeeper can carry an ACL map entry whose id is nonzero but whose
+/// ACL list is empty. An empty ACL list means unrestricted, whichever id carries it.
+TEST_P(CoordinationTest, TestEmptyACLListWithNonzeroId)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    /// Mimic snapshot deserialization: addMapping starts the usage counter at 0, and every node
+    /// referencing the id adds one use.
+    storage.acl_map.addMapping(2, {});
+    addNode(storage, "/legacy_empty_acl", "data", /*ephemeral_owner=*/0, /*acl_id=*/2);
+    storage.acl_map.addUsage(2);
+
+    storage.acl_map.addMapping(3, {{.permissions = ACL::All, .scheme = "digest", .id = "user:password"}});
+    addNode(storage, "/restricted", "data", /*ephemeral_owner=*/0, /*acl_id=*/3);
+    storage.acl_map.addUsage(3);
+
+    const auto assert_get = [&](const std::string & path, Error expected)
+    {
+        int64_t new_zxid = ++zxid;
+        auto request = std::make_shared<ZooKeeperGetRequest>();
+        request->path = path;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1u);
+        ASSERT_EQ(responses[0].response->error, expected) << "path " << path;
+    };
+
+    /// The session adds no auth, so only the node's own ACL list decides.
+    assert_get("/legacy_empty_acl", Error::ZOK);
+    /// A nonzero id whose non-empty ACL list the session cannot satisfy is still refused.
+    assert_get("/restricted", Error::ZNOAUTH);
+}
+
 TEST_P(CoordinationTest, TestMultiWatches)
 {
     using namespace DB;
