@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
 StreamingExchangeSink::~StreamingExchangeSink()
@@ -124,7 +125,7 @@ void StreamingExchangeSink::sendToSocket()
                 }
                 else
                 {
-                    throw Poco::Net::NetException(fmt::format("Failed to send data to socket for stream {}, last error {}", stream_name, last_error));
+                    StreamingExchangeProtocol::throwSocketError(last_error, *socket, "send data to exchange stream " + stream_name);
                 }
             }
 
@@ -139,9 +140,9 @@ void StreamingExchangeSink::sendToSocket()
             /// in those cases, otherwise it's a real network error.
             LOG_TRACE(log, "Send to exchange stream {} hit IO exception: {}; checking for peer close", stream_name, e.displayText());
             tryReceiveControlPacket();
-            if (!no_more_data_needed)
-                throw;
-            return;
+            if (no_more_data_needed)
+                return;
+            StreamingExchangeProtocol::rethrowSocketException(*socket, "send data to exchange stream " + stream_name);
         }
     }
 
@@ -359,6 +360,13 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     if (chunk.getNumColumns() > 0)
     {
+        /// The exchange stream uses the server default codec (now `ZSTD(3)`): `network_compression_method`
+        /// is a per-query setting and the sink has no query settings at hand (it is constructed from a
+        /// header, a connection and a stream name), so the setting is not plumbed here. This is safe:
+        /// each compressed frame is self-describing (the receiver auto-detects the codec via
+        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel —
+        /// `StreamingExchangeProtocol` rejects peers on a different protocol version during the
+        /// handshake, so a stream is never read back by a node expecting a different codec.
         auto compressed_buf = std::make_unique<CompressedWriteBuffer>(*out);
         auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_TCP_PROTOCOL_VERSION, input.getSharedHeader());
 
@@ -420,22 +428,12 @@ bool StreamingExchangeSink::tryReadFromSocketNonBlocking(char * buffer, size_t b
 {
     while (position < buffer_size)
     {
-        const size_t remaining = buffer_size - position;
-        ssize_t received = socket->receiveBytes(
-            buffer + position,
-            static_cast<int>(std::min<size_t>(remaining, std::numeric_limits<int>::max())));
+        ssize_t received = StreamingExchangeProtocol::tryReceive(
+            *socket, buffer + position, buffer_size - position, "control packet on exchange stream " + stream_name);
         if (received < 0)
-        {
-            auto last_error = errno;
-            if (last_error == EINTR)
-                continue;
-            if (last_error == EAGAIN || last_error == EWOULDBLOCK)
-                return true; /// No data right now, try later.
-            throw Poco::Net::NetException(fmt::format(
-                "Failed to receive control packet on exchange stream {}, error {}", stream_name, last_error));
-        }
-        if (received == 0)
             return false; /// Peer half-closed.
+        if (received == 0)
+            return true; /// No data right now, try later.
         position += received;
     }
     return true;
@@ -467,8 +465,9 @@ void StreamingExchangeSink::tryReceiveControlPacket()
 
     if (!not_eof)
     {
+        /// The consumer went away mid-stream, most likely because its task failed or was cancelled.
         if (incoming_packet_bytes_filled > 0)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED,
                 "Peer half-closed exchange stream {} after {} of {} control bytes; truncated control message",
                 stream_name, incoming_packet_bytes_filled, sizeof(incoming_packet_type));
 
@@ -476,7 +475,7 @@ void StreamingExchangeSink::tryReceiveControlPacket()
         /// and closes without sending NoMoreDataNeeded. Treat EOF as benign only with nothing left to send.
         const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
         if (!final_chunk_added || unsent > 0 || out->count() > 0)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED,
                 "Peer half-closed exchange stream {} without sending NoMoreDataNeeded "
                 "(final_chunk_added={}, unsent={}, out={})",
                 stream_name, final_chunk_added, unsent, out->count());
