@@ -300,7 +300,7 @@ void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File '{}' already exists", normalized_path.string());
 
     /// The default location is represented by an empty key.
-    if (info.blob_key == getDefaultBlobKey(node->info->remote_path, normalized_path.filename()))
+    if (info.blob_key == getDefaultBlobKey(node->info->remote_path, pathToGenericString(normalized_path.filename())))
         info.blob_key.clear();
 
     auto new_directory_info = node->info.value();

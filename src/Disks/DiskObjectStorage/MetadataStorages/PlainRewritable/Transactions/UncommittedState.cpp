@@ -160,11 +160,11 @@ void UncommittedState::moveDirectory(const std::string & path_from, const std::s
 void UncommittedState::recordCreatedFile(const std::string & path, const std::string & blob_key)
 {
     const auto normalized_path = normalizePath(path);
-    const auto directory = tx_snapshot->getDirectoryRemoteInfo(normalized_path.parent_path());
+    const auto directory = tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path.parent_path()));
     if (!directory)
         return;
 
-    const auto file_name = normalized_path.filename().string();
+    const auto file_name = pathToGenericString(normalized_path.filename());
     FileRemoteInfo info{.blob_key = blob_key};
     const auto new_blob_key = getBlobKey(*directory, file_name, info);
 
@@ -186,7 +186,7 @@ void UncommittedState::recordCreatedFile(const std::string & path, const std::st
     /// would be placed at the default location again - which is exactly the blob that the file this one was
     /// hard-linked from is keeping alive.
     if (new_blob_key != getDefaultBlobKey(directory->remote_path, file_name))
-        tx_snapshot->markDirectoryExplicit(normalized_path.parent_path());
+        tx_snapshot->markDirectoryExplicit(pathToGenericString(normalized_path.parent_path()));
 }
 
 void UncommittedState::recordHardLink(const std::string & path_from, const std::string & path_to)
@@ -195,13 +195,13 @@ void UncommittedState::recordHardLink(const std::string & path_from, const std::
     const auto normalized_path_to = normalizePath(path_to);
 
     /// The target directory gains a file whose blob is stored under the prefix of another directory.
-    markDirectoryExplicit(normalized_path_to.parent_path());
+    markDirectoryExplicit(pathToGenericString(normalized_path_to.parent_path()));
 
-    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(normalized_path_from.parent_path());
+    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()));
     if (!directory_from)
         return;
 
-    const auto file_name_from = normalized_path_from.filename().string();
+    const auto file_name_from = pathToGenericString(normalized_path_from.filename());
     const auto file_from = directory_from->files.find(file_name_from);
     if (file_from == directory_from->files.end())
         return;
@@ -211,7 +211,7 @@ void UncommittedState::recordHardLink(const std::string & path_from, const std::
     tx_snapshot->addBlobLink(info.blob_key);
 
     /// A hard link over something that already exists is rejected by the commit, which is where the error belongs.
-    if (!tx_snapshot->getDirectoryRemoteInfo(normalized_path_to.parent_path())
+    if (!tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path_to.parent_path()))
         || tx_snapshot->existsFile(path_to)
         || tx_snapshot->existsDirectory(path_to))
         return;
@@ -226,13 +226,13 @@ void UncommittedState::recordMovedFile(const std::string & path_from, const std:
     if (normalized_path_from == normalized_path_to)
         return;
 
-    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(normalized_path_from.parent_path());
-    const auto directory_to = tx_snapshot->getDirectoryRemoteInfo(normalized_path_to.parent_path());
+    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()));
+    const auto directory_to = tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path_to.parent_path()));
     if (!directory_from || !directory_to)
         return;
 
-    const auto file_name_from = normalized_path_from.filename().string();
-    const auto file_name_to = normalized_path_to.filename().string();
+    const auto file_name_from = pathToGenericString(normalized_path_from.filename());
+    const auto file_name_to = pathToGenericString(normalized_path_to.filename());
 
     const auto file_from = directory_from->files.find(file_name_from);
     if (file_from == directory_from->files.end())
