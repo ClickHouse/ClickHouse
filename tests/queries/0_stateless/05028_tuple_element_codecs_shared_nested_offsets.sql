@@ -53,12 +53,16 @@ SELECT count() = 1, groupUniqArray(part_type) = ['Wide']
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_tuple_codec_shared_nested_wide' AND active;
 
--- The value streams retain their independent codecs, while schema order makes n.a the first
--- owner of the shared n.size0 stream.
-SELECT DISTINCT substream, mapKeys(codec_block_counts)
-FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_shared_nested_wide)
-WHERE substream IN ('n.a', 'n.b', 'n.size0')
-ORDER BY substream;
+-- The value streams retain their independent codec families, while schema order makes n.a
+-- the first owner of the shared n.size0 stream. Physical stream names escape dots in column
+-- names. Block headers identify decoder families, so ZSTD(3) is reported as ZSTD(1) and
+-- LZ4HC(4) as LZ4.
+SELECT
+    countIf(endsWith(substream, '%2Ea') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0,
+    countIf(endsWith(substream, '%2Eb') AND mapContains(codec_block_counts, 'LZ4')) > 0,
+    countIf(endsWith(substream, '.size0') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0,
+    countIf(endsWith(substream, '.size0') AND mapContains(codec_block_counts, 'LZ4')) = 0
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_shared_nested_wide);
 
 CREATE TABLE t_tuple_codec_shared_nested_compact
 (
