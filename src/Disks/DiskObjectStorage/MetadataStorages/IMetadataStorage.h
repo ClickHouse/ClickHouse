@@ -323,6 +323,14 @@ public:
         return false;
     }
 
+    /// Whether a hard link created by `createHardLink` really shares the blob between the two files,
+    /// instead of copying it. The write-once (`plain`) metadata cannot represent hard links at all,
+    /// and `plain_rewritable` does it only when the disk is configured for it.
+    virtual bool supportsHardLinks() const
+    {
+        return !isWriteOnce() && !isPlain();
+    }
+
     using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }

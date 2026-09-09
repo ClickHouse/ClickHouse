@@ -30,7 +30,6 @@ ASTPtr makeASTSelectFromTimeSeries(
 
 /// The settings the generated read query must run with, independent of the caller's session/profile.
 /// Apply them to the (child) context that runs `makeASTSelectFromTimeSeries`.
-/// `final` is whether the outer query uses the `FINAL` keyword (see `SelectQueryInfo::isFinal`).
-SettingsChanges getSettingsForSelectFromTimeSeries(bool final);
+SettingsChanges getSettingsForSelectFromTimeSeries();
 
 }

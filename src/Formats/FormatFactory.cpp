@@ -23,9 +23,9 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Defines.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Core/SettingsQuirks.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 

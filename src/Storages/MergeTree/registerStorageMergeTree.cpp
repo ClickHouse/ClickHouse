@@ -43,6 +43,9 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB
@@ -96,6 +99,7 @@ namespace ErrorCodes
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 
@@ -684,10 +688,48 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
+    /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input even though it
+    /// runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata stored on this
+    /// server (short `ATTACH`, `ATTACH DATABASE`, restart) carry `attach_short_syntax`, and
+    /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
+    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+
+    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
+    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
+    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+
+    /// A definition re-derived from metadata stored in Keeper arrives as a plain `CREATE` with no
+    /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
+    const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
+
+    /// Shared Catalog secondaries re-execute the initiator's DDL without a metadata transaction, so
+    /// they are told apart by the client info instead (the same marker `AlterCommands` and
+    /// `StorageKeeperMap` use); an older initiator may have committed a definition this check refuses.
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay = args.getLocalContext()->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+
+    /// Statistics of a column that is not physically stored can never be built: the column is absent
+    /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
+    /// so a new replica of a table predating this check still starts.
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    {
+        for (const auto & column : columns)
+        {
+            if (!columns.hasPhysical(column.name) && column.statistics.hasExplicitStatistics())
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+        }
+    }
+
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
-
-    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
 
     if (is_extended_storage_def)
     {
@@ -2365,8 +2407,8 @@ Configuration markup:
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -2490,6 +2532,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+Statistics require a physically stored column. An `ALIAS` or `EPHEMERAL` column is not written to any part, so declaring statistics on one is rejected.
 
 We can also manipulate statistics with `ALTER` statements:
 

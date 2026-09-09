@@ -345,8 +345,8 @@ where `web` is from the server configuration file:
 | `proxy`                                         | Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.                                                                                                                                      | -                                        |
 | `connect_timeout_ms`                            | Socket connect timeout in milliseconds.                                                                                                                                                                                                       | `10000` (10 seconds)                     |
 | `request_timeout_ms`                            | Request timeout in milliseconds.                                                                                                                                                                                                              | `5000` (5 seconds)                       |
-| `retry_attempts`                                | Number of retry attempts for failed requests.                                                                                                                                                                                                 | `10`                                     |
-| `single_read_retries`                           | Number of retry attempts for connection drops during read.                                                                                                                                                                                    | `4`                                      |
+| `s3_retry_attempts`                             | Number of retry attempts for failed requests.                                                                                                                                                                                                 | `500`                                    |
+| `s3_max_single_read_retries`                    | Number of retry attempts for connection drops during read.                                                                                                                                                                                    | `4`                                      |
 | `min_bytes_for_seek`                            | Minimum number of bytes to use seek operation instead of sequential read.                                                                                                                                                                     | `1 MB`                                   |
 | `metadata_path`                                 | Local filesystem path to store S3 metadata files.                                                                                                                                                                                             | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`                             | If `true`, skips disk access checks during startup.                                                                                                                                                                                           | `false`                                  |
@@ -412,15 +412,16 @@ Configuration:
 A new disk type `s3_plain_rewritable` was introduced in `24.4`.
 Similar to the `s3_plain` disk type, it does not require additional storage for 
 metadata files. Instead, metadata is stored in S3.
-Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges 
+Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges
 and supports `INSERT` operations.
-[Mutations](/reference/statements/alter/index#mutations) and replication of tables are not supported.
+Replication of tables is not supported.
+[Mutations](/reference/statements/alter/index#mutations) and `ALTER` operations
+are supported only if the disk is configured with `enable_hard_links`, see below.
 
 A use case for this disk type is for non-replicated `MergeTree` tables. Although 
 the `s3` disk type is suitable for non-replicated `MergeTree` tables, you may opt
 for the `s3_plain_rewritable` disk type if you do not require local metadata 
-for the table and are willing to accept a limited set of operations. This could
-be useful, for example, for system tables.
+for the table. This could be useful, for example, for system tables.
 
 Configuration:
 
@@ -446,6 +447,39 @@ is equal to
 
 Starting from `24.5` it is possible to configure any object storage disk 
 (`s3`, `azure`, `local`) using the `plain_rewritable` metadata type.
+
+#### Hard links on plain rewritable disks {#plain-rewritable-hard-links}
+
+`ALTER` operations and mutations of a `MergeTree` table share the unchanged files
+between a part and its mutated successor with hard links, instead of copying
+them. The `enable_hard_links` setting (`0` by default) allows a disk with the
+`plain_rewritable` metadata to create real hard links, which unlocks these
+operations:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>1</enable_hard_links>
+</s3_plain_rewritable>
+```
+
+A hard link makes the metadata of a directory list its files explicitly, together
+with the keys of the objects storing them, so that a file can refer to an object
+stored under the prefix of another directory. Consider the following before
+enabling it:
+
+- Servers older than `26.9` cannot read a directory in this form. A disk that has
+  such directories is not readable after a downgrade, and cannot be shared with
+  older servers. Directories that never had hard links keep the previous layout,
+  so a disk stays readable by older servers until the first operation that
+  creates a hard link - a mutation, an `ALTER`, a `FREEZE` or a backup. Turning
+  the setting off again does not convert the existing directories back.
+- An object whose last link is removed is deleted in two steps: the metadata of
+  the directory is rewritten first, and the object is deleted after that. If the
+  server is killed in between, the object is left in the bucket and is not
+  referenced by anything, so it has to be deleted manually.
 
 ### Using Azure Blob Storage {#azure-blob-storage}
 

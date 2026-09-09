@@ -1,0 +1,65 @@
+string size
+3	0	1
+0	1	0
+3	0	1
+0	1	0
+array size
+2	0	1
+0	1	0
+2	0	1
+0	1	0
+null map
+0	1
+1	0
+0	1
+1	0
+1
+1
+map keys
+['k']	0
+['k']	0
+map values
+[1]
+[1]
+map element
+1
+1
+nullable json
+2	0	1	1
+0	1	0	0
+2	0	1	1
+0	1	0	0
+nullable tuple
+2	0	1	['k']
+0	1	0	[]
+2	0	1	['k']
+0	1	0	[]
+json size path
+2	0	1	1
+2	0	1	1
+tuple element
+1
+1
+tuple element, nested declared first
+1
+1
+variant element
+7
+7
+still optimized
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
