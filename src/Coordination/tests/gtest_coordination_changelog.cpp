@@ -3040,7 +3040,9 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadExhaustedLatestCacheHandoff
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "commit_ra_cache_pad_entry"; // fixed-size payload, so the threshold below
                                                               // deterministically admits `cached_tail` entries
-    const uint64_t threshold = cached_tail * payload.size();
+    // The cache charges resident bytes per entry, not payload bytes, so size the threshold with the
+    // same accounting the cache uses.
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,
@@ -4032,7 +4034,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadIdleReaderEvictedAfterCacheHitCat
     constexpr uint64_t total = 100;
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "peer_idle_evict_pad_entry";
-    const uint64_t threshold = cached_tail * payload.size();
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,
@@ -4106,7 +4108,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefresh
     constexpr uint64_t total = 100;
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "commit_idle_evict_pad_entry";
-    const uint64_t threshold = cached_tail * payload.size();
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,
