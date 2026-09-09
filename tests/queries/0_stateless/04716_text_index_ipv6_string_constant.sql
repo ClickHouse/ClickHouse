@@ -51,6 +51,18 @@ INSERT INTO t_map VALUES (map(toIPv6('2001:db8::abcd:1'), 'v'));
 SELECT count() FROM t_map WHERE m.`key_2001:db8::abcd:1` = 'v' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM t_map WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 16) SETTINGS force_data_skipping_indices = 'idx';
 
+-- A key a row does not have reads as the map value type's default, `::` here, which the index does not
+-- hold because it indexes the values that are present. `optimize_functions_to_subcolumns` picks which
+-- of the two element reads runs, and the forced queries fail if map elements decline as a class.
+SELECT '-- a missing map key compared with the map value type default keeps the granule';
+CREATE TABLE t_map_values (m Map(String, IPv6), INDEX idx mapValues(m) TYPE ngrambf_v1(3, 512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_map_values VALUES (map('a', '2001:db8:1:2:3:4:5:6'));
+SELECT count() FROM t_map_values WHERE m['missing'] = '::' SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_map_values WHERE m['missing'] = '::' SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_map_values WHERE m['missing'] = '::' SETTINGS ignore_data_skipping_indices = 'idx';
+SELECT count() FROM t_map_values WHERE m['a'] = '2001:db8:1:2:3:4:5:6' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_map_values WHERE m['a'] = '2001:db8:1:2:3:4:5:6' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1;
+
 -- On a `String` domain the constant is already in the index encoding, so it must not be routed
 -- through a conversion: one wider than the column has no representation there and would decline.
 SELECT '-- a FixedString column keeps pruning for a constant wider than the column';

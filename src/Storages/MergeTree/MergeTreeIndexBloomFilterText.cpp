@@ -363,6 +363,21 @@ static bool convertConstantToIndexDomain(
     return true;
 }
 
+/// True when the constant lands on the index domain's default value. The comparison is on the encoded
+/// bytes, so it holds for domains where the default has no textual spelling of its own, such as the 16
+/// zero bytes of `IPv6`.
+static bool constantIsIndexDomainDefault(
+    const DataTypePtr & indexed_type, const DataTypePtr & constant_type, const Field & constant)
+{
+    String constant_bytes;
+    if (!convertConstantToIndexDomain(indexed_type, constant_type, constant, constant_bytes))
+        return false;
+
+    auto column = BloomFilter::getPrimitiveType(indexed_type)->createColumn();
+    column->insertDefault();
+    return constant_bytes == column->getDataAt(0);
+}
+
 bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
@@ -617,6 +632,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     auto key_index = getKeyIndex(column_name);
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
+    bool reads_map_element_against_values_index = false;
 
     if (key_node.isFunction())
     {
@@ -665,6 +681,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
             {
                 key_index = map_values_exists;
+                reads_map_element_against_values_index = true;
             }
             else
             {
@@ -695,6 +712,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
             {
                 key_index = map_values_idx;
+                reads_map_element_against_values_index = true;
             }
             else
             {
@@ -702,6 +720,13 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             }
         }
     }
+
+    /// The default above is the compared expression's, which is the map value type only for a string
+    /// valued map. A key the row does not have still reads as the map value type's default, a value the
+    /// index does not hold, so such a comparison must not prune.
+    if (reads_map_element_against_values_index
+        && constantIsIndexDomainDefault(index_data_types[*key_index], const_source_type, const_value))
+        return false;
 
     const auto lowercase_key_index = getKeyIndex(fmt::format("lower({})", column_name));
     const auto is_has_token_case_insensitive = function_name.starts_with("hasTokenCaseInsensitive");
