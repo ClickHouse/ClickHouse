@@ -477,6 +477,8 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
         || query.hasOrderBy()
         || query.hasLimitBy()
         || query.hasLimit()
+        || query.hasLimitAfter()
+        || query.hasLimitUntil()
         || query.hasOffset())
         return false;
 
