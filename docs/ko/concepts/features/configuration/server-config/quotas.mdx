@@ -115,7 +115,19 @@ doc_type: 'guide'
 
 하나 이상의 시간 인터벌에서 이 제한을 초과하면, 어떤 제한이 초과되었는지, 어떤 인터벌에 해당하는지, 그리고 새 인터벌이 언제 시작되는지(다시 쿼리를 보낼 수 있는 시점)를 설명하는 텍스트와 함께 예외가 발생합니다.
 
-QUOTA는 여러 키의 리소스를 각각 독립적으로 보고하기 위해 &quot;QUOTA key&quot; 기능을 사용할 수 있습니다. 다음은 그 예시입니다:
+<Note>
+  **쿼터 계산에서 제외되는 쿼리**
+
+  쿼터가 소진된 경우에도 쿼터 구성과 사용량을 검사할 수 있도록, 다음 시스템 테이블 중 하나에서만 읽는 `SELECT` 쿼리는 쿼터에 부과되지 않으며 쿼리 복잡성 제한의 적용 대상도 아닙니다:
+
+  * `system.quotas`
+  * `system.quota_limits`
+  * `system.quota_usage`
+  * `system.quotas_usage`
+  * `system.one`
+</Note>
+
+쿼터는 여러 키의 리소스를 각각 독립적으로 보고하기 위해 &quot;쿼터 key&quot; 기능을 사용할 수 있습니다. 다음은 그 예시입니다:
 
 ```xml
 <!-- For the global reports designer. -->
@@ -143,7 +155,7 @@ QUOTA는 여러 키의 리소스를 각각 독립적으로 보고하기 위해 &
     <keyed />
 ```
 
-정규화된 쿼리 해시를 기준으로 QUOTA를 설정할 수도 있으며, 그러면 서로 다른 각 쿼리 패턴에 독립적인 QUOTA 버킷이 할당됩니다. XML 구성에서는 이를 `<keyed_by_normalized_query_hash />`로 작성합니다:
+정규화된 쿼리 해시를 기준으로 쿼터를 설정할 수도 있으며, 그러면 서로 다른 각 쿼리 패턴에 독립적인 쿼터 버킷이 할당됩니다. XML 구성에서는 이를 `<keyed_by_normalized_query_hash />`로 작성합니다:
 
 ```xml
 <my_quota>
@@ -163,11 +175,11 @@ CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX que
 
 이 예시에서는 서로 다른 각 정규화된 쿼리를 시간당 최대 100회까지 실행할 수 있습니다. `SELECT number FROM numbers(1)`와 `SELECT number FROM numbers(2)`는 동일한 버킷을 공유하지만(정규화된 형식이 같기 때문), `SELECT number, number FROM numbers(1)`는 별도의 버킷을 사용합니다.
 
-이 QUOTA는 config의 &#39;users&#39; 섹션에서 사용자에게 할당됩니다. &quot;접근 권한&quot; 섹션을 참조하십시오.
+이 쿼터는 config의 &#39;users&#39; 섹션에서 사용자에게 할당됩니다. &quot;접근 권한&quot; 섹션을 참조하십시오.
 
-분산 쿼리 처리에서는 누적된 값이 요청을 보낸 서버에 저장됩니다. 따라서 사용자가 다른 서버로 이동하면 해당 서버의 QUOTA는 &quot;처음부터 다시&quot; 시작됩니다.
+분산 쿼리 처리에서는 누적된 값이 요청을 보낸 서버에 저장됩니다. 따라서 사용자가 다른 서버로 이동하면 해당 서버의 쿼터는 &quot;처음부터 다시&quot; 시작됩니다.
 
-서버를 재시작하면 QUOTA가 재설정됩니다.
+서버를 재시작하면 쿼터가 재설정됩니다.
 
 <div id="related-content">
   ## 관련 콘텐츠
