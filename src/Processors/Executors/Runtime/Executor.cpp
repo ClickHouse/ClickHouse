@@ -76,9 +76,11 @@ void Executor::pushInitialTasks()
 {
     for (auto * sink : pipeline->sinks())
     {
-        if (!sink->lock.tryLock())
+        auto round_lock = sink->lock.lockRound();
+        if (sink->lock.status() != ProcessorLock::Status::Idle)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is locked before the execution started", sink->processor->getName());
 
+        sink->lock.setExecuting();
         scheduler->push(Task{.state = sink, .kind = Task::Kind::Prepare});
     }
 }
