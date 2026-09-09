@@ -1172,6 +1172,8 @@ void TCPHandler::runImpl()
 
                 if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 {
+                    if (query_state->profile_traces_queue)
+                        query_state->profile_traces_queue->cancel();
                     sendEndOfStream(*query_state);
                     out->sync();
                 }
