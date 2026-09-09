@@ -3352,9 +3352,11 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
-/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. A float source is refused for an
-/// integer or `Decimal` destination, because `fptosi` / `fptoui` have no defined result outside the
-/// destination range. A `Bool` destination stays allowed, it is compiled through `nativeBoolCast`.
+/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. Compiled code cannot raise, so only
+/// conversions whose interpreted form has no range check are compilable: a `Decimal` source to float, or
+/// to a signed integer at least as wide as its storage (the `convertToImpl` arms that never throw), and
+/// any source to `Bool`, lowered as a comparison of the raw value with zero. A `Decimal` destination
+/// range-checks `value * 10^scale`, and `fptosi` / `fptoui` are undefined outside the destination range.
 static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
 {
     return castBothTypes(from, to, [](const auto & left, const auto & right)
@@ -3371,10 +3373,17 @@ static bool isCompilableNumericConversion(const IDataType * from, const IDataTyp
                     return isBool(right.getPtr());
                 return true;
             }
-            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                return !is_floating_point<typename LeftDataType::FieldType>;
             else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
+            {
+                using RightFieldType = typename RightDataType::FieldType;
+                if (isBool(right.getPtr()))
+                    return true;
+                if constexpr (is_floating_point<RightFieldType>)
+                    return true;
+                else
+                    return !is_unsigned_v<RightFieldType>
+                        && sizeof(RightFieldType) >= sizeof(NativeType<typename LeftDataType::FieldType>);
+            }
         }
         return false;
     });
