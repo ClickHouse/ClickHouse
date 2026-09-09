@@ -26,6 +26,7 @@ The digests are therefore compared post-mangle: the pre-mangle objects miss
 that last difference and report a cache hit the runtime does not have.
 """
 
+import copy
 import dataclasses
 import hashlib
 import importlib
@@ -264,9 +265,20 @@ class TestLatestTagIsBaseBranchOnly:
             monkeypatch, "groeneai/reland-fuzzer-dict-from-binary"
         ) == [False]
 
+    def test_a_workflow_without_branches_refuses_to_publish(self):
+        # A workflow with no branches cannot name its base branch. Moving a
+        # public mutable tag is consequential, so the undecidable case refuses
+        # rather than falling back to publishing.
+        holder = copy.deepcopy(nightly_workflow)
+        holder.branches = []
+        assert holder.set_latest_for_docker_merged_manifest
+        for branch in ("master", "some/other-branch", ""):
+            assert not _publish_latest_docker_manifest(holder, branch)
+
     def test_every_workflow_in_the_tree_that_tags_latest_declares_a_branch(self):
-        # A workflow with no branches cannot name its base branch, so the gate
-        # falls back to publishing; that fallback has to stay unreachable.
+        # The refusal above is a backstop, not a design: a workflow that tags
+        # `latest` and declares no branch would silently never publish, so the
+        # tree still has to declare one everywhere.
         holders = []
         directory = os.path.join(os.path.dirname(__file__), "..", "workflows")
         for name in sorted(os.listdir(directory)):

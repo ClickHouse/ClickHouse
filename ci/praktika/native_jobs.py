@@ -87,11 +87,13 @@ def _is_praktika_job(job_name):
 def _publish_latest_docker_manifest(workflow, branch):
     """`latest` is a mutable alias shared by every consumer of the images, so only
     a run on the workflow's own branch may move it. A workflow that declares no
-    branches cannot name that branch and keeps the unguarded behaviour."""
+    branches cannot name that branch, and moving a public mutable tag is exactly
+    the kind of consequential action a fallback path must not take, so that case
+    refuses to publish rather than falling back to the unguarded behaviour."""
     if not workflow.set_latest_for_docker_merged_manifest:
         return False
     if not workflow.branches:
-        return True
+        return False
     return branch in workflow.branches
 
 
