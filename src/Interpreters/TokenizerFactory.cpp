@@ -40,6 +40,22 @@ Type castAs(const Field & field, std::string_view argument_name)
     return field.safeGet<Type>();
 }
 
+/// Accepts a `Bool` literal or `UInt64` (`0`/`1`), like `checkAndGetLiteralArgument<bool>`.
+template <>
+bool castAs<bool>(const Field & field, std::string_view argument_name)
+{
+    if (field.getType() == Field::Types::Bool)
+        return field.safeGet<bool>();
+
+    if (field.getType() == Field::Types::UInt64)
+        return field.safeGet<UInt64>() != 0;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Tokenizer argument '{}' expected to be of type Bool, but got type: {}",
+        argument_name, field.getTypeName());
+}
+
 void assertParamsCount(size_t params_count, size_t max_count, std::string_view tokenizer)
 {
     if (params_count > max_count)
@@ -219,7 +235,7 @@ static void registerTokenizers(TokenizerFactory & factory)
     auto split_by_regexp_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
         const auto * tokenizer_name = SplitByRegexpTokenizer::getExternalName();
-        assertParamsCount(args.size(), 1, tokenizer_name);
+        assertParamsCount(args.size(), 2, tokenizer_name);
 
         if (args.empty())
             throw Exception(
@@ -234,7 +250,11 @@ static void registerTokenizers(TokenizerFactory & factory)
                 "Incorrect parameter of tokenizer '{}': the regular expression cannot be empty",
                 tokenizer_name);
 
-        return std::make_unique<SplitByRegexpTokenizer>(regexp);
+        bool match_tokens = false;
+        if (args.size() > 1)
+            match_tokens = castAs<bool>(args[1], "match_tokens");
+
+        return std::make_unique<SplitByRegexpTokenizer>(regexp, match_tokens);
     };
 
     factory.registerTokenizer(SplitByRegexpTokenizer::getName(), ITokenizer::Type::SplitByRegexp, split_by_regexp_creator);
