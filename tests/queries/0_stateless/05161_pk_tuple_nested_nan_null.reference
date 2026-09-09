@@ -1,0 +1,20 @@
+a NaN in the constant
+0
+0
+0
+0
+0
+0
+0
+an ordinary constant still counts and prunes
+3
+4
+a NaN in the key data
+2
+2
+2
+2
+a NULL in the constant, through a key transform
+0
+0
+1
