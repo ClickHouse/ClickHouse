@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int MEMORY_RESERVATION_KILLED;
     extern const int MEMORY_RESERVATION_FAILED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -265,21 +266,26 @@ ResourceCost MemoryReservation::takeSpillRequest(const ISpillable * spillable, R
     ResourceCost claim = std::min(spillable_bytes, enqueued_spill);
     enqueued_spill -= claim;
     ++spills_in_flight;
-    reclaimable_in_progress.insert(spillable);
+    reclaimable_in_progress[spillable] = claim;
     return claim;
 }
 
 void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost remaining_bytes, const MemoryTracker * memory_tracker)
 {
     ResourceCost total = 0;
-    bool last_spill = false;
     {
         std::lock_guard lock(mutex);
         chassert(spills_in_flight > 0);
         --spills_in_flight;
-        last_spill = spills_in_flight == 0;
 
-        reclaimable_in_progress.erase(spillable);
+        ResourceCost claim = 0;
+        if (auto it = reclaimable_in_progress.find(spillable); it != reclaimable_in_progress.end())
+        {
+            claim = it->second;
+            reclaimable_in_progress.erase(it);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No in progress spilling request");
 
         auto & entry = reclaimable[spillable];
         reclaimable_total = reclaimable_total - entry + remaining_bytes;
@@ -287,16 +293,12 @@ void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost r
         total = reclaimable_total;
         reclaimable_increment.changeTo(total);
 
-        if (last_spill)
-        {
-            enqueued_spill = 0;
-            reported_reclaimable = reclaimable_total;
-        }
+        enqueued_spill -= claim;
+        reported_reclaimable = reclaimable_total;
     }
 
+    queue.finishSpill(*this, total);
     syncWithMemoryTracker(memory_tracker);
-    if (last_spill)
-        queue.finishSpill(*this, total);
 }
 
 void MemoryReservation::throwIfNeeded()

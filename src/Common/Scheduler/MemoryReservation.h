@@ -120,8 +120,7 @@ private:
 
     /// Reclaimable bytes per spillable object
     std::unordered_map<const ISpillable *, ResourceCost> reclaimable;
-    /// Avoid spilling same processor in parallel
-    std::unordered_set<const ISpillable *> reclaimable_in_progress;
+    std::unordered_map<const ISpillable *, ResourceCost> reclaimable_in_progress;
     /// Sum of the map values
     ResourceCost reclaimable_total = 0;
     /// Last total sent to the scheduler (small updates are not sent)
