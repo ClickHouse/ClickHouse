@@ -533,6 +533,7 @@ private:
         bool should_visit = false;
         bool should_index = false;
         bool has_json_path_descendants = false;
+        bool remove_low_cardinality = false;
     };
 
     struct ObjectPlan
@@ -596,7 +597,6 @@ private:
             {
                 const auto & column = typed_path_columns.at(path);
                 const auto full_type = recursiveRemoveLowCardinality(type);
-                const auto full_column = recursiveRemoveLowCardinality(column);
                 const auto value_type = removeNullableOrLowCardinalityNullable(full_type);
                 const bool is_dynamic = DB::isDynamic(value_type);
                 auto logical_path = appendPath(logical_prefix, path);
@@ -609,14 +609,15 @@ private:
                      std::move(logical_path),
                      std::move(hash_path),
                      full_type,
-                     full_column,
-                     full_column.get(),
+                     column,
+                     column.get(),
                      &type_info,
                      {},
                      is_dynamic,
                      should_visit,
                      should_index,
-                     type_info.has_json_path_descendants});
+                     type_info.has_json_path_descendants,
+                     full_type != type});
                 if (is_dynamic)
                     initialize_dynamic_type_infos(paths.back());
             }
@@ -647,8 +648,8 @@ private:
         };
 
         ObjectPlan temporary_plan;
-        /// Shared values are deserialized into mutable temporary columns whose paths can change between rows.
-        auto & plan = shared_value_depth ? temporary_plan : object_plans[&column_object];
+        /// Shared values and converted ranges use temporary columns that can be reused or destroyed between calls.
+        auto & plan = temporary_column_depth ? temporary_plan : object_plans[&column_object];
         if (plan.type != &type_object || plan.logical_prefix != logical_prefix)
         {
             plan.hash_prefix = hash_prefix;
@@ -680,7 +681,17 @@ private:
                 continue;
             if (!path.is_dynamic)
             {
-                emitRange(path.hash_path, path.logical_path, role, path.type, *path.column, start_row, end_row, false, *path.type_info, path.should_index);
+                if (path.remove_low_cardinality)
+                {
+                    const auto full_column = recursiveRemoveLowCardinality(path.column->cut(start_row, end_row - start_row));
+                    ++temporary_column_depth;
+                    emitRange(path.hash_path, path.logical_path, role, path.type, *full_column, 0, end_row - start_row,
+                        false, *path.type_info, path.should_index);
+                    --temporary_column_depth;
+                }
+                else
+                    emitRange(path.hash_path, path.logical_path, role, path.type, *path.column, start_row, end_row,
+                        false, *path.type_info, path.should_index);
                 continue;
             }
             const auto & dynamic = assert_cast<const ColumnDynamic &>(*path.column);
@@ -760,7 +771,7 @@ private:
         if (!available_columns.empty())
             available_columns.pop_back();
         serialization->deserializeBinary(*column, buffer, format_settings);
-        ++shared_value_depth;
+        ++temporary_column_depth;
         if (type_info.raw_value)
         {
             if (should_index)
@@ -768,7 +779,7 @@ private:
         }
         else
             emitValue(hash_path, logical_path, role, type, *column, 0, true, type_info, should_index);
-        --shared_value_depth;
+        --temporary_column_depth;
         column->popBack(1);
         available_columns.push_back(std::move(column));
     }
@@ -1071,7 +1082,7 @@ private:
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<MutableColumnPtr>> shared_columns_cache;
     UnorderedMapWithMemoryTracking<const IDataType *, TypeInfo> type_infos;
     UnorderedMapWithMemoryTracking<const ColumnObject *, ObjectPlan> object_plans;
-    size_t shared_value_depth = 0;
+    size_t temporary_column_depth = 0;
     WriteBufferFromOwnString value_buffer;
     const FormatSettings format_settings;
 };
