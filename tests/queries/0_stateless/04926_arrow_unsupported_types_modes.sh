@@ -36,6 +36,8 @@ check "SELECT '{\"a\":1,\"b\":\"s\"}'::JSON AS x" "hex(x)"
 check "SELECT 42::Dynamic AS x" "hex(x)"
 check "SELECT [1,2]::Array(Dynamic) AS x" "arrayMap(v -> hex(v), x)"
 check "SELECT sumState(number) AS x FROM numbers(3)" "hex(x)"
+# `QBit` reaches the same path through its own `SerializationQBit` rather than the JSON/Dynamic ones.
+check "SELECT [1,2,3]::QBit(BFloat16, 3) AS x" "hex(x)"
 
 # `binary` is the default and matches what the old boolean did, so an unset `output_format_arrow_unsupported_types`
 # keeps honouring `output_format_arrow_unsupported_types_as_binary`.

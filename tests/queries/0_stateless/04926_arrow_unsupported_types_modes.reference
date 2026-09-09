@@ -26,6 +26,13 @@ String	0300000000000000
 String	0300000000000000
 --- throw
 NOT_IMPLEMENTED
+=== SELECT [1,2,3]::QBit(BFloat16, 3) AS x
+--- text
+String	5B312C322C335D
+--- binary
+String	03803F00404040
+--- throw
+NOT_IMPLEMENTED
 === old boolean still works ===
 NOT_IMPLEMENTED
 String	15023432
