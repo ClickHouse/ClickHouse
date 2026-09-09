@@ -29,6 +29,30 @@ ${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt.arrow', Arrow)"
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT v, toTypeName(v) FROM file('${DATA}/rt.arrow', Arrow, 'v Variant(IPv6, String)') ORDER BY toString(v)"
 
+echo "--- for Variant(IntervalDay, String), which it stores as a signed int64 ---"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA}/rt_interval.arrow', Arrow, 'v Variant(IntervalDay, String)')
+        SETTINGS engine_file_truncate_on_insert = 1
+        SELECT if(number = 0,
+                  CAST(toIntervalDay(3), 'Variant(IntervalDay, String)'),
+                  CAST('text', 'Variant(IntervalDay, String)'))
+        FROM numbers(2)"
+${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_interval.arrow', Arrow)"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT v, toTypeName(v) FROM file('${DATA}/rt_interval.arrow', Arrow, 'v Variant(IntervalDay, String)') ORDER BY toString(v)"
+
+echo "--- and for Variant(Date, String) under output_format_arrow_date_as_uint16 ---"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA}/rt_date.arrow', Arrow, 'v Variant(Date, String)')
+        SETTINGS engine_file_truncate_on_insert = 1, output_format_arrow_date_as_uint16 = 1
+        SELECT if(number = 0,
+                  CAST(toDate('2022-01-08'), 'Variant(Date, String)'),
+                  CAST('text', 'Variant(Date, String)'))
+        FROM numbers(2)"
+${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_date.arrow', Arrow)"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT v, toTypeName(v) FROM file('${DATA}/rt_date.arrow', Arrow, 'v Variant(Date, String)') ORDER BY toString(v)"
+
 python3 - "${CLICKHOUSE_USER_FILES_UNIQUE}" <<'PY'
 import sys
 import pyarrow as pa
@@ -89,6 +113,11 @@ columns = {
     "uint32_date64": dense(
         [pa.array([7, 8], type=pa.uint32()),
          pa.array([19000 * 86400000, 19001 * 86400000], type=pa.date64())], ["i", "d"]),
+    # `duration[s]` decodes to `IntervalSecond`, which no conversion admits, while `int64` admits every
+    # interval kind, so the duration branch has to claim `IntervalSecond` itself. Every alternative an
+    # `int64` branch can take is numeric, hence the sibling and the suspicious-types setting below.
+    "int64_duration": dense(
+        [pa.array([7, 8], type=pa.int64()), pa.array([5, 6], type=pa.duration("s"))], ["i", "d"]),
     # Claiming its own alternative is not converting into it: a `Date32` branch stays excluded from
     # substitution and keeps the day numbers the flat column path returns, while its sibling widens.
     "uint32_date32": dense(
@@ -97,6 +126,9 @@ columns = {
     "date32_flat": pa.array([19000, 19001, 19000, 19001], type=pa.date32()),
     # Both branches can only take `UInt8`, so any assignment would put two branches on one alternative.
     "bool_uint8": dense([pa.array([True, False]), pa.array([7, 8], type=pa.uint8())], ["b", "i"]),
+    # A branch that takes an alternative beside one that takes none and is not requested either, so the
+    # repair is abandoned and the request keeps the message it reports today.
+    "bool_date32": dense([pa.array([True, False]), pa.array([19000, 19001], type=pa.date32())], ["b", "d"]),
     # A dense branch whose retained slot the decoder gathers away, so the repair never sees the value 9.
     "retained": dense([pa.array([1, 9, 2], type=pa.int8()), pa.nulls(1)], ["i", "n"],
                       offsets=pa.array([0, 0, 2, 0], type=pa.int32())),
@@ -170,6 +202,10 @@ read_column aliased_retained 'Variant(IPv6, UInt32)'
 # `session_timezone` is randomized in CI and `DateTime` renders in it, so the arm pins the zone it prints in.
 echo "--- a branch no conversion admits claims its own alternative, which disambiguates its sibling ---"
 read_column uint32_date64 'Variant(UInt64, DateTime)' Arrow "session_timezone = 'UTC'"
+echo "--- an explicitly zoned DateTime alternative is a relabel, so the branch takes it ---"
+read_column uint32_date64 "Variant(UInt64, DateTime('UTC'))"
+echo "--- and a duration branch claims the alternative its int64 sibling could otherwise take ---"
+read_column int64_duration 'Variant(IntervalSecond, Int128)' Arrow "allow_suspicious_variant_types = 1"
 echo "--- claiming it is not converting into it: an excluded branch keeps its own values ---"
 read_column uint32_date32 'Variant(UInt64, Date32)'
 echo "--- which are the values the flat column path returns for the same days ---"
@@ -188,6 +224,8 @@ echo "--- two branches may never end up on one alternative ---"
 rejected bool_uint8 'Variant(UInt8, String)'
 echo "--- an ambiguous branch gets no alternative, so this stays rejected ---"
 rejected binary_fsb 'Variant(IPv6, Int128)'
+echo "--- an unassigned branch the request does not name abandons the repair, keeping the message ---"
+rejected bool_date32 'Variant(UInt8, String)'
 echo "--- and where every branch is assigned, a value that cannot convert is reported as itself ---"
 named_error unparseable_binary_int32 'Variant(IPv6, UInt32)'
 

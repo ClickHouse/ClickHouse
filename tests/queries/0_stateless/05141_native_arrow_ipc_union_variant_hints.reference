@@ -2,6 +2,14 @@
 v	Variant(FixedString(16), String)					
 ::1	Variant(IPv6, String)
 text	Variant(IPv6, String)
+--- for Variant(IntervalDay, String), which it stores as a signed int64 ---
+v	Variant(Int64, String)					
+3	Variant(IntervalDay, String)
+text	Variant(IntervalDay, String)
+--- and for Variant(Date, String) under output_format_arrow_date_as_uint16 ---
+v	Variant(String, UInt16)					
+2022-01-08	Variant(Date, String)
+text	Variant(Date, String)
 --- union<bool, int8> as Variant(Bool, UInt8) ---
 true	Variant(Bool, UInt8)
 7	Variant(Bool, UInt8)
@@ -47,6 +55,16 @@ b	Variant(Enum8(\'a\' = 1, \'b\' = 2))
 2022-01-08 00:00:00	Variant(DateTime, UInt64)
 8	Variant(DateTime, UInt64)
 2022-01-09 00:00:00	Variant(DateTime, UInt64)
+--- an explicitly zoned DateTime alternative is a relabel, so the branch takes it ---
+7	Variant(DateTime(\'UTC\'), UInt64)
+2022-01-08 00:00:00	Variant(DateTime(\'UTC\'), UInt64)
+8	Variant(DateTime(\'UTC\'), UInt64)
+2022-01-09 00:00:00	Variant(DateTime(\'UTC\'), UInt64)
+--- and a duration branch claims the alternative its int64 sibling could otherwise take ---
+7	Variant(Int128, IntervalSecond)
+5	Variant(Int128, IntervalSecond)
+8	Variant(Int128, IntervalSecond)
+6	Variant(Int128, IntervalSecond)
 --- claiming it is not converting into it: an excluded branch keeps its own values ---
 7	Variant(Date32, UInt64)
 2022-01-08	Variant(Date32, UInt64)
@@ -82,6 +100,8 @@ Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 Cannot convert type Variant(Bool, UInt8) to Variant(String, UInt8).
 --- an ambiguous branch gets no alternative, so this stays rejected ---
 Cannot convert type Variant(FixedString(16), String) to Variant(IPv6, Int128).
+--- an unassigned branch the request does not name abandons the repair, keeping the message ---
+Cannot convert type Variant(Bool, Date32) to Variant(String, UInt8).
 --- and where every branch is assigned, a value that cannot convert is reported as itself ---
 (CANNOT_PARSE_IPV6)
 --- schema inference has no requested type, so it is unaffected ---
@@ -93,9 +113,11 @@ text_binary_int32	Variant(Int32, String)
 unparseable_binary_int32	Variant(Int32, String)					
 date32_utf8	Variant(Date32, String)					
 uint32_date64	Variant(DateTime, UInt32)					
+int64_duration	Variant(Int64, IntervalSecond)					
 uint32_date32	Variant(Date32, UInt32)					
 date32_flat	Nullable(Date32)					
 bool_uint8	Variant(Bool, UInt8)					
+bool_date32	Variant(Bool, Date32)					
 retained	Variant(Int8)					
 aliased_retained	Variant(Int32, String)					
 binary_fsb	Variant(FixedString(16), String)					

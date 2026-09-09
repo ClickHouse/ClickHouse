@@ -695,12 +695,13 @@ bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & 
 
 /// Whether a decoded `Variant` element can be repaired into a requested alternative: always its own decoded type, and
 /// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from a column decoded as
-/// `decoded`. `Bool` and `UInt8` must not accept each other's alternative even though they compare equal, otherwise
-/// both elements of `union<bool, int8>` requested as `Variant(Bool, UInt8)` stay ambiguous. A composite is never
-/// substituted, since `castColumn` pairs tuple fields by name while this walk keeps the decoded names, so a
-/// name-differing target field would be defaulted rather than rejected. `Date32` is never substituted, since whether a
-/// day number is range-checked, saturated or copied verbatim is decided by the decoder from its own hint, which this
-/// post-decode layer cannot supply.
+/// `decoded`. An `Int8` or `UInt8` element is never re-declared as `Bool`, although the two compare equal: a value
+/// outside 0/1 would then render as `true`. The reverse is allowed, since a `Bool` element only holds 0 or 1. A
+/// composite is never substituted, since `castColumn` pairs tuple fields by name while this walk keeps the decoded
+/// names, so a name-differing target field would be defaulted rather than rejected. `Date32` is never substituted,
+/// since whether a day number is range-checked, saturated or copied verbatim is decided by the decoder from its own
+/// hint, which this post-decode layer cannot supply; a decoded `UInt16` may still take `Date`, since that decode
+/// ignores every hint and every `UInt16` value is a valid day number.
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
 {
     const DataTypePtr to = ArrowIPC::stripHint(alternative);
@@ -717,12 +718,14 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
     if (from.isInt8() || from.isUInt8())
         return which.isInt8() || (which.isUInt8() && !isBool(to)) || which.isEnum8() || variantElementWidensTo(to, 1);
     if (from.isInt16() || from.isUInt16())
-        return which.isInt16() || which.isUInt16() || which.isEnum16() || variantElementWidensTo(to, 2);
+        return which.isInt16() || which.isUInt16() || which.isEnum16() || variantElementWidensTo(to, 2)
+            || (from.isUInt16() && which.isDate());
     if (from.isInt32() || from.isUInt32())
         return which.isInt32() || which.isUInt32() || variantElementWidensTo(to, 4)
             || (from.isUInt32() && (which.isIPv4() || which.isDateTime()));
     if (from.isInt64() || from.isUInt64())
-        return which.isInt64() || which.isUInt64() || variantElementWidensTo(to, 8);
+        return which.isInt64() || which.isUInt64() || variantElementWidensTo(to, 8)
+            || (from.isInt64() && which.isInterval());
     if (from.isFloat32())
         return which.isFloat32() || which.isFloat64();
     if (from.isFloat64())
@@ -741,6 +744,8 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
     if (from.isDecimal())
         return which.isDecimal();
     /// Relabelling to another scale or time zone is what the flat column path does for the same request.
+    if (from.isDateTime())
+        return which.isDateTime();
     if (from.isDateTime64())
         return which.isDateTime64();
     if (from.isTime64())
