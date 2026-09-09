@@ -227,7 +227,8 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     /// constants.
     if (typeMayContainDecimal(*constant_value_type))
     {
-        auto exact_ast = columnConstantToExactLiteralAST(constant_value.getColumn(), 0, constant_value_type);
+        auto exact_ast = columnConstantToExactLiteralAST(
+            constant_value.getColumn(), 0, constant_value_type, options.name_dynamic_member_types);
         if (!options.add_cast_for_constants)
             return exact_ast;
         /// columnConstantToExactLiteralAST already casts a scalar Decimal/DateTime64/Time64 value to its

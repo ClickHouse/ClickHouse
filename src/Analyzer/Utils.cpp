@@ -1675,16 +1675,18 @@ bool literalIdentifiesValue(const IDataType & type)
 /// from all their arguments, so named `Int64` and `UInt64` siblings have no common type unless
 /// `use_variant_as_common_type` builds a Variant, while bare literals of different widths simply widen; `tuple`
 /// types each argument independently, so its elements are named normally.
-ASTPtr nameDynamicMemberAST(ASTPtr value, const DataTypePtr & member_type, bool inside_unifying_container)
+ASTPtr nameDynamicMemberAST(ASTPtr value, const DataTypePtr & member_type, bool inside_unifying_container,
+                            bool name_dynamic_member_types)
 {
-    if (inside_unifying_container || !literalIdentifiesValue(*member_type)
+    if (!name_dynamic_member_types || inside_unifying_container || !literalIdentifiesValue(*member_type)
         || isStringOrFixedString(removeNullable(removeLowCardinality(member_type))))
         return value;
     return makeCastToTypeNameAST(std::move(value), member_type->getName());
 }
 
 ASTPtr columnConstantToExactLiteralASTImpl(
-    const ColumnPtr & column, size_t row, const DataTypePtr & type, bool inside_unifying_container)
+    const ColumnPtr & column, size_t row, const DataTypePtr & type, bool inside_unifying_container,
+    bool name_dynamic_member_types)
 {
     /// Decimal-free subtrees are serialized exactly by the default literal path, unchanged.
     if (!typeMayContainDecimal(*type))
@@ -1692,7 +1694,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(
 
     if (isColumnConst(*column))
         return columnConstantToExactLiteralASTImpl(
-            assert_cast<const ColumnConst &>(*column).getDataColumnPtr(), 0, type, inside_unifying_container);
+            assert_cast<const ColumnConst &>(*column).getDataColumnPtr(), 0, type, inside_unifying_container,
+            name_dynamic_member_types);
 
     switch (type->getTypeId())
     {
@@ -1703,7 +1706,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(
                 return make_intrusive<ASTLiteral>(Null());
             return columnConstantToExactLiteralASTImpl(
                 nullable_column.getNestedColumnPtr(), row, assert_cast<const DataTypeNullable &>(*type).getNestedType(),
-                inside_unifying_container);
+                inside_unifying_container, name_dynamic_member_types);
         }
         case TypeIndex::Decimal32:
         case TypeIndex::Decimal64:
@@ -1731,8 +1734,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(
             size_t end = offsets[row];
             ASTs elements;
             for (size_t i = start; i < end; ++i)
-                elements.push_back(
-                    columnConstantToExactLiteralASTImpl(nested_column, i, nested_type, /*inside_unifying_container=*/true));
+                elements.push_back(columnConstantToExactLiteralASTImpl(
+                    nested_column, i, nested_type, /*inside_unifying_container=*/true, name_dynamic_member_types));
             return makeASTFunctionFromList("array", std::move(elements));
         }
         case TypeIndex::Tuple:
@@ -1742,7 +1745,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(
             ASTs elements;
             for (size_t i = 0; i != element_types.size(); ++i)
                 elements.push_back(columnConstantToExactLiteralASTImpl(
-                    element_columns[i], row, element_types[i], inside_unifying_container));
+                    element_columns[i], row, element_types[i], inside_unifying_container, name_dynamic_member_types));
             return makeASTFunctionFromList("tuple", std::move(elements));
         }
         case TypeIndex::Map:
@@ -1758,9 +1761,9 @@ ASTPtr columnConstantToExactLiteralASTImpl(
             for (size_t i = start; i < end; ++i)
             {
                 elements.push_back(columnConstantToExactLiteralASTImpl(
-                    keys, i, map_type.getKeyType(), /*inside_unifying_container=*/true));
+                    keys, i, map_type.getKeyType(), /*inside_unifying_container=*/true, name_dynamic_member_types));
                 elements.push_back(columnConstantToExactLiteralASTImpl(
-                    values, i, map_type.getValueType(), /*inside_unifying_container=*/true));
+                    values, i, map_type.getValueType(), /*inside_unifying_container=*/true, name_dynamic_member_types));
             }
             return makeASTFunctionFromList("map", std::move(elements));
         }
@@ -1774,7 +1777,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(
             const auto & member_type = variant_types[global_discr];
             auto member_ast = columnConstantToExactLiteralASTImpl(
                 variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
-                inside_unifying_container);
+                inside_unifying_container, name_dynamic_member_types);
             /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
             /// literal does not keep the member type (a `Point` is inferred back as `Tuple(Float64, Float64)`,
             /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. This mirrors the
@@ -1798,8 +1801,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(
                 return nameDynamicMemberAST(
                     columnConstantToExactLiteralASTImpl(
                         variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
-                        member_type, inside_unifying_container),
-                    member_type, inside_unifying_container);
+                        member_type, inside_unifying_container, name_dynamic_member_types),
+                    member_type, inside_unifying_container, name_dynamic_member_types);
             }
 
             /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
@@ -1812,8 +1815,9 @@ ASTPtr columnConstantToExactLiteralASTImpl(
             tmp_column->reserve(1);
             decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
             return nameDynamicMemberAST(
-                columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, inside_unifying_container),
-                decoded_type, inside_unifying_container);
+                columnConstantToExactLiteralASTImpl(
+                    std::move(tmp_column), 0, decoded_type, inside_unifying_container, name_dynamic_member_types),
+                decoded_type, inside_unifying_container, name_dynamic_member_types);
         }
         case TypeIndex::Object:
         {
@@ -1832,9 +1836,11 @@ ASTPtr columnConstantToExactLiteralASTImpl(
 
 }
 
-ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type)
+ASTPtr columnConstantToExactLiteralAST(
+    const ColumnPtr & column, size_t row, const DataTypePtr & type, bool name_dynamic_member_types)
 {
-    return columnConstantToExactLiteralASTImpl(column, row, type, /*inside_unifying_container=*/false);
+    return columnConstantToExactLiteralASTImpl(
+        column, row, type, /*inside_unifying_container=*/false, name_dynamic_member_types);
 }
 
 ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name)

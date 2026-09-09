@@ -77,6 +77,11 @@ struct ConvertToASTOptions
     /// Add _CAST if constant literal type is different from column type
     bool add_cast_for_constants = true;
 
+    /// Name the active member type of a `Dynamic` constant, so a ClickHouse shard rebuilds the
+    /// subtype the initiator held. An external database has no `Dynamic`: it reads the literal as
+    /// text, so a named member changes which rows its predicate selects.
+    bool name_dynamic_member_types = true;
+
     bool use_source_expression_for_constants = false;
 
     /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
