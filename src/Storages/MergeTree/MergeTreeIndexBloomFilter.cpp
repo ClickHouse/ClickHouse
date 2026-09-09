@@ -251,6 +251,20 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
     return info;
 }
 
+/// A `FixedString(N)` map key is stored zero-padded to N bytes, and the index holds the hash of those N
+/// bytes, so a subscript of fewer bytes names that same key only once padded. A longer subscript is no key
+/// the map can hold: it is left unpadded, and hashing its own bytes finds no granule, which is the answer
+/// the map subscript gives for it.
+Field padMapKeyFieldForIndex(const Field & key_field, const DataTypePtr & index_element_type)
+{
+    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(index_element_type.get());
+    if (!fixed_string_type || key_field.getType() != Field::Types::String
+        || key_field.safeGet<String>().size() >= fixed_string_type->getN())
+        return key_field;
+
+    return convertFieldToType(key_field, *index_element_type);
+}
+
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` and resolve it
 /// against the bloom filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
@@ -709,7 +723,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), map_info->key_field)));
+            const Field key_field = padMapKeyFieldForIndex(map_info->key_field, actual_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), key_field)));
         }
         else if (map_info->has_values_index)
         {
@@ -1217,6 +1232,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
+            if (map_info->has_keys_index)
+                const_value = padMapKeyFieldForIndex(const_value, actual_type);
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
 
             return true;

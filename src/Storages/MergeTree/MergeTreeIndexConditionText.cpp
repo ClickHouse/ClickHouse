@@ -33,6 +33,7 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -1713,6 +1714,17 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                     return false;
 
                 key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+
+                /// The index tokenizes a `FixedString(N)` key from all N stored bytes, so a shorter
+                /// subscript names that same key only once padded to N. A longer subscript is no key the
+                /// map can hold, so leaving it unpadded lets a granule without it still be pruned.
+                const auto & indexed_keys_type = header.getByName(fmt::format("mapKeys({})", required_column.name)).type;
+                if (const auto * keys_array_type = typeid_cast<const DataTypeArray *>(indexed_keys_type.get()))
+                {
+                    if (const auto * fixed_key_type = typeid_cast<const DataTypeFixedString *>(keys_array_type->getNestedType().get()))
+                        if (key_const_value->size() < fixed_key_type->getN())
+                            key_const_value->resize(fixed_key_type->getN(), '\0');
+                }
             }
             else
             {

@@ -1,0 +1,19 @@
+S1 key column, zero-tailed subscript	7	7
+S2 constant subscript, no subcolumn rewrite	7	7
+S3 control, exact width	7	7
+S4 control, non-zero tail	0	0
+S5 control, wider than N, constant	0
+S5 control, wider than N, non-constant	0
+S6 control, subcolumn rewrite still fires	1
+S7 LowCardinality key column	7	7
+S8 LowCardinality dictionary lookup	7	7
+S9 control, String key stays exact-length	0	0
+S10 bloom_filter, indexed count matches unindexed	8	8
+S11 control, bloom_filter still prunes an absent key	0
+S12 control, bloom_filter used for an exact-width key	8
+S13 text index, indexed count matches unindexed	8	8
+S14 control, text index still prunes an absent key	0
+S15 control, text index used for a paddable key	8
+S16 bloom_filter over LowCardinality key, indexed matches unindexed	8	8
+S17 text index over LowCardinality key, indexed matches unindexed	8	8
+S18 control, text index over LowCardinality key still prunes an absent key	0
