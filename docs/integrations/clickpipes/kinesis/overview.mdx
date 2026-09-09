@@ -37,7 +37,7 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
 
 5. Select the Kinesis stream, **Data format**, and starting offset. For `Protobuf`, upload a `.proto` file or serialized `FileDescriptorSet` (maximum 768 KiB). No schema registry is required.
 
-   The UI will display a sample document from the selected stream. You can also enable Enhanced Fan-out for Kinesis streams to improve the performance and stability of your ClickPipe (More information on Enhanced Fan-out can be found [here](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+   The UI displays sample data from the selected stream. **Use Kinesis Enhanced Fan-Out** is enabled by default. See the [Amazon Kinesis documentation](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) for details.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Set data format and topic" size="lg" border/>
 
@@ -168,13 +168,7 @@ If you have specific low-latency requirements, please [contact us](https://click
 
 ### Active Shards {#active-shards}
 
-We strongly recommend limiting the number concurrently active shards to match your throughput requirements.  For an "On Demand" Kinesis stream, AWS will automatically assign a matching number of shards based on throughput,
-but for "Provisioned" streams, provisioning too many shards can cause latency as described below, plus have increased costs because Kinesis pricing for such streams is on a "per shard" basis.
-
-If your producer application writes continuously to a large number of active shards, this can cause latency if your pipe isn't scaled high enough to efficiently process those shards.  Based on Kinesis throughput limits,
-ClickPipes assigns a specific number of "workers" per replica to read shard data.  For example, at the smallest size, a ClickPipes replica will have 4 of these worker threads.  If the producer is writing
-to more than 4 shards at the same time, data won't be processed from the "extra" shards until a worker thread is available.  In particular, if the pipe is using "enhanced fanout", each worker thread will subscribe to a
-single shard for 5 minutes, and is unavailable to read any other shard during that time.  This can cause latency "spikes" of 5 minute multiples.
+A large number of active shards can reduce ClickPipe throughput if the ClickPipe isn't [scaled](#scaling) to handle them.
 
 ### Scaling {#scaling}
 
