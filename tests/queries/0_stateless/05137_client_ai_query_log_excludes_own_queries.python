@@ -3,15 +3,23 @@
 # lookups as what the user wanted. The `log_comment` marker cannot carry that on its own - it is a
 # setting, so a session that accepts no setting change leaves every query of the agent unmarked,
 # and this tool deliberately reaches back into earlier sessions. The queries the agent runs
-# internally therefore also run under a marked query id, which no session can take away.
+# internally therefore also run under a query id starting with `clickhouse-ai-agent-`, which no
+# session can take away.
 #
-# Two `clickhouse-local` sessions over one `--path`, so the query log of the first is history for
-# the second. The first has a settings profile that makes `log_comment` `const`, so the agent works
-# there without the marker (and without this tool); the second has none, so the tool is offered and
-# must return the query of the user from the first session and none of the agent's own.
+# Two independent sessions, each checking its own half:
+#  - one whose settings profile holds `log_comment` `const`, so the agent works there without that
+#    marker, asserting that its internal queries reach the query log without the `log_comment`
+#    marker and with the query-id one - the state an earlier session used to leave behind
+#    indistinguishable from the history of the user;
+#  - one with no such profile, where the tool is offered, asserting that it returns the query of
+#    the user and none of the agent's own.
+#
+# The query log of `clickhouse-local` does not outlive the process (the `system` database keeps no
+# metadata under `--path`), so each session checks what it produced itself.
 import json
 import os
 import pty
+import re
 import select
 import shlex
 import threading
@@ -34,50 +42,80 @@ client_gone = False
 
 FINAL_ANSWER = "MOCK-DONE"
 
-# The query the user types in the first session. It must come back from `read_query_log` in the
-# second one: what is being tested is that the agent's own queries are filtered out, not that
-# everything is.
-USER_QUERY = "SELECT 'user-typed-4f2a9c' AS marker"
+# The query the user types. It must reach the log carrying neither marker, and come back from
+# `read_query_log`: what is being tested is that the agent's own queries are filtered out, not
+# that everything is.
+USER_QUERY_MARKER = "user-typed-4f2a9c"
+USER_QUERY = f"SELECT '{USER_QUERY_MARKER}' AS marker"
 
-# Substrings of the queries the agent runs on its own. None of them may come back as user history:
-# the schema probe of `list_tables`, the documentation lookup, the probe that asks whether the
-# `log_comment` marker may be attached at all, and the read of the log itself. A query with
-# parameters reaches the query log re-formatted from its AST, with the parameters substituted, so
-# these are fragments of the formatted text rather than of what the client sent.
-ASSISTANT_QUERY_FRAGMENTS = [
-    "system.tables",
-    "system.documentation",
-    "'log_comment'",
-    "system.user_query_log",
-]
+# `system.documentation` is only ever read by the agent (the `consult_documentation` tool and the
+# `help` command), so it identifies the agent's internal traffic in the log.
+AGENT_QUERY_PATTERN = "%system.documentation%"
 
-# What the mock provider asks for, per session. The first session exercises the tools that run
-# internally; the second one reads the log back.
-SESSION_1_CALLS = [
+# What the mock provider asks for. The first turn exercises the tools that run internally; a
+# second turn, if the session has one, reads the log back - by then the queries of the first turn
+# have been flushed into it, which is what makes the exclusion worth asserting.
+INTERNAL_TOOL_CALLS = [
     ("list_tables", {"database": "default"}),
     ("consult_documentation", {"name": "MergeTree"}),
 ]
-SESSION_2_CALLS = [
+READ_QUERY_LOG_CALLS = [
     ("read_query_log", {"limit": 100}),
 ]
 
-# The last request each session's mock provider received: it carries the results of every tool call
-# and the tools the agent offered for the call.
+
+def plan_for_turn(user_turns):
+    """The tool calls the model has made by the end of turn `user_turns`, cumulative: the
+    conversation of the agent persists across `?` invocations, so the provider sees the calls of
+    the earlier turns in the history of the later ones."""
+    if user_turns <= 1:
+        return INTERNAL_TOOL_CALLS
+    return INTERNAL_TOOL_CALLS + READ_QUERY_LOG_CALLS
+
+# The four answers the probe query below returns, in order. Printed as its own line each, so a
+# failure names which of them went wrong.
+PROBE_ANSWERS = [
+    "agent_internal_queries_are_logged",
+    "agent_internal_queries_carry_the_log_comment_marker",
+    "agent_internal_queries_carry_the_query_id_marker",
+    "user_query_carries_neither_marker",
+]
+
+# The sentinel is split so that the query the client echoes back does not match the answer line:
+# the echo contains the text of the query, quotes and `||` included, and the answer does not.
+PROBE_SENTINEL = "PROBE-9b71c4"
+PROBE_QUERY = (
+    "WITH query LIKE '{agent}' AS is_agent_internal, "
+    "query LIKE '%{user}%' AS is_user_typed, "
+    "log_comment = 'clickhouse-ai-agent' AS has_log_comment_marker, "
+    "startsWith(query_id, 'clickhouse-ai-agent-') AS has_query_id_marker "
+    "SELECT 'PROBE' || '-9b71c4:'"
+    " || ' ' || if(countIf(is_agent_internal) > 0, 'yes', 'no')"
+    " || ' ' || if(countIf(is_agent_internal AND has_log_comment_marker) > 0, 'yes', 'no')"
+    " || ' ' || if(countIf(is_agent_internal AND NOT has_query_id_marker) = 0, 'yes', 'no')"
+    " || ' ' || if(countIf(is_user_typed AND (has_log_comment_marker OR has_query_id_marker)) = 0, 'yes', 'no')"
+    " FROM system.user_query_log WHERE type != 'QueryStart' FORMAT TSVRaw"
+).format(agent=AGENT_QUERY_PATTERN, user=USER_QUERY_MARKER)
+
+# The last request the mock provider received: it carries the results of every tool call and the
+# tools the agent offered for the call.
 last_request = {}
 
 
-def make_handler(calls):
+def make_handler():
     class Handler(BaseHTTPRequestHandler):
         """A mock OpenAI-compatible provider. It answers with one tool call per case, in order,
-        and finishes with a plain text message."""
+        and finishes each turn with a plain text message."""
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length", 0))
             request = json.loads(self.rfile.read(length))
             last_request["value"] = request
 
-            # The number of tool calls already made is the number of tool results in the history.
+            # The number of tool calls already made is the number of tool results in the history,
+            # and the number of turns is the number of questions in it.
             done = sum(1 for m in request["messages"] if m.get("role") == "tool")
+            calls = plan_for_turn(sum(1 for m in request["messages"] if m.get("role") == "user"))
             if done < len(calls):
                 name, arguments = calls[done]
                 message = {
@@ -87,7 +125,10 @@ def make_handler(calls):
                         {
                             "id": f"call_{name}",
                             "type": "function",
-                            "function": {"name": name, "arguments": json.dumps(arguments)},
+                            "function": {
+                                "name": name,
+                                "arguments": json.dumps(arguments),
+                            },
                         }
                     ],
                 }
@@ -132,9 +173,12 @@ def make_config(port, session, const_log_comment):
     using an API key found there."""
     base = os.path.join(
         os.environ["CLICKHOUSE_TMP"],
-        os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + f".{session}",
+        os.path.basename(os.path.abspath(__file__)).removesuffix(".python")
+        + f".{session}",
     )
 
+    # `const` on `log_comment` alone leaves the session otherwise writable, which is the state the
+    # agent cannot mark its queries in and the `readonly` setting does not show.
     constraints = (
         "<constraints><log_comment><const/></log_comment></constraints>"
         if const_log_comment
@@ -233,14 +277,15 @@ def report_client_if_gone(child_pid, session):
         print(f"client_gone: session {session}, yes")
 
 
-def run_session(session, calls, const_log_comment, statements, post_statements, db_path, debug_log_fd):
-    """One `clickhouse-local` session: run the statements, then one `?` turn, then the statements
-    that have to follow it, and return the last request the mock provider saw."""
+def run_session(session, turns, const_log_comment, probe, debug_log_fd):
+    """One `clickhouse-local` session: type the query of the user, then run the given turns - each
+    a question and the statements that follow it - and finally, if asked, flush the log and run the
+    probe query over it. Returns the last request the mock provider saw and the probe answers."""
     global client_gone
     client_gone = False
     last_request.clear()
 
-    server = HTTPServer(("127.0.0.1", 0), make_handler(calls))
+    server = HTTPServer(("127.0.0.1", 0), make_handler())
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
     base = shlex.split(os.environ["CLICKHOUSE_LOCAL"])
@@ -249,12 +294,11 @@ def run_session(session, calls, const_log_comment, statements, post_statements, 
         make_config(server.server_port, session, const_log_comment),
         "--history_file=/dev/null",
         # The suggestion query of the client reads `system.tables` and `system.settings` among
-        # others, unmarked, because it is not a query of the agent. It is the user's client asking,
-        # so the log is right to keep it - but it would look like the agent's own traffic to the
-        # assertions below.
+        # others, unmarked, because it is the user's client asking rather than the agent. The log
+        # is right to keep it, and it has no business in what is asserted here.
         "--disable_suggestion",
         "--path",
-        db_path,
+        os.path.join(os.environ["CLICKHOUSE_TMP"], f"05137_local_db_{session}"),
     ]
 
     child_pid, master = pty.fork()
@@ -264,7 +308,7 @@ def run_session(session, calls, const_log_comment, statements, post_statements, 
         os.environ.pop("OPENAI_API_KEY", None)
         os.environ.pop("ANTHROPIC_API_KEY", None)
         os.execv(base[0], argv)
-        return {}
+        return {}, []
 
     try:
         read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
@@ -274,20 +318,35 @@ def run_session(session, calls, const_log_comment, statements, post_statements, 
         # being typed, so it is already there before the statement has run, and `replxx` submits
         # everything that is buffered when it starts reading as a single statement - the question
         # that follows would be merged into the setup and the `?` would never start the agent.
-        for statement in statements:
-            os.write(master, statement.encode() + b"\n")
-            read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
+        os.write(master, USER_QUERY.encode() + b"\n")
+        read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
 
-        os.write(master, b"? look around\n")
-        read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+        for question, statements in turns:
+            os.write(master, question.encode() + b"\n")
+            read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+            for statement in statements:
+                os.write(master, statement.encode() + b"\n")
+                read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
         request = last_request.get("value", {})
         report_client_if_gone(child_pid, session)
 
-        for statement in post_statements:
-            os.write(master, statement.encode() + b"\n")
+        answers = []
+        if probe:
+            # The flush is explicit, so what the probe reads does not depend on the flush interval.
+            os.write(master, b"SYSTEM FLUSH LOGS\n")
             read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
 
-        return request
+            os.write(master, PROBE_QUERY.encode() + b"\n")
+            output = read_until(
+                master,
+                debug_log_fd,
+                lambda o: re.search(PROBE_SENTINEL + r":( \w+)+", o) is not None,
+                TIMEOUT_SECONDS,
+            )
+            found = re.search(PROBE_SENTINEL + r":((?: \w+)+)", output)
+            answers = found.group(1).split() if found else []
+
+        return request, answers
     finally:
         os.write(master, b"exit\n")
         drain(master, debug_log_fd, 1.0)
@@ -308,34 +367,36 @@ def tool_results(request):
 
 
 def main():
-    db_path = os.path.join(os.environ["CLICKHOUSE_TMP"], "05137_local_db")
     debug_log_fd = open(DEBUG_LOG, "a")
     try:
-        # The first session leaves both a query of the user and the agent's own queries in the log,
-        # the agent's without the `log_comment` marker. The flush runs after the turn, because the
-        # queries of the turn are what has to reach the log, and it makes what the second session
-        # reads independent of the flush interval and of the shutdown of this one.
-        first = run_session(
+        # A session that cannot attach the `log_comment` marker: the tool that reads the log is not
+        # offered there, and what the agent leaves in the log is what a later session would read.
+        first, answers = run_session(
             session=1,
-            calls=SESSION_1_CALLS,
+            turns=[("? look around", [])],
             const_log_comment=True,
-            statements=[USER_QUERY],
-            post_statements=["SYSTEM FLUSH LOGS"],
-            db_path=db_path,
+            probe=True,
             debug_log_fd=debug_log_fd,
         )
         print(
             "session_1_read_query_log_offered: "
             f"{'yes' if 'read_query_log' in offered_tools(first) else 'no'}"
         )
+        if len(answers) != len(PROBE_ANSWERS):
+            print(f"probe_answers: {answers}")
+        else:
+            for name, answer in zip(PROBE_ANSWERS, answers):
+                print(f"{name}: {answer}")
 
-        second = run_session(
+        # A session that can: the tool is offered, and it must return the query of the user and
+        # none of the agent's own.
+        # The flush between the turns is what makes the second one meaningful: the queries of the
+        # first turn are in the log by then, so the tool has something to exclude.
+        second, _ = run_session(
             session=2,
-            calls=SESSION_2_CALLS,
+            turns=[("? look around", ["SYSTEM FLUSH LOGS"]), ("? what did I run", [])],
             const_log_comment=False,
-            statements=[],
-            post_statements=[],
-            db_path=db_path,
+            probe=False,
             debug_log_fd=debug_log_fd,
         )
         print(
@@ -344,10 +405,9 @@ def main():
         )
 
         history = tool_results(second).get("call_read_query_log", "")
-        print(f"user_query_is_returned: {'yes' if 'user-typed-4f2a9c' in history else 'no'}")
-        returned = [fragment for fragment in ASSISTANT_QUERY_FRAGMENTS if fragment in history]
-        if returned:
-            print(f"assistant_queries_are_returned: {returned} in {history[:2000]}")
+        print(f"user_query_is_returned: {'yes' if USER_QUERY_MARKER in history else 'no'}")
+        if "system.documentation" in history or "system.tables" in history:
+            print(f"assistant_queries_are_returned: yes, in {history[:2000]}")
         else:
             print("assistant_queries_are_returned: no")
     finally:
