@@ -110,6 +110,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_columns_in_data_file",
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
+    "upload_checksum_algorithm",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -125,9 +126,14 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
 
 String StorageS3Configuration::getDataSourceDescription() const
 {
+    return getDataSourceDescriptionForNamespace(url.bucket);
+}
+
+String StorageS3Configuration::getDataSourceDescriptionForNamespace(const String & object_namespace) const
+{
     /// A separator between host and port is required: without it, e.g. host "a1" port 23 and
     /// host "a12" port 3 both normalize to "a123", aliasing two distinct endpoints.
-    return std::filesystem::path(url.uri.getHost() + ":" + std::to_string(url.uri.getPort())) / url.bucket;
+    return std::filesystem::path(url.uri.getHost() + ":" + std::to_string(url.uri.getPort())) / object_namespace;
 }
 
 std::string StorageS3Configuration::getPathInArchive() const

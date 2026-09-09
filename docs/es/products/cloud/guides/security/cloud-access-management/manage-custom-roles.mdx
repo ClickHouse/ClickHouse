@@ -82,9 +82,17 @@ Además de los permisos de la consola, los roles personalizados pueden incluir p
 
 Al añadir permisos de datos a un rol personalizado, ClickHouse Cloud crea un rol correspondiente en cada servicio seleccionado con el prefijo `cloud:`. Por ejemplo, un rol personalizado llamado `readonly` aparece en la base de datos como `cloud:readonly`. Los miembros del rol personalizado reciben estos permisos de base de datos al conectarse al servicio mediante la autenticación sin contraseña de SQL Console.
 
-<Info>
-  Los roles asignados manualmente en la base de datos mediante la [convención de nomenclatura `sql-console-role:<email>`](/es/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) tienen prioridad sobre los roles asignados mediante la consola.
-</Info>
+<Tip>
+  Los roles de base de datos administrados por Cloud sustituyen los roles [`sql-console-role:<email>`](/es/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) asignados manualmente, que no son compatibles con la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### Requisitos previos
+</div>
+
+Los roles personalizados de base de datos en un servicio dependen de la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) y no se aplican mientras esté deshabilitada. Antes de añadir permisos de datos a un rol, vaya al servicio, abra `Settings` y busque la tarjeta `JWT authentication` en la sección `Security`. Asegúrese de que el interruptor `SQL Console` esté habilitado.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Tarjeta de autenticación con JWT con el interruptor SQL Console habilitado" size="lg" force />
 
 <Steps>
   <Step title="Añadir permisos de datos a un rol" id="add-data-permissions">
@@ -92,17 +100,17 @@ Al añadir permisos de datos a un rol personalizado, ClickHouse Cloud crea un ro
   </Step>
 
   <Step title="Seleccionar el servicio" id="select-data-permissions-service">
-    Seleccione el servicio al que se aplicarán los permisos. Añada más servicios para aplicar permisos a varios servicios.
+    Seleccione el servicio al que se aplicarán los permisos. Añada más servicios para aplicar los mismos permisos `Read-only` o `Admin` a varios servicios.
   </Step>
 
   <Step title="Elegir el nivel de acceso" id="choose-data-access-level">
-    Seleccione el acceso `Read-only`, `Admin` o `Custom`. Con el acceso `Custom`, defina permisos específicos de acceso a datos mediante sentencias [`GRANT`](/es/reference/statements/grant) de ClickHouse.
+    Seleccione el acceso `Read-only`, `Admin` o `Custom`. Con el acceso `Custom`, defina permisos específicos de acceso a datos mediante sentencias [`GRANT`](/es/reference/statements/grant) de ClickHouse. El acceso `Custom` solo puede seleccionarse cuando los permisos se aplican a un único servicio; para definir permisos personalizados para varios servicios, añada un permiso `Data` independiente para cada servicio.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Cuadro de diálogo para crear un rol con permisos de datos definidos mediante sentencias GRANT personalizadas" size="md" />
   </Step>
 
   <Step title="Crear el rol" id="create-role-with-data-permissions">
-    Haga clic en `Create role`. Los roles de base de datos se crearán en los servicios seleccionados.
+    Haga clic en `Create role`. Los roles de base de datos se crearán en los servicios seleccionados. Los roles pueden tardar hasta 10 minutos en propagarse a un servicio, pero los usuarios a los que se asigne el rol recibirán sus permisos inmediatamente al consultar el servicio.
   </Step>
 </Steps>
 
@@ -110,7 +118,7 @@ Al añadir permisos de datos a un rol personalizado, ClickHouse Cloud crea un ro
   ### Verificar roles de base de datos
 </div>
 
-Los roles administrados mediante la consola se crean en la base de datos con el prefijo `cloud:` y el tipo de almacenamiento `cloud`. Para listarlos, consulte la tabla `system.roles` del servicio:
+Los roles administrados mediante la consola se crean en la base de datos con el prefijo `cloud:` y el tipo de almacenamiento `cloud`, y pueden tardar hasta 10 minutos en aparecer después de su creación. Para listarlos, consulte la tabla `system.roles` del servicio:
 
 ```sql
 SELECT * FROM system.roles;

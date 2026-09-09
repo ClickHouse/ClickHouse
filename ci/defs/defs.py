@@ -32,10 +32,9 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
-    MACOS_ARM_SMALL = ["self-hosted", "macos_m2"]
-    MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
-    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
-    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    MACOS_ARM_SMALL = ["self-hosted", "macos-m2"]
+    AMD_TINY = ["self-hosted", "amd-tiny"]
+    ARM_TINY = ["self-hosted", "arm-tiny"]
     RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
@@ -49,12 +48,25 @@ BASE_BRANCH = "master"
 azure_secret = Secret.Config(
     name="azure_connection_string",
     type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
 )
 
 SECRETS = [
     Secret.Config(
+        name="clickhouse-dockerhub-registry",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-connection",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    #TODO: remove
+    Secret.Config(
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
@@ -85,6 +97,23 @@ SECRETS = [
     Secret.Config(
         name="/github-app/clickhouse-gh.installation_id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
+    ),
+]
+
+# Push-only secrets: consumed by the loom code.refresh pre_hook, which runs
+# only in MasterCI and ReleaseBranchCI. Kept out of the shared SECRETS list
+# so untrusted lanes (pull_request, backport) never register them and PR
+# code cannot resolve the loom writer token via Info.get_secret.
+LOOM_SECRETS = [
+    Secret.Config(
+        name="loom-url",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="loom-ci-token",
+        type=Secret.Type.AWS_SSM_PARAMETER,
         region="us-east-1",
     ),
 ]
@@ -439,6 +468,7 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    LIBFUZZER_CORPUS_MINIMIZATION = "libFuzzer corpus minimization"
     PARSER_MEMORY_CHECK = "Parser memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"

@@ -10,8 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/zh/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-数据库备份可作为一道安全保障：如果因任何不可预见的原因导致数据丢失，便可通过最近一次成功备份将服务恢复到之前的状态。
-这能最大限度地缩短停机时间，并避免业务关键数据永久丢失。
+数据库备份旨在支持您通过最近一次成功备份将服务恢复到之前的状态。
 
 <div id="backups">
   ## 备份
@@ -34,8 +33,7 @@ ClickHouse Cloud 备份由“全量备份”和“增量备份”共同组成，
 </div>
 
 在基础版、Scale 和 Enterprise 层级中，备份会单独计量和计费，不包含在存储费用内。
-所有服务默认每天备份一次；从 Scale 层级开始，还可通过 Cloud 控制台的 Settings 选项卡配置更多备份。
-每个备份至少保留 24 小时。
+目前，服务默认每天备份一次，保留 24 小时。备份配置可能因服务和协议而异。
 
 更多详情，请参阅[&quot;查看和恢复备份&quot;](/zh/products/cloud/guides/backups/review-and-restore-backups)。
 
@@ -64,8 +62,8 @@ ClickHouse Cloud 支持为 **Scale** 和 **Enterprise** 层级的服务配置备
 </div>
 
 ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) 账户存储 (AWS S3、Google Cloud Storage 或 Azure Blob 存储) 。
-如果您将备份配置到自己的存储桶，ClickHouse Cloud 仍会每天将备份保存到其自己的存储桶中。
-这样做是为了确保当您存储桶中的备份损坏时，我们至少还有一份数据副本可供恢复。
+如果您将备份配置到自己的存储桶，ClickHouse Cloud 默认也会继续创建自己的备份。
+
 有关 ClickHouse Cloud 备份工作机制的详细信息，请参阅 [backups](/zh/products/cloud/guides/backups/review-and-restore-backups) 文档。
 
 本指南将介绍如何将备份导出到您的 AWS、GCP 和 Azure 对象存储，以及如何将您账户中的这些备份恢复到新的 ClickHouse Cloud 服务。
@@ -81,7 +79,7 @@ ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) �
   目前，我们不支持对使用 [透明数据加密 (TDE)](/zh/products/cloud/guides/security/cmek#transparent-data-encryption-tde) 的服务或受监管服务进行备份/恢复。
 </Info>
 
-有关如何对 AWS、GCP、Azure 对象存储执行完整备份和增量备份，以及如何从这些备份中恢复的示例，请参阅[“将备份导出到您自己的 Cloud 账户”](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)。
+有关如何对 AWS、GCP、Azure 对象存储执行全量备份和增量备份，以及如何从这些备份中恢复的示例，请参阅[“将备份导出到您自己的 Cloud 账户”](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)。
 
 <div id="backup-options">
   ### 备份选项

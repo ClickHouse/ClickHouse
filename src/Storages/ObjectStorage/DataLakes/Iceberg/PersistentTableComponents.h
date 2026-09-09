@@ -44,6 +44,9 @@ struct PersistentTableComponents
     const IcebergPathResolver path_resolver;
     /// Canonical identity of the physical storage this table lives on, see `TableStorageIdentity`.
     const TableStorageIdentity table_identity;
+    /// True when the resolver works against a table root deeper than `table_path`. Operations scoped
+    /// to `table_path` then reach outside this table, so they must refuse to run.
+    const bool table_root_was_derived;
 
     /// Invalidate the cached latest-metadata selection for this table, keyed by `table_path`
     /// namespaced by `table_identity.data_source_description` via
