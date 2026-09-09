@@ -571,6 +571,8 @@ The `transform` function does not work with `NULL`.
 SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
 ```
 
+The composition reads left to right: the value flows through the operands in the order they are written, so `f | g` means `g(f(x))` and `f | g | h` means `h(g(f(x)))`. This is the direction of the shell pipe and of the C++ ranges `|`, which is why the same glyph is used. It is the opposite of the mathematical `∘` and of Haskell's `.`, where `g . f` applies `f` first; the left-to-right equivalents in those languages are spelled `>>>` or `>>`.
+
 Each operand can be a lambda, the name of a function, another composition, or an expression with argument placeholders. The placeholders turn an expression into a lambda: `_1`, `_2`, ... refer to the first, second, ... lambda argument and may be used at any depth of the expression, and the largest placeholder number determines the number of arguments. The anonymous placeholder `_` introduces one argument per occurrence, in the order of occurrence, and must be a direct argument of a function call. For example, `plus(_, 1)` and `plus(_1, 1)` both mean `x -> plus(x, 1)`.
 
 Placeholders can also be used without the composition operator in the lambda position of a higher-order function: `arrayMap(_1 * 2 + 1, [1, 2, 3])`. Names bound in the query take priority over placeholders, so a column, an alias, or a lambda bound with `WITH` named `_1` keeps its meaning.
