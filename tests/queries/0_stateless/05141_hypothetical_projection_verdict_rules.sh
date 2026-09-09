@@ -86,6 +86,12 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_co ON t_co INDEX b TYPE commit_order;
     EXPLAIN WHATIF SELECT count() FROM t_co WHERE b = 42 SETTINGS ${PIN};
 " | grep -E '^\s+reason:' | awk '{$1=$1; print}'
+# the query form of the same thing gets the same reason
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_qco ON t_co
+        (SELECT b, _block_number, _block_offset ORDER BY (_block_number, _block_offset));
+    EXPLAIN WHATIF SELECT count() FROM t_co WHERE b = 42 SETTINGS ${PIN};
+" | grep -E '^\s+reason:' | awk '{$1=$1; print}'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_co;"
 
 echo "--- projections disabled by the query ---"

@@ -30,8 +30,8 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PartDirIntent.h>
-#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexCommitOrder.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
@@ -553,11 +553,17 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    if (projection->index && projection->index->getName() == ProjectionIndexCommitOrder::name)
+    /// both `TYPE commit_order` and its query form order by these, so name the surface instead of the type
+    for (const auto & required : proj_key.expression->getRequiredColumns())
     {
-        result.not_applicable_reason
-            = "EXPLAIN WHATIF does not estimate `TYPE commit_order` projections yet, their key is the commit order itself";
-        return result;
+        if (required == BlockNumberColumn::name || required == BlockOffsetColumn::name)
+        {
+            result.not_applicable_reason = fmt::format(
+                "Projection orders by the commit order ({}, {}), which EXPLAIN WHATIF does not estimate yet",
+                backQuote(BlockNumberColumn::name),
+                backQuote(BlockOffsetColumn::name));
+            return result;
+        }
     }
 
     /// the scan reads what the projection stores, so a key over a virtual column has no source there

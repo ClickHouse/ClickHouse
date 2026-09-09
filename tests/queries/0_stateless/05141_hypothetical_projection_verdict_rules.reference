@@ -19,7 +19,8 @@ _part_offset = 7: with Granules: 1, without Granules: 1, from projection 0
 b = 42 AND _part_offset = 7: with Granules: 1, without Granules: 1, from projection 0
 b = 42: with Granules: 1, without Granules: 10, from projection 1
 --- a commit_order projection is not estimated ---
-reason: EXPLAIN WHATIF does not estimate `TYPE commit_order` projections yet, their key is the commit order itself
+reason: Projection orders by the commit order (`_block_number`, `_block_offset`), which EXPLAIN WHATIF does not estimate yet
+reason: Projection orders by the commit order (`_block_number`, `_block_offset`), which EXPLAIN WHATIF does not estimate yet
 --- projections disabled by the query ---
 reason: Projections are disabled by `optimize_use_projections = 0`
 --- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
