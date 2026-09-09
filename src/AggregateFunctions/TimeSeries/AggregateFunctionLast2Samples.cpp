@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_series_aggregate_functions;
+    extern const SettingsBool enable_time_series_aggregate_functions;
 }
 namespace
 {
@@ -81,10 +81,10 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
 
 AggregateFunctionPtr createAggregateFunctionLast2Samples(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0)
+    if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0)
         throw Exception(
             ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
+            "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
             name);
 
     assertBinary(name, argument_types);
@@ -124,7 +124,7 @@ Aggregate function that takes time series data as pairs of timestamps and values
 The aggregated table stores only last 2 values for each aligned timestamp. This allows to calculate PromQL-like `irate` and `idelta` by reading much less data then is stored in the raw table.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesLastTwoSamples = R"(
@@ -139,8 +139,10 @@ timeSeriesLastTwoSamples(timestamp, value)
     {
         "Example table for raw data, and a table for storing re-sampled data",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
+DROP TABLE IF EXISTS t_raw_timeseries;
+
 CREATE TABLE t_raw_timeseries
 (
     metric_id UInt64,
@@ -151,6 +153,8 @@ ENGINE = MergeTree()
 ORDER BY (metric_id, timestamp);
 
 -- Table with data re-sampled to bigger (15 sec) time steps
+DROP TABLE IF EXISTS t_resampled_timeseries_15_sec;
+
 CREATE TABLE t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -161,6 +165,8 @@ ENGINE = AggregatingMergeTree()
 ORDER BY (metric_id, grid_timestamp);
 
 -- MV for populating re-sampled table
+DROP VIEW IF EXISTS mv_resampled_timeseries;
+
 CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -183,35 +189,37 @@ FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN '2024-12-12 12:00:12' AND '2024-12-12 12:00:31'
 ORDER BY metric_id, timestamp;
         )",
-        R"(
-3    2024-12-12 12:00:12.870    29
-3    2024-12-12 12:00:13.770    8
-3    2024-12-12 12:00:14.670    19
-3    2024-12-12 12:00:15.570    30
-3    2024-12-12 12:00:16.470    9
-3    2024-12-12 12:00:17.370    20
-3    2024-12-12 12:00:18.270    2
-3    2024-12-12 12:00:19.170    10
-3    2024-12-12 12:00:20.070    21
-3    2024-12-12 12:00:20.970    3
-3    2024-12-12 12:00:21.870    11
-3    2024-12-12 12:00:22.770    22
-3    2024-12-12 12:00:23.670    4
-3    2024-12-12 12:00:24.570    12
-3    2024-12-12 12:00:25.470    23
-3    2024-12-12 12:00:26.370    5
-3    2024-12-12 12:00:27.270    13
-3    2024-12-12 12:00:28.170    24
-3    2024-12-12 12:00:29.069    6
-3    2024-12-12 12:00:29.969    14
-3    2024-12-12 12:00:30.869    25
-        )"
+        R"DOCS_MD(
+3	2024-12-12 12:00:12.870	29
+3	2024-12-12 12:00:13.770	8
+3	2024-12-12 12:00:14.670	19
+3	2024-12-12 12:00:15.570	30
+3	2024-12-12 12:00:16.470	9
+3	2024-12-12 12:00:17.370	20
+3	2024-12-12 12:00:18.270	2
+3	2024-12-12 12:00:19.170	10
+3	2024-12-12 12:00:20.070	21
+3	2024-12-12 12:00:20.970	3
+3	2024-12-12 12:00:21.870	11
+3	2024-12-12 12:00:22.770	22
+3	2024-12-12 12:00:23.670	4
+3	2024-12-12 12:00:24.570	12
+3	2024-12-12 12:00:25.470	23
+3	2024-12-12 12:00:26.370	5
+3	2024-12-12 12:00:27.270	13
+3	2024-12-12 12:00:28.170	24
+3	2024-12-12 12:00:29.069	6
+3	2024-12-12 12:00:29.969	14
+3	2024-12-12 12:00:30.869	25
+        )DOCS_MD"
     },
     {
         "Query the last 2 sample for timestamps '2024-12-12 12:00:15' and '2024-12-12 12:00:30'",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
+DROP TABLE IF EXISTS t_raw_timeseries;
+
 CREATE TABLE t_raw_timeseries
 (
     metric_id UInt64,
@@ -222,6 +230,8 @@ ENGINE = MergeTree()
 ORDER BY (metric_id, timestamp);
 
 -- Table with data re-sampled to bigger (15 sec) time steps
+DROP TABLE IF EXISTS t_resampled_timeseries_15_sec;
+
 CREATE TABLE t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -232,6 +242,8 @@ ENGINE = AggregatingMergeTree()
 ORDER BY (metric_id, grid_timestamp);
 
 -- MV for populating re-sampled table
+DROP VIEW IF EXISTS mv_resampled_timeseries;
+
 CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -254,16 +266,18 @@ FROM t_resampled_timeseries_15_sec
 WHERE metric_id = 3 AND grid_timestamp BETWEEN '2024-12-12 12:00:15' AND '2024-12-12 12:00:30'
 ORDER BY metric_id, grid_timestamp;
         )",
-        R"(
-3    2024-12-12 12:00:15    (['2024-12-12 12:00:14.670','2024-12-12 12:00:13.770'],[19,8])
-3    2024-12-12 12:00:30    (['2024-12-12 12:00:29.969','2024-12-12 12:00:29.069'],[14,6])
-        )"
+        R"DOCS_MD(
+3	2024-12-12 12:00:15	(['2024-12-12 12:00:14.670','2024-12-12 12:00:13.770'],[19,8])
+3	2024-12-12 12:00:30	(['2024-12-12 12:00:29.969','2024-12-12 12:00:29.069'],[14,6])
+        )DOCS_MD"
     },
     {
         "Calculate idelta and irate from the raw data",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
+DROP TABLE IF EXISTS t_raw_timeseries;
+
 CREATE TABLE t_raw_timeseries
 (
     metric_id UInt64,
@@ -292,15 +306,17 @@ FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN start_ts - interval window_seconds seconds AND end_ts
 GROUP BY metric_id;
         )",
-        R"(
-3    [11,8,-18,8,11]    [12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]
-        )"
+        R"DOCS_MD(
+3	[11,8,-18,8,11]	[12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]
+        )DOCS_MD"
     },
     {
         "Calculate idelta and irate from the re-sampled data",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
+DROP TABLE IF EXISTS t_raw_timeseries;
+
 CREATE TABLE t_raw_timeseries
 (
     metric_id UInt64,
@@ -311,6 +327,8 @@ ENGINE = MergeTree()
 ORDER BY (metric_id, timestamp);
 
 -- Table with data re-sampled to bigger (15 sec) time steps
+DROP TABLE IF EXISTS t_resampled_timeseries_15_sec;
+
 CREATE TABLE t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -321,6 +339,8 @@ ENGINE = AggregatingMergeTree()
 ORDER BY (metric_id, grid_timestamp);
 
 -- MV for populating re-sampled table
+DROP VIEW IF EXISTS mv_resampled_timeseries;
+
 CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -356,9 +376,9 @@ FROM (
 )
 GROUP BY metric_id;
         )",
-        R"(
-3    [11,8,-18,8,11]    [12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]
-        )"
+        R"DOCS_MD(
+3	[11,8,-18,8,11]	[12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_timeSeriesLastTwoSamples = {25, 6};

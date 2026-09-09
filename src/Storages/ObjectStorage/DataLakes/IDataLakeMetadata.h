@@ -9,7 +9,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
@@ -144,7 +143,7 @@ public:
     virtual bool optimize(
         const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
-        return false;
+        throwNotImplemented("optimize");
     }
 
     virtual bool supportsDelete() const { return false; }

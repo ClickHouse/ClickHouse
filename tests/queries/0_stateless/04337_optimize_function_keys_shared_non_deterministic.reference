@@ -14,15 +14,10 @@ CREATE TABLE test (g UInt32, x UInt32) ENGINE = MergeTree ORDER BY (g, x);
 INSERT INTO test SELECT number % 3 AS g, number AS x FROM numbers(12);
 -- LIMIT BY: rand64(g) + 1 is removed as a deterministic function of the key rand64(g).
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY g LIMIT 1 BY rand64(g), rand64(g) + 1;
-SELECT __table1.g AS g
-FROM default.test AS __table1
-ORDER BY __table1.g ASC
-LIMIT _CAST(1, \'UInt64\') BY rand64(__table1.g)
+SELECT __table1.g AS g\nFROM default.test AS __table1\nORDER BY __table1.g ASC\nLIMIT _CAST(1, \'UInt64\') BY rand64(__table1.g)
 -- GROUP BY: rand64(g) + 1 is removed as a deterministic function of the key rand64(g).
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM test GROUP BY rand64(g), rand64(g) + 1;
-SELECT count() AS `count()`
-FROM default.test AS __table1
-GROUP BY rand64(__table1.g)
+SELECT count() AS `count()`\nFROM default.test AS __table1\nGROUP BY rand64(__table1.g)
 -- Both expressions read the same evaluation of rand64(number), so the second one always equals the
 -- first one plus one.
 SELECT count() FROM (SELECT rand64(number) AS a, rand64(number) + 1 AS b FROM numbers(1000) WHERE b != a + 1);

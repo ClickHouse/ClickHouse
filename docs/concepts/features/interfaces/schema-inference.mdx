@@ -246,7 +246,7 @@ that allows cleaning the schema cache for all sources, or for a specific source.
 Let's try to infer the structure of a sample dataset from s3 `github-2022.ndjson.gz` and see how the schema inference cache works:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 ```response
 ┌─name───────┬─type─────────────────────────────────────────┐
@@ -286,7 +286,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 5 rows in set. Elapsed: 0.601 sec.
 ```
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 ```response
 ┌─name───────┬─type─────────────────────────────────────────┐
@@ -332,7 +332,7 @@ As you can see, the second query succeeded almost instantly.
 Let's try to change some settings that can affect inferred schema:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 SETTINGS input_format_json_try_infer_named_tuples_from_objects=0, input_format_json_read_objects_as_strings = 1
 
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐

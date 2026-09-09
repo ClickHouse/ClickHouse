@@ -2,7 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 
 #include <functional>
 
@@ -74,9 +74,10 @@ public:
     void addTotalsSource(ProcessorPtr source);
     void addExtremesSource(ProcessorPtr source);
 
-    /// Drop totals and extremes (create NullSink for them).
+    /// Drop totals and extremes. All three discard through a `DroppingTransform` on the data path.
     void dropTotals();
     void dropExtremes();
+    void dropTotalsAndExtremes();
 
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.
@@ -109,6 +110,9 @@ public:
 
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
+
+    /// Watermark-aware pair to resize. Adds CalibrateWatermarksProcessor.
+    void calibrateWatermarks(size_t num_streams);
 
     using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
 
@@ -145,6 +149,11 @@ private:
     /// If is set, all newly created processors will be added to this too.
     /// It is needed for debug. See QueryPipelineProcessorsCollector.
     Processors * collected_processors = nullptr;
+
+    /// Discards the requested streams through a `DroppingTransform`. Requires a data output to forward,
+    /// which holds for every caller: totals and extremes can only be added to a non-empty pipe, and
+    /// `addTransform` rejects an empty one.
+    void dropStreams(bool drop_totals, bool drop_extremes);
 
     /// This methods are for QueryPipeline. It is allowed to complete graph only there.
     /// So, we may be sure that Pipe always has output port if not empty.

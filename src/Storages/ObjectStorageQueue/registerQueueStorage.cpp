@@ -517,7 +517,7 @@ Engine supports all s3 related settings. For more information about S3 settings 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](/cloud/data-sources/secure-s3) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/products/cloud/guides/data-sources/accessing-s3-data-securely) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql
@@ -616,7 +616,11 @@ Constructions with `{}` are similar to the [remote](/reference/functions/table-f
 
 ## Introspection {#introspection}
 
-For introspection use `system.s3queue_metadata_cache` stateless table and `system.s3queue_log` persistent table.
+For introspection use the `system.s3queue_metadata_cache` and `system.s3_queue_metadata` stateless tables and the `system.s3queue_log` persistent table.
+
+- Use `system.s3queue_metadata_cache` to inspect the in-memory cache of per-file processing state (which files are currently being processed, processed or failed) on the local server.
+- Use `system.s3_queue_metadata` to inspect the state stored in keeper directly: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents. This is useful when the in-memory cache does not (yet) reflect keeper, or to look at the shared state across the cluster.
+- Use `system.s3queue_log` for the persistent history of `processed` and `failed` files.
 
 1. `system.s3queue_metadata_cache`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
@@ -658,7 +662,25 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue_metadata_cache`, but for `processed` and `failed` files.
+2. `system.s3_queue_metadata`. This table is not persistent and reads the state directly from keeper: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents.
+
+The `processed_nodes`, `processing_nodes`, `failed_nodes` and `processed_path` columns issue keeper requests and are fetched only when the corresponding column is selected, so selecting just the `*_nodes_count` counters avoids the extra keeper traffic.
+
+```sql
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
+FROM system.s3_queue_metadata
+
+Row 1:
+──────
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
+```
+
+For the full list of columns see the `system.s3_queue_metadata` reference page.
+
+3. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue_metadata_cache`, but for `processed` and `failed` files.
 
 The table has the following structure:
 
@@ -757,7 +779,7 @@ CREATE TABLE test (name String, value UInt32)
 
 `AzureQueue` parameters are the same as `AzureBlobStorage` table engine supports. See parameters section [here](/reference/engines/table-engines/integrations/azureBlobStorage).
 
-Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage).
+Similar to the [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage).
 
 **Example**
 
@@ -860,10 +882,11 @@ For more information about virtual columns see [here](/reference/engines/table-e
 
 Enable logging for the table via the table setting `enable_logging_to_queue_log=1`.
 
-Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
+Introspection capabilities are the same as the [S3Queue table engine](/reference/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
 1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
-2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
+2. Use the `system.azure_queue_metadata` table to inspect the state stored in keeper directly: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents. This is the `AzureQueue` counterpart of `system.s3_queue_metadata`.
+3. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
 ```xml
 <azure_queue_log>
@@ -929,7 +952,7 @@ exception:
 
 ## Limitations {#limitations}
 
-`AzureQueue` shares the same implementation as `S3Queue` and has the same [limitations](/engines/table-engines/integrations/s3queue#limitations). In particular, a device-level power loss of the ClickHouse node can silently lose consumed rows: a file is recorded as processed in Keeper (and, with `after_processing = 'delete'`, its source blob removed) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). For the recommended materialized-view consumption path, setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table narrows this window substantially.
+`AzureQueue` shares the same implementation as `S3Queue` and has the same [limitations](/reference/engines/table-engines/integrations/s3queue#limitations). In particular, a device-level power loss of the ClickHouse node can silently lose consumed rows: a file is recorded as processed in Keeper (and, with `after_processing = 'delete'`, its source blob removed) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). For the recommended materialized-view consumption path, setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table narrows this window substantially.
 )DOCS_MD",
             .syntax = "ENGINE = AzureQueue(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key,] format [, compression]) SETTINGS mode = '...', ...",
             .related = {"S3Queue", "AzureBlobStorage"}});

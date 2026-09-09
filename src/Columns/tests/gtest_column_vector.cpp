@@ -1,12 +1,13 @@
+#include <cmath>
 #include <limits>
 #include <type_traits>
 #include <typeinfo>
 #include <vector>
 #include <Columns/ColumnsNumber.h>
+#include <gtest/gtest.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
-#include <gtest/gtest.h>
 
 using namespace DB;
 
@@ -17,11 +18,15 @@ static constexpr size_t MAX_ROWS = 10000;
 static const VectorWithMemoryTracking<size_t> filter_ratios = {1, 2, 5, 11, 32, 64, 100, 1000};
 static const size_t K = filter_ratios.size();
 
-template <typename, typename = void >
-struct HasUnderlyingType : std::false_type {};
+template <typename, typename = void>
+struct HasUnderlyingType : std::false_type
+{
+};
 
 template <typename T>
-struct HasUnderlyingType<T, std::void_t<typename T::UnderlyingType>> : std::true_type {};
+struct HasUnderlyingType<T, std::void_t<typename T::UnderlyingType>> : std::true_type
+{
+};
 
 template <typename T>
 static MutableColumnPtr createColumn(size_t n)
@@ -38,11 +43,11 @@ static MutableColumnPtr createColumn(size_t n)
     return column;
 }
 
-static bool checkFilter(const PaddedPODArray<UInt8> &flit, const IColumn & src, const IColumn & dst)
+static bool checkFilter(const PaddedPODArray<UInt8> & flit, const IColumn & src, const IColumn & dst)
 {
     size_t n = flit.size();
     size_t dst_size = dst.size();
-    size_t j = 0;   /// index of dest
+    size_t j = 0; /// index of dest
     for (size_t i = 0; i < n; ++i)
     {
         if (flit[i] != 0)
@@ -52,7 +57,7 @@ static bool checkFilter(const PaddedPODArray<UInt8> &flit, const IColumn & src, 
             j++;
         }
     }
-    return dst_size == j;   /// filtered size check
+    return dst_size == j; /// filtered size check
 }
 
 template <typename T>
@@ -83,6 +88,56 @@ static void testFilter()
     catch (const Exception & e)
     {
         FAIL() << e.displayText();
+    }
+}
+
+TEST(ColumnVector, GetExtremes)
+{
+    {
+        auto column = ColumnUInt64::create();
+        auto & values = column->getData();
+        values.push_back(5);
+        values.push_back(1);
+        values.push_back(9);
+        values.push_back(3);
+
+        Field min;
+        Field max;
+        column->getExtremes(min, max, 0, column->size());
+
+        EXPECT_EQ(min.safeGet<UInt64>(), 1);
+        EXPECT_EQ(max.safeGet<UInt64>(), 9);
+    }
+
+    {
+        auto column = ColumnFloat64::create();
+        auto & values = column->getData();
+        values.push_back(std::numeric_limits<Float64>::quiet_NaN());
+        values.push_back(3.5);
+        values.push_back(-2.0);
+        values.push_back(std::numeric_limits<Float64>::quiet_NaN());
+        values.push_back(7.0);
+
+        Field min;
+        Field max;
+        column->getExtremes(min, max, 0, column->size());
+
+        EXPECT_DOUBLE_EQ(min.safeGet<Float64>(), -2.0);
+        EXPECT_DOUBLE_EQ(max.safeGet<Float64>(), 7.0);
+    }
+
+    {
+        auto column = ColumnFloat32::create();
+        auto & values = column->getData();
+        values.push_back(std::numeric_limits<Float32>::quiet_NaN());
+        values.push_back(std::numeric_limits<Float32>::quiet_NaN());
+
+        Field min;
+        Field max;
+        column->getExtremes(min, max, 0, column->size());
+
+        EXPECT_TRUE(std::isnan(min.safeGet<Float64>()));
+        EXPECT_TRUE(std::isnan(max.safeGet<Float64>()));
     }
 }
 
@@ -145,7 +200,7 @@ static void testIndex()
 
     try
     {
-        test_case(0, 0, 0);   /// test for zero length index
+        test_case(0, 0, 0); /// test for zero length index
         for (size_t i = 0; i < TEST_RUNS; ++i)
         {
             /// make sure rows distribute in (column_sizes[r-1], colulmn_sizes[r]]

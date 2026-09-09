@@ -40,13 +40,23 @@ ORDER BY (town, street);
 
 عندما يعالج خادم ClickHouse مثال الإدراج الذي يحتوي على 4 صفوف (على سبيل المثال، عبر عبارة [INSERT INTO](/ar/reference/statements/insert-into)) الموضحة في المخطط أعلاه، فإنه ينفّذ عدة خطوات:
 
-① **الفرز**: تُفرَز الصفوف بحسب مفتاح الفرز الخاص بالجدول `(town, street)`، ويُنشأ [فهرس أساسي متناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) للصفوف المُفرَزة.
+<Steps>
+  <Step title="الفرز">
+    تُفرَز الصفوف بحسب مفتاح الفرز الخاص بالجدول `(town, street)`، ويُنشأ [فهرس أساسي متناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) للصفوف المُفرَزة.
+  </Step>
 
-② **التقسيم**: تُقسَّم البيانات المُفرَزة إلى أعمدة.
+  <Step title="التقسيم">
+    تُقسَّم البيانات المُفرَزة إلى أعمدة.
+  </Step>
 
-③ **الضغط**: يُصبح كل عمود [مضغوطًا](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  <Step title="الضغط">
+    يُصبح كل عمود [مضغوطًا](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  </Step>
 
-④ **الكتابة إلى القرص**: تُحفَظ الأعمدة المضغوطة كملفات أعمدة ثنائية داخل دليل جديد يمثّل جزء البيانات الخاص بعملية الإدراج. ويُضغط الفهرس الأساسي المتناثر أيضًا ويُخزَّن في الدليل نفسه.
+  <Step title="الكتابة إلى القرص">
+    تُحفَظ الأعمدة المضغوطة كملفات أعمدة ثنائية داخل دليل جديد يمثّل جزء البيانات الخاص بعملية الإدراج. ويُضغط الفهرس الأساسي المتناثر أيضًا ويُخزَّن في الدليل نفسه.
+  </Step>
+</Steps>
 
 اعتمادًا على المحرك المحدد للجدول، [قد](/ar/reference/settings/session-settings) تحدث تحويلات إضافية بالتوازي مع الفرز.
 
@@ -56,7 +66,7 @@ ORDER BY (town, street);
   ## دمج الأجزاء
 </div>
 
-لإدارة عدد الأجزاء في كل جدول، تجمع مهمة [دمج في الخلفية](/ar/concepts/core-concepts/merges) الأجزاء الأصغر دوريًا في أجزاء أكبر حتى تصل إلى [حجم مضغوط](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) (عادةً نحو 150 جيجابايت). وتُعلَّم الأجزاء المدمجة على أنها غير نشطة، ثم تُحذف بعد [فاصل زمني](/ar/reference/settings/merge-tree-settings#old_parts_lifetime) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings#old_parts_lifetime). ومع مرور الوقت، تُنشئ هذه العملية بنية هرمية من الأجزاء المدمجة، ولهذا سُمّي جدول MergeTree بهذا الاسم:
+لإدارة عدد الأجزاء في كل جدول، تجمع مهمة [دمج في الخلفية](/ar/concepts/core-concepts/merges) الأجزاء الأصغر دوريًا في أجزاء أكبر حتى تصل إلى [حجم مضغوط](/ar/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) (عادةً نحو 150 جيجابايت). وتُعلَّم الأجزاء المدمجة على أنها غير نشطة، ثم تُحذف بعد [فاصل زمني](/ar/reference/settings/merge-tree-settings/other#old_parts_lifetime) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings/other#old_parts_lifetime). ومع مرور الوقت، تُنشئ هذه العملية بنية هرمية من الأجزاء المدمجة، ولهذا سُمّي جدول MergeTree بهذا الاسم:
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 
