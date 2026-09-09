@@ -48,6 +48,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/DelayedSource.h>
@@ -398,7 +399,7 @@ namespace
             {
                 if (hasSecretsInStep(*node->step))
                     throw Exception(ErrorCodes::ACCESS_DENIED,
-                        "Not enough privileges to execute EXPLAIN of a query with secret function arguments, "
+                        "Not enough privileges to execute EXPLAIN of a query with an old analyzer."
                         "SET enable_analyzer = 1 or get privileges to display secrets for select queries "
                         "and set setting format_display_secrets_in_show_and_select = 1.");
 
@@ -776,7 +777,7 @@ bool explainQueryTree(
     /// Mask secrets only after the passes: the masked tree is used solely for the dump below, so
     /// redaction (which may replace a non-constant secret value with a hidden constant) can never
     /// change how the query is analyzed. With run_passes = 0 the tree is dumped without analysis.
-    if (!query_context->canDisplaySecretsInShowAndSelect())
+    if (!canDisplaySecrets(query_context))
     {
         SecretArgumentsDumpVisitor visitor;
         visitor.visit(query_tree);
@@ -797,7 +798,7 @@ bool explainQueryTree(
             buf << "\n\n";
 
         IAST::FormatSettings format_settings(settings.ast_one_line);
-        format_settings.show_secrets = query_context->canDisplaySecretsInShowAndSelect();
+        format_settings.show_secrets = canDisplaySecrets(query_context);
 
         ConvertToASTOptions ast_options;
         /// `EXPLAIN SYNTAX` shows the query in a canonical, close-to-syntax form, so constants are
@@ -854,7 +855,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
     ContextPtr context;
-    std::function<std::unique_ptr<QueryPlan>()> parallel_replicas_builder;
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> parallel_replicas_builder;
     bool ignore_quota = false;
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
@@ -1036,7 +1037,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
             IAST::FormatSettings format_settings(settings.oneline);
-            format_settings.show_secrets = query_context->canDisplaySecretsInShowAndSelect();
+            format_settings.show_secrets = canDisplaySecrets(query_context);
             IAST::FormatState format_state;
             IAST::FormatStateStacked format_frame;
             format_frame.allow_operators = false;
@@ -1105,7 +1106,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
 
             if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-                && !query_context->canDisplaySecretsInShowAndSelect())
+                && !canDisplaySecrets(query_context))
                 throwIfPlanHasSecrets(plan);
 
             if (settings.json)
@@ -1154,7 +1155,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     context = interpreter.getContext();
 
                     /// Without `header = 1` the pipeline dump shows no column names, so nothing can leak.
-                    if (settings.query_pipeline_options.header && !query_context->canDisplaySecretsInShowAndSelect())
+                    if (settings.query_pipeline_options.header && !canDisplaySecrets(query_context))
                         throwIfPlanHasSecrets(plan);
                 }
 
@@ -1312,7 +1313,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             planning_ns += watch.elapsed();
 
             if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-                && !query_context->canDisplaySecretsInShowAndSelect())
+                && !canDisplaySecrets(query_context))
                 throwIfPlanHasSecrets(plan);
 
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs

@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/StringUtils.h>
@@ -38,7 +39,7 @@ RenderOptions resolveRenderOptions(const ContextPtr & context)
     const auto & settings = context->getSettingsRef();
 
     RenderOptions options;
-    options.show_secrets = context->canDisplaySecretsInShowAndSelect();
+    options.show_secrets = canDisplaySecrets(context);
     options.print_pretty_type_names = settings[Setting::print_pretty_type_names];
     options.quoting_rule = settings[Setting::show_create_query_identifier_quoting_rule];
     options.quoting_style = settings[Setting::show_create_query_identifier_quoting_style];

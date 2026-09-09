@@ -1,3 +1,4 @@
+#include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -7,19 +8,25 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsIdentifierQuotingRule show_create_query_identifier_quoting_rule;
     extern const SettingsIdentifierQuotingStyle show_create_query_identifier_quoting_style;
     extern const SettingsBool print_pretty_type_names;
 }
 
+bool canDisplaySecrets(const ContextPtr & context)
+{
+    return context->displaySecretsInShowAndSelect()
+        && context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select]
+        && context->getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
+}
+
 String format(const SecretHidingFormatSettings & settings)
 {
-    const bool show_secrets = settings.ctx->canDisplaySecretsInShowAndSelect();
-
     return settings.query.formatWithPossiblyHidingSensitiveData(
         settings.max_length,
         settings.one_line,
-        show_secrets,
+        canDisplaySecrets(settings.ctx),
         settings.ctx->getSettingsRef()[Setting::print_pretty_type_names],
         settings.ctx->getSettingsRef()[Setting::show_create_query_identifier_quoting_rule],
         settings.ctx->getSettingsRef()[Setting::show_create_query_identifier_quoting_style]);

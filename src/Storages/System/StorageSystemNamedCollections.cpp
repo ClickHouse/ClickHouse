@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -54,8 +55,8 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         auto & tuple_column = column_map->getNestedData();
         auto & key_column = tuple_column.getColumn(0);
         auto & value_column = tuple_column.getColumn(1);
-        bool access_secrets = access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
-        access_secrets &= context->canDisplaySecretsInShowAndSelect();
+        const bool access_secrets
+            = access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS) && canDisplaySecrets(context);
 
         size_t size = 0;
         for (const auto & key : collection->getKeys())

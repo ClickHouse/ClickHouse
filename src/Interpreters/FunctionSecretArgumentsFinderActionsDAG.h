@@ -11,6 +11,23 @@
 namespace DB
 {
 
+  /// This class lets `FunctionSecretArgumentsFinder` read a FUNCTION node of an `ActionsDAG`.
+  /// It is the sibling of `FunctionAST` (parser AST) and `FunctionTreeNodeImpl` (analyzer query tree).
+  /// Those two are used by `FunctionSecretArgumentsFinderAST` and `FunctionSecretArgumentsFinderTreeNodeImpl`.
+  /// The finder code is written one time against `AbstractFunction`. This class answers its four
+  /// questions about an argument for each DAG node type:
+  ///
+  ///   - `COLUMN`, or a `FUNCTION` that was folded to a constant: this is a literal.
+  ///     `tryGetConstantField` reads the `ColumnConst` from `column`. It does not look at the node type.
+  ///     `tryGetString` returns the value of a `String` constant. `tryGetLiteralText` returns the SQL
+  ///     text of any scalar constant, with quotes for strings.
+  ///   - `FUNCTION` that was not folded: this is a nested call, for example `equals(key, value)`.
+  ///     `getFunction` wraps it, so the finder can look at its children.
+  ///   - `INPUT`: this is a column reference. It is the DAG form of an identifier. `isIdentifier` is true.
+  ///     `tryGetString` returns the column name, but only when the caller allows identifiers.
+  ///     A DAG never holds a named collection or a table function, so an `INPUT` is always a column.
+  ///   - `ALIAS`: the constructor removes it with `unwrapAlias`. The finder sees the child instead.
+  ///   - `ARRAY_JOIN`, `PLACEHOLDER`: every question answers false. The finder then hides the argument.
 class FunctionActionsDAG : public AbstractFunction
 {
 public:
