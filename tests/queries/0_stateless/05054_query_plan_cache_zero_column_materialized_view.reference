@@ -1,0 +1,11 @@
+-- both columns granted; the helper column is a:
+3
+-- hits: 0
+-- the plan must not be cached, so the second run is a miss too:
+3
+-- hits: 0
+-- grants moved from the helper column to the other one; re-planning must still succeed:
+3
+-- hits: 0
+-- with no column granted at all the query must be denied:
+ACCESS_DENIED

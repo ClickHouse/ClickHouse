@@ -81,6 +81,7 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryPlanCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
@@ -640,6 +641,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable EncryptionHeaderCachePtr encryption_header_cache TSA_GUARDED_BY(mutex);   /// Cache of raw encryption-header bytes by file path
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
+    mutable QueryPlanCachePtr query_plan_cache TSA_GUARDED_BY(mutex);                 /// Cache of serialized query plans.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
@@ -1447,6 +1449,10 @@ ContextData::ContextData(const ContextData &o) :
     client_protocol_version(o.client_protocol_version),
     partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
+    /// The pointer (not the contents) is copied on purpose: nested plan building (expanded view
+    /// bodies, subqueries, `InterpreterSelectQueryAnalyzer::buildContext`) happens in contexts
+    /// copied from the planning context, and all of them must record into the same collector.
+    plan_cache_storage_identities(o.plan_cache_storage_identities),
     query_factories_info(o.query_factories_info),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
@@ -5477,6 +5483,48 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear(tag);
+}
+
+void Context::setQueryPlanCache(size_t max_size_in_bytes, size_t max_entries)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_plan_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan cache has been already created.");
+
+    shared->query_plan_cache = std::make_shared<QueryPlanCache>(max_size_in_bytes, max_entries);
+}
+
+void Context::updateQueryPlanCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->query_plan_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("query_plan_cache.max_size_in_bytes", DEFAULT_QUERY_PLAN_CACHE_MAX_SIZE);
+    if (max_size_in_bytes > max_cache_size)
+    {
+        max_size_in_bytes = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered query plan cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(max_size_in_bytes));
+    }
+    size_t max_entries = config.getUInt64("query_plan_cache.max_entries", DEFAULT_QUERY_PLAN_CACHE_MAX_ENTRIES);
+    shared->query_plan_cache->updateConfiguration(max_size_in_bytes, max_entries);
+}
+
+QueryPlanCachePtr Context::getQueryPlanCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->query_plan_cache;
+}
+
+void Context::clearQueryPlanCache() const
+{
+    QueryPlanCachePtr cache = getQueryPlanCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::clearCaches() const

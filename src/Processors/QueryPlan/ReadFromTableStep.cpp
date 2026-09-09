@@ -85,7 +85,9 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    auto cloned = std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    cloned->setReadsOnlyInjectedColumn(reads_only_injected_column);
+    return cloned;
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);

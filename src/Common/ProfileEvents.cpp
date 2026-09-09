@@ -172,6 +172,10 @@
     M(EncryptionHeaderCacheHits, "Number of times encryption header bytes were found in the encryption header cache, so the source read of the header was skipped.", ValueType::Number) \
     M(EncryptionHeaderCacheMisses, "Number of times encryption header bytes were not found in the encryption header cache, so they were read from the source.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryPlanCacheHits, "Number of times a query plan was found in the query plan cache (and reused).", ValueType::Number) \
+    M(QueryPlanCacheMisses, "Number of times a query plan was not found in the query plan cache.", ValueType::Number) \
+    M(QueryPlanCacheValidationMisses, "Number of times a cached query plan was found but rejected because its dependencies (schema, row policies) changed.", ValueType::Number) \
+    M(QueryPlanCacheStaleMisses, "Number of times a cached query plan failed to materialize and the query was re-planned.", ValueType::Number) \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.", ValueType::Number) \
     M(QueryCacheReadRows, "The number of rows read from the query cache.", ValueType::Number) \

@@ -1,0 +1,10 @@
+-- miss (allowed, per-column grant on the view):
+1
+2
+-- hit with only column grants on the view must be denied (table-level SELECT required):
+ACCESS_DENIED
+-- revoking the selected column while another remains keeps the hit denied:
+ACCESS_DENIED
+-- after granting table-level SELECT on the view the hit is allowed:
+1
+2
