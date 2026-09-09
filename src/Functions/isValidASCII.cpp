@@ -115,8 +115,7 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t current_offset = offsets[i];
-            /// Exclude the terminating zero byte, so that empty strings take the fast path.
-            size_t string_size = current_offset - prev_offset - 1;
+            size_t string_size = current_offset - prev_offset;
             result_data[i] = isValidASCII(chars.data() + prev_offset, string_size);
             prev_offset = current_offset;
         }
