@@ -13,7 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context_fwd.h>
-#include <limits>
 
 namespace Coordination
 {
@@ -54,19 +53,16 @@ std::string ZooKeeperRequest::toString(bool short_format) const
         toStringImpl(short_format));
 }
 
-size_t ZooKeeperRequest::requestSize(bool use_xid_64) const
-{
-    return (use_xid_64 ? sizeof(int64_t) : sizeof(int32_t)) + Coordination::size(getOpNum()) + sizeImpl();
-}
-
 void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64, bool supports_tracing) const
 {
-    size_t request_size = requestSize(use_xid_64);
-    /// Last stand: the length prefix is serialized as int32, so the request must fit into it.
-    if (request_size > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
-        throw Exception(Error::ZBADARGUMENTS,
-            "Request size {} does not fit into the int32 length prefix, request: {}",
-            request_size, toString(true));
+    size_t request_size = 0;
+    if (use_xid_64)
+        request_size += sizeof(int64_t);
+    else
+        request_size += sizeof(int32_t);
+
+    request_size += Coordination::size(getOpNum()) + sizeImpl();
+
     Coordination::write(static_cast<int32_t>(request_size), out);
     if (use_xid_64)
         Coordination::write(static_cast<int64_t>(xid), out);
@@ -1238,24 +1234,7 @@ void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(error, out);
 }
 
-void ZooKeeperMultiRequest::addRootPath(const String & root_path)
-{
-    cached_size_impl.reset();
-    MultiRequest<ZooKeeperRequestPtr>::addRootPath(root_path);
-}
-
 size_t ZooKeeperMultiRequest::sizeImpl() const
-{
-    if (cached_size_impl)
-    {
-        chassert(*cached_size_impl == computeSizeImpl());
-        return *cached_size_impl;
-    }
-    cached_size_impl = computeSizeImpl();
-    return *cached_size_impl;
-}
-
-size_t ZooKeeperMultiRequest::computeSizeImpl() const
 {
     size_t total_size = 0;
     for (const auto & zk_request : requests)
@@ -1281,7 +1260,6 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_validator)
 {
-    cached_size_impl.reset();
     while (true)
     {
         OpNum op_num = {};
@@ -1364,17 +1342,21 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
             response = std::make_shared<ZooKeeperErrorResponse>();
 
         if (op_error != Error::ZOK)
+        {
             response->error = op_error;
+
+            /// Set error for whole transaction.
+            /// If some operations fail, ZK send global error as zero and then send details about each operation.
+            /// It will set error code for first failed operation and it will set special "runtime inconsistency" code for other operations.
+            if (error == Error::ZOK && op_error != Error::ZRUNTIMEINCONSISTENCY)
+                error = op_error;
+        }
 
         if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
 
         response->zxid = zxid;
     }
-
-    /// The failed-multi aggregate error is not sent on the wire; derive it from the
-    /// per-operation errors just read.
-    promoteMultiResponseError(*this);
 
     /// Footer.
     {
@@ -1392,23 +1374,6 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
             throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
         if (error_read != -1)
             throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
-    }
-}
-
-void promoteMultiResponseError(MultiResponse & response)
-{
-    if (response.error != Error::ZOK)
-        return;
-
-    /// A failed multi leaves the aggregate ZOK, with the real error on the failing operation
-    /// and ZRUNTIMEINCONSISTENCY on the operations after it; promote the first real error.
-    for (const auto & sub : response.responses)
-    {
-        if (sub->error != Error::ZOK && sub->error != Error::ZRUNTIMEINCONSISTENCY)
-        {
-            response.error = sub->error;
-            break;
-        }
     }
 }
 

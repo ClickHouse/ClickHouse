@@ -1,0 +1,84 @@
+---
+slug: /cloud/guides/sql-console/manage-sql-console-role-assignments
+sidebarTitle: 'Gérer les attributions de rôles dans la Console SQL'
+title: 'Configurer les attributions de rôles dans la Console SQL'
+description: 'Guide expliquant comment gérer les attributions de rôles dans la Console SQL'
+doc_type: 'guide'
+keywords: ['Console SQL', 'attributions de rôles', 'gestion des accès', 'autorisations', 'sécurité']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<Warning>
+  Ce paramètre est déprécié et a été remplacé par un nouveau paramètre sur l’écran de création de rôle dans les organisations ayant migré vers des rôles personnalisés. Pour plus d’informations, consultez [Gérer les utilisateurs du cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users).
+</Warning>
+
+> Ce guide explique comment configurer les attributions de rôles de la console SQL, qui
+> déterminent les autorisations d’accès à l’échelle de la console ainsi que les fonctionnalités auxquelles un utilisateur peut
+> accéder dans la Cloud Console.
+
+<Steps>
+  <Step>
+    ### Accéder aux paramètres du service
+
+    Depuis la page des services, cliquez sur le menu situé dans le coin supérieur droit du service pour lequel vous souhaitez ajuster les paramètres d’accès à la console SQL.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/1_service_settings.webp" size="lg" />
+
+    Sélectionnez `settings` dans le menu contextuel.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/2_service_settings.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Ajuster l’accès à la console SQL
+
+    Dans la section &quot;Sécurité&quot;, repérez la zone &quot;Accès à la console SQL&quot; :
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/3_service_settings.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Mettre à jour les paramètres pour Service Admin
+
+    Sélectionnez le menu déroulant de Service Admin pour modifier les paramètres de contrôle d’accès des rôles Service Admin :
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/4_service_settings.webp" size="md" />
+
+    Vous pouvez choisir parmi les rôles suivants :
+
+    | Rôle            |
+    | --------------- |
+    | `Aucun accès`   |
+    | `Lecture seule` |
+    | `Accès complet` |
+  </Step>
+
+  <Step>
+    ### Mettre à jour les paramètres pour Service Read Only
+
+    Sélectionnez le menu déroulant de Service Read Only pour modifier les paramètres de contrôle d’accès des rôles Service Read Only :
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/5_service_settings.webp" size="md" />
+
+    Vous pouvez choisir parmi les rôles suivants :
+
+    | Rôle            |
+    | --------------- |
+    | `Aucun accès`   |
+    | `Lecture seule` |
+    | `Accès complet` |
+  </Step>
+
+  <Step>
+    ### Vérifier les utilisateurs ayant accès
+
+    Vous pouvez afficher un aperçu des utilisateurs du service en sélectionnant le nombre d’utilisateurs :
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/6_service_settings.webp" size="md" />
+
+    Un onglet s’ouvrira à droite de la page et affichera le nombre total d’utilisateurs ainsi que leurs rôles :
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/7_service_settings.webp" size="md" />
+  </Step>
+</Steps>

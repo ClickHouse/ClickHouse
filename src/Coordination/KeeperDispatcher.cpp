@@ -13,7 +13,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
-#include <Common/saturatedWaitDuration.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -21,7 +20,6 @@
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
@@ -102,11 +100,6 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-namespace FailPoints
-{
-    extern const char keeper_shutdown_throw_after_flag[];
-}
-
 KeeperDispatcher::KeeperDispatcher()
     : server_config(std::make_shared<KeeperConfiguration>())
     , log(getLogger("KeeperDispatcher"))
@@ -136,9 +129,10 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             if (response.request)
                 response.request->spans.maybeInitialize(KeeperSpan::DispatcherResponsesQueue, response.request->tracing_context.get());
 
-            if (tryRouteSpecialResponse(response))
-                return;
-            if (dispatcher_old)
+            /// Special new session response.
+            if (response.response->xid != Coordination::WATCH_XID && response.response->getOpNum() == Coordination::OpNum::SessionID)
+                onSessionIDResponse(response.response);
+            else if (dispatcher_old)
                 dispatcher_old->onResponse(std::move(response));
             else
                 dispatcher->onResponse(std::move(response));
@@ -160,15 +154,13 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     {
         if (keeper_context->getCoordinationSettings()[CoordinationSetting::use_new_dispatcher])
         {
-            dispatcher = std::make_unique<KeeperRequestDispatcher>(
-                server.get(), [this](const KeeperResponseForSession & response) { return tryRouteSpecialResponse(response); });
+            dispatcher = std::make_unique<KeeperRequestDispatcher>(server.get());
             dispatcher->startupResponseThread();
             new_dispatcher_response_thread_started = true;
         }
         else
         {
-            dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(
-                server.get(), [this](const KeeperResponseForSession & response) { return tryRouteSpecialResponse(response); });
+            dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(server.get());
         }
 
         LOG_DEBUG(log, "Waiting server to initialize");
@@ -193,11 +185,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
         if (new_dispatcher_response_thread_started && dispatcher)
-        {
-            /// Raft startup failed, so we can't join nuraft's commit thread here.
-            dispatcher->shutdownRequests();
-            dispatcher->drainAndCheckQueues(/*closed_all_connections=*/false);
-        }
+            dispatcher->shutdown(/*closed_all_connections=*/false);
 
         throw;
     }
@@ -226,10 +214,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
 void KeeperDispatcher::shutdown(bool closed_all_connections)
 {
-    /// Armed once the shutdown is committed to. setShutdownCalled is one-shot, so no later
-    /// shutdown reaches the waiters and they must be completed even if a step below throws.
-    scope_guard fail_session_id_waiters;
-
     try
     {
         {
@@ -237,11 +221,6 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
 
             if (!keeper_context || !keeper_context->setShutdownCalled())
                 return;
-
-            fail_session_id_waiters = scope_guard([this] { failPendingSessionIDRequests(); });
-
-            fiu_do_on(FailPoints::keeper_shutdown_throw_after_flag,
-                      { throw Exception(ErrorCodes::SYSTEM_ERROR, "Injected shutdown failure"); });
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
 
@@ -265,22 +244,11 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
 
         if (dispatcher_old)
             dispatcher_old->shutdown();
-        /// Stop accepting requests and close the sessions first: that needs a live raft instance,
-        /// which server->shutdown destroys.
         if (dispatcher)
-            dispatcher->shutdownRequests();
+            dispatcher->shutdown(closed_all_connections);
 
         if (server)
             server->shutdown();
-
-        /// Only now is nuraft's commit thread joined, so no thread can produce responses anymore
-        /// and the queues can be drained and checked.
-        if (dispatcher)
-            dispatcher->drainAndCheckQueues(closed_all_connections);
-
-        /// On the normal path, run here rather than leaving it to the guard: until the commit
-        /// thread is joined a late commit can still complete a waiter itself.
-        fail_session_id_waiters.reset();
 
         snapshot_s3.shutdown();
 
@@ -427,7 +395,7 @@ void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size, UInt64
 void KeeperDispatcher::interruptibleSleep(std::chrono::milliseconds period)
 {
     std::unique_lock lock(early_shutdown_wait_mutex);
-    early_shutdown_wait_cv.wait_for(lock, saturatedWaitMilliseconds(period.count()), [&] { return shutting_down.load(); });
+    early_shutdown_wait_cv.wait_for(lock, period, [&] { return shutting_down.load(); });
 }
 
 void KeeperDispatcher::signalShutdown()
@@ -521,33 +489,6 @@ void KeeperDispatcher::finishSession(int64_t session_id)
         dispatcher->finishSession(session_id);
 }
 
-bool KeeperDispatcher::tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept
-{
-    /// A SessionID response carries session_id -1, which has no registered response callback.
-    /// Its waiter is a promise in new_session_id_requests, keyed by internal_id.
-    if (response.response->xid == Coordination::WATCH_XID || response.response->getOpNum() != Coordination::OpNum::SessionID)
-        return false;
-
-    onSessionIDResponse(response.response);
-    return true;
-}
-
-void KeeperDispatcher::failPendingSessionIDRequests() noexcept
-{
-    std::unordered_map<int64_t, std::promise<int64_t>> pending;
-    {
-        std::lock_guard lock(new_session_id_mutex);
-        pending.swap(new_session_id_requests);
-    }
-
-    if (!pending.empty())
-        LOG_INFO(log, "Failing {} pending session ID request(s) because of shutdown", pending.size());
-
-    for (auto & [internal_id, promise] : pending)
-        promise.set_exception(std::make_exception_ptr(
-            zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED, "Keeper is shutting down")));
-}
-
 void KeeperDispatcher::onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept
 {
     chassert(response->getOpNum() == Coordination::OpNum::SessionID);
@@ -611,7 +552,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         throw;
     }
 
-    if (future.wait_for(saturatedWaitMilliseconds(session_timeout_ms)) != std::future_status::ready)
+    if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
     {
         {
             std::lock_guard lock(new_session_id_mutex);

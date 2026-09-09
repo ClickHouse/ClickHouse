@@ -5,7 +5,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -294,9 +293,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
-    startup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
+    startup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
+    consumer_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 
@@ -468,7 +467,7 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     };
     auto publication_exists = [&](const String & name)
     {
-        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = {}", quoteStringPostgreSQL(name)))};
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = '{}'", name))};
         return !result.empty();
     };
 
@@ -509,7 +508,7 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     else
     {
         pqxx::result result{tx.exec(fmt::format(
-            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(legacy_publication_name)))};
+            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{}'", legacy_publication_name))};
         if (result.empty())
             ownership_conflict = fmt::format(
                 "the legacy publication {} publishes no tables, so the schema-blind legacy replication slot "
@@ -700,9 +699,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 {
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
 
-    /// Not always PostgreSQL's own snapshot id from `CREATE_REPLICATION_SLOT`: with a user-managed
-    /// slot it is `materialized_postgresql_snapshot` verbatim, so it has to be sent as data.
-    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT {}", quoteStringPostgreSQL(snapshot_name));
+    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
     tx->exec(query_str);
 
     PostgreSQLTableStructurePtr table_structure;
@@ -847,7 +844,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
 
 bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = {})", quoteStringPostgreSQL(publication_name));
+    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx.exec(query_str)};
     chassert(!result.empty());
     return result[0][0].as<std::string>() == "t";
@@ -1329,7 +1326,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 
 std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
-    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name));
+    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
     std::set<String> tables;
 
     for (const auto & [schema, table] : tx.stream<std::string, std::string>(query))
