@@ -594,7 +594,8 @@ QueryLogElement logQueryStart(
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
 
         elem.log_comment = settings[Setting::log_comment];
-        if (elem.log_comment.size() > settings[Setting::max_query_size])
+        /// `max_query_size = 0` means "unlimited" everywhere else, so it must not truncate the comment to nothing.
+        if (settings[Setting::max_query_size] != 0 && elem.log_comment.size() > settings[Setting::max_query_size])
             elem.log_comment.resize(settings[Setting::max_query_size]);
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
@@ -1028,7 +1029,8 @@ void logExceptionBeforeStart(
     elem.http_request_url = httpRequestURLForLogging(context);
 
     elem.log_comment = settings[Setting::log_comment];
-    if (elem.log_comment.size() > settings[Setting::max_query_size])
+    /// `max_query_size = 0` means "unlimited" everywhere else, so it must not truncate the comment to nothing.
+    if (settings[Setting::max_query_size] != 0 && elem.log_comment.size() > settings[Setting::max_query_size])
         elem.log_comment.resize(settings[Setting::max_query_size]);
 
     if (auto txn = context->getCurrentTransaction())

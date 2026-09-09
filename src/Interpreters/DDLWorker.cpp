@@ -591,7 +591,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         /// A server-owned handler query lifts the parser limits by sending `max_parser_depth = 0` /
         /// `max_parser_backtracks = 0` with the entry settings (see `executeQueryImpl`), which
         /// `makeQueryContext` has applied to `query_context` clamped to this host's constraints.
-        /// Ordinary distributed DDL therefore keeps this host's parser limits.
+        /// Ordinary distributed DDL therefore keeps this host's parser limits. `makeQueryContext` also
+        /// resets `dialect` and `max_query_size` on the replay context, because `query_to_execute` is SQL
+        /// this server formatted rather than text the initiator typed.
         executeQuery(
             istr,
             nullwb,
