@@ -9,27 +9,32 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # no first-class Arrow mapping. The values are written through `ISerialization`, not through
 # `IColumn::getDataAt`, which `JSON`, `Dynamic` and `QBit` do not implement and which yields the
 # `AggregateDataPtr` (a heap address, not the state) for `AggregateFunction`.
+#
+# Process startup dominates the runtime of this test, so statements are batched into as few
+# `clickhouse-local` invocations as possible. A rejected write has to stay on its own, because the error
+# ends the batch and `--ignore-error` hides it.
 
 DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.arrows"
 
-# Prints nothing on success, the error code otherwise, so that both outcomes stay in the reference.
-write() {
-    ${CLICKHOUSE_LOCAL} --query "
-        INSERT INTO FUNCTION file('${DATA_FILE}', 'ArrowStream') $1
-        SETTINGS output_format_arrow_compression_method = 'none',
-                 engine_file_truncate_on_insert = 1, $2" 2>&1 | grep -oF 'NOT_IMPLEMENTED' | head -1
+insert() {
+    echo "INSERT INTO FUNCTION file('${2:-$DATA_FILE}', 'ArrowStream') $1
+          SETTINGS output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1, $3;"
 }
-read_back() { ${CLICKHOUSE_LOCAL} --query "SELECT toTypeName(x), $1 FROM file('${DATA_FILE}', 'ArrowStream')"; }
+
+# Prints the error code, so that a rejection is visible in the reference rather than being an empty line.
+rejected() { ${CLICKHOUSE_LOCAL} --query "$1" 2>&1 | grep -oF 'NOT_IMPLEMENTED' | head -1; }
 
 # Every value is printed hex-encoded: an aggregate state and the binary encodings contain NUL bytes.
 check() {
     local query="$1" display="$2"
     echo "=== ${query}"
-    for mode in text binary throw; do
-        echo "--- ${mode}"
-        write "${query}" "output_format_arrow_unsupported_types = '${mode}'"
-        [ "${mode}" = throw ] || read_back "${display}"
-    done
+    ${CLICKHOUSE_LOCAL} --multiquery --query "
+        $(insert "${query}" "" "output_format_arrow_unsupported_types = 'text'")
+        SELECT 'text', toTypeName(x), ${display} FROM file('${DATA_FILE}', 'ArrowStream');
+        $(insert "${query}" "" "output_format_arrow_unsupported_types = 'binary'")
+        SELECT 'binary', toTypeName(x), ${display} FROM file('${DATA_FILE}', 'ArrowStream');"
+    printf 'throw\t'
+    rejected "$(insert "${query}" "" "output_format_arrow_unsupported_types = 'throw'")"
 }
 
 check "SELECT '{\"a\":1,\"b\":\"s\"}'::JSON AS x" "hex(x)"
@@ -40,71 +45,66 @@ check "SELECT sumState(number) AS x FROM numbers(3)" "hex(x)"
 check "SELECT [1,2,3]::QBit(BFloat16, 3) AS x" "hex(x)"
 
 # `binary` is the default and matches what the old boolean did, so an unset `output_format_arrow_unsupported_types`
-# keeps honouring `output_format_arrow_unsupported_types_as_binary`.
-echo "=== old boolean still works ==="
-write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types_as_binary = 0"
-write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types_as_binary = 1"
-read_back "hex(x)"
-
-# An explicit mode wins over the boolean whichever order the two are given in.
-echo "=== explicit mode wins over the boolean ==="
-write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types_as_binary = 0, output_format_arrow_unsupported_types = 'text'"
-read_back "hex(x)"
-write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types = 'throw', output_format_arrow_unsupported_types_as_binary = 1"
-
-# An aggregate state written in `binary` mode is the same encoding `RowBinary` uses, so it deserializes back
-# into the original `AggregateFunction` type.
-echo "=== AggregateFunction binary round-trip ==="
-write "SELECT sumState(number) AS x FROM numbers(11)" "output_format_arrow_unsupported_types = 'binary'"
-${CLICKHOUSE_LOCAL} --query "
-    SELECT finalizeAggregation(CAST(x AS AggregateFunction(sum, UInt64)))
-    FROM file('${DATA_FILE}', 'ArrowStream')"
+# keeps honouring `output_format_arrow_unsupported_types_as_binary`. An explicit mode wins over the boolean
+# whichever order the two are given in.
+echo "=== the old boolean, and precedence over it ==="
+DYNAMIC="SELECT 42::Dynamic AS x"
+printf 'boolean=0\t'; rejected "$(insert "${DYNAMIC}" "" "output_format_arrow_unsupported_types_as_binary = 0")"
+printf 'throw wins over boolean=1\t'
+rejected "$(insert "${DYNAMIC}" "" "output_format_arrow_unsupported_types = 'throw', output_format_arrow_unsupported_types_as_binary = 1")"
+${CLICKHOUSE_LOCAL} --multiquery --query "
+    $(insert "${DYNAMIC}" "" "output_format_arrow_unsupported_types_as_binary = 1")
+    SELECT 'boolean=1', hex(x) FROM file('${DATA_FILE}', 'ArrowStream');
+    $(insert "${DYNAMIC}" "" "output_format_arrow_unsupported_types_as_binary = 0, output_format_arrow_unsupported_types = 'text'")
+    SELECT 'text wins over boolean=0', hex(x) FROM file('${DATA_FILE}', 'ArrowStream');"
 
 # The opaque column is tagged as an Arrow extension type carrying the original ClickHouse type name, so a
 # consumer can tell it apart from a genuine string or binary column. A reader that does not know the
 # extension name (as here, `pyarrow`) sees the plain storage type. An aggregate state stays `binary` even in
 # `text` mode: `serializeText` writes its raw state bytes, and an Arrow `string` column must hold valid UTF-8.
-# A map's key is tagged too - `Map(JSON, ...)` is a legal type.
+# A map's key is tagged too - `Map(JSON, ...)` is a legal type. 128 puts the high bit in the first byte of
+# the state, so that payload is not valid UTF-8.
 echo "=== pyarrow: storage type and clickhouse.opaque tag ==="
-dump_schema() {
-    python3 - "${DATA_FILE}" "$1" <<'PY'
+JSON_Q="SELECT '{\"a\":1}'::JSON AS x"
+AGG_Q="SELECT sumState(toUInt64(128)) AS x"
+MAP_Q="SELECT CAST(map('{\"a\":1}', 1), 'Map(JSON, UInt8)') AS x"
+
+${CLICKHOUSE_LOCAL} --multiquery --query "
+    $(insert "${JSON_Q}" "${DATA_FILE}.json_text"    "output_format_arrow_unsupported_types = 'text'")
+    $(insert "${JSON_Q}" "${DATA_FILE}.json_binary"  "output_format_arrow_unsupported_types = 'binary'")
+    $(insert "${AGG_Q}"  "${DATA_FILE}.agg_text"     "output_format_arrow_unsupported_types = 'text'")
+    $(insert "${AGG_Q}"  "${DATA_FILE}.agg_binary"   "output_format_arrow_unsupported_types = 'binary'")
+    $(insert "${MAP_Q}"  "${DATA_FILE}.map_text"     "output_format_arrow_unsupported_types = 'text'")
+    $(insert "${MAP_Q}"  "${DATA_FILE}.map_binary"   "output_format_arrow_unsupported_types = 'binary'")"
+
+python3 - "${DATA_FILE}" <<'PY'
 import sys
 import pyarrow as pa
 
-with pa.OSFile(sys.argv[1], "rb") as source:
-    schema = pa.ipc.open_stream(source).schema
 
-
-def dump(field, path):
+def dump(label, field, path):
     metadata = {key.decode(): value.decode() for key, value in (field.metadata or {}).items()}
-    print(sys.argv[2], path, field.type, metadata.get("ARROW:extension:name"),
+    print(label, path, field.type, metadata.get("ARROW:extension:name"),
           metadata.get("ARROW:extension:metadata"), sep="\t")
     for i in range(field.type.num_fields):
-        dump(field.type.field(i), f"{path}.{field.type.field(i).name}")
+        dump(label, field.type.field(i), f"{path}.{field.type.field(i).name}")
 
 
-for f in schema:
-    dump(f, f.name)
+for label in ["json/text", "json/binary", "aggregate/text", "aggregate/binary", "map/text", "map/binary"]:
+    suffix = label.replace("json/", "json_").replace("aggregate/", "agg_").replace("map/", "map_")
+    with pa.OSFile(f"{sys.argv[1]}.{suffix}", "rb") as source:
+        schema = pa.ipc.open_stream(source).schema
+    for f in schema:
+        dump(label, f, f.name)
 PY
-}
 
-for mode in text binary; do
-    write "SELECT '{\"a\":1}'::JSON AS x" "output_format_arrow_unsupported_types = '${mode}'"
-    dump_schema "json/${mode}"
-done
+# An aggregate state written in either mode is the encoding `RowBinary` uses, so it deserializes back into
+# the original `AggregateFunction` type.
+echo "=== AggregateFunction round-trip ==="
+${CLICKHOUSE_LOCAL} --multiquery --query "
+    SELECT 'text', finalizeAggregation(CAST(x AS AggregateFunction(sum, UInt64)))
+    FROM file('${DATA_FILE}.agg_text', 'ArrowStream');
+    SELECT 'binary', finalizeAggregation(CAST(x AS AggregateFunction(sum, UInt64)))
+    FROM file('${DATA_FILE}.agg_binary', 'ArrowStream');"
 
-# 128 puts the high bit in the first byte of the state, so the payload is not valid UTF-8.
-for mode in text binary; do
-    write "SELECT sumState(toUInt64(128)) AS x" "output_format_arrow_unsupported_types = '${mode}'"
-    dump_schema "aggregate/${mode}"
-    ${CLICKHOUSE_LOCAL} --query "
-        SELECT finalizeAggregation(CAST(x AS AggregateFunction(sum, UInt64)))
-        FROM file('${DATA_FILE}', 'ArrowStream')"
-done
-
-for mode in text binary; do
-    write "SELECT CAST(map('{\"a\":1}', 1), 'Map(JSON, UInt8)') AS x" "output_format_arrow_unsupported_types = '${mode}'"
-    dump_schema "map/${mode}"
-done
-
-rm -f "${DATA_FILE}"
+rm -f "${DATA_FILE}" "${DATA_FILE}".*

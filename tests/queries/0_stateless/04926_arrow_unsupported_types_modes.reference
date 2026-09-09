@@ -1,53 +1,33 @@
 === SELECT '{"a":1,"b":"s"}'::JSON AS x
---- text
-String	7B2261223A312C2262223A2273227D
---- binary
-String	02016215017301610A0100000000000000
---- throw
-NOT_IMPLEMENTED
+text	String	7B2261223A312C2262223A2273227D
+binary	String	02016215017301610A0100000000000000
+throw	NOT_IMPLEMENTED
 === SELECT 42::Dynamic AS x
---- text
-String	3432
---- binary
-String	15023432
---- throw
-NOT_IMPLEMENTED
+text	String	3432
+binary	String	15023432
+throw	NOT_IMPLEMENTED
 === SELECT [1,2]::Array(Dynamic) AS x
---- text
-Array(String)	['31','32']
---- binary
-Array(String)	['0A0100000000000000','0A0200000000000000']
---- throw
-NOT_IMPLEMENTED
+text	Array(String)	['31','32']
+binary	Array(String)	['0A0100000000000000','0A0200000000000000']
+throw	NOT_IMPLEMENTED
 === SELECT sumState(number) AS x FROM numbers(3)
---- text
-String	0300000000000000
---- binary
-String	0300000000000000
---- throw
-NOT_IMPLEMENTED
+text	String	0300000000000000
+binary	String	0300000000000000
+throw	NOT_IMPLEMENTED
 === SELECT [1,2,3]::QBit(BFloat16, 3) AS x
---- text
-String	5B312C322C335D
---- binary
-String	03803F00404040
---- throw
-NOT_IMPLEMENTED
-=== old boolean still works ===
-NOT_IMPLEMENTED
-String	15023432
-=== explicit mode wins over the boolean ===
-String	3432
-NOT_IMPLEMENTED
-=== AggregateFunction binary round-trip ===
-55
+text	String	5B312C322C335D
+binary	String	03803F00404040
+throw	NOT_IMPLEMENTED
+=== the old boolean, and precedence over it ===
+boolean=0	NOT_IMPLEMENTED
+throw wins over boolean=1	NOT_IMPLEMENTED
+boolean=1	15023432
+text wins over boolean=0	3432
 === pyarrow: storage type and clickhouse.opaque tag ===
 json/text	x	string	clickhouse.opaque	JSON
 json/binary	x	binary	clickhouse.opaque	JSON
 aggregate/text	x	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
-128
 aggregate/binary	x	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
-128
 map/text	x	map<string, uint8>	None	None
 map/text	x.entries	struct<key: string not null, value: uint8 not null>	None	None
 map/text	x.entries.key	string	clickhouse.opaque	JSON
@@ -56,3 +36,6 @@ map/binary	x	map<binary, uint8>	None	None
 map/binary	x.entries	struct<key: binary not null, value: uint8 not null>	None	None
 map/binary	x.entries.key	binary	clickhouse.opaque	JSON
 map/binary	x.entries.value	uint8	None	None
+=== AggregateFunction round-trip ===
+text	128
+binary	128

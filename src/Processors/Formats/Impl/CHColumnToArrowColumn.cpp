@@ -190,20 +190,18 @@ namespace DB
     /// `ColumnVariant` (hence `ColumnDynamic`) and `ColumnQBit` throw `NOT_IMPLEMENTED`, and
     /// `ColumnAggregateFunction` returns the `AggregateDataPtr` itself, so the export would carry heap
     /// addresses instead of aggregate states.
-    static void fillArrowArrayWithOpaqueColumnData(
-        ColumnPtr write_column,
+    template <typename Builder>
+    static void appendOpaqueColumnData(
+        Builder & builder,
+        const ColumnPtr & write_column,
         const DataTypePtr & column_type,
         const PaddedPODArray<UInt8> * null_bytemap,
         const String & format_name,
         const CHColumnToArrowColumn::Settings & settings,
-        arrow::ArrayBuilder* array_builder,
+        bool as_text,
         size_t start,
         size_t end)
     {
-        /// `arrow::StringBuilder` derives from `arrow::BinaryBuilder`, so one cast covers both the `utf8`
-        /// builder used for text and the `binary` one used for binary.
-        arrow::BinaryBuilder & builder = assert_cast<arrow::BinaryBuilder &>(*array_builder);
-        const bool as_text = settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT;
         const auto serialization = column_type->getDefaultSerialization();
         arrow::Status status;
 
@@ -224,6 +222,32 @@ namespace DB
             }
             checkStatus(status, write_column->getName(), format_name);
         }
+    }
+
+    static void fillArrowArrayWithOpaqueColumnData(
+        ColumnPtr write_column,
+        const DataTypePtr & column_type,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        const CHColumnToArrowColumn::Settings & settings,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        /// Dispatch on the builder `getArrowType` asked for rather than re-deriving the mode, so the payload
+        /// cannot disagree with the declared type: a `utf8` column is only chosen for a value with a text
+        /// form, and everything else - an aggregate state in either mode included - gets `binary`.
+        /// `arrow::StringBuilder` does derive from `arrow::BinaryBuilder`, but they cannot be conflated
+        /// here: `assert_cast` compares typeid exactly, so casting one to the other aborts in a debug or
+        /// sanitizer build.
+        if (array_builder->type()->id() == arrow::Type::STRING)
+            appendOpaqueColumnData(
+                assert_cast<arrow::StringBuilder &>(*array_builder),
+                write_column, column_type, null_bytemap, format_name, settings, /*as_text=*/true, start, end);
+        else
+            appendOpaqueColumnData(
+                assert_cast<arrow::BinaryBuilder &>(*array_builder),
+                write_column, column_type, null_bytemap, format_name, settings, /*as_text=*/false, start, end);
     }
 
     /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
