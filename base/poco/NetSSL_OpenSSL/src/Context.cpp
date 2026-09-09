@@ -133,15 +133,41 @@ static bool poco_dir_cert(const std::string & dir)
 
 static bool poco_dir_contains_certs(const std::string & dir)
 {
+	/// A hash-shaped file name alone does not mean that a CA certificate can be obtained from the
+	/// directory: a stale symlink or a zero-byte placeholder such as `deadbeef.0` makes
+	/// `SSL_CTX_load_verify_locations` succeed while leaving the trust store empty, and the failure
+	/// only shows up later, at handshake time. Require at least one certificate that actually parses,
+	/// so that the caller falls back to the probe and to the certificates embedded into the binary.
 	RegularExpression re("^[a-fA-F0-9]{8}\\.\\d$");
 	try
 	{
 		for (DirectoryIterator it(dir), end; it != end; ++it)
-			if (re.match(Path(it->path()).getFileName()))
+		{
+			if (!re.match(Path(it->path()).getFileName()))
+				continue;
+
+			/// OpenSSL looks up hash-named entries of a certificate directory in PEM format.
+			BIO * bio = BIO_new_file(it->path().c_str(), "r");
+			if (bio == nullptr)
+			{
+				ERR_clear_error();
+				continue;
+			}
+
+			X509 * cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+			BIO_free(bio);
+			ERR_clear_error();
+
+			if (cert != nullptr)
+			{
+				X509_free(cert);
 				return true;
+			}
+		}
 	}
 	catch (Poco::Exception& exc) {}
 
+	ERR_clear_error();
 	return false;
 }
 
@@ -301,6 +327,7 @@ void Context::init(const Params& params)
 	try
 	{
 		int errCode = 0;
+		bool caLocationLoaded = false;
 		if (!params.caLocation.empty())
 		{
 			Poco::File aFile(params.caLocation);
@@ -314,6 +341,7 @@ void Context::init(const Params& params)
 				throw SSLContextException(std::string("Cannot load CA file/directory at ") + params.caLocation, msg);
 			}
 			_caPaths.caLocation = params.caLocation;
+			caLocationLoaded = true;
 		}
 
 		if (params.loadDefaultCAs)
@@ -358,11 +386,16 @@ void Context::init(const Params& params)
 				/// silently produce an empty trust store and only fail later, at handshake time.
 				errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
 
-				if (errCode != 1)
+				/// The embedded bundle is a substitute for a *missing* filesystem trust store, not an
+				/// addition to a configured one: when `caLocation` was loaded successfully, its roots are
+				/// exactly the trust store the deployment asked for, and appending the public roots of the
+				/// embedded bundle would widen the trust surface beyond it. The store is not empty in that
+				/// case either, so nothing is thrown.
+				if (errCode != 1 && !caLocationLoaded)
 					errCode = poco_load_embedded_certificates(_pSSLContext, _caPaths);
 			}
 
-			if (errCode != 1)
+			if (errCode != 1 && !caLocationLoaded)
 			{
 				std::string msg = Utility::getLastError();
 				throw SSLContextException("Cannot load default CA certificates", msg);

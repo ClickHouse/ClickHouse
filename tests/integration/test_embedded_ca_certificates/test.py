@@ -21,6 +21,17 @@ node = cluster.add_instance(
     ],
     stay_alive=True,
 )
+# A node with an explicitly configured `caConfig`: the embedded bundle must not be added
+# to the trust store it defines.
+node_ca_config = cluster.add_instance(
+    "node_ca_config",
+    main_configs=[
+        "configs/ssl_config_ca_config.xml",
+        "configs/server-cert.pem",
+        "configs/server-key.pem",
+    ],
+    stay_alive=True,
+)
 
 # The locations probed by Poco::Net::Context for default CA certificates.
 CA_LOCATIONS = [
@@ -53,13 +64,20 @@ def default_ca_file():
     )
 
 
-def https_ping():
+def https_ping(instance=None):
+    instance = instance or node
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     response = requests.get(
-        f"https://{node.ip_address}:8443/ping", verify=False, timeout=10
+        f"https://{instance.ip_address}:8443/ping", verify=False, timeout=10
     )
     response.raise_for_status()
     return response.text
+
+
+def remove_ca_locations(instance):
+    instance.exec_in_container(
+        ["bash", "-c", "rm -rf " + " ".join(CA_LOCATIONS)], privileged=True, user="root"
+    )
 
 
 def test_embedded_ca_certificates(started_cluster):
@@ -193,3 +211,69 @@ def test_default_ca_file_does_not_shadow_default_dir(started_cluster):
         ).strip()
         == "0"
     )
+
+
+def test_unloadable_hash_named_file_engages_fallback(started_cluster):
+    # A hash-named entry of the default CA directory that OpenSSL cannot load a certificate
+    # from - a zero-byte placeholder or a stale symlink - must not count as certificates
+    # being present: `SSL_CTX_load_verify_locations` succeeds for such a directory while the
+    # trust store stays empty, which is exactly the handshake-time failure the fallback
+    # exists to prevent.
+    remove_ca_locations(node)
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "mkdir -p /etc/ssl/certs && : > /etc/ssl/certs/deadbeef.0",
+        ],
+        privileged=True,
+        user="root",
+    )
+    node.restart_clickhouse()
+
+    assert https_ping() == "Ok.\n"
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
+            ).strip()
+        )
+        > 100
+    )
+
+
+def test_ca_config_is_not_widened_by_embedded_certificates(started_cluster):
+    # `caConfig` defines the trust store the deployment asked for. The embedded bundle is a
+    # substitute for a missing filesystem trust store, not an addition to a configured one:
+    # appending its public roots would silently widen the trust surface of a deployment that
+    # intended to trust only its own root.
+    remove_ca_locations(node_ca_config)
+    node_ca_config.restart_clickhouse()
+
+    # The server starts and serves HTTPS: a configured `caConfig` is a usable trust store,
+    # so the absence of the default CA locations is not an error either.
+    assert https_ping(node_ca_config) == "Ok.\n"
+
+    # The configured root is in the trust store...
+    assert (
+        int(
+            node_ca_config.query(
+                "SELECT count() FROM system.certificates"
+                " WHERE path = '/etc/clickhouse-server/config.d/server-cert.pem'"
+            ).strip()
+        )
+        > 0
+    )
+    # ...and the embedded certificates are not.
+    assert (
+        node_ca_config.query(
+            "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
+        ).strip()
+        == "0"
+    )
+
+    # The outbound (client) context is created from `caConfig` alone as well.
+    error = node_ca_config.query_and_get_error(
+        f"SELECT * FROM url('https://{node.ip_address}:8443/ping', LineAsString)"
+    )
+    assert "Cannot load default CA certificates" not in error
