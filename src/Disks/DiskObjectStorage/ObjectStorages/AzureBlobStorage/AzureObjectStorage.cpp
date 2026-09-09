@@ -656,7 +656,8 @@ void AzureObjectStorage::copyObject( /// NOLINT
             object_to_attributes,
             scheduler,
             /*blob_storage_log=*/nullptr,
-            if_none_match);
+            if_none_match,
+            write_settings.object_storage_copy_source_if_match);
     }
     catch (const Azure::Core::RequestFailedException & e)
     {

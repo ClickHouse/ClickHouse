@@ -418,7 +418,8 @@ void copyAzureBlobStorageFile(
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     BlobStorageLogWriterPtr blob_storage_log,
-    const String & dest_if_none_match)
+    const String & dest_if_none_match,
+    const String & source_if_match)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
@@ -443,6 +444,8 @@ void copyAzureBlobStorageFile(
                 Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
                 if (!dest_if_none_match.empty())
                     copy_options.AccessConditions.IfNoneMatch = Azure::ETag(dest_if_none_match);
+                if (!source_if_match.empty())
+                    copy_options.SourceAccessConditions.IfMatch = Azure::ETag(source_if_match);
                 if (object_to_attributes.has_value())
                 {
                     for (const auto & [key, value] : *object_to_attributes)
@@ -457,6 +460,8 @@ void copyAzureBlobStorageFile(
                 Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
                 if (!dest_if_none_match.empty())
                     copy_options.AccessConditions.IfNoneMatch = Azure::ETag(dest_if_none_match);
+                if (!source_if_match.empty())
+                    copy_options.SourceAccessConditions.IfMatch = Azure::ETag(source_if_match);
                 if (object_to_attributes.has_value())
                 {
                     for (const auto & [key, value] : *object_to_attributes)
@@ -511,6 +516,15 @@ void copyAzureBlobStorageFile(
     }
     if (!is_native_copy_done)
     {
+        /// The buffered read carries no source condition, so a pinned copy cannot prove the bytes came
+        /// from the requested generation. Fail instead of copying an unproven one.
+        if (!source_if_match.empty())
+            throw Exception(
+                ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                "Cannot copy blob {} pinned to source ETag {}: the native copy is unavailable and the "
+                "read-write fallback cannot pin the source",
+                src_blob, source_if_match);
+
         /// Copy through read and write
         LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
         auto create_read_buffer = [&]

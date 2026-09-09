@@ -27,6 +27,8 @@ struct S3CopyFileSettings
     /// Pins every read of the source to one generation; empty on unversioned buckets.
     /// The caller's `fallback_file_reader` must pin the same version.
     String source_version_id;
+    /// Source ETag the copy must still match, so it cannot carry a generation the caller never saw.
+    String source_if_match;
     std::optional<S3::ObjectHeaders> source_headers;
     std::optional<ObjectAttributes> source_tags;
 };

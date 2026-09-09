@@ -41,7 +41,10 @@ void copyAzureBlobStorageFile(
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
     BlobStorageLogWriterPtr blob_storage_log = {},
     /// Pass `*` to fail instead of overwriting the destination blob.
-    const String & dest_if_none_match = {});
+    const String & dest_if_none_match = {},
+    /// Source ETag the copy must still match. The read-write fallback cannot carry the condition, so a
+    /// pinned copy fails there rather than silently copying a newer generation.
+    const String & source_if_match = {});
 
 
 /// Copies data from any seekable source to AzureBlobStorage.

@@ -43,6 +43,10 @@ struct WriteSettings
     std::string object_storage_write_if_none_match;
     std::string object_storage_write_if_match;
 
+    /// Pins a guarded copy to the source generation the caller inspected (its ETag): the copy fails
+    /// instead of silently carrying a newer one. Empty means no pin.
+    std::string object_storage_copy_source_if_match;
+
     /// Whether a guarded copy restates the source object's tags, which needs permission to read them.
     /// When false the copy keeps the pre-guard permission set and does not carry the tags over.
     bool object_storage_copy_preserve_source_tags = true;

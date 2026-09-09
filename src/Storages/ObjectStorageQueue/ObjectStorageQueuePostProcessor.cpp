@@ -359,6 +359,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                         {
                             LOG_TRACE(log, "Copying object {} to {}", source_object.remote_path, object_to.remote_path);
                             std::optional<ObjectAttributes> provenance;
+                            auto write_settings = move_write_settings;
                             if (!preserve_path)
                             {
                                 if (auto source_metadata
@@ -370,12 +371,17 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                                         source_metadata->etag,
                                         source_metadata->last_modified.epochTime(),
                                         source_metadata->version_id);
+                                    /// The backend looks the source up again, so pin it to the generation this
+                                    /// provenance describes: a rewrite in between fails the copy instead of
+                                    /// stamping these attributes onto newer bytes.
+                                    write_settings.object_storage_copy_source_if_match = source_metadata->etag;
                                 }
                             }
 
                             try
                             {
-                                object_storage->copyObject(source_object, object_to, read_settings, move_write_settings, provenance);
+                                object_storage->copyObject(
+                                    source_object, object_to, read_settings, write_settings, provenance);
                             }
                             catch (const Exception & e)
                             {
@@ -653,6 +659,10 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         auto blob_client = src_client->GetBlobClient(object_from.remote_path);
                         auto properties = blob_client.GetProperties().Value;
                         auto blob_size = properties.BlobSize;
+                        /// The copy resolves the source key again, so pin it to the generation these
+                        /// properties describe; the copy fails if the blob was rewritten in between.
+                        const String source_if_match
+                            = move_if_none_match.empty() ? String{} : properties.ETag.ToString();
                         const auto provenance = move_if_none_match.empty()
                             ? std::optional<ObjectAttributes>{}
                             : makeMoveProvenance(
@@ -677,7 +687,8 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                 provenance,
                                 scheduler,
                                 /* blob_storage_log */ {},
-                                /* dest_if_none_match */ move_if_none_match);
+                                /* dest_if_none_match */ move_if_none_match,
+                                /* source_if_match */ source_if_match);
                         }
                         catch (const Azure::Core::RequestFailedException & e)
                         {

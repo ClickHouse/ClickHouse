@@ -808,6 +808,8 @@ namespace
         void fillCopyRequest(S3::CopyObjectRequest & request)
         {
             request.SetCopySource(makeCopySource(src_bucket, src_key, copy_settings.source_version_id));
+            if (!copy_settings.source_if_match.empty())
+                request.SetCopySourceIfMatch(copy_settings.source_if_match);
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
 
@@ -926,6 +928,8 @@ namespace
 
             /// Make a copy request to copy a part.
             request->SetCopySource(makeCopySource(src_bucket, src_key, copy_settings.source_version_id));
+            if (!copy_settings.source_if_match.empty())
+                request->SetCopySourceIfMatch(copy_settings.source_if_match);
             request->SetBucket(dest_bucket);
             request->SetKey(dest_key);
             request->SetUploadId(multipart_upload_id);

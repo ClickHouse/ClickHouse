@@ -699,6 +699,9 @@ void S3ObjectStorage::copyObject( // NOLINT
     /// Everything below must describe the generation this HEAD saw, so a same-key re-upload cannot
     /// mix another version's bytes into a guarded copy. Empty on unversioned buckets.
     const String source_version_id = guarded_copy ? source_info.version_id : String{};
+    /// A caller that already built provenance from an earlier lookup pins that generation here, so the
+    /// copy fails rather than stamping it onto bytes from a newer one.
+    const String & source_if_match = write_settings.object_storage_copy_source_if_match;
     /// A guarded copy re-uploads the object, so the tags are read explicitly rather than through the
     /// `HeadObject` tag count, which restricted credentials do not get to see.
     std::optional<ObjectAttributes> source_tags;
@@ -721,16 +724,22 @@ void S3ObjectStorage::copyObject( // NOLINT
         scheduler,
         [&, this]() -> std::unique_ptr<SeekableReadBuffer>
         {
-            if (source_version_id.empty())
+            if (source_version_id.empty() && source_if_match.empty())
                 return readObject(object_from, read_settings_to_use);
+            /// The read-write fallback carries no copy-source condition, so pin the read itself:
+            /// `ReadBufferFromS3` checks every response ETag against the expected one.
             return std::make_unique<ReadBufferFromS3>(
                 current_client, src_bucket, src_key, source_version_id,
-                settings_ptr->request_settings, read_settings_to_use);
+                settings_ptr->request_settings, read_settings_to_use,
+                /*use_external_buffer=*/false, /*offset=*/0, /*read_until_position=*/0, /*restricted_seek=*/false,
+                /*file_size=*/std::nullopt, credentials_refresh_callback,
+                /*blob_storage_log=*/nullptr, /*expected_etag=*/source_if_match);
         },
         object_to_attributes,
         S3CopyFileSettings{
             .if_none_match = write_settings.object_storage_write_if_none_match,
             .source_version_id = source_version_id,
+            .source_if_match = source_if_match,
             .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
                                            : std::optional<S3::ObjectHeaders>{},
             .source_tags = std::move(source_tags)});
