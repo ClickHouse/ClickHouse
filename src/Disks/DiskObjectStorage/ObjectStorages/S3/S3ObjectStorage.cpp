@@ -147,7 +147,6 @@ public:
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
         , start_after_set(start_after_.has_value() && !start_after_->empty())
-        , limited_log(std::make_shared<LogSeriesLimiter>(getLogger("S3IteratorAsync"), 1, 30))
     {
         request->SetBucket(bucket_);
         request->SetPrefix(path_prefix);
@@ -165,6 +164,11 @@ public:
     }
 
 private:
+    std::string describeListing() const override
+    {
+        return fmt::format("Bucket: {}, Prefix: {}", request->GetBucket(), request->GetPrefix());
+    }
+
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
@@ -208,21 +212,8 @@ private:
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
 
-            const bool is_truncated = outcome.GetResult().GetIsTruncated();
-
-            /// A page may legitimately be empty while the listing continues: S3 filters inside a
-            /// partition and can report `IsTruncated` with no contents. It is also what a listing
-            /// looks like when it under-reports, so record it -- an object that a later step cannot
-            /// find is much easier to explain with this in the log.
-            if (objects.empty() && is_truncated)
-                LOG_INFO(
-                    limited_log,
-                    "Listing returned an empty page while reporting more to come. Bucket: {}, Prefix: {}, StartAfter: {}",
-                    request->GetBucket(), request->GetPrefix(),
-                    request->StartAfterHasBeenSet() ? request->GetStartAfter() : "<unset>");
-
             /// It returns false when all objects were returned
-            return is_truncated;
+            return outcome.GetResult().GetIsTruncated();
         }
 
         throw S3Exception(outcome.GetError().GetErrorType(),
@@ -235,7 +226,6 @@ private:
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
     bool start_after_set;
-    LogSeriesLimiterPtr limited_log;
 };
 
 }

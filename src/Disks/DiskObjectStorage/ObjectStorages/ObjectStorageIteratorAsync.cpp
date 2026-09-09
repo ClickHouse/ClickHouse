@@ -18,6 +18,7 @@ IObjectStorageIteratorAsync::IObjectStorageIteratorAsync(
     ThreadName thread_name)
     : list_objects_pool(threads_metric, threads_active_metric, threads_scheduled_metric, 1)
     , list_objects_scheduler(threadPoolCallbackRunnerUnsafe<BatchAndHasNext>(list_objects_pool, thread_name))
+    , limited_log(std::make_shared<LogSeriesLimiter>(getLogger("ObjectStorageIteratorAsync"), 1, 30))
 {
 }
 
@@ -87,6 +88,14 @@ void IObjectStorageIteratorAsync::nextBatch()
                 is_finished = true;
                 break;
             }
+
+            /// Following the token past an empty page is correct, and it is also what a listing
+            /// under-reporting its contents looks like. Nothing else records that it happened, and
+            /// an object a later step cannot find is much easier to explain with this in the log.
+            LOG_INFO(
+                limited_log,
+                "Listing returned an empty page while reporting more to come, following the token. {}",
+                describeListing());
         }
     }
     catch (...)
