@@ -90,17 +90,24 @@ echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/sys
 # Install previous release packages
 install_packages previous_release_package_folder
 
+# These helper invocations of `clickhouse-local` only query `system.settings` and friends, so they
+# must not touch the persistent default data directory in the home: a table left there by another
+# invocation, or a concurrent instance holding the directory, would break them. The `--tmp` option
+# asks for a throwaway directory, but it exists only in the new binary - the previously released
+# binary defaults to a temporary directory anyway - so it is added only after the upgrade.
+local_tmp_option=""
+
 # NOTE: we need to run clickhouse-local under script to get settings without any adjustments, like clickhouse-local does in case of stdout is not a tty
 function save_settings_clean()
 {
   local out=$1 && shift
-  script -q -c "clickhouse-local --implicit-select 0 -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
+  script -q -c "clickhouse-local $local_tmp_option --implicit-select 0 -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
 }
 
 function save_mergetree_settings_clean()
 {
   local out=$1 && shift
-  script -q -c "clickhouse-local --implicit-select 0 -q \"select * from system.merge_tree_settings into outfile '$out'\"" --log-out /dev/null
+  script -q -c "clickhouse-local $local_tmp_option --implicit-select 0 -q \"select * from system.merge_tree_settings into outfile '$out'\"" --log-out /dev/null
 }
 
 # We save the (numeric) version of the old server to compare setting changes between the 2
@@ -109,13 +116,13 @@ function save_mergetree_settings_clean()
 function save_major_version()
 {
   local out=$1 && shift
-  clickhouse-local -q "SELECT a[1]::UInt64 * 100 + a[2]::UInt64 as v FROM (Select splitByChar('.', version()) as a) into outfile '$out'"
+  clickhouse-local $local_tmp_option -q "SELECT a[1]::UInt64 * 100 + a[2]::UInt64 as v FROM (Select splitByChar('.', version()) as a) into outfile '$out'"
 }
 
 save_settings_clean 'old_settings.native'
 save_mergetree_settings_clean 'old_merge_tree_settings.native'
 save_major_version 'old_version.native'
-old_major_version=$(clickhouse-local -q "select a[1] || '.' || a[2] from (select splitByChar('.', version()) as a)")
+old_major_version=$(clickhouse-local $local_tmp_option -q "select a[1] || '.' || a[2] from (select splitByChar('.', version()) as a)")
 
 configure_opts=(
     # Let's enable S3 storage by default
@@ -172,6 +179,9 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Install and start new server
 install_packages $PACKAGES_DIR
+
+# The new binary supports (and needs) a throwaway data directory for the pure helper queries.
+local_tmp_option="--tmp"
 configure "${configure_opts[@]}"
 
 # Check that all new/changed setting were added in settings changes history.
@@ -182,12 +192,12 @@ configure "${configure_opts[@]}"
 # rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
 # so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
 # still caught and must have a settings changes history entry.
-IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+IS_SANITIZED=$(clickhouse-local $local_tmp_option --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
   save_mergetree_settings_clean 'new_merge_tree_settings.native'
-  clickhouse-local -nmq "
+  clickhouse-local $local_tmp_option -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE old_merge_tree_settings AS file('old_merge_tree_settings.native');
   CREATE TABLE old_version AS file('old_version.native');

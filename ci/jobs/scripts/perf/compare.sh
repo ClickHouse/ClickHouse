@@ -41,7 +41,9 @@ JEMALLOC_PROFILER_SAMPLING_RATE=16
 # REPORT_LOCAL_{QUERY,SERVER}_SETTINGS in performance_tests.py.
 # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
 # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
-CHPC_REPORT_LOCAL_QUERY_SETTINGS="--max_bytes_before_external_group_by=0 --max_bytes_ratio_before_external_group_by=0 --max_bytes_before_external_sort=0 --max_bytes_ratio_before_external_sort=0"
+# --tmp: report-building invocations run concurrently and must not share
+# (and lock) the default designated data directory in the home directory.
+CHPC_REPORT_LOCAL_QUERY_SETTINGS="--tmp --max_bytes_before_external_group_by=0 --max_bytes_ratio_before_external_group_by=0 --max_bytes_before_external_sort=0 --max_bytes_ratio_before_external_sort=0"
 # Track each process against its own RSS, not the job cgroup (MEMORY_LIMIT_EXCEEDED).
 CHPC_REPORT_LOCAL_SERVER_SETTINGS="--memory_worker_use_cgroup=0"
 

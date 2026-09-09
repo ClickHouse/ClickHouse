@@ -45,7 +45,7 @@ EOF
 echo "-- HOME/.clickhouse-local/config.xml"
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR/home" "$CLICKHOUSE_LOCAL" --query "SELECT getSetting('max_threads')"
+    HOME="$TESTDIR/home" $CLICKHOUSE_LOCAL --query "SELECT getSetting('max_threads')"
 )
 
 echo "-- ./clickhouse-local.xml"
@@ -53,14 +53,14 @@ echo "-- ./clickhouse-local.xml"
     cd "$TESTDIR/cwd" || exit 1
     cp "$TESTDIR/home/.clickhouse-local/config.xml" "./clickhouse-local.xml"
     cp "$TESTDIR/home/.clickhouse-local/users.xml" "./users.xml"
-    HOME="$TESTDIR" "$CLICKHOUSE_LOCAL" --query "SELECT getSetting('max_threads')"
+    HOME="$TESTDIR" $CLICKHOUSE_LOCAL --query "SELECT getSetting('max_threads')"
     rm -f "./clickhouse-local.xml" "./users.xml"
 )
 
 echo "-- --config-file"
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR" "$CLICKHOUSE_LOCAL" \
+    HOME="$TESTDIR" $CLICKHOUSE_LOCAL \
         --config-file="$TESTDIR/home/.clickhouse-local/config.xml" \
         --query "SELECT getSetting('max_threads')"
 )
@@ -71,7 +71,7 @@ mkdir -p "$TESTDIR/empty_home"
     cd "$TESTDIR/cwd" || exit 1
     # Default `max_threads` depends on the host's CPU count, so just assert that
     # the query succeeds with a positive integer (i.e. did not crash on missing config).
-    OUT=$(HOME="$TESTDIR/empty_home" "$CLICKHOUSE_LOCAL" --query "SELECT getSetting('max_threads') > 0")
+    OUT=$(HOME="$TESTDIR/empty_home" $CLICKHOUSE_LOCAL --query "SELECT getSetting('max_threads') > 0")
     echo "$OUT"
 )
 
@@ -112,7 +112,7 @@ cat > "$TESTDIR/orphan_home/.clickhouse-local/config.xml" <<EOF
 EOF
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR/orphan_home" "$CLICKHOUSE_LOCAL" --query "SELECT getSetting('max_threads')" 2>&1 \
+    HOME="$TESTDIR/orphan_home" $CLICKHOUSE_LOCAL --query "SELECT getSetting('max_threads')" 2>&1 \
         | grep -oE 'FILE_DOESNT_EXIST|max_threads' \
         | head -n 1
 )
@@ -126,7 +126,7 @@ cat > "$TESTDIR/orphan_home_uc/.clickhouse-local/config.xml" <<EOF
 EOF
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR/orphan_home_uc" "$CLICKHOUSE_LOCAL" --query "SELECT getSetting('max_threads')" 2>&1 \
+    HOME="$TESTDIR/orphan_home_uc" $CLICKHOUSE_LOCAL --query "SELECT getSetting('max_threads')" 2>&1 \
         | grep -oE 'FILE_DOESNT_EXIST|max_threads' \
         | head -n 1
 )

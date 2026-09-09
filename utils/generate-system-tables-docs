@@ -111,7 +111,9 @@ def run_query(binary, config, query, use_client=False, extra_args=None):
     if use_client:
         cmd = [binary, "client", "--query", query, "--format", "TSVWithNamesAndTypes"]
     else:
-        cmd = [binary, "local", "--query", query, "--format", "TSVWithNamesAndTypes"]
+        # Use a unique temporary directory: the generator must not read (or lock) the
+        # persistent default directory of `clickhouse-local` in the user's home.
+        cmd = [binary, "local", "--tmp", "--query", query, "--format", "TSVWithNamesAndTypes"]
     if config and not use_client:
         cmd.extend(["--config-file", config])
     if extra_args:

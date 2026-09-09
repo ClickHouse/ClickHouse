@@ -100,7 +100,7 @@ def main():
             Result.from_commands_run(
                 name="ubuntu12",
                 command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query 'select 1'",
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --tmp --query 'select 1'",
                 ],
                 with_info=True,
             )
@@ -118,7 +118,7 @@ def main():
             Result.from_commands_run(
                 name="centos5",
                 command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --query 'select 1'"
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --tmp --query 'select 1'"
                 ],
                 with_info=True,
             )
