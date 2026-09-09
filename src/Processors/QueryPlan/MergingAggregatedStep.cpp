@@ -90,23 +90,8 @@ void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
     group_by_sort_description = std::move(input_sort_description);
 }
 
-void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// Update values from settings if plan was deserialized.
-    /// An optimizer rewrite can build this step from the params of a deserialized `AggregatingStep`,
-    /// which carries the "resolve locally later" sentinel 0 for both thread counts.
-    if (max_threads == 0)
-        max_threads = settings.max_threads;
-    if (params.max_threads == 0)
-        params.max_threads = settings.max_threads;
-
-    /// Read only under `memory_efficient_aggregation`, which `applyParallelReplicas` hardcodes off
-    /// and `makeDistributed` forwards from the setting.
-    if (memory_efficient_merge_threads == 0)
-        memory_efficient_merge_threads = settings.aggregation_memory_efficient_merge_threads;
-    if (memory_efficient_merge_threads == 0)
-        memory_efficient_merge_threads = max_threads;
-
     if (memoryBoundMergingWillBeUsed())
     {
         if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
@@ -306,7 +291,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     }
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    deserializeAggregateDescriptions(aggregates, ctx.in);
 
     SortDescription group_by_sort_description;
     deserializeSortDescription(group_by_sort_description, ctx.in);

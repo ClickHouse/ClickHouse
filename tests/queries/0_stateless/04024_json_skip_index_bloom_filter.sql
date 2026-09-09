@@ -4,7 +4,6 @@
 -- Data layout: 2 parts x 2 granules each (index_granularity = 1, ORDER BY tuple()).
 --   Part 1: (1, '{"a": {"b": 1}, "c": "hello"}'), (2, '{"a": {"d": 2}, "e": "world"}')
 --   Part 2: (3, '{"x": {"y": 3}, "z": "test"}'),  (4, '{"p": {"q": 4}, "r": "foo"}')
-SET explain_query_plan_default = 'legacy';
 
 -- =============================================================================
 -- Section 1: Equals
@@ -316,6 +315,38 @@ FROM (EXPLAIN indexes = 1 SELECT * FROM t_json_tuple WHERE t.json.a = 1)
 WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%' OR explain LIKE '%Skip%';
 
 DROP TABLE t_json_tuple;
+
+-- One index whose columns are JSONAllPaths(a) and JSONAllPaths(`a.b`): the name `a.b.<path>`
+-- matches both, so the choice decides which bloom filter is probed. The shorter JSON column wins,
+-- so `a.b.y` resolves to column `a` path `b.y`, which is absent from `a` and prunes.
+DROP TABLE IF EXISTS t_json_ambiguous;
+SET allow_suspicious_indices = 1;
+CREATE TABLE t_json_ambiguous
+(
+    a JSON,
+    `a.b` JSON,
+    INDEX idx (JSONAllPaths(a), JSONAllPaths(`a.b`)) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_json_ambiguous VALUES ('{"b": {"x": 1}}', '{"y": 2}');
+
+SELECT 'ambiguous JSON column: path present in the shorter column';
+SELECT trimLeft(explain)
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_ambiguous WHERE a.b.x = 1)
+WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%';
+
+SELECT 'ambiguous JSON column: path present only in the longer column';
+SELECT trimLeft(explain)
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_ambiguous WHERE a.b.y = 2)
+WHERE explain LIKE '%Parts:%' OR explain LIKE '%Granules:%';
+
+SELECT 'result: ambiguous JSON column';
+SELECT count() FROM t_json_ambiguous WHERE a.b.x = 1;
+SELECT count() FROM t_json_ambiguous WHERE a.b.y = 2;
+
+DROP TABLE t_json_ambiguous;
 
 -- =============================================================================
 -- Section 9: Correctness

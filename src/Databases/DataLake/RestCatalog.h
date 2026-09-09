@@ -50,7 +50,7 @@ public:
 
     bool empty() const override;
 
-    CatalogTables getTables() const override;
+    DB::Names getTables() const override;
 
     Namespaces getNamespaces() const override;
 
@@ -141,7 +141,7 @@ protected:
         bool oauth_server_use_request_body_,
         DB::ContextPtr context_);
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;
@@ -177,12 +177,6 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
-    /// Whether this catalog has flat (single-level) namespaces and ignores the `parent` filter when
-    /// listing namespaces. Such catalogs (BigLake, Databricks Delta Sharing) echo the same namespaces
-    /// for any parent; treating those echoes as children would recurse without bound, so sub-namespace
-    /// listing is skipped for them (see `parseNamespaces`).
-    bool hasFlatNamespaces() const;
-
     /// List the immediate child namespaces directly under `base_namespace`
     /// (single level, not recursive). An empty base lists the root namespaces.
     Namespaces listChildNamespaces(const std::string & base_namespace) const;
@@ -193,7 +187,7 @@ protected:
     /// `limit` is a soft cap on the number of returned names; 0 means no limit.
     DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0) const;
 
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 
@@ -284,8 +278,7 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
-        DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_);
+        DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -307,27 +300,9 @@ private:
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
-    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
-    /// catalog is cached and holds the global context, whose settings never reflect the creating session.
-    const bool allow_server_credentials_in_user_queries;
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
-};
-
-/// Databricks Delta Sharing exposes an Iceberg REST catalog with a flat, single-level namespace model
-/// (share -> namespace/schema -> table) and ignores the `parent` filter when listing namespaces. It is
-/// otherwise a plain REST catalog, so it reuses RestCatalog's behaviour and only reports a distinct type
-/// so `hasFlatNamespaces()` applies the same top-level-only listing used for BigLake.
-class DeltaSharingCatalog : public RestCatalog
-{
-public:
-    using RestCatalog::RestCatalog;
-
-    DB::DatabaseDataLakeCatalogType getCatalogType() const override
-    {
-        return DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
-    }
 };
 
 }

@@ -7,7 +7,6 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Functions/geometryConverters.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -83,8 +82,6 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
             String type = types->getElement<std::string>(0);
             if (type == "Point")
                 result_type = GeoType::Point;
-            else if (type == "MultiPoint")
-                result_type = GeoType::MultiPoint;
             else if (type == "LineString")
                 result_type = GeoType::LineString;
             else if (type == "Polygon")
@@ -108,155 +105,84 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
     return geo_columns;
 }
 
-/// The whitespace class the WKT grammar (boost::geometry::read_wkt, used by readWKT) treats as
-/// token separators: space, tab, newline, carriage return. Not isWhitespaceASCII, which also
-/// includes \f and \v that read_wkt rejects.
-inline bool isWKTSeparator(char ch)
-{
-    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
-}
-
-inline void skipWKTSeparators(ReadBuffer & in_buffer)
-{
-    char ch = 0;
-    while (in_buffer.peek(ch) && isWKTSeparator(ch))
-        in_buffer.ignore();
-}
-
-/// After the type keyword the grammar allows either the coordinate list, which starts with '(',
-/// or the token EMPTY in place of it: "LINESTRING EMPTY" == "LINESTRING()". Returns true for the
-/// EMPTY form. Any other token is invalid WKT (readWKT rejects it too), so it is reported here
-/// rather than left half-consumed for readOpenBracket, which would accept the '(' that follows
-/// and silently import "LINESTRING E(1 1, 2 2)".
-/// Called ONLY right after the type keyword: EMPTY is not a list element, so "POLYGON(EMPTY)"
-/// keeps failing, as it does in readWKT.
-inline bool readWKTEmptyToken(ReadBuffer & in_buffer)
-{
-    skipWKTSeparators(in_buffer);
-    char ch = 0;
-    /// At EOF let readOpenBracket report the missing '('.
-    if (!in_buffer.peek(ch) || ch == '(')
-        return false;
-
-    std::string token;
-    while (in_buffer.peek(ch) && !isWKTSeparator(ch) && ch != '(')
-    {
-        token.push_back(ch);
-        in_buffer.ignore();
-    }
-    if (!boost::iequals(token, "EMPTY"))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected '(' or EMPTY, got {}", token);
-    return true;
-}
-
-/// "()" (separators allowed in between) is an empty element list: "LINESTRING()" == "LINESTRING
-/// EMPTY". Legal at every nesting depth, so "POLYGON(())" is a polygon with one empty ring.
-/// Call right after readOpenBracket; consumes the closing ')' when the list is empty.
-inline bool checkWKTEmptyList(ReadBuffer & in_buffer)
-{
-    skipWKTSeparators(in_buffer);
-    char ch = 0;
-    if (!in_buffer.peek(ch) || ch != ')')
-        return false;
-    in_buffer.ignore();
-    return true;
-}
-
-inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
 {
     Float64 x = 0;
     Float64 y = 0;
-    skipWKTSeparators(in_buffer);
-    if (precise_float_parsing)
+    char ch = 0;
+    while (true)
     {
-        tryReadFloatTextPrecise(x, in_buffer);
-        skipWKTSeparators(in_buffer);
-        readFloatTextPrecise(y, in_buffer);
+        if (!in_buffer.peek(ch))
+            break;
+        if (ch != ' ')
+            break;
+        in_buffer.ignore();
     }
-    else
-    {
-        tryReadFloatImpreciseForCompatibility(x, in_buffer);
-        skipWKTSeparators(in_buffer);
-        readFloatImpreciseForCompatibility(y, in_buffer);
-    }
+    tryReadFloatText(x, in_buffer);
+    in_buffer.ignore();
+    readFloatText(y, in_buffer);
     return {x, y};
 }
 
 inline void readOpenBracket(ReadBuffer & in_buffer)
 {
-    /// Only separators may precede '('. readWKT (boost::geometry::read_wkt) rejects any other
-    /// token here, e.g. "POINT x(1 2)".
-    skipWKTSeparators(in_buffer);
-    char ch = 0;
-    if (!in_buffer.read(ch) || ch != '(')
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected '('");
-}
-
-inline void readCloseBracket(ReadBuffer & in_buffer)
-{
-    /// Only separators may precede ')'.
-    skipWKTSeparators(in_buffer);
-    char ch = 0;
-    if (!in_buffer.read(ch) || ch != ')')
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected ')'");
+    while (true)
+    {
+        char ch = 0;
+        readBinary(ch, in_buffer);
+        if (ch == '(')
+            break;
+    }
 }
 
 inline bool readItemEnding(ReadBuffer & in_buffer)
 {
-    /// A parsed item is followed only by separators and then ')' (end) or ',' (next item).
-    /// readWKT rejects other tokens here, e.g. "LINESTRING(1 1 xx, 2 2)".
-    skipWKTSeparators(in_buffer);
     char ch = 0;
-    if (!in_buffer.read(ch))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected ')' or ','");
-    if (ch == ')')
-        return true;
-    if (ch == ',')
-        return false;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected ')' or ','");
+    while (true)
+    {
+        readBinary(ch, in_buffer);
+        if (ch == ')')
+            return true;
+
+        if (ch == ',')
+            return false;
+    }
 }
 
-inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer)
 {
     LineString<CartesianPoint> ls;
     readOpenBracket(in_buffer);
-    if (checkWKTEmptyList(in_buffer))
-        return ls;
     while (true)
     {
-        ls.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
+        ls.push_back(parseWKTPoint(in_buffer));
         if (readItemEnding(in_buffer))
             break;
     }
     return ls;
 }
 
-inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer)
 {
     Ring<CartesianPoint> ring;
     readOpenBracket(in_buffer);
-    if (checkWKTEmptyList(in_buffer))
-        return ring;
     while (true)
     {
-        ring.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
+        ring.push_back(parseWKTPoint(in_buffer));
         if (readItemEnding(in_buffer))
             break;
     }
     return ring;
 }
 
-inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
 {
     Polygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
-    if (checkWKTEmptyList(in_buffer))
-        return poly;
     bool should_complete_outer = true;
     while (true)
     {
-        auto parsed_line = parseWKTRing(in_buffer, precise_float_parsing);
+        auto parsed_line = parseWKTRing(in_buffer);
         if (should_complete_outer)
         {
             should_complete_outer = false;
@@ -272,140 +198,64 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer, bool prec
     return poly;
 }
 
-inline MultiPoint<CartesianPoint> parseWKTMultiPoint(ReadBuffer & in_buffer, bool precise_float_parsing)
-{
-    MultiPoint<CartesianPoint> result;
-    readOpenBracket(in_buffer);
-    if (checkWKTEmptyList(in_buffer))
-        return result;
-    while (true)
-    {
-        /// Both MULTIPOINT (1 1, 2 2) and MULTIPOINT ((1 1), (2 2)) are valid WKT spellings.
-        /// Reuse the shared separator/bracket helpers so this path stays as strict as readWKT:
-        /// any separator (space, tab, newline) is tolerated, and a parenthesized point must be
-        /// closed by ')' with nothing but separators in between (so "MULTIPOINT ((1 1 x))" throws).
-        skipWKTSeparators(in_buffer);
-        char ch = 0;
-        const bool parenthesized = in_buffer.peek(ch) && ch == '(';
-        if (parenthesized)
-            in_buffer.ignore();
-        result.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
-        if (parenthesized)
-            readCloseBracket(in_buffer);
-        if (readItemEnding(in_buffer))
-            break;
-    }
-    return result;
-}
-
-inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer)
 {
     MultiLineString<CartesianPoint> result;
     readOpenBracket(in_buffer);
-    if (checkWKTEmptyList(in_buffer))
-        return result;
     while (true)
     {
-        result.push_back(parseWKTLine(in_buffer, precise_float_parsing));
+        result.push_back(parseWKTLine(in_buffer));
         if (readItemEnding(in_buffer))
             break;
     }
     return result;
 }
 
-inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer, bool precise_float_parsing)
+inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
 {
     MultiPolygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
-    if (checkWKTEmptyList(in_buffer))
-        return poly;
     while (true)
     {
-        poly.push_back(parseWKTPolygon(in_buffer, precise_float_parsing));
+        poly.push_back(parseWKTPolygon(in_buffer));
         if (readItemEnding(in_buffer))
             break;
     }
     return poly;
 }
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsing)
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
 {
-    /// The type keyword is a single WKT token: skip leading separators, then read the keyword up
-    /// to the first separator or '('. readOpenBracket consumes any separators before '('. This
-    /// matches readWKT (boost::geometry::read_wkt), which treats ' \t\n\r' as token separators.
     std::string type;
-    skipWKTSeparators(in_buffer);
     while (true)
     {
         char current_symbol = 0;
         if (!in_buffer.peek(current_symbol))
             break;
-        if (current_symbol == '(' || isWKTSeparator(current_symbol))
+        if (current_symbol == '(')
             break;
         type.push_back(current_symbol);
         in_buffer.ignore();
     }
 
-    /// The keyword is matched case-insensitively with boost::iequals, like readWKT
-    /// (boost::geometry::read_wkt). Diagnostics keep the original spelling.
-    GeometricObject result;
-    if (boost::iequals(type, "POINT"))
+    while (!type.empty() && type.back() == ' ')
+        type.pop_back();
+
+    if (type == "POINT")
     {
-        /// A ClickHouse Point is Tuple(Float64, Float64) with no empty representation, so
-        /// "POINT EMPTY" is rejected here as it is in readWKT (#110692). Report it explicitly
-        /// instead of failing on the missing '('.
-        if (readWKTEmptyToken(in_buffer))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: empty points are not supported");
         readOpenBracket(in_buffer);
-        auto point = parseWKTPoint(in_buffer, precise_float_parsing);
-        readCloseBracket(in_buffer);
-        result = point;
+        return parseWKTPoint(in_buffer);
     }
-    else if (boost::iequals(type, "LINESTRING"))
-    {
-        if (readWKTEmptyToken(in_buffer))
-            result = LineString<CartesianPoint>{};
-        else
-            result = parseWKTLine(in_buffer, precise_float_parsing);
-    }
-    else if (boost::iequals(type, "POLYGON"))
-    {
-        if (readWKTEmptyToken(in_buffer))
-            result = Polygon<CartesianPoint>{};
-        else
-            result = parseWKTPolygon(in_buffer, precise_float_parsing);
-    }
-    else if (boost::iequals(type, "MULTIPOINT"))
-    {
-        if (readWKTEmptyToken(in_buffer))
-            result = MultiPoint<CartesianPoint>{};
-        else
-            result = parseWKTMultiPoint(in_buffer, precise_float_parsing);
-    }
-    else if (boost::iequals(type, "MULTILINESTRING"))
-    {
-        if (readWKTEmptyToken(in_buffer))
-            result = MultiLineString<CartesianPoint>{};
-        else
-            result = parseWKTMultiLineString(in_buffer, precise_float_parsing);
-    }
-    else if (boost::iequals(type, "MULTIPOLYGON"))
-    {
-        if (readWKTEmptyToken(in_buffer))
-            result = MultiPolygon<CartesianPoint>{};
-        else
-            result = parseWKTMultiPolygon(in_buffer, precise_float_parsing);
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
+    if (type == "LINESTRING")
+        return parseWKTLine(in_buffer);
+    if (type == "POLYGON")
+        return parseWKTPolygon(in_buffer);
+    if (type == "MULTILINESTRING")
+        return parseWKTMultiLineString(in_buffer);
+    if (type == "MULTIPOLYGON")
+        return parseWKTMultiPolygon(in_buffer);
 
-    /// Only separators may follow the geometry (each caller passes a buffer holding a single WKT
-    /// value). readWKT rejects trailing tokens, e.g. "POINT(1 2) trailing" or "POINT(1 2))".
-    skipWKTSeparators(in_buffer);
-    if (!in_buffer.eof())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: unexpected trailing data");
-
-    return result;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
 }
 
 DataTypePtr getGeoDataType(GeoType type)
@@ -413,7 +263,6 @@ DataTypePtr getGeoDataType(GeoType type)
     switch (type)
     {
         case GeoType::Point: return DataTypeFactory::instance().get("Point");
-        case GeoType::MultiPoint: return DataTypeFactory::instance().get("MultiPoint");
         case GeoType::LineString: return DataTypeFactory::instance().get("LineString");
         case GeoType::Polygon: return DataTypeFactory::instance().get("Polygon");
         case GeoType::MultiLineString: return DataTypeFactory::instance().get("MultiLineString");
@@ -428,17 +277,6 @@ static void appendPointToGeoColumn(const CartesianPoint & point, IColumn & col)
     auto & tuple = assert_cast<ColumnTuple &>(col);
     assert_cast<ColumnFloat64 &>(tuple.getColumn(0)).getData().push_back(point.x());
     assert_cast<ColumnFloat64 &>(tuple.getColumn(1)).getData().push_back(point.y());
-}
-
-static void appendMultiPointToGeoColumn(const MultiPoint<CartesianPoint> & multipoint, IColumn & col)
-{
-    auto & array = assert_cast<ColumnArray &>(col);
-
-    for (const auto & point : multipoint)
-        appendPointToGeoColumn(point, array.getData());
-
-    auto & offsets = array.getOffsets();
-    offsets.push_back(offsets.back() + multipoint.size());
 }
 
 static void appendLineStringToGeoColumn(const LineString<CartesianPoint> & line, IColumn & col)
@@ -487,14 +325,13 @@ static void appendMultiPolygonToGeoColumn(const MultiPolygon<CartesianPoint> & m
     offsets.push_back(offsets.back() + multipolygon.size());
 }
 
-/// Global discriminators for the Geometry type (fixed order, new geo types are appended):
-/// LineString=0, MultiLineString=1, MultiPolygon=2, Point=3, Polygon=4, Ring=5, MultiPoint=6
+/// Global discriminators for the Geometry type (Variant sorted alphabetically by type name):
+/// LineString=0, MultiLineString=1, MultiPolygon=2, Point=3, Polygon=4, Ring=5
 static constexpr ColumnVariant::Discriminator kLineStringDiscriminator = 0;
 static constexpr ColumnVariant::Discriminator kMultiLineStringDiscriminator = 1;
 static constexpr ColumnVariant::Discriminator kMultiPolygonDiscriminator = 2;
 static constexpr ColumnVariant::Discriminator kPointDiscriminator = 3;
 static constexpr ColumnVariant::Discriminator kPolygonDiscriminator = 4;
-static constexpr ColumnVariant::Discriminator kMultiPointDiscriminator = 6;
 
 void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col)
 {
@@ -504,11 +341,6 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
             if (!std::holds_alternative<CartesianPoint>(object))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
             appendPointToGeoColumn(std::get<CartesianPoint>(object), col);
-            return;
-        case GeoType::MultiPoint:
-            if (!std::holds_alternative<MultiPoint<CartesianPoint>>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi point");
-            appendMultiPointToGeoColumn(std::get<MultiPoint<CartesianPoint>>(object), col);
             return;
         case GeoType::LineString:
             if (!std::holds_alternative<LineString<CartesianPoint>>(object))
@@ -545,8 +377,6 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
                 global_discr = kMultiLineStringDiscriminator;
             else if (std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
                 global_discr = kMultiPolygonDiscriminator;
-            else if (std::holds_alternative<MultiPoint<CartesianPoint>>(object))
-                global_discr = kMultiPointDiscriminator;
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type in WKB/WKT data");
 
@@ -566,8 +396,6 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
                 appendPolygonToGeoColumn(std::get<Polygon<CartesianPoint>>(object), nested_col);
             else if (std::holds_alternative<MultiLineString<CartesianPoint>>(object))
                 appendMultiLineStringToGeoColumn(std::get<MultiLineString<CartesianPoint>>(object), nested_col);
-            else if (std::holds_alternative<MultiPoint<CartesianPoint>>(object))
-                appendMultiPointToGeoColumn(std::get<MultiPoint<CartesianPoint>>(object), nested_col);
             else
                 appendMultiPolygonToGeoColumn(std::get<MultiPolygon<CartesianPoint>>(object), nested_col);
 

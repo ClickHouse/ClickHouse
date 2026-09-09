@@ -276,7 +276,7 @@ public:
 
             if (chunk && chunk.getNumColumns() != result_block.columns())
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::WASM_ERROR,
                     "Different number of columns in result chunks, expected {}, got {}",
                     result_block.dumpStructure(),
                     chunk.dumpStructure());
@@ -289,6 +289,13 @@ public:
             if (!has_data)
                 break;
         }
+
+        if (result_chunk.getNumColumns() != result_block.columns())
+            throw Exception(
+                ErrorCodes::WASM_ERROR,
+                "WebAssembly function returned a result with {} columns, expected {}",
+                result_chunk.getNumColumns(), result_block.columns());
+
         result_block.setColumns(result_chunk.detachColumns());
     }
 
@@ -827,9 +834,9 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
     };
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    Strings getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        Strings result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);

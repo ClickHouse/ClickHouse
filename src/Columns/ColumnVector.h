@@ -200,8 +200,6 @@ public:
         PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
         int direction, int nan_direction_hint) const override;
 
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
-
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -357,9 +355,6 @@ public:
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
-
-    void serializeAsComparable(size_t n, String & out) const override;
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

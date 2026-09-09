@@ -165,9 +165,9 @@ void registerInputFormatProtobufList(FormatFactory & factory)
 
     factory.setDocumentation("ProtobufList", Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge/>
+:::note
+This format is not supported in ClickHouse Cloud.
+:::
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -175,7 +175,7 @@ import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/
 
 ## Description {#description}
 
-The `ProtobufList` format is similar to the [`Protobuf`](/reference/formats/Protobuf/Protobuf) format but rows are represented as a sequence of sub-messages contained in a message with a fixed name of "Envelope".
+The `ProtobufList` format is similar to the [`Protobuf`](./Protobuf.md) format but rows are represented as a sequence of sub-messages contained in a message with a fixed name of "Envelope".
 
 ## Example usage {#example-usage}
 

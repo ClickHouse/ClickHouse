@@ -58,7 +58,7 @@ class AggregateFunctionQuantile final
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
-    static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
+    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
@@ -238,7 +238,7 @@ public:
             this->data(place).add(value);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }

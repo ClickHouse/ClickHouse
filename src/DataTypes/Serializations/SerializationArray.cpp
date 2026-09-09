@@ -438,11 +438,15 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
         else
             SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
 
-        /// Verify offsets if the data comes over the network
-        if (settings.native_format)
+        /// Verify offsets that were read as absolute values. The other branch accumulates sizes, so it
+        /// is monotonic by construction. Only the values appended by this call are new: everything below
+        /// `prev_size` was verified by the previous call, and starting one element earlier keeps the
+        /// comparison across the range boundary.
+        if (!settings.position_independent_encoding)
         {
             const auto & offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
-            const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
+            const auto * const scan_begin = offsets.begin() + (prev_size ? prev_size - 1 : 0);
+            const auto * const it = std::adjacent_find(scan_begin, offsets.end(), std::greater<>());
             if (it != offsets.end())
             {
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays offsets are not monotonically increasing (starting at {}, value {})",
@@ -527,10 +531,20 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     /// Check consistency between offsets and elements subcolumns.
-    /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
-    if (!nested_column->empty() && nested_column->size() != last_offset)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
-            toString(nested_column->size()), toString(last_offset));
+    if (nested_column->size() != last_offset)
+    {
+        if (!nested_column->empty())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
+                toString(nested_column->size()), toString(last_offset));
+
+        /// An empty elements column is ok for the sizes encoding: it is how a column of a Nested type
+        /// that was added by ALTER reads the parts written before that ALTER. The absolute-offsets
+        /// encoding always writes the elements next to the offsets, so there an empty elements column
+        /// means the data is corrupted and the offsets would index past the end of the elements.
+        if (!settings.position_independent_encoding)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
+    }
 
     column = std::move(mutable_column);
 }
@@ -568,9 +582,6 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
 
     IColumn & nested_column = column_array.getData();
 
-    /// Rolling back to the recorded size (instead of popping the elements this loop counted)
-    /// also drops rows a failing nested reader appended before it threw or returned false.
-    const size_t initial_nested_size = nested_column.size();
     size_t size = 0;
 
     bool has_braces = false;
@@ -595,8 +606,8 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
 
     auto on_error_no_throw = [&]()
     {
-        if (nested_column.size() > initial_nested_size)
-            nested_column.popBack(nested_column.size() - initial_nested_size);
+        if (size)
+            nested_column.popBack(size);
         return ReturnType(false);
     };
 
@@ -655,8 +666,8 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
     }
     catch (...)
     {
-        if (nested_column.size() > initial_nested_size)
-            nested_column.popBack(nested_column.size() - initial_nested_size);
+        if (size)
+            nested_column.popBack(size);
         if constexpr (throw_exception)
             throw;
         /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.

@@ -160,7 +160,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         StorageID(database_name, table_name),
         sqlite_db,
         database_path,
-        TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+        table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},
         /* comment = */ "",
@@ -260,22 +260,22 @@ The table below shows the default type mapping when ClickHouse automatically inf
 
 |  SQLite   | ClickHouse                                              |
 |---------------|---------------------------------------------------------|
-| INTEGER       | [Int32](/reference/data-types/int-uint)     |
-| REAL          | [Float32](/reference/data-types/float)      |
-| TEXT          | [String](/reference/data-types/string)      |
-| TEXT          | [UUID](/reference/data-types/uuid)          |
-| BLOB          | [String](/reference/data-types/string)      |
+| INTEGER       | [Int32](../../sql-reference/data-types/int-uint.md)     |
+| REAL          | [Float32](../../sql-reference/data-types/float.md)      |
+| TEXT          | [String](../../sql-reference/data-types/string.md)      |
+| TEXT          | [UUID](../../sql-reference/data-types/uuid.md)          |
+| BLOB          | [String](../../sql-reference/data-types/string.md)      |
 
-When you explicitly define a table with specific ClickHouse types using the [SQLite table engine](/reference/engines/table-engines/integrations/sqlite), the following ClickHouse types can be parsed from SQLite TEXT columns:
+When you explicitly define a table with specific ClickHouse types using the [SQLite table engine](../../engines/table-engines/integrations/sqlite.md), the following ClickHouse types can be parsed from SQLite TEXT columns:
 
-- [Date](/reference/data-types/date), [Date32](/reference/data-types/date32)
-- [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64)
-- [UUID](/reference/data-types/uuid)
-- [Enum8, Enum16](/reference/data-types/enum)
-- [Decimal32, Decimal64, Decimal128, Decimal256](/reference/data-types/decimal)
-- [FixedString](/reference/data-types/fixedstring)
-- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/reference/data-types/int-uint))
-- [Float32, Float64](/reference/data-types/float)
+- [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md)
+- [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md)
+- [UUID](../../sql-reference/data-types/uuid.md)
+- [Enum8, Enum16](../../sql-reference/data-types/enum.md)
+- [Decimal32, Decimal64, Decimal128, Decimal256](../../sql-reference/data-types/decimal.md)
+- [FixedString](../../sql-reference/data-types/fixedstring.md)
+- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](../../sql-reference/data-types/int-uint.md))
+- [Float32, Float64](../../sql-reference/data-types/float.md)
 
 SQLite has dynamic typing, and its type access functions perform automatic type coercion. For example, reading a TEXT column as an integer will return 0 if the text cannot be parsed as a number. This means that if a ClickHouse table is defined with a different type than the underlying SQLite column, values may be silently coerced rather than causing an error.
 

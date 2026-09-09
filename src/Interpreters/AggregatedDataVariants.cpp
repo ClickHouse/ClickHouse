@@ -11,7 +11,6 @@
 namespace ProfileEvents
 {
     extern const Event AggregationPreallocatedElementsInHashTables;
-    extern const Event AggregationConvertedToTwoLevel;
 }
 
 namespace DB
@@ -162,8 +161,6 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel() const
 
 void AggregatedDataVariants::convertToTwoLevel()
 {
-    ProfileEvents::increment(ProfileEvents::AggregationConvertedToTwoLevel);
-
     if (aggregator)
         LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
 

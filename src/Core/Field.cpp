@@ -310,7 +310,7 @@ bool Field::operator<= (const Field & rhs) const
         {
             static constexpr int nan_direction_hint = 1; /// Put NaN at the end
             Float64 f1 = get<Float64>();
-            Float64 f2 = get<Float64>();
+            Float64 f2 = rhs.get<Float64>();
             return FloatCompareHelper<Float64>::less(f1, f2, nan_direction_hint)
                 || FloatCompareHelper<Float64>::equals(f1, f2, nan_direction_hint);
         }
