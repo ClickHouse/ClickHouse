@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SERIALIZATION_ERROR;
 }
 
 namespace FailPoints
@@ -102,21 +103,82 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
     }
 }
 
-void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn)
+NonTransactionalRemovalLocks::~NonTransactionalRemovalLocks()
 {
-    TransactionInfoContext transaction_context{storage->getStorageID(), part_to_remove->name};
+    for (const auto & locked : locked_parts)
+    {
+        try
+        {
+            locked.part->version->unlockRemovalTID(Tx::NonTransactionalTID, locked.context);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void NonTransactionalRemovalLocks::lock(const StoragePtr & storage, const DataPartPtr & covering_part, const DataPartsVector & parts_to_remove)
+{
+    TransactionInfoContext transaction_context{storage->getStorageID(), ""};
+    if (covering_part)
+        transaction_context.covering_part = covering_part->name;
+
+    for (const auto & part : parts_to_remove)
+    {
+        auto & version = *part->version;
+
+        if (version.getInfo().isRemoved())
+        {
+            LOG_INFO(version.getLogger(), "Object {} is already removed", version.getObjectName());
+            continue;
+        }
+
+        /// Refused here rather than in `setAndStoreRemovalTID` so that nothing of the batch has
+        /// been written yet, see the class comment.
+        if (version.isCreatedByUncommittedTransaction())
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                version.getObjectName(), version.getInfo().creation_tid);
+
+        transaction_context.part_name = part->name;
+        version.lockRemovalTID(Tx::NonTransactionalTID, transaction_context);
+        locked_parts.push_back({part, transaction_context});
+    }
+}
+
+void NonTransactionalRemovalLocks::store()
+{
+    /// Drain as we go, so that the destructor only releases the locks that were not stored.
+    while (!locked_parts.empty())
+    {
+        LockedPart locked = std::move(locked_parts.back());
+        locked_parts.pop_back();
+
+        SCOPE_EXIT({ locked.part->version->unlockRemovalTID(Tx::NonTransactionalTID, locked.context); });
+        locked.part->version->setAndStoreRemovalTID(Tx::NonTransactionalTID);
+    }
+}
+
+void MergeTreeTransaction::removeOldPart(
+    const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn,
+    NonTransactionalRemovalLocks & removal_locks)
+{
     if (txn)
     {
         /// Lock part for removal and write current TID into version metadata file.
         /// If server crash just after committing transactions
         /// we will find this TID in version metadata and will finally remove part.
+        TransactionInfoContext transaction_context{storage->getStorageID(), part_to_remove->name};
         txn->removeOldPart(storage, part_to_remove, transaction_context);
         return;
     }
-    part_to_remove->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
+    removal_locks.lock(storage, /*covering_part=*/ nullptr, {part_to_remove});
 }
 
-void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn)
+void MergeTreeTransaction::addNewPartAndRemoveCovered(
+    const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts,
+    MergeTreeTransaction * txn, NonTransactionalRemovalLocks & removal_locks)
 {
     TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
     TransactionInfoContext transaction_context{storage->getStorageID(), new_part->name};
@@ -135,11 +197,7 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
     }
     else
     {
-        for (const auto & covered : covered_parts)
-        {
-            transaction_context.part_name = covered->name;
-            covered->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
-        }
+        removal_locks.lock(storage, new_part, covered_parts);
     }
 }
 
