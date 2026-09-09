@@ -127,7 +127,10 @@ TEST(IcebergMetadataBelongsToValidatedTable, AMissingUuidFailsClosed)
         .metadata_compression_method = DB::CompressionMethod::None,
         .table_path = "/data/table",
         .trusted_table_uuid = trusted,
-        .path_resolver = IcebergPathResolver("/data/table", "/data/table"),
+        .path_resolver = IcebergPathResolver(
+            "/data/table",
+            "/data/table",
+            BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false}),
         .table_root_was_derived = false,
     };
 
@@ -153,7 +156,10 @@ TEST(IcebergMetadataBelongsToValidatedTable, NoValidatedUuidIsNotARefusal)
         .metadata_compression_method = DB::CompressionMethod::None,
         .table_path = "/data/table",
         .trusted_table_uuid = trusted,
-        .path_resolver = IcebergPathResolver("/data/table", "/data/table"),
+        .path_resolver = IcebergPathResolver(
+            "/data/table",
+            "/data/table",
+            BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false}),
         .table_root_was_derived = false,
     };
 
