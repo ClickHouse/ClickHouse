@@ -26,6 +26,10 @@ SELECT domainRFC('http://user@paypal.com@[2001:db8::1]:80') FORMAT CSV;
 SELECT domainRFC('http://user@paypal.com:80@evil.com/') FORMAT CSV;
 SELECT domainRFC('http://user@[::1]:80@evil.com/') FORMAT CSV;
 SELECT domainRFC('http://user@192.168.1.1:80@evil.com/') FORMAT CSV;
+-- A bracketed host that already closed before '@' would have to become part of userinfo, but raw
+-- '[' / ']' can never legally appear there.
+SELECT domainRFC('http://[::1]:80@[::2]') FORMAT CSV;
+SELECT domainRFC('http://[::1]:80@evil.com') FORMAT CSV;
 -- Does not conform to the IPv6 format.
 SELECT domainRFC('[2001db81]:80') FORMAT CSV;
 SELECT domainRFC('[20[01:db8::1]:80') FORMAT CSV;

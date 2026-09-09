@@ -119,6 +119,10 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '@': /// myemail@gmail.com
             /// Inside an IP-literal there is no userinfo: `@` is not allowed there at all.
             if (has_open_bracket) return std::string_view{};
+            /// A bracket that already closed before this '@' would have to become part of
+            /// userinfo now that '@' turned up - but raw '[' / ']' can never legally appear
+            /// there, so an authority like "[::1]:80@evil.com" is invalid, not "host evil.com".
+            if (has_end_bracket) return std::string_view{};
             if (has_terminator_after_colon) return std::string_view{};
             if (has_at_symbol) return std::string_view{};
             has_sub_delims = false;
