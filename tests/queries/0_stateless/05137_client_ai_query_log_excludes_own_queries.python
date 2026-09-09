@@ -105,6 +105,21 @@ PROBE_ANSWERS = [
 # The sentinel is split so that the query the client echoes back does not match the answer line:
 # the echo contains the text of the query, quotes and `||` included, and the answer does not.
 PROBE_SENTINEL = "PROBE-9b71c4"
+
+# The same trick for the wait below, which asks whether the query of the user has reached the log.
+READY_SENTINEL = "READY-2c8fd1"
+READY_QUERY = (
+    "SELECT 'READY' || '-2c8fd1: ' || toString(count()) FROM system.user_query_log "
+    "WHERE type != 'QueryStart' AND query LIKE '%{user}%' FORMAT TSVRaw"
+).format(user=USER_QUERY_MARKER)
+
+# How many times the flush is repeated while waiting for that row. The flush is synchronous for
+# what is already queued, so one is normally enough; the retries are what makes the wait a wait.
+READY_ATTEMPTS = 10
+
+# Stands in a turn's statement list for "wait until the query log can be read", rather than being
+# a statement to type.
+WAIT_FOR_THE_LOG = object()
 PROBE_QUERY = (
     "WITH query LIKE '{agent}' AS is_agent_internal, "
     "query LIKE '%{user}%' AS is_user_typed, "
@@ -385,9 +400,12 @@ def run_session(session, plan, turns, const_log_comment, probe, debug_log_fd):
             os.write(master, question.encode() + b"\n")
             read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
             for statement in statements:
-                run_statement(master, debug_log_fd, statement)
-                if statement == "SYSTEM FLUSH LOGS":
+                if statement is WAIT_FOR_THE_LOG:
+                    if not wait_for_the_user_query_in_the_log(master, debug_log_fd):
+                        print(f"the query of the user never reached the log in session {session}")
                     log_is_flushed["value"] = True
+                else:
+                    run_statement(master, debug_log_fd, statement)
         request = last_request.get("value", {})
         report_client_if_gone(child_pid, session)
 
@@ -406,6 +424,24 @@ def run_session(session, plan, turns, const_log_comment, probe, debug_log_fd):
         drain(master, debug_log_fd, 1.0)
         os.close(master)
         server.shutdown()
+
+
+def wait_for_the_user_query_in_the_log(master, debug_log_fd):
+    """Flush the query log until the query the user typed is in it, and say whether it got there.
+
+    `read_query_log` is asserted to return that query, and the assertion is only about the filter
+    of the tool if the row is there to be filtered. Flushing once is not enough to know that it is:
+    a flush is synchronous for the entries that are already queued, and this one competes with the
+    agent's own queries from the turn that just ended, so the row can still be missing when the
+    next turn reads the log - which is how this test failed once in `amd_tsan` with the read
+    returning no rows at all."""
+    for _ in range(READY_ATTEMPTS):
+        run_statement(master, debug_log_fd, "SYSTEM FLUSH LOGS")
+        output = run_statement(master, debug_log_fd, READY_QUERY)
+        found = re.search(READY_SENTINEL + r": (\d+)", output)
+        if found and int(found.group(1)) > 0:
+            return True
+    return False
 
 
 def offered_tools(request):
@@ -450,7 +486,7 @@ def main():
         second, _ = run_session(
             session=2,
             plan=then_read_the_log,
-            turns=[("? look around", ["SYSTEM FLUSH LOGS"]), ("? what did I run", [])],
+            turns=[("? look around", [WAIT_FOR_THE_LOG]), ("? what did I run", [])],
             const_log_comment=False,
             probe=False,
             debug_log_fd=debug_log_fd,
