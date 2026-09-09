@@ -4,6 +4,8 @@
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
+#include <atomic>
+#include <algorithm>
 #include <base/hex.h>
 
 #include <Columns/ColumnVector.h>
@@ -647,23 +649,6 @@ public:
         serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
     }
 
-    /// Bytes a serialized block carries besides its rows, for the formats that frame a whole
-    /// block rather than a row: `BuffersWriter` prefixes the payloads with a `UInt64` column
-    /// count, a `UInt64` row count and one `UInt64` size per column, and `ColumnBinary` writes
-    /// a frame header followed by one fixed-size descriptor per column. Both amounts depend on
-    /// the column count alone, so a call pays them once however many rows it carries.
-    ///
-    /// A row-framing format has none: `RowBinary` and the text formats write only what a row
-    /// costs, so the whole stream is already accounted for by the per-row measurement.
-    size_t blockFramingBytes(size_t num_columns) const
-    {
-        if (serialization_format == "Buffers")
-            return sizeof(UInt64) * (2 + num_columns);
-        if (serialization_format == "ColumnBinary")
-            return ColumnBinaryWire::FRAME_HEADER_BYTES + num_columns * ColumnBinaryWire::COL_DESC_BYTES;
-        return 0;
-    }
-
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
@@ -824,61 +809,106 @@ private:
         return static_cast<size_t>(static_cast<Float64>(*budget_basis) * memory_ratio);
     }
 
-    /// Measure the wire instead of predicting it: write each row through the real output format
-    /// into a `NullWriteBuffer` and read the byte count off it. Delimiters, keys, enum labels and
-    /// the configured tokens are all counted, because the serializer writes them.
+    /// The exact number of bytes one call carrying `[start, start + length)` puts on the wire.
     ///
-    /// Reports the payload of a row alone: a block-framing format writes its framing on every
-    /// `write`, and the measurement writes one row at a time, so the framing would otherwise be
-    /// charged to each row instead of once to the call that carries them.
-    template <typename OnRow>
-    void measureRows(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, OnRow && on_row) const
+    /// The batch is measured whole rather than assembled out of per-row measurements. A row has
+    /// no cost of its own under a block-scoped wire: `ColumnBinary` writes a frame header, a
+    /// descriptor per column and one `COL_LOWCARD` dictionary per batch, and `BuffersWriter`
+    /// runs `NativeWriter::writeData` once per block, which emits a fresh `LowCardinality`
+    /// dictionary and the `Dynamic` / `Variant` structure prefixes for whatever rows the block
+    /// holds. Summing one-row probes charges every row a whole frame and a whole dictionary,
+    /// which over-prices such a batch by more than an order of magnitude, and no fixed per-write
+    /// subtraction can remove state whose size depends on which rows the batch carries.
+    ///
+    /// What comes back here is the stream the guest is really handed - framing, wrapping and
+    /// shared state included - so the budget below is compared against the actual size rather
+    /// than against a bound on it.
+    size_t measureBatchBytes(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
     {
-        /// A function without arguments is handed no input buffer at all, so there is nothing to
-        /// measure and nothing for the size of an input to decide.
-        if (arguments.empty())
-            return;
-
-        /// Cut each row out of the original arguments instead of materializing the whole block
-        /// first: a wide `ColumnConst` argument would otherwise be expanded to one copy per row
-        /// on the host, which is the very input the splitting below exists to rescue.
-        auto header = getArgumentsBlock(arguments, 0, 0);
+        auto block = getArgumentsBlock(arguments, start_idx, length);
         NullWriteBuffer measure_buf;
-        auto measure_out = context->getOutputFormat(serialization_format, measure_buf, header.cloneEmpty(), wasmFormatSettings(context));
-        const size_t framing_per_write = blockFramingBytes(header.columns());
+        auto measure_out
+            = context->getOutputFormat(serialization_format, measure_buf, block.cloneEmpty(), wasmFormatSettings(context));
 
-        size_t written_before = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            measure_out->write(getArgumentsBlock(arguments, row, 1));
+        /// `ColumnBinary` states the size of a block without writing it. This is the very
+        /// primitive `executeOnBlock` sizes the guest buffer with, so the measurement and the
+        /// allocation cannot disagree, and it is exact for the whole block being measured.
+        if (auto precomputed = measure_out->precomputeSerializedSize(block, length))
+            return *precomputed;
 
-            const size_t written_after = measure_buf.count();
-            on_row(row, written_after - written_before - framing_per_write);
-            written_before = written_after;
-        }
+        measure_out->write(block);
+        measure_out->finalize();
+        return measure_buf.count();
     }
 
-    /// What one call's stream costs beyond its rows: the framing a block format writes on every
-    /// `write`, plus whatever the format wraps the rows in once - `JSONEachRow` under
-    /// `output_format_json_array_of_rows` brackets them, for instance. The wrapping is measured
-    /// rather than modelled, by finalizing an empty stream through the real format.
+    /// How many rows the call starting at `start_idx` should carry, out of `remaining`.
     ///
-    /// The per-row measurement runs one long-lived stream, so it charges the opening bracket to
-    /// its first row and every later row a separator instead of that bracket. Counting the whole
-    /// wrapping again here therefore overstates a call by the few bytes of an opening bracket,
-    /// which only ever moves a batch boundary one row earlier. An input is never understated,
-    /// which is what the batching budget relies on.
-    size_t perCallOverheadBytes(const ColumnsWithTypeAndName & arguments) const
+    /// The cost of a batch is monotone in its row count - adding a row can only grow the payload,
+    /// and can only grow a per-batch dictionary - so "the rows that fit the budget" is a prefix
+    /// and can be bracketed. Each probe measures a candidate exactly and rescales the next one by
+    /// how far it landed from the budget, keeping the largest candidate known to fit and the
+    /// smallest known to overflow, so the bracket shrinks on every step.
+    ///
+    /// The batch that is sent has always been measured, so the choice never depends on the hint
+    /// carried across calls; the hint only saves probes. It is a relaxed atomic because
+    /// `executeImpl` runs concurrently over pipeline threads on one function object, and a stale
+    /// or torn-looking value costs at most an extra probe.
+    size_t chooseBatchRows(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t remaining, size_t budget) const
     {
-        const size_t framing = blockFramingBytes(arguments.size());
+        /// A function without arguments is handed no input buffer, so no size bounds its calls.
         if (arguments.empty())
-            return framing;
+            return remaining;
 
-        NullWriteBuffer overhead_buf;
-        auto overhead_out
-            = context->getOutputFormat(serialization_format, overhead_buf, getArgumentsBlock(arguments, 0, 0), wasmFormatSettings(context));
-        overhead_out->finalize();
-        return framing + overhead_buf.count();
+        /// A batch filling this much of its budget is taken as it is: proving it maximal costs
+        /// more serializations than the few rows it could still gain.
+        static constexpr double good_enough_fill = 0.75;
+        static constexpr size_t max_probes = 16;
+
+        /// Probe upwards from a single row when nothing is known yet, rather than downwards from
+        /// the whole block. A probe serializes the candidate, and for a wire that does not carry
+        /// constness a `ColumnConst` argument is materialized to do it, so a first probe of the
+        /// whole block would expand exactly the input the splitting exists to rescue. Measuring
+        /// one row over-states the marginal cost, because it carries the whole per-batch state,
+        /// so the rescaled candidate is an undershoot that later probes grow into.
+        const size_t hint = batch_rows_hint.load(std::memory_order_relaxed);
+        size_t candidate = std::clamp(hint == 0 ? static_cast<size_t>(1) : hint, static_cast<size_t>(1), remaining);
+        size_t largest_fitting = 0;
+        size_t smallest_overflowing = remaining + 1;
+
+        for (size_t probe = 0; probe < max_probes; ++probe)
+        {
+            const size_t measured = measureBatchBytes(arguments, start_idx, candidate);
+            if (measured <= budget)
+            {
+                largest_fitting = candidate;
+                if (candidate == remaining || static_cast<double>(measured) >= good_enough_fill * static_cast<double>(budget))
+                    break;
+            }
+            else
+            {
+                smallest_overflowing = candidate;
+                /// A single row past the budget is still passed on its own: the split stops at
+                /// one row per call, and whether the guest can hold that row is for its
+                /// allocator to say.
+                if (candidate == 1)
+                    break;
+            }
+
+            if (largest_fitting + 1 >= smallest_overflowing)
+                break;
+
+            size_t next = measured == 0
+                ? remaining
+                : static_cast<size_t>(static_cast<double>(candidate) * static_cast<double>(budget) / static_cast<double>(measured));
+            next = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
+            if (next == candidate)
+                break;
+            candidate = next;
+        }
+
+        const size_t chosen = std::max<size_t>(largest_fitting, 1);
+        batch_rows_hint.store(chosen, std::memory_order_relaxed);
+        return chosen;
     }
 
     void appendBatchResult(MutableColumnPtr & result_column, MutableColumnPtr batch_column) const
@@ -938,26 +968,11 @@ private:
 
         if (budget)
         {
-            /// What a call costs beyond its rows, which no per-row measurement sees.
-            const size_t block_framing_bytes = perCallOverheadBytes(arguments);
-
-            /// Flush before the next row would cross the budget. A stride derived from the
-            /// average row size cannot bound a skewed block: one huge row among many tiny ones
-            /// would still share a call with its neighbours.
-            ///
-            /// A row that is itself past the budget is still passed on its own: the split stops
-            /// at one row per call, and whether the guest can hold that row is for its allocator
-            /// to say.
-            size_t running_bytes = 0;
-            measureRows(arguments, input_rows_count, [&](size_t row, size_t row_bytes)
-            {
-                if (row > batch_start && running_bytes + row_bytes + block_framing_bytes > *budget)
-                {
-                    flush_batch(row);
-                    running_bytes = 0;
-                }
-                running_bytes += row_bytes;
-            });
+            /// Take the rows a call can hold, measure the call, and start the next one where
+            /// it ended. A stride derived from an average row size cannot bound a skewed block:
+            /// one huge row among many tiny ones would still share a call with its neighbours.
+            while (batch_start < input_rows_count)
+                flush_batch(batch_start + chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget));
         }
         else if (fixed_block_size > 0)
         {
@@ -1014,6 +1029,10 @@ private:
 
     /// Configured `webassembly_udf_max_memory` in bytes, empty when the host caps nothing.
     std::optional<size_t> module_memory_limit;
+
+    /// Rows the previous call fitted into the budget, reused as the first candidate for the
+    /// next one. A hint only, never a bound: see `chooseBatchRows`.
+    mutable std::atomic<size_t> batch_rows_hint{0};
 
     mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;
