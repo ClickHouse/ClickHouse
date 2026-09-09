@@ -454,7 +454,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         n -= bytes_copied;
     }
 
-    return initial_n;
+    return initial_n - n;
 }
 
 ObjectMetadata ReadBufferFromAzureBlobStorage::getObjectMetadataFromTheLastRequest() const
