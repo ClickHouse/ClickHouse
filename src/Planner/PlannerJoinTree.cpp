@@ -37,6 +37,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -3301,9 +3302,9 @@ const StorageDistributed * getDistributedStorageFromTableExpression(const QueryT
     else
         return nullptr;
 
-    /// `Alias`, `MaterializedView` and `StorageProxy` (for example `lazy_load_tables`) forward
-    /// `read` to a nested storage. If that nested storage is `Distributed`, the join still fans
-    /// out across shards, so look through the wrappers before deciding.
+    /// `Alias`, `MaterializedView`, `Buffer` and `StorageProxy` (for example `lazy_load_tables`)
+    /// forward `read` to a nested storage. If that nested storage is `Distributed`, the join still
+    /// fans out across shards, so look through the wrappers before deciding.
     for (size_t i = 0; storage && i < 16; ++i)
     {
         if (const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get()))
@@ -3315,6 +3316,8 @@ const StorageDistributed * getDistributedStorageFromTableExpression(const QueryT
             storage = alias->tryGetTargetTable();
         else if (const auto * materialized_view = storage->as<StorageMaterializedView>())
             storage = materialized_view->tryGetTargetTable();
+        else if (const auto * buffer = storage->as<StorageBuffer>())
+            storage = buffer->getDestinationTable();
         else
             break;
     }
