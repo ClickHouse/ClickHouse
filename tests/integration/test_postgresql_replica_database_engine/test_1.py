@@ -790,7 +790,7 @@ def test_failed_detach_remains_retryable_after_failed_rollback(started_cluster):
     cursor = conn.cursor()
     for _ in range(60):
         cursor.execute(
-            "SELECT count() FROM pg_publication_tables WHERE pubname = 'postgres_database_ch_publication' "
+            "SELECT count(*) FROM pg_publication_tables WHERE pubname = 'postgres_database_ch_publication' "
             f"AND tablename = '{table_name}'"
         )
         if cursor.fetchall()[0][0] == 1:
