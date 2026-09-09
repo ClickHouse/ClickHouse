@@ -311,6 +311,9 @@ set(SANITIZER_COMMON_FLAGS
     # pointers too. Override compiler-rt's default -fomit-frame-pointer.
     -fno-omit-frame-pointer
     -funwind-tables
+    # From upstream SANITIZER_COMMON_CFLAGS (compiler-rt/CMakeLists.txt): the runtimes run before thread
+    # local storage is set up and inside interceptors and signal handlers, where reading the canary from
+    # %fs is not safe and __stack_chk_fail is itself interposable.
     -fno-stack-protector
     -fvisibility=hidden
     # Suppress all warnings — these are external sources we don't audit.
