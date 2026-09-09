@@ -24,6 +24,8 @@ Test DESCRIBE with only the middle alias of the chain ungranted
 ACCESS_DENIED
 Test system.columns with a column-level grant on the final table
 secret_id
+Test system.columns with a column revoked on the final table
+secret_id
 Test system.completions with a column-level grant on the final table
 secret_id
 Test DESCRIBE through the chain with the final target granted

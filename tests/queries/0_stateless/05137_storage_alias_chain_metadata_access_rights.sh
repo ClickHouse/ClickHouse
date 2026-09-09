@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="chain_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mid_user="chain_mid_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 col_user="chain_col_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rev_user="chain_rev_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Build `chain_a1 -> chain_a2 -> chain_a3 -> chain_base`. Every CREATE names a target that is either
 # absent or not an Alias, which is the only order the point-in-time Alias -> Alias rejection accepts.
@@ -15,6 +16,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP USER IF EXISTS ${user};
     DROP USER IF EXISTS ${mid_user};
     DROP USER IF EXISTS ${col_user};
+    DROP USER IF EXISTS ${rev_user};
     DROP TABLE IF EXISTS chain_a1;
     DROP TABLE IF EXISTS chain_a2;
     DROP TABLE IF EXISTS chain_a3;
@@ -57,6 +59,13 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a3 TO ${col_user};
     GRANT SHOW COLUMNS(secret_id) ON chain_base TO ${col_user};
     GRANT SELECT ON system.completions TO ${col_user};
+
+    CREATE USER ${rev_user} NOT IDENTIFIED;
+    GRANT SHOW TABLES, SHOW COLUMNS ON chain_a1 TO ${rev_user};
+    GRANT SHOW TABLES, SHOW COLUMNS ON chain_a2 TO ${rev_user};
+    GRANT SHOW TABLES, SHOW COLUMNS ON chain_a3 TO ${rev_user};
+    GRANT SHOW COLUMNS ON chain_base TO ${rev_user};
+    REVOKE SHOW COLUMNS(secret_payload) ON chain_base FROM ${rev_user};
 "
 
 echo "Test DESCRIBE through the chain"
@@ -126,6 +135,13 @@ ${CLICKHOUSE_CLIENT} --user="${col_user}" --query "
     SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'chain_a1' ORDER BY name;
 "
 
+# `rev_user` holds the privilege on every table in the chain, with one column revoked on the final one,
+# so the answer must come from the per-column check and not from the table-level one.
+echo "Test system.columns with a column revoked on the final table"
+${CLICKHOUSE_CLIENT} --user="${rev_user}" --query "
+    SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'chain_a1' ORDER BY name;
+"
+
 echo "Test system.completions with a column-level grant on the final table"
 ${CLICKHOUSE_CLIENT} --user="${col_user}" --query "
     SELECT word FROM system.completions WHERE context = 'column' AND belongs = 'chain_a1' ORDER BY word;
@@ -175,4 +191,5 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP USER ${user};
     DROP USER ${mid_user};
     DROP USER ${col_user};
+    DROP USER ${rev_user};
 "

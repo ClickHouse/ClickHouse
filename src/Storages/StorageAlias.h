@@ -48,6 +48,10 @@ public:
     /// definition and resolve nothing through it.
     bool isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
 
+    /// Returns the subset of `column_names` the current user has this access to on every table this
+    /// alias resolves through. Resolves the chain once, whatever the grants look like.
+    NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
+
     /// Read from target table
     void read(
         QueryPlan & query_plan,
