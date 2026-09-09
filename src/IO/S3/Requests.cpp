@@ -61,6 +61,20 @@ std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
     return {};
 }
 
+void translateHeadersToGCS(Aws::Http::HttpRequest & request)
+{
+    const auto before = request.GetHeaders();
+    const auto after = translateHeadersToGCS(before);
+
+    for (const auto & [name, _] : before)
+        if (!after.contains(name))
+            request.DeleteHeader(name.c_str());
+
+    for (const auto & [name, value] : after)
+        if (!before.contains(name))
+            request.SetHeaderValue(name, value);
+}
+
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers)
 {
     /// GCS supports same headers as S3 but with a prefix x-goog instead of x-amz

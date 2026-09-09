@@ -8,6 +8,7 @@
 #include <IO/S3/ProviderType.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
+#include <aws/core/http/HttpRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/ListObjectsRequest.h>
@@ -69,6 +70,11 @@ inline void setChecksumAlgorithm(R & request)
 /// outside it has no GCS counterpart, or one of a different shape that a rename cannot produce.
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
 
+/// Applied to the built request, where the SDK has merged both header carriers: the ones the request
+/// object generates and the `extra_headers` attached through `SetAdditionalCustomHeaderValue`. Doing
+/// it per request type would miss the second.
+void translateHeadersToGCS(Aws::Http::HttpRequest & request);
+
 /// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
 /// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
 std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);
@@ -77,14 +83,6 @@ template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
 {
 public:
-    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override
-    {
-        auto headers = BaseRequest::GetRequestSpecificHeaders();
-        if (api_mode != ApiMode::GCS)
-            return headers;
-        return translateHeadersToGCS(std::move(headers));
-    }
-
     Aws::Endpoint::EndpointParameters GetEndpointContextParams() const override
     {
         auto params = BaseRequest::GetEndpointContextParams();

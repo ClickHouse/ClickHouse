@@ -984,6 +984,7 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
         /// all "x-amz-*" headers have to be either converted or deleted
         /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
+        translateHeadersToGCS(*httpRequest);
     }
 }
 
