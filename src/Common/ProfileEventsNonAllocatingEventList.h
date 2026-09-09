@@ -1,7 +1,7 @@
 #pragma once
 
-/// Initial audited nonallocating events; legacy dynamic/destructor publishers still require an audit.
-/// Standalone layouts reserve this subset; it does not authorize paged process-counter storage.
+/// Events published from signal handlers, allocator hooks, or allocation-denied scopes.
+/// Every event in this list has preallocated query-counter storage.
 #define APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M) \
     M(QueryProfilerConcurrencyOverruns) \
     M(QueryProfilerSignalOverruns) \
@@ -42,4 +42,20 @@
     M(FilesystemCacheEvictMicroseconds) \
     M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds) \
     M(ObjectStorageQueuePullMicroseconds) \
-    M(ThrottlerSleepMicroseconds)
+    M(ThrottlerSleepMicroseconds) \
+    M(MemoryOvercommitWaitTimeMicroseconds) \
+    M(GlobalThreadPoolLockWaitMicroseconds) \
+    M(LocalThreadPoolLockWaitMicroseconds) \
+    M(GlobalThreadPoolJobWaitTimeMicroseconds) \
+    M(LocalThreadPoolJobWaitTimeMicroseconds) \
+    M(GlobalThreadPoolShrinks) \
+    M(LocalThreadPoolShrinks) \
+    M(JemallocFailedAllocationSampleTracking) \
+    M(JemallocFailedDeallocationSampleTracking) \
+    M(WriteBufferFromFileDescriptorWrite) \
+    M(WriteBufferFromFileDescriptorWriteFailed) \
+    M(DiskWriteElapsedMicroseconds) \
+    M(WriteBufferFromFileDescriptorWriteBytes) \
+    M(PageCacheWeightLost) \
+    M(PageCacheResized) \
+    M(AsyncLoaderWaitMicroseconds)

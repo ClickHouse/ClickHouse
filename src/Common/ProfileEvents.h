@@ -81,6 +81,9 @@ namespace ProfileEvents
         /// with the flip.
         std::atomic<uint32_t> cpus = 0;
         AlignedCounters counters_holder;
+        struct PagedCounters;
+        /// Query counters keep hot cells inline and allocate cold pages on first use.
+        std::unique_ptr<PagedCounters> paged_counters;
 
         /// Used to propagate increments.
         /// Requires acquire-release:
@@ -118,9 +121,7 @@ namespace ProfileEvents
         friend struct ProfileEventsPerCPUInitializer;
 
         Counters(Counters && src) noexcept;
-#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
         ~Counters();
-#endif
 
         double getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset = false);
 
@@ -132,7 +133,7 @@ namespace ProfileEvents
         /// Debug allocation checks enforce the contract where supported.
         void incrementNonAllocating(NonAllocatingEvent event, Count amount = 1) noexcept;
         void incrementNoTrace(Event event, Count amount = 1);
-        void incrementSignalSafe(Event event, Count amount = 1);
+        void incrementSignalSafe(NonAllocatingEvent event, Count amount = 1);
 
         struct Snapshot
         {
@@ -215,8 +216,8 @@ namespace ProfileEvents
     void incrementNoTrace(Event event, Count amount = 1);
 
     /// Async-signal-safe variant of `incrementNoTrace` (no `sched_getcpu`). Use ONLY from
-    /// signal/crash handlers.
-    void incrementSignalSafe(Event event, Count amount = 1);
+    /// signal/crash handlers. The token requires an event with preallocated storage.
+    void incrementSignalSafe(NonAllocatingEvent event, Count amount = 1);
 
     /// Get name of event by identifier. Returns statically allocated string.
     const std::string_view & getName(Event event);

@@ -169,16 +169,6 @@ option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests"
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
-# Research-only: process counters remain dense until nonallocating publishers are audited.
-option(ENABLE_PROFILE_EVENTS_PAGED_EXPERIMENT "Build profile-counter experiment diagnostics; process storage remains dense" OFF)
-if (ENABLE_PROFILE_EVENTS_PAGED_EXPERIMENT)
-    if (NOT (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64)))
-        message(FATAL_ERROR "The paged ProfileEvents experiment requires Linux x86-64 or AArch64")
-    endif()
-    message(WARNING "ProfileEvents experiment diagnostics enabled; paged process storage is blocked pending the nonallocating publisher audit")
-    add_compile_definitions(PROFILE_EVENTS_PAGED_EXPERIMENT=1)
-endif()
-
 if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT USE_MUSL)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)

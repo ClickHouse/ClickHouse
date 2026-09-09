@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsNonAllocatingEvents.h>
 #include <Common/MemoryTracker.h>
 #include <Common/VariableContext.h>
 
+#include <array>
 #include <atomic>
+#include <barrier>
 #include <memory>
 #include <limits>
 #include <thread>
@@ -14,6 +17,7 @@ namespace ProfileEvents
 {
     extern const Event Query;
     extern const Event SelectQuery;
+    extern const Event AdaptiveAggregationSpillBacklogSheds;
 }
 
 /// Drive the real `Thread` -> `User` -> `global_counters` chain: every thread increments its own
@@ -125,9 +129,9 @@ TEST(ProfileEvents, ParentAttachedConcurrentlyWithIncrement)
     EXPECT_EQ((*parent)[ProfileEvents::Query], 1);
 }
 
-/// Exercise every event, including the tail, through single-row and per-CPU parents. The deny
-/// scope covers updates only; constructing a snapshot still allocates its dense result buffer.
-TEST(ProfileEvents, EveryEventPropagatesWithoutAllocating)
+/// First updates may allocate cold pages in the `Process` parent. Subsequent updates reuse
+/// those pages; snapshots allocate only their dense result buffer.
+TEST(ProfileEvents, EveryEventPropagatesWithRetainedColdPages)
 {
     struct PerCPUGuard
     {
@@ -144,14 +148,17 @@ TEST(ProfileEvents, EveryEventPropagatesWithoutAllocating)
         ProfileEvents::Counters user(VariableContext::User, &global);
         ProfileEvents::Counters process(VariableContext::Process, &user);
         ProfileEvents::Counters thread(VariableContext::Thread, &process);
+        for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
+        {
+            thread.increment(event, 1);
+            thread.incrementNoTrace(event, 2);
+        }
         {
             DENY_ALLOCATIONS_IN_SCOPE;
             for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
             {
-                thread.increment(event, 1);
-                thread.incrementNoTrace(event, 2);
-                thread.incrementSignalSafe(event, 4);
-                thread.increment(event, 0);
+                thread.increment(event, 4);
+                thread.incrementNoTrace(event, 0);
             }
         }
         for (const auto * counters : {&thread, &process, &user, &global})
@@ -181,7 +188,7 @@ TEST(ProfileEvents, MoveResetAndWrapEveryEvent)
         {
             DENY_ALLOCATIONS_IN_SCOPE;
             for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
-                moved.incrementSignalSafe(event, 2);
+                moved.incrementNoTrace(event, 2);
         }
         auto snapshot = moved.getPartiallyAtomicSnapshot();
         for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
@@ -194,7 +201,7 @@ TEST(ProfileEvents, MoveResetAndWrapEveryEvent)
             DENY_ALLOCATIONS_IN_SCOPE;
             moved.resetCounters();
             for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
-                moved.incrementSignalSafe(event, 3);
+                moved.incrementNoTrace(event, 3);
         }
         for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
         {
@@ -205,7 +212,7 @@ TEST(ProfileEvents, MoveResetAndWrapEveryEvent)
             DENY_ALLOCATIONS_IN_SCOPE;
             moved.reset();
             for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
-                moved.incrementSignalSafe(event, 5);
+                moved.incrementNoTrace(event, 5);
         }
         for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
         {
@@ -215,24 +222,96 @@ TEST(ProfileEvents, MoveResetAndWrapEveryEvent)
     }
 }
 
-TEST(ProfileEvents, ConcurrentTailUpdates)
+TEST(ProfileEvents, ReservedEventsPropagateWithoutAllocating)
+{
+    ProfileEvents::Counters global(VariableContext::Global, nullptr);
+    ProfileEvents::Counters user(VariableContext::User, &global);
+    ProfileEvents::Counters process(VariableContext::Process, &user);
+    ProfileEvents::Counters thread(VariableContext::Thread, &process);
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+#define M(NAME) \
+        thread.incrementSignalSafe(ProfileEvents::nonAllocatingEvent<ProfileEvents::NAME>(), 2); \
+        thread.incrementNonAllocating(ProfileEvents::nonAllocatingEvent<ProfileEvents::NAME>(), 1);
+        APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M)
+#undef M
+    }
+    const std::array reserved_events = {
+#define M(NAME) ProfileEvents::NAME,
+        APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M)
+#undef M
+    };
+    for (const auto * counters : {&thread, &process, &user, &global})
+    {
+        auto snapshot = counters->getPartiallyAtomicSnapshot();
+        for (auto event : reserved_events)
+        {
+            EXPECT_EQ((*counters)[event], 3);
+            EXPECT_EQ(snapshot[event], 3);
+        }
+    }
+}
+
+TEST(ProfileEvents, AbsentColdPagesReadAsZeroWithoutAllocating)
 {
     ProfileEvents::Counters counters(VariableContext::Process, nullptr);
-    const ProfileEvents::Event last_event(ProfileEvents::end() - 1);
+    const auto hot_event = ProfileEvents::nonAllocatingEvent<ProfileEvents::QueryProfilerRuns>();
+    bool values_match = true;
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        counters.incrementSignalSafe(hot_event, 7);
+        for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
+        {
+            counters.increment(event, 0);
+            counters.incrementNoTrace(event, 0);
+            const auto expected = event == hot_event.value() ? 7 : 0;
+            values_match &= counters[event] == expected;
+        }
+    }
+    EXPECT_TRUE(values_match);
+    auto snapshot = counters.getPartiallyAtomicSnapshot();
+    for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
+        EXPECT_EQ(snapshot[event], event == hot_event.value() ? 7 : 0);
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        counters.resetCounters();
+        for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
+            values_match &= counters[event] == 0;
+    }
+    EXPECT_TRUE(values_match);
+}
+
+TEST(ProfileEvents, ConcurrentFirstColdUpdatesAndSnapshots)
+{
+    ProfileEvents::Counters counters(VariableContext::Process, nullptr);
+    /// This event was appended after the public frequency ranking and remains cold.
+    const auto cold_event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
     constexpr size_t num_threads = 8;
     constexpr size_t increments = 10'000;
+    std::barrier<> start(num_threads + 1);
+    std::atomic<size_t> finished = 0;
     std::vector<std::thread> threads;
     for (size_t i = 0; i < num_threads; ++i)
     {
         threads.emplace_back([&]
         {
-            DENY_ALLOCATIONS_IN_SCOPE;
+            start.arrive_and_wait();
             for (size_t j = 0; j < increments; ++j)
-                counters.incrementSignalSafe(last_event);
+                counters.incrementNoTrace(cold_event);
+            finished.fetch_add(1, std::memory_order_release);
         });
     }
+    start.arrive_and_wait();
+    ProfileEvents::Count previous = 0;
+    do
+    {
+        const auto value = counters.getPartiallyAtomicSnapshot()[cold_event];
+        EXPECT_GE(value, previous);
+        EXPECT_LE(value, num_threads * increments);
+        previous = value;
+    } while (finished.load(std::memory_order_acquire) != num_threads);
     for (auto & thread : threads)
         thread.join();
-    EXPECT_EQ(counters[last_event], num_threads * increments);
-    EXPECT_EQ(counters.getPartiallyAtomicSnapshot()[last_event], num_threads * increments);
+    EXPECT_EQ(counters[cold_event], num_threads * increments);
+    EXPECT_EQ(counters.getPartiallyAtomicSnapshot()[cold_event], num_threads * increments);
 }
