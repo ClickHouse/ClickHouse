@@ -1,0 +1,301 @@
+---
+title: '関数レベルの設定'
+sidebarTitle: '関数設定'
+slug: /chdb/configuration/function-config
+description: '関数レベルで実行エンジンと Dtype 補正を設定する'
+keywords: ['chdb', 'datastore', 'function', 'config', 'Dtype', 'correction']
+doc_type: 'reference'
+---
+
+DataStore では、エンジンの選択や Dtype の補正など、関数単位で実行をきめ細かく制御できます。
+
+<div id="function-engine">
+  ## 関数エンジンの設定
+</div>
+
+特定の関数について、実行エンジンを上書きします。
+
+<div id="setting-engines">
+  ### 関数エンジンの設定
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# 特定の関数をchdbで使用するよう強制する
+function_config.use_chdb('length', 'substring', 'concat')
+
+# 特定の関数をpandasで使用するよう強制する
+function_config.use_pandas('upper', 'lower', 'capitalize')
+
+# デフォルトの優先設定を行う
+function_config.prefer_chdb()    # デフォルトをchdbにする
+function_config.prefer_pandas()  # デフォルトをpandasにする
+
+# 自動にリセットする
+function_config.reset()
+```
+
+<div id="when-to-use">
+  ### 使い分けの目安
+</div>
+
+**以下の場合は chdb を強制します。**
+
+* ClickHouse のほうが高いパフォーマンスを発揮する関数
+* SQL の最適化を活用できる関数
+* 大規模な文字列/日時処理
+
+**以下の場合は pandas を強制します。**
+
+* pandas 固有の動作をする関数
+* pandas との厳密な互換性が必要な場合
+* カスタム文字列処理
+
+<div id="function-example">
+  ### 例
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import function_config
+
+# 関数エンジンを設定する
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper')
+
+ds = pd.read_csv("data.csv")
+
+# length() は chdb を使用する
+ds['name_len'] = ds['name'].str.len()
+
+# substring() は chdb を使用する  
+ds['prefix'] = ds['name'].str.slice(0, 3)
+
+# upper() は pandas を使用する
+ds['name_upper'] = ds['name'].str.upper()
+```
+
+***
+
+<div id="overlapping">
+  ## 共通の関数
+</div>
+
+159 個以上の関数が chdb と pandas の両方のエンジンで利用できます。
+
+| カテゴリ      | 関数                                                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **文字列**   | `length`, `upper`, `lower`, `trim`, `ltrim`, `rtrim`, `concat`, `substring`, `replace`, `reverse`, `contains`, `startswith`, `endswith` |
+| **数学**    | `abs`, `round`, `floor`, `ceil`, `exp`, `log`, `log10`, `sqrt`, `pow`, `sin`, `cos`, `tan`                                              |
+| **DateTime** | `year`, `month`, `day`, `hour`, `minute`, `second`, `dayofweek`, `dayofyear`, `quarter`                                                 |
+| **集約**    | `sum`, `avg`, `min`, `max`, `count`, `std`, `var`, `median`                                                                             |
+
+共通の関数では、エンジンは次の順で選択されます。
+
+1. 明示的な関数設定 (設定されている場合) 
+2. グローバルの `execution_engine` 設定
+3. コンテキストに基づく自動選択
+
+***
+
+<div id="chdb-only">
+  ## chdb専用の関数
+</div>
+
+一部の関数は、ClickHouse でのみ利用できます。
+
+| カテゴリ            | 関数                                                                                 |
+| --------------- | ---------------------------------------------------------------------------------- |
+| **Array**       | `arraySum`, `arrayAvg`, `arraySort`, `arrayDistinct`, `groupArray`, `arrayElement` |
+| **JSON**        | `JSONExtractString`, `JSONExtractInt`, `JSONExtractFloat`, `JSONHas`               |
+| **URL**         | `domain`, `path`, `protocol`, `extractURLParameter`                                |
+| **IP**          | `IPv4StringToNum`, `IPv4NumToString`, `isIPv4String`                               |
+| **Geo**         | `greatCircleDistance`, `geoDistance`, `geoToH3`                                    |
+| **Hash**        | `cityHash64`, `xxHash64`, `sipHash64`, `MD5`, `SHA256`                             |
+| **Conditional** | `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`                                      |
+
+これらの関数は、設定にかかわらず自動的に chdb エンジンを使用します。
+
+***
+
+<div id="pandas-only">
+  ## pandas専用の関数
+</div>
+
+一部の関数は、pandas でのみ利用できます。
+
+| カテゴリ              | 関数                  |
+| ----------------- | ------------------- |
+| **Apply**         | カスタムのラムダ関数、ユーザー定義関数 |
+| **Complex Pivot** | カスタム集計を使用するピボットテーブル |
+| **Stack/Unstack** | 複雑な再構成操作            |
+| **Interpolate**   | 時系列の補間メソッド          |
+
+これらの関数は、設定にかかわらず自動的に pandas エンジンを使用します。
+
+***
+
+<div id="dtype-correction">
+  ## Dtype補正
+</div>
+
+DataStore がエンジン間でデータ型をどのように補正するかを設定します。
+
+<div id="correction-levels">
+  ### 補正レベル
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# 補正なし
+config.set_correction_level(CorrectionLevel.NONE)
+
+# クリティカルな型のみ（NULLの処理、ブール値）
+config.set_correction_level(CorrectionLevel.CRITICAL)
+
+# 高優先度（デフォルト）- 一般的な型の不一致
+config.set_correction_level(CorrectionLevel.HIGH)
+
+# 中程度 - より積極的な補正
+config.set_correction_level(CorrectionLevel.MEDIUM)
+
+# すべて - 可能なすべての型を補正
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+<div id="level-details">
+  ### 修正レベルの詳細
+</div>
+
+| レベル             | 説明      | 修正対象の型                     |
+| --------------- | ------- | -------------------------- |
+| `NONE`          | 自動修正なし  | なし                         |
+| `CRITICAL`      | 必須の修正   | NULL の処理、真偽値変換             |
+| `HIGH` (デフォルト)  | 一般的な修正  | 整数/浮動小数点の精度、日時、文字列エンコーディング |
+| `MEDIUM`        | より多くの修正 | Decimal の精度、タイムゾーンの処理      |
+| `ALL`           | 最大限の修正  | すべての型の差異                   |
+
+<div id="when-correction">
+  ### 型の修正が必要な場合
+</div>
+
+次のような場合に、型の違いが生じることがあります。
+
+1. **ClickHouse → pandas**: 整数サイズの違い (Int64 と int64) 
+2. **pandas → ClickHouse**: Python の object 型から SQL 型への変換
+3. **NULL の処理**: pandas の NA と ClickHouse の NULL
+4. **ブール値**: ブール値の表現の違い
+5. **DateTime**: タイムゾーンの違い
+
+<div id="function-example">
+  ### 例
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# 厳格モード - 型の完全一致を期待する
+config.set_correction_level(CorrectionLevel.NONE)
+
+# 緩和モード - 型の問題を自動修正する
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+***
+
+<div id="api">
+  ## Function Configuration API
+</div>
+
+<div id="function-config-object">
+  ### function_config オブジェクト
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# 関数のエンジンを強制指定
+function_config.use_chdb(*function_names)
+function_config.use_pandas(*function_names)
+
+# デフォルトの優先設定
+function_config.prefer_chdb()
+function_config.prefer_pandas()
+
+# デフォルト（自動）にリセット
+function_config.reset()
+
+# 設定を確認
+function_config.get_engine('length')  # 'chdb'、'pandas'、または 'auto' を返す
+```
+
+<div id="per-call">
+  ### 呼び出し単位のオーバーライド
+</div>
+
+一部のメソッドでは、呼び出し単位でエンジンをオーバーライドできます。
+
+```python
+# engineパラメータを使用する（サポートされている場合）
+ds['result'] = ds['col'].str.upper(engine='pandas')
+```
+
+***
+
+<div id="best-practices">
+  ## ベストプラクティス
+</div>
+
+<div id="start-with-defaults">
+  ### 1. まずはデフォルト設定で始める
+</div>
+
+```python
+# 自動モードを使用し、DataStore に決定させる
+config.use_auto()
+```
+
+<div id="configure-for-specific-workloads">
+  ### 2. 特定のワークロード用に設定する
+</div>
+
+```python
+# ClickHouse最適化文字列処理用
+function_config.use_chdb('length', 'substring', 'concat')
+
+# pandas互換の文字列動作用
+function_config.use_pandas('upper', 'lower')
+```
+
+<div id="use-appropriate-correction-level">
+  ### 3. 適切な補正レベルを使用する
+</div>
+
+```python
+# 開発環境: より緩やか
+config.set_correction_level(CorrectionLevel.ALL)
+
+# 本番環境: より厳格
+config.set_correction_level(CorrectionLevel.HIGH)
+```
+
+<div id="test-both-engines">
+  ### 4. 両方のエンジンをテストする
+</div>
+
+```python
+# chdbでテスト
+config.use_chdb()
+result_chdb = process_data()
+
+# pandasでテスト
+config.use_pandas()
+result_pandas = process_data()
+
+# 結果を比較
+assert result_chdb.equals(result_pandas)
+```

@@ -1,0 +1,13 @@
+---
+title: 'ClickHouse에 비용 기반 옵티마이저가 있습니까'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/cost-based
+description: 'ClickHouse에는 일부 비용 기반 최적화 메커니즘이 있습니다'
+doc_type: '참고'
+keywords: ['CBE', 'optimizer']
+---
+
+ClickHouse에는 일부 비용 기반 최적화 메커니즘이 있습니다. 예를 들어, 컬럼을 읽는 순서는 디스크에서 압축된 데이터 범위를 읽는 비용에 따라 결정됩니다.
+
+또한 ClickHouse는 컬럼 통계(column statistics)를 기반으로 JOIN 순서를 재조정하기도 하지만, 이는 (2025년 기준) Postgres, Oracle, MS SQL Server의 CBE만큼 발전된 수준은 아닙니다.

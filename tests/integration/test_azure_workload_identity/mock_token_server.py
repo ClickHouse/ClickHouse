@@ -78,7 +78,17 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self._send(404, "")
 
     def do_POST(self):
-        body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
+        # Azure front ends reject body-carrying requests without `Content-Length`
+        # with `411 Length Required` (the request body has no framing otherwise).
+        # Mimic that instead of tolerating the missing header, so a transport
+        # regression fails the test loudly.
+        content_length = self.headers.get("Content-Length")
+        if content_length is None:
+            requests_log.append({"path": self.path, "error": "missing Content-Length"})
+            self._send(411, json.dumps({"error": "length_required"}))
+            return
+
+        body = self.rfile.read(int(content_length)).decode()
         requests_log.append({"path": self.path, "body": body})
         token = {"access_token": "dummy-token", "expires_in": 3600, "token_type": "Bearer"}
         self._send(200, json.dumps(token))

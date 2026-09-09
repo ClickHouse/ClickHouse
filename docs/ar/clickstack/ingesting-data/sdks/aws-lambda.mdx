@@ -1,0 +1,341 @@
+---
+slug: /use-cases/observability/clickstack/sdks/aws_lambda
+description: 'AWS Lambda لـ ClickStack - حزمة observability من ClickHouse'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observability', 'aws-lambda', 'lambda-layers']
+---
+
+**يتكامل هذا الدليل مع:**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ السجلات</td>
+      <td className="pe-2">✅ المقاييس</td>
+      <td className="pe-2">✅ التتبعات</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="installing-the-otel-lambda-layers">
+  ## تثبيت طبقات Lambda الخاصة بـ OpenTelemetry
+</div>
+
+يوفّر مشروع OpenTelemetry طبقات Lambda منفصلة من أجل:
+
+1. إضافة instrumentation تلقائيًا إلى شيفرة دالة Lambda الخاصة بك باستخدام auto-instrumentation من OpenTelemetry.
+2. إعادة توجيه السجلات والمقاييس وتتبع المجمّعة إلى ClickStack.
+
+<div id="adding-language-specific-auto-instrumentation">
+  ### إضافة طبقة auto-instrumentation الخاصة باللغة
+</div>
+
+تقوم طبقات Lambda الخاصة باللغة والمخصّصة لـ auto-instrumentation بتجهيز شيفرة دالة Lambda لديك تلقائيًا بحزمة OpenTelemetry auto-instrumentation المناسبة للغتك.
+
+لكل لغة ولكل منطقة قيمة ARN خاصة بها.
+
+إذا كانت دالة Lambda لديك مجهّزة بالفعل باستخدام OpenTelemetry SDK، فيمكنك تخطي هذه الخطوة.
+
+**للبدء**:
+
+1. في قسم Layers، انقر على &quot;Add a layer&quot;
+2. اختر تحديد ARN وأدخل قيمة ARN الصحيحة بحسب اللغة، مع التأكد من استبدال `<region>` بمنطقتك (على سبيل المثال: `us-east-2`):
+
+<Tabs>
+  <Tab title="Javascript">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-nodejs-0_7_0:1
+    ```
+  </Tab>
+
+  <Tab title="بايثون">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-python-0_7_0:1
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-javaagent-0_6_0:1
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-ruby-0_1_0:1
+    ```
+  </Tab>
+</Tabs>
+
+*يمكن العثور على أحدث إصدارات هذه الطبقات في [مستودع OpenTelemetry Lambda Layers على GitHub](https://github.com/open-telemetry/opentelemetry-lambda/releases).*
+
+3. قم بتكوين متغيرات البيئة التالية في دالة Lambda لديك ضمن &quot;Configuration&quot; &gt; &quot;Environment variables&quot;.
+
+<Tabs>
+  <Tab title="Javascript">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="بايثون">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+</Tabs>
+
+<div id="installing-the-otel-collector-layer">
+  ### تثبيت طبقة Lambda الخاصة بـ OpenTelemetry collector
+</div>
+
+تتيح لك طبقة Lambda الخاصة بـ collector إعادة توجيه السجلات والمقاييس والتتبعات من دالة Lambda إلى ClickStack دون التأثير في أوقات الاستجابة بسبب كمون المُصدِّر.
+
+**لتثبيت طبقة `collector`**:
+
+1. في قسم Layers، انقر على &quot;Add a layer&quot;
+2. حدِّد &quot;specify an ARN&quot; واختر ARN الصحيح بناءً على المعمارية، وتأكد من استبدال `<region>` بمنطقتك (على سبيل المثال: `us-east-2`):
+
+<Tabs>
+  <Tab title="x86_64">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-collector-amd64-0_8_0:1
+    ```
+  </Tab>
+
+  <Tab title="arm64">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-collector-arm64-0_8_0:1
+    ```
+  </Tab>
+</Tabs>
+
+3. أضف ملف `collector.yaml` التالي إلى مشروعك لتهيئة `collector` بحيث يرسل البيانات إلى ClickStack:
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    processors:
+      batch:
+      decouple:
+
+    exporters:
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        compression: gzip
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    processors:
+      batch:
+      decouple:
+
+    exporters:
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        headers:
+          authorization: <YOUR_INGESTION_API_KEY>
+        compression: gzip
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+    ```
+  </Tab>
+</Tabs>
+
+4. أضف متغير البيئة التالي:
+
+```shell
+OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
+```
+
+<div id="checking-the-installation">
+  ## التحقق من التثبيت
+</div>
+
+بعد نشر الطبقات، ينبغي أن ترى الآن التتبعات التي جُمعت تلقائيًا
+من دالة Lambda الخاصة بك في HyperDX. قد يتسبب المعالجان `decouple` و`batching`
+في تأخير جمع بيانات القياس عن بُعد، لذا قد يتأخر ظهور التتبعات.
+ولإرسال سجلات أو مقاييس مخصّصة، ستحتاج إلى إضافة OpenTelemetry SDKs الخاصة بلغتك إلى
+تعليماتك البرمجية.
+
+<div id="troubleshoting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="custom-instrumentation-not-sending">
+  ### عدم إرسال التضمين البرمجي المخصّص
+</div>
+
+إذا لم تكن ترى التتبعات التي عرّفتها يدويًا أو أي بيانات قياس عن بُعد أخرى، فقد
+تكون تستخدم إصدارًا غير متوافق من حزمة واجهة برمجة تطبيقات OpenTelemetry. تأكد من أن
+إصدار حزمة واجهة برمجة تطبيقات OpenTelemetry لديك يساوي على الأقل إصدار الحزمة
+المضمَّنة في AWS Lambda أو يكون أقدم منه.
+
+<div id="enabling-sdk-debug-logs">
+  ### تمكين سجلات التصحيح الخاصة بـ SDK
+</div>
+
+عيّن متغير البيئة `OTEL_LOG_LEVEL` إلى `DEBUG` لتمكين سجلات التصحيح من
+OpenTelemetry SDK. سيساعد ذلك على التأكد من أن طبقة auto-instrumentation
+تقوم بأداتة تطبيقك بشكل صحيح.
+
+<div id="enabling-collector-debug-logs">
+  ### تمكين سجلات التصحيح الخاصة بالـ collector
+</div>
+
+لاستكشاف مشكلات الـ collector وإصلاحها، يمكنك تمكين سجلات التصحيح عبر تعديل
+ملف تكوين الـ collector لإضافة المصدّر `logging`، وضبط مستوى سجلّات telemetry
+على `debug` لتمكين تسجيل أكثر تفصيلاً من طبقة Lambda الخاصة بالـ collector.
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    exporters:
+      logging:
+        verbosity: detailed
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        compression: gzip
+
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    exporters:
+      logging:
+        verbosity: detailed
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        headers:
+          authorization: <YOUR_INGESTION_API_KEY>
+        compression: gzip
+
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+    ```
+  </Tab>
+</Tabs>

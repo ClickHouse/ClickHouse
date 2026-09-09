@@ -150,7 +150,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-static void matchQueryAliases(const uint32_t ncols, Select * osel, Select * nsel)
+static void matchQueryAliases(const uint32_t ncols, Select & osel, Select * nsel)
 {
     /// Make sure aliases match
     SelectStatementCore * ssc = nsel->mutable_select_core();
@@ -171,7 +171,7 @@ static void matchQueryAliases(const uint32_t ncols, Select * osel, Select * nsel
             ->set_column(ncname);
         jtf->add_col_aliases()->set_column(ncname);
     }
-    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->set_allocated_sel(osel);
+    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->mutable_sel()->Swap(&osel);
 }
 
 void StatementGenerator::generateDerivedTable(
@@ -183,7 +183,8 @@ void StatementGenerator::generateDerivedTable(
     std::optional<String> recursive,
     Select * sel)
 {
-    Select * osel = sel->New();
+    /// Built on the stack so an exception escaping `generateSelect` cannot leak it; `matchQueryAliases` swaps it into `sel`.
+    Select osel;
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
@@ -203,7 +204,7 @@ void StatementGenerator::generateDerivedTable(
 
     this->current_level++;
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, osel);
+    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, &osel);
     this->current_level--;
 
     if (backup)
@@ -367,7 +368,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             ffunc->set_path(t.getTablePath(rg, this->allow_not_deterministic));
             if (t.file_format.has_value())
             {
-                ffunc->set_inoutformat(t.file_format.value());
+                ffunc->set_format(t.file_format.value());
             }
             if (t.file_comp.has_value() || rg.nextSmallNumber() < 5)
             {
@@ -391,7 +392,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             ufunc->set_uurl(t.getTablePath(rg, this->allow_not_deterministic));
             if (t.file_format.has_value())
             {
-                ufunc->set_inoutformat(t.file_format.value());
+                ufunc->set_format(t.file_format.value());
             }
             structure = rg.nextMediumNumber() < 96 ? ufunc->mutable_structure() : nullptr;
             if (structure)
@@ -482,7 +483,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         if (ofunc)
         {
             setObjectStoreParams<SQLTable, ObjectStoreFunc>(rg, t, ofunc);
-            addRandomHTTPHeaders(rg, tfunc);
+            /// Custom HTTP headers only apply to HTTP-based (S3-family) object stores; forwarding them
+            /// into the Azure SDK or local-file paths breaks the transport (e.g. Accept-Encoding).
+            if (t.isOnS3())
+                addRandomHTTPHeaders(rg, tfunc);
         }
     }
     else if (usage == TableFunctionUsage::ClusterCall)
@@ -772,6 +776,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::MergeProjectionUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeTextIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF)] = has_mergetree_table && this->allow_engine_udf;
+    queryMask[static_cast<size_t>(QueryOp::MergeCodecBlockCountsUDF)] = has_mergetree_table && this->allow_engine_udf;
     /// `filesystem([path])` reads local files (metadata + optional content) — non-deterministic
     /// and needs FILE access. Don't emit it through `remote()` either.
     queryMask[static_cast<size_t>(QueryOp::FilesystemUDF)] = !under_remote && this->allow_not_deterministic && this->allow_engine_udf;
@@ -1118,12 +1123,9 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             URLFunc * ufunc = tf->mutable_url();
             const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
             const std::optional<String> & cluster = tt.getCluster();
-            const OutFormat outf = rg.nextBool()
-                ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-            const InFormat iinf = (outIn.contains(outf)) && rg.nextBool()
-                ? outIn.at(outf)
-                : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1);
+            const String outf = rg.pickRandomly((!this->allow_not_deterministic || rg.nextBool()) ? fc.in_out_formats : fc.out_formats);
+            const std::optional<String> read_back = fc.formatToRead(outf);
+            const String iinf = (read_back.has_value() && rg.nextBool()) ? read_back.value() : rg.pickRandomly(fc.in_formats);
 
             if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
@@ -1147,13 +1149,13 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             sql += " FROM `" + escapeSQLString(tt.getDatabaseName(), '`') + "`.`" + escapeSQLString(tt.name, '`') + "`";
             if (rg.nextMediumNumber() < 91)
             {
-                sql += " FORMAT " + InFormat_Name(iinf).substr(3);
+                sql += " FORMAT " + outf;
             }
             url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "query=" + urlEncodeQueryParam(sql);
             ufunc->set_uurl(std::move(url));
             if (rg.nextMediumNumber() < 91)
             {
-                ufunc->set_outformat(outf);
+                ufunc->set_format(iinf);
             }
             ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
             addRandomHTTPHeaders(rg, tf);
@@ -1253,6 +1255,22 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_embedded_postings"}, uint8_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_raw_postings"}, uint8_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"has_compressed_postings"}, uint8_tp.get()));
+            this->levels[this->current_level].rels.emplace_back(rel);
+        }
+        break;
+        case QueryOp::MergeCodecBlockCountsUDF: {
+            SQLRelation rel(rel_name);
+            const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
+
+            tt.setName(tof->mutable_tfunc()->mutable_mtcodecblocks(), true);
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"column"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"substream"}, string_tp.get()));
+            /// The trailing columns are Nullable (NULL for `Compact` parts) and `codec_block_counts`
+            /// is a Map, none of which the plain helpers model - leave the type unknown
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"data_compressed_bytes"}, nullptr));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"data_uncompressed_bytes"}, nullptr));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"codec_block_counts"}, nullptr));
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;
@@ -2413,7 +2431,11 @@ void StatementGenerator::generateSelect(
             generateSelect(rg, false, false, ncols, allowed_clauses, std::nullopt, tsel->mutable_sel());
             if (recursive.has_value())
             {
-                matchQueryAliases(ncols, tsel->release_sel(), tsel->mutable_sel());
+                /// Move the generated query out, then rebuild `sel` as a wrapper around it
+                Select osel;
+
+                osel.Swap(tsel->mutable_sel());
+                matchQueryAliases(ncols, osel, tsel->mutable_sel());
             }
         }
         this->width++;
@@ -2504,7 +2526,7 @@ void StatementGenerator::generateSelect(
             force_group_by |= nopt > 3 && nopt < 7;
             if (force_global_agg || force_group_by)
             {
-                allowed_clauses &= ~(allow_orderby);
+                allowed_clauses &= ~allow_orderby;
             }
             else
             {
@@ -2662,14 +2684,12 @@ void StatementGenerator::generateTopSelect(
         if (fc.truncate_output)
         {
             /// Don't randomize format/compression/level when truncating output for easier testing
-            ts->set_format(OutFormat::OUT_Null);
+            ts->set_format("Null");
             sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> out_range(1, static_cast<uint32_t>(OutFormat_MAX));
-
-            ts->set_format(static_cast<OutFormat>(out_range(rg.generator)));
+            ts->set_format(rg.pickRandomly(fc.out_formats));
             if (rg.nextSmallNumber() < 10)
             {
                 std::uniform_int_distribution<uint32_t> step_range(

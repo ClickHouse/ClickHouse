@@ -29,7 +29,16 @@ if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -lc")
+    # musl itself is linked in cmake/musl.cmake. -nostartfiles: don't use glibc's crt*.o
+    # from the sysroot; musl's own startup files (copied to stable paths in
+    # contrib/musl-cmake) are wired here in the canonical order: crt1.o and crti.o go
+    # through CMAKE_EXE_LINKER_FLAGS, which the link line places before all object
+    # files, and crtn.o goes at the end of DEFAULT_LIBS, after all libraries — crti and
+    # crtn provide the prologue/epilogue of the `.init`/`.fini` sections and must wrap
+    # every other contribution to them.
+    set (MUSL_CRT_DIR "${CMAKE_BINARY_DIR}/contrib/musl-cmake")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/crt1.o ${MUSL_CRT_DIR}/crti.o")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
@@ -40,10 +49,19 @@ set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
-set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+if (USE_MUSL)
+    # musl provides pthread in libc.
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+else ()
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+endif ()
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
+
+if (USE_MUSL)
+    include (cmake/musl.cmake)
+endif()
 
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)

@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/instrument-application
+title: 'Инструментируйте приложение за 5 минут с Управляемым ClickStack'
+description: 'Инструментируйте приложение Node.js с помощью OpenTelemetry и отправляйте его журналы, метрики и трейсы в Управляемый ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'инструментирование', 'opentelemetry', 'управляемый', 'обсервабилити', 'sdk', 'nodejs']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import InstrumentApplication from '/snippets/ru/clickstack/_instrument_application.mdx';
+
+В этом руководстве показано, как добавить в небольшое приложение Node.js инструментацию OpenTelemetry и отправлять его журналы, метрики и трассировки в Управляемый ClickStack. Инструментация backend-части выполняется без изменений исходного кода приложения.
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) — это приложение Node.js, которое выполняет запросы к набору данных HackerNews, размещённому в общедоступной демо-среде ClickHouse. В основе каждой диаграммы, таблицы и строки поиска лежит реальный запрос к ClickHouse, поэтому каждое взаимодействие создаёт трассировку, чей основной span — HTTPS-вызов от backend-части к ClickHouse.
+
+В этом руководстве предполагается, что вы уже выполнили [Настройка OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) и что у вас запущен коллектор ClickStack, доступный с машины, на которой вы запускаете это приложение. **Убедитесь, что вы сохранили его конечную точку OTLP** и `OTLP_AUTH_TOKEN`, который задали при развёртывании.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Коллектор ClickStack, доступный с этой машины. Если вы еще не развернули его, сначала следуйте инструкции [Настройка OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
+* Конечная точка OTLP этого коллектора и заданный для него `OTLP_AUTH_TOKEN`.
+* Node 18+ и npm.
+
+<InstrumentApplication />
+
+<div id="further-reading">
+  ## Дополнительные материалы
+</div>
+
+* [Мониторинг Kubernetes](/ru/clickstack/managed-onboarding/monitoring-kubernetes): сбор журналов, инфраструктурных метрик и событий Kubernetes из кластера.
+* [Мониторинг журналов AWS CloudWatch](/ru/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): пересылка журналов CloudWatch через приёмник CloudWatch в OpenTelemetry.
+* [Воспроизведение сеанса](/ru/clickstack/features/session-replay): обзор, параметры SDK и настройки конфиденциальности.
+* [Выход в продакшн](/ru/clickstack/managing/production): рекомендации по подготовке к работе в продакшне.

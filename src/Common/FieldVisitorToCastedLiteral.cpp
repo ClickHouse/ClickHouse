@@ -48,7 +48,7 @@ String FieldVisitorToCastedLiteral::operator() (const Float64 & x) const
     /// FieldVisitorToString should emit a decimal point or exponent for finite Float64,
     /// it's important here because the trailing decimal point keeps the SQL parser from re-parsing
     /// the literal as an integer.
-    chassert(!std::isfinite(x) || out.find('.') != String::npos || out.find('e') != String::npos || out.find('E') != String::npos);
+    chassert(!std::isfinite(x) || out.contains('.') || out.contains('e') || out.contains('E'));
     if (!skip_unambiguous_cast)
         out += "::Float64";
     return out;

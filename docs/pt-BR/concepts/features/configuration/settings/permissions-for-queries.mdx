@@ -1,0 +1,75 @@
+---
+description: 'Configurações de permissões para consultas.'
+sidebarTitle: 'Permissões para consultas'
+slug: /operations/settings/permissions-for-queries
+title: 'Permissões para consultas'
+doc_type: 'reference'
+---
+
+As consultas no ClickHouse podem ser divididas nos seguintes tipos:
+
+1. Consultas de leitura de dados: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
+2. Consultas de escrita de dados: `INSERT`, `OPTIMIZE`.
+3. Consultas de alteração de configurações: `SET`, `USE`.
+4. Consultas [DDL](https://en.wikipedia.org/wiki/Data_definition_language): `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5. `KILL QUERY`.
+
+As configurações a seguir regulam as permissões do usuário por tipo de consulta:
+
+<div id="readonly">
+  ## readonly
+</div>
+
+Restringe as permissões para consultas de leitura de dados, escrita de dados e alteração de configurações.
+
+Quando definido como 1, permite:
+
+* Todos os tipos de consultas de leitura (como SELECT e consultas equivalentes).
+* Consultas que modificam apenas o contexto da sessão (como USE).
+
+Quando definido como 2, permite o acima, além de:
+
+* SET e CREATE TEMPORARY TABLE
+
+<Tip>
+  Consultas como EXISTS, DESCRIBE, EXPLAIN, SHOW PROCESSLIST etc. equivalem a SELECT, porque apenas fazem SELECT em tabelas do sistema.
+</Tip>
+
+Valores possíveis:
+
+* 0 — Consultas de leitura, escrita e alteração de configurações são permitidas.
+* 1 — Somente consultas de leitura de dados são permitidas.
+* 2 — Consultas de leitura de dados e alteração de configurações são permitidas.
+
+Valor padrão: 0
+
+<Note>
+  Depois de definir `readonly = 1`, o usuário não pode alterar as configurações `readonly` e `allow_ddl` na sessão atual.
+
+  Ao usar o método `GET` na [interface HTTP](/pt-BR/concepts/features/interfaces/http), `readonly = 1` é definido automaticamente. Para modificar dados, use o método `POST`.
+
+  Definir `readonly = 1` impede que o usuário altere configurações. Há uma forma de impedir que o usuário altere apenas configurações específicas. Também há uma forma de permitir a alteração apenas de configurações específicas mesmo com as restrições de `readonly = 1`. Para mais detalhes, consulte [restrições nas configurações](/pt-BR/concepts/features/configuration/settings/constraints-on-settings).
+</Note>
+
+<div id="allow_ddl">
+  ## allow_ddl
+</div>
+
+Permite ou bloqueia [consultas DDL](https://en.wikipedia.org/wiki/Data_definition_language).
+
+Valores possíveis:
+
+* 0 — consultas DDL não são permitidas.
+* 1 — consultas DDL são permitidas.
+
+Valor padrão: 1
+
+<Note>
+  Você não pode executar `SET allow_ddl = 1` se `allow_ddl = 0` na sessão atual.
+</Note>
+
+<Info>
+  **KILL QUERY**
+
+  `KILL QUERY` pode ser executado com qualquer combinação das configurações readonly e allow&#95;ddl.
+</Info>

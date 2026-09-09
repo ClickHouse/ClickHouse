@@ -1,15 +1,22 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <Common/quoteString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Core/Defines.h>
@@ -21,11 +28,14 @@
 
 #include <Interpreters/Context.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 String ConstraintsDescription::toString() const
@@ -37,7 +47,7 @@ String ConstraintsDescription::toString() const
     for (const auto & constraint : constraints)
         list.children.push_back(constraint);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 ConstraintsDescription ConstraintsDescription::parse(const String & str)
@@ -133,9 +143,84 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
 }
 
+namespace
+{
+
+/// Whether the expression contains an `arrayJoin` call that multiplies the rows of the block the
+/// constraint is checked on. It can hide behind an alias (the case-insensitive `unnest`, caught by
+/// resolving to the canonical name) or a SQL UDF that is inlined into the expression when it is built
+/// (caught by descending into the UDF body). A call inside a nested subquery has its own scope and does
+/// not multiply the outer rows, so it is skipped - `CHECK x IN (SELECT arrayJoin([1, 2]))` still
+/// produces one boolean per inserted row. This mirrors `expressionContainsArrayJoin` for row policies
+/// and `selectListHasArrayJoinFunction` in `InterpreterSelectQuery`.
+bool expressionContainsArrayJoin(const ASTPtr & ast, std::unordered_set<String> & visited_udfs)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (getFunctionCanonicalNameIfAny(function->name) == "arrayJoin")
+            return true;
+
+        if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+            udf_body && visited_udfs.insert(function->name).second
+                && expressionContainsArrayJoin(udf_body, visited_udfs))
+            return true;
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (!child->as<ASTSelectQuery>() && expressionContainsArrayJoin(child, visited_udfs))
+            return true;
+    }
+
+    return false;
+}
+
+}
+
+void ConstraintsDescription::assertConstraintPreservesRowCount(const ASTPtr & constraint)
+{
+    /// `arrayJoin` is the one action that changes the number of rows in a block, while
+    /// `CheckConstraintsTransform` indexes the result column positionally against the rows of the block
+    /// being inserted: a longer result reads past the end of the block's columns, and a shorter one
+    /// blames a violation on the wrong row. `arrayJoin` is rejected for skip indexes, keys, mutations,
+    /// `PREWHERE` and row policies for the same reason.
+    ///
+    /// Checked on the AST, not on a built expression: a constraint expression is deliberately not built
+    /// at DDL time, because it may name a function or a table that does not resolve yet - a constraint
+    /// referencing a table created later, or a function missing from the current build, has to remain
+    /// creatable. `CheckConstraintsTransform` refuses a result whose size does not match the block, so
+    /// an `arrayJoin` that only becomes visible after resolution (through a UDF created later, say) still
+    /// fails comprehensibly.
+    const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
+    if (!constraint_ptr || constraint_ptr->type != ASTConstraintDeclaration::Type::CHECK)
+        return;
+
+    std::unordered_set<String> visited_udfs;
+    if (expressionContainsArrayJoin(constraint_ptr->expr, visited_udfs))
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
+            backQuote(constraint_ptr->name));
+}
+
+void ConstraintsDescription::assertPreserveRowCount() const
+{
+    for (const auto & constraint : constraints)
+        assertConstraintPreservesRowCount(constraint);
+}
+
 ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
+    /// The columns that are physically available when the constraint is checked (the top-level table columns).
+    /// A constraint expression may reference subcolumns (e.g. `x.null` of a `Nullable` column, `arr.size0` of an
+    /// `Array`) that are not present in this block; they have to be extracted from their parent columns first.
+    Block available_columns;
+    for (const auto & column : source_columns_)
+        available_columns.insert({column.type->createColumn(), column.type, column.name});
+
     ConstraintsExpressions res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
@@ -146,7 +231,14 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
             // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
             ASTPtr expr = constraint_ptr->expr->clone();
             auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-            res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false, true, CompileExpressions::yes));
+            auto constraint_dag = ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActionsDAG(false, true);
+
+            /// Prepend actions that extract the required subcolumns from their parent columns, so the expression
+            /// can be evaluated on a block that contains only the top-level columns.
+            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, constraint_dag.getRequiredColumnsNames(), context);
+            res.push_back(std::make_shared<ExpressionActions>(
+                ActionsDAG::merge(std::move(extract_subcolumns_dag), std::move(constraint_dag)),
+                ExpressionActionsSettings(context, CompileExpressions::yes)));
         }
     }
     return res;
@@ -184,7 +276,7 @@ std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomsById(const Co
     return result;
 }
 
-ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const
+ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const
 {
     QueryTreeData data;
     std::vector<Analyzer::CNFAtomicFormula> atomic_constraints_data;

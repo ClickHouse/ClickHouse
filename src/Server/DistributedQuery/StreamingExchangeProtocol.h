@@ -15,9 +15,11 @@ class WriteBuffer;
 
 namespace StreamingExchangeProtocol
 {
-    /// Wire-format version. Bumped on any change to packet layouts.
-    /// Negotiated in SourceHello/SinkHello; mismatches reject the connection.
-    static constexpr UInt64 PROTOCOL_VERSION = 2;
+    /// Wire-format version, exchanged in SourceHello/SinkHello and required to match
+    /// exactly on both ends. Bumped on any change to packet layouts. Version 3 carries a
+    /// `auth_token` in `SourceHelloBody` for authenticating the connecting source (empty
+    /// when authentication is not used).
+    static constexpr UInt64 PROTOCOL_VERSION = 3;
 
     /// Sanity cap for the body of a Hello packet.
     static constexpr UInt64 MAX_HELLO_BODY_BYTES = 64 * 1024;
@@ -52,15 +54,16 @@ namespace StreamingExchangeProtocol
         UInt64 bytes_size;  /// Size of the packet body (does not include this header)
     };
 
-    /// Wire format of the SourceHello body. Parsing is split in two phases because
-    /// only the version field is guaranteed to live at a fixed offset across protocol
-    /// versions: peers on a different version may use a different layout for the rest,
-    /// so the version must be read and validated first.
+    /// Wire format of the SourceHello body. The version is read first and must match this
+    /// node's `PROTOCOL_VERSION`; the rest of the body is parsed only after that check, so a
+    /// mismatched peer never has its (possibly differently-laid-out) body parsed further.
     struct SourceHelloBody
     {
         UInt64 source_version = 0;
         String query_id;
         String stream_name;
+        /// Auth token for authenticating the source; empty when the source has none.
+        String auth_token;
 
         static UInt64 readVersion(ReadBuffer & in);
         void readAfterVersion(ReadBuffer & in);
@@ -77,9 +80,24 @@ namespace StreamingExchangeProtocol
         void write(WriteBuffer & out) const;
     };
 
-    /// Single receive that retries on EINTR. Returns bytes read, or 0 if the socket
-    /// would block. Throws Poco::Net::NetException on early EOF or other socket error;
-    /// `description` labels the call site in the exception message.
+    /// The peer address for messages; a socket whose peer is gone may not know it anymore.
+    String describePeer(const Poco::Net::StreamSocket & socket);
+
+    /// Throw for an errno from `recv` or `send`: `EXCHANGE_PEER_DISCONNECTED` when the other side of
+    /// the connection is gone, a generic network error otherwise. `what` names the operation.
+    [[noreturn]] void throwSocketError(int socket_errno, const Poco::Net::StreamSocket & socket, const String & what);
+
+    /// For a catch block around `receiveBytes` or `sendBytes`: rethrows the in-flight Poco exception,
+    /// as `EXCHANGE_PEER_DISCONNECTED` when the other side of the connection is gone.
+    [[noreturn]] void rethrowSocketException(const Poco::Net::StreamSocket & socket, const String & what);
+
+    /// Single receive that retries on EINTR. Returns the bytes read, 0 if the socket would block, or
+    /// -1 if the peer closed its side. `description` labels the call site in the exception message.
     ssize_t tryReceive(Poco::Net::StreamSocket & socket, char * buffer, size_t size, const String & description);
+
+    /// Send the whole buffer on a blocking socket, retrying on EINTR. A send that timed out stays a
+    /// timeout: Poco reports it without the errno that would tell the send deadline from the kernel's
+    /// connection timeout. `description` labels the call site in the exception message.
+    void sendAll(Poco::Net::StreamSocket & socket, const char * buffer, size_t size, const String & description);
 }
 }

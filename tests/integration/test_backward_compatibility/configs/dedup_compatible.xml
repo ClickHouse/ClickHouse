@@ -1,3 +1,0 @@
-<clickhouse>
-    <insert_deduplication_version>compatible_double_hashes</insert_deduplication_version>
-</clickhouse>
