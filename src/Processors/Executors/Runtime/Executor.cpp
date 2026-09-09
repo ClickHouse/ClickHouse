@@ -156,8 +156,8 @@ void Executor::cancel(IProcessor::CancelReason reason)
         return;
     }
 
-    coordinator->stop();
     pipeline->cancel(reason);
+    coordinator->stop();
 }
 
 void Executor::cancelReading()
