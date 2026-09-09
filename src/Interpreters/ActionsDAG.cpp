@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,14 +13,17 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
+#include <Functions/FunctionPlannerOnlyFilter.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/SetSerialization.h>
 #include <IO/WriteBufferFromString.h>
@@ -140,6 +144,21 @@ void tryFoldFunctionToConstant(
         if (!best_effort)
             throw;
         return;
+    }
+
+    if (column && !columnMatchesType(*column, *node.result_type))
+    {
+        /// group_by_use_nulls promotes a FunctionNode's declared result type to Nullable via
+        /// FunctionNode::wrap_with_nullable, while the un-wrapped base function used for constant
+        /// folding still returns the non-Nullable type. Reconcile the folded constant to the
+        /// declared type in exactly this case instead of failing the check.
+        /// Require the folded column to actually match the base type (including decimal/DateTime64
+        /// scale) before casting, so this stays scoped to the wrapped/non-wrapped mismatch and any
+        /// other wrong type, including a divergent-scale one, still hits the check below.
+        auto base_result_type = node.function_base->getResultType();
+        if (columnMatchesType(*column, *base_result_type, /*strict_decimal_scale=*/ true)
+            && node.result_type->equals(*makeNullableOrLowCardinalityNullableSafe(base_result_type)))
+            column = castColumn({column, base_result_type, {}}, node.result_type);
     }
 
     if (column && !columnMatchesType(*column, *node.result_type))
@@ -556,6 +575,58 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
     return addCastImpl(*this, node_to_cast, cast_type, std::move(result_name), std::move(context), CastType::nonAccurate);
 }
 
+const ActionsDAG::Node & ActionsDAG::addBooleanCondition(const Node & node, const DataTypePtr & result_type, ContextPtr context)
+{
+    const Node * res = &node;
+
+    /// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
+    /// `Nothing` has no values to normalize.
+    auto nested_type = removeLowCardinalityAndNullable(node.result_type);
+    if (!isBool(nested_type) && !isNothing(nested_type))
+    {
+        if (node.column)
+        {
+            /// A constant is normalized by a cast, which folds it here and adds no node to the plan.
+            /// `and` cannot do it: it reads a constant through `FieldVisitorConvertToNumber`, which
+            /// throws on a value like -0.5. Through `Bool`, because `CAST(256, 'UInt8')` is 0.
+            DataTypePtr bool_type = DataTypeFactory::instance().get("Bool");
+            if (isNullableOrLowCardinalityNullable(node.result_type))
+                bool_type = makeNullable(bool_type);
+            res = &addCast(*res, bool_type, {}, context);
+        }
+        else
+        {
+            /// `and(x, true)` for an expression: the optimizer reads a condition through the functions
+            /// it knows, and a `_CAST` around one hides it from selectivity estimation.
+            auto uint8_type = std::make_shared<DataTypeUInt8>();
+            const auto & true_node = addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
+            FunctionOverloadResolverPtr func_builder_and
+                = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+            res = &addFunction(func_builder_and, {res, &true_node}, {});
+        }
+    }
+
+    /// A NULL condition is not true, and casting a NULL to a non-Nullable type would throw.
+    if (isNullableOrLowCardinalityNullable(res->result_type) && !canContainNull(*result_type))
+    {
+        if (!context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Context is required to convert a Nullable condition to {}", result_type->getName());
+
+        auto uint8_type = std::make_shared<DataTypeUInt8>();
+        const auto & false_node = addColumn(uint8_type->createColumnConst(0, 0), uint8_type, "false");
+        res = &addFunction(FunctionFactory::instance().get("ifNull", context), {res, &false_node}, {});
+    }
+
+    /// An already normalized condition is returned untouched: an extra `_CAST` around it hides the
+    /// predicate from selectivity estimation. Once a node has been added, match `result_type` by name
+    /// as well, because `Bool` compares equal to `UInt8` but prints `true` rather than 1.
+    const bool converted = res != &node;
+    if (converted ? res->result_type->getName() != result_type->getName() : !res->result_type->equals(*result_type))
+        res = &addCast(*res, result_type, {}, context);
+
+    return *res;
+}
+
 const ActionsDAG::Node & ActionsDAG::addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
 {
     return addCastImpl(*this, node_to_cast, cast_type, std::move(result_name), std::move(context), CastType::accurateOrNull);
@@ -791,6 +862,15 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
 
     for (auto old_it = required_nodes.begin(), new_it = outputs.begin(); new_it != outputs.end(); ++old_it, ++new_it)
         if (*old_it != *new_it)
+            return true;
+
+    return false;
+}
+
+bool ActionsDAG::hasPlannerOnlyFilters() const
+{
+    for (const auto & node : nodes)
+        if (node.type == ActionType::FUNCTION && node.function_base && isPlannerOnlyFilterFunction(*node.function_base))
             return true;
 
     return false;
@@ -2172,10 +2252,19 @@ bool ActionsDAG::hasArrayJoin() const noexcept
     return false;
 }
 
+/// Whether the node is not deterministic within the query (`rand`) or is stateful (`rowNumberInAllBlocks`),
+/// so that evaluating it a different number of times changes the result. A lambda counts as such when its
+/// body has such a function.
+static bool isNonDeterministicOrStateful(const ActionsDAG::Node & node)
+{
+    return !allNodeFunctions(
+        node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery() && !function.isStateful(); });
+}
+
 bool ActionsDAG::hasStatefulFunctions() const
 {
     for (const auto & node : nodes)
-        if (node.type == ActionType::FUNCTION && node.function_base->isStateful())
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return !function.isStateful(); }))
             return true;
 
     return false;
@@ -2992,6 +3081,12 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
                 if (cur.node->type == ActionType::INPUT && array_joined_columns_set.contains(cur.node->result_name))
                     depend_on_array_join = true;
 
+                /// `ARRAY JOIN` multiplies the rows, so an expression that is not deterministic within the
+                /// query is drawn once per source row when it is evaluated below it, instead of once per
+                /// expanded row. Keep such an expression on the side of the `ARRAY JOIN` where it was written.
+                if (isNonDeterministicOrStateful(*cur.node))
+                    depend_on_array_join = true;
+
                 for (const auto * child : cur.node->children)
                 {
                     if (!split_nodes.contains(child))
@@ -3228,8 +3323,8 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
             if (cur.num_allowed_children == cur.node->children.size())
             {
                 bool is_deprecated_function = !allow_non_deterministic_functions
-                    && cur.node->type == ActionsDAG::ActionType::FUNCTION
-                    && !cur.node->function_base->isDeterministicInScopeOfQuery();
+                    && !allNodeFunctions(
+                        *cur.node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
 
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT
@@ -3814,23 +3909,9 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             /// Fix the result type and add an alias.
             auto & child = new_children.front();
 
+            /// Preserve the original type if the column is needed in the result.
             if (!removes_filter)
-            {
-                /// Preserve the original type if the column is needed in the result.
-                /// A cast alone is not enough: `and` implicitly converts its arguments to booleans,
-                /// while a cast maps values like 256 or 0.1 to 0, which is inconsistent with e.g. "1 and 256".
-                /// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
-                if (!isBool(removeLowCardinalityAndNullable(child->result_type)))
-                {
-                    auto uint8_type = std::make_shared<DataTypeUInt8>();
-                    const auto & true_node = addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
-                    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-                    child = &addFunction(func_builder_and, {child, &true_node}, {});
-                }
-
-                if (!child->result_type->equals(*predicate->result_type))
-                    child = &addCast(*child, predicate->result_type, {}, nullptr);
-            }
+                child = &addBooleanCondition(*child, predicate->result_type, nullptr);
 
             Node node;
             node.type = ActionType::ALIAS;
