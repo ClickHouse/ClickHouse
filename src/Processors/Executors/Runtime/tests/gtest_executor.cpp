@@ -20,6 +20,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <algorithm>
 #include <functional>
 #include <thread>
@@ -670,7 +671,7 @@ public:
     }
 
 private:
-    bool have_all_inputs = false;
+    std::atomic<bool> have_all_inputs = false;
     bool emitted = false;
     size_t collected = 0;
 };

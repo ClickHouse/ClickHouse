@@ -242,6 +242,7 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
     if (pipeline.profile_processors || pipeline.trace_processors || clock)
         execution_time_watch.emplace();
 
+    std::exception_ptr exception;
     try
     {
         if (processor.isSpillable() && CurrentThread::getGroup())
@@ -266,11 +267,15 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
             }
         }
     }
-    catch (Exception exception) /// NOLINT
+    catch (Exception & e)
     {
-        if (canAddInfoToException(exception))
-            exception.addMessage("While executing " + processor.getName());
-        throw exception;
+        if (canAddInfoToException(e))
+            e.addMessage("While executing " + processor.getName());
+        exception = std::current_exception();
+    }
+    catch (...)
+    {
+        exception = std::current_exception();
     }
 
     if (execution_time_watch)
@@ -283,6 +288,9 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
 
     if (clock)
         clock->onLeave();
+
+    if (exception)
+        std::rethrow_exception(exception);
 
     scheduler.push(Task{.state = &state, .kind = Task::Kind::Prepare}, worker_id);
 }
