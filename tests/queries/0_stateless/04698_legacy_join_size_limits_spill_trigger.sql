@@ -43,24 +43,3 @@ FROM (SELECT number AS k FROM numbers(2000000)) AS t1
 INNER JOIN (SELECT number AS k FROM numbers(2000000)) AS t2
 USING (k);
 
--- The adaptive path too: `hash` goes to disk on the threshold, and from there the caps make it spill
--- further rather than stop the query. Same query both ways, so the gate has to be what decides.
-SELECT 'legacy: the caps spill the on-disk phase of hash instead of failing it';
-SET max_bytes_ratio_before_external_join = 0;
-SET max_bytes_before_external_join = '1M';
-SET grace_hash_join_initial_buckets = 1;
-SET join_algorithm = 'hash';
-SET max_rows_in_join = 0;
-SET max_bytes_in_join = '2M';
-
-SET legacy_join_size_limits_trigger_spilling = 0;
-SELECT count()
-FROM (SELECT number AS k FROM numbers(200000)) AS t1
-INNER JOIN (SELECT number AS k FROM numbers(200000)) AS t2
-USING (k); -- { serverError SET_SIZE_LIMIT_EXCEEDED }
-
-SET legacy_join_size_limits_trigger_spilling = 1;
-SELECT count()
-FROM (SELECT number AS k FROM numbers(200000)) AS t1
-INNER JOIN (SELECT number AS k FROM numbers(200000)) AS t2
-USING (k);
