@@ -737,7 +737,8 @@ void generateManifestList(
     const std::vector<ManifestListEntryCounts> & entry_counts,
     const std::unordered_set<String> & carry_forward_manifest_paths,
     const std::vector<Int64> & entry_partition_spec_ids,
-    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries)
+    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries,
+    const std::vector<Int64> & entry_row_counts)
 {
     chassert(
         per_entry_content_types.empty() || per_entry_content_types.size() == manifest_entry_names.size(),
@@ -753,6 +754,12 @@ void generateManifestList(
         entry_counts.empty() || entry_counts.size() == manifest_entry_names.size(),
         "entry_counts size does not match number of manifest entries");
     const bool manifest_rewrite = !entry_counts.empty();
+    if (!manifest_rewrite && entry_row_counts.size() != manifest_entry_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest list needs one row count per manifest entry, got {} counts for {} entries",
+            entry_row_counts.size(),
+            manifest_entry_names.size());
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -762,6 +769,9 @@ void generateManifestList(
         schema_representation = manifest_list_v2_schema;
     else if (version == 3)
         schema_representation = manifest_list_v3_schema;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
+
     auto schema = avro::compileJsonSchemaFromString(schema_representation); // NOLINT
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
@@ -814,12 +824,21 @@ void generateManifestList(
         }
     };
 
-    Int64 cum_rows = 0;
-    Int64 next_first_row_id = version > 2 && new_snapshot->has(Iceberg::f_first_row_id)
-            && !new_snapshot->isNull(Iceberg::f_first_row_id)
-        ? new_snapshot->getValue<Int64>(Iceberg::f_first_row_id)
-        : 0;
-    /// Copy entries from the parent snapshot's manifest list: `use_previous_snapshots` copies all, `carry_forward_manifest_paths` copies only the listed manifests.
+    Int64 next_first_row_id = 0;
+    if (version > 2)
+    {
+        if (manifest_rewrite)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Rewriting an Iceberg manifest list is not supported for format-version 3: the row-lineage "
+                "'first_row_id' of a rewritten manifest is not round-tripped");
+        if (!new_snapshot->has(Iceberg::f_first_row_id) || new_snapshot->isNull(Iceberg::f_first_row_id))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Snapshot of a format-version 3 Iceberg table has no '{}', cannot assign row ids to the added data files",
+                Iceberg::f_first_row_id);
+        next_first_row_id = new_snapshot->getValue<Int64>(Iceberg::f_first_row_id);
+    }
     if (use_previous_snapshots || !carry_forward_manifest_paths.empty())
     {
         auto parent_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
@@ -883,7 +902,6 @@ void generateManifestList(
                         add_field_to_datum(Iceberg::f_existing_rows_count);
                         add_field_to_datum(Iceberg::f_deleted_rows_count);
                         add_field_to_datum(Iceberg::f_key_metadata);
-                        /// v2 and v3 share the manifest-list schema, so these fields exist for both.
                         if (version > 1)
                         {
                             add_field_to_datum(Iceberg::f_content);
@@ -891,10 +909,7 @@ void generateManifestList(
                             add_field_to_datum(Iceberg::f_min_sequence_number);
                         }
                         if (version > 2)
-                        {
                             add_field_to_datum(Iceberg::f_manifest_first_row_id);
-                            cum_rows += old_entry.field(Iceberg::f_added_rows_count).value<Int64>();
-                        }
                         writer.write(new_datum);
                     });
                 break;
@@ -949,9 +964,6 @@ void generateManifestList(
             setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
             setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
-            /// Only a v3 manifest list has the field at all.
-            if (version > 2)
-                setVersionedField(entry, cum_rows, Iceberg::f_manifest_first_row_id);
 
             write_partition_summary(entry, entry_idx);
 
@@ -980,9 +992,7 @@ void generateManifestList(
             else
                 entry.field(Iceberg::f_deleted_rows_count) = 0;
         }
-        const Int64 added_rows_count = entry_content == Iceberg::FileContentType::DATA
-            ? (summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0)
-            : (summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0);
+        const Int64 added_rows_count = entry_row_counts[entry_idx];
         setVersionedField(entry, added_rows_count, Iceberg::f_added_rows_count);
         setVersionedField(
             entry,
@@ -1287,6 +1297,7 @@ bool IcebergStorageSink::initializeMetadata()
     Strings manifest_entries_in_storage;
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
+    std::vector<Int64> manifest_entry_row_counts;
     std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
@@ -1392,6 +1403,10 @@ bool IcebergStorageSink::initializeMetadata()
             auto manifest_entry_path = filename_generator.generateManifestEntryName();
             manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
             manifest_entries.push_back(manifest_entry_path);
+            Int64 manifest_row_count = 0;
+            for (UInt64 data_file_row_count : writer.getDataFileRowCounts())
+                manifest_row_count += static_cast<Int64>(data_file_row_count);
+            manifest_entry_row_counts.push_back(manifest_row_count);
 
             /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (partitioner)
@@ -1473,7 +1488,8 @@ bool IcebergStorageSink::initializeMetadata()
                     /* entry_counts = */ {},
                     /* carry_forward_manifest_paths = */ {},
                     /* entry_partition_spec_ids = */ {},
-                    entry_partition_summaries);
+                    entry_partition_summaries,
+                    manifest_entry_row_counts);
                 buffer_manifest_list->finalize();
             }
             catch (...)
