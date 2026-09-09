@@ -91,6 +91,9 @@ columns = {
     "bool_int8": bool_int8(),
     # `Bool` is a custom-named `UInt8`, so the two compare equal and only their names tell them apart.
     "bool_utf8": dense([pa.array([True, False]), pa.array(["x", "y"])], ["b", "s"]),
+    # An `int8` branch is never re-declared as `Bool`, although `Bool` is a custom-named `UInt8` and the
+    # two compare equal: a value outside 0/1 would come back as `true`.
+    "int8_utf8": dense([pa.array([-8, 7], type=pa.int8()), pa.array(["x", "y"])], ["i", "s"]),
     # A raw-byte branch: `fixed_size_binary(16)` reinterpreted as a big integer.
     "fsb_utf8": dense([fsb, pa.array(["x", "y"])], ["f", "s"]),
     # The same, dictionary-encoded, so the branch's values arrive from a DictionaryBatch.
@@ -148,6 +151,11 @@ columns = {
         [pa.array([b"\x00" * 15 + b"\x01", b"zz", b"\x00" * 15 + b"\x02"], type=pa.binary()),
          pa.array([42], type=pa.int32())],
         ["b", "i"], [0, 0, 0, 1], [0, 0, 2, 0], 4),
+    # A composite branch takes only its own alternative: this walk keeps the decoded names, and a cast to a
+    # tuple whose names are disjoint converts positionally, so a field named `b` would come back holding `a`.
+    "struct_utf8": dense(
+        [pa.StructArray.from_arrays([pa.array([1, 2], type=pa.int32())], fields=[pa.field("a", pa.int32())]),
+         pa.array(["x", "y"])], ["t", "s"]),
     # Neither branch prefers a requested alternative and both match both, so nothing is assigned.
     "binary_fsb": dense([pa.array([b"aa", b"bb"], type=pa.binary()), fsb], ["b", "f"]),
     # The Arrow child order differs from the sorted `Variant` order, so the repair must map local to global.
@@ -237,6 +245,10 @@ echo "--- and the narrowing DateTime64 -> DateTime is refused, so this stays rej
 rejected ts_utf8 'Variant(DateTime, String)'
 echo "--- two branches may never end up on one alternative ---"
 rejected bool_uint8 'Variant(UInt8, String)'
+echo "--- an int8 branch is never re-declared as Bool, so this stays rejected ---"
+rejected int8_utf8 'Variant(Bool, String)'
+echo "--- a composite branch is never re-declared, so a name-differing field stays rejected ---"
+rejected struct_utf8 'Variant(Tuple(b Int32), String)'
 echo "--- an ambiguous branch gets no alternative, so this stays rejected ---"
 rejected binary_fsb 'Variant(IPv6, Int128)'
 echo "--- an unassigned branch the request does not name abandons the repair, keeping the message ---"

@@ -115,6 +115,10 @@ Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 Cannot convert type Variant(DateTime64(3, 'UTC'), String) to Variant(DateTime, String).
 --- two branches may never end up on one alternative ---
 Cannot convert type Variant(Bool, UInt8) to Variant(String, UInt8).
+--- an int8 branch is never re-declared as Bool, so this stays rejected ---
+Cannot convert type Variant(Int8, String) to Variant(Bool, String).
+--- a composite branch is never re-declared, so a name-differing field stays rejected ---
+Cannot convert type Variant(String, Tuple(a Nullable(Int32))) to Variant(String, Tuple(b Int32)).
 --- an ambiguous branch gets no alternative, so this stays rejected ---
 Cannot convert type Variant(FixedString(16), String) to Variant(IPv6, Int128).
 --- an unassigned branch the request does not name abandons the repair, keeping the message ---
@@ -124,6 +128,7 @@ Cannot convert type Variant(Bool, Date32) to Variant(String, UInt8).
 --- schema inference has no requested type, so it is unaffected ---
 bool_int8	Variant(Bool, Int8)					
 bool_utf8	Variant(Bool, String)					
+int8_utf8	Variant(Int8, String)					
 fsb_utf8	Variant(FixedString(16), String)					
 dict_fsb_utf8	Variant(FixedString(16), String)					
 text_binary_int32	Variant(Int32, String)					
@@ -139,6 +144,7 @@ bool_uint8	Variant(Bool, UInt8)
 bool_date32	Variant(Bool, Date32)					
 retained	Variant(Int8)					
 aliased_retained	Variant(Int32, String)					
+struct_utf8	Variant(String, Tuple(\n    a Nullable(Int32)))					
 binary_fsb	Variant(FixedString(16), String)					
 utf8_int32	Variant(Int32, String)					
 sparse	Variant(Bool, Int8)					
