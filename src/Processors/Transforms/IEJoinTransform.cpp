@@ -936,6 +936,15 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             has_current_left = true;
         }
 
+        if (!residual && kind == IEJoinKind::LeftAnti)
+        {
+            if (bit_array_end > scan_pos)
+                matched[0][current_left_row] = 1;
+            has_current_left = false;
+            ++l2_cursor;
+            continue;
+        }
+
         std::optional<size_t> found = findNextSetBit();
         if (!found)
             break;

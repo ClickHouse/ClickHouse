@@ -6,6 +6,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <Access/Common/AccessType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -39,6 +40,9 @@
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <base/EnumReflection.h>
+#include <algorithm>
+#include <optional>
+#include <unordered_map>
 #include <unordered_set>
 
 
@@ -56,6 +60,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
+    extern const TimeSeriesSettingsUInt64 version;
 }
 
 namespace Setting
@@ -286,7 +291,9 @@ namespace
             auto external_table_id = query.getTargetTableID(kind);
             if (!external_table_id)
                 return {StorageID::createEmpty(), {}};
-            auto external_table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(external_table_id), context);
+            auto resolved_external_table_id = context->tryResolveStorageID(external_table_id);
+            context->checkAccess(AccessType::SHOW_COLUMNS, resolved_external_table_id.database_name, resolved_external_table_id.table_name);
+            auto external_table = DatabaseCatalog::instance().tryGetTable(resolved_external_table_id, context);
             if (!external_table)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", external_table_id.getNameForLogs());
             auto external_metadata = external_table->getInMemoryMetadataPtr(context, false);
@@ -312,75 +319,162 @@ namespace
             readTypesFromExternalTags(tags_id, tags_columns, id_type, id_src, table_id);
     }
 
+    /// Reads the declared inner engines and extracts the family of the inner engines.
+    /// All the inner tables must have the same family, otherwise their contents would diverge between replicas.
+    void readInnerEngineFamilyFromInnerEngines(
+        const ASTCreateQuery & query,
+        std::optional<DefaultTableEngine> & inner_engine_family, String & inner_engine_family_src,
+        const StorageID & table_id)
+    {
+        auto replication_type = [](DefaultTableEngine family) -> std::string_view
+        {
+            switch (family)
+            {
+                case DefaultTableEngine::ReplicatedMergeTree:
+                    return "replicated";
+                case DefaultTableEngine::SharedMergeTree:
+                    return "shared";
+                default:
+                    return "not replicated";
+            }
+        };
+
+        for (auto kind : getTargetKinds())
+        {
+            const auto * inner_engine = query.getTargetInnerEngine(kind);
+            if (!inner_engine || !inner_engine->engine)
+                continue;
+
+            const String & engine_name = inner_engine->engine->name;
+            DefaultTableEngine family = DefaultTableEngine::MergeTree;
+            if (engine_name.starts_with("Replicated"))
+                family = DefaultTableEngine::ReplicatedMergeTree;
+            else if (engine_name.starts_with("Shared"))
+                family = DefaultTableEngine::SharedMergeTree;
+
+            String source = fmt::format("the inner {} table's engine {}", magic_enum::enum_name(kind), engine_name);
+            if (inner_engine_family)
+            {
+                if (*inner_engine_family != family)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "{}: {} is {} while {} is {}, but all the inner tables must have the same replication type",
+                        table_id.getNameForLogs(),
+                        inner_engine_family_src, replication_type(*inner_engine_family),
+                        source, replication_type(family));
+                continue;
+            }
+            inner_engine_family = family;
+            inner_engine_family_src = source;
+        }
+    }
+
+    /// Checks that all the inner tables have the same replication type, otherwise their contents would diverge
+    /// between replicas. The generated inner engines follow the declared ones, but an engine copied from the old
+    /// table by the clause `AS <other_table>` can differ from them.
+    void checkInnerEnginesReplicationTypesMatch(const ASTCreateQuery & create_query, const StorageID & table_id)
+    {
+        std::optional<DefaultTableEngine> inner_engine_family;
+        String inner_engine_family_src;
+        readInnerEngineFamilyFromInnerEngines(create_query, inner_engine_family, inner_engine_family_src, table_id);
+    }
+
     /// Resolved column types needed during normalization.
     struct ResolvedTimeSeriesTypes
     {
         DataTypePtr timestamp_type;
         DataTypePtr scalar_type;
         DataTypePtr id_type;
+
+        /// The family of the engines of the inner tables: `MergeTree`, `ReplicatedMergeTree` or `SharedMergeTree`.
+        /// Unset if no inner engine is declared, see `getDefaultInnerEngineFamily`.
+        std::optional<DefaultTableEngine> inner_engine_family;
     };
 
-    /// Resolves types `timestamp_type`, `scalar_type`, `id_type`; sets by defaults the types
-    /// which are not set explicitly.
-    /// `check_external_targets` is set when external target tables are expected to exist (CREATE time);
-    /// on ATTACH they are allowed not to be loaded yet.
+    /// Resolves the types of the `timestamp`, `value` and `id` columns from the declarations in the query,
+    /// then from `fallback_types` (the resolved types of the table from the clause `AS <other_table>`), then from the defaults.
+    /// The external target tables are read always (if `check_external_targets` is true),
+    /// or only if some type isn't declared in the query (if `check_external_targets_for_missing_types` is true),
+    /// or never - on ATTACH they may not exist yet.
+    /// `need_inner_engine_family` is set if the family of the inner engines is needed to generate inner engines.
     ResolvedTimeSeriesTypes resolveTimeSeriesTypes(
         const ASTCreateQuery & create_query,
         const ContextPtr & context,
-        bool check_external_targets)
+        bool check_external_targets,
+        bool check_external_targets_for_missing_types,
+        bool need_inner_engine_family,
+        const ResolvedTimeSeriesTypes * fallback_types)
     {
         StorageID table_id{create_query.getDatabase(), create_query.getTable()};
 
-        DataTypePtr timestamp_type;
-        DataTypePtr scalar_type;
-        DataTypePtr id_type;
+        /// A type declared in several places must be the same everywhere.
+        ResolvedTimeSeriesTypes types;
         String timestamp_src;
         String scalar_src;
         String id_src;
 
         readTypesFromOuterColumns(create_query,
-            timestamp_type, timestamp_src, scalar_type, scalar_src, table_id);
+            types.timestamp_type, timestamp_src, types.scalar_type, scalar_src, table_id);
 
         readTypesFromInnerSamples(create_query,
-            timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src, table_id);
+            types.timestamp_type, timestamp_src, types.scalar_type, scalar_src, types.id_type, id_src, table_id);
 
         readTypesFromInnerTags(create_query,
-            id_type, id_src, table_id);
+            types.id_type, id_src, table_id);
 
-        if (check_external_targets)
+        bool all_types_resolved = types.timestamp_type && types.scalar_type && types.id_type;
+        if (check_external_targets || (check_external_targets_for_missing_types && !all_types_resolved))
         {
             readTypesFromExternalTargets(create_query, context,
-                timestamp_type, timestamp_src,
-                scalar_type, scalar_src,
-                id_type, id_src,
+                types.timestamp_type, timestamp_src,
+                types.scalar_type, scalar_src,
+                types.id_type, id_src,
                 table_id);
         }
 
-        /// Apply defaults for unset types.
-        if (!timestamp_type)
-            timestamp_type = std::make_shared<DataTypeDateTime64>(3);
-        if (!scalar_type)
-            scalar_type = std::make_shared<DataTypeFloat64>();
-        if (!id_type)
-            id_type = std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())});
+        if (need_inner_engine_family)
+        {
+            String inner_engine_family_src;
+            readInnerEngineFamilyFromInnerEngines(create_query, types.inner_engine_family, inner_engine_family_src, table_id);
+        }
 
+        /// The types and the engines declared in the query win over the ones of the old table.
+        if (fallback_types)
+        {
+            if (!types.timestamp_type)
+                types.timestamp_type = fallback_types->timestamp_type;
+            if (!types.scalar_type)
+                types.scalar_type = fallback_types->scalar_type;
+            if (!types.id_type)
+                types.id_type = fallback_types->id_type;
+            if (!types.inner_engine_family)
+                types.inner_engine_family = fallback_types->inner_engine_family;
+        }
+
+        /// Apply defaults for unset types.
+        if (!types.timestamp_type)
+            types.timestamp_type = std::make_shared<DataTypeDateTime64>(3);
+        if (!types.scalar_type)
+            types.scalar_type = std::make_shared<DataTypeFloat64>();
+        if (!types.id_type)
+            types.id_type = std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())});
         /// Validate types.
         {
-            WhichDataType ts_which{*timestamp_type};
+            WhichDataType ts_which{*types.timestamp_type};
             if (!(ts_which.isDateTime64() || ts_which.isDateTime() || ts_which.isUInt32()))
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
-                    table_id.getNameForLogs(), timestamp_type->getName(), TimeSeriesColumnNames::Timestamp);
+                    table_id.getNameForLogs(), types.timestamp_type->getName(), TimeSeriesColumnNames::Timestamp);
         }
         {
-            WhichDataType sc_which{*scalar_type};
+            WhichDataType sc_which{*types.scalar_type};
             if (!(sc_which.isFloat64() || sc_which.isFloat32()))
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
-                    table_id.getNameForLogs(), scalar_type->getName(), TimeSeriesColumnNames::Value);
+                    table_id.getNameForLogs(), types.scalar_type->getName(), TimeSeriesColumnNames::Value);
         }
         {
             /// Identifiers can be of any comparable type: the id column is used in the sorting keys of the inner tables
             /// and in JOINs between them.
+            const auto & id_type = types.id_type;
             bool id_ok = id_type->isComparable() && !id_type->isNullable() && !id_type->isLowCardinalityNullable()
                 && !isNothing(*id_type) && !isVariant(*id_type) && !id_type->hasDynamicSubcolumns();
             if (!id_ok)
@@ -389,17 +483,409 @@ namespace
                     table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
         }
 
-        return ResolvedTimeSeriesTypes{
-            .timestamp_type = std::move(timestamp_type),
-            .scalar_type = std::move(scalar_type),
-            .id_type = std::move(id_type),
+        return types;
+    }
+
+    /// Removes the settings copied from the old table which this table must not inherit. `new_settings` is
+    /// the SETTINGS clause of the query, which is applied on top of the copied settings afterwards.
+    void removeOldSettingsDisabledByNewSettings(SettingsChanges & old_settings, const ASTSetQuery * new_settings)
+    {
+        /// The version is pinned for the new table separately, so that it gets the latest one.
+        old_settings.removeSetting("version");
+
+        /// Obsolete settings are not copied.
+        old_settings.removeSetting("use_all_tags_column_to_generate_id");
+
+        /// The settings of the features which the settings of this table disable: a plain CREATE rejects
+        /// such a combination (see `checkTimeSeriesSettings`).
+        /// The value a setting will have: written in the query, or copied unless the query resets it to the default.
+        auto get_new_value = [&](std::string_view name) -> const Field *
+        {
+            if (new_settings)
+            {
+                if (const auto * written_value = new_settings->changes.tryGet(name))
+                    return written_value;
+                if (std::ranges::find(new_settings->default_settings, name) != new_settings->default_settings.end())
+                    return nullptr;
+            }
+            return old_settings.tryGet(name);
         };
+
+        /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
+        if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
+            old_settings.removeSettings({"recent_samples_partition_by", "recent_samples_index_granularity"});
+
+        /// The default value of `store_min_time_and_max_time` is true, so an absent setting doesn't disable the columns.
+        if (const auto * value = get_new_value("store_min_time_and_max_time"); value && !SettingFieldBool{*value}.value)
+            old_settings.removeSettings({"aggregate_min_time_and_max_time", "filter_by_min_time_and_max_time"});
+    }
+
+    /// Removes the settings copied from the old table which were written for its `id` type, if this table has another one.
+    void removeOldSettingsDisabledByIdTypeChange(SettingsChanges & old_settings, const DataTypePtr & old_id_type, const DataTypePtr & new_id_type)
+    {
+        if (!old_id_type->equals(*new_id_type))
+            old_settings.removeSetting("id_generator");
+    }
+
+    /// Removes the columns copied from the old table which the settings of this table disable.
+    /// `old_settings` are the settings of the old table, `new_settings` are the settings of this table.
+    void removeInnerColumnsDisabledByNewSettings(
+        ASTColumns & inner_table_columns, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & old_settings, const TimeSeriesSettings & new_settings)
+    {
+        if ((inner_table_kind != ViewTarget::Tags) || !inner_table_columns.columns)
+            return;
+
+        auto & columns = inner_table_columns.columns->children;
+        auto remove_column = [&](std::string_view name)
+        {
+            auto has_name = [&](const ASTPtr & column) { return column->as<ASTColumnDeclaration &>().name == name; };
+            columns.erase(std::remove_if(columns.begin(), columns.end(), has_name), columns.end());
+        };
+
+        /// The columns "min_time" and "max_time" are not stored.
+        if (!new_settings[TimeSeriesSetting::store_min_time_and_max_time])
+        {
+            remove_column(TimeSeriesColumnNames::MinTime);
+            remove_column(TimeSeriesColumnNames::MaxTime);
+        }
+
+        /// The ephemeral column "all_tags" was used in version 0 for calculating identifiers: it contained all the tags,
+        /// while the "tags" column contained only the tags without dedicated columns.
+        if (old_settings[TimeSeriesSetting::version] == 0)
+            remove_column(TimeSeriesColumnNames::AllTags);
+
+        /// The tag columns of the old table which aren't tag columns of this table (see `tags_to_columns`).
+        auto get_tag_column_names = [](const TimeSeriesSettings & from_settings)
+        {
+            std::unordered_set<String> tag_column_names;
+            const Map & tags_to_columns = from_settings[TimeSeriesSetting::tags_to_columns];
+            for (const auto & tag_name_and_column_name : tags_to_columns)
+                tag_column_names.insert(tag_name_and_column_name.safeGet<Tuple>().at(1).safeGet<String>());
+            return tag_column_names;
+        };
+        auto new_tag_column_names = get_tag_column_names(new_settings);
+        for (const auto & old_tag_column_name : get_tag_column_names(old_settings))
+        {
+            if (!new_tag_column_names.contains(old_tag_column_name))
+                remove_column(old_tag_column_name);
+        }
+    }
+
+    /// Whether a column of an inner table looks like a column generated by `normalizeInnerColumns` of the current or
+    /// of an older version of the server. `settings` are the settings of the table the column was generated for.
+    /// Such a column carries no information beyond the settings, so it can be generated again.
+    bool isGeneratedInnerColumn(const ASTColumnDeclaration & column, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings)
+    {
+        if (!column.getType() || column.getComment() || column.getStatisticsDesc() || column.getTTL()
+            || column.getCollation() || column.getSettings() || column.null_modifier || column.primary_key_specifier)
+            return false;
+
+        const auto & name = column.name;
+        auto type = DataTypeFactory::instance().get(column.getType());
+        auto type_name = type->getName();
+
+        const bool is_version_0 = (settings[TimeSeriesSetting::version] == 0);
+        const bool has_default = column.getDefaultExpression() || (column.default_specifier != ColumnDefaultSpecifier::Empty);
+
+        /// Any type accepted for "timestamp" and "value" counts, see `resolveTimeSeriesTypes`.
+        auto is_scalar_type = [](const IDataType & scalar_type)
+        {
+            WhichDataType which{scalar_type};
+            return which.isFloat64() || which.isFloat32();
+        };
+
+        auto is_timestamp_type = [](const IDataType & timestamp_type)
+        {
+            WhichDataType which{timestamp_type};
+            return which.isDateTime64() || which.isDateTime() || which.isUInt32();
+        };
+
+        auto is_nullable_timestamp = [&](const DataTypePtr & nullable_type)
+        {
+            return nullable_type->isNullable() && is_timestamp_type(*removeNullable(nullable_type));
+        };
+
+        auto codec = column.getCodec();
+
+        switch (inner_table_kind)
+        {
+            case ViewTarget::Samples:
+            case ViewTarget::RecentSamples:
+            {
+                if (has_default)
+                    return false;
+
+                /// Any type counts because the type is also resolved from the old table (see `resolveTimeSeriesTypes`).
+                if (name == TimeSeriesColumnNames::ID)
+                    return !codec;
+
+                /// The generated "timestamp" and "value" columns have codecs (see `normalizeInnerColumns`).
+                /// The codecs are not checked for version 0: its columns are converted to the current form anyway.
+                if (name == TimeSeriesColumnNames::Timestamp)
+                {
+                    if (!is_timestamp_type(*type))
+                        return false;
+                    return !codec || is_version_0 || (codec->formatWithSecretsOneLine() == "CODEC(DoubleDelta, ZSTD(1))");
+                }
+
+                if (name == TimeSeriesColumnNames::Value)
+                {
+                    if (!is_scalar_type(*type))
+                        return false;
+                    return !codec || is_version_0 || (codec->formatWithSecretsOneLine() == "CODEC(ZSTD(3))");
+                }
+
+                return false;
+            }
+
+            case ViewTarget::Tags:
+            {
+                if (codec)
+                    return false;
+
+                if (name == TimeSeriesColumnNames::ID)
+                {
+                    /// Any type counts because the type is also resolved from the old table (see `resolveTimeSeriesTypes`).
+                    /// The DEFAULT is absent (with the `id_generator` setting) or the canonical expression for the type.
+                    auto default_expression = column.getDefaultExpression();
+                    if (!default_expression)
+                        return column.default_specifier == ColumnDefaultSpecifier::Empty;
+
+                    if ((column.default_specifier != ColumnDefaultSpecifier::Default) || column.ephemeral_default)
+                        return false;
+
+                    auto canonical_default = TimeSeriesIDGenerator::tryGetDefault(type);
+                    if (canonical_default && (default_expression->formatWithSecretsOneLine() == canonical_default->formatWithSecretsOneLine()))
+                        return true;
+
+                    /// Version 0 had other canonical expressions, hashing the ephemeral "all_tags" column.
+                    return is_version_0;
+                }
+
+                if (has_default)
+                    return false;
+
+                if (name == TimeSeriesColumnNames::MetricName)
+                    return type_name == "LowCardinality(String)";
+
+                if (name == TimeSeriesColumnNames::Tags)
+                    return type_name == "Map(LowCardinality(String), String)";
+
+                if ((name == TimeSeriesColumnNames::MinTime) || (name == TimeSeriesColumnNames::MaxTime))
+                {
+                    /// `Nullable(<timestamp type>)`, or `SimpleAggregateFunction(min|max, Nullable(<timestamp type>))` when aggregated.
+                    if (const auto * simple_aggregate = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+                    {
+                        std::string_view expected_function = (name == TimeSeriesColumnNames::MinTime) ? "min" : "max";
+                        const auto & argument_types = simple_aggregate->getArgumentsDataTypes();
+                        return (simple_aggregate->getFunctionName() == expected_function) && (argument_types.size() == 1)
+                            && is_nullable_timestamp(argument_types[0]);
+                    }
+                    return is_nullable_timestamp(type);
+                }
+
+                /// A tag column from `tags_to_columns`.
+                const Map & tags_to_columns = settings[TimeSeriesSetting::tags_to_columns];
+                for (const auto & tag_name_and_column_name : tags_to_columns)
+                {
+                    const auto & column_name = tag_name_and_column_name.safeGet<Tuple>().at(1).safeGet<String>();
+                    if (name == column_name)
+                        return type_name == "String";
+                }
+
+                return false;
+            }
+
+            case ViewTarget::Metrics:
+            {
+                if (has_default || codec)
+                    return false;
+
+                if ((name == TimeSeriesColumnNames::MetricFamilyName) || (name == TimeSeriesColumnNames::Help))
+                    return type_name == "String";
+
+                if ((name == TimeSeriesColumnNames::Type) || (name == TimeSeriesColumnNames::Unit))
+                {
+                    if (type_name == "LowCardinality(String)")
+                        return true;
+                    /// The prealpha version (version 0) generated `String` for "type" and "unit".
+                    return is_version_0 && (type_name == "String");
+                }
+
+                return false;
+            }
+
+            default:
+                UNREACHABLE();
+        }
+    }
+
+    /// Removes the generated columns (see `isGeneratedInnerColumn`) from an inner table's column list,
+    /// so that `normalizeInnerColumns` generates them again from the current settings.
+    void removeGeneratedInnerColumns(ASTColumns & inner_table_columns, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings)
+    {
+        if (!inner_table_columns.columns)
+            return;
+
+        auto & columns = inner_table_columns.columns->children;
+        auto is_generated = [&](const ASTPtr & column)
+        {
+            return isGeneratedInnerColumn(column->as<ASTColumnDeclaration &>(), inner_table_kind, settings);
+        };
+        columns.erase(std::remove_if(columns.begin(), columns.end(), is_generated), columns.end());
+    }
+
+    /// Removes the parts of an inner table's engine declaration which look like generated by `normalizeInnerEngine`
+    /// of the current or of an older version of the server, so that they are generated again; the other parts are kept.
+    /// A declaration with an engine which doesn't look generated is kept as a whole.
+    /// `settings` are the settings of the table the engine was generated for.
+    void removeGeneratedInnerEngine(ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings)
+    {
+        if (!inner_engine.engine)
+            return;
+
+        /// A MergeTree engine of any replication type (`MergeTree`, `ReplicatedMergeTree` or `SharedMergeTree`) without arguments.
+        const auto & engine = *inner_engine.engine;
+        if (engine.parameters || (engine.arguments && !engine.arguments->children.empty()))
+            return;
+
+        std::string_view engine_name = engine.name;
+        if (engine_name.starts_with("Replicated"))
+            engine_name.remove_prefix(strlen("Replicated"));
+        else if (engine_name.starts_with("Shared"))
+            engine_name.remove_prefix(strlen("Shared"));
+
+        const bool is_version_0 = (settings[TimeSeriesSetting::version] == 0);
+
+        /// Whether the sorting key consists of the specified columns. A tuple is written as `(a, b)`, or as `tuple(a, b)`
+        /// by some older versions, and a single column is written without a tuple.
+        auto sorting_key_equals = [&](std::string_view columns)
+        {
+            if (!inner_engine.order_by)
+                return false;
+            auto key_str = inner_engine.order_by->formatWithSecretsOneLine();
+            return (key_str == columns) || (key_str == fmt::format("({})", columns)) || (key_str == fmt::format("tuple({})", columns));
+        };
+
+        auto partitioning_equals = [&](std::string_view expression)
+        {
+            return inner_engine.partition_by && (inner_engine.partition_by->formatWithSecretsOneLine() == expression);
+        };
+
+        auto ttl_equals = [&](std::string_view expression)
+        {
+            return inner_engine.ttl_table && (inner_engine.ttl_table->formatWithSecretsOneLine() == expression);
+        };
+
+        /// Removes the settings with the expected values; the settings clause goes away with its last setting.
+        auto remove_settings = [&](const std::unordered_map<std::string_view, Field> & expected_inner_settings)
+        {
+            if (!inner_engine.settings)
+                return;
+            std::erase_if(inner_engine.settings->changes, [&](const SettingChange & change)
+            {
+                auto it = expected_inner_settings.find(change.name);
+                return (it != expected_inner_settings.end()) && (change.value == it->second);
+            });
+            if (inner_engine.settings->changes.empty())
+                inner_engine.reset(inner_engine.settings);
+        };
+
+        switch (inner_table_kind)
+        {
+            case ViewTarget::Samples:
+            {
+                if (engine_name != "MergeTree")
+                    return;
+                if (sorting_key_equals("id, timestamp"))
+                    inner_engine.reset(inner_engine.order_by);
+                remove_settings({{"index_granularity", settings[TimeSeriesSetting::samples_index_granularity].value}});
+                break;
+            }
+
+            case ViewTarget::RecentSamples:
+            {
+                if (engine_name != "MergeTree")
+                    return;
+                if (sorting_key_equals("id, timestamp"))
+                    inner_engine.reset(inner_engine.order_by);
+
+                /// The partition key is the `recent_samples_partition_by` setting if set, otherwise the default one.
+                const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value;
+                String expected_partition_by = partition_by
+                    ? partition_by->formatWithSecretsOneLine()
+                    : "toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))";
+                if (partitioning_equals(expected_partition_by))
+                    inner_engine.reset(inner_engine.partition_by);
+
+                UInt64 ttl_seconds = settings[TimeSeriesSetting::recent_samples_ttl_seconds];
+                if (ttl_equals(fmt::format("toDateTime(timestamp) + toIntervalSecond({})", ttl_seconds)))
+                    inner_engine.reset(inner_engine.ttl_table);
+
+                remove_settings({
+                    {"index_granularity", settings[TimeSeriesSetting::recent_samples_index_granularity].value},
+                    {"ttl_only_drop_parts", static_cast<UInt64>(1)}});
+                break;
+            }
+
+            case ViewTarget::Tags:
+            {
+                /// The generated engine kind follows the `aggregate_min_time_and_max_time` setting of the old table.
+                std::string_view generated_engine_name = settings[TimeSeriesSetting::aggregate_min_time_and_max_time]
+                    ? "AggregatingMergeTree"
+                    : "ReplacingMergeTree";
+                if (engine_name != generated_engine_name)
+                    return;
+
+                /// The primary key and the sorting key are connected, so they are considered together.
+                bool primary_key_is_generated = !inner_engine.primary_key
+                    || (inner_engine.primary_key->formatWithSecretsOneLine() == "metric_name");
+
+                /// The generated sorting key contains `min_time` and `max_time` if they are stored but not aggregated.
+                /// Version 0 tables were also generated with the short key regardless of these settings.
+                bool min_time_and_max_time_in_sorting_key = settings[TimeSeriesSetting::store_min_time_and_max_time]
+                    && !settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+                bool sorting_key_is_generated = sorting_key_equals(
+                    min_time_and_max_time_in_sorting_key ? "metric_name, id, min_time, max_time" : "metric_name, id");
+                if (!sorting_key_is_generated && is_version_0)
+                    sorting_key_is_generated = sorting_key_equals("metric_name, id");
+
+                if (primary_key_is_generated && sorting_key_is_generated)
+                {
+                    inner_engine.reset(inner_engine.primary_key);
+                    inner_engine.reset(inner_engine.order_by);
+
+                    /// `allow_nullable_key` is needed for the nullable `min_time` and `max_time` in the sorting key,
+                    /// so it's connected to the sorting key too.
+                    remove_settings({{"allow_nullable_key", static_cast<UInt64>(1)}});
+                }
+
+                remove_settings({
+                    {"index_granularity", settings[TimeSeriesSetting::tags_index_granularity].value},
+                    {"allow_dimensions_outside_sorting_key", static_cast<UInt64>(1)}});
+                break;
+            }
+
+            case ViewTarget::Metrics:
+            {
+                if (engine_name != "ReplacingMergeTree")
+                    return;
+                if (sorting_key_equals("metric_family_name"))
+                    inner_engine.reset(inner_engine.order_by);
+                break;
+            }
+
+            default:
+                UNREACHABLE();
+        }
+
+        inner_engine.reset(inner_engine.engine);
     }
 
     /// Adds missing required columns to an inner table's column list, building them in canonical order.
     /// Existing columns are taken from `inner_table_columns`; missing columns are created with the given type.
     /// Returns true if the column list was modified.
-    bool normalizeInnerTableColumns(
+    bool normalizeInnerColumns(
         ASTColumns & inner_table_columns,
         ViewTarget::Kind inner_table_kind,
         const TimeSeriesSettings & time_series_settings,
@@ -568,6 +1054,13 @@ namespace
         storage.settings->changes.setSetting(name, value);
     }
 
+    /// Converts a create query written by a server which didn't support versioning yet:
+    /// such tables belong to version 0 (see TimeSeriesVersion.h).
+    void convertDefinitionWithoutExplicitVersion(ASTCreateQuery & create_query)
+    {
+        setTimeSeriesSettingVersion(create_query, 0);
+    }
+
     /// Detects prealpha version by outer columns: prealpha had outer columns `id`, `timestamp`, `value`,
     /// and now we don't have them.
     bool isPrealpha(const ASTCreateQuery & create_query)
@@ -585,10 +1078,10 @@ namespace
         return false;
     }
 
-    /// Migrates a prealpha CREATE query: generates `INNER COLUMNS` for inner targets and
+    /// Converts a prealpha CREATE query: generates `INNER COLUMNS` for inner targets and
     /// replaces outer columns with a single `time_series` column carrying the resolved types.
     /// Function normalizeTimeSeriesDefinition() will rebuild the full list of the outer columns afterwards.
-    void upgradeFromPrealpha(ASTCreateQuery & create_query)
+    void convertPrealphaDefinition(ASTCreateQuery & create_query)
     {
         TimeSeriesSettings time_series_settings;
         if (create_query.storage)
@@ -629,7 +1122,7 @@ namespace
 
         for (auto inner_table_kind : getTargetKinds())
         {
-            /// Prealpha tables predate the recent samples table, so there is nothing to upgrade for it,
+            /// Prealpha tables predate the recent samples table, so there is nothing to convert for it,
             /// and no RECENT SAMPLES target should be added to an old table's definition.
             if (inner_table_kind == ViewTarget::RecentSamples)
                 continue;
@@ -776,9 +1269,9 @@ namespace
         return create_query.storage && !hasExplicitTimeSeriesSettingRecentSamplesTTL(create_query);
     }
 
-    /// Upgrades a create query made by a version before the `recent_samples_ttl_seconds` setting existed:
+    /// Converts a create query made by a version before the `recent_samples_ttl_seconds` setting existed:
     /// records the setting explicitly in the query's SETTINGS clause, so that its value always matches the table.
-    void upgradeFromVersionWithNoRecentSamplesTTL(ASTCreateQuery & create_query)
+    void convertDefinitionWithoutRecentSamplesTTL(ASTCreateQuery & create_query)
     {
         /// Normally the setting is pinned to zero: the table was initially created without the recent
         /// samples table, while the absent setting would read as its non-zero default. However a query
@@ -793,15 +1286,30 @@ namespace
         setEngineSettings(*create_query.storage, "recent_samples_ttl_seconds", Field(ttl_to_pin));
     }
 
-    /// Returns the prefix ("", "Replicated" or "Shared") for the names of generated inner table engines,
-    /// based on the `default_table_engine` setting. Only the family can be taken from the setting because
-    /// each inner table needs its own engine kind (e.g. AggregatingMergeTree for the tags table), so only
-    /// the plain MergeTree, ReplicatedMergeTree and SharedMergeTree default engines are supported;
-    /// with any other default engine the inner table's engine must be specified explicitly.
-    std::string_view getInnerEngineFamilyPrefix(ViewTarget::Kind target_kind, const ContextPtr & context)
+    /// The family of the inner engines when none is declared: it follows the `default_table_engine` setting.
+    /// The value `None` is kept: then the inner engines must be declared explicitly.
+    DefaultTableEngine getDefaultInnerEngineFamily(const ContextPtr & context, const StorageID & table_id)
     {
         auto default_table_engine = context->getSettingsRef()[Setting::default_table_engine].value;
         switch (default_table_engine)
+        {
+            case DefaultTableEngine::MergeTree:
+            case DefaultTableEngine::ReplicatedMergeTree:
+            case DefaultTableEngine::SharedMergeTree:
+            case DefaultTableEngine::None:
+                return default_table_engine;
+            default:
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "{}: The `default_table_engine` setting value '{}' cannot be used to choose the engines of the inner tables "
+                    "of a TimeSeries table (supported values are MergeTree, ReplicatedMergeTree and SharedMergeTree); "
+                    "specify the inner tables' engines explicitly", table_id.getNameForLogs(), magic_enum::enum_name(default_table_engine));
+        }
+    }
+
+    /// The prefix of the name of an inner engine for the family of the inner engines, e.g. "Replicated" for `ReplicatedMergeTree`.
+    std::string_view getInnerEngineFamilyPrefix(DefaultTableEngine inner_engine_family, ViewTarget::Kind inner_table_kind)
+    {
+        switch (inner_engine_family)
         {
             case DefaultTableEngine::MergeTree:
                 return "";
@@ -812,199 +1320,211 @@ namespace
             case DefaultTableEngine::None:
                 throw Exception(ErrorCodes::INCORRECT_QUERY,
                     "The inner {} table of a TimeSeries table requires an explicit engine "
-                    "because the `default_table_engine` setting is 'None'", target_kind);
+                    "because the `default_table_engine` setting is 'None'", inner_table_kind);
             default:
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                    "The `default_table_engine` setting value '{}' cannot be used to choose the engine of the inner {} table "
-                    "of a TimeSeries table (supported values are MergeTree, ReplicatedMergeTree and SharedMergeTree); "
-                    "specify the inner table's engine explicitly", magic_enum::enum_name(default_table_engine), target_kind);
+                UNREACHABLE();
         }
     }
 
-    /// Makes the definition of the default engine for an inner table.
-    /// The engine family (plain, Replicated or Shared) follows the `default_table_engine` setting.
-    boost::intrusive_ptr<ASTStorage> generateInnerEngine(
-        ViewTarget::Kind target_kind, const TimeSeriesSettings & settings, const ContextPtr & context)
+    /// Generates the engine of an inner table if it's not specified, and applies the TimeSeries settings to it,
+    /// whether the engine was generated or specified by the user.
+    /// The replication type of a generated engine (`MergeTree`, `ReplicatedMergeTree` or `SharedMergeTree`) is taken
+    /// from `resolved_types`, or from the `default_table_engine` setting if no inner engine is declared.
+    /// Returns true if the engine declaration was modified.
+    bool normalizeInnerEngine(
+        ASTStorage & inner_engine,
+        ViewTarget::Kind inner_table_kind,
+        const TimeSeriesSettings & settings,
+        const ResolvedTimeSeriesTypes & resolved_types,
+        const StorageID & table_id,
+        const ContextPtr & context)
     {
-        auto storage = make_intrusive<ASTStorage>();
+        bool changed = false;
 
-        switch (target_kind)
+        auto set_engine = [&](std::string_view engine_kind)
+        {
+            DefaultTableEngine inner_engine_family = resolved_types.inner_engine_family
+                ? *resolved_types.inner_engine_family
+                : getDefaultInnerEngineFamily(context, table_id);
+            auto engine = makeASTFunction(fmt::format("{}{}", getInnerEngineFamilyPrefix(inner_engine_family, inner_table_kind), engine_kind));
+            engine->setNoEmptyArgs(false);
+            inner_engine.set(inner_engine.engine, engine);
+            changed = true;
+        };
+
+        auto is_merge_tree = [&] { return inner_engine.engine->name.ends_with("MergeTree"); };
+
+        /// A declared MergeTree engine without keys gets the same keys as a generated one.
+        auto needs_sorting_key = [&] { return is_merge_tree() && !inner_engine.order_by && !inner_engine.primary_key; };
+
+        /// A key of one column is written without a tuple, e.g. `ORDER BY metric_family_name`.
+        auto set_sorting_key = [&](ASTs key_columns)
+        {
+            ASTPtr sorting_key;
+            if (key_columns.size() == 1)
+                sorting_key = key_columns[0];
+            else
+            {
+                auto tuple = makeASTOperator("tuple");
+                tuple->arguments->children = std::move(key_columns);
+                sorting_key = tuple;
+            }
+            inner_engine.set(inner_engine.order_by, sorting_key);
+            changed = true;
+        };
+
+        auto set_primary_key = [&](ASTPtr primary_key)
+        {
+            inner_engine.set(inner_engine.primary_key, primary_key);
+            changed = true;
+        };
+
+        auto has_partition_by = [&] { return inner_engine.partition_by != nullptr; };
+
+        auto set_partition_by = [&](ASTPtr partition_by)
+        {
+            inner_engine.setOrReplace(inner_engine.partition_by, partition_by);
+            changed = true;
+        };
+
+        /// Sets a TTL deleting the expired rows.
+        auto set_ttl = [&](ASTPtr ttl_expression)
+        {
+            auto ttl_element = make_intrusive<ASTTTLElement>(TTLMode::DELETE, DataDestinationType::DELETE, "", /*if_exists=*/ false);
+            ttl_element->setTTL(std::move(ttl_expression));
+            auto ttl_list = make_intrusive<ASTExpressionList>();
+            ttl_list->children.push_back(std::move(ttl_element));
+            inner_engine.setOrReplace(inner_engine.ttl_table, ttl_list);
+            changed = true;
+        };
+
+        auto has_engine_setting = [&](std::string_view name) { return hasEngineSetting(inner_engine, name); };
+
+        auto set_engine_setting = [&](std::string_view name, UInt64 value)
+        {
+            setEngineSettings(inner_engine, name, Field(value));
+            changed = true;
+        };
+
+        /// The `*_index_granularity` settings set `index_granularity` of the inner MergeTree tables, overriding the engine declaration.
+        auto set_index_granularity = [&](const SettingFieldUInt64 & index_granularity)
+        {
+            if (is_merge_tree() && (index_granularity.isChanged() || !has_engine_setting("index_granularity")))
+                set_engine_setting("index_granularity", index_granularity.value);
+        };
+
+        switch (inner_table_kind)
         {
             case ViewTarget::Samples:
             case ViewTarget::RecentSamples:
             {
                 /// The recent samples table gets the same generated engine as the samples table; it becomes
-                /// partitioned and TTL'd later (see applyInnerEnginePartitionBy and applyRecentSamplesTTL).
-                auto engine = makeASTFunction(fmt::format("{}MergeTree", getInnerEngineFamilyPrefix(target_kind, context)));
-                engine->setNoEmptyArgs(false);
-                storage->set(storage->engine, engine);
+                /// partitioned and TTL'd below.
+                if (!inner_engine.engine)
+                    set_engine("MergeTree");
 
-                storage->set(storage->order_by,
-                    makeASTOperator("tuple",
-                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
-                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
-                return storage;
+                if (needs_sorting_key())
+                {
+                    set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
+                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)});
+                }
+
+                const auto & index_granularity = settings[(inner_table_kind == ViewTarget::Samples)
+                    ? TimeSeriesSetting::samples_index_granularity
+                    : TimeSeriesSetting::recent_samples_index_granularity];
+                set_index_granularity(index_granularity);
+
+                if (inner_table_kind != ViewTarget::RecentSamples)
+                    break;
+
+                /// `recent_samples_ttl_seconds` is a correctness contract for the reader: the TTL always comes from it; non-TTL engines are rejected.
+                if (!is_merge_tree())
+                    throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                        "{}: The inner recent samples table requires a MergeTree-family engine to apply the TTL "
+                        "defined by the `recent_samples_ttl_seconds` setting", table_id.getNameForLogs());
+
+                /// The table is partitioned by time, so `ttl_only_drop_parts` lets the TTL drop whole expired parts instead of rewriting them.
+                if (!has_engine_setting("ttl_only_drop_parts"))
+                    set_engine_setting("ttl_only_drop_parts", 1);
+
+                if (const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value)
+                {
+                    /// An explicitly set `recent_samples_partition_by` overrides the partition key from the engine declaration.
+                    set_partition_by(partition_by->clone());
+                }
+                else if (!has_partition_by())
+                {
+                    /// Otherwise a declared partition key is kept; if there is none, the default one (5-hour buckets) is used.
+                    /// `toDateTime` makes the default partition key work for any timestamp type (e.g. a raw `UInt32`),
+                    /// same as the TTL expression.
+                    set_partition_by(makeASTFunction("toStartOfInterval",
+                        makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
+                        makeASTFunction("toIntervalHour", make_intrusive<ASTLiteral>(static_cast<UInt64>(5)))));
+                }
+
+                set_ttl(makeASTOperator("plus",
+                    makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
+                    makeASTFunction("toIntervalSecond",
+                        make_intrusive<ASTLiteral>(settings[TimeSeriesSetting::recent_samples_ttl_seconds].value))));
+                break;
             }
 
             case ViewTarget::Tags:
             {
                 const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
-                std::string_view engine_kind = aggregate_min_time_and_max_time
-                    ? "AggregatingMergeTree"
-                    : "ReplacingMergeTree";
-                auto engine = makeASTFunction(fmt::format("{}{}", getInnerEngineFamilyPrefix(target_kind, context), engine_kind));
-                engine->setNoEmptyArgs(false);
-                storage->set(storage->engine, engine);
+                if (!inner_engine.engine)
+                    set_engine(aggregate_min_time_and_max_time ? "AggregatingMergeTree" : "ReplacingMergeTree");
 
-                storage->set(storage->primary_key, make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
-
-                ASTs order_by_list;
-                order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
-                order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-                if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !aggregate_min_time_and_max_time)
+                if (needs_sorting_key())
                 {
-                    order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
-                    order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
+                    set_primary_key(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+
+                    ASTs key_columns;
+                    key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+                    key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+                    if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !aggregate_min_time_and_max_time)
+                    {
+                        key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
+                        key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
+
+                        /// These columns are nullable, so the sorting key needs `allow_nullable_key`.
+                        set_engine_setting("allow_nullable_key", 1);
+                    }
+                    set_sorting_key(std::move(key_columns));
                 }
-                auto order_by_tuple = make_intrusive<ASTFunction>();
-                order_by_tuple->name = "tuple";
-                auto arguments_list = make_intrusive<ASTExpressionList>();
-                arguments_list->children = std::move(order_by_list);
-                order_by_tuple->arguments = arguments_list;
-                storage->set(storage->order_by, order_by_tuple);
-                return storage;
+
+                set_index_granularity(settings[TimeSeriesSetting::tags_index_granularity]);
+
+                /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags` Map) outside
+                /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
+                /// rows that a background merge collapses together shares the same `id`, hence the same values of
+                /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
+                /// by default (see the `allow_dimensions_outside_sorting_key` setting and
+                /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
+                /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
+                if (inner_engine.engine->name.contains("Aggregating")
+                    && !has_engine_setting("allow_dimensions_outside_sorting_key"))
+                {
+                    set_engine_setting("allow_dimensions_outside_sorting_key", 1);
+                }
+                break;
             }
 
             case ViewTarget::Metrics:
             {
-                auto engine = makeASTFunction(fmt::format("{}ReplacingMergeTree", getInnerEngineFamilyPrefix(target_kind, context)));
-                engine->setNoEmptyArgs(false);
-                storage->set(storage->engine, engine);
-                storage->set(storage->order_by, make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName));
-                return storage;
+                if (!inner_engine.engine)
+                    set_engine("ReplacingMergeTree");
+
+                if (needs_sorting_key())
+                    set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName)});
+                break;
             }
 
             default:
-                break;
+                UNREACHABLE();
         }
 
-        UNREACHABLE();
-    }
-
-    /// Applies engine settings driven by the TimeSeries settings to an inner table's engine,
-    /// whether the engine was generated or specified by the user.
-    void applyInnerEngineSettings(ViewTarget::Kind kind, ASTStorage & storage, const TimeSeriesSettings & settings)
-    {
-        if (!storage.engine)
-            return;
-
-        const auto & engine_name = storage.engine->name;
-
-        /// The `*_index_granularity` settings set `index_granularity` of the inner MergeTree tables, overriding the engine declaration.
-        if ((kind == ViewTarget::Samples || kind == ViewTarget::Tags || kind == ViewTarget::RecentSamples)
-            && engine_name.ends_with("MergeTree"))
-        {
-            const auto & index_granularity = settings[(kind == ViewTarget::Samples)
-                ? TimeSeriesSetting::samples_index_granularity
-                : ((kind == ViewTarget::Tags)
-                    ? TimeSeriesSetting::tags_index_granularity
-                    : TimeSeriesSetting::recent_samples_index_granularity)];
-            if (index_granularity.isChanged() || !hasEngineSetting(storage, "index_granularity"))
-                setEngineSettings(storage, "index_granularity", Field(index_granularity.value));
-        }
-
-        /// The table is partitioned by time, so `ttl_only_drop_parts` lets the TTL drop whole expired parts instead of rewriting them.
-        if (kind == ViewTarget::RecentSamples && engine_name.ends_with("MergeTree")
-            && !hasEngineSetting(storage, "ttl_only_drop_parts"))
-        {
-            setEngineSettings(storage, "ttl_only_drop_parts", Field(static_cast<UInt64>(1)));
-        }
-
-        /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags` Map) outside
-        /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
-        /// rows that a background merge collapses together shares the same `id`, hence the same values of
-        /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
-        /// by default (see the `allow_dimensions_outside_sorting_key` setting and
-        /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
-        /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
-        if (kind == ViewTarget::Tags && engine_name.contains("Aggregating")
-            && !hasEngineSetting(storage, "allow_dimensions_outside_sorting_key"))
-        {
-            setEngineSettings(storage, "allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1)));
-        }
-    }
-
-    /// Sets the partition key of the inner recent samples table.
-    void applyInnerEnginePartitionBy(ViewTarget::Kind kind, ASTStorage & storage, const TimeSeriesSettings & settings)
-    {
-        if (kind != ViewTarget::RecentSamples || !storage.engine || !storage.engine->name.ends_with("MergeTree"))
-            return;
-
-        if (const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value)
-        {
-            /// An explicitly set `recent_samples_partition_by` overrides the partition key from the engine declaration.
-            storage.setOrReplace(storage.partition_by, partition_by->clone());
-        }
-        else if (!storage.partition_by)
-        {
-            /// Otherwise a declared partition key is kept; if there is none, the default one (5-hour buckets) is used.
-            /// `toDateTime` makes the default partition key work for any timestamp type (e.g. a raw `UInt32`),
-            /// same as the TTL expression.
-            storage.set(storage.partition_by,
-                makeASTFunction("toStartOfInterval",
-                    makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
-                    makeASTFunction("toIntervalHour", make_intrusive<ASTLiteral>(static_cast<UInt64>(5)))));
-        }
-    }
-
-    /// `recent_samples_ttl_seconds` is a correctness contract for the reader: the TTL always comes from it; non-TTL engines are rejected.
-    void applyRecentSamplesTTL(ASTStorage & storage, const TimeSeriesSettings & settings, const StorageID & table_id)
-    {
-        if (!storage.engine || !storage.engine->name.ends_with("MergeTree"))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                "{}: The inner recent samples table requires a MergeTree-family engine to apply the TTL "
-                "defined by the `recent_samples_ttl_seconds` setting", table_id.getNameForLogs());
-
-        auto ttl_element = make_intrusive<ASTTTLElement>(TTLMode::DELETE, DataDestinationType::DELETE, "", /*if_exists=*/ false);
-        ttl_element->setTTL(makeASTOperator("plus",
-            makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
-            makeASTFunction("toIntervalSecond",
-                make_intrusive<ASTLiteral>(settings[TimeSeriesSetting::recent_samples_ttl_seconds].value))));
-        auto ttl_list = make_intrusive<ASTExpressionList>();
-        ttl_list->children.push_back(std::move(ttl_element));
-        storage.setOrReplace(storage.ttl_table, ttl_list);
-    }
-
-    /// Checks that two inner tables have the same replication type (replicated, shared, or non-replicated),
-    /// otherwise their contents would diverge between replicas.
-    void checkInnerEngineReplicationMatches(
-        ViewTarget::Kind kind, const ASTStorage & inner_engine,
-        ViewTarget::Kind prev_kind, const ASTStorage * prev_inner_engine)
-    {
-        if (!prev_inner_engine || !prev_inner_engine->engine || !inner_engine.engine)
-            return;
-
-        const String & engine_name = inner_engine.engine->name;
-        const String & prev_engine_name = prev_inner_engine->engine->name;
-
-        auto is_replicated = [](const String & name) { return name.starts_with("Replicated"); };
-        auto is_shared = [](const String & name) { return name.starts_with("Shared"); };
-
-        if (is_shared(prev_engine_name) != is_shared(engine_name))
-        {
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "The inner {} table {} shared ({}) while the inner {} table {} shared ({})",
-                magic_enum::enum_name(prev_kind), is_shared(prev_engine_name) ? "is" : "is not", prev_engine_name,
-                magic_enum::enum_name(kind), is_shared(engine_name) ? "is" : "is not", engine_name);
-        }
-
-        if (is_replicated(prev_engine_name) != is_replicated(engine_name))
-        {
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "The inner {} table {} replicated ({}) while the inner {} table {} replicated ({})",
-                magic_enum::enum_name(prev_kind), is_replicated(prev_engine_name) ? "is" : "is not", prev_engine_name,
-                magic_enum::enum_name(kind), is_replicated(engine_name) ? "is" : "is not", engine_name);
-        }
+        return changed;
     }
 
     /// Checks that a target table or an inner-columns list has all the columns required by the
@@ -1153,60 +1673,112 @@ namespace
         }
     }
 
-    /// If `create_query` has clause `AS <other_table>`,
-    /// the function reads the CREATE query of the <other_table> and applies outer columns, inner columns, inner engines,
-    /// and the `SETTINGS` clause to the current `create_query`.
-    void applyASClause(ASTCreateQuery & create_query, const ContextPtr & context)
+    /// Reads the CREATE query of the table from the clause `AS <other_table>` of `create_query`.
+    /// The stored metadata of the old table can be written by an older version, so its normalized form is returned.
+    boost::intrusive_ptr<const ASTCreateQuery> getASCreateQuery(const ASTCreateQuery & create_query, const ContextPtr & context)
     {
-        chassert (!create_query.as_table.empty());
-        auto other_database = context->resolveDatabase(create_query.as_database);
-        auto as_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
-            DatabaseCatalog::instance().getDatabase(other_database)->getCreateTableQuery(create_query.as_table, context));
+        chassert(!create_query.as_table.empty());
 
-        /// The stored metadata of the other table can be written by an older version,
-        /// so copy from its normalized form.
-        if (as_create_query->is_time_series_table)
+        /// The definition of the old table is read below.
+        auto old_database = context->resolveDatabase(create_query.as_database);
+        context->checkAccess(AccessType::SHOW_COLUMNS, old_database, create_query.as_table);
+
+        auto old_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
+            DatabaseCatalog::instance().getDatabase(old_database)->getCreateTableQuery(create_query.as_table, context));
+
+        /// The columns of a TimeSeries table are always generated, so the old table's columns can't be copied.
+        if (!old_create_query->is_time_series_table)
         {
-            auto normalized = boost::static_pointer_cast<ASTCreateQuery>(as_create_query->clone());
-            normalizeTimeSeriesDefinition(*normalized, context, LoadingStrictnessLevel::ATTACH, /* is_restore_from_backup = */ false);
-            as_create_query = normalized;
+            StorageID old_table_id{old_create_query->getDatabase(), old_create_query->getTable()};
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Cannot CREATE a TimeSeries table AS {} because it is not a TimeSeries table", old_table_id.getNameForLogs());
         }
 
-        /// Copy settings from the other table.
-        if (as_create_query->storage && as_create_query->storage->settings
-            && (!create_query.storage || !create_query.storage->settings))
+        auto normalized = boost::static_pointer_cast<ASTCreateQuery>(old_create_query->clone());
+        normalizeTimeSeriesDefinition(*normalized, context, LoadingStrictnessLevel::ATTACH, /* is_restore_from_backup = */ false);
+        return normalized;
+    }
+
+    /// Applies the definition of the table from the clause `AS <other_table>` to `create_query`: its inner columns,
+    /// inner engines, and the `SETTINGS` clause. The outer columns are not copied because they are always regenerated.
+    void applyASClause(
+        ASTCreateQuery & create_query,
+        const ResolvedTimeSeriesTypes & new_types,
+        const ASTCreateQuery & old_create_query,
+        const ResolvedTimeSeriesTypes & old_types)
+    {
+        /// Copy settings from the old table. Settings are merged by name: a setting written in this query wins.
+        if (old_create_query.storage && old_create_query.storage->settings)
         {
             if (!create_query.storage)
                 create_query.set(create_query.storage, make_intrusive<ASTStorage>());
-            create_query.storage->set(create_query.storage->settings, as_create_query->storage->settings->clone());
+
+            auto merged_settings = boost::static_pointer_cast<ASTSetQuery>(old_create_query.storage->settings->clone());
+
+            /// Some settings of the old table are not copied because the settings written in this query disable them.
+            removeOldSettingsDisabledByNewSettings(merged_settings->changes, create_query.storage->settings);
+
+            /// The `id_generator` of the old table is not copied if this table has another `id` type.
+            removeOldSettingsDisabledByIdTypeChange(merged_settings->changes, old_types.id_type, new_types.id_type);
+
+            if (create_query.storage->settings)
+            {
+                /// A `name = DEFAULT` reset is a mention of the setting too, so the value of the old table
+                /// is not inherited for it. The reset itself is not kept: an absent setting means the default.
+                merged_settings->changes.removeSettings(create_query.storage->settings->default_settings);
+                merged_settings->changes.setSettings(create_query.storage->settings->changes);
+            }
+            create_query.storage->set(create_query.storage->settings, merged_settings);
         }
 
-        /// Copy outer column from the other table.
-        if (!create_query.columns_list && as_create_query->columns_list)
-        {
-            create_query.set(create_query.columns_list,
-                boost::static_pointer_cast<ASTColumns>(as_create_query->columns_list->clone()));
-        }
+        /// The inner columns and engines generated for the old table are not copied: they are generated again for
+        /// this table, whose settings can differ. The generated columns are recognized with the settings of the old table.
+        TimeSeriesSettings old_settings;
+        if (old_create_query.storage)
+            old_settings.loadFromQuery(*old_create_query.storage);
 
-        /// Copy inner columns and inner engines from the other table.
+        /// The merged settings of this table.
+        TimeSeriesSettings new_settings;
+        if (create_query.storage)
+            new_settings.loadFromQuery(*create_query.storage);
+
+        /// Copy inner columns and inner engines from the old table.
         for (auto kind : getTargetKinds())
         {
-            if (!hasInnerColumns(create_query, kind))
+            /// A disabled recent samples target needs nothing from the old table.
+            if ((kind == ViewTarget::RecentSamples) && (new_settings[TimeSeriesSetting::recent_samples_ttl_seconds] == 0))
+                continue;
+
+            if (!hasTargetTableID(create_query, kind) && !hasInnerColumns(create_query, kind))
             {
-                if (auto * as_inner_cols = as_create_query->getTargetInnerColumns(kind))
-                    create_query.setTargetInnerColumns(kind, boost::static_pointer_cast<ASTColumns>(as_inner_cols->clone()));
+                if (auto * old_inner_columns = old_create_query.getTargetInnerColumns(kind))
+                {
+                    auto new_inner_columns = boost::static_pointer_cast<ASTColumns>(old_inner_columns->clone());
+                    removeInnerColumnsDisabledByNewSettings(*new_inner_columns, kind, old_settings, new_settings);
+                    removeGeneratedInnerColumns(*new_inner_columns, kind, old_settings);
+                    create_query.setTargetInnerColumns(kind, new_inner_columns);
+                }
             }
 
             if (!hasTargetTableID(create_query, kind) && !hasInnerEngine(create_query, kind))
             {
-                if (hasTargetTableID(*as_create_query, kind))
+                if (hasTargetTableID(old_create_query, kind))
                 {
-                    StorageID other_table_id{as_create_query->getDatabase(), as_create_query->getTable()};
-                    throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "Cannot CREATE a table AS {} because it has external tables", other_table_id.getNameForLogs());
+                    /// An external target of the old table is not copied, but the query can declare an inner target
+                    /// instead by its columns, then the engine is generated.
+                    if (!hasInnerColumns(create_query, kind))
+                    {
+                        StorageID old_table_id{old_create_query.getDatabase(), old_create_query.getTable()};
+                        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Cannot CREATE a table AS {} because it has external tables", old_table_id.getNameForLogs());
+                    }
                 }
-                if (auto * other_inner_engine = as_create_query->getTargetInnerEngine(kind))
-                    create_query.setTargetInnerEngine(kind, other_inner_engine->clone());
+                else if (const auto * old_inner_engine = old_create_query.getTargetInnerEngine(kind))
+                {
+                    auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(old_inner_engine->clone());
+                    removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings);
+                    create_query.setTargetInnerEngine(kind, new_inner_engine);
+                }
             }
         }
     }
@@ -1248,23 +1820,35 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     /// `is_new_table` is false if we're restoring from a backup.
     bool is_new_table = (mode <= LoadingStrictnessLevel::SECONDARY_CREATE) && !is_restore_from_backup;
 
-    /// Whether the create query may come from an older version, so it can be upgraded to the current form.
+    /// Whether the create query may come from an older version, so it can be converted to the current form.
     /// The initial CREATE query is excluded: it must be written in the current form already.
-    bool can_upgrade = (mode != LoadingStrictnessLevel::CREATE) || is_restore_from_backup;
+    bool can_convert = (mode != LoadingStrictnessLevel::CREATE) || is_restore_from_backup;
 
-    /// Upgrade the create_query if it was created by the old versions.
-    /// (A new query written in the prealpha form must be rejected, see readTypesFromOuterColumns.)
-    if (can_upgrade && isPrealpha(create_query))
+    /// Convert the create_query if it was created before the `version` setting was introduced.
+    if (can_convert && !hasExplicitTimeSeriesSettingVersion(create_query))
     {
-        upgradeFromPrealpha(create_query);
-        chassert(!isPrealpha(create_query));
+        convertDefinitionWithoutExplicitVersion(create_query);
+        chassert(hasExplicitTimeSeriesSettingVersion(create_query));
     }
 
-    /// Upgrade the create_query if it was created before the recent samples table existed.
-    if (can_upgrade && isVersionWithNoRecentSamplesTTL(create_query))
+    /// The older forms of the definition below were written only by servers which didn't support versioning yet,
+    /// so they can be found only in tables of version 0.
+    if (can_convert && (getTimeSeriesSettingVersion(create_query) == 0))
     {
-        upgradeFromVersionWithNoRecentSamplesTTL(create_query);
-        chassert(!isVersionWithNoRecentSamplesTTL(create_query));
+        /// Convert the create_query if it was created by the old versions.
+        /// (A new query written in the prealpha form must be rejected, see readTypesFromOuterColumns.)
+        if (isPrealpha(create_query))
+        {
+            convertPrealphaDefinition(create_query);
+            chassert(!isPrealpha(create_query));
+        }
+
+        /// Convert the create_query if it was created before the recent samples table existed.
+        if (isVersionWithNoRecentSamplesTTL(create_query))
+        {
+            convertDefinitionWithoutRecentSamplesTTL(create_query);
+            chassert(!isVersionWithNoRecentSamplesTTL(create_query));
+        }
     }
 
     /// Whether the query itself declares a RECENT SAMPLES target. This is checked before applyASClause,
@@ -1275,13 +1859,38 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         = hasInnerColumns(create_query, ViewTarget::RecentSamples) || hasInnerEngine(create_query, ViewTarget::RecentSamples)
         || hasTargetTableID(create_query, ViewTarget::RecentSamples);
 
-    /// Apply the clause `AS <other_table>` if any.
+    /// The definition of the table from the clause `AS <other_table>` if any, and its resolved types.
+    boost::intrusive_ptr<const ASTCreateQuery> old_create_query;
+    std::optional<ResolvedTimeSeriesTypes> old_types;
     if (!create_query.as_table.empty())
-        applyASClause(create_query, context);
+    {
+        old_create_query = getASCreateQuery(create_query, context);
+        /// The types of the old table are normally in its outer and inner columns, so its external target tables are rarely read.
+        old_types = resolveTimeSeriesTypes(
+            *old_create_query,
+            context,
+            /* check_external_targets = */ false,
+            /* check_external_targets_for_missing_types = */ is_new_table,
+            /* need_inner_engine_family = */ is_new_table,
+            /* fallback_types = */ nullptr);
+    }
 
     /// Resolve types timestamp_type, scalar_type, id_type.
     /// External targets are checked only at CREATE time; on ATTACH they may not be loaded yet.
-    ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(create_query, context, /*check_external_targets=*/ is_new_table);
+    /// The external target tables of a new table must exist.
+    ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(
+        create_query,
+        context,
+        /* check_external_targets = */ is_new_table,
+        /* check_external_targets_for_missing_types = */ is_new_table,
+        /* need_inner_engine_family = */ is_new_table,
+        old_types ? &*old_types : nullptr);
+
+    /// Apply the clause `AS <other_table>` if any.
+    /// This must happen before pinning the version below: the AS clause merges the SETTINGS clause
+    /// of the old table into the query, and the version is pinned in the merged settings.
+    if (old_create_query)
+        applyASClause(create_query, resolved_types, *old_create_query, *old_types);
 
     /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
     if (is_new_table)
@@ -1289,7 +1898,17 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         TimeSeriesSettings settings;
         if (create_query.storage)
             settings.loadFromQuery(*create_query.storage);
+
+        /// This also checks that the version is in the range supported by this server.
         checkTimeSeriesSettings(settings);
+
+        /// Pin `version`, so that the table keeps its version if a future server bumps the latest one.
+        /// Converted queries have a version at this point (see above), so a missing version here means a fresh CREATE.
+        if (!settings[TimeSeriesSetting::version].isChanged() && create_query.storage)
+        {
+            setEngineSettings(*create_query.storage, "version",
+                Field(settings[TimeSeriesSetting::version].value));
+        }
 
         /// Pin `recent_samples_ttl_seconds`, so that the table keeps its TTL if a future version changes the default.
         if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds].isChanged() && create_query.storage)
@@ -1311,10 +1930,6 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
             if (create_query.targets)
                 create_query.targets->removeTarget(ViewTarget::RecentSamples);
         }
-
-        /// The previous inner engine to compare with in checkInnerEngineReplicationMatches.
-        ViewTarget::Kind prev_inner_kind{};
-        const ASTStorage * prev_inner_engine = nullptr;
 
         for (auto kind : getTargetKinds())
         {
@@ -1338,7 +1953,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                 auto inner_columns = create_query.getTargetInnerColumns(kind)
                     ? boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone())
                     : make_intrusive<ASTColumns>();
-                if (normalizeInnerTableColumns(*inner_columns, kind, settings, resolved_types, table_id))
+                if (normalizeInnerColumns(*inner_columns, kind, settings, resolved_types, table_id))
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
@@ -1346,22 +1961,17 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                     *inner_columns->columns, context, mode);
                 checkTargetTable(inner_columns_description, kind, settings, resolved_types, table_id);
 
-                if (!hasInnerEngine(create_query, kind))
-                    create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings, context));
-
-                if (auto * inner_engine = create_query.getTargetInnerEngine(kind))
-                {
-                    applyInnerEngineSettings(kind, *inner_engine, settings);
-                    applyInnerEnginePartitionBy(kind, *inner_engine, settings);
-                    if (kind == ViewTarget::RecentSamples)
-                        applyRecentSamplesTTL(*inner_engine, settings, table_id);
-
-                    checkInnerEngineReplicationMatches(kind, *inner_engine, prev_inner_kind, prev_inner_engine);
-                    prev_inner_kind = kind;
-                    prev_inner_engine = inner_engine;
-                }
+                auto inner_engine = create_query.getTargetInnerEngine(kind)
+                    ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
+                    : make_intrusive<ASTStorage>();
+                if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, context))
+                    create_query.setTargetInnerEngine(kind, inner_engine);
             }
         }
+
+        /// Inner tables with different replication types would diverge between replicas.
+        /// The generated inner engines follow the declared ones, but an inner engine copied from the old table can differ.
+        checkInnerEnginesReplicationTypesMatch(create_query, StorageID{create_query.getDatabase(), create_query.getTable()});
     }
 
     /// Regenerate the columns of TimeSeries table from the resolved types.
