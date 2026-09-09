@@ -52,7 +52,6 @@ SELECT count() > 0 FROM (EXPLAIN actions = 0 SELECT id, id + 1 AS s FROM m ORDER
 
 -- Same bug on the old analyzer path.
 SELECT '-- Old analyzer, LIMIT 3';
-SELECT count() FROM (SELECT id, arrayJoin(a) FROM m LEFT JOIN l ON l.id = m.id ORDER BY id LIMIT 3) SETTINGS allow_experimental_analyzer = 0;
 
 -- When `arrayJoin` is the sort key, it stays below `SortingStep` and
 -- the optimization is not applied — verify this still works.

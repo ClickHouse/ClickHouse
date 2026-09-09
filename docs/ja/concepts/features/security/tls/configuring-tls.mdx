@@ -118,7 +118,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 
   <Step title="ClickHouse Keeperを使用した基本クラスターによる環境の構成" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
-    このデプロイメント環境では、各ノードで以下の ClickHouse Keeper 設定を使用します。各サーバーにはそれぞれ固有の `<server_id>` が設定されます (例：ノード `chnode1` には `<server_id>1</server_id>`、以降も同様) 。
+    このデプロイ環境では、各ノードで以下の ClickHouse Keeper 設定が使用されます。各サーバーはそれぞれ固有の `<server_id>` を持ちます (例：ノード `chnode1` の場合は `<server_id>1</server_id>`) 。
 
     <Note>
       ClickHouse Keeper の推奨ポートは `9281` です。ただし、ポートは設定可能であり、このポートが環境内の別のアプリケーションですでに使用されている場合は、別のポートに設定できます。
@@ -305,7 +305,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </openSSL>
     ```
 
-    詳細については、[このページ](/ja/reference/settings/server-settings/settings#openssl)を参照してください。
+    詳細については、[このページ](/ja/reference/settings/server-settings/settings/other#openssl)を参照してください。
 
     7. すべてのノードで gRPC 用の TLS を設定します。
 

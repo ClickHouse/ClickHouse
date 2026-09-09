@@ -137,7 +137,7 @@ SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea4
 
 단순한 표현식이 포함된 쿼리만 지원됩니다(예: `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 이러한 표현식은 MongoDB 쿼리 언어로 변환되어 서버 측에서 실행됩니다.
-[mongodb&#95;throw&#95;on&#95;unsupported&#95;query](/ko/reference/settings/session-settings#mongodb_throw_on_unsupported_query)를 사용하면 이러한 제한을 모두 비활성화할 수 있습니다.
+[mongodb&#95;throw&#95;on&#95;unsupported&#95;query](/ko/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query)를 사용하면 이러한 제한을 모두 비활성화할 수 있습니다.
 이 경우 ClickHouse는 가능한 범위에서 쿼리 변환을 시도하지만, 전체 테이블 스캔이 발생하고 처리가 ClickHouse 측에서 수행될 수 있습니다.
 
 <Note>
