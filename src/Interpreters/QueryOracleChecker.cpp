@@ -27,6 +27,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
@@ -291,6 +292,13 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
 {
     if (!ast)
         return false;
+
+    /// A query parameter (`{p:Identifier}`, `{v:UInt64}`) is substituted only at analysis time, so the
+    /// AST the oracles rewrite is not self-describing: an Identifier parameter can resolve to a
+    /// SELECT-list alias (e.g. one introduced by `* REPLACE (expr AS b)`), which the structural gates
+    /// cannot see and which a rewrite that drops the projection silently redefines. Skip such queries.
+    if (ast->as<ASTQueryParameter>())
+        return true;
 
     if (const auto * table_expr = ast->as<ASTTableExpression>())
     {
