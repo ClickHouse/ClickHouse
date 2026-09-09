@@ -11,6 +11,11 @@ class QueryPipeline;
 class QueryPlanProfiler
 {
 public:
+    explicit QueryPlanProfiler(size_t max_description_length_)
+        : max_description_length(max_description_length_)
+    {
+    }
+
     /// Whether this query should have its plan captured. Everything the capture costs -- keeping
     /// the plan, per-processor timings, and the join analyze mode -- is decided here, so the
     /// condition has to describe the queries that can actually end up with a `query_plan` value,
@@ -50,7 +55,7 @@ public:
         return *plan_json;
     }
 
-    void setMaxDescriptionLength(size_t max_length) { max_description_length = max_length; }
+    size_t getMaxDescriptionLength() const { return max_description_length; }
 
     /// Drops the captured plan. A QueryPlan owns a QueryPlanResourceHolder -- storages, table
     /// locks, contexts -- so holding one after the query has finished keeps a table from being
@@ -74,7 +79,7 @@ private:
     bool canRender() const { return query_plan && query_plan->isInitialized() && pretty_names.has_value(); }
 
     bool plan_captured = false;
-    size_t max_description_length {0};
+    const size_t max_description_length;
     std::optional<QueryPlan> query_plan;
     std::optional<PrettyNamesPerPlan> pretty_names;
     std::optional<String> plan_json;

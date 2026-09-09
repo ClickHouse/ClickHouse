@@ -3176,11 +3176,6 @@ static BlockIO executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                     }
 
-                    /// Non-null only when the check above enabled it, so the condition is not
-                    /// repeated here.
-                    if (auto plan_profiler = context->getPlanProfiler())
-                        interpreter->setPlanProfiler(plan_profiler);
-
                     res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.

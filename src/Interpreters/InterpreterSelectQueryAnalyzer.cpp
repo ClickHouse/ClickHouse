@@ -64,7 +64,6 @@ extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
-extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 namespace
@@ -407,7 +406,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
         result.pipeline.setQuota(context->getQuota());
     result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
-    if (plan_profiler)
+    if (auto plan_profiler = context->getPlanProfiler())
         plan_profiler->instrumentPipeline(result.pipeline);
 
     return result;
@@ -437,16 +436,14 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
+    auto plan_profiler = context->getPlanProfiler();
+
     /// Step descriptions produced by optimizations (e.g. merged expressions) are passed through
     /// IQueryPlanStep::setStepDescription(description, limit), which truncates to `limit` — and the
     /// default 0 discards them entirely. The strings are formatted regardless, so raising the limit
     /// only stops the result being thrown away.
     if (plan_profiler)
-    {
-        const size_t limit = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
-        optimization_settings.max_step_description_length = limit;
-        plan_profiler->setMaxDescriptionLength(limit);
-    }
+        optimization_settings.max_step_description_length = plan_profiler->getMaxDescriptionLength();
 
     /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
     /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds

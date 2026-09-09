@@ -360,6 +360,7 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 page_cache_block_size;
@@ -9050,7 +9051,8 @@ const ServerSettings & Context::getServerSettings() const
 
 void Context::enablePlanProfiler()
 {
-    query_plan_profiler = std::make_shared<QueryPlanProfiler>();
+    query_plan_profiler = std::make_shared<QueryPlanProfiler>(
+        getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
 QueryPlanProfilerPtr Context::getPlanProfiler() const
