@@ -2052,9 +2052,38 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                     /// No table has been replicated yet (the database was created but the initial
                     /// synchronization did not create a single nested table before the restart), so there is no
                     /// on-disk set to treat as authoritative. Fall back to the publication's tables to bootstrap
-                    /// the initial synchronization.
+                    /// the initial synchronization - but only to the members that belong to the schemas this
+                    /// engine is configured to replicate. The publication survives the restart while nothing
+                    /// pins the replicated set on the ClickHouse side, so an operator (or another deployment)
+                    /// can extend it while the server is down; without this filter a `foo.t` added to the
+                    /// publication of a `materialized_postgresql_schema_list = 'a, b'` database would be
+                    /// snapshotted and streamed, and, because materialized_storages would then be seeded from
+                    /// the publication, the attach-time membership checks above would accept the widened set on
+                    /// every later restart. The engine definition, not the PostgreSQL catalog, decides which
+                    /// schemas this database replicates, so out-of-scope members are dropped here.
                     pqxx::work tx(connection.getRef());
-                    result_tables = fetchTablesFromPublication(tx);
+                    String out_of_scope;
+                    for (const auto & [schema, table] : fetchPublishedTablePairs(tx))
+                    {
+                        if (!replicated_schemas.contains(schema))
+                        {
+                            if (!out_of_scope.empty())
+                                out_of_scope += ", ";
+                            out_of_scope += schema + '.' + table;
+                            continue;
+                        }
+                        result_tables.insert(schema_as_a_part_of_table_name ? schema + '.' + table : table);
+                    }
+
+                    if (!out_of_scope.empty())
+                        LOG_WARNING(
+                            log,
+                            "The existing publication {} publishes the following table(s) from schema(s) this "
+                            "database is not configured to replicate: {}. They are not replicated: the engine "
+                            "definition decides the replicated schemas, and the publication was extended after "
+                            "this database was created. Remove them from the publication on the PostgreSQL side, "
+                            "or recreate this database with the wider schema set.",
+                            doubleQuoteString(publication_name), out_of_scope);
                 }
             }
             /// Check tables list from publication is the same as expected tables list.

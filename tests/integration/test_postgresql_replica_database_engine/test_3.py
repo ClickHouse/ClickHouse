@@ -5614,6 +5614,133 @@ def test_detach_permanently_rejects_last_replicated_table(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_bootstrap_from_publication_ignores_out_of_scope_schemas(started_cluster):
+    # Regression for a review finding on https://github.com/ClickHouse/ClickHouse/pull/110493: when a
+    # whole-schema database restarts without a single nested table on disk, fetchRequiredTables() falls
+    # back to the surviving publication to bootstrap the initial synchronization. That fallback used to
+    # trust the publication as the desired replicated set, which is wrong for a
+    # `materialized_postgresql_schema_list` database: the publication outlives the restart while nothing
+    # pins the replicated set on the ClickHouse side, so a table from a schema outside the configured list
+    # that was added to the publication while the server was down became a table to snapshot and stream.
+    # Worse, materialized_storages was then seeded from the publication, so the attach-time membership
+    # checks accepted the widened set on every later restart too. The engine definition, not the
+    # PostgreSQL catalog, decides which schemas the database replicates.
+    #
+    # The never-synchronized state is produced the same way as in the two tests above: the tables of the
+    # configured schemas have no primary key and no replica identity index, so the first synchronization
+    # creates the publication but cannot materialize anything.
+    schemas = ["scope_schema_a", "scope_schema_b"]
+    foreign_schema = "scope_schema_foreign"
+    table = "scope_table"
+    foreign_table = "scope_foreign_table"
+    mat_db = "scope_schema_list_database"
+    pg_dbs = ["scope_src_a", "scope_src_b"]
+
+    cursor = pg_manager.get_db_cursor()
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        create_postgres_schema(cursor, schema_name)
+        pg_manager.create_clickhouse_postgres_db(
+            database_name=pg_db,
+            schema_name=schema_name,
+            postgres_database="postgres_database",
+        )
+        cursor.execute(
+            f'CREATE TABLE "{schema_name}"."{table}" (key Integer NOT NULL, value Integer)'
+        )
+        cursor.execute(
+            f'INSERT INTO "{schema_name}"."{table}" SELECT i, i FROM generate_series(0, 29) AS i'
+        )
+    create_postgres_schema(cursor, foreign_schema)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[
+            f"materialized_postgresql_schema_list = '{', '.join(schemas)}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    # The publication exists, but no table could be materialized: this is the never-synchronized state
+    # whose restart takes the publication-bootstrap path.
+    wait_for_replication_slot(cursor)
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+    for schema_name in schemas:
+        assert 0 == int(
+            instance.query(f"EXISTS TABLE `{mat_db}`.`{schema_name}.{table}`")
+        )
+
+    # While the server is down: the configured tables get the primary key they were missing (so the
+    # restart can finally snapshot them), and a table from a schema that is NOT in
+    # `materialized_postgresql_schema_list` is created and added to the surviving publication.
+    instance.stop_clickhouse()
+    for schema_name in schemas:
+        cursor.execute(f'ALTER TABLE "{schema_name}"."{table}" ADD PRIMARY KEY (key)')
+    create_postgres_table_with_schema(cursor, foreign_schema, foreign_table)
+    cursor.execute(
+        f'INSERT INTO "{foreign_schema}"."{foreign_table}" SELECT i, i FROM generate_series(0, 29) AS i'
+    )
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" ADD TABLE "{foreign_schema}"."{foreign_table}"'
+    )
+    instance.start_clickhouse()
+
+    # The bootstrap materializes exactly the publication members that belong to the configured schemas.
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+        assert 30 == int(
+            instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{table}`")
+        )
+    assert 0 == int(
+        instance.query(
+            f"EXISTS TABLE `{mat_db}`.`{foreign_schema}.{foreign_table}`"
+        )
+    )
+
+    # The out-of-scope table must stay out for good: it is not picked up by ongoing streaming, and it is
+    # not accepted on the next restart either - which is the restart that used to inherit the widened set
+    # through materialized_storages.
+    cursor.execute(
+        f'INSERT INTO "{foreign_schema}"."{foreign_table}" SELECT i, i FROM generate_series(30, 39) AS i'
+    )
+    instance.restart_clickhouse()
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        cursor.execute(
+            f'INSERT INTO "{schema_name}"."{table}" SELECT i, i FROM generate_series(30, 49) AS i'
+        )
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+        assert 50 == int(
+            instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{table}`")
+        )
+    assert 0 == int(
+        instance.query(
+            f"EXISTS TABLE `{mat_db}`.`{foreign_schema}.{foreign_table}`"
+        )
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
