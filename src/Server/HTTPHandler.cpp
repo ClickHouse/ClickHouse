@@ -1236,9 +1236,9 @@ void HTTPHandler::processQuery(
                 /// The buffered output is discarded on an exception, so the framing format is recreated
                 /// below from `framing_name` alone. Carry over the log, profile-events and profile-traces queues that
                 /// were attached during parsing and planning (the `framing` object goes out of scope
-                /// before this writer runs, so the queues are captured by value here) - otherwise the
-                /// framed exception response would drop the `log` / `profile_events` / `profile_traces` packets that the
-                /// streaming path and the documentation promise.
+                /// before this writer runs, so the queues are captured by value here). Trace draining
+                /// is deferred for fully buffered responses; logs and profile events retain only the
+                /// entries still pending in their queues.
                 std::shared_ptr<InternalTextLogsQueue> framing_logs_queue = framing ? framing->getLogsQueue() : nullptr;
                 InternalProfileEventsQueuePtr framing_profile_events_queue = framing ? framing->getProfileEventsQueue() : nullptr;
                 String framing_profile_events_host_name = framing ? framing->getProfileEventsHostName() : "";
@@ -1262,8 +1262,8 @@ void HTTPHandler::processQuery(
                     if (!framing_name.empty())
                     {
                         /// All the output buffered so far is discarded, so the framing format is created
-                        /// anew, and the response consists of the auxiliary packets (logs, profile events, profile traces)
-                        /// accumulated so far followed by a single exception packet.
+                        /// anew, and the response drains the retained trace queue and pending logs/profile events,
+                        /// followed by a single exception packet.
                         auto framing_for_exception = createFramingFormat(
                             framing_name, buf, format_settings ? *format_settings : getFormatSettings(context_), {.is_http = true});
                         if (framing_logs_queue)
@@ -1368,6 +1368,7 @@ void HTTPHandler::processQuery(
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+    query_flags.http_response_fully_buffered = wait_end_of_query;
 
     executeQuery(
         std::move(in),

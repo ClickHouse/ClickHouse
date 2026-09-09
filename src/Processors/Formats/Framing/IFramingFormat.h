@@ -121,7 +121,8 @@ public:
     void setProfileEventsQueue(const InternalProfileEventsQueuePtr & queue, const String & host_name_, UInt64 period_us);
 
     /// Stack trace samples of the query will be written as packets, at most once in `period_us` microseconds.
-    void setProfileTracesQueue(const InternalProfileTracesQueuePtr & queue, UInt64 period_us);
+    /// Fully buffered responses retain samples in the bounded queue until finalization.
+    void setProfileTracesQueue(const InternalProfileTracesQueuePtr & queue, UInt64 period_us, bool defer_until_finalize = false);
 
     /// Accessors for the auxiliary queue wiring, so it can be carried over when a
     /// framing format is recreated for the buffered exception path (see `HTTPHandler`), keeping the
@@ -201,6 +202,7 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot profile_events_snapshots;
     InternalProfileTracesQueuePtr profile_traces_queue;
     UInt64 profile_traces_period_us = 0;
+    bool defer_profile_traces_until_finalize = false;
     Stopwatch profile_traces_watch;
 
     String exception_message;
