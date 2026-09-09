@@ -252,4 +252,14 @@ DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type)
 {
     return removeNullable(removeLowCardinality(type));
 };
+
+const IDataType & removeLowCardinalityAndNullable(const IDataType & type)
+{
+    const IDataType * result = &type;
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result))
+        result = low_cardinality_type->getDictionaryType().get();
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(result))
+        result = nullable_type->getNestedType().get();
+    return *result;
+}
 }

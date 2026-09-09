@@ -4353,18 +4353,6 @@ struct ToNumberMonotonicity
     }
 };
 
-/// Monotonicity of a value-wise conversion does not depend on the `Nullable` or `LowCardinality`
-/// wrapper: `NULL` maps to `NULL` and keeps its place in the ordering.
-inline const IDataType & unwrapTypeForMonotonicity(const IDataType & type)
-{
-    const IDataType * result = &type;
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result))
-        result = low_cardinality_type->getDictionaryType().get();
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(result))
-        result = nullable_type->getNestedType().get();
-    return *result;
-}
-
 template <typename T>
 struct ToDateMonotonicity
 {
@@ -4379,7 +4367,7 @@ struct ToDateMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field & left, const Field & right)
     {
-        const IDataType & type = unwrapTypeForMonotonicity(type_with_wrappers);
+        const IDataType & type = removeLowCardinalityAndNullable(type_with_wrappers);
         auto which = WhichDataType(type);
         if (which.isDateOrDate32() || which.isTime() || which.isTime64() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8()
             || which.isUInt16())
@@ -4419,7 +4407,7 @@ struct ToDateTimeMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field &, const Field &)
     {
-        const IDataType & type = unwrapTypeForMonotonicity(type_with_wrappers);
+        const IDataType & type = removeLowCardinalityAndNullable(type_with_wrappers);
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);
