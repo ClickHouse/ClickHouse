@@ -821,9 +821,9 @@ void AlterCommand::apply(
                         column.settings.removeSetting(setting);
                 }
 
-                /// User specified default expression or changed
-                /// datatype. We have to replace default.
-                if (default_expression || data_type)
+                /// Restating the type is not a default decision, so the column keeps the default it
+                /// currently has. Removals are handled by the `to_remove` branches above.
+                if (default_expression)
                 {
                     column.default_desc.kind = default_kind;
                     column.default_desc.expression = default_expression;
@@ -2008,13 +2008,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                         }
                     }
                 }
-
-                if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
-                {
-                    command.default_kind = column_from_table.default_desc.kind;
-                    command.default_expression = column_from_table.default_desc.expression;
-                }
-
             }
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
@@ -2084,6 +2077,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
 
+        /// A `CHECK` constraint whose expression changes the number of rows cannot be checked at insert
+        /// time - see `ConstraintsDescription::assertConstraintPreservesRowCount`. `CREATE TABLE` enforces
+        /// the same invariant in `InterpreterCreateQuery::getTableProperties`, so an alter must not be a
+        /// way around it.
+        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            ConstraintsDescription::assertConstraintPreservesRowCount(command.constraint_decl);
+
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
@@ -2152,7 +2152,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                /// `default_kind` is what the parser set: `validate` runs before `prepare`, which back-fills it from the table.
+                /// `default_kind` holds its enumerator's zero value unless `default_expression` is set.
                 const bool becomes_physical = command.default_expression
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
