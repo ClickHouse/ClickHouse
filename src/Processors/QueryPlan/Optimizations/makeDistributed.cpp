@@ -31,6 +31,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <fmt/ranges.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
@@ -55,41 +56,40 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported);
+bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
+const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root);
 
-/// Collects every step of the plan that cannot be shipped to a worker as part of a serialized
-/// fragment.
-void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported)
+/// True if the step cannot be shipped to a worker as part of a serialized fragment.
+/// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this server
+/// (a shard gets it on the plan of a secondary query) and must run in the process that owns that
+/// connection: its callback holds the connection's protocol version and codec. A `ReadFromMergeTree`
+/// is serialized specially as a bucketed worker read, and a logical exchange becomes a stage
+/// boundary and is never serialized itself, so the generic `isSerializable` answer does not apply
+/// to those two.
+bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
-    /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this
-    /// server (a shard gets it on the plan of a secondary query). It must run in the process
-    /// that owns that connection: its callback holds the connection's protocol version and
-    /// codec. A distributed plan executes every stage as a worker task, where the step would
-    /// run in the wrong process; a plan that carries it runs locally instead.
-    if (typeid_cast<const BlocksMarshallingStep *>(node.step.get()))
+    if (typeid_cast<const BlocksMarshallingStep *>(&step))
+        return true;
+    if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
+        return false;
+    return !step.isSerializable();
+}
+
+/// The first step of an optimized plan that cannot execute remotely, or nullptr. Nothing is
+/// tolerated here: the placeholders the decision skips have been materialized away by now.
+const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
     {
-        unsupported.push_back(node.step.get());
-        return;
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (isStepUnsupportedForRemoteExecution(*node->step))
+            return node->step.get();
+        for (const auto * child : node->children)
+            stack.push_back(child);
     }
-
-    if (node.children.empty())
-    {
-        /// A `ReadFromMergeTree` leaf is serialized specially (a bucketed worker read), so the
-        /// generic `isSerializable` answer does not apply to it.
-        if (!typeid_cast<const ReadFromMergeTree *>(node.step.get()) && !node.step->isSerializable())
-            unsupported.push_back(node.step.get());
-        return;
-    }
-
-    /// Logical exchanges become stage boundaries at the split and are never serialized themselves.
-    if (!dynamic_cast<const LogicalExchangeStep *>(node.step.get()) && !node.step->isSerializable())
-        unsupported.push_back(node.step.get());
-
-    /// Always keep descending: an offending inner step (e.g. a CommonSubplanStep)
-    /// can still have non-shippable steps below it, and the caller-side filter relies
-    /// on those being reported as their own entries.
-    for (const auto * child : node.children)
-        findStepsUnsupportedForRemoteExecution(*child, unsupported);
+    return nullptr;
 }
 
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -151,11 +151,12 @@ String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 std::optional<PreformattedMessage> getReasonAggregationCannotBeDistributed(QueryPlan::Node & node, bool enable_cascades_optimizer);
 std::optional<PreformattedMessage> getReasonCascadesCannotDistribute(const IQueryPlanStep & step);
-std::optional<PreformattedMessage>
-traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 std::optional<PreformattedMessage> getReasonStepCannotBeDistributed(const IQueryPlanStep & step);
 std::optional<PreformattedMessage>
 getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+std::optional<PreformattedMessage>
+getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings);
+std::optional<PreformattedMessage> getReasonChildPlanSetsCannotBeShipped(QueryPlan::Node & root);
 
 
 /// Returns the reason a `ReadFromMergeTree` cannot ship as a distributed read, or nullopt.
@@ -187,7 +188,7 @@ std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFr
 {
     /// The old interpreter sets the read order before the plan is optimized (query_plan_read_in_order = 0)
     /// and builds the FinishSorting above it; see the FinishSorting check in
-    /// traversePlanForUnsupportedDistributedStep for why such a plan cannot be distributed. A read this
+    /// getReasonNodeCannotBeDistributed for why such a plan cannot be distributed. A read this
     /// optimizer asks for in order is requested later and has no order set here yet.
     if (read->getQueryInfo().input_order_info)
         return std::make_optional(PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read"));
@@ -293,73 +294,80 @@ std::optional<PreformattedMessage> getReasonCascadesCannotDistribute(const IQuer
     return std::nullopt;
 }
 
-
+/// Returns a reason why the plan can't be executed in distributed way if such reason exists, or std::nullopt otherwise
 std::optional<PreformattedMessage>
-traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
+getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (!optimization_settings.make_distributed_plan)
-    {
+    const auto & step = *node.step;
+
+    /// `CommonSubplanStep` and `CommonSubplanReferenceStep` are tolerated: `make_distributed_plan`
+    /// the second optimization pass is guaranteed to
+    /// materialize them away (`materializeQueryPlanReferences` / `optimizeUnusedCommonSubplans`)
+    if (typeid_cast<const CommonSubplanStep *>(&step) || typeid_cast<const CommonSubplanReferenceStep *>(&step))
         return std::nullopt;
+
+    if (isStepUnsupportedForRemoteExecution(step))
+        return PreformattedMessage::create(
+            "make_distributed_plan cannot distribute this query: it contains the step {} which could not execute remotely",
+            step.getName());
+
+    /// Sets backed by an external table cannot be shipped with the worker tasks.
+    if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(&step))
+        if (auto reason = getReasonSetsCannotBeShipped(*delayed); reason.has_value())
+            return reason;
+
+    /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
+    /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
+    /// `_part_starting_offset`.
+    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
+        if (auto reason = getReasonReadCannotBeDistributed(read); reason.has_value())
+            return reason;
+
+    /// The old interpreter plans read-in-order before the query plan is optimized (with
+    /// query_plan_read_in_order = 0), building a FinishSorting this pass never revisits:
+    /// optimizeReadInOrder only converts a Type::Full sorting, so the exchange-safety check in
+    /// findReadingStep cannot see it, and the scatter placed under it may survive and feed it rows
+    /// that are no longer sorted. Reject such a plan instead of returning rows in the wrong order.
+    if (const auto * sorting = typeid_cast<const SortingStep *>(&step);
+        sorting && (sorting->getType() == SortingStep::Type::FinishSorting || sorting->getType() == SortingStep::Type::PartitionedFinishSorting))
+        return PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read");
+
+    if (auto reason = getReasonStepCannotBeDistributed(step); reason.has_value())
+        return reason;
+
+    if (auto reason = getReasonAggregationCannotBeDistributed(node, optimization_settings.enable_cascades_optimizer); reason.has_value())
+        return reason;
+
+    if (optimization_settings.enable_cascades_optimizer)
+        if (auto reason = getReasonCascadesCannotDistribute(step); reason.has_value())
+            return reason;
+
+    return std::nullopt;
+}
+
+/// Sets inside a step-owned child plan (e.g. the per-table plans of `ReadFromMerge`) are detached
+/// and shipped by value like the main tree's (`extractSetsForDistributedPlan`), so they must pass
+/// the same check. Nothing else in a child plan is checked here: it is serialized, or not, as part
+/// of its owner, which the main walk judges by `isSerializable`.
+std::optional<PreformattedMessage> getReasonChildPlanSetsCannotBeShipped(QueryPlan::Node & root)
+{
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !node->step)
+            continue;
+        if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
+            if (auto reason = getReasonSetsCannotBeShipped(*delayed); reason.has_value())
+                return reason;
+        for (auto * child : node->children)
+            stack.push_back(child);
+        for (auto * child_plan : node->step->getChildPlans())
+            if (child_plan && child_plan->getRootNode())
+                stack.push_back(child_plan->getRootNode());
     }
-    std::optional<PreformattedMessage> unsupported_step;
-    Stack stack{};
-    traverseQueryPlan(
-        stack,
-        root,
-        [&](auto &) { },
-        [&](QueryPlan::Node & frame_node)
-        {
-            if (unsupported_step)
-            {
-                return;
-            }
-
-            /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
-            /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
-            /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
-            if (const auto * step = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get()); step != nullptr)
-            {
-                if (auto reason = getReasonReadCannotBeDistributed(step); reason.has_value())
-                {
-                    unsupported_step = std::move(reason);
-                    return;
-                }
-            }
-
-            /// The old interpreter plans read-in-order before the query plan is optimized (with
-            /// query_plan_read_in_order = 0), building a FinishSorting this pass never revisits:
-            /// optimizeReadInOrder only converts a Type::Full sorting, so the exchange-safety check in
-            /// findReadingStep cannot see it, and the scatter placed under it may survive and feed it rows
-            /// that are no longer sorted. Reject such a plan instead of returning rows in the wrong order.
-            if (const auto * sorting = typeid_cast<const SortingStep *>(frame_node.step.get());
-                sorting && (sorting->getType() == SortingStep::Type::FinishSorting || sorting->getType() == SortingStep::Type::PartitionedFinishSorting))
-            {
-                unsupported_step = PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read");
-                return;
-            }
-
-            if (auto reason = getReasonStepCannotBeDistributed(*frame_node.step); reason.has_value())
-            {
-                unsupported_step = std::move(reason);
-                return;
-            }
-
-            if (auto reason = getReasonAggregationCannotBeDistributed(frame_node, optimization_settings.enable_cascades_optimizer);
-                reason.has_value())
-            {
-                unsupported_step = std::move(reason);
-                return;
-            }
-
-            if (optimization_settings.enable_cascades_optimizer && frame_node.step)
-            {
-                if (auto reason = getReasonCascadesCannotDistribute(*frame_node.step.get()); reason.has_value())
-                {
-                    unsupported_step = std::move(reason);
-                }
-            }
-        });
-    return unsupported_step;
+    return std::nullopt;
 }
 
 
@@ -374,41 +382,32 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         return PreformattedMessage::create(
             "make_distributed_plan cannot use a forced projection: a distributed read is bucketed and cannot be served from a projection");
 
-    /// Sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`) cannot be shipped with the
-    /// worker tasks.
-    if (auto res = validateSetsForDistributedPlan(root); res.has_value())
+    /// One walk over the main tree, stopping at the first reason. The order of the checks inside
+    /// `getReasonNodeCannotBeDistributed` decides which reason a plan with several defects reports.
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
     {
-        return res;
+        auto * node = stack.back();
+        stack.pop_back();
+
+        /// Before visiting the node and verifying if it can run in distributed way, we need to fetch child plan.
+        /// `ReadFromMerge` builds its per-table plans lazily on getChildPlan() call, copying the query context
+        /// while it still carries the caller's `make_distributed_plan=1`. Hence, each child
+        /// can run make optimization decision for itself whether or not to run the subplan in distributed way
+        /// (i.e. 04367_distributed_plan_merge_scatter_multishard).
+        const auto child_plans = node->step->getChildPlans();
+
+        if (auto reason = getReasonNodeCannotBeDistributed(*node, optimization_settings); reason.has_value())
+            return reason;
+
+        for (auto * child_plan : child_plans)
+            if (child_plan && child_plan->getRootNode())
+                if (auto reason = getReasonChildPlanSetsCannotBeShipped(*child_plan->getRootNode()); reason.has_value())
+                    return reason;
+
+        for (auto * child : node->children)
+            stack.push_back(child);
     }
-
-    std::vector<const IQueryPlanStep *> unsupported_steps;
-    findStepsUnsupportedForRemoteExecution(root, unsupported_steps);
-
-    /// The CommonSubplanStep and CommonSubplanReferenceStep are allowed in this case:
-    /// `make_distributed_plan` force-disables the in-memory buffer, so the second optimization
-    /// pass is guaranteed to materialize them away (`materializeQueryPlanReferences` /
-    /// `optimizeUnusedCommonSubplans`) before the fragment cut.
-    const auto is_tolerated_placeholder = [](const IQueryPlanStep * step)
-    {
-        return typeid_cast<const CommonSubplanStep *>(step) != nullptr
-            || typeid_cast<const CommonSubplanReferenceStep *>(step) != nullptr;
-    };
-
-    const auto first_unallowed = std::ranges::find_if_not(unsupported_steps, is_tolerated_placeholder);
-
-    if (first_unallowed != unsupported_steps.end())
-    {
-        return PreformattedMessage::create(
-            "make_distributed_plan cannot distribute this query: "
-            "it contains the step {} which could not execute remotely",
-            (*first_unallowed)->getName());
-    }
-
-    if (auto res = QueryPlanOptimizations::traversePlanForUnsupportedDistributedStep(root, optimization_settings); res.has_value())
-    {
-        return res;
-    }
-
     return std::nullopt;
 }
 

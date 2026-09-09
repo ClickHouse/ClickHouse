@@ -821,7 +821,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 namespace QueryPlanOptimizations
 {
 
-void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported);
+const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 DistributedQueryPlan
 makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
@@ -932,14 +932,10 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
     /// A non-serializable step found here
     /// means either a caller skipped the call to `applyDistributedPlanFallbackToLocal`  or an optimization pass created the step after
     /// the plan was accepted. Neither may silently fall back, so abort the plan.
-    std::vector<const IQueryPlanStep *> unsupported_steps{};
-    QueryPlanOptimizations::findStepsUnsupportedForRemoteExecution(*root, unsupported_steps);
-    if (!unsupported_steps.empty())
-    {
+    if (const auto * step = QueryPlanOptimizations::findStepUnsupportedForRemoteExecution(*root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.",
-            unsupported_steps.front()->getName());
-    }
+            step->getName());
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
     /// fragments never carry their placeholder steps; the sets are added back below.

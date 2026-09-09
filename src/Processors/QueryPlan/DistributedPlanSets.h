@@ -13,15 +13,17 @@ namespace DB
 
 class FutureSetFromSubquery;
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+class DelayedCreatingSetsStep;
 
 /// Handling of `IN`-subquery sets for a distributed query plan (`make_distributed_plan`).
 /// The sets are built once on the initiator and their values ship with the worker tasks;
 /// see `QueryPlan::convertToDistributed` for how these functions are used around the cut.
 
-/// Rejects sets that worker tasks cannot receive (currently: sets backed by a `GLOBAL IN` /
-/// `GLOBAL JOIN` external table; a task has no way to carry a temporary table). Runs before
-/// the optimization passes, so no such set is built for a query that is rejected.
-std::optional<PreformattedMessage> validateSetsForDistributedPlan(QueryPlan::Node & root);
+/// The reason the sets of this step cannot be shipped with the worker tasks, or nullopt: a set
+/// backed by an external table (`GLOBAL IN` / `GLOBAL JOIN` next to a classic remote read) lives in
+/// the initiator's session as a temporary table, and a task carries set values, not tables. Called
+/// from the pre-optimization decision, so no such set is built for a query that is rejected.
+std::optional<PreformattedMessage> getReasonSetsCannotBeShipped(const DelayedCreatingSetsStep & step);
 
 /// Detaches the IN-subquery sets from the delayed set steps and removes those steps from the
 /// plan, so the fragments never carry them; the caller re-adds the sets to the initiator plan.
