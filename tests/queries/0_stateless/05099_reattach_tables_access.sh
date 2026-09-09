@@ -239,12 +239,14 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_dst"
 # `CREATE TABLE ts ENGINE = TimeSeries SAMPLES missing_samples AS src` fails with `UNKNOWN_TABLE`
 # and must not detach `src` on the way. Because an existing target can still fail the type check
 # there, any statement carrying such a target conservatively never triggers the `DETACH`/`ATTACH`.
+# The source is itself a `TimeSeries` table: the columns of a `TimeSeries` table are always generated,
+# so `getASCreateQuery` rejects an `AS` source that is not one before it ever gets to the target.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ts_src"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ts_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} --enable_time_series_table=1 -q "CREATE TABLE t_reattach_ts_src ENGINE = TimeSeries"
 
 REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
     --reattach_tables_before_query_execution=1 \
-    --allow_experimental_time_series_table=1 \
+    --enable_time_series_table=1 \
     --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SAMPLES t_reattach_ts_missing_samples AS t_reattach_ts_src" 2>&1)
 REATTACH_STATUS=$?
 if [ "$REATTACH_STATUS" -eq 0 ]; then
@@ -264,7 +266,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ts_samples (id Tuple(UInt64, UU
 
 REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
     --reattach_tables_before_query_execution=1 \
-    --allow_experimental_time_series_table=1 \
+    --enable_time_series_table=1 \
     --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SAMPLES t_reattach_ts_samples" 2>&1)
 REATTACH_STATUS=$?
 if [ "$REATTACH_STATUS" -ne 0 ]; then
