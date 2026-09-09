@@ -258,8 +258,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
     convert_distinct_to_aggregation = from[Setting::query_plan_enable_optimizations]
-        && from[Setting::query_plan_convert_distinct_to_aggregation]
-        && !from[Setting::make_distributed_plan] && !from[Setting::serialize_query_plan];
+        && from[Setting::query_plan_convert_distinct_to_aggregation];
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     distinct_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_distinct_partitions_independently];
