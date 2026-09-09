@@ -28,6 +28,12 @@ Verifies that the PR can be merged to master.
 If not, it will fail with a message `Cannot fetch mergecommit`.
 To fix this check, resolve the conflict as described in the [GitHub documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/resolving-a-merge-conflict-on-github), or merge the `master` branch to your pull request branch using git.
 
+## Review threads check {#review-threads-check}
+
+When CI starts while your pull request has unresolved review threads, it runs only a limited pipeline (builds and the preliminary checks such as the fast test and the style check), and the `Review Threads` and `Mergeable Check` statuses stay red: the code is expected to change again while the review comments are being addressed, so running the full test suite would waste resources.
+
+If review threads change after a CI run has completed, re-run CI to refresh the statuses and, when appropriate, run the full suite. If all review threads are resolved while CI is still running, CI re-evaluates the gate and runs the full test suite. If you believe the unresolved threads should not block testing and merging, a repository maintainer can add the `ignore-unresolved-threads` label to the pull request.
+
 ## Docs check (Mintlify) {#docs-check}
 
 Validates the Mintlify documentation, internal links and anchors, redirects, snippet imports, and changelogs. External-link failures are reported as warnings.
