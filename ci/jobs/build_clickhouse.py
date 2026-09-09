@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import shutil
 
@@ -109,6 +110,33 @@ def run_shell(name, command, **kwargs):
     print(f"\n<<<< {name}\n")
 
 
+def warn_on_low_sccache_hit_rate(info):
+    """Post a non-blocking workflow warning when the sccache hit rate is below 40% (issue #46502)."""
+    stats = Shell.get_output("sccache --show-stats --stats-format json")
+    if not stats:
+        return
+    # Best-effort observability: an unexpected stats blob (unparseable, or a
+    # future sccache renaming these fields) must never fail an already-green build.
+    try:
+        counts = json.loads(stats)["stats"]
+        hits = sum(counts["cache_hits"]["counts"].values())
+        misses = sum(counts["cache_misses"]["counts"].values())
+    except (json.JSONDecodeError, KeyError, AttributeError, TypeError) as e:
+        print(f"WARNING: could not parse sccache stats, skipping hit-rate check: {e}")
+        return
+    total = hits + misses
+    if total == 0:
+        info.add_workflow_warning(
+            "sccache recorded no compilations - the compiler cache may not be in use"
+        )
+        return
+    hit_rate = 100 * hits / total
+    if hit_rate < 40:
+        info.add_workflow_warning(
+            f"Low sccache hit rate {hit_rate:.1f}% ({hits}/{total} compilations cached) - the compiler cache may be degraded or stale"
+        )
+
+
 def setup_build_caches_env(info):
     """Configure compiler/clang-tidy cache environment for a build.
 
@@ -120,7 +148,7 @@ def setup_build_caches_env(info):
     os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
     os.environ["SCCACHE_CACHE_SIZE"] = "40G"
     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
@@ -142,7 +170,7 @@ def setup_build_caches_env(info):
         # anyway, will be terminated once the build is finished
         os.environ["CTCACHE_LOG_LEVEL"] = "debug"
         os.environ["CTCACHE_DIR"] = f"{temp_dir}/ccache/clang-tidy-cache"
-        os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_PATH
+        os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
         os.environ["CTCACHE_S3_FOLDER"] = "ccache/clang-tidy-cache"
         # PR builds run on untrusted runners without S3 write access; only
         # master/release builds (pr_number == 0) are allowed to write entries.
@@ -462,6 +490,9 @@ def main():
                 results.append(retry_cmake)
 
         run_shell("sccache stats", "sccache --show-stats")
+        # wasm64 disables the cache (emcc is uncacheable), so sccache sees zero compilations on a healthy build
+        if not cache_warmup and "-DCOMPILER_CACHE=disabled" not in cmake_cmd:
+            warn_on_low_sccache_hit_rate(info)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"

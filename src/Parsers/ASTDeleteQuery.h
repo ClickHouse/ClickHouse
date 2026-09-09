@@ -41,6 +41,7 @@ protected:
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
         f(nullptr, &partition);
+        f(nullptr, &partitions);
         f(nullptr, &predicate);
     }
 };
