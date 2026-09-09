@@ -77,6 +77,7 @@
 #endif
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -458,7 +459,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
-        elem.formatted_query = query_ast->formatWithSecretsOneLine();
+        elem.formatted_query = query_ast->formatForLogging();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
@@ -743,7 +744,9 @@ static void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+                String value = convertFieldToString(change.value);
+                CoreSettings::maskSettingValue(change.name, change.value, value);
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), value);
             }
         }
         query_span->finish(time);
@@ -901,7 +904,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = ast->formatWithSecretsOneLine();
+            elem.formatted_query = ast->formatForLogging();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
