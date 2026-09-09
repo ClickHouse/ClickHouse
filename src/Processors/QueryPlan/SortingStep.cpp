@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -187,7 +188,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
-    temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
+    temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -248,14 +249,14 @@ SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    size_t max_block_size_,
+    const Settings & settings_,
     UInt64 limit_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
-    , sort_settings(max_block_size_)
+    , sort_settings(settings_)
 {
 }
 
@@ -333,8 +334,23 @@ static void checkScatterConnectionLimit(size_t threads, size_t streams)
             threads, streams, connection_count_limit);
 }
 
+Names SortingStep::getPartitionByColumnNames() const
+{
+    Names names;
+    names.reserve(partition_by_description.size());
+    for (const auto & column : partition_by_description)
+        names.push_back(column.column_name);
+    return names;
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
+    /// The input streams already carry disjoint sets of the partition key values (each stream holds whole
+    /// partitions), so reshuffling rows across streams is redundant: sorting every stream independently
+    /// already keeps each partition contiguous and sorted.
+    if (skip_scatter_by_partition)
+        return;
+
     /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
     /// both sides of the join scatter into the same number of shards even if they read a different number
     /// of streams; otherwise fall back to the pipeline's thread count (window-frame partitioned sort).
@@ -399,6 +415,12 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
         /// Disable buffering when `read_in_order_use_virtual_row_per_block` is enabled, these optimizations are incompatible.
         /// Buffering would need to flush virtual rows, otherwise virtual rows lose their purpose while reading from the stream.
         /// But flushing a virtual row between every block effectively turns buffering into a no-op.
+        ///
+        /// Buffering combined with the initial virtual rows is fine: after `BufferChunksTransform`
+        /// delivers a virtual row it does not read ahead until the merge actually demands data
+        /// from that source, so buffering does not defeat the deferral of the sources behind
+        /// virtual rows (and the prefetch window below keeps its meaning). Once the merge
+        /// releases a source, buffering works for it as usual.
         bool use_virtual_row_per_block = apply_virtual_row_conversions && sort_settings.read_in_order_use_virtual_row_per_block;
         if (use_buffering && sort_settings.read_in_order_use_buffering && !use_virtual_row_per_block)
         {
@@ -421,7 +443,11 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*out_row_sources_buf=*/ nullptr,
             /*filter_column_name=*/ std::nullopt,
             /*use_average_block_sizes=*/ false,
-            apply_virtual_row_conversions);
+            apply_virtual_row_conversions,
+            /// Allow this many sources deferred behind virtual rows to read ahead in
+            /// parallel, so that the merge does not serialize reads that previously
+            /// ran concurrently. Bounds the number of concurrently open readers.
+            /*virtual_row_prefetch_window=*/ pipeline.getNumThreads());
 
         pipeline.addTransform(std::move(transform));
     }
@@ -655,6 +681,9 @@ void SortingStep::describeActions(FormatSettings & settings) const
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
 
+    if (skip_scatter_by_partition)
+        settings.out << prefix << "Skip scatter by partition: 1\n";
+
     if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
     {
         settings.out << prefix << "Per-stream LIMIT BY columns: ";
@@ -687,6 +716,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     if (limit)
         map.add("Limit", limit);
 
+    if (skip_scatter_by_partition)
+        map.add("Skip scatter by partition", true);
+
     if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
     {
         auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
@@ -704,6 +736,7 @@ void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, U
 }
 
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT = 8;
 
 void SortingStep::serialize(Serialization & ctx) const
 {
@@ -716,14 +749,12 @@ void SortingStep::serialize(Serialization & ctx) const
             "Serialization of SortingStep requires query plan serialization version >= {}; "
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
-    /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
     serializeSortDescription(result_description, ctx.out);
 
     serializeSortDescription(partition_by_description, ctx.out);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
-    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
-    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
+    /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
     /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
     /// bit is set), so a plain full sort always writes a plain 0.
     UInt8 flags = 0;
@@ -739,11 +770,18 @@ void SortingStep::serialize(Serialization & ctx) const
 
     if (type == Type::FinishSorting)
         serializeSortDescription(prefix_description, ctx.out);
-}
 
-QueryPlanStepPtr SortingStep::clone() const
-{
-    return std::make_unique<SortingStep>(*this);
+    /// The limit matters for a distributed partial top-N: the sort runs on a worker below a
+    /// sorted gather, and losing the limit would turn it into an unbounded full sort there.
+    /// The field exists only since query plan serialization version 7; an older stream has no
+    /// place for it, so throw for a bounded sort rather than send bytes the other side would
+    /// misread (the deserialize side checks the same).
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT)
+        writeVarUInt(limit, ctx.out);
+    else if (limit != 0)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "A bounded sort in a distributed plan requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT);
 }
 
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
@@ -774,18 +812,43 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     if (finish_sorting)
         deserializeSortDescription(prefix_description, ctx.in);
 
+    /// A stream older than version 7 has no limit field (see serialize).
+    UInt64 limit = 0;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT)
+        readVarUInt(limit, ctx.in);
+
     std::unique_ptr<SortingStep> step;
     if (partition_by_description.empty())
         step = std::make_unique<SortingStep>(
-            ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
+            ctx.input_headers.front(), std::move(result_description), limit, std::move(sort_settings));
     else
         step = std::make_unique<SortingStep>(
-            ctx.input_headers.front(), std::move(result_description), std::move(partition_by_description), 0, sort_settings);
+            ctx.input_headers.front(), std::move(result_description), std::move(partition_by_description), limit, sort_settings);
 
     if (finish_sorting)
         step->convertToFinishSorting(std::move(prefix_description), use_buffering, apply_virtual_row_conversions);
 
     return step;
+}
+
+QueryPlanStepPtr SortingStep::clone() const
+{
+    /// Reconstructing another type as Full would silently drop its ordered-input contract.
+    if (type != Type::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of SortingStep is implemented only for Full sorting");
+    if (!partition_by_description.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of partitioned sorting is not implemented for SortingStep");
+
+    auto cloned = std::make_unique<SortingStep>(
+        input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    cloned->always_read_till_end = always_read_till_end;
+    cloned->is_partial_top_n = is_partial_top_n;
+    cloned->use_buffering = use_buffering;
+    cloned->apply_virtual_row_conversions = apply_virtual_row_conversions;
+    cloned->threshold_tracker = threshold_tracker;
+    cloned->limit_by_columns = limit_by_columns;
+    cloned->limit_by_group_length = limit_by_group_length;
+    return cloned;
 }
 
 std::vector<size_t> SortingStep::getStepGroups() const

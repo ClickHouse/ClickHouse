@@ -198,6 +198,9 @@ struct LogFileSettings
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
+    /// 0 = automatically use the number of CPU cores (resolved by Changelog's constructor).
+    uint64_t startup_read_max_streams = 0;
+    uint64_t startup_read_buffer_size = 8 * 1024 * 1024;
 };
 
 struct FlushSettings
@@ -380,6 +383,18 @@ struct LogEntryStorage
 
     /// Test-only: whether the commit reader currently exists.
     bool hasCommitReaderForTests() const;
+
+    /// True when latest_logs_cache has no size threshold (retains the whole live log, never evicts).
+    bool isUnlimitedCacheMode() const { return latest_logs_cache.hasUnlimitedSpace(); }
+
+    void addLocation(uint64_t index, uint64_t term, int32_t value_type, const LogEntryPtr & log_entry, LogLocation log_location);
+
+    void reserveLocations(size_t count);
+
+    void addEntryToLatestCache(uint64_t index, const LogEntryPtr & log_entry);
+
+    void setLatestConfig(uint64_t index, LogEntryPtr log_entry);
+
 private:
     void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
@@ -547,8 +562,8 @@ public:
 
     Changelog(Changelog &&) = delete;
 
-    /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
-    /// Truncate broken entries, remove files after broken entries.
+    /// Reads changelog files from disk (see computeStartToReadFrom for the start index), truncates
+    /// broken entries, and removes files after them. Dispatches to the serial or parallel reader.
     void readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep);
 
     /// Add entry to log with index.
@@ -636,6 +651,9 @@ public:
     /// Test-only: forwards to LogEntryStorage::hasCommitReaderForTests.
     bool hasCommitReaderForTests() const { return entry_storage.hasCommitReaderForTests(); }
 
+    /// Test-only: force the serial (non-parallel) startup read path regardless of compression state.
+    void setForceSerialStartupReadForTesting(bool value) { force_serial_startup_read_for_test = value; }
+
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
 
     static ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path);
@@ -670,16 +688,49 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(ChangelogFileDescriptionPtr description);
 
+    /// Serial startup read: files streamed one by one, each record inserted via addEntryWithLocation.
+    /// Fallback for compression, a single in-scope file, streams=0, or forced testing.
+    void readChangelogAndInitWriterSerialLocked(uint64_t last_commited_log_index, uint64_t start_to_read_from) TSA_REQUIRES(writer_mutex);
+
+    /// Parallel metadata read (all in-scope files concurrently) + serial stitch.
+    void readChangelogAndInitWriterParallelLocked(
+        uint64_t last_commited_log_index, uint64_t start_to_read_from, std::vector<ChangelogFileDescriptionPtr> in_scope_files)
+        TSA_REQUIRES(writer_mutex);
+
+    /// Outcome of reading the last in-scope changelog file, as needed by finalizeChangelogsAfterRead.
+    /// A trimmed-down, header-visible stand-in for the serial/parallel readers' own (.cpp-local)
+    /// per-file read result types.
+    struct LastChangelogReadOutcome
+    {
+        uint64_t log_start_index = 0;
+        uint64_t last_read_index = 0;
+        bool error = false;
+        bool compressed_log = false;
+    };
+
+    /// Shared tail of the serial and parallel startup reads: decides what to do with the on-disk log
+    /// set based on what the read produced -- remove everything, continue writing into an incomplete
+    /// last log, or start writing after a clean last log -- then makes sure every file (including the
+    /// new writer's) lives on the correct disk.
+    void finalizeChangelogsAfterRead(
+        uint64_t last_commited_log_index,
+        uint64_t remove_logs_before_index,
+        const std::optional<LastChangelogReadOutcome> & last_log_read_outcome,
+        bool last_log_is_not_complete) TSA_REQUIRES(writer_mutex);
+
     /// Thread for operations on changelog file, e.g. removing the file
     void backgroundChangelogOperationsThread();
 
     void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
-    void removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
+    /// Queues asynchronous removal; returns the operation so callers can wait for completion.
+    ChangelogFileOperationPtr removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
     void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
     const bool compress_logs;
+    const uint64_t startup_read_max_streams;
+    const uint64_t startup_read_buffer_size;
     LoggerPtr log;
 
     mutable std::mutex writer_mutex;
@@ -733,6 +784,9 @@ private:
     const FlushSettings flush_settings;
 
     bool initialized = false;
+
+    /// Test-only: forces readChangelogAndInitWriter onto the serial path regardless of compression.
+    bool force_serial_startup_read_for_test = false;
 };
 
 }

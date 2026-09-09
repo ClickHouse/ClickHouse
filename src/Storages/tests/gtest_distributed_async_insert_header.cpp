@@ -6,6 +6,9 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Core/Block.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Formats/NativeWriter.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/Distributed/Defines.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
@@ -124,6 +127,95 @@ TEST(DistributedAsyncInsertHeader, FillsZeroVersionForCurrentLayout)
     EXPECT_EQ(header.client_info.client_version_minor, VERSION_MINOR);
     EXPECT_EQ(header.client_info.client_version_patch, VERSION_PATCH);
     EXPECT_EQ(header.client_info.client_tcp_protocol_version, DBMS_TCP_PROTOCOL_VERSION);
+}
+
+/// The embedded `ClientInfo` layout of the queue-file header is frozen: fields added after the freeze
+/// (`client_agent`, `is_internal`, `current_roles`, `http_handler_name`, `http_request_url`) must not be
+/// serialized with `with_trailing_fields = false`, or an older binary draining the file would misinterpret
+/// the fields that follow the embedded `ClientInfo` - starting with `rows` and `bytes`.
+TEST(DistributedAsyncInsertHeader, HTTPHandlerFieldsDoNotShiftEmbeddedLayout)
+{
+    const auto header = roundTrip("http_handler_frozen_layout", [](WriteBuffer & out)
+    {
+        ClientInfo client_info;
+        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        client_info.interface = ClientInfo::Interface::HTTP;
+        client_info.http_method = ClientInfo::HTTPMethod::POST;
+        client_info.initial_address = Poco::Net::SocketAddress("127.0.0.1:9000");
+        client_info.http_handler_name = "some_handler";
+        client_info.http_request_url = "/some/url";
+
+        WriteBufferFromOwnString header_buf;
+        writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
+        writeStringBinary("INSERT INTO t VALUES", header_buf);
+        Settings settings;
+        settings.write(header_buf);
+        client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
+        writeVarUInt(123, header_buf);
+        writeVarUInt(456, header_buf);
+        writeStringBinary("", header_buf);
+        header_buf.finalize();
+
+        const std::string_view header_data = header_buf.stringView();
+        writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
+        writeStringBinary(header_data, out);
+        writePODBinary(CityHash_v1_0_2::CityHash128(header_data.data(), header_data.size()), out);
+    });
+
+    /// `rows` and `bytes` immediately follow the embedded `ClientInfo`; they parse correctly only if the
+    /// handler fields were suppressed from it.
+    EXPECT_EQ(header.rows, 123u);
+    EXPECT_EQ(header.bytes, 456u);
+    EXPECT_TRUE(header.client_info.http_handler_name.empty());
+    EXPECT_TRUE(header.client_info.http_request_url.empty());
+}
+
+/// The handler name and request URL still propagate through the queue file - as trailing header fields,
+/// which older binaries safely ignore.
+TEST(DistributedAsyncInsertHeader, HTTPHandlerFieldsPropagateAsTrailingFields)
+{
+    const auto header = roundTrip("http_handler_trailing", [](WriteBuffer & out)
+    {
+        ClientInfo client_info;
+        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        client_info.interface = ClientInfo::Interface::HTTP;
+        client_info.http_method = ClientInfo::HTTPMethod::POST;
+        client_info.initial_address = Poco::Net::SocketAddress("127.0.0.1:9000");
+
+        Block block;
+        block.insert({DataTypeUInt64().createColumn(), std::make_shared<DataTypeUInt64>(), "x"});
+
+        WriteBufferFromOwnString header_buf;
+        writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
+        writeStringBinary("INSERT INTO t VALUES", header_buf);
+        Settings settings;
+        settings.write(header_buf);
+        client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
+        writeVarUInt(1, header_buf);
+        writeVarUInt(8, header_buf);
+        writeStringBinary(block.dumpStructure(), header_buf);
+        {
+            NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty())};
+            header_stream.write(block.cloneEmpty());
+        }
+        writeVarUInt(1, header_buf); /// shard_num
+        writeStringBinary("test_cluster", header_buf);
+        writeStringBinary("default.dist", header_buf);
+        writeStringBinary("default.local", header_buf);
+        writeStringBinary("", header_buf); /// client_agent
+        writeBinary(false, header_buf); /// is_internal
+        writeStringBinary("some_handler", header_buf);
+        writeStringBinary("/some/url", header_buf);
+        header_buf.finalize();
+
+        const std::string_view header_data = header_buf.stringView();
+        writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
+        writeStringBinary(header_data, out);
+        writePODBinary(CityHash_v1_0_2::CityHash128(header_data.data(), header_data.size()), out);
+    });
+
+    EXPECT_EQ(header.client_info.http_handler_name, "some_handler");
+    EXPECT_EQ(header.client_info.http_request_url, "/some/url");
 }
 
 /// A non-zero version identifies the real initiator and must be preserved as is.

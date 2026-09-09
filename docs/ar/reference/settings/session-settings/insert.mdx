@@ -28,14 +28,16 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 يُفعّل أو يعطّل إزالة التكرار للكتل لأمر `INSERT` (في جداول Replicated*).
 
+لا يسري هذا الإعداد إلا عند ضبط [`deduplicate_insert`](/ar/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) على `backward_compatible_choice`.
+
 القيم الممكنة:
 
 * 0 — معطّل.
 * 1 — مفعّل.
 
 افتراضيًا، تُزال تكرارات الكتل المُدرجة في الجداول المكررة بواسطة تعليمة `INSERT` (راجع [تكرار البيانات](/ar/reference/engines/table-engines/mergetree-family/replication)).
-وبالنسبة إلى الجداول المكررة، تُزال افتراضيًا تكرارات أحدث 100 كتلة فقط لكل partition (راجع [replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window)، [replicated&#95;deduplication&#95;window&#95;seconds](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-أما الجداول غير المكررة، فراجع [non&#95;replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+وبالنسبة إلى الجداول المكررة، تُزال افتراضيًا تكرارات أحدث 100 كتلة فقط لكل partition (راجع [replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)، [replicated&#95;deduplication&#95;window&#95;seconds](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+أما الجداول غير المكررة، فراجع [non&#95;replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <div id="insert_deduplication_token">
   ## insert_deduplication_token
@@ -51,8 +53,8 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 يُستخدم `insert_deduplication_token` في إزالة التكرار *فقط* عندما لا تكون قيمته فارغة.
 
-بالنسبة إلى الجداول المكررة، افتراضيًا لا تتم إزالة التكرار إلا لأحدث 100 عملية inserts لكل partition (راجع [replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window)، [replicated&#95;deduplication&#95;window&#95;seconds](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-أما الجداول غير المكررة، فراجع [non&#95;replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+بالنسبة إلى الجداول المكررة، افتراضيًا لا تتم إزالة التكرار إلا لأحدث 100 عملية inserts لكل partition (راجع [replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)، [replicated&#95;deduplication&#95;window&#95;seconds](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+أما الجداول غير المكررة، فراجع [non&#95;replicated&#95;deduplication&#95;window](/ar/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <Note>
   يتم تتبّع `insert_deduplication_token` لكل partition، لذا يمكن لعدة partitions مكتوبة بعملية insert واحدة أن تحمل token نفسه. ومن دون token، يُحتسب checksum الافتراضي للمحتوى على مستوى block inserted بالكامل، لذلك لا تُزال تكرارات عملية insert إلا عندما تتطابق بياناتها بالكامل مع insert سابقة (retry)، وليس عندما تتطابق rows الخاصة بـ partition واحدة فقط مصادفةً مع insert مختلفة.

@@ -93,14 +93,6 @@ export const kbIndex = {
       tags: ["Data Modelling"]
     },
     {
-      id: "tables-schema/schema-migration-tools",
-      title: "Automatic schema migration tools for ClickHouse",
-      description: "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time.",
-      href: "/ar/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
-      category: "Tables & schema",
-      tags: ["Tools and Utilities"]
-    },
-    {
       id: "cloud-services/aws-privatelink-setup-for-msk-clickpipes",
       title: "AWS PrivateLink setup to expose MSK for ClickPipes",
       description: "Setup steps to expose a private MSK via MSK multi-VPC connectivity to ClickPipes.",
@@ -176,7 +168,7 @@ export const kbIndex = {
     {
       id: "configuration-settings/change-the-prompt-in-clickhouse-client",
       title: "Change the prompt in clickhouse-client",
-      description: "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      description: "تشرح هذه المقالة كيفية تغيير المحثّ في عميل ClickHouse ونافذة طرفية clickhouse-local من :) إلى prefix يتبعه :)",
       href: "/ar/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       category: "Configuration & settings",
       tags: ["Settings", "Native Clients and Interfaces"]
@@ -194,16 +186,8 @@ export const kbIndex = {
       title: "مقارنة المقاييس بين الاستعلامات بالديسيبل",
       description: "استعلام لمقارنة المقاييس بين استعلامين في ClickHouse.",
       href: "/ar/resources/support-center/knowledge-base/queries-sql/comparing-metrics-between-queries",
-      category: "الاستعلامات وSQL",
+      category: "Queries & SQL",
       tags: ["Performance and Optimizations"]
-    },
-    {
-      id: "configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      title: "تهيئة قدرات CAP_IPC_LOCK وCAP_SYS_NICE في Docker",
-      description: "تعرّف على كيفية حل تحذيرات قدرات Docker لـ `CAP_IPC_LOCK` و`CAP_SYS_NICE` عند تشغيل ClickHouse في حاوية.",
-      href: "/ar/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      category: "الإعدادات والتهيئة",
-      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -251,7 +235,7 @@ export const kbIndex = {
       title: "هل يمتلك ClickHouse محسّنًا قائمًا على التكلفة؟",
       description: "يمتلك ClickHouse آليات معينة للتحسين القائم على التكلفة",
       href: "/ar/resources/support-center/knowledge-base/general-faqs/cost-based",
-      category: "عام والأسئلة الشائعة",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -259,7 +243,7 @@ export const kbIndex = {
       title: "هل يدعم ClickHouse بحيرات البيانات؟",
       description: "يدعم ClickHouse بحيرات البيانات، بما في ذلك Iceberg وDelta Lake وApache Hudi وApache Paimon وHive",
       href: "/ar/resources/support-center/knowledge-base/general-faqs/datalake",
-      category: "عام والأسئلة الشائعة",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -267,7 +251,7 @@ export const kbIndex = {
       title: "هل يدعم ClickHouse الـ JOIN الموزع؟",
       description: "يدعم ClickHouse الـ JOIN الموزع",
       href: "/ar/resources/support-center/knowledge-base/general-faqs/distributed-join",
-      category: "عام والأسئلة الشائعة",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -275,7 +259,7 @@ export const kbIndex = {
       title: "هل يدعم ClickHouse الاستعلامات الموحدة؟",
       description: "يدعم ClickHouse نطاقًا واسعًا من الاستعلامات الموحدة والهجينة",
       href: "/ar/resources/support-center/knowledge-base/general-faqs/federated",
-      category: "عام والأسئلة الشائعة",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -283,7 +267,7 @@ export const kbIndex = {
       title: "هل يدعم ClickHouse الاستعلامات المتكررة والمتزامنة؟",
       description: "يدعم ClickHouse معدل استعلامات عالٍ وتزامنًا عاليًا",
       href: "/ar/resources/support-center/knowledge-base/general-faqs/concurrency",
-      category: "عام والأسئلة الشائعة",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -299,7 +283,7 @@ export const kbIndex = {
       title: "هل يدعم ClickHouse التحديثات في الوقت الفعلي؟",
       description: "يدعم ClickHouse التحديثات الخفيفة في الوقت الفعلي",
       href: "/ar/resources/support-center/knowledge-base/general-faqs/updates",
-      category: "عام والأسئلة الشائعة",
+      category: "General & FAQs",
       tags: []
     },
     {
@@ -339,7 +323,7 @@ export const kbIndex = {
       title: "كيف يمكنني إجراء كتابات مقسّمة حسب السنة والشهر على S3؟",
       description: "تعرّف على كيفية كتابة البيانات المقسّمة حسب السنة والشهر إلى حاوية S3 في ClickHouse، باستخدام بنية مسار مخصصة لتنظيم البيانات.",
       href: "/ar/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders",
-      category: "استيراد البيانات وتصديرها",
+      category: "Data import & export",
       tags: ["Data Export", "Native Clients and Interfaces"]
     },
     {
@@ -395,7 +379,7 @@ export const kbIndex = {
       title: "كيف أثبّت ClickHouse على Windows 10؟",
       description: "Learn how to install and test ClickHouse on Windows 10 using WSL 2. Includes setup, troubleshooting, and running a test environment.",
       href: "/ar/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
-      category: "Setup & installation",
+      category: "الإعداد والتثبيت",
       tags: ["Tools and Utilities"]
     },
     {
@@ -403,7 +387,7 @@ export const kbIndex = {
       title: "How do I remove the default user?",
       description: "Learn how to remove the default user when running ClickHouse Server.",
       href: "/ar/resources/support-center/knowledge-base/security/remove-default-user",
-      category: "Security & access control",
+      category: "الأمان والتحكم في الوصول",
       tags: ["Server Admin"]
     },
     {
@@ -452,7 +436,7 @@ export const kbIndex = {
       title: "How to build LLVM and clang on Linux",
       description: "Commands to build LLVM and clang on Linux.",
       href: "/ar/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-      category: "Setup & installation",
+      category: "الإعداد والتثبيت",
       tags: ["Community", "Tools and Utilities"]
     },
     {
@@ -468,7 +452,7 @@ export const kbIndex = {
       title: "How to Check Users Assigned to Roles and Vice Versa",
       description: "Learn how to query ClickHouse's `system.role_grants` to find users assigned to roles and roles assigned to specific users.",
       href: "/ar/resources/support-center/knowledge-base/security/check-users-roles",
-      category: "Security & access control",
+      category: "الأمان والتحكم في الوصول",
       tags: ["Server Admin", "System Tables", "Managing Cloud"]
     },
     {
@@ -670,7 +654,7 @@ export const kbIndex = {
       title: "كيفية الاسترداد من لقطة Keeper تالفة",
       description: "مقال يصف كيفية الاسترداد من لقطة Keeper تالفة: كيف تظهر المشكلة، وما هي اللقطة وأين تجدها، والاستراتيجيات الممكنة للاسترداد.",
       href: "/ar/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
-      category: "Troubleshooting & errors",
+      category: "استكشاف الأخطاء وإصلاحها",
       tags: ["Troubleshooting"]
     },
     {
@@ -678,7 +662,7 @@ export const kbIndex = {
       title: "كيفية استعادة نسخة متماثلة بعد فشل التخزين",
       description: "يشرح هذا المقال كيفية استرداد البيانات عند استخدام الجداول المتماثلة في قواعد البيانات الذرية في ClickHouse وفقدان الأقراص/التخزين في إحدى النسخ المتماثلة أو تلفها.",
       href: "/ar/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure",
-      category: "Troubleshooting & errors",
+      category: "استكشاف الأخطاء وإصلاحها",
       tags: ["Deployments and Scaling"]
     },
     {
@@ -739,7 +723,7 @@ export const kbIndex = {
     },
     {
       id: "performance-optimization/finding-expensive-queries-by-memory-usage",
-      title: "Identifying Expensive Queries by Memory Usage in ClickHouse",
+      title: "تحديد الاستعلامات المكلفة حسب استخدام الذاكرة في ClickHouse",
       description: "Learn how to use the `system.query_log` table to find the most memory-intensive queries in ClickHouse, with examples for clustered and standalone setups.",
       href: "/ar/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
       category: "Performance & optimization",
@@ -822,7 +806,7 @@ export const kbIndex = {
       title: "Mapping Windows Active Directory security groups to ClickHouse roles",
       description: "Example of mapping Windows Active Directory security groups to ClickHouse roles",
       href: "/ar/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles",
-      category: "Security & access control",
+      category: "الأمان والتحكم في الوصول",
       tags: ["Tools and Utilities"]
     },
     {
@@ -874,36 +858,44 @@ export const kbIndex = {
       tags: ["Errors and Exceptions", "Data Formats"]
     },
     {
-      id: "troubleshooting/exception-too-many-parts",
-      title: 'Resolving "Too Many Parts" error in ClickHouse',
-      description: 'Learn how to address the "Too many parts" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.',
-      href: "/ar/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
-      category: "Troubleshooting & errors",
-      tags: ["Errors and Exceptions"]
-    },
-    {
       id: "troubleshooting/certificate-verify-failed-error",
-      title: "Resolving SSL Certificate Verify Error in ClickHouse",
+      title: "حل خطأ تعذّر التحقق من شهادة SSL في ClickHouse",
       description: "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
       href: "/ar/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
-      category: "Troubleshooting & errors",
+      category: "استكشاف الأخطاء وإصلاحها",
       tags: ["Security and Authentication", "Errors and Exceptions"]
+    },
+    {
+      id: "troubleshooting/exception-too-many-parts",
+      title: 'حلّ الاستثناء "Too many parts" في ClickHouse',
+      description: 'تعرّف على كيفية تشخيص الاستثناء "Too many parts" وحلّه من خلال تجميع عمليات الإدراج، واستخدام عمليات الإدراج غير المتزامنة، واختيار مفتاح تقسيم مناسب.',
+      href: "/ar/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+      category: "استكشاف الأخطاء وإصلاحها",
+      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/connection-timeout-remote-remoteSecure",
       title: "Resolving Timeout Errors with `remote` and `remoteSecure` Table Functions",
       description: "Learn how to fix timeout errors when using `remote` or `remoteSecure` table functions in ClickHouse by adjusting the connection timeout settings.",
       href: "/ar/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
-      category: "Troubleshooting & errors",
+      category: "استكشاف الأخطاء وإصلاحها",
       tags: ["Errors and Exceptions"]
     },
     {
       id: "tables-schema/runbook-json",
       title: "Runbook: JSON schema",
-      description: "اختر نهج المخطط المناسب لبيانات JSON في ClickHouse — أعمدة مكتوبة، أو هجين، أو JSON أصلي، أو تخزين String",
+      description: "اختر نهج المخطط المناسب لبيانات JSON في ClickHouse — أعمدة محدّدة الأنواع، أو نهج هجين، أو JSON أصلي، أو التخزين كـ String",
       href: "/ar/resources/support-center/knowledge-base/tables-schema/runbook-json",
       category: "Tables & schema",
       tags: ["Runbooks", "Data Modelling"]
+    },
+    {
+      id: "tables-schema/schema-migration-tools",
+      title: "أدوات ترحيل المخطط في ClickHouse",
+      description: "تعرّف على أدوات ترحيل المخطط في ClickHouse وكيفية إدارة تغيّر مخططات قواعد البيانات بمرور الوقت.",
+      href: "/ar/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+      category: "Tables & schema",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "tables-schema/search-across-node-for-tables-with-a-wildcard",
@@ -912,6 +904,14 @@ export const kbIndex = {
       href: "/ar/resources/support-center/knowledge-base/tables-schema/search-across-node-for-tables-with-a-wildcard",
       category: "Tables & schema",
       tags: ["Deployments and Scaling"]
+    },
+    {
+      id: "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      title: "إعداد خادم MCP لوثائق ClickHouse",
+      description: "اربط أدوات الذكاء الاصطناعي بوثائق ClickHouse عبر Model Context Protocol.",
+      href: "/ar/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      category: "Setup & installation",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "performance-optimization/query-max-execution-time",
@@ -1064,7 +1064,7 @@ export const kbIndex = {
       title: "Which ClickHouse version to use in production?",
       description: "This page provides guidance on which ClickHouse version to use in production",
       href: "/ar/resources/support-center/knowledge-base/setup-installation/production",
-      category: "Setup & installation",
+      category: "الإعداد والتثبيت",
       tags: []
     },
     {
@@ -1074,6 +1074,14 @@ export const kbIndex = {
       href: "/ar/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
       category: "General & FAQs",
       tags: []
+    },
+    {
+      id: "security/set-role-not-persisting-in-sql-console",
+      title: "لماذا لا يستمر تطبيق `SET ROLE` في SQL Console لـ ClickHouse Cloud",
+      description: "تعرّف على سبب عدم استمرار تطبيق `SET ROLE` في SQL Console لـ ClickHouse Cloud وكيفية تعيين أذونات دائمة لكل مستخدم.",
+      href: "/ar/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
+      category: "الأمان والتحكم في الوصول",
+      tags: ["Security and Authentication", "Managing Cloud", "Troubleshooting"]
     },
     {
       id: "data-management/dictionaries-consistent-state",

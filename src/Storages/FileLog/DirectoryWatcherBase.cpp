@@ -1,15 +1,16 @@
-#include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <filesystem>
 #include <unistd.h>
 #include <poll.h>
 #include <Common/ErrnoException.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 
 #if defined(OS_LINUX)
@@ -21,7 +22,6 @@
 #include <fcntl.h>
 #include <sys/event.h>
 #include <sys/stat.h>
-#include <base/scope_guard.h>
 #endif
 
 namespace DB
@@ -62,10 +62,16 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     inotify_fd = inotify_init();
     if (inotify_fd == -1)
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
+    /// Only the destructor closes this descriptor, and the destructor does not run if this
+    /// constructor throws.
+    scope_guard close_inotify_fd = [this] { ::close(inotify_fd); };
 #endif
 
-    watch_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "directory_watch", [this] { watchFunc(); });
     start();
+
+#if defined(OS_LINUX)
+    close_inotify_fd.release();
+#endif
 }
 
 #if defined(OS_LINUX)
@@ -592,16 +598,34 @@ DirectoryWatcherBase::~DirectoryWatcherBase()
 
 void DirectoryWatcherBase::start()
 {
-    if (watch_task)
-        watch_task->activateAndSchedule();
+    /// The catch keeps a watch failure contained and logged here, as the schedule pool's execute
+    /// used to do. Letting it escape would instead become the global pool's first_exception and be
+    /// rethrown from an unrelated later scheduleOrThrow.
+    watch_thread = std::make_unique<ThreadFromGlobalPool>([this]
+    {
+        try
+        {
+            watchFunc();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    });
 }
 
 void DirectoryWatcherBase::stop()
 {
     stopped = true;
     (void)::write(event_pipe.fds_rw[1], "\0", 1);
-    if (watch_task)
-        watch_task->deactivate();
+    if (watch_thread)
+    {
+        /// Mandatory: ~ThreadFromGlobalPoolImpl aborts on a still-joinable thread. The write above
+        /// is what makes the blocking poll return, so this cannot hang.
+        if (watch_thread->joinable())
+            watch_thread->join();
+        watch_thread.reset();
+    }
 }
 
 }

@@ -26,12 +26,12 @@ ClickHouse では、パーツ内のデータを整理するために、互いに
   ### 各タイプの使い分け
 </div>
 
-パーツのタイプは、次のテーブル設定によって決まります。
+パーツタイプは、次のテーブル設定によって決まります。
 
-* [`min_bytes_for_wide_part`](/ja/reference/settings/merge-tree-settings#min_bytes_for_wide_part): パーツがwide パーツを使用するために必要な最小バイト数
-* [`min_rows_for_wide_part`](/ja/reference/settings/merge-tree-settings#min_rows_for_wide_part): パーツがwide パーツを使用するために必要な最小行数
+* [`min_bytes_for_wide_part`](/ja/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): パーツがwide パーツを使用するために必要な最小バイト数
+* [`min_rows_for_wide_part`](/ja/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): パーツがwide パーツを使用するために必要な最小行数
 
-データパート内のバイト数または行数のいずれかが対応する設定値を下回る場合、そのパーツは `compact パーツ` 形式で保存されます。そうでない場合は、`wide パーツ` 形式が使用されます。
+データパーツ内のバイト数または行数のいずれかが対応する設定値を下回る場合、そのパーツは `compact パーツ` 形式で保存されます。そうでない場合は、`wide パーツ` 形式が使用されます。
 
 <div id="performance-considerations">
   ### パフォーマンスに関する考慮事項
@@ -71,10 +71,10 @@ compact パーツではカラムサイズの統計が計算されないため、
 
 ストレージフォーマットは、パーツのファイルがディスク上で物理的にどのように格納されるかを決定します。
 
-| フォーマット     | 説明                              | 提供状況           |
-| ---------- | ------------------------------- | -------------- |
-| **Full**   | 各ファイルはパーツディレクトリに個別に格納されます       | オープンソース版とCloud |
-| **Packed** | すべてのファイルが 1 つのアーカイブファイルにまとめられます | オープンソース版とCloud |
+| フォーマット     | 説明                                                                    | 提供状況           |
+| ---------- | --------------------------------------------------------------------- | -------------- |
+| **Full**   | 各ファイルはパーツディレクトリに個別に格納されます                                             | オープンソース版とCloud |
+| **Packed** | ほとんどのパーツファイルが 1 つのアーカイブファイルにまとめられます (プロジェクションと一部のサービスファイルは別途書き込まれます)  | オープンソース版とCloud |
 
 <div id="full-storage">
   ### Full storage
@@ -86,13 +86,13 @@ Full storage では、各 パーツ は複数の個別ファイルで構成さ�
   ### Packed ストレージ
 </div>
 
-Packed ストレージでは、すべてのパーツファイルが 1 つのアーカイブにまとめられます。これによりファイル操作の回数が大幅に減り、リクエストごとに遅延とコストが発生する S3 のようなリモートストレージでは特に重要です。
+Packed ストレージでは、ほとんどのパーツファイルが 1 つのアーカイブにまとめられます。プロジェクションと一部のサービスファイル (`txn_version.txt`、`delete-on-destroy.txt`、`invalidated_system_columns.txt`) は、パーツ自体が書き込まれた後に作成または再書き込みされる可能性があるため、引き続き個別に書き込まれます。これによりファイル操作の回数が大幅に減り、リクエストごとに遅延とコストが発生する S3 のようなリモートストレージでは特に重要です。
 
 **Packed ストレージの利点:**
 
 * S3/オブジェクトストレージ API 呼び出しの削減
 * 協調サービスへのメタデータ負荷の軽減
-* ストレージコストの削減 (Full ストレージは大幅に高額になる場合があります)
+* ストレージコストの削減 (Full storage は大幅に高額になる場合があります)
 * リモートストレージ上の小さなパーツでパフォーマンスが向上
 
 <div id="when-packed-storage-is-used">
@@ -101,9 +101,9 @@ Packed ストレージでは、すべてのパーツファイルが 1 つのア�
 
 以下の条件の**いずれか**が true の場合、パーツは Packed ストレージ を使用します。
 
-* 非圧縮バイト数 &lt; [`min_bytes_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* 行数 &lt; [`min_rows_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* マージレベル &lt; [`min_level_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* 非圧縮バイト数 &lt; [`min_bytes_for_full_part_storage`](/ja/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* 行数 &lt; [`min_rows_for_full_part_storage`](/ja/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* マージレベル &lt; [`min_level_for_full_part_storage`](/ja/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 Packed ストレージ はオプトインです。3 つの設定はすべてデフォルトで `0` のため、いずれかの値を引き上げない限り、パーツは Full storage を使用します。
 
@@ -153,6 +153,10 @@ Packed ストレージ はオプトインです。3 つの設定はすべてデ�
 </div>
 
 既存のパーツのパーツタイプとストレージタイプは、[`system.parts`](/ja/reference/system-tables/parts)テーブルを使用して確認できます。
+
+<Note>
+  オープンソース版 ClickHouse では、`part_storage_type`はバージョン26.9以降で`system.parts`によって公開されています。バージョン26.8以前では、クエリから`part_storage_type`を省略し、`part_type`のみでグループ化および並べ替えを行ってください。
+</Note>
 
 ```sql
 SELECT
