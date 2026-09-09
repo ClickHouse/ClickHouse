@@ -282,7 +282,9 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         const bool nel_within = subset_of(op.nel, combined);
         const bool nel_crosses = (op.nel & left_mask) && (op.nel & right_mask);
         const bool rel_crosses = (op.relations & left_mask) && (op.relations & right_mask);
-        const bool involved = (nel_within && nel_crosses) || (op.nel == 0 && rel_crosses && within);
+        /// A degenerate operator (one-sided or absent predicate) has no crossing predicate, so it is
+        /// located by its relation set crossing the split with all of its relations present.
+        const bool involved = (nel_within && nel_crosses) || (op.degenerate && rel_crosses && within);
         if (!involved)
             continue;
         any_involved = true;
@@ -303,13 +305,14 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         bool mirrored = subset_of(op.required_left, right_mask) && subset_of(op.required_right, left_mask);
 
         /// A one-sided/cross-product operator has an empty required side, so the containment above
-        /// cannot orient it. Require each input subtree on its own side instead: this orients it and
-        /// stops a relation being pulled across (an invalid cross join). Rare -- gated by the flag.
+        /// cannot orient it. Require each whole input subtree on its own side instead: this orients
+        /// it and rejects a fragmented split that pulls part of a subtree across the outer-join
+        /// boundary (an invalid plan). Rare -- gated by the flag.
         if (op.degenerate)
         {
             const UInt32 right_relations = op.relations & ~op.left_relations;
-            forward = forward && (op.left_relations & left_mask) && (right_relations & right_mask);
-            mirrored = mirrored && (op.left_relations & right_mask) && (right_relations & left_mask);
+            forward = forward && subset_of(op.left_relations, left_mask) && subset_of(right_relations, right_mask);
+            mirrored = mirrored && subset_of(op.left_relations, right_mask) && subset_of(right_relations, left_mask);
         }
 
         if (!forward && !mirrored)
@@ -334,10 +337,11 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         strictness = op.strictness;
     }
 
-    /// No operator is applied across this split. A connected query always has one, so this only
-    /// happens when the split is reachable solely through the synthetic cross-product connectivity
-    /// yet no operator legitimately spans it -- reject rather than invent an inner join.
-    if (!any_involved)
+    /// No operator is applied across this split. A real predicate always maps to an operator, so the
+    /// only legitimate no-operator split is a transitive inner join (two sides tied by a column
+    /// equivalence, no direct predicate). Anything else reaching here is the synthetic cross-product
+    /// connectivity with no operator spanning it -- reject rather than invent an inner join.
+    if (!any_involved && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
         return std::nullopt;
 
     return std::make_pair(kind, strictness);
