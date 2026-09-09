@@ -90,6 +90,16 @@ public:
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
     void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
 
+    /// Clamping counterpart of `checkResetToDefault`, for a reset crossing an execution context (a nested
+    /// `SETTINGS name = DEFAULT`), where a violation must not throw. `names` is reduced to the resets that
+    /// may be performed as written; a reset clamped by a `MIN` / `MAX` constraint is moved to
+    /// `clamped_changes` as an assignment of the clamped value; a forbidden one is dropped altogether.
+    void clampResetToDefault(
+        const Settings & current_settings,
+        std::vector<String> & names,
+        SettingsChanges & clamped_changes,
+        SettingSource source) const;
+
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;

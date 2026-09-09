@@ -66,7 +66,8 @@ void ASTFunction::setNoEmptyArgs(bool value)
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
-    if (name == "view" || name == "viewIfPermitted" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3")
+    if (name == "view" || name == "viewIfPermitted" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3"
+        || name == "obfuscate")
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function '{}' cannot be used as an expression", name);
 
     /// If function can be converted to literal it will be parsed as literal after formatting.
@@ -261,10 +262,11 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
     /// The parser produces a bare `SelectWithUnionQuery` function argument only inside the table
-    /// functions `view` and `viewIfPermitted` (`ViewLayer` is their only producer): `view(SELECT ...)`
-    /// has exactly one argument, the select, and `viewIfPermitted(SELECT ... ELSE table_function(...))`
-    /// has exactly (select, function), because after `ELSE` only a function call is accepted; neither
-    /// form has parameters. In an expression context both names parse as ordinary functions and a bare
+    /// functions `view`, `viewIfPermitted` (`ViewLayer` is their only producer) and `obfuscate`
+    /// (`ObfuscateLayer`): `view(SELECT ...)` and `obfuscate(SELECT ...)` have exactly one argument,
+    /// the select, and `viewIfPermitted(SELECT ... ELSE table_function(...))` has exactly
+    /// (select, function), because after `ELSE` only a function call is accepted; none of these forms
+    /// has parameters. In an expression context these names parse as ordinary functions and a bare
     /// select cannot appear among their arguments at all. The formatter prints special forms for
     /// exactly the table function shapes (the query-argument form, which silently drops parameters,
     /// and the `ELSE` form, which is unparseable elsewhere), so reject any other combination that
@@ -273,33 +275,42 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     /// spelling hits the same parse-back constraints.
     bool is_view = equalsCaseInsensitive(name, "view");
     bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
-    if ((is_view || is_view_if_permitted) && arguments)
+    bool is_obfuscate = equalsCaseInsensitive(name, "obfuscate");
+    if ((is_view || is_view_if_permitted || is_obfuscate) && arguments)
     {
         bool has_bare_select = std::ranges::any_of(
             arguments->children, [](const ASTPtr & child) { return child->as<ASTSelectWithUnionQuery>() != nullptr; });
         bool is_table_function_shape = !parameters
-            && (is_view
-                ? arguments->children.size() == 1 && arguments->children[0]->as<ASTSelectWithUnionQuery>()
-                : arguments->children.size() == 2 && arguments->children[0]->as<ASTSelectWithUnionQuery>()
-                    && arguments->children[1]->as<ASTFunction>());
+            && (is_view_if_permitted
+                ? arguments->children.size() == 2 && arguments->children[0]->as<ASTSelectWithUnionQuery>()
+                    && arguments->children[1]->as<ASTFunction>()
+                : arguments->children.size() == 1 && arguments->children[0]->as<ASTSelectWithUnionQuery>());
         if (has_bare_select && !is_table_function_shape)
         {
-            if (is_view)
+            if (is_view_if_permitted)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'view' with a select query argument must have exactly one argument, a select query, "
-                    "and no parameters during AST JSON deserialization");
+                    "'viewIfPermitted' with a select query argument must have exactly two arguments, a select query "
+                    "followed by a function, and no parameters during AST JSON deserialization");
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'viewIfPermitted' with a select query argument must have exactly two arguments, a select query "
-                "followed by a function, and no parameters during AST JSON deserialization");
+                "'{}' with a select query argument must have exactly one argument, a select query, "
+                "and no parameters during AST JSON deserialization", is_view ? "view" : "obfuscate");
         }
 
-        /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
-        /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and
-        /// execution matches the name case-sensitively (e.g. `StorageView::replaceWithSubquery` and
-        /// the table function factory), so a non-canonical spelling that reaches the interpreter
-        /// through `clickhouse_json` would fail. Canonicalize it the way the parser does.
+        /// For the table function form the parser emits only the canonical spelling (`ViewLayer` and
+        /// `ObfuscateLayer` dispatch on the lowercased name but always produce `view`,
+        /// `viewIfPermitted` or `obfuscate`), and execution matches the name case-sensitively (e.g.
+        /// `StorageView::replaceWithSubquery` and the table function factory, where none of these
+        /// three is registered case-insensitively), so a non-canonical spelling that reaches the
+        /// interpreter through `clickhouse_json` would fail. Canonicalize it the way the parser does.
         if (is_table_function_shape)
-            name = is_view ? "view" : "viewIfPermitted";
+        {
+            if (is_view)
+                name = "view";
+            else if (is_view_if_permitted)
+                name = "viewIfPermitted";
+            else
+                name = "obfuscate";
+        }
     }
 
     r.readAlias(*this);

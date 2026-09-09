@@ -1,0 +1,16 @@
+-- the constrained values as seen by the user
+1000	42
+-- a top-level reset still throws
+max_result_rows: constraint violation
+max_execution_time: constraint violation
+-- a nested reset past a MIN bound is clamped to the bound, not set to the default
+500
+-- a nested reset of a CONST setting is dropped
+42
+-- the same holds for a CTE
+500
+-- a duplicated setting in a nested clause is last-wins, and the last value is clamped as well
+1000
+2000
+-- an unconstrained nested reset is unaffected
+0
