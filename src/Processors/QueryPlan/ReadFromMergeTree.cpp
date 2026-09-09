@@ -6454,7 +6454,7 @@ bool ReadFromMergeTree::supportsBucketedRead() const
         unsupported_deferred_filters = false;
 #endif
     /// An order set before the plan was optimized (the old analyzer's executeOrderOptimized) is rejected in
-    /// hasReadMergeTreeUnsupportedOptionDistributed, so it cannot reach here. Do not gate on it: the worker
+    /// getReasonReadCannotBeDistributed, so it cannot reach here. Do not gate on it: the worker
     /// path asks for its order before consulting this, and refusing would route the read to a node with no catalog.
     return !unsupported_deferred_filters
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
@@ -6486,7 +6486,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
-    /// earlier in hasReadMergeTreeUnsupportedOptionDistributed.)
+    /// earlier in getReasonReadCannotBeDistributed.)
     if (query_info.isStream())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read with the STREAM modifier");

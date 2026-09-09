@@ -18,7 +18,6 @@
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
-#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
@@ -33,7 +32,6 @@
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -825,18 +823,12 @@ namespace QueryPlanOptimizations
 
 void findStepsUnsupportedForRemoteExecution(const QueryPlan::Node & node, std::vector<const IQueryPlanStep *> & unsupported);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
-void convertLogicalJoinsForLocalExecution(
-    QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 DistributedQueryPlan
 makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 std::optional<PreformattedMessage>
-traversePlanForUnsupportedDistributedStep(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 }
-
-
-std::optional<PreformattedMessage>
-hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 
 
 /// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
@@ -872,18 +864,23 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
         || QueryPlanOptimizations::planContainsLogicalExchange(*root))
         return false;
 
-    const auto res = hasPlanUnsupportedStepForDistributed(*root, settings);
-    if (!res.has_value())
+    /// A bad bucket-count setting is a user error and throws regardless of the fallback setting.
+    /// It goes before the plan check because `tryMakeDistributed*` sizes exchange fan-outs and
+    /// read-bucket vectors from the raw values.
+    QueryPlanOptimizations::validateDistributedPlanBucketCounts(settings);
+
+    const auto reason = QueryPlanOptimizations::getReasonPlanCannotBeDistributed(*root, settings);
+    if (!reason.has_value())
     {
         distributed_plan_decision = DistributedPlanDecision::Distributed;
         return false;
     }
 
     if (!settings.distributed_plan_fallback_to_local_execution)
-        throw Exception(*res, ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(*reason, ErrorCodes::SUPPORT_IS_DISABLED);
 
     LOG_INFO(
-        getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", res->text);
+        getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
     settings.make_distributed_plan = false;
     distributed_plan_decision = DistributedPlanDecision::FellBack;
     return true;
@@ -927,59 +924,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::addStepsToBuildSets(effective_settings, *this, *root, nodes);
     if (effective_settings.materialize_ctes)
         QueryPlanOptimizations::resolveMaterializingCTEs(effective_settings, *this, *root, nodes);
-}
-
-
-std::optional<PreformattedMessage>
-hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
-{
-    /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
-    /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
-    QueryPlanOptimizations::validateDistributedPlanBucketCounts(optimization_settings);
-
-    /// Sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`) cannot be shipped with the
-    /// worker tasks.
-    if (auto res = validateSetsForDistributedPlan(root); res.has_value())
-    {
-        return res;
-    }
-
-    std::vector<const IQueryPlanStep *> unsupported_steps;
-    QueryPlanOptimizations::findStepsUnsupportedForRemoteExecution(root, unsupported_steps);
-
-    /// The CommonSubplanStep and CommonSubplanReferenceStep are allowed in this case:
-    /// `make_distributed_plan` force-disables the in-memory buffer, so the second optimization
-    /// pass is guaranteed to materialize them away (`materializeQueryPlanReferences` /
-    /// `optimizeUnusedCommonSubplans`) before the fragment cut.
-    const auto is_tolerated_placeholder = [](const IQueryPlanStep * step)
-    {
-        return typeid_cast<const CommonSubplanStep *>(step) != nullptr
-            || typeid_cast<const CommonSubplanReferenceStep *>(step) != nullptr;
-    };
-
-    const auto first_unallowed = std::ranges::find_if_not(unsupported_steps, is_tolerated_placeholder);
-
-    if (first_unallowed != unsupported_steps.end())
-    {
-        return PreformattedMessage::create(
-            "make_distributed_plan cannot distribute this query: "
-            "it contains the step {} which could not execute remotely",
-            (*first_unallowed)->getName());
-    }
-
-    /// Currently does not work with projections.
-    if (optimization_settings.force_use_projection || !optimization_settings.force_projection_name.empty())
-    {
-        return PreformattedMessage::create(
-            "make_distributed_plan creates a plan where projections are not used, hence falling back to the local execution");
-    }
-
-    if (auto res = QueryPlanOptimizations::traversePlanForUnsupportedDistributedStep(root, optimization_settings); res.has_value())
-    {
-        return res;
-    }
-
-    return std::nullopt;
 }
 
 

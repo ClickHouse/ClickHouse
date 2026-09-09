@@ -2,9 +2,10 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Common/Exception.h>
+#include <Common/LoggingFormatStringHelpers.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace DB

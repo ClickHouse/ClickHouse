@@ -91,7 +91,6 @@ namespace Setting
     extern const SettingsBool explain_syntax_single_record;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
 }
@@ -881,7 +880,10 @@ bool InterpreterExplainQuery::isExecutableAnalyze() const
     if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
         return false;
 
-    return true;
+    /// A plan that stays distributed is rejected in executeImpl and never runs its inner SELECT, so it
+    /// must not be charged as one. Planning here is not extra work: `ignoreQuota` plans the same
+    /// inner query at the same moment.
+    return !getAnalyzedInnerQuery().plan.staysDistributed();
 }
 
 InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyzedInnerQuery() const
@@ -930,6 +932,10 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), planning_context, inner_options);
         interpreter.buildQueryPlan(result->plan);
         result->context = interpreter.getContext();
+        /// The old analyzer has no query tree to carry a fallback into, so the decision is recorded
+        /// on the plan only, the same way `buildQueryPipeline` applies it at execution.
+        QueryPlanOptimizationSettings probe_settings(result->context);
+        result->plan.applyDistributedPlanFallbackToLocal(probe_settings);
         result->ignore_quota = interpreter.ignoreQuota();
         result->ignore_limits = interpreter.ignoreLimits();
     }
@@ -1300,12 +1306,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
             auto & analyzed = getAnalyzedInnerQuery();
 
-            /// The inner interpreter has decided the distributed-to-local fallback on its context
-            /// (see `getAnalyzedInnerQuery`): a query that fell back is a plain local query and is
-            /// analyzable. Only a plan that stays distributed is rejected — its rewrite into
-            /// exchange/remote steps cannot be executed here. The old analyzer makes no fallback
-            /// decision, so its context keeps the raw setting and is rejected as before.
-            if (analyzed.context->getSettingsRef()[Setting::make_distributed_plan])
+            /// A query that fell back to local execution is a plain local query and is analyzable.
+            /// Only a plan that stays distributed is rejected: its rewrite into exchange and remote
+            /// steps cannot be executed here. The decision was recorded on the plan by
+            /// `getAnalyzedInnerQuery` for both analyzers.
+            if (analyzed.plan.staysDistributed())
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");

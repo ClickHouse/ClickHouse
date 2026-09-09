@@ -198,9 +198,16 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
-void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Rule for passes under `make_distributed_plan`: a pass that can turn a serializable step into a
+/// non-serializable one, or insert one (read-in-order, distinct-in-order, aggregation-in-order,
+/// lazy materialization and lazy FINAL, the scattered full-sorting merge join), must not run while
+/// the distributed plan is being built. The fallback decision (`QueryPlan::applyDistributedPlanFallbackToLocal`)
+/// is taken before this function on the unoptimized plan, so it stays correct only if no pass here
+/// creates a step it did not see; `convertToDistributed` throws if one slips through. Nothing is
+/// lost by skipping: every worker re-optimizes its fragment with `make_distributed_plan = 0` and
+/// applies these passes to its own part of the plan.
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
