@@ -52,7 +52,8 @@ use vortex::scalar_fn::ScalarFnVTableExt;
 use vortex::session::VortexSession;
 use vortex::VortexSessionDefault;
 
-/// Reads `length` bytes at `offset` into `out`. Returns zero on success.
+/// Reads `length` bytes at `offset` into `out`. Returns zero on success. Called from the threads
+/// that run the IO queue, concurrently when `io_concurrency` is greater than 1.
 pub type FFI_VortexReadCallback =
     unsafe extern "C" fn(context: *mut c_void, offset: u64, length: u64, out: *mut u8) -> i32;
 
@@ -60,6 +61,7 @@ pub type FFI_VortexReadCallback =
 pub type FFI_VortexWriteCallback =
     unsafe extern "C" fn(context: *mut c_void, data: *const u8, length: u64) -> i32;
 
+/// The queue a task waits in.
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FFI_VortexTaskQueue {
@@ -74,15 +76,17 @@ const NUM_QUEUES: usize = 2;
 /// Reports that a task of this queue became runnable. It must not call back into the library:
 /// schedule `vortex_ffi_runtime_run` somewhere and return. Can be called on any thread, and
 /// synchronously from inside any call that woke a task.
+/// Optional: a null callback gives a runtime that only advances inside FFI calls. The `Option` is
+/// part of the alias so that the generated header sees a plain, nullable function pointer.
 pub type FFI_VortexTaskReadyCallback =
-    unsafe extern "C" fn(context: *mut c_void, queue: FFI_VortexTaskQueue);
+    Option<unsafe extern "C" fn(context: *mut c_void, queue: FFI_VortexTaskQueue)>;
 
 /// The whole of the threading in this crate. Futures that Vortex spawns become `Runnable`s in one
 /// of the two queues, and a `Runnable` only ever runs inside `vortex_ffi_runtime_run` or
 /// `block_on`.
 struct HostRuntime {
     queues: [ConcurrentQueue<Runnable>; NUM_QUEUES],
-    notify: Option<FFI_VortexTaskReadyCallback>,
+    notify: FFI_VortexTaskReadyCallback,
     /// The caller's pointer, as an integer to keep this struct `Send`.
     context: usize,
     /// Used when scheduling: work whose runtime is already gone is dropped rather than queued.
@@ -94,7 +98,7 @@ struct HostRuntime {
 }
 
 impl HostRuntime {
-    fn new(context: usize, notify: Option<FFI_VortexTaskReadyCallback>) -> Arc<Self> {
+    fn new(context: usize, notify: FFI_VortexTaskReadyCallback) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             queues: [ConcurrentQueue::unbounded(), ConcurrentQueue::unbounded()],
             notify,
@@ -255,7 +259,7 @@ pub struct FFI_VortexRuntime {
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_runtime_new(
     context: *mut c_void,
-    notify: Option<FFI_VortexTaskReadyCallback>,
+    notify: FFI_VortexTaskReadyCallback,
 ) -> *mut FFI_VortexRuntime {
     Box::into_raw(Box::new(FFI_VortexRuntime {
         inner: HostRuntime::new(context as usize, notify),
@@ -777,7 +781,9 @@ fn scan_task_error(outcome: Result<VortexResult<()>, Box<dyn Any + Send>>) -> Op
 /// delivered nothing.
 ///
 /// The reader and the callbacks' context both have to outlive the scan. `filter` is borrowed, not
-/// consumed. Returns null on failure.
+/// consumed. Only one scan of a reader may be alive at a time - everything that bounds the reads,
+/// `io_concurrency` above all, is set up per scan - so this fails while another scan of the same
+/// reader has not been freed. Returns null on failure.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_scan_create(
     reader: *const FFI_VortexReader,
@@ -1056,6 +1062,7 @@ pub enum FFI_VortexPrimitiveType {
     F64 = 9,
 }
 
+/// The operator of `vortex_ffi_expr_compare`.
 #[repr(i32)]
 #[derive(Clone, Copy)]
 pub enum FFI_VortexComparisonOperator {
@@ -2526,5 +2533,42 @@ mod tests {
             assert_eq!(consumer.rows(), 3);
             vortex_ffi_reader_free(reader);
         }
+    }
+    /// The header is generated from this file by `generate-header.sh`, so their signatures cannot
+    /// drift apart. What regeneration cannot catch on its own is forgetting to run it: this checks
+    /// that the committed header still declares exactly the functions this file exports.
+    #[test]
+    fn header_declares_every_exported_function() {
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let source = std::fs::read_to_string(crate_dir.join("src/lib.rs")).unwrap();
+        let header = std::fs::read_to_string(crate_dir.join("include/vortex_ffi.h")).unwrap();
+
+        let exported: std::collections::BTreeSet<_> = source
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("pub unsafe extern \"C\" fn "))
+            .filter_map(|rest| rest.split('(').next())
+            .map(str::trim)
+            .collect();
+        // Only what is declared, so that a `vortex_ffi_*` mentioned in a comment does not count.
+        let declared: std::collections::BTreeSet<_> = header
+            .match_indices('(')
+            .filter_map(|(paren, _)| {
+                let before = &header[..paren];
+                let start = before
+                    .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+                    .map_or(0, |boundary| boundary + 1);
+                Some(&before[start..]).filter(|name| name.starts_with("vortex_ffi_"))
+            })
+            .collect();
+
+        assert!(!exported.is_empty(), "found no exported functions to check");
+        let missing: Vec<_> = exported.difference(&declared).collect();
+        let extra: Vec<_> = declared.difference(&exported).collect();
+        assert!(
+            missing.is_empty() && extra.is_empty(),
+            "include/vortex_ffi.h is out of date: run generate-header.sh.\n  \
+             exported but not declared: {missing:?}\n  \
+             declared but not exported: {extra:?}"
+        );
     }
 }
