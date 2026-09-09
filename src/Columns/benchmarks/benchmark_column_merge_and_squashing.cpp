@@ -14,6 +14,7 @@
 #include <Interpreters/Squashing.h>
 #include <Processors/Chunk.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/benchmarks/JemallocAllocationCounter.h>
 #include <Common/typeid_cast.h>
 
 #include <cstring>
@@ -181,6 +182,15 @@ Aggregator::Params makeAdaptiveAggregationParams(const AggregateDescriptions & a
         /*adaptive_aggregator_freeze_threshold_bytes_=*/0);
 }
 
+void setJemallocAllocationCounters(benchmark::State & state, const std::optional<JemallocAllocationStats> & allocation_stats)
+{
+    if (!allocation_stats)
+        return;
+
+    state.counters["jemalloc_allocations"] = static_cast<double>(allocation_stats->allocations);
+    state.counters["jemalloc_allocated_bytes"] = static_cast<double>(allocation_stats->allocated_bytes);
+}
+
 MutableStagedChunkPtr makeAdaptiveStagedChunk(const DataTypePtr & argument_type, size_t chunk_number, size_t rows)
 {
     auto chunk = std::make_shared<StagedChunk>();
@@ -212,6 +222,14 @@ void BM_PrepareForSquashingNestedMap(benchmark::State & state)
     const auto initial_column = makeNestedMapColumn(type, 0, state.range(1));
     const auto sources = makeSources(type, state.range(0), state.range(1), false);
 
+    /// Run one untimed allocation probe. Exact jemalloc request counts require flushing the
+    /// thread cache, so keeping the probe separate avoids perturbing the benchmark's timed loop.
+    auto allocation_probe_destination = initial_column->cloneResized(initial_column->size());
+    const auto allocation_stats = measureJemallocAllocations([&] { allocation_probe_destination->prepareForSquashing(sources, 1); });
+    benchmark::DoNotOptimize(allocation_probe_destination);
+    allocation_probe_destination.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
+
     for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
@@ -235,6 +253,24 @@ void BM_SquashNestedMap(benchmark::State & state)
     /// Squashing uses the first chunk as the destination and appends the requested number of sources to it.
     const auto source_columns = makeSources(type, state.range(0) + 1, state.range(1), false);
     auto header = std::make_shared<const Block>(Block{{type->createColumn(), type, "value"}});
+
+    Chunks allocation_probe_chunks;
+    allocation_probe_chunks.reserve(source_columns.size());
+    for (const auto & source : source_columns)
+        allocation_probe_chunks.emplace_back(Columns{source->cloneResized(source->size())}, source->size());
+    auto allocation_probe_squashing = std::make_unique<Squashing>(header, 0, 0);
+    Chunk allocation_probe_result;
+    const auto allocation_stats = measureJemallocAllocations(
+        [&]
+        {
+            for (auto & chunk : allocation_probe_chunks)
+                allocation_probe_squashing->add(std::move(chunk));
+            allocation_probe_result = Squashing::squash(allocation_probe_squashing->flush(), header);
+        });
+    benchmark::DoNotOptimize(allocation_probe_result);
+    allocation_probe_result.clear();
+    allocation_probe_squashing.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
 
     for (auto _ [[maybe_unused]] : state)
     {
@@ -264,6 +300,12 @@ void BM_PrepareForSquashingObject(benchmark::State & state)
     const auto initial_column = makeObjectColumn(type, 0, state.range(1));
     const auto sources = makeSources(type, state.range(0), state.range(1), true);
 
+    auto allocation_probe_destination = initial_column->cloneResized(initial_column->size());
+    const auto allocation_stats = measureJemallocAllocations([&] { allocation_probe_destination->prepareForSquashing(sources, 1); });
+    benchmark::DoNotOptimize(allocation_probe_destination);
+    allocation_probe_destination.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
+
     for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
@@ -285,6 +327,13 @@ void BM_ChooseDynamicStructureForMergeObject(benchmark::State & state)
     auto sources = makeSources(type, state.range(0), state.range(1), true);
     cacheStatistics(sources);
 
+    auto allocation_probe_destination = type->createColumn();
+    const auto allocation_stats = measureJemallocAllocations(
+        [&] { allocation_probe_destination->chooseDynamicStructureForMerge(sources, max_dynamic_subcolumns); });
+    benchmark::DoNotOptimize(allocation_probe_destination);
+    allocation_probe_destination.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
+
     for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
@@ -305,6 +354,13 @@ void BM_TakeOrCalculateStatisticsFromObject(benchmark::State & state)
     const auto type = getObjectType();
     auto sources = makeSources(type, state.range(0), state.range(1), true);
     cacheStatistics(sources);
+
+    auto allocation_probe_destination = type->createColumn();
+    allocation_probe_destination->chooseDynamicStructureForMerge(sources, max_dynamic_subcolumns);
+    const auto allocation_stats = measureJemallocAllocations([&] { allocation_probe_destination->takeOrCalculateStatisticsFrom(sources); });
+    benchmark::DoNotOptimize(allocation_probe_destination);
+    allocation_probe_destination.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
 
     for (auto _ [[maybe_unused]] : state)
     {
@@ -328,6 +384,15 @@ void BM_TakeStatisticsForPartWritingObject(benchmark::State & state)
     auto sources = makeSources(type, 1, state.range(0), true);
     cacheStatistics(sources);
     const auto & source = sources.front();
+
+    /// MergeTreeDataPartWriterOnDisk propagates statistics from one block or sample column.
+    auto allocation_probe_destination = type->createColumn();
+    allocation_probe_destination->takeExactDynamicStructureFrom(*source);
+    const auto allocation_stats
+        = measureJemallocAllocations([&] { allocation_probe_destination->takeOrCalculateStatisticsFrom(ColumnsView{source}); });
+    benchmark::DoNotOptimize(allocation_probe_destination);
+    allocation_probe_destination.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
 
     for (auto _ [[maybe_unused]] : state)
     {
@@ -356,6 +421,17 @@ void BM_AdaptiveAggregationCoalescingNestedMap(benchmark::State & state)
     const Block header{{key_type->createColumn(), key_type, "key"}, {argument_type->createColumn(), argument_type, "value"}};
     const Aggregator aggregator(header, makeAdaptiveAggregationParams(aggregates));
 
+    auto allocation_probe_session = std::make_shared<AdaptiveAggregationSession>();
+    auto allocation_probe_producer = std::make_unique<AdaptiveAggregationProducer>(allocation_probe_session);
+    allocation_probe_producer->pending_chunks.reserve(state.range(0));
+    for (size_t chunk = 0; chunk != static_cast<size_t>(state.range(0)); ++chunk)
+        allocation_probe_producer->pending_chunks.emplace_back(makeAdaptiveStagedChunk(argument_type, chunk, state.range(1)));
+    const auto allocation_stats = measureJemallocAllocations([&] { aggregator.flushPendingChunks(*allocation_probe_producer); });
+    benchmark::DoNotOptimize(allocation_probe_session->backlog.undrainedRecords());
+    allocation_probe_producer.reset();
+    allocation_probe_session.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
+
     for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
@@ -381,6 +457,17 @@ void BM_MergePreparationObject(benchmark::State & state)
     const auto type = getObjectType();
     auto sources = makeSources(type, state.range(0), state.range(1), true);
     cacheStatistics(sources);
+
+    auto allocation_probe_destination = type->createColumn();
+    const auto allocation_stats = measureJemallocAllocations(
+        [&]
+        {
+            allocation_probe_destination->chooseDynamicStructureForMerge(sources, max_dynamic_subcolumns);
+            allocation_probe_destination->takeOrCalculateStatisticsFrom(sources);
+        });
+    benchmark::DoNotOptimize(allocation_probe_destination);
+    allocation_probe_destination.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
 
     for (auto _ [[maybe_unused]] : state)
     {
