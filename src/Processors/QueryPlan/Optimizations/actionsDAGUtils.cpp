@@ -6,6 +6,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
@@ -550,6 +552,157 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     return new_inputs;
 }
 
+static bool isConstantExpression(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        const auto * current = nodes.top();
+        nodes.pop();
+
+        if (current->column)
+            continue;
+
+        if (current->type == ActionsDAG::ActionType::ALIAS && current->children.size() == 1)
+        {
+            nodes.push(current->children[0]);
+            continue;
+        }
+
+        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
+            && current->function_base->isDeterministicInScopeOfQuery())
+        {
+            for (const auto * child : current->children)
+                nodes.push(child);
+
+            continue;
+        }
+
+        return false;
+    }
+
+    return true;
+}
+
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true, 0};
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
+        return {};
+
+    const auto function_name = node.function_base->getName();
+    ActionsDAGLineageKind kind{};
+    size_t source_child_index = 0;
+    if ((function_name == "materialize" || function_name == "toNullable") && node.children.size() == 1)
+        kind = ActionsDAGLineageKind::ValuePreserving;
+    else if (function_name == "_CAST" || function_name == "CAST")
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    else
+    {
+        if (!node.function_base->isDeterministicInScopeOfQuery())
+            return {};
+
+        /// Constant arguments do not increase NDV; follow the only non-const argument.
+        std::optional<size_t> non_constant_child;
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            if (isConstantExpression(node.children[i]))
+                continue;
+
+            if (non_constant_child)
+                return {};
+            non_constant_child = i;
+        }
+
+        if (!non_constant_child)
+            return {};
+        source_child_index = *non_constant_child;
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    }
+
+    /// NDV counts only non-null values. A hop turning a Nullable source argument into a
+    /// non-Nullable result can map NULL to one additional counted value.
+    const bool collapses_null
+        = isNullableOrLowCardinalityNullable(node.children[source_child_index]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
+    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
+        ->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type));
+    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width, source_child_index};
+}
+
+std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
+{
+    using TraceState = std::optional<ActionsDAGInputLineage>;
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> input_positions;
+    const auto & inputs = actions.getInputs();
+    for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
+        input_positions[inputs[input_position]] = input_position;
+
+    std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
+    const auto & outputs = actions.getOutputs();
+    for (const auto * output : outputs)
+    {
+        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
+        nodes_to_process.push({output, false});
+        while (!nodes_to_process.empty())
+        {
+            auto [node, child_pushed] = nodes_to_process.top();
+            if (traced.contains(node))
+            {
+                nodes_to_process.pop();
+                continue;
+            }
+
+            if (auto input = input_positions.find(node); input != input_positions.end())
+            {
+                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
+                nodes_to_process.pop();
+                continue;
+            }
+
+            const auto hop = describeActionsDAGLineageHop(*node);
+            if (hop && !child_pushed)
+            {
+                nodes_to_process.top().second = true;
+                nodes_to_process.push({node->children[hop->source_child_index], false});
+                continue;
+            }
+
+            TraceState result;
+            if (hop)
+            {
+                const auto & child = traced.at(node->children[hop->source_child_index]);
+                if (child)
+                {
+                    ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
+                    if (hop->kind == ActionsDAGLineageKind::DistinctValuesBound
+                        || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
+                        kind = ActionsDAGLineageKind::DistinctValuesBound;
+                    else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
+                        || child->kind == ActionsDAGLineageKind::ValuePreserving)
+                        kind = ActionsDAGLineageKind::ValuePreserving;
+                    result = ActionsDAGInputLineage{
+                        child->input_position,
+                        kind,
+                        child->ndv_delta + hop->ndv_delta,
+                        child->preserves_width && hop->preserves_width};
+                }
+            }
+            traced[node] = result;
+            nodes_to_process.pop();
+        }
+    }
+
+    std::vector<ActionsDAGOutputLineage> result;
+    result.reserve(outputs.size());
+    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
+        result.push_back({output_position, traced.at(outputs[output_position])});
+    return result;
+}
+
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
     if (node->function_base->isInjective({}))
@@ -585,7 +738,10 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            UNREACHABLE();
+            /// The result of an ARRAY JOIN is not a per-row function of its child, so it cannot be
+            /// reduced any further (see `buildArrayJoinDAG` for how such nodes enter key expressions).
+            irreducible.insert(node);
+            break;
         case ActionsDAG::ActionType::COLUMN:
             irreducible.insert(node);
             break;

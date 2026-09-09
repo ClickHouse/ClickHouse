@@ -861,7 +861,7 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     }
     else if (engine_name == "NATS")
     {
-        /// NATS(named_collection, nats_password = 'password', ...)
+        /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
         findNATSTableEngineSecretArguments();
     }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
@@ -876,13 +876,14 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
 void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
 {
     /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
-    ///      [, nats_credential_file = '/path'] [, nats_url = 'nats://user:password@host:4222'], ...)
-    /// The removed `nats_credentials` setting is masked too: the query is formatted for logging
-    /// before the overrides are validated, so the old spelling must not leak the JWT/seed.
+    ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
+    ///      [, nats_url = 'nats://user:password@host:4222']
+    ///      [, nats_server_list = 'nats://user:password@host:4222,...'], ...)
     /// The only positional argument the engine accepts is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
     /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
     /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
+    /// `nats_server_list` is hidden whole because each list entry can carry userinfo credentials.
     /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {

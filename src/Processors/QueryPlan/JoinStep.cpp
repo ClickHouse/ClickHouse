@@ -147,9 +147,10 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    /// Sharding requires both pipelines to have the same number of streams.
-    /// When stream counts don't match, fall back to the
-    /// regular join pipeline which handles different stream counts
+    /// Sharding requires both pipelines to have the same number of streams, because the shards of the two
+    /// sides are paired positionally. Every step that can feed a sharded join keeps one output port per
+    /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
+    /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
     if (!use_sharding)
     {
@@ -471,12 +472,13 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());
+    auto match_counter = std::make_shared<RightRowsMatchCounter>();
 
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
-        return std::make_shared<JoiningTransform>(header, output_header, join, max_block_size, on_totals, default_totals, counter);
+        return std::make_shared<JoiningTransform>(header, output_header, join, max_block_size, on_totals, default_totals, counter, match_counter);
     });
 }
 

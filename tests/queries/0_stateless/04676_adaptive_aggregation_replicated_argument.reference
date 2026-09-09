@@ -8,6 +8,4 @@ Nullable(UInt64)
 4873337004925605739
 4873337004925605739
 sealed chunks	1
-normalized string	1
-normalized uint128	1
-normalized nullable	1
+normalized	1

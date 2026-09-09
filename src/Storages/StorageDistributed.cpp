@@ -717,7 +717,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     // LIMIT
     // OFFSET
-    if (query_node.hasLimit() || query_node.hasOffset())
+    // LIMIT AFTER/UNTIL (the no-count forms leave hasLimit() false but must still be applied once on the initiator)
+    if (query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitAfter() || query_node.hasLimitUntil())
         return default_stage;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
@@ -800,7 +801,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     // LIMIT
     // OFFSET
-    if (select.limitLength() || select.limitOffset())
+    // LIMIT AFTER/UNTIL (the no-count forms leave limitLength() false but must still be applied once on the initiator)
+    if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
         return default_stage;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
@@ -1029,7 +1031,7 @@ void StorageDistributed::read(
             column.column = column.column->convertToFullColumnIfConst();
         header = std::make_shared<const Block>(std::move(block));
 
-        /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
+        /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
         /// in a separate clone so the AST sent to shards contains the generic function name
         /// that can be re-resolved by the shard's analyzer.  The original query tree must keep
         /// the specialized functions because it is reused later for getSampleBlock / plan building
