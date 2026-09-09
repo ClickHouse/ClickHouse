@@ -38,6 +38,7 @@ ${CLICKHOUSE_CLIENT} -q "
         countIf(mapContains(Settings, 'distributed_cache_client_id')) AS inherited_caller_setting
     FROM system.query_log
     WHERE event_date >= yesterday()
+      AND current_database = currentDatabase()
       AND type = 'QueryStart'
       AND query IN (
             'DETACH TABLE ${CLICKHOUSE_DATABASE}.t_reattach_internal_settings SYNC',
