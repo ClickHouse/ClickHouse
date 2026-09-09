@@ -161,7 +161,7 @@ void WorkerPool::runUntil(std::atomic_bool * yield_flag)
 
 void WorkerPool::grow()
 {
-    if (!pool || scheduler.queued() == 0 || workers_count >= max_threads || coordinator.idle() > 0)
+    if (!pool || workers_count >= max_threads || coordinator.idle() > 0 || scheduler.queued() == 0)
         return;
 
     std::unique_lock lock(spawn_mutex, std::try_to_lock);
