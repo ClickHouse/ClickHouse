@@ -184,8 +184,7 @@ private:
     const ObjectStorageKeyGeneratorPtr key_generator;
 
     LoggerPtr log;
-    /// A store may report an empty page with more to come for long stretches, so the notice about it
-    /// is throttled rather than emitted per page.
+    /// Throttled: a store may report empty pages for long stretches.
     LogSeriesLimiterPtr limited_log;
 
     const bool for_disk_s3;

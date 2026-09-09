@@ -89,9 +89,8 @@ void IObjectStorageIteratorAsync::nextBatch()
                 break;
             }
 
-            /// Following the token past an empty page is correct, and it is also what a listing
-            /// under-reporting its contents looks like. Nothing else records that it happened, and
-            /// an object a later step cannot find is much easier to explain with this in the log.
+            /// Correct to follow, but indistinguishable from a listing that under-reports, which
+            /// is how #109751 was reached twice. Leave a trace.
             LOG_INFO(
                 limited_log,
                 "Listing returned an empty page while reporting more to come, following the token. {}",

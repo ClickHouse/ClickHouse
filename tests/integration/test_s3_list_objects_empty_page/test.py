@@ -156,12 +156,8 @@ def test_empty_listing_page_does_not_create_intersecting_parts(start_cluster):
 
 
 def test_empty_listing_page_is_logged(start_cluster):
-    """The empty page is legal and now handled, so nothing about it is visible from the outside.
-
-    It is also indistinguishable from a listing that under-reports, which is how #109751 was
-    reached twice. Following the token has to leave a trace, or a recurrence is again only
-    reconstructible from the object store's own access logs.
-    """
+    """Following the token past an empty page has to leave a trace, or a recurrence of #109751 is
+    only reconstructible from the object store's own access logs."""
     node = cluster.instances["node"]
 
     node.query("DROP TABLE IF EXISTS test_logged_page SYNC")
