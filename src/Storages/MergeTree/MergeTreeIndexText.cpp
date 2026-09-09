@@ -1665,7 +1665,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     /// Keep-set mode: the map is pre-seeded with the only tokens to keep, everything else is skipped.
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
-        auto it = tokens_map.find(packed_key);
+        auto * it = tokens_map.find(packed_key);
         if (!it)
             return;
 
