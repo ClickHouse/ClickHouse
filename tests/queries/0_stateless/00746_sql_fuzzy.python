@@ -5,6 +5,7 @@
 import os
 import random
 import re
+import signal
 import string
 import sys
 
@@ -170,5 +171,8 @@ def main():
 
 
 if __name__ == "__main__":
+    # The script is the producer side of a pipe to `clickhouse-client`;
+    # exit silently if the consumer closes it early, like the Perl version did.
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
     sys.setrecursionlimit(10000)
     main()
