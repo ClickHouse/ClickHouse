@@ -76,8 +76,8 @@ namespace UTF8
 namespace
 {
 
-/// Every caller sits behind an `#if`, and on aarch64 the vectorised paths cover the whole length
-/// range, so in that configuration this function has no caller at all.
+/// Every caller sits behind an `#if`, and on aarch64 the library arms take every length, so in that
+/// configuration this function has no caller at all.
 [[maybe_unused]] UInt8 isValidUTF8Scalar(const UInt8 * data, UInt64 len)
 {
     while (len)
