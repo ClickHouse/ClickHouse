@@ -55,7 +55,8 @@ public:
     // is canceled and a `MEMORY_RESERVATION_ACQUISITION_TIMEOUT` exception is thrown.
     // `admission_timeout_ms_ == 0` means no timeout; it is used only to build the timeout message.
     MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size,
-                      UInt64 admission_timeout_ms_, std::chrono::steady_clock::time_point admission_deadline_);
+                      UInt64 admission_timeout_ms_ = 0,
+                      std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point{});
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
