@@ -97,10 +97,12 @@ SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1);
 
 DROP TABLE t_106533_partlevel;
 
--- A filtered query reaches _minmax_count_projection through its own part-minmax condition, built in
--- getMinMaxCountProjectionBlock. The projection groups by the partition columns and its filter has to be
--- computable from them, so the partition predicate is the filter here. `nan <= 3.` is false, which leaves
--- the NaN row alone in the false partition, and then that one part's bound decides the whole count.
+-- A filtered query is answered out of a second part-minmax condition, the one
+-- `MergeTreeData::getMinMaxCountProjectionBlock` builds. The projection groups by the partition columns
+-- and its filter has to be computable from them, so the partition predicate is the filter here.
+-- `nan <= 3.` is false, which leaves the NaN row alone in the false partition, and then that one part's
+-- bound decides the whole count. Only an unsound prune is observable from SQL: a condition that declines
+-- to prune leaves the outer filter to drop the same rows, so this pins the answer, not the pruning.
 
 DROP TABLE IF EXISTS t_106533_proj_filtered;
 
