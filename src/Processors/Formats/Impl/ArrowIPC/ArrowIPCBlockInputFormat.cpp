@@ -697,8 +697,8 @@ bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & 
 /// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from a column decoded as
 /// `decoded`. An `Int8` or `UInt8` element is never re-declared as `Bool`, although the two compare equal: a value
 /// outside 0/1 would then render as `true`. The reverse is allowed, since a `Bool` element only holds 0 or 1. A
-/// composite is never substituted, since `castColumn` pairs tuple fields by name while this walk keeps the decoded
-/// names, so a name-differing target field would be defaulted rather than rejected. `Date32` is never substituted,
+/// composite is never substituted, since this walk keeps the decoded field names and a cast between tuples with
+/// differing names fills the target fields instead of rejecting them. `Date32` is never substituted,
 /// since the decoder decides from its own hint whether a day number is range-checked, saturated or copied verbatim,
 /// and this layer cannot supply one; a decoded `UInt16` may take `Date`, and a decoded `DateTime` a `DateTime64`,
 /// since those decodes read no hint and every value they produce is in range, while the narrowing reverse is refused.

@@ -111,8 +111,8 @@ columns = {
     # A `date32` branch is excluded by design: whether a day number is range-checked, saturated or copied
     # verbatim is decided inside the decoder, from a hint this post-decode repair cannot supply.
     "date32_utf8": dense([pa.array([19000, 19001], type=pa.date32()), pa.array(["x", "y"])], ["d", "s"]),
-    # `date64` decodes to `DateTime`, which no conversion admits, while `uint32` admits both `DateTime` and
-    # `UInt64`. The `date64` branch has to claim `DateTime` itself, or the `uint32` branch stays ambiguous.
+    # `date64` decodes to `DateTime`, whose only targets are `DateTime` and `DateTime64`, so one of them is
+    # its single candidate below, while `uint32` admits two. It has to claim its own, or `uint32` stays ambiguous.
     "uint32_date64": dense(
         [pa.array([7, 8], type=pa.uint32()),
          pa.array([19000 * 86400000, 19001 * 86400000], type=pa.date64())], ["i", "d"]),
@@ -215,7 +215,7 @@ read_column retained "Variant(Enum8('a' = 1, 'b' = 2))"
 echo "--- nor decide the width of the values that are selected ---"
 read_column aliased_retained 'Variant(IPv6, UInt32)'
 # `session_timezone` is randomized in CI and `DateTime` renders in it, so the arm pins the zone it prints in.
-echo "--- a branch no conversion admits claims its own alternative, which disambiguates its sibling ---"
+echo "--- a branch with a single candidate claims its own alternative, which disambiguates its sibling ---"
 read_column uint32_date64 'Variant(UInt64, DateTime)' Arrow "session_timezone = 'UTC'"
 echo "--- an explicitly zoned DateTime alternative is a relabel, so the branch takes it ---"
 read_column uint32_date64 "Variant(UInt64, DateTime('UTC'))"

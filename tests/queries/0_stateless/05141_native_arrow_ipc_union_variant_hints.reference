@@ -50,7 +50,7 @@ b	Variant(Enum8(\'a\' = 1, \'b\' = 2))
 ::1	Variant(IPv6, UInt32)
 ::2	Variant(IPv6, UInt32)
 42	Variant(IPv6, UInt32)
---- a branch no conversion admits claims its own alternative, which disambiguates its sibling ---
+--- a branch with a single candidate claims its own alternative, which disambiguates its sibling ---
 7	Variant(DateTime, UInt64)
 2022-01-08 00:00:00	Variant(DateTime, UInt64)
 8	Variant(DateTime, UInt64)
