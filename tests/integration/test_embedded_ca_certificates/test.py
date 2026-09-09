@@ -272,8 +272,12 @@ def test_ca_config_is_not_widened_by_embedded_certificates(started_cluster):
         == "0"
     )
 
-    # The outbound (client) context is created from `caConfig` alone as well.
-    error = node_ca_config.query_and_get_error(
-        f"SELECT * FROM url('https://{node.ip_address}:8443/ping', LineAsString)"
+    # The outbound (client) context is created from `caConfig` alone as well: without a usable
+    # trust store its creation threw `Cannot load default CA certificates` before anything was
+    # sent, and the certificates that make the connection verify come from `caConfig`, not from
+    # the embedded bundle - `system.certificates` above shows none of the latter.
+    answer, error = node_ca_config.query_and_get_answer_with_error(
+        f"SELECT * FROM url('https://{node_ca_config.ip_address}:8443/ping', LineAsString)"
     )
     assert "Cannot load default CA certificates" not in error
+    assert answer.strip() == "Ok." or "certificate" in error.lower()
