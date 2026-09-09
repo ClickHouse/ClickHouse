@@ -509,8 +509,8 @@ public:
         memset(static_cast<void *>(buf), 0, NUM_CELLS * sizeof(*buf));
     }
 
-    /// After executing this function, the table can only be destroyed,
-    ///  and also you can use the methods `size`, `empty`, `begin`, `end`.
+    /// After executing this function, the table can only be destroyed or inspected through
+    /// `size`, `empty`, `begin`, `end`, and `getBufferSizeInBytes`.
     void clearAndShrink()
     {
         destroyElements();
@@ -518,7 +518,7 @@ public:
         free();
     }
 
-    size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
+    size_t getBufferSizeInBytes() const { return buf ? NUM_CELLS * sizeof(Cell) : 0; }
 
     size_t getBufferSizeInCells() const { return NUM_CELLS; }
 
