@@ -69,7 +69,7 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 /// number of output bytes, so a rename-only step stays transparent and the single-replica and
 /// parallel-replicas plan builds still match. Only a change in the set/types of output columns
 /// changes `output_bytes`.
-static bool sameByteLayout(const Block & lhs, const Block & rhs)
+bool sameByteLayout(const Block & lhs, const Block & rhs)
 {
     if (lhs.columns() != rhs.columns())
         return false;
@@ -84,7 +84,7 @@ static bool sameByteLayout(const Block & lhs, const Block & rhs)
 /// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
 /// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
 /// `isPassThroughExpression` below.
-static bool isByteTransparentTransform(const ITransformingStep & transform)
+bool isByteTransparentTransform(const ITransformingStep & transform)
 {
     return transform.getTransformTraits().preserves_number_of_rows
         && !transform.getInputHeaders().empty()
