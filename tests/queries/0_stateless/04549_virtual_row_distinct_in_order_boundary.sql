@@ -291,3 +291,56 @@ SELECT
   = (SELECT arraySort(groupArray((a, b))) FROM (SELECT * FROM (SELECT a, b FROM t_virtual_row_widen_past_pk ORDER BY a DESC LIMIT 1 BY a, b SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0)));
 
 DROP TABLE t_virtual_row_widen_past_pk;
+
+-- A SELECTIVE fixed middle key. In the sections above every row has `b = 1`, so the index entries
+-- the virtual row is taken from always survive the filter. Here `b` takes several values, so the
+-- first index row of a read range (the direct-order boundary) and the part's final mark (the
+-- reverse-order boundary) usually belong to rows that `WHERE b = 1` removes, and the filter runs
+-- before the merges. The announced row is still a valid bound - it is an index value at the edge
+-- of the range, and dropping rows never moves the remaining ones past it - so both merges stay
+-- correct: the read-side preliminary merge compares the raw index values on the whole read prefix
+-- `(a, b, c)`, and the outer converted merge compares only the covered prefix `(a)`.
+DROP TABLE IF EXISTS t_virtual_row_selective_fixed_key;
+
+CREATE TABLE t_virtual_row_selective_fixed_key (a UInt32, b UInt32, c UInt32)
+ENGINE = MergeTree ORDER BY (a, b, c)
+SETTINGS index_granularity = 8;
+
+SYSTEM STOP MERGES t_virtual_row_selective_fixed_key;
+
+INSERT INTO t_virtual_row_selective_fixed_key SELECT number % 10, number % 3, number % 7 FROM numbers(2000);
+INSERT INTO t_virtual_row_selective_fixed_key SELECT number % 10, number % 3, number % 7 FROM numbers(2000, 2000);
+INSERT INTO t_virtual_row_selective_fixed_key SELECT number % 10, number % 3, number % 7 FROM numbers(4000, 2000);
+INSERT INTO t_virtual_row_selective_fixed_key SELECT number % 10, number % 3, number % 7 FROM numbers(6000, 2000);
+
+-- The optimization must stay enabled for the selective skipped-middle-key read.
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT a, c FROM t_virtual_row_selective_fixed_key WHERE b = 1 ORDER BY a, c
+      SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1)
+WHERE explain ILIKE '%Virtual row conversions%';
+
+SELECT
+    (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key WHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
+  = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key WHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- Reverse order takes the boundary from the part's final mark, which is the last index row and
+-- therefore normally a row with `b != 1`.
+SELECT
+    (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key WHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
+  = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key WHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- The same predicate in `PREWHERE`, which the read applies before the preliminary merge.
+SELECT
+    (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key PREWHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
+  = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key PREWHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+SELECT
+    (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key PREWHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
+  = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key PREWHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- Per-block mode announces a truncated boundary after every chunk of the filtered stream.
+SELECT
+    (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key PREWHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1))
+  = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_selective_fixed_key PREWHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+DROP TABLE t_virtual_row_selective_fixed_key;
