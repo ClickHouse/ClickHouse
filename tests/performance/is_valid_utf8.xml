@@ -1,6 +1,6 @@
-<!-- Sweeps isValidUTF8 across the lengths where the vectorised validators and the scalar loop trade
-     places, in both the valid and the malformed-at-the-first-byte direction. materialize() keeps the
-     argument out of constant folding, and run_all_queries keeps every length in every run. -->
+<!-- Sweeps isValidUTF8 across both lengths where the validators trade places, 16 and 64, in both the
+     valid and the malformed-at-the-first-byte direction. materialize() keeps the argument out of
+     constant folding, and run_all_queries keeps every length in every run. -->
 <test run_all_queries="1">
     <query>SELECT isValidUTF8(materialize(repeat('a', 8))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 16))) FROM numbers(3000000) FORMAT Null</query>
@@ -19,4 +19,9 @@
     <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21845))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
     <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 63))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 65534))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 4))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 7))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 4))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 3))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 8))) FROM numbers(3000000) FORMAT Null</query>
 </test>
