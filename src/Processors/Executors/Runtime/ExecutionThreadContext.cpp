@@ -83,6 +83,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                     if (auto spill_request = reservation->takeSpillRequest(spillable, memory.spillable_memory_bytes))
                     {
                         auto * memory_tracker = process_list_element->getMemoryTracker();
+                        reservation->finishSpill(spillable, 0, memory_tracker);
                         const auto & logger = getLogger("Scheduler");
 
                         LOG_TRACE(logger, "Spilling {}, of {} (tracked {})", formatReadableSizeWithBinarySuffix(spill_request), formatReadableSizeWithBinarySuffix(memory.spillable_memory_bytes), formatReadableSizeWithBinarySuffix(memory_tracker->get()));
@@ -93,7 +94,6 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                         LOG_TRACE(logger, "Spilled {}, remaining {}, tracked {} (took {} ms)", formatReadableSizeWithBinarySuffix(spilled), formatReadableSizeWithBinarySuffix(remaining), formatReadableSizeWithBinarySuffix(memory_tracker->get()), watch.elapsedMilliseconds());
                         ProfileEvents::increment(ProfileEvents::MemoryReservationSpilledBytes, spilled);
                         ProfileEvents::increment(ProfileEvents::MemoryReservationSpillingMicroseconds, watch.elapsedMicroseconds());
-                        reservation->finishSpill(spillable, remaining, memory_tracker);
                     }
                 }
             }
