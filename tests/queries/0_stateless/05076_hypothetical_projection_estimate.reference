@@ -200,6 +200,7 @@ Granules: 3
 b >= 4000: within a granule of the real count: 1
 b < 2000: within a granule of the real count: 1
 --- a materialized lightweight delete ---
+rows the rebuilt projection kept:	1000
 hypothetical:
 marks: 10
 rows: 1000

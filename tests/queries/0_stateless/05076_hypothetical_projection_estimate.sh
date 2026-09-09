@@ -224,7 +224,8 @@ for w in "b >= 4000" "b < 2000"; do
 done
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;"
 
-# a lightweight delete leaves the dead rows in the part, and a materialized projection keeps them too
+# a lightweight delete leaves the dead rows in the part, and a projection without a WHERE keeps them:
+# the rebuild ANDs `_row_exists` into the projection's WHERE, and there is none here to AND it into
 echo "--- a materialized lightweight delete ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;
@@ -237,6 +238,8 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_real_d SELECT number, number % 100, number FROM numbers(1000);
     DELETE FROM t_est_d WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
     DELETE FROM t_real_d WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
+    SELECT 'rows the rebuilt projection kept:', sum(rows) FROM system.projection_parts
+        WHERE database = currentDatabase() AND table = 't_real_d' AND active;
 "
 compare p_d "(SELECT a, b, v ORDER BY b)" "SELECT a, v FROM TABLE WHERE b < 30" t_est_d t_real_d
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;"
