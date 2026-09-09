@@ -1018,12 +1018,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     /// A config-inherited value is not marked as `changed`, so `checkCompressionCodecSettings`
                     /// will never look at it. This is the only place that rejects a codec which can never work
                     /// on an untyped stream (e.g. `T64`, via `requiresColumnTypeToCompress`), so that part of
-                    /// the validation runs here as well; the experimental part must hold for both the session
-                    /// and the default profile, because only the latter survives a restart. `validateCodecString`
-                    /// runs with the sanity checks disabled, so the lossy-on-untyped case (`SZ3`) needs the
-                    /// explicit `checkCodecStringSafeForUntypedData` predicate next to it.
-                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
+                    /// the validation runs here as well. It is a property of the data, not a policy, so it
+                    /// holds on every path. `validateCodecString` runs with the sanity checks disabled, so the
+                    /// lossy-on-untyped case (`SZ3`) needs the explicit `checkCodecStringSafeForUntypedData`
+                    /// predicate next to it.
                     CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, name);
+
+                    /// The codec gate must hold for the default profile, because only that survives a restart
+                    /// (see below). A definition supplied now additionally has to be authorized by the
+                    /// session that supplies it. A genuine metadata load has no session to speak of: the load
+                    /// context of `TablesLoader` is a copy of the global context, whose settings are the
+                    /// `system_profile` snapshot rather than the policy an operator sets in `default_profile`
+                    /// (see `Context::getDefaultProfileSettings`), so checking it would refuse existing
+                    /// tables on restart whenever `system_profile` does not repeat the opt-in.
+                    if (!isLoadingFromExistingMetadata(args.mode))
+                        CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
 
                     try
                     {

@@ -26,6 +26,16 @@ node_profile_disabled = cluster.add_instance(
     "node_profile_disabled",
     main_configs=["configs/merge_tree.xml"],
 )
+# The default profile opts in, but `system_profile` is a separate profile that does not. The load
+# context of `TablesLoader` is a copy of the global context, whose settings are the `system_profile`
+# snapshot, so the metadata-load path must not check the config-inherited codec against it - only
+# against the default profile, which is the durable server policy.
+node_system_profile_disabled = cluster.add_instance(
+    "node_system_profile_disabled",
+    main_configs=["configs/merge_tree.xml", "configs/system_profile.xml"],
+    user_configs=["configs/default_profile_opt_in_system_profile_disabled.xml"],
+    stay_alive=True,
+)
 
 DISABLED = {"enable_zxc_codec": 0}
 ENABLED = {"enable_zxc_codec": 1}
@@ -157,3 +167,21 @@ def test_restart_with_config_default_allowed_in_default_profile(started_cluster)
 
     assert node.query("SELECT count() FROM t_restart") == "1\n"
     node.query("DROP TABLE t_restart SYNC")
+
+
+def test_restart_with_system_profile_not_repeating_the_opt_in(started_cluster):
+    # The table stores no codec setting, so on every load the value falls back to the config default
+    # and is re-validated. The default profile allows it; `system_profile` does not, and checking the
+    # load context against it would refuse the table on restart.
+    node_system_profile_disabled.query(
+        "CREATE TABLE t_system_profile (x UInt64) ENGINE = MergeTree ORDER BY x",
+        settings=ENABLED,
+    )
+    node_system_profile_disabled.query(
+        "INSERT INTO t_system_profile VALUES (1)", settings=ENABLED
+    )
+
+    node_system_profile_disabled.restart_clickhouse()
+
+    assert node_system_profile_disabled.query("SELECT count() FROM t_system_profile") == "1\n"
+    node_system_profile_disabled.query("DROP TABLE t_system_profile SYNC")
