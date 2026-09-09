@@ -4,7 +4,9 @@
 #include <base/getPageSize.h>
 #include <base/Numa.h>
 
+#include <algorithm>
 #include <fstream>
+#include <optional>
 
 #if defined(OS_WINDOWS)
 #include <Poco/UnWindows.h>
@@ -48,7 +50,45 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
 #endif
 }
 
+std::optional<uint64_t> getWindowsJobObjectMemoryLimit()
+{
+#if defined(OS_WINDOWS)
+    /// Windows has no cgroups. A container, and anything else that wants to cap a process, uses
+    /// a job object instead, and `GlobalMemoryStatusEx` does not see that cap - it reports what
+    /// the machine has. A null handle asks about the job the calling process belongs to; the
+    /// call fails when there is no such job, which is the ordinary case outside a container.
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
+    if (!QueryInformationJobObject(nullptr, JobObjectExtendedLimitInformation, &info, sizeof(info), nullptr))
+        return {};
+
+    return windowsJobObjectMemoryLimit(
+        info.BasicLimitInformation.LimitFlags,
+        static_cast<uint64_t>(info.JobMemoryLimit),
+        static_cast<uint64_t>(info.ProcessMemoryLimit));
+#else
+    return {};
+#endif
 }
+
+}
+
+#if defined(OS_WINDOWS)
+std::optional<uint64_t> windowsJobObjectMemoryLimit(uint32_t limit_flags, uint64_t job_memory_limit, uint64_t process_memory_limit)
+{
+    std::optional<uint64_t> limit;
+
+    /// The job-wide limit is what container runtimes set, and the per-process limit caps this
+    /// process alone. Either one is an upper bound on what this process can commit, so when both
+    /// are present the smaller one is the effective limit. A flag that is not set leaves the
+    /// corresponding field meaningless, so it must not be read.
+    if (limit_flags & JOB_OBJECT_LIMIT_JOB_MEMORY)
+        limit = job_memory_limit;
+    if (limit_flags & JOB_OBJECT_LIMIT_PROCESS_MEMORY)
+        limit = limit.has_value() ? std::min(*limit, process_memory_limit) : process_memory_limit;
+
+    return limit;
+}
+#endif
 
 uint64_t getMemoryAmountOrZero()
 {
@@ -73,6 +113,15 @@ uint64_t getMemoryAmountOrZero()
 
     if (auto total_numa_memory = DB::getNumaNodesTotalMemory(); total_numa_memory.has_value())
         memory_amount = *total_numa_memory;
+
+    /// Respect the memory limit of the job object this process belongs to. This is the Windows
+    /// counterpart of the cgroup clamp below: without it every caller that sizes itself from
+    /// `getMemoryAmount` - the default `max_server_memory_usage` in `clickhouse-local`, the
+    /// background pools in `Context::initializeBackgroundExecutorsIfNeeded` - would budget for
+    /// the whole machine inside a container and be killed by the outer quota instead of
+    /// staying under it.
+    if (auto job_limit = getWindowsJobObjectMemoryLimit(); job_limit.has_value() && *job_limit < memory_amount)
+        memory_amount = *job_limit;
 
     /// Respect the memory limit set by cgroups v2.
     auto limit_v2 = getCgroupsV2MemoryLimit();
