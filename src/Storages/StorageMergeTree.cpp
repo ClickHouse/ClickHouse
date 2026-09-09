@@ -3826,8 +3826,8 @@ StorageMergeTree::MutationsSnapshot::MutationsSnapshot(
     PartitionIdsByCommand partition_ids_by_command_)
     : MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
     , mutations_by_version(std::move(mutations_snapshot))
-    , partition_ids_by_command(std::move(partition_ids_by_command_))
 {
+    partition_ids_by_command = std::move(partition_ids_by_command_);
 }
 
 MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsForPart(const DataPartPtr & part) const
@@ -3847,17 +3847,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
     /// by mutation version alone applied it to every part whose data version predates the mutation, so
     /// while a `CLEAR COLUMN c IN PARTITION p` was pending, reads of *all* partitions answered the
     /// column's default, and went back to the stored values once the mutation materialized.
-    if (!partition_ids_by_command.empty())
-    {
-        const auto & partition_id = part->info.getOriginalPartitionId();
-        std::erase_if(result, [&](const MutationCommand & command)
-        {
-            if (!command.has_partition)
-                return false;
-            auto it = partition_ids_by_command.find(command.ast_text);
-            return it != partition_ids_by_command.end() && !it->second.contains(partition_id);
-        });
-    }
+    filterCommandsOutsidePartition(result, part->info.getOriginalPartitionId());
 
     std::reverse(result.begin(), result.end());
     return result;
@@ -3917,31 +3907,7 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
       * acquired before the mutations mutex elsewhere. The commands are kept alive by the snapshot.
       */
     for (const auto & [version, commands] : mutations_snapshot)
-    {
-        for (const auto & command : *commands)
-        {
-            if (!command.has_partition || partition_ids_by_command.contains(command.ast_text))
-                continue;
-
-            auto command_ast = command.ast();
-            if (!command_ast)
-                continue;
-
-            NameSet partition_ids;
-            if (const auto * partitions = command_ast->partitions)
-            {
-                for (const auto & partition : partitions->children)
-                    partition_ids.insert(getPartitionIDFromQuery(partition, getContext(), nullptr));
-            }
-            else if (const auto * partition = command_ast->partition)
-            {
-                partition_ids.insert(getPartitionIDFromQuery(partition->clone(), getContext(), nullptr));
-            }
-
-            if (!partition_ids.empty())
-                partition_ids_by_command.emplace(command.ast_text, std::move(partition_ids));
-        }
-    }
+        collectPartitionIdsOfScopedCommands(*commands, partition_ids_by_command);
 
     return std::make_shared<MutationsSnapshot>(
         params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts),

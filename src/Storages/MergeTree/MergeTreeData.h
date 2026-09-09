@@ -641,6 +641,17 @@ public:
         MutationCounters counters;
         PatchesByPartition patches_by_partition;
 
+        /** The partitions a command is scoped to, for every command of the snapshot that names one
+          * (`ALTER TABLE ... CLEAR COLUMN c IN PARTITION p`, `... DELETE IN PARTITION p WHERE ...`),
+          * keyed by the command's text.
+          *
+          * Resolved when the snapshot is taken (see `collectPartitionIdsOfScopedCommands`), which is
+          * where the storage and a context to evaluate a partition expression are at hand; the
+          * per-part command selection cannot evaluate one.
+          */
+        using PartitionIdsByCommand = std::unordered_map<String, NameSet>;
+        PartitionIdsByCommand partition_ids_by_command;
+
         MutationsSnapshotBase() = default;
         MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_);
 
@@ -657,6 +668,10 @@ public:
     protected:
         NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+
+        /// Drops the commands that name a partition other than @partition_id: a command with
+        /// `IN PARTITION` applies to the partition it names alone.
+        void filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -1391,6 +1406,15 @@ public:
     };
 
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
+
+    /** For every command that names a partition (`... IN PARTITION p`), resolves the partition ids and
+      * records them by the command's text, so that the per-part command selection of a mutations
+      * snapshot can respect the scope. Only the commands that have a partition are parsed -
+      * `has_partition` is recorded when the command itself is parsed - so a table with many pending
+      * mutations of the ordinary kind pays nothing here.
+      */
+    void collectPartitionIdsOfScopedCommands(
+        const MutationCommands & commands, MutationsSnapshotBase::PartitionIdsByCommand & result) const;
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(

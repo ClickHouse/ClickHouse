@@ -2321,10 +2321,16 @@ CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr
     return constructPromoters(std::move(committing_block_numbers), std::move(partition_ranges));
 }
 
-ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_)
+ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(
+    Params params_,
+    MutationCounters counters_,
+    MutationsByPartititon mutations_by_partition_,
+    DataPartsVector patches_,
+    PartitionIdsByCommand partition_ids_by_command_)
     : MergeTreeData::MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
     , mutations_by_partition(std::move(mutations_by_partition_))
 {
+    partition_ids_by_command = std::move(partition_ids_by_command_);
 }
 
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
@@ -2377,6 +2383,13 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
         }
     }
 
+    /** A command that names a partition applies to that partition alone, but the queue keys a mutation
+      * entry by the partitions of *all* of its commands: `ALTER TABLE ... CLEAR COLUMN c IN PARTITION
+      * '1', CLEAR COLUMN d` is a single entry, and the unscoped `CLEAR COLUMN d` puts it in every
+      * partition, which used to hand the scoped `CLEAR COLUMN c` to their parts as well.
+      */
+    filterCommandsOutsidePartition(result, partition_id);
+
     std::reverse(result.begin(), result.end());
     return result;
 }
@@ -2403,77 +2416,91 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     DataPartsVector patch_parts;
     MutationCounters mutations_snapshot_counters;
     MutationsSnapshot::MutationsByPartititon mutations_snapshot;
+    MutationsSnapshot::PartitionIdsByCommand partition_ids_by_command;
 
     if (params.need_patch_parts)
         patch_parts = storage.getPatchPartsVectorForInternalUsage();
 
-    std::shared_lock lock(state_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && params.min_part_metadata_version >= params.metadata_version)
-        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
-
-    for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
-        if (partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
-            continue;
+        std::shared_lock lock(state_mutex);
+        if (!params.need_data_mutations && !params.need_alter_mutations && params.min_part_metadata_version >= params.metadata_version)
+            return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 
-        const int64_t min_part_data_version = MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(params, partition_id);
-        const int64_t max_mutation_version_to_include = MergeTreeData::IMutationsSnapshot::getMaxMutationVersionForPartition(params, partition_id);
-
-        bool seen_all_data_mutations = !params.need_data_mutations && !params.need_alter_mutations;
-        bool seen_all_metadata_mutations = params.min_part_metadata_version >= params.metadata_version;
-
-        auto & partition_snapshot = mutations_snapshot[partition_id];
-        for (const auto & [mutation_version, status] : mutations | std::views::reverse)
+        for (const auto & [partition_id, mutations] : mutations_by_partition)
         {
-            if (seen_all_data_mutations && seen_all_metadata_mutations)
-                break;
-
-            if (mutation_version > max_mutation_version_to_include)
+            if (partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
                 continue;
 
-            auto alter_version = status->entry->alter_version;
-            if (alter_version != -1)
+            const int64_t min_part_data_version = MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(params, partition_id);
+            const int64_t max_mutation_version_to_include = MergeTreeData::IMutationsSnapshot::getMaxMutationVersionForPartition(params, partition_id);
+
+            bool seen_all_data_mutations = !params.need_data_mutations && !params.need_alter_mutations;
+            bool seen_all_metadata_mutations = params.min_part_metadata_version >= params.metadata_version;
+
+            auto & partition_snapshot = mutations_snapshot[partition_id];
+            for (const auto & [mutation_version, status] : mutations | std::views::reverse)
             {
-                if (seen_all_metadata_mutations || alter_version > params.metadata_version)
+                if (seen_all_data_mutations && seen_all_metadata_mutations)
+                    break;
+
+                if (mutation_version > max_mutation_version_to_include)
                     continue;
 
-                /// We take commands with bigger metadata version
-                if (alter_version > params.min_part_metadata_version)
+                auto alter_version = status->entry->alter_version;
+                if (alter_version != -1)
                 {
-                    /// Copy a pointer to the whole entry to avoid extracting and copying commands.
-                    /// Required commands will be copied later only for specific parts.
-                    if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
+                    if (seen_all_metadata_mutations || alter_version > params.metadata_version)
+                        continue;
+
+                    /// We take commands with bigger metadata version
+                    if (alter_version > params.min_part_metadata_version)
                     {
-                        partition_snapshot.emplace(mutation_version, status->entry);
-                        incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
+                        /// Copy a pointer to the whole entry to avoid extracting and copying commands.
+                        /// Required commands will be copied later only for specific parts.
+                        if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
+                        {
+                            partition_snapshot.emplace(mutation_version, status->entry);
+                            incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
+                        }
+                    }
+                    else
+                    {
+                        seen_all_metadata_mutations = true;
                     }
                 }
-                else
+                else if (!seen_all_data_mutations)
                 {
-                    seen_all_metadata_mutations = true;
-                }
-            }
-            else if (!seen_all_data_mutations)
-            {
-                if (mutation_version > min_part_data_version)
-                {
-                    /// Copy a pointer to the whole entry to avoid extracting and copying commands.
-                    /// Required commands will be copied later only for specific parts.
-                    if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
+                    if (mutation_version > min_part_data_version)
                     {
-                        partition_snapshot.emplace(mutation_version, status->entry);
-                        incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
+                        /// Copy a pointer to the whole entry to avoid extracting and copying commands.
+                        /// Required commands will be copied later only for specific parts.
+                        if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
+                        {
+                            partition_snapshot.emplace(mutation_version, status->entry);
+                            incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
+                        }
                     }
-                }
-                else
-                {
-                    seen_all_data_mutations = true;
+                    else
+                    {
+                        seen_all_data_mutations = true;
+                    }
                 }
             }
         }
     }
 
-    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+    /** Resolve the partitions of the commands that name one, so that the per-part selection can keep
+      * such a command out of the partitions it does not target. The entries are kept alive by the
+      * snapshot, and the queue's state mutex is released here: evaluating a partition expression takes
+      * other locks of the storage.
+      */
+    for (const auto & [partition_id, mutations] : mutations_snapshot)
+        for (const auto & [mutation_version, entry] : mutations)
+            storage.collectPartitionIdsOfScopedCommands(entry->commands, partition_ids_by_command);
+
+    return std::make_shared<MutationsSnapshot>(
+        params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts),
+        std::move(partition_ids_by_command));
 }
 
 MutationCounters ReplicatedMergeTreeQueue::getMutationCounters() const

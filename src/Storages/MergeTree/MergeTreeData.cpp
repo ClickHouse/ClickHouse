@@ -736,6 +736,48 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
     }
 }
 
+void MergeTreeData::MutationsSnapshotBase::filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const
+{
+    if (partition_ids_by_command.empty())
+        return;
+
+    std::erase_if(commands, [&](const MutationCommand & command)
+    {
+        if (!command.has_partition)
+            return false;
+        auto it = partition_ids_by_command.find(command.ast_text);
+        return it != partition_ids_by_command.end() && !it->second.contains(partition_id);
+    });
+}
+
+void MergeTreeData::collectPartitionIdsOfScopedCommands(
+    const MutationCommands & commands, MutationsSnapshotBase::PartitionIdsByCommand & result) const
+{
+    for (const auto & command : commands)
+    {
+        if (!command.has_partition || result.contains(command.ast_text))
+            continue;
+
+        auto command_ast = command.ast();
+        if (!command_ast)
+            continue;
+
+        NameSet partition_ids;
+        if (const auto * partitions = command_ast->partitions)
+        {
+            for (const auto & partition : partitions->children)
+                partition_ids.insert(getPartitionIDFromQuery(partition, getContext(), nullptr));
+        }
+        else if (const auto * partition = command_ast->partition)
+        {
+            partition_ids.insert(getPartitionIDFromQuery(ASTPtr(partition->clone()), getContext(), nullptr));
+        }
+
+        if (!partition_ids.empty())
+            result.emplace(command.ast_text, std::move(partition_ids));
+    }
+}
+
 PatchParts MergeTreeData::MutationsSnapshotBase::getPatchesForPart(const DataPartPtr & part) const
 {
     if (!params.need_patch_parts)
