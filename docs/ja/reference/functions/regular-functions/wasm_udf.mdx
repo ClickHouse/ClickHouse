@@ -49,8 +49,7 @@ ClickHouse の設定で、WebAssembly サポートを有効にします。
 
 利用可能なエンジン実装:
 
-* `wasmtime` (デフォルト、推奨) — [WasmTime](https://github.com/bytecodealliance/wasmtime) を使用します
-* `wasmedge` — [WasmEdge](https://github.com/WasmEdge/WasmEdge) を使用します
+* `wasmtime` (デフォルト、かつ現在唯一の実装) — [Wasmtime](https://github.com/bytecodealliance/wasmtime) を使用します
 
 <div id="quick-start">
   ## クイックスタート
@@ -234,14 +233,14 @@ RETURNS return_type
 * `FROM 'module_name' :: 'source_function_name'`: 読み込まれた WASM モジュール名と、使用する WASM モジュール内の関数名 (デフォルトは function&#95;name)
 * `ARGUMENTS`: 引数名と型の一覧 (名前は省略可能で、名前付きフィールドをサポートするシリアライゼーションフォーマットで使用されます)
 * `ABI`: Application Binary Interface のバージョン
-  * `ROW_DIRECT`: 直接的な型マッピング、行ごとの処理
+  * `ROW_DIRECT`: 直接型マッピング、行ごとの処理
   * `BUFFERED_V1`: シリアライゼーションを伴うブロックベースの処理
   * `ASSEMBLYSCRIPT`: [AssemblyScript](https://www.assemblyscript.org) コンパイラで生成されたモジュール向けの行ごと処理。数値型は AssemblyScript のプリミティブにマップされ、ClickHouse `String` は AssemblyScript `string` にマップされます。
 * `DETERMINISTIC`: 関数を決定論的として宣言します。つまり、同じ入力に対して常に同じ出力を返します。指定すると、ClickHouse はすべての引数が定数である呼び出しを定数畳み込みすることがあります。関数はクエリ解析時に一度評価され、その結果がすべての行で再利用されます。
 * `SHA256_HASH`: 検証用の想定モジュールハッシュ (省略した場合は自動入力) 。異なるレプリカ間で正しい WASM モジュールが読み込まれていることを保証するために使用できます。
 * `SETTINGS`: 関数ごとの設定
   * `serialization_format` String — モジュールに渡す引数ブロックのシリアライズと、返された結果の解析に使用するフォーマット。`ABI BUFFERED_V1` でのみ使用されます。サポートされる値: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`。デフォルト: `MsgPack`。`Buffers` などのブロックベースのフォーマットでは、宣言された関数シグネチャに一致する型の単一カラムを返す必要があります。
-  * `webassembly_udf_enable_fuel` Bool — 関数の有限 fuel バジェットを有効にします。デフォルト: `true`。`false` の場合、この関数ではクエリレベルの設定 `webassembly_udf_max_fuel` は無視されます。fuel 制限を無効にすると、`wasmtime` engine の使用時にパフォーマンスが向上することがあります。ただし、信頼できない ゲストコード や不具合のある ゲストコード では、暴走実行のリスクが高まる可能性があります。
+  * `webassembly_udf_enable_fuel` Bool — 関数の有限 fuel バジェットを有効にします。デフォルト: `true`。`false` の場合、この関数ではクエリレベルの設定 `webassembly_udf_max_fuel` は無視されます。fuel 制限を無効にすると、パフォーマンスが向上することがあります。ただし、信頼できない ゲストコード や不具合のある ゲストコード では、暴走実行のリスクが高まる可能性があります。
 
 <div id="abis-versions">
   ## ABI バージョン

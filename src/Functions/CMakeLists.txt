@@ -1,6 +1,7 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions AI)
+add_headers_and_sources(clickhouse_functions Kusto)
 
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
@@ -16,6 +17,7 @@ set(DBMS_FUNCTIONS
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
+    FunctionPlannerOnlyFilter.cpp # createInternalFunctionPlannerOnlyFilterResolver, isPlannerOnlyFilterFunction (Used by deriveNotNullFiltersFromJoin.cpp, resolvePlannerOnlyFilters.cpp, ActionsDAG.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
