@@ -73,6 +73,13 @@
                 <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
                 <persistent_removal_log>true</persistent_removal_log>
             </broken_s3_long_retries>
+            <encrypted_broken_s3_long_retries>
+                <type>encrypted</type>
+                <disk>broken_s3_long_retries</disk>
+                <key>1234567812345678</key>
+                <path>encrypted/</path>
+                <skip_access_check>true</skip_access_check>
+            </encrypted_broken_s3_long_retries>
             <broken_s3_long_retries_always_multi_part>
                 <type>s3</type>
                 <endpoint>http://resolver:8085/root/data/</endpoint>
@@ -222,6 +229,13 @@
                     </main>
                 </volumes>
             </broken_s3_long_retries>
+            <encrypted_broken_s3_long_retries>
+                <volumes>
+                    <main>
+                        <disk>encrypted_broken_s3_long_retries</disk>
+                    </main>
+                </volumes>
+            </encrypted_broken_s3_long_retries>
             <broken_s3_long_retries_always_multi_part>
                 <volumes>
                     <main>

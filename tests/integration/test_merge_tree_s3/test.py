@@ -1122,12 +1122,45 @@ def test_cancelling_packed_mutation_copy_source_stops_s3_retries(
             broken_s3.reset()
 
 
+@pytest.mark.parametrize(
+    "storage_policy",
+    ["broken_s3_long_retries", "encrypted_broken_s3_long_retries"],
+    ids=["plain", "encrypted"],
+)
 def test_cancelling_partial_mutation_copy_stops_s3_retries(
-    s3_cancellation, broken_s3
+    s3_cancellation, broken_s3, storage_policy
 ):
     node, table = s3_cancellation
     node.query(
         f"CREATE TABLE {table} (key UInt32, value UInt32, unchanged String) "
+        "ENGINE=MergeTree ORDER BY key "
+        f"SETTINGS storage_policy='{storage_policy}', "
+        "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage=0, "
+        "min_rows_for_wide_part=0, min_bytes_for_wide_part=0"
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number, number, toString(number) FROM numbers(10000)"
+    )
+    assert node.query(
+        f"SELECT part_type, part_storage_type, disk_name FROM system.parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == f"Wide\tFull\t{storage_policy}"
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_copy(action="internal_error", count=10000)
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value + 1 WHERE key = 0 SETTINGS mutations_sync=1",
+        timeout=30,
+    )
+    wait_for_s3_request(broken_s3, "object_copy", count=2)
+    assert_s3_cancelled(node, table, request, broken_s3, "object_copy")
+
+
+def test_cancelling_projection_copy_stops_s3_retries(s3_cancellation, broken_s3):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value UInt32, unchanged String, "
+        "PROJECTION p (SELECT unchanged ORDER BY unchanged)) "
         "ENGINE=MergeTree ORDER BY key "
         "SETTINGS storage_policy='broken_s3_long_retries', "
         "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage=0, "
@@ -1140,15 +1173,40 @@ def test_cancelling_partial_mutation_copy_stops_s3_retries(
         f"SELECT part_type, part_storage_type FROM system.parts "
         f"WHERE database=currentDatabase() AND table='{table}' AND active"
     ).strip() == "Wide\tFull"
+    assert node.query(
+        f"SELECT count() FROM system.projection_parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active AND name='p'"
+    ).strip() == "1"
+
+    table_uuid = node.query(
+        f"SELECT toString(uuid) FROM system.tables "
+        f"WHERE database=currentDatabase() AND name='{table}'"
+    ).strip()
+    projection_remote_paths = (
+        node.query(
+            "SELECT remote_path FROM system.remote_data_paths "
+            "WHERE disk_name='broken_s3_long_retries' "
+            f"AND local_path LIKE '%{table_uuid}%' AND local_path LIKE '%/p.proj/%' "
+            "ORDER BY remote_path"
+        )
+        .strip()
+        .splitlines()
+    )
+    assert projection_remote_paths
+    projection_copy_sources = [
+        f"root/{remote_path.lstrip('/')}" for remote_path in projection_remote_paths
+    ]
 
     broken_s3.reset()
-    broken_s3.setup_at_object_copy(action="internal_error", count=10000)
+    broken_s3.setup_at_object_copy(
+        action="internal_error", count=10000, copy_sources=projection_copy_sources
+    )
     request = node.get_query_request(
         f"ALTER TABLE {table} UPDATE value = value + 1 WHERE key = 0 SETTINGS mutations_sync=1",
         timeout=30,
     )
-    wait_for_s3_request(broken_s3, "object_copy", count=2)
-    assert_s3_cancelled(node, table, request, broken_s3, "object_copy")
+    wait_for_s3_request(broken_s3, "object_copy_injected", count=2)
+    assert_s3_cancelled(node, table, request, broken_s3, "object_copy_injected")
 
 
 @pytest.mark.parametrize("request_kind", ["object_head", "object_read"])

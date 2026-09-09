@@ -44,7 +44,15 @@ class MockControl:
     def reset(self):
         self._apply(f"http://localhost:{self._port}/mock_settings/reset")
 
-    def setup_action(self, when, count=None, after=None, action=None, action_args=None):
+    def setup_action(
+        self,
+        when,
+        count=None,
+        after=None,
+        action=None,
+        action_args=None,
+        copy_sources=None,
+    ):
         url = f"http://localhost:{self._port}/mock_settings/{when}?nothing=1"
 
         if count is not None:
@@ -59,6 +67,12 @@ class MockControl:
         if action_args is not None:
             for x in action_args:
                 url += f"&action_args={x}"
+
+        if copy_sources is not None:
+            if not copy_sources:
+                raise ValueError("copy_sources must not be empty")
+            for copy_source in copy_sources:
+                url += f"&copy_source={urllib.parse.quote(copy_source, safe='')}"
 
         self._apply(url)
 
@@ -398,7 +412,13 @@ class _ServerRuntime:
 
     class CountAfter:
         def __init__(
-            self, lock, count_=None, after_=None, action_=None, action_args_=[]
+            self,
+            lock,
+            count_=None,
+            after_=None,
+            action_=None,
+            action_args_=[],
+            copy_sources_=None,
         ):
             self.lock = lock
 
@@ -406,6 +426,11 @@ class _ServerRuntime:
             self.after = after_ if after_ is not None else 0
             self.action = action_
             self.action_args = action_args_
+            self.copy_sources = (
+                {copy_source.lstrip("/") for copy_source in copy_sources_}
+                if copy_sources_ is not None
+                else None
+            )
 
             if self.action == "connection_refused":
                 self.error_handler = _ServerRuntime.ConnectionRefusedAction()
@@ -448,10 +473,19 @@ class _ServerRuntime:
                 after_=_and_then(params.get("after", [None])[0], int),
                 action_=params.get("action", [None])[0],
                 action_args_=params.get("action_args", []),
+                copy_sources_=params.get("copy_source"),
             )
 
         def __str__(self):
-            return f"count:{self.count} after:{self.after} action:{self.action} action_args:{self.action_args}"
+            return (
+                f"count:{self.count} after:{self.after} action:{self.action} "
+                f"action_args:{self.action_args} copy_sources:{self.copy_sources}"
+            )
+
+        def matches_copy_source(self, copy_source):
+            return self.copy_sources is None or urllib.parse.unquote(copy_source).lstrip(
+                "/"
+            ) in self.copy_sources
 
         def has_effect(self):
             with self.lock:
@@ -479,6 +513,7 @@ class _ServerRuntime:
             "object_head": 0,
             "object_read": 0,
             "object_copy": 0,
+            "object_copy_injected": 0,
         }
         self.fake_put_when_length_bigger = None
         self.fake_uploads = dict()
@@ -511,6 +546,7 @@ class _ServerRuntime:
                 "object_head": 0,
                 "object_read": 0,
                 "object_copy": 0,
+                "object_copy_injected": 0,
             }
             self.fake_put_when_length_bigger = None
             self.fake_uploads = dict()
@@ -772,9 +808,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
 
         if self.headers.get("x-amz-copy-source") is not None:
+            copy_source = self.headers["x-amz-copy-source"]
             with _runtime.lock:
                 _runtime.request_counts["object_copy"] += 1
-            if _runtime.at_object_copy is not None and _runtime.at_object_copy.has_effect():
+            if (
+                _runtime.at_object_copy is not None
+                and _runtime.at_object_copy.matches_copy_source(copy_source)
+                and _runtime.at_object_copy.has_effect()
+            ):
+                with _runtime.lock:
+                    _runtime.request_counts["object_copy_injected"] += 1
                 return _runtime.at_object_copy.inject_error(self)
 
         if _runtime.slow_put is not None:
