@@ -97,7 +97,8 @@ def socket_samples(samples, caller):
 table = "native_trace_flush_" + uuid.uuid4().hex
 control(f"CREATE TABLE {table} (n UInt64, arr Array(UInt64) MATERIALIZED range(n)) ENGINE = Null")
 try:
-    output, samples = execute(f"INSERT INTO {table} (n) FORMAT TSV", "100000\n" * 4096)
+    # Each `UInt64` array reaches the 65536-byte sampling threshold, before `PODArray` padding.
+    output, samples = execute(f"INSERT INTO {table} (n) FORMAT TSV", "8192\n" * 4096)
     assert not output, output
     assert not socket_samples(samples, "TCPHandler::processInsertQuery"), socket_samples(samples, "TCPHandler::processInsertQuery")[:1]
 finally:
