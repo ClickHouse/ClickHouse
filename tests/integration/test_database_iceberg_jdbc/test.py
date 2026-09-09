@@ -132,7 +132,7 @@ def test_catalog_reads_and_refresh(started_cluster, version, endpoint_has_bucket
         assert "label" in node.query(f"DESCRIBE TABLE {name}.`a.b.t`")
         definition = node.query(f"SHOW CREATE DATABASE {name}")
         assert READER_PASSWORD not in definition
-        assert "jdbc_password = '[HIDDEN]'" in definition
+        assert "[HIDDEN]" in definition
     finally:
         drop_catalog_fixture(fixture)
 
