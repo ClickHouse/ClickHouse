@@ -13,6 +13,11 @@ SELECT '-- the matching row is found';
 SELECT count() FROM t_ngram WHERE ip = '2001:db8::' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM t_ngram WHERE ip = '2001:db8::' SETTINGS ignore_data_skipping_indices = 'idx';
 
+-- `IPv6StringToNum` gives the address as a `FixedString(16)`, whose trailing zero bytes are part of
+-- the value here, unlike in a string comparison, which ignores them.
+SELECT '-- a binary FixedString(16) constant keeps using the index';
+SELECT count() FROM t_ngram WHERE ip = IPv6StringToNum('2001:db8::') SETTINGS force_data_skipping_indices = 'idx';
+
 -- Assert the presence of the pruning line. Asserting a full-scan line instead would be vacuous:
 -- the primary key emits its own unconditional one.
 SELECT '-- a non-matching address still prunes, so pruning is not disabled outright';

@@ -9,6 +9,7 @@
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
@@ -337,8 +338,21 @@ static bool convertConstantToIndexDomain(
         return true;
     }
 
+    /// A `FixedString` constant arrives without the trailing zeros that string comparison ignores, while
+    /// this domain deserializes the type's declared width. Zero-extend it back, as the conversion to
+    /// `FixedString` does for a shorter value.
+    Field widened = constant;
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(removeNullable(removeLowCardinality(constant_type)).get());
+        fixed_string_type && widened.getType() == Field::Types::String
+        && widened.safeGet<String>().size() < fixed_string_type->getN())
+    {
+        String bytes = widened.safeGet<String>();
+        bytes.resize(fixed_string_type->getN());
+        widened = std::move(bytes);
+    }
+
     /// `try` because index analysis can run for constants the comparison itself would never evaluate.
-    Field converted = tryConvertFieldToType(constant, *actual_type, constant_type.get());
+    Field converted = tryConvertFieldToType(widened, *actual_type, constant_type.get());
     if (converted.isNull())
         return false;
 

@@ -1,6 +1,8 @@
 -- the matching row is found
 1
 1
+-- a binary FixedString(16) constant keeps using the index
+1
 -- a non-matching address still prunes, so pruning is not disabled outright
 1
 -- the other index types over the same column
