@@ -9227,7 +9227,9 @@ If, at query planning time, the probe side of a JOIN is estimated to produce no 
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
-Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
+Run a second pass index analysis (via `use_skip_indexes_on_data_read`) to prune granules on LHS of a join.
+
+Takes effect only when the left side of the join is read locally. The descriptors that drive the second pass are attached to the read step while the query plan is optimized, and they are not carried over when that step is rebuilt for remote execution, so the granule pruning does not happen with parallel replicas (`enable_parallel_replicas = 1`) or with a distributed query plan (`make_distributed_plan = 1`). In those modes the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
 )", 0) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.

@@ -562,7 +562,9 @@ private:
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
     /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
     /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
-    /// only the optimization is lost); propagating it there is a follow-up.
+    /// only the optimization is lost); propagating it there is a follow-up. This is part of the setting's
+    /// documented contract (see its description in `Settings.cpp`) and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed

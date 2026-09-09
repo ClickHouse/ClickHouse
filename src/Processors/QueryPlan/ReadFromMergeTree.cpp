@@ -5040,6 +5040,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && !pending_mutations
         /// Not supported under parallel replicas: the descriptor is not carried to remote replica
         /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
+        /// The setting's description documents this no-op, and
+        /// `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
         && !isParallelReadingFromReplicas()
         && indexes.has_value())
     {
@@ -6547,7 +6549,8 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// rebuilds a fresh `ReadFromMergeTree` in `deserialize` without these descriptors, so the pruning is
     /// simply skipped on distributed reads. Results stay correct (the read just does no runtime pruning);
     /// only the optimization is lost. This mirrors the parallel-replicas guard in `initializePipeline`.
-    /// Propagating the descriptors to worker plans is a follow-up.
+    /// Propagating the descriptors to worker plans is a follow-up. The setting's description documents
+    /// this no-op, and `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
 
     /// Bucketed reads exist only since query-plan serialization version 2. If the peer only understands
     /// version 1, throw a clear error rather than write bytes it would misread (the deserialize side checks
