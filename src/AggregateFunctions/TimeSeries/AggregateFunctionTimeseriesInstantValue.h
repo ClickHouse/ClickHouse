@@ -26,6 +26,7 @@ struct AggregateFunctionTimeseriesInstantValueTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
+    using ResultType = ValueType_;
 
     static String getName()
     {
@@ -90,6 +91,8 @@ struct AggregateFunctionTimeseriesInstantValueTraits
 
     /// InstantValue keeps no preaggregated summary - the bucket (its two newest samples) is fed to the aggregator as-is.
     using Bucket = Summary;
+
+    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 
@@ -111,13 +114,10 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesInstantValue, Traits>;
     using Base::Base;
 
-    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    typename Traits::Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return typename Traits::Aggregator{Base::timestamp_scale_multiplier};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 4;
-    static constexpr bool DateTime64Supported = true;
 };
 
 /// Each SQL function as a 3-argument template with its is_rate variant baked in, so registration names the
