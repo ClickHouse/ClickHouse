@@ -361,7 +361,8 @@ private:
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
     void updateProfileTracesQueue(QueryState & state) const;
-    void sendProfileTraces(QueryState & state, bool finish = false) TSA_REQUIRES(callback_mutex);
+    void sendPendingProfileTraces(QueryState & state, bool finish = false) TSA_REQUIRES(callback_mutex);
+    void sendProfileTraces(QueryState & state, const Block & block) TSA_REQUIRES(callback_mutex);
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.

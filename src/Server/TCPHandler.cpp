@@ -1179,11 +1179,7 @@ void TCPHandler::runImpl()
                 }
                 else
                 {
-                    if (query_state->profile_traces_queue)
-                    {
-                        ProfileTracesBlocker blocker;
-                        sendProfileTraces(*query_state, true);
-                    }
+                    sendPendingProfileTraces(*query_state, true);
                     sendException(*exception, send_exception_with_stack_trace);
                 }
             }
@@ -1949,11 +1945,7 @@ void TCPHandler::sendProfileEvents(QueryState & state)
 
 void TCPHandler::sendSelectProfileEvents(QueryState & state)
 {
-    if (state.profile_traces_queue)
-    {
-        ProfileTracesBlocker blocker;
-        sendProfileTraces(state);
-    }
+    sendPendingProfileTraces(state);
 
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
@@ -1968,11 +1960,7 @@ void TCPHandler::sendInsertProfileEvents(QueryState & state)
     if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return;
 
-    if (state.profile_traces_queue)
-    {
-        ProfileTracesBlocker blocker;
-        sendProfileTraces(state);
-    }
+    sendPendingProfileTraces(state);
 
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
         return;
@@ -1997,11 +1985,8 @@ void TCPHandler::updateProfileTracesQueue(QueryState & state) const
     }
 }
 
-void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
+void TCPHandler::sendPendingProfileTraces(QueryState & state, bool finish)
 {
-    /// The caller's guard also suppresses samples from this function's entry and return paths.
-    chassert(ProfileTracesBlocker::isBlocked());
-
     if (!state.profile_traces_queue)
         return;
 
@@ -2015,32 +2000,63 @@ void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
         < state.query_context->getSettingsRef()[Setting::interactive_delay])
         return;
 
-    if (finish)
-        state.profile_traces_queue->finish();
-
+    bool first_block = true;
     do
     {
-        Block block = state.profile_traces_queue->getBlock();
-        if (!block.rows())
-            break;
-
-        if (!state.profile_traces_block_out)
+        Block block;
         {
-            initMaybeCompressedOut(state);
-            state.profile_traces_block_out = std::make_unique<NativeWriter>(
-                *state.maybe_compressed_out, client_tcp_protocol_version,
-                std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context));
+            ProfileTracesBlocker blocker;
+            if (finish && first_block)
+                state.profile_traces_queue->finish();
+            block = state.profile_traces_queue->getBlock();
+            if (!block.rows())
+            {
+                block = {};
+                return;
+            }
         }
 
-        writeVarUInt(Protocol::Server::ProfileTraces, *out);
-        writeStringBinary("", *out);
-        state.profile_traces_block_out->write(block);
-        if (state.maybe_compressed_out != out)
-            state.profile_traces_block_out->flush();
-        out->finishChunk();
-        state.after_send_profile_traces.restart();
+        /// Destroy trace buffers under suppression, including when either socket flush throws.
+        SCOPE_EXIT({
+            ProfileTracesBlocker blocker;
+            block = {};
+        });
+
+        /// Keep pending ordinary query output visible to the profiler. Only flush it early
+        /// when a trace batch is ready, so empty or throttled queues add no flushes.
+        if (first_block)
+            out->sync();
+
+        {
+            ProfileTracesBlocker blocker;
+            sendProfileTraces(state, block);
+        }
+        first_block = false;
     }
     while (finish);
+}
+
+void TCPHandler::sendProfileTraces(QueryState & state, const Block & block)
+{
+    /// The caller's guard also covers the function entry, socket flush and return.
+    chassert(ProfileTracesBlocker::isBlocked());
+
+    if (!state.profile_traces_block_out)
+    {
+        initMaybeCompressedOut(state);
+        state.profile_traces_block_out = std::make_unique<NativeWriter>(
+            *state.maybe_compressed_out, client_tcp_protocol_version,
+            std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context));
+    }
+
+    writeVarUInt(Protocol::Server::ProfileTraces, *out);
+    writeStringBinary("", *out);
+    state.profile_traces_block_out->write(block);
+    if (state.maybe_compressed_out != out)
+        state.profile_traces_block_out->flush();
+    out->finishChunk();
+    out->sync();
+    state.after_send_profile_traces.restart();
 }
 
 
@@ -3485,11 +3501,7 @@ void TCPHandler::trySendExceptionWithoutConnectionBuffers(const Exception & e)
 
 void TCPHandler::sendEndOfStream(QueryState & state)
 {
-    if (state.profile_traces_queue)
-    {
-        ProfileTracesBlocker blocker;
-        sendProfileTraces(state, true);
-    }
+    sendPendingProfileTraces(state, true);
 
     state.sent_all_data = true;
     state.io.setAllDataSent();
