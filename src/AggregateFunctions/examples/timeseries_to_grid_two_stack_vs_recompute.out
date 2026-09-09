@@ -1,0 +1,93 @@
+timeSeries*ToGrid: two-stacks vs recompute, measured on 2026-09-08.
+
+timeSeriesDerivToGrid: two-stacks vs recompute, ns per grid point (32 series x 8000 buckets).
+
+buckets_per_window   recompute(ns)  two_stacks(ns)  ratio (recompute / two_stacks)      winner
+                 2           14.77           15.71                            0.94   recompute
+                 4           20.72           19.07                            1.09  two-stacks
+                 6           27.56           20.39                            1.35  two-stacks
+                 8           26.86           15.74                            1.71  two-stacks
+                10           30.76           16.32                            1.88  two-stacks
+                12           35.36           16.74                            2.11  two-stacks
+                14           41.30           16.74                            2.47  two-stacks
+                16           49.77           16.98                            2.93  two-stacks
+                18           55.71           18.18                            3.06  two-stacks
+                20           63.36           17.46                            3.63  two-stacks
+                22           70.73           17.09                            4.14  two-stacks
+                24           78.11           17.24                            4.53  two-stacks
+                28           93.05           17.19                            5.41  two-stacks
+                32          108.00           17.21                            6.28  two-stacks
+                36          122.75           17.33                            7.08  two-stacks
+                40          137.81           17.39                            7.93  two-stacks
+
+AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS (two-stacks first wins)   = 4
+BPW_TO_FORCE_TWO_STACKS (two-stacks > 2x faster)                 = 12
+
+timeSeriesSumToGrid: two-stacks vs recompute, ns per grid point (32 series x 8000 buckets).
+
+buckets_per_window   recompute(ns)  two_stacks(ns)  ratio (recompute / two_stacks)      winner
+                 2            7.28            8.84                            0.82   recompute
+                 4            9.15            9.22                            0.99   recompute
+                 6           11.06            9.68                            1.14  two-stacks
+                 8           12.82            9.70                            1.32  two-stacks
+                10           15.13            9.95                            1.52  two-stacks
+                12           17.24           10.26                            1.68  two-stacks
+                14           18.76           10.60                            1.77  two-stacks
+                16           20.29           10.34                            1.96  two-stacks
+                18           22.95           10.36                            2.21  two-stacks
+                20           24.52           10.23                            2.40  two-stacks
+                22           25.95           10.20                            2.54  two-stacks
+                24           30.61           10.28                            2.98  two-stacks
+                28           35.89           10.29                            3.49  two-stacks
+                32           41.58           10.14                            4.10  two-stacks
+                36           45.91           10.08                            4.55  two-stacks
+                40           47.51           10.10                            4.70  two-stacks
+
+AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS (two-stacks first wins)   = 6
+BPW_TO_FORCE_TWO_STACKS (two-stacks > 2x faster)                 = 18
+
+timeSeriesMaxToGrid: two-stacks vs recompute, ns per grid point (32 series x 8000 buckets).
+
+buckets_per_window   recompute(ns)  two_stacks(ns)  ratio (recompute / two_stacks)      winner
+                 2            6.43            7.96                            0.81   recompute
+                 4            8.36            8.09                            1.03  two-stacks
+                 6            9.88            8.65                            1.14  two-stacks
+                 8           11.44            8.80                            1.30  two-stacks
+                10           13.01            9.08                            1.43  two-stacks
+                12           14.75            9.09                            1.62  two-stacks
+                14           16.29            9.17                            1.78  two-stacks
+                16           17.44            9.21                            1.89  two-stacks
+                18           19.11            9.13                            2.09  two-stacks
+                20           20.32            9.17                            2.22  two-stacks
+                22           22.43            9.25                            2.43  two-stacks
+                24           25.30            9.28                            2.73  two-stacks
+                28           32.79            9.17                            3.58  two-stacks
+                32           41.63            9.15                            4.55  two-stacks
+                36           44.27            9.05                            4.89  two-stacks
+                40           50.11            8.99                            5.58  two-stacks
+
+AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS (two-stacks first wins)   = 4
+BPW_TO_FORCE_TWO_STACKS (two-stacks > 2x faster)                 = 18
+
+timeSeriesMinToGrid: two-stacks vs recompute, ns per grid point (32 series x 8000 buckets).
+
+buckets_per_window   recompute(ns)  two_stacks(ns)  ratio (recompute / two_stacks)      winner
+                 2            6.30            7.90                            0.80   recompute
+                 4            7.99            7.97                            1.00  two-stacks
+                 6            9.67            8.28                            1.17  two-stacks
+                 8           11.22            8.52                            1.32  two-stacks
+                10           13.28            8.66                            1.53  two-stacks
+                12           15.10            8.66                            1.74  two-stacks
+                14           14.88            8.78                            1.70  two-stacks
+                16           16.87            8.96                            1.88  two-stacks
+                18           18.26            8.94                            2.04  two-stacks
+                20           20.39            8.93                            2.28  two-stacks
+                22           22.13            9.07                            2.44  two-stacks
+                24           23.81            9.01                            2.64  two-stacks
+                28           30.21            8.98                            3.36  two-stacks
+                32           36.70            8.98                            4.09  two-stacks
+                36           39.50            9.04                            4.37  two-stacks
+                40           44.64            8.85                            5.04  two-stacks
+
+AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS (two-stacks first wins)   = 4
+BPW_TO_FORCE_TWO_STACKS (two-stacks > 2x faster)                 = 18

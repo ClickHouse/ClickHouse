@@ -48,6 +48,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+LoggerPtr getMergeTreeRangeReaderLogger()
+{
+    static LoggerPtr log = getLogger("MergeTreeRangeReader");
+    return log;
+}
+
 static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
 {
     if (!column)

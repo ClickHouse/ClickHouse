@@ -1,0 +1,30 @@
+-- the other table must be a TimeSeries table
+-- declared engines without keys get the generated keys
+MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1
+ReplacingMergeTree ORDER BY metric_family_name
+-- a customized `min_time` column is not copied if the new table does not store `min_time`/`max_time`
+`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String)
+AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1
+-- `tags_to_columns` written in the query replaces the copied one: the column of a removed tag is not copied,
+-- the column of an added tag is generated
+`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `instance` String, `region` String, `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+-- the customized parts are copied, the generated parts follow the settings of the new table: `min_time`/`max_time`
+-- are not aggregated, so the tags engine is ReplacingMergeTree with them in the sorting key, and keeps its settings
+`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3)), `extra` UInt8
+`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `min_time` Nullable(DateTime64(6)), `max_time` Nullable(DateTime64(6))
+ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id, min_time, max_time) SETTINGS index_granularity = 1024, min_bytes_for_wide_part = 0, allow_nullable_key = 1
+-- a type declared in the query wins over the type of the other table, the other types are inherited: `value` is
+-- Float32 as declared, `timestamp` is DateTime64(6) as in `ts_src`. The declared samples columns replace the copied ones
+`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float32
+`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ZSTD(3))
+`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(6)))
+-- `id_generator` of the other table was written for its `id` type, so it is copied only if the `id` type stays the same
+1
+0
+`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+-- the inner columns of the other table are not copied for a target replaced with an external table, the types come
+-- from the external table: `timestamp` is DateTime64(3) in `ts_src` and DateTime64(6) in `ext_data`
+0
+`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3))

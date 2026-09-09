@@ -3,6 +3,41 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ci.praktika.utils import Shell
 
+# Iceberg datasets unpacked into user_files as <database> -> (directory, tables); every job that downloads a tarball must also attach the database via iceberg_database_ddl_commands, or the tests querying it fail.
+ICEBERG_DATASETS = {
+    "tpch_ice10": (
+        "tpch_ice_sf10",
+        (
+            "nation",
+            "region",
+            "supplier",
+            "part",
+            "customer",
+            "partsupp",
+            "orders",
+            "lineitem",
+        ),
+    ),
+}
+
+
+def iceberg_database_ddl_commands(server_path):
+    """Attach the Iceberg datasets as databases on one server ({server_path}/db); must run after the server's db directory is materialized, because IcebergLocal stores an absolute path that differs per server."""
+    user_files = f"{server_path}/db/user_files"
+    metadata = f"{server_path}/db/metadata"
+    commands = []
+    for database, (directory, tables) in ICEBERG_DATASETS.items():
+        commands.append(f"mkdir -p {metadata}/{database}")
+        commands.append(
+            f'echo "ATTACH DATABASE {database} ENGINE=Ordinary" > {metadata}/{database}.sql'
+        )
+        for table in tables:
+            commands.append(
+                f"echo \"ATTACH TABLE {table} ENGINE = IcebergLocal('{user_files}/{directory}/{table}/')\""
+                f" > {metadata}/{database}/{table}.sql"
+            )
+    return commands
+
 
 def download_and_extract_datasets(dataset_urls, target_dir, retries=5):
     """Download dataset tarballs in parallel and extract them into target_dir.

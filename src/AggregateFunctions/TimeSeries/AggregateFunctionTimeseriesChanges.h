@@ -27,6 +27,7 @@ struct AggregateFunctionTimeseriesChangesTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
+    using ResultType = ValueType_;
 
     static String getName()
     {

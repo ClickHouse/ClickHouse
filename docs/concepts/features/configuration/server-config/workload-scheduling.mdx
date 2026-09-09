@@ -35,8 +35,8 @@ To enable IO scheduling for a specific disk, you have to create read and write r
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
 -- or
-CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
-CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE read_resource_name (READ DISK read_disk_name)
+CREATE RESOURCE write_resource_name (WRITE DISK write_disk_name)
 ```
 
 A resource can be used for any number of disks for READ or WRITE or both for READ and WRITE. There is a syntax allowing to use a resource for all the disks:

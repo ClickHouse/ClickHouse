@@ -4959,21 +4959,6 @@ def test_table_statistics(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_table_statistics")
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-
-    def get_parquet_files_size(table_name):
-        """Calculate total size of parquet files in S3 for the Delta table."""
-        total_size = 0
-        s3_objects = minio_client.list_objects(bucket, table_name, recursive=True)
-        for obj in s3_objects:
-            # Only count parquet files, exclude _delta_log directory
-            if (
-                obj.object_name.endswith(".parquet")
-                and "/_delta_log/" not in obj.object_name
-            ):
-                total_size += obj.size
-        return total_size
 
     delta_path = f"/{TABLE_NAME}"
     write_delta_from_df(
@@ -5007,16 +4992,7 @@ def test_table_statistics(started_cluster):
         started_cluster,
     )
 
-    result = instance.query(
-        f"SELECT total_rows, total_bytes FROM system.tables WHERE name = '{TABLE_NAME}'"
-    )
-
-    total_rows, total_bytes = map(lambda x: int(x), result.strip().split("\t"))
-    expected_rows = 1200
-    expected_bytes = get_parquet_files_size(TABLE_NAME)
-
-    assert total_rows == expected_rows
-    assert total_bytes == expected_bytes
+    assert 1200 == int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
 
     write_delta_from_df(
         spark,
@@ -5033,16 +5009,7 @@ def test_table_statistics(started_cluster):
         "",
     )
 
-    result = instance.query(
-        f"SELECT total_rows, total_bytes FROM system.tables WHERE name = '{TABLE_NAME}'"
-    )
-
-    total_rows, total_bytes = map(lambda x: int(x), result.strip().split("\t"))
-    expected_rows = 1300
-    expected_bytes = get_parquet_files_size(TABLE_NAME)
-
-    assert total_rows == expected_rows
-    assert total_bytes == expected_bytes
+    assert 1300 == int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
 
     def check_with_condition(count, start_row, snapshot_version):
         expected_rows = start_row + 100

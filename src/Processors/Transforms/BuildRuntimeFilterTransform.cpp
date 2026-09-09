@@ -31,6 +31,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     bool allow_to_use_not_exact_filter_,
     bool track_key_range_,
     std::optional<UInt64> distinct_keys_hint_,
+    bool distinct_keys_hint_matches_filter_key_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
@@ -58,7 +59,8 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                 exact_values_limit_,
                 bloom_filter_hash_functions_,
                 max_ratio_of_set_bits_in_bloom_filter_,
-                distinct_keys_hint_);
+                distinct_keys_hint_,
+                distinct_keys_hint_matches_filter_key_);
         }
         else
         {

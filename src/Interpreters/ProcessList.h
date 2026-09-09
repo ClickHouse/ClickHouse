@@ -15,6 +15,7 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/UniqueLock.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -337,6 +338,10 @@ struct ProcessListForUser
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
 
+    /// Per-user memory-pressure monitor: watches `user_memory_tracker`, escalates against the global
+    /// monitor. A query monitor is repointed onto this one when the query joins the user.
+    MemoryPressureMonitor user_memory_pressure_monitor{user_memory_tracker, getGlobalMemoryPressureMonitor()};
+
     TemporaryDataOnDiskScopePtr user_temp_data_on_disk;
 
     UserOvercommitTracker user_overcommit_tracker;
@@ -353,6 +358,9 @@ struct ProcessListForUser
     {
         /// TODO: should we drop user_temp_data_on_disk here?
         user_memory_tracker.reset();
+        /// Called when the user's last query leaves, so clear the sticky level too - the next query
+        /// must not inherit the previous one's cooldown.
+        user_memory_pressure_monitor.reset();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
     }

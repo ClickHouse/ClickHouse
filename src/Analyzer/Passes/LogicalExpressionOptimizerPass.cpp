@@ -1379,12 +1379,32 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     return CommonExpressionExtractionResult{new_or_node, common_exprs};
 }
 
+/// Rebuild the root of a logical operator as an `and` over `arguments`, converted to `result_type`.
+/// A lone argument is still wrapped in `and(arg, 1)`, because the plain `_CAST(arg, UInt8)` below
+/// would map values like `0.5` to `0` where the enclosing operator read them as true.
+static QueryTreeNodePtr buildAndNodeWithResultType(QueryTreeNodes arguments, const DataTypePtr & result_type, const ContextPtr & context)
+{
+    if (arguments.size() == 1 && arguments.front()->getResultType()->equals(*result_type))
+        return std::move(arguments.front());
+
+    if (arguments.size() == 1)
+        arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
+
+    auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->markAsOperator();
+    and_function_node->getArguments().getNodes() = std::move(arguments);
+    and_function_node->resolveAsFunction(FunctionFactory::instance().get("and", context));
+
+    QueryTreeNodePtr result = std::move(and_function_node);
+    if (!result->getResultType()->equals(*result_type))
+        result = buildCastFunction(result, result_type, context);
+    return result;
+}
+
 static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr & context)
 {
     [[maybe_unused]] auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "or");
-
-    QueryTreeNodePtr new_root_node{};
 
     if (auto maybe_result = tryExtractCommonExpressions(node, context); maybe_result.has_value())
     {
@@ -1393,31 +1413,7 @@ static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const Cont
         if (result.new_node != nullptr)
             new_root_arguments.push_back(std::move(result.new_node));
 
-        if (new_root_arguments.size() == 1 && new_root_arguments.front()->getResultType()->equals(*node->getResultType()))
-        {
-            new_root_node = std::move(new_root_arguments.front());
-        }
-        else
-        {
-            /// If only one argument remains but its ResultType does not match the original `or`
-            /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
-            /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
-            /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
-            /// function performs the `!= 0` on `arg` internally.
-            if (new_root_arguments.size() == 1)
-                new_root_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
-
-            auto new_function_node = std::make_shared<FunctionNode>("and");
-            new_function_node->markAsOperator();
-            new_function_node->getArguments().getNodes() = std::move(new_root_arguments);
-            auto and_function_resolver = FunctionFactory::instance().get("and", context);
-            new_function_node->resolveAsFunction(and_function_resolver);
-            new_root_node = std::move(new_function_node);
-        }
-
-        if (!new_root_node->getResultType()->equals(*node->getResultType()))
-            new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
-        node = std::move(new_root_node);
+        node = buildAndNodeWithResultType(std::move(new_root_arguments), node->getResultType(), context);
     }
 }
 
@@ -1455,33 +1451,7 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
     if (!extracted_something)
         return;
 
-    QueryTreeNodePtr new_root_node;
-
-    if (new_top_level_arguments.size() == 1 && new_top_level_arguments.front()->getResultType()->equals(*node->getResultType()))
-    {
-        new_root_node = std::move(new_top_level_arguments.front());
-    }
-    else
-    {
-        /// If only one argument remains but its ResultType does not match the original `and`
-        /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
-        /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
-        /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
-        /// function performs the `!= 0` on `arg` internally.
-        if (new_top_level_arguments.size() == 1)
-            new_top_level_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
-
-        auto and_function_node = std::make_shared<FunctionNode>("and");
-        and_function_node->markAsOperator();
-        and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
-        auto and_function_resolver = FunctionFactory::instance().get("and", context);
-        and_function_node->resolveAsFunction(and_function_resolver);
-        new_root_node = std::move(and_function_node);
-    }
-
-    if (!new_root_node->getResultType()->equals(*node->getResultType()))
-        new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
-    node = std::move(new_root_node);
+    node = buildAndNodeWithResultType(std::move(new_top_level_arguments), node->getResultType(), context);
 }
 
 static void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)

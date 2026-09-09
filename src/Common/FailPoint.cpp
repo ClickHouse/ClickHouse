@@ -358,7 +358,8 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
     REGULAR(keeper_changelog_readahead_fill_exception) \
-    REGULAR(distributed_plan_record_failure_while_starting_tasks) \
+    ONCE(distributed_plan_record_failure_while_starting_tasks) \
+    ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \

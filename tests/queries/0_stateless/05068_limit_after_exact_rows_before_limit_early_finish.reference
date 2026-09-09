@@ -1,0 +1,96 @@
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5]
+	],
+
+	"extremes":
+	{
+		"min": [0],
+		"max": [19]
+	},
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 20
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5]
+	],
+
+	"extremes":
+	{
+		"min": [0],
+		"max": [19]
+	},
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 20
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5]
+	],
+
+	"extremes":
+	{
+		"min": [0],
+		"max": [19]
+	},
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 20
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5]
+	],
+
+	"extremes":
+	{
+		"min": [0],
+		"max": [19]
+	},
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 20
+}

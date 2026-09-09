@@ -1,0 +1,102 @@
+=== struct_date32_garbage_under_null
+\N
+('1970-02-12')
+=== struct_dict_garbage_index_under_null
+\N
+('a')
+=== struct_dict_default_garbage_index_under_null
+\N
+('b')
+=== struct_struct_date32_garbage_under_null
+\N
+(('1970-02-12'))
+=== struct_list_date32_garbage_under_null
+\N
+(['1970-01-02'])
+=== struct_large_list_date32_garbage_under_null
+\N
+(['1970-01-02'])
+=== struct_fixed_size_list_date32_garbage_under_null
+\N
+(['1970-01-06','1970-01-07'])
+=== struct_map_date32_garbage_under_null
+\N
+({'b':'1970-01-02'})
+=== struct_string_view_garbage_view_under_null
+\N
+('hi')
+=== list_date32_garbage_in_null_slot_range
+[]
+['1970-01-02']
+=== fixed_size_list_date32_garbage_in_null_slot_range
+[]
+['1970-01-06','1970-01-07']
+=== map_date32_garbage_in_null_slot_range
+{}
+{'b':'1970-01-02'}
+=== sparse_union_date32_garbage_in_unselected
+7
+1970-01-02
+=== sparse_union_dict_garbage_index_in_unselected
+7
+x
+=== struct_sparse_union_date32_garbage_under_null
+\N
+('1970-01-03')
+=== struct_dense_union_date32_garbage_under_null
+\N
+('1970-01-04')
+=== struct_union_garbage_type_id_under_null
+\N
+('1970-01-05')
+=== struct_dense_union_garbage_offset_under_null
+\N
+('1970-01-07')
+=== struct_json_garbage_bytes_under_null
+\N
+('{"a":1}')
+=== struct_ipv6_binary_garbage_under_null
+\N
+('::1')
+=== struct_int128_binary_garbage_under_null
+\N
+(7)
+=== struct_array_ipv6_binary_garbage_under_null
+\N
+(['::1'])
+=== struct_date32_garbage_under_null as Tuple(d Int32)
+(0)
+(42)
+=== struct_date32_garbage_under_null as Tuple(d Date32)
+('1970-01-01')
+('1970-02-12')
+=== struct_ipv6_binary_garbage_under_null as Tuple(v IPv6)
+('::')
+('::1')
+=== struct_int128_binary_garbage_under_null as Tuple(n Int128)
+(0)
+(7)
+=== struct_fixed_binary_garbage_under_null as Tuple(b UUID)
+('00000000-0000-0000-0000-000000000000')
+('00010203-0405-0607-0809-0a0b0c0d0e0f')
+=== struct_fixed_binary_garbage_under_null as Tuple(b IPv6)
+('::')
+('1:203:405:607:809:a0b:c0d:e0f')
+=== struct_fixed_binary_garbage_under_null as Tuple(b Int128)
+(0)
+(20011376718272490338853433276725592320)
+=== struct_fixed_binary_garbage_under_null as Tuple(b UInt128)
+(0)
+(20011376718272490338853433276725592320)
+=== struct_fixed_binary32_garbage_under_null as Tuple(b Int256)
+(0)
+(14074904626401341155369551180448584754667373453244490859944217516317499064576)
+=== struct_fixed_binary32_garbage_under_null as Tuple(b UInt256)
+(0)
+(14074904626401341155369551180448584754667373453244490859944217516317499064576)
+=== struct_uuid_garbage_under_null
+\N
+('00010203-0405-0607-0809-0a0b0c0d0e0f')
+=== struct_uuid_garbage_under_null as a plain Tuple
+('00000000-0000-0000-0000-000000000000')
+('00010203-0405-0607-0809-0a0b0c0d0e0f')

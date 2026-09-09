@@ -300,30 +300,6 @@ Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, Postgr
 
 Enable PRQL - an alternative to SQL.
 
-## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
-
-<ExperimentalBadge/>
-
-**Aliases**: `allow_experimental_ts_to_grid_aggregate_function`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New setting to enable experimental timeSeries* aggregate functions."}]}]}/>
-
-Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
-
-## allow_experimental_time_series_table {#allow_experimental_time_series_table}
-
-<ExperimentalBadge/>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Added new setting to allow the TimeSeries table engine"}]}]}/>
-
-Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
-- 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
-- 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
-
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge/>

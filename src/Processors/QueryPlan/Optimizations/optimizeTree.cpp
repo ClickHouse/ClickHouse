@@ -241,6 +241,11 @@ void optimizeTreeSecondPass(
 
     Stack stack;
 
+    traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
+    {
+        resolvePlannerOnlyFilters(frame_node, optimization_settings);
+    });
+
     /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
     /// filters, which would hide the source filters
     bool predicates_were_propagated = false;

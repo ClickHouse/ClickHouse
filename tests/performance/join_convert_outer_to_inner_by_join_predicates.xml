@@ -1,0 +1,20 @@
+<test>
+    <settings>
+        <join_use_nulls>1</join_use_nulls>
+    </settings>
+
+    <create_query>CREATE TABLE fact (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE mid (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE small (val UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO fact SELECT number % 20000000, number * 7 FROM numbers_mt(100000000)</fill_query>
+    <fill_query>INSERT INTO mid SELECT number, number % 1000000 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO small SELECT number * 9973 + 7 FROM numbers(100)</fill_query>
+
+    <query>SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val SETTINGS join_algorithm = 'hash'</query>
+    <query>SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <drop_query>DROP TABLE fact</drop_query>
+    <drop_query>DROP TABLE mid</drop_query>
+    <drop_query>DROP TABLE small</drop_query>
+</test>

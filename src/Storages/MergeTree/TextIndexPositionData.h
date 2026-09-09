@@ -1,7 +1,8 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/HashTable/StringHashMap.h>
+#include <base/PackedStringRef.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -121,6 +122,6 @@ private:
     bool sorted = true;
 };
 
-using TokenToPositionListMap = StringHashMap<PositionListBuilder>;
+using TokenToPositionListMap = HashMap<PackedStringRef, PositionListBuilder>;
 
 }

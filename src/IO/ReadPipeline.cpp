@@ -36,6 +36,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+LoggerPtr getReadPipelineLogger()
+{
+    static LoggerPtr log = getLogger("ReadPipeline");
+    return log;
+}
+
 namespace
 {
     /// Helper for std::visit with multiple lambdas.

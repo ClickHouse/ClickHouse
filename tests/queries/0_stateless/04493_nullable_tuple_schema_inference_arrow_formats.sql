@@ -5,6 +5,9 @@
 -- unless the Nullable(Tuple) type is allowed by allow_experimental_nullable_tuple_type, because otherwise
 -- DESCRIBE would return a type that CREATE TABLE rejects. The struct null map is propagated
 -- into the tuple elements instead, as it worked before Nullable(Tuple) was supported.
+-- Dropping the struct null map turns a NULL row into a visible one, whose element values the Arrow spec
+-- leaves undefined; the Arrow readers therefore show the type defaults there (ORC, whose null map does
+-- reach the elements, shows NULLs) rather than whatever the producer left under the null slot.
 -- The Parquet queries with input_format_parquet_use_native_reader_v3 = 0 exercise the legacy
 -- Arrow-based Parquet reader in releases that still have it; in newer releases the setting is
 -- obsolete and they run on the native reader.

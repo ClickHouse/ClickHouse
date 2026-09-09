@@ -177,9 +177,8 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 
     /// Unlike blob storages, HDFS has real directories, and a file cannot be created in a
     /// directory that does not exist. The generated object keys contain a nested prefix
-    /// (e.g. `abc/xyzxyzxyz...`), so create the parent directory first, like `LocalObjectStorage`
-    /// does. `hdfsCreateDirectory` creates all missing path components and is a no-op if
-    /// the directory already exists.
+    /// (e.g. `abc/xyzxyzxyz...`), so create the parent first; `hdfsCreateDirectory` creates all
+    /// missing path components and is a no-op if the directory already exists.
     const auto parent_path = file_path.parent_path();
     if (!parent_path.empty() && parent_path != "/")
     {
@@ -198,9 +197,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
         patchSettings(write_settings),
         buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND,
-        std::move(blob_storage_log),
-        /// So that a canceled write cleans up the emptied prefix directories it created.
-        data_directory);
+        std::move(blob_storage_log));
 }
 
 
@@ -241,12 +238,6 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
 
     if (res == -1)
         throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
-
-    /// The generated object keys contain a nested directory prefix (e.g. `abc/xyzxyzxyz...`),
-    /// and `writeObject` creates those directories because HDFS, unlike blob storages, has real
-    /// directories. Clean the now-empty prefix directories up to the data directory, like
-    /// `LocalObjectStorage::removeObject` does; the cleanup is best-effort by design.
-    removeEmptiedParentDirectories(hdfs_fs.get(), path, data_directory);
 }
 
 void HDFSObjectStorage::removeObjects(const StoredObjects & objects)

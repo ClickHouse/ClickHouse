@@ -927,6 +927,11 @@ inline bool isNaNField(const Field & f)
     return f.isNaN();
 }
 
+/// True when `field`, or any Field nested inside it at any depth, satisfies `predicate`.
+/// The predicates above answer for a single value, while `Array`, `Tuple`, `Map` and `Object` hold Fields,
+/// so they say nothing about what a container carries.
+bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &));
+
 }
 
 template <>

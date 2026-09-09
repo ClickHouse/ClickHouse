@@ -333,14 +333,19 @@ public:
     /// back under the threshold or only a tail too small for a part is left, which accumulates
     /// in the session's shared table instead. Producers over the trigger block on the claim
     /// deliberately - pausing production is the backpressure that makes the bound hold.
-    void drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
+    /// Returns how many staged records this sweep took out of the backlog, which is zero when
+    /// it found nothing to claim: the trigger is reached by every producer on every block.
+    size_t drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
 
     /// One claim of the sweep: a full batch drained into a producer-local table and written,
     /// after which it returns true so the sweep claims again; or the tail drained into the
     /// shared table, nothing to claim, the query under the threshold, or a declined
-    /// reservation, after which it returns false and the sweep ends.
+    /// reservation, after which it returns false and the sweep ends. `drained_records_out`
+    /// reports what this claim drained, which the two endings that drain nothing leave at zero.
     bool drainStagedChunksBatchUnderMemoryPressure(
-        AdaptiveAggregationSession & shared, PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+        AdaptiveAggregationSession & shared,
+        PaddedPODArray<AggregateDataPtr> & places_scratch,
+        size_t & drained_records_out) const;
 
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
     /// merge goes external, spilling at the part bound as it goes, and throws if anything

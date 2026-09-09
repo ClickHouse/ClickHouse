@@ -1094,6 +1094,8 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIfNeeded");
+
     if (is_removed)
         return;
 

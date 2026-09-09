@@ -851,11 +851,11 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (!location_path.contains("://") && !location_path.starts_with('/'))
-        location_path = "/" + location_path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
-        location_path
-            = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
+        location_path = Iceberg::makeIcebergLocationURI(
+            configuration_ptr->getTypeName(), configuration_ptr->getNamespace(), location_path);
+    else if (!location_path.contains("://") && !location_path.starts_with('/'))
+        location_path = "/" + location_path;
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
@@ -903,8 +903,10 @@ void IcebergMetadata::createInitial(
 
     if (catalog)
     {
-        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
-            + configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix);
+        auto catalog_filename = Iceberg::makeIcebergLocationURI(
+            configuration_ptr->getTypeName(),
+            configuration_ptr->getNamespace(),
+            configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix));
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
 }

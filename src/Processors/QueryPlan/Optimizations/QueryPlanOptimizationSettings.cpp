@@ -107,8 +107,9 @@ namespace Setting
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
-    extern const SettingsBool query_plan_optimize_join_order_use_cd_a_conflict_detector;
-    extern const SettingsBool query_plan_optimize_join_order_use_cd_c_conflict_detector;
+    extern const SettingsBool query_plan_optimize_join_order_use_conflict_detector_a;
+    extern const SettingsBool query_plan_optimize_join_order_use_conflict_detector_c;
+    extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
@@ -153,6 +154,9 @@ namespace Setting
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool query_plan_derive_not_null_filters_from_joins;
+    extern const SettingsBool query_plan_allow_derived_not_null_filters_execution;
+    extern const SettingsDouble query_plan_max_selectivity_for_not_null_filters_execution;
 }
 
 namespace ServerSetting
@@ -375,8 +379,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
-    query_plan_optimize_join_order_use_cd_a_conflict_detector = from[Setting::query_plan_optimize_join_order_use_cd_a_conflict_detector];
-    query_plan_optimize_join_order_use_cd_c_conflict_detector = from[Setting::query_plan_optimize_join_order_use_cd_c_conflict_detector];
+    query_plan_optimize_join_order_use_conflict_detector_a = from[Setting::query_plan_optimize_join_order_use_conflict_detector_a];
+    query_plan_optimize_join_order_use_conflict_detector_c = from[Setting::query_plan_optimize_join_order_use_conflict_detector_c];
+    join_use_nulls = from[Setting::join_use_nulls];
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 
@@ -392,6 +397,13 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
+
+    derive_not_null_filters_from_joins = from[Setting::query_plan_convert_outer_join_to_inner_join]
+        && from[Setting::query_plan_derive_not_null_filters_from_joins];
+
+    allow_derived_not_null_filters_execution = from[Setting::query_plan_allow_derived_not_null_filters_execution];
+
+    max_selectivity_for_not_null_filters_execution = from[Setting::query_plan_max_selectivity_for_not_null_filters_execution];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

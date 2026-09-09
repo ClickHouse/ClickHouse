@@ -33,6 +33,7 @@ public:
         bool allow_to_use_not_exact_filter_,
         bool track_key_range_,
         std::optional<UInt64> distinct_keys_hint_,
+        bool distinct_keys_hint_matches_filter_key_,
         ContextPtr query_context_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }

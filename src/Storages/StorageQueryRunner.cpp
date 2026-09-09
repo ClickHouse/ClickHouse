@@ -647,7 +647,7 @@ private:
             element.is_internal = true;
 
             if (settings[Setting::log_query_settings])
-                element.query_settings = settings.changedToFlatMap();
+                element.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
             {

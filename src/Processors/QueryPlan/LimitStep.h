@@ -48,6 +48,8 @@ public:
 
     bool hasCorrelatedExpressions() const override { return false; }
 
+    /// A `Limit` at the replica-output boundary is a shard limit, so its output is replicated, not
+    /// partitioned: every replica emits up to `limit` rows and ships all of them.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:

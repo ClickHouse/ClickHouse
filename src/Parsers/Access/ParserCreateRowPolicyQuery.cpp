@@ -340,7 +340,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -349,7 +349,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -358,7 +358,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -422,6 +422,8 @@ In the `TO` section you can provide a list of users and roles this policy should
 
 Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
+Roles named in the `TO` section, including those after `ALL EXCEPT`, are matched against the current user's enabled roles ([`system.enabled_roles`](/reference/system-tables/enabled_roles)), not against every role granted to the user, so [`SET ROLE`](/reference/statements/set-role) can change which policies apply.
+
 ## AS Clause {#as-clause}
 
 It's allowed to have more than one policy enabled on the same table for the same user at one time. So we need a way to combine the conditions from multiple policies.
@@ -442,9 +444,11 @@ A policy can be defined as restrictive as an alternative. Restrictive policies a
 Here is the general formula:
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+If no permissive condition applies, the first condition has no effect and only the restrictive policies decide, because `access_control_improvements.users_without_row_policies_can_read_rows` is enabled by default. A user to whom no condition applies therefore sees every row, and `access_control_improvements.throw_on_unmatched_row_policies`, disabled by default, raises an exception instead when the table does have conditions and none of them apply.
 
 For example, the following policies:
 
@@ -501,7 +505,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 )",

@@ -111,11 +111,23 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '#':
             goto done;
         case '@': /// myemail@gmail.com
+            /// Inside an IP-literal there is no userinfo: `@` is not allowed there at all.
+            if (has_open_bracket) return std::string_view{};
             if (has_terminator_after_colon) return std::string_view{};
             if (has_at_symbol) goto done;
             has_sub_delims = false;
             has_at_symbol = true;
             start_of_host = pos + 1;
+
+            /// An IP-literal host may follow the userinfo: `http://user:password@[2001:db8::1]:8080/`
+            /// (RFC 3986, 3.2). Enter the same mode as for an authority that starts with the bracket,
+            /// so that the colons inside it are not read as the port separator.
+            if (pos + 1 < end && *(pos + 1) == '[')
+            {
+                has_open_bracket = true;
+                start_of_host = pos + 2;
+                ++pos;
+            }
             break;
         case ';':
         case '=':
@@ -158,12 +170,12 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
 done:
     if (has_sub_delims)
         return std::string_view{};
+    /// A complete IP-literal is the host as it stands, whether or not a userinfo preceded it: it has no
+    /// dot to look for, and the colon that follows it belongs to the port.
+    if (has_open_bracket && has_end_bracket)
+        return std::string_view(start_of_host, pos - start_of_host);
     if (!has_at_symbol)
-    {
-        if (has_open_bracket && has_end_bracket)
-            return std::string_view(start_of_host, pos - start_of_host);
         pos = colon_pos ? colon_pos : pos;
-    }
     return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 

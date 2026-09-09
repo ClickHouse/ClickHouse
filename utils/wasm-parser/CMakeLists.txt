@@ -91,6 +91,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Core/Field.cpp"
     "${CH}/src/Core/Joins.cpp"
     "${CH}/src/Core/QualifiedTableName.cpp"
+    "${CH}/src/Core/SettingsSecrets.cpp"
     "${CH}/src/Core/Streaming/CursorTree.cpp"
     "${CH}/src/Core/Streaming/Settings.cpp"
     "${CH}/src/IO/DoubleConverter.cpp"

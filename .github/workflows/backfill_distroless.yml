@@ -21,7 +21,13 @@ env:
 
 jobs:
   BackfillDistroless:
-    runs-on: [self-hosted, release-maker]
+    # Generic CI pool. The dedicated `release-maker` pool is retired; between
+    # 2026-08-03 and 2026-09-03 every dispatch sat unclaimed and was killed by
+    # GitHub's 24h queue timeout (8 consecutive runs, `runner_name` empty,
+    # `steps: []`), so no distroless rebuild reached Docker Hub for a month.
+    # This job only downloads prebuilt release debs and assembles layers, so it
+    # does not need release-grade hardware.
+    runs-on: [self-hosted, arm-small]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -29,8 +35,52 @@ jobs:
           clear-repository: true
       - name: Debug Info
         uses: ./.github/actions/debug
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx (multi-arch)
+        shell: bash
+        run: |
+          set -e
+          # The generic runner is not pre-provisioned for multi-arch docker
+          # builds (the legacy `release-maker` host was). Mirrors the same
+          # migration in ci/jobs/release_job.py. Two things are needed:
+          #
+          # 1. QEMU/binfmt registration. Both linux/amd64 and linux/arm64 are
+          #    built in one buildx invocation; this pool is aarch64, so amd64
+          #    is the emulated arch. binfmt is pinned by digest (not `latest`)
+          #    because it runs --privileged.
+          # 2. A `docker-container` builder with host networking. The default
+          #    sandbox network has no working egress for RUN steps, and the
+          #    ch-builder stage does apt-get plus wget against
+          #    packages.clickhouse.com. Use a dedicated builder name and
+          #    recreate it unconditionally so a pre-provisioned shared builder
+          #    is never clobbered.
+          docker run --privileged --rm \
+            tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 \
+            --install all
+          docker buildx rm distroless-backfill-builder >/dev/null 2>&1 || true
+          docker buildx create --name distroless-backfill-builder \
+            --driver docker-container --driver-opt network=host --use
+          docker buildx inspect --bootstrap
+      - name: Docker Hub login
+        # The legacy `release-maker` host was logged in to Docker Hub
+        # out-of-band, so this job never authenticated explicitly. Generic
+        # runners are not, so the `--push` below would fail on auth. Same
+        # credentials and mechanism as ci/jobs/docker_server.py::docker_login.
+        #
+        # Deliberately unconditional. `inputs.dry-run` arrives as the string
+        # "false" when dispatched through the API (which is how
+        # DistrolessAutoRebuild triggers this), so an `if: !inputs.dry-run`
+        # guard evaluates a non-empty string and skips the login on exactly
+        # the runs that need it. The build step below string-compares
+        # INPUT_DRY_RUN for the same reason. Logging in on a dry-run is
+        # harmless, so skip the guard rather than the credentials.
+        shell: bash
+        run: |
+          set -eo pipefail
+          # pipefail matters: without it a failed SSM fetch pipes an empty
+          # password into docker login and the step fails on the wrong error.
+          aws ssm get-parameter --name dockerhub_robot_password \
+            --with-decryption --output text --query Parameter.Value \
+            | docker login --username 'robotclickhouse' --password-stdin
       - name: Build and push distroless images
         shell: bash
         env:
@@ -215,6 +265,8 @@ jobs:
                 --label="com.clickhouse.build.version=${VERSION}-distroless" \
                 ${TAG_ARGS} \
                 --build-arg=VERSION="${VERSION}" \
+                --build-arg=apt_archive=http://us-east-1.ec2.archive.ubuntu.com \
+                --build-arg=apt_ports_archive=http://us-east-1.ec2.ports.ubuntu.com \
                 --progress=plain \
                 --file="${DOCKERFILE}" \
                 "${CONTEXT}"

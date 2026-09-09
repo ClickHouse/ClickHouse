@@ -475,7 +475,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                 /*allow_to_use_not_exact_filter_=*/false,
                 /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
-                distinct_keys_hint);
+                distinct_keys_hint,
+                /*distinct_keys_hint_matches_filter_key_=*/true);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -541,7 +542,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                     /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
                     /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
-                    distinct_keys_hint);
+                    distinct_keys_hint,
+                    /*distinct_keys_hint_matches_filter_key_=*/join_keys_build_side.size() == 1);
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
                 new_build_filter_node->children = {build_filter_node};
 

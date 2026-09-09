@@ -1006,6 +1006,46 @@ void normalizeBoolFields(Field & field)
     }
 }
 
+bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &))
+{
+    /// Walked with an explicit worklist, like the copy and destroy paths above, so the native stack
+    /// depth does not follow the nesting depth of a value that arrives from data rather than a literal.
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
+    {
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        if (predicate(*current))
+            return true;
+
+        switch (current->getType())
+        {
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & element : current->safeGet<Map>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Object:
+                for (const auto & [_, element] : current->safeGet<Object>())
+                    pending.push_back(&element);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
 std::string_view fieldTypeToString(Field::Types::Which type)
 {
     switch (type)

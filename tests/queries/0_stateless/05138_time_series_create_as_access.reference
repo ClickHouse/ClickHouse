@@ -1,0 +1,8 @@
+-- with no SHOW COLUMNS privileges:
+Not enough privileges. To execute this query, it's necessary to have the grant SHOW COLUMNS ON db.ts_src
+-- with SHOW COLUMNS ON ts_src:
+Not enough privileges. To execute this query, it's necessary to have the grant SHOW COLUMNS ON db.ext_data
+-- with SHOW COLUMNS ON ts_src, ext_data:
+Not enough privileges. To execute this query, it's necessary to have the grant SHOW COLUMNS ON db.ext_tags
+-- with SHOW COLUMNS ON ts_src, ext_data, ext_tags:
+`id` UUID, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3))	`id` UUID DEFAULT reinterpretAsUUID(sipHash128(tags)), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String)

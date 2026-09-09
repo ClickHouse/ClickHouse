@@ -963,8 +963,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// We cannot use query_id from the context because user can put any string there and it might be not unique
         UUID unique_query_id = UUIDHelpers::generateV4();
 
+        /// Shared by the source driving the plan and the source reading the result, so the client gets
+        /// the failure that stopped the query and not one it caused.
+        auto cancellation = std::make_shared<DistributedQueryCancellation>();
+
         /// Make plan stub that reads from the executor that executes the distributed plan
-        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(result_header, unique_query_id, std::move(distributed_plan), task_to_host_map));
+        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(
+            result_header, unique_query_id, std::move(distributed_plan), task_to_host_map, cancellation));
         Pipes pipes;
         pipes.emplace_back(std::move(run_distributed_plan));
 
@@ -982,7 +987,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
             context,
-            execute_locally);
+            execute_locally,
+            cancellation);
 
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {

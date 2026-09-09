@@ -768,6 +768,49 @@ void generateManifestList(
     writer.setMetadata(Iceberg::f_avro_schema, schema_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
+    /// Writes the `partitions` field summary of one manifest-list entry. Every manifest written here holds
+    /// exactly one partition tuple, so `lower_bound == upper_bound` per partition field; readers use these
+    /// bounds to skip whole manifests. Left null when no summaries are supplied (unpartitioned table).
+    auto write_partition_summary = [&](avro::GenericRecord & entry, size_t entry_idx)
+    {
+        if (entry_partition_summaries.empty())
+            return;
+
+        auto & partitions_field = entry.field(Iceberg::f_partitions);
+        partitions_field.selectBranch(1);
+        auto & summaries = partitions_field.value<avro::GenericArray>();
+        auto summary_schema = summaries.schema()->leafAt(0);
+        for (const auto & [partition_value, partition_type] : entry_partition_summaries[entry_idx])
+        {
+            avro::GenericDatum summary_datum(summary_schema);
+            auto & summary_record = summary_datum.value<avro::GenericRecord>();
+            const bool is_null = partition_value.isNull();
+            summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(is_null);
+            if (!is_null)
+            {
+                if (isNaNPartitionValue(partition_value, partition_type))
+                {
+                    /// NaN float/double partition value: record it via `contains_nan` instead of publishing the NaN bytes as ordered bounds.
+                    auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
+                    contains_nan.selectBranch(1);
+                    contains_nan.value<bool>() = true;
+                }
+                else if (canDumpIcebergStats(partition_value, partition_type))
+                {
+                    auto bound = dumpFieldToBytes(partition_value, partition_type);
+                    auto & lower = summary_record.field(Iceberg::f_lower_bound);
+                    lower.selectBranch(1);
+                    lower.value<std::vector<uint8_t>>() = bound;
+                    auto & upper = summary_record.field(Iceberg::f_upper_bound);
+                    upper.selectBranch(1);
+                    upper.value<std::vector<uint8_t>>() = bound;
+                }
+                /// else: a partition type whose bounds we cannot serialize (e.g. `Float`); leave the bounds null, matching the data-file statistics path.
+            }
+            summaries.value().push_back(summary_datum);
+        }
+    };
+
     for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
     {
         avro::GenericDatum entry_datum(schema.root());
@@ -816,43 +859,7 @@ void generateManifestList(
             setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
 
-            /// Recompute the `partitions` summary so pruning bounds survive the rewrite (lower_bound == upper_bound per field).
-            if (!entry_partition_summaries.empty())
-            {
-                auto & partitions_field = entry.field(Iceberg::f_partitions);
-                partitions_field.selectBranch(1);
-                auto & summaries = partitions_field.value<avro::GenericArray>();
-                auto summary_schema = summaries.schema()->leafAt(0);
-                for (const auto & [partition_value, partition_type] : entry_partition_summaries[entry_idx])
-                {
-                    avro::GenericDatum summary_datum(summary_schema);
-                    auto & summary_record = summary_datum.value<avro::GenericRecord>();
-                    const bool is_null = partition_value.isNull();
-                    summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(is_null);
-                    if (!is_null)
-                    {
-                        if (isNaNPartitionValue(partition_value, partition_type))
-                        {
-                            /// NaN float/double partition value: record it via `contains_nan` instead of publishing the NaN bytes as ordered bounds.
-                            auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
-                            contains_nan.selectBranch(1);
-                            contains_nan.value<bool>() = true;
-                        }
-                        else if (canDumpIcebergStats(partition_value, partition_type))
-                        {
-                            auto bound = dumpFieldToBytes(partition_value, partition_type);
-                            auto & lower = summary_record.field(Iceberg::f_lower_bound);
-                            lower.selectBranch(1);
-                            lower.value<std::vector<uint8_t>>() = bound;
-                            auto & upper = summary_record.field(Iceberg::f_upper_bound);
-                            upper.selectBranch(1);
-                            upper.value<std::vector<uint8_t>>() = bound;
-                        }
-                        /// else: a partition type whose bounds we cannot serialize (e.g. `Float`); leave the bounds null, matching the data-file statistics path.
-                    }
-                    summaries.value().push_back(summary_datum);
-                }
-            }
+            write_partition_summary(entry, entry_idx);
 
             writer.write(entry_datum);
             continue;
@@ -899,6 +906,8 @@ void generateManifestList(
             0,
             Iceberg::f_existing_rows_count);
         setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
+
+        write_partition_summary(entry, entry_idx);
 
         writer.write(entry_datum);
     }
@@ -1266,6 +1275,7 @@ bool IcebergStorageSink::initializeMetadata()
     Strings manifest_entries_in_storage;
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
@@ -1371,6 +1381,17 @@ bool IcebergStorageSink::initializeMetadata()
             manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
             manifest_entries.push_back(manifest_entry_path);
 
+            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
+            if (partitioner)
+            {
+                const auto & partition_types = partitioner->getResultTypes();
+                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
+                partition_summary.reserve(partition_key.size());
+                for (size_t i = 0; i < partition_key.size(); ++i)
+                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                entry_partition_summaries.push_back(std::move(partition_summary));
+            }
+
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(resolver.resolve(manifest_entry_path)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
             try
@@ -1435,7 +1456,12 @@ bool IcebergStorageSink::initializeMetadata()
                     manifest_entry_sizes,
                     *buffer_manifest_list,
                     Iceberg::FileContentType::DATA,
-                    /* use_previous_snapshots = */ true);
+                    /* use_previous_snapshots = */ true,
+                    /* per_entry_content_types = */ {},
+                    /* entry_counts = */ {},
+                    /* carry_forward_manifest_paths = */ {},
+                    /* entry_partition_spec_ids = */ {},
+                    entry_partition_summaries);
                 buffer_manifest_list->finalize();
             }
             catch (...)

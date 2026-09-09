@@ -231,6 +231,9 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         reserve_size,
                         fmt::format("concurrent{}", i),
                         /*is_concurrent_hash_join*/ true);
+
+                    CurrentMemoryTracker::check();
+
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
                     inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
@@ -239,6 +242,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                 });
         }
         pool->wait();
+        CurrentMemoryTracker::check();
 
         /// Share one StoredColumnsIndex across all slots so that RowRef::block_no is globally
         /// unique: cells built by any slot end up in the shared two-level map after the build

@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int CANNOT_SCHEDULE_TASK;
+    extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
 namespace FailPoints
@@ -685,7 +686,8 @@ ExchangeLookupPtr createExchangeLookup(
     const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context,
-    bool execute_locally)
+    bool execute_locally,
+    DistributedQueryCancellationPtr cancellation)
 {
     if (execute_locally)
     {
@@ -739,10 +741,10 @@ ExchangeLookupPtr createExchangeLookup(
             address.port = static_cast<UInt16>(streaming_exchange_port);
 
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), sources_with_ports);
+        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation));
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
-    UNUSED(exchange_stream_sources, context);
+    UNUSED(exchange_stream_sources, context, cancellation);
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "Streaming exchanges are only supported on Linux and macOS; "
         "use `distributed_plan_force_exchange_kind = 'Persisted'`");
@@ -816,7 +818,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         task_description.exchange_stream_sources,
         temporary_files,
         context,
-        execute_locally);
+        execute_locally,
+        /*cancellation=*/ nullptr);
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 
@@ -828,6 +831,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     optimization_settings.query_plan_optimize_join_order_randomize = 0;
     optimization_settings.convert_join_to_in = false;
     optimization_settings.convert_outer_join_to_inner_join = false;
+    optimization_settings.derive_not_null_filters_from_joins = false;
     optimization_settings.convert_any_join_to_semi_or_anti_join = false;
     optimization_settings.merge_filter_into_join_condition = false;
     optimization_settings.top_k_through_join = false;
@@ -1139,14 +1143,6 @@ static WorkerAddress resolveWorkerAddress(
     address.stateless_worker_port = static_cast<UInt16>(dispatch_port);
 
     return address;
-}
-
-UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 destination_exchange_port)
-{
-    for (const auto & stream : exchange_stream_sources.stream_hosts)
-        if (stream.second.port != destination_exchange_port)
-            return 2;
-    return 1;
 }
 
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
@@ -1466,8 +1462,14 @@ protected:
             /// and leave a task that does not settle for the worker to reclaim on shutdown.
             for (auto & task : tasks_to_cancel)
             {
-                if (waitForTaskTerminal(task))
+                if (auto terminal_status = waitForTaskTerminal(task))
+                {
+                    /// Its failure can be the root cause of the teardown: the initiator often sees an
+                    /// effect first, e.g. the result reader's socket closing.
+                    if (terminal_status->status != "Finished" && terminal_status->status != "Unknown task")
+                        recordTaskFailure(task, *terminal_status);
                     tryForgetTask(task);
+                }
                 else
                     LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after cancellation; "
                         "leaving it for the worker to reclaim", task.task_id, task.endpoint_uri);
@@ -1495,14 +1497,31 @@ protected:
         }
 
     private:
-        /// Log the in-flight exception, store it as the query's first failure, and request
-        /// cancellation. Called from the worker lambda's catch blocks so a failed status check
-        /// or a failed re-enqueue surfaces through `checkCancelled` instead of escaping the
-        /// thread (which would be rethrown by ~TaskTracker and terminate the server).
-        void recordFailure()
+        /// Record a task's failed status under the worker's error code, so the client sees it and the
+        /// record can rank it. A status other than `Failed` carries no code and gets the generic remote
+        /// error code, which ranks below a known root cause.
+        void recordTaskFailure(const RunningTaskInfo & task, const DistributedQueryTaskStatus & task_status)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            cancellation->recordCurrentException();
+            const int code = task_status.error_code != 0 ? task_status.error_code : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+            recordFailure(std::make_exception_ptr(Exception(code, "Task {} did not finish successfully (status: {}): {}",
+                task.task_id, task_status.status, task_status.error_message)));
+        }
+
+        /// Log the exception, record it as the query's failure, and request cancellation. The status
+        /// check threads call it from their catch blocks, so a failure there surfaces through
+        /// `checkCancelled` instead of escaping the thread and terminating the server.
+        void recordFailure(std::exception_ptr exception)
+        {
+            /// A consequence is expected while the query stops; only a root cause is worth an error entry.
+            const bool is_consequence = DistributedQueryCancellation::isConsequence(getExceptionErrorCode(exception));
+            if (is_consequence)
+                LOG_TRACE(logger, "Task ended with a failure that another one caused: {}", getExceptionMessage(exception, /*with_stacktrace=*/ false));
+            else
+                tryLogException(exception, __PRETTY_FUNCTION__);
+            /// The teardown waits a bounded time for each task's outcome; a root cause reported later
+            /// is recorded, but the query has been reported already.
+            if (!cancellation->recordException(exception) && !is_consequence)
+                LOG_WARNING(logger, "The failure arrived after the query reported another one, the client did not see it");
         }
 
         void checkCancelled()
@@ -1533,17 +1552,18 @@ protected:
                 return;
             }
 
-            /// Task reached a terminal state on the worker. Release worker-side
-            /// bookkeeping for it (TaskState/progress/future). Best-effort.
+            /// Task reached a terminal state on the worker.
+            const bool finished = task_status.status == "Finished";
+            if (!finished)
+                recordTaskFailure(task, task_status);
+
+            /// Release worker-side bookkeeping for it (TaskState/progress/future). Best-effort. Only
+            /// after recording the failure: a forgotten task answers the teardown's poll with
+            /// "Unknown task", which carries none.
             tryForgetTask(task);
 
-            if (task_status.status != "Finished")
-                throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-                    "Task {} did not finish successfully (status: {}): {}",
-                    task.task_id, task_status.status, task_status.error_message);
-
-            /// Update task state
-            setTaskFinished(stage_name, task.task_id);
+            if (finished)
+                setTaskFinished(stage_name, task.task_id);
         }
 
         void tryForgetTask(const RunningTaskInfo & task) noexcept
@@ -1559,9 +1579,9 @@ protected:
         }
 
         /// Polls the worker until the task leaves the "Running" state or a bounded time budget elapses.
-        /// Returns true when the task is known to be terminal (or already gone from the worker), false
-        /// on timeout or a status-request error.
-        bool waitForTaskTerminal(const RunningTaskInfo & task) noexcept
+        /// Returns the terminal status when the task is known to be terminal (or already gone from the
+        /// worker), nothing on timeout or a status-request error.
+        std::optional<DistributedQueryTaskStatus> waitForTaskTerminal(const RunningTaskInfo & task) noexcept
         {
             constexpr UInt32 poll_wait_ms = 300;
             constexpr size_t max_polls = 10;
@@ -1571,15 +1591,15 @@ protected:
                 {
                     auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context, /*for_cleanup*/ true);
                     if (task_status.status != "Running")
-                        return true;
+                        return task_status;
                 }
                 catch (...)
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("waitForTaskTerminal {} on {}", task.task_id, task.endpoint_uri));
-                    return false;
+                    return std::nullopt;
                 }
             }
-            return false;
+            return std::nullopt;
         }
 
         void addTaskToCheckQueue(const String & stage_name, const String & task_name)
@@ -1667,8 +1687,8 @@ protected:
                     }
                     catch (...)
                     {
-                        /// recordFailure() logs and stores the exception. Ok.
-                        recordFailure();
+                        /// recordFailure logs and stores the exception. Ok.
+                        recordFailure(std::current_exception());
                     }
                     /// Decrement the in-flight counter before scheduling the next check so
                     /// the next `enqueueGetStatus` is not gated by an already-finished slot.
@@ -1689,8 +1709,8 @@ protected:
                     }
                     catch (...)
                     {
-                        /// recordFailure() logs and stores the exception. Ok.
-                        recordFailure();
+                        /// recordFailure logs and stores the exception. Ok.
+                        recordFailure(std::current_exception());
                     }
                 });
             ++in_flight_request_count;
@@ -1786,12 +1806,6 @@ protected:
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
-            /// A version-1 consumer dials producers on its own exchange port, so the decision must
-            /// compare against the destination worker's port, not the initiator's.
-            const auto & destination_worker = task_to_host_map->getTaskHosts().at(task.task_id);
-            task_description.serialization_version = chooseTaskSerializationVersion(
-                task_description.exchange_stream_sources, destination_worker.streaming_exchange_port);
-
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.
             /// On send failure clean up directly in case the worker did accept the start;
@@ -1822,29 +1836,65 @@ protected:
 };
 
 
-void DistributedQueryCancellation::recordCurrentException()
+DistributedQueryCancellation::DistributedQueryCancellation()
+    : wakeup(std::make_shared<WakeupFd>())
 {
-    /// Publish the failure and the flag in one critical section. Setting the flag outside it would
-    /// let a waiter that already read no failure still see the flag and report `Query was cancelled`.
-    std::lock_guard lock(mutex);
-    /// A bare cancellation is not a root cause: a task stopped by the cancellation of its
-    /// exchange must not become the query's reported failure.
-    auto exception = std::current_exception();
-    if (!first_exception && getExceptionErrorCode(exception) != ErrorCodes::QUERY_WAS_CANCELLED)
-        first_exception = exception;
+}
+
+DistributedQueryCancellation::FailureRank DistributedQueryCancellation::rankOf(int error_code)
+{
+    if (error_code == ErrorCodes::QUERY_WAS_CANCELLED || error_code == ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+        return FailureRank::Consequence;
+    if (error_code == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+        return FailureRank::Unclassified;
+    return FailureRank::RootCause;
+}
+
+void DistributedQueryCancellation::cancel()
+{
+    cancelled_by_pipeline = true;
     cancelled = true;
+    notifyStageWakeup(wakeup);
+}
+
+bool DistributedQueryCancellation::recordException(std::exception_ptr exception)
+{
+    const FailureRank rank = rankOf(getExceptionErrorCode(exception));
+    bool driving_source_reports = false;
+    {
+        /// Publish the failure and the flag in one critical section. Setting the flag outside it
+        /// would let a waiter that already read no failure still see the flag and report
+        /// `Query was cancelled`.
+        std::lock_guard lock(mutex);
+        const bool worth_recording = rank == FailureRank::RootCause || !cancelled_by_pipeline;
+        if (worth_recording && (!failure || rank > failure_rank))
+        {
+            failure = exception;
+            failure_rank = rank;
+        }
+        cancelled = true;
+        driving_source_reports = !execution_finished;
+    }
+    notifyStageWakeup(wakeup);
+    return driving_source_reports;
+}
+
+void DistributedQueryCancellation::markExecutionFinished()
+{
+    std::lock_guard lock(mutex);
+    execution_finished = true;
 }
 
 std::exception_ptr DistributedQueryCancellation::getFailure() const
 {
     std::lock_guard lock(mutex);
-    return first_exception;
+    return failure;
 }
 
 void DistributedQueryCancellation::rethrowIfFailedLocked() const
 {
-    if (first_exception)
-        std::rethrow_exception(first_exception);
+    if (failure)
+        std::rethrow_exception(failure);
 }
 
 void DistributedQueryCancellation::rethrowIfFailed() const

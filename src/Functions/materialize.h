@@ -32,6 +32,8 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool isNullPropagating(const DataTypePtr & /*result_type*/) const override { return true; }
+
     bool useDefaultImplementationForNothing() const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
