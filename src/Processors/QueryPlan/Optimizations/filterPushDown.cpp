@@ -1148,13 +1148,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 /// order and so change the coordination mode the fragment announces: `WHERE tenant = 42` can, while
 /// `WHERE tenant > 42`, a bare boolean or a join runtime filter leave the decision alone.
 ///
-/// Deliberately structural, and not `appendFixedColumnsFromFilterExpression` - the analysis read-in-order
-/// itself uses - even though reusing that would be narrower and exact. It inspects `FUNCTION` nodes and
-/// descends only `and`, so an `ALIAS` around the condition, which is how a conjunction usually arrives
-/// here, makes it report that nothing is fixed. Reading it that way pushed `tenant = 42` into a fragment
-/// that then read `InOrder` while the replicas read `Default`. Missing a fixed column costs that analysis
-/// an optimization and costs this one correctness, so the two cannot share a test until the analysis
-/// looks through aliases.
+/// Deliberately structural, and not `appendFixedColumnsFromFilterExpression` - the analysis
+/// read-in-order itself uses - even though reusing that would be narrower and exact. The two want their
+/// errors to point opposite ways. That analysis is an under-approximation by design: it descends only
+/// `and`, takes only an `equals` with a single non-constant child, and reads nothing out of an
+/// `isNotDistinctFrom` or anything below an `or`. Each miss costs it one optimization. A miss here costs
+/// correctness - the condition enters a fragment that then reads `InOrder` while the replicas read
+/// `Default` - so this has to stay a superset of whatever that analysis can find, and not follow it if
+/// it is ever narrowed for precision.
 ///
 /// The price is refusing far more than it must: an equality under an `or`, one between two non-constant
 /// expressions, or an `isNotDistinctFrom` fixes nothing and still waits for the setting.
