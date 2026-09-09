@@ -38,6 +38,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageValues.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -299,8 +300,27 @@ bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & 
 /// already constant-folded live in ConstantNode::source_expression, which is NOT a child
 /// (children_size == 0), so they are correctly ignored: by then they are constants evaluated on
 /// the initiator and safe to ship.
+///
+/// A bare `IN some_table` / `NOT IN some_table` carries a TABLE node - or a TABLE_FUNCTION node for
+/// a table function - instead of a QUERY node, and reads a table by name exactly the way a subquery
+/// does: on the normal StorageView path against the initiator's table, per-shard once the
+/// optimization fires. Those count here too, otherwise two spellings of the same predicate over the
+/// same view return different rows. Only the right-hand side of an `IN` is inspected for them,
+/// because the query's own join tree is made of TABLE nodes as well.
 bool containsSubqueryNode(const QueryTreeNodePtr & node)
 {
+    if (const auto * function_node = node->as<FunctionNode>();
+        function_node && isNameOfInFunction(function_node->getFunctionName()))
+    {
+        const auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() >= 2)
+        {
+            const auto right_node_type = arguments[1]->getNodeType();
+            if (right_node_type == QueryTreeNodeType::TABLE || right_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+                return true;
+        }
+    }
+
     for (const auto & child : node->getChildren())
     {
         if (!child)
@@ -320,6 +340,13 @@ bool containsSubqueryNode(const QueryTreeNodePtr & node)
 /// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
 /// the optimization fires, with the same divergence risk described above, so suppress the
 /// optimization when present. Mirrors hasSubquery in StorageView.cpp.
+///
+/// Like containsSubqueryNode, this also treats a bare `IN some_table` / `IN some_table_function(...)`
+/// as a subquery. The expression parser produces an ASTFunction from the IN family whose right-hand
+/// side is an ASTIdentifier (the table name) or an ASTFunction naming a table function, never an
+/// ASTSubquery, so the plain ASTSubquery check above misses it, while the analyzer resolves that
+/// identifier as a table and reads it exactly the way a subquery would - on each shard once folded
+/// into the shipped query. Only the right-hand side of an IN is inspected.
 bool astContainsSubquery(const ASTPtr & ast)
 {
     if (!ast)
@@ -327,6 +354,22 @@ bool astContainsSubquery(const ASTPtr & ast)
 
     if (ast->as<ASTSubquery>())
         return true;
+
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            const auto & right = arguments[1];
+            if (right->as<ASTIdentifier>())
+                return true;
+
+            if (const auto * right_function = right->as<ASTFunction>();
+                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
+                return true;
+        }
+    }
 
     for (const auto & child : ast->children)
     {
@@ -1109,6 +1152,8 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
       * and also set the number of threads to 1.
       */
     if (main_query_node.hasLimit()
+        && !main_query_node.hasLimitAfter()
+        && !main_query_node.hasLimitUntil()
         && !main_query_node.isDistinct()
         && !main_query_node.isLimitWithTies()
         && !main_query_node.hasPrewhere()
@@ -1348,6 +1393,13 @@ void pushOrderByIntoView(
     if (outer->hasOffset())
         return;
 
+    /// `LIMIT n AFTER ... [UNTIL ...]` counts rows only from the boundary row onwards, and the
+    /// boundary is located on the coordinator over the ordered stream. Pushing `LIMIT_LENGTH` into
+    /// the view would keep the first n rows of every shard instead, so the boundary row may never
+    /// reach the coordinator and the range would return too few rows or none at all.
+    if (outer->hasLimitAfter() || outer->hasLimitUntil())
+        return;
+
     /// LIMIT ... WITH TIES decides ties globally after ordering. Pushing
     /// LIMIT_LENGTH into the view would truncate per-shard before the global
     /// tie set is known.
@@ -1415,8 +1467,10 @@ void pushOrderByIntoView(
     if (sel->qualify())
         return;
 
-    /// View must not already have ORDER BY/LIMIT
-    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
+    /// View must not already have ORDER BY/LIMIT, including a `LIMIT [n] AFTER/UNTIL` range: the
+    /// injected `ORDER BY` would change which rows its boundaries select, and the injected
+    /// `LIMIT_LENGTH` would become the count of a range that had none.
+    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset() || sel->limitAfter() || sel->limitUntil())
         return;
 
     /// View must not carry `LIMIT`/`OFFSET` through its own `SETTINGS` clause.
