@@ -575,6 +575,8 @@ String toString(ClientInfo::Interface interface)
             return "BACKGROUND";
         case ClientInfo::Interface::ARROW_FLIGHT:
             return "ARROWFLIGHT";
+        case ClientInfo::Interface::ICEBERG_REST_CATALOG:
+            return "ICEBERG_REST_CATALOG";
     }
 
     return fmt::format("Unknown server interface ({}).", static_cast<int>(interface));

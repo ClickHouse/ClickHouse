@@ -4468,7 +4468,7 @@ void Server::createServers(
                         port_name,
                         "Iceberg REST catalog: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
-                            httpContext(), createIcebergRESTCatalogHandlerFactory(warehouse), server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                            httpContext(), createIcebergRESTCatalogHandlerFactory(*this, warehouse), server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
                 });
             }
         }

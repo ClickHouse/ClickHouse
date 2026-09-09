@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IcebergRESTCatalog/IIcebergRESTCatalogStore.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogRouter.h>
@@ -14,15 +15,22 @@
 namespace DB
 {
 
+class IServer;
+class Session;
+
 /// Serves the Iceberg REST catalog v1 API (RFC: issue #114697).
+/// Every request is authenticated with the regular HTTP credentials (Basic, `X-ClickHouse-User`, certificates).
 class IcebergRESTCatalogHandler : public HTTPRequestHandler
 {
 public:
-    IcebergRESTCatalogHandler(String warehouse_, IcebergRESTCatalogStorePtr store_);
+    IcebergRESTCatalogHandler(IServer & server_, String warehouse_, IcebergRESTCatalogStorePtr store_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
+    /// Returns nullptr when the response has already been sent (401 with `WWW-Authenticate`).
+    ContextMutablePtr authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response, Session & session) const;
+
     void handleGetConfig(const Poco::URI & uri, HTTPServerResponse & response) const;
     void handleListNamespaces(const Poco::URI & uri, HTTPServerResponse & response) const;
     void handleCreateNamespace(HTTPServerRequest & request, HTTPServerResponse & response) const;
@@ -36,6 +44,7 @@ private:
         HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message);
 
     LoggerPtr log;
+    IServer & server;
     const String warehouse;
     IcebergRESTCatalogStorePtr store;
 };

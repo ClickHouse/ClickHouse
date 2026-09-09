@@ -1,11 +1,19 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogHandler.h>
 
+#include <Access/Credentials.h>
+#include <Core/Settings.h>
 #include <IO/HTTPCommon.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Session.h>
+#include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <Server/HTTP/authenticateUserByHTTP.h>
+#include <Server/HTTPHandler.h>
+#include <Server/IServer.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -19,6 +27,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_DENIED;
+    extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_PASSWORD;
+}
 
 namespace
 {
@@ -58,11 +73,28 @@ std::optional<String> getQueryParameter(const Poco::URI & uri, const String & na
 
 }
 
-IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(String warehouse_, IcebergRESTCatalogStorePtr store_)
+IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, String warehouse_, IcebergRESTCatalogStorePtr store_)
     : log(getLogger("IcebergRESTCatalogHandler"))
+    , server(server_)
     , warehouse(std::move(warehouse_))
     , store(std::move(store_))
 {
+}
+
+ContextMutablePtr IcebergRESTCatalogHandler::authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response, Session & session) const
+{
+    /// Only the URI is parsed here, so the body stays available for the route handlers.
+    HTMLForm params(server.context()->getSettingsRef(), request);
+    /// No fixed user: every request must carry its own credentials.
+    const HTTPHandlerConnectionConfig connection_config;
+    /// Each request gets a fresh handler, so partial multi-step credentials do not survive a 401 anyway.
+    std::unique_ptr<Credentials> request_credentials;
+    if (!authenticateUserByHTTP(request, params, response, session, request_credentials, connection_config, server.context(), log))
+        return nullptr;
+
+    auto context = session.makeQueryContext();
+    context->setCurrentQueryId("");
+    return context;
 }
 
 std::optional<String> IcebergRESTCatalogHandler::readRequestBody(HTTPServerRequest & request, HTTPServerResponse & response, size_t max_size)
@@ -118,6 +150,11 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
 {
     try
     {
+        Session session(server.context(), ClientInfo::Interface::ICEBERG_REST_CATALOG, request.isSecure());
+        auto context = authenticateUser(request, response, session);
+        if (!context)
+            return; /// 401 with `WWW-Authenticate` is already sent.
+
         Poco::URI uri;
         std::vector<std::string> segments;
         try
@@ -191,12 +228,30 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
     }
     catch (...)
     {
+        auto status = Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
+        String type = "InternalServerError";
+        String message = "Internal server error";
+
+        const int code = getCurrentExceptionCode();
+        /// `AccessControl` reports a wrong password for the `default` user as `REQUIRED_PASSWORD`.
+        if (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD)
+        {
+            status = Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED;
+            type = "NotAuthorizedException";
+            message = getCurrentExceptionMessage(false);
+        }
+        else if (code == ErrorCodes::ACCESS_DENIED)
+        {
+            status = Poco::Net::HTTPResponse::HTTP_FORBIDDEN;
+            type = "ForbiddenException";
+            message = getCurrentExceptionMessage(false);
+        }
+
         tryLogCurrentException(log, "Failed to process Iceberg REST catalog request");
         try
         {
             if (!response.sent())
-                sendError(
-                    response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "InternalServerError", "Internal server error");
+                sendError(response, status, type, message);
         }
         catch (...)
         {

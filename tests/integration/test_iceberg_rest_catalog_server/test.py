@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import time
 import uuid
 
@@ -11,8 +12,12 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
-    "node", main_configs=["configs/iceberg_rest_catalog.xml"], stay_alive=True
+    "node",
+    main_configs=["configs/iceberg_rest_catalog.xml"],
+    stay_alive=True,
 )
+
+DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
 
@@ -42,8 +47,12 @@ def catalog_url(path):
     return f"http://{node.ip_address}:{CATALOG_PORT}{path}"
 
 
-def catalog_request(method, path, json=None, params=None, expected_code=200):
-    response = requests.request(method, catalog_url(path), json=json, params=params)
+def catalog_request(
+    method, path, json=None, params=None, expected_code=200, auth=None, headers=None
+):
+    response = requests.request(
+        method, catalog_url(path), json=json, params=params, auth=auth, headers=headers
+    )
     assert response.status_code == expected_code, (
         f"Expected {expected_code}, got {response.status_code}. "
         f"Response: {response.text}"
@@ -122,7 +131,9 @@ def test_namespaces(started_cluster):
     assert list_namespaces(parent=f"{ns}\x1feu") == [[ns, "eu", "west"]]
     assert list_namespaces(parent=f"{ns}\x1feu\x1fwest") == []
 
-    response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}%1Feu%1Fwest"))
+    response = requests.head(
+        catalog_url(f"/v1/my_warehouse/namespaces/{ns}%1Feu%1Fwest")
+    )
     assert response.status_code == 204, response.text
 
     response = catalog_request(
@@ -171,9 +182,7 @@ def test_namespace_exists(started_cluster):
 
 def test_malformed_create_namespace(started_cluster):
     for body in [None, {}, {"namespace": []}, {"namespace": [""]}]:
-        response = requests.post(
-            catalog_url("/v1/my_warehouse/namespaces"), json=body
-        )
+        response = requests.post(catalog_url("/v1/my_warehouse/namespaces"), json=body)
         assert response.status_code == 400, response.text
         assert_error_shape(response, "BadRequestException")
 
@@ -246,17 +255,73 @@ def test_stop_start_listen(started_cluster):
     assert [ns] in list_namespaces()
 
 
+def test_authentication(started_cluster):
+    # (basic auth, headers, is_ok)
+    cases = [
+        (DEFAULT_AUTH, None, True),
+        (("default", "wrong"), None, False),
+        (("no_such_user", ""), None, False),
+        (None, {"X-ClickHouse-User": "default", "X-ClickHouse-Key": ""}, True),
+        (None, {"X-ClickHouse-User": "default", "X-ClickHouse-Key": "wrong"}, False),
+    ]
+    for auth, headers, is_ok in cases:
+        response = catalog_request(
+            "GET",
+            "/v1/my_warehouse/namespaces",
+            expected_code=200 if is_ok else 401,
+            auth=auth,
+            headers=headers,
+        )
+        if not is_ok:
+            assert_error_shape(response, "NotAuthorizedException")
+
+
+def test_auth_failure_does_not_poison_connection(started_cluster):
+    session = requests.Session()
+    response = session.get(
+        catalog_url("/v1/my_warehouse/namespaces"), auth=("default", "wrong")
+    )
+    assert response.status_code == 401
+    response = session.get(
+        catalog_url("/v1/my_warehouse/namespaces"), auth=DEFAULT_AUTH
+    )
+    assert response.status_code == 200
+
+
+def test_client_auth_header(started_cluster):
+    # (credentials, is_ok)
+    cases = [
+        (b"default:", True),
+        (b"default:wrong", False),
+    ]
+    for credentials, is_ok in cases:
+        token = base64.b64encode(credentials).decode()
+        # The client fetches /v1/config on CREATE DATABASE, so wrong credentials fail there with the server's 401.
+        query = f"""
+            DROP DATABASE IF EXISTS rest_client_auth_db;
+            SET allow_experimental_database_iceberg = 1;
+            CREATE DATABASE rest_client_auth_db
+            ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1')
+            SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+                auth_header = 'Authorization: Basic {token}'
+            """
+        if is_ok:
+            node.query(query)
+            node.query("DROP DATABASE IF EXISTS rest_client_auth_db")
+        else:
+            error = node.query_and_get_error(query)
+            assert "401" in error, error
+
+
 def test_clickhouse_rest_catalog_client(started_cluster):
     ns = f"client_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
 
-    node.query(
-        f"""
+    node.query(f"""
         DROP DATABASE IF EXISTS rest_client_db;
         SET allow_experimental_database_iceberg = 1;
         CREATE DATABASE rest_client_db
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse'
-        """
-    )
+        """)
     node.query("DROP DATABASE IF EXISTS rest_client_db")
