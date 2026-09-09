@@ -25,3 +25,10 @@ if (TARGET ch_contrib::sz3)
     clickhouse_add_executable (sz3_decompress_fuzzer sz3_decompress_fuzzer.cpp)
     target_link_libraries (sz3_decompress_fuzzer PRIVATE dbms)
 endif ()
+
+# The fuzzer calls getCompressionCodecIguana, which is only compiled when Iguana is enabled
+# (USE_IGUANA), so only build this target when the Iguana contrib is available.
+if (TARGET ch_contrib::iguana)
+    clickhouse_add_executable (iguana_decompress_fuzzer iguana_decompress_fuzzer.cpp)
+    target_link_libraries (iguana_decompress_fuzzer PRIVATE dbms)
+endif ()

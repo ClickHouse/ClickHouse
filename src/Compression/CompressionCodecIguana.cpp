@@ -121,6 +121,11 @@ void registerCodecIguana(CompressionCodecFactory & factory)
     });
 }
 
+CompressionCodecPtr getCompressionCodecIguana()
+{
+    return std::make_shared<CompressionCodecIguana>();
+}
+
 }
 
 #endif
