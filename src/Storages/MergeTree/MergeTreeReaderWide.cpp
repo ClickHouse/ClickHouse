@@ -398,9 +398,11 @@ MergeTreeReaderWide::findColumnsCacheEntriesForRange(size_t row_begin, size_t ro
 
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        /// Columns dropped by pending mutations, and invalidated system columns,
-        /// don't need cache entries: they are not read from the part at all.
-        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        /// Columns dropped by pending mutations, invalidated system columns, and columns that
+        /// `fillMissingColumns` synthesizes after the read don't need cache entries: they are not
+        /// read from the part at all. Requiring one for them would make every read of a table
+        /// with such a column miss forever, because the write path never produces one.
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || isColumnFilledAfterReading(pos))
             continue;
 
         const auto & column_name = requested_column_names[pos];
@@ -480,6 +482,12 @@ bool MergeTreeReaderWide::lookupColumnsCache(size_t row_begin, size_t row_end, s
     return true;
 }
 
+bool MergeTreeReaderWide::isColumnFilledAfterReading(size_t pos) const
+{
+    const auto & name = columns_to_read[pos].name;
+    return columns_absent_from_part.contains(name) || partially_read_columns.contains(name);
+}
+
 bool MergeTreeReaderWide::canServeFirstRangeFromCache()
 {
     /// Mirror the eligibility of `readRows`: `cache_possible` there, plus the read side of the
@@ -531,9 +539,12 @@ size_t MergeTreeReaderWide::serveRowsFromColumnsCache(MutableColumns & res_colum
 
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        /// Column was dropped by a pending mutation or invalidated.
-        /// Don't serve stale data from cache.
-        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        /// Column was dropped by a pending mutation or invalidated - don't serve stale data from
+        /// the cache - or it is one `fillMissingColumns` synthesizes after the read, which has no
+        /// entry to serve. Leaving it null is what the disk path does with both (see the
+        /// `column->empty()` case of the read loop), and `fillMissingColumns` runs after every
+        /// read, whether its rows came from the cache or from disk.
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || isColumnFilledAfterReading(pos))
         {
             res_columns[pos] = nullptr;
             continue;
@@ -621,10 +632,11 @@ bool MergeTreeReaderWide::canContinueColumnsCacheWrite() const
 
 void MergeTreeReaderWide::accumulateRowsForColumnsCache(size_t pos, const IColumn & column, size_t offset, size_t rows)
 {
-    /// A column with some of its streams missing from the part (a member of a `Nested` that was
-    /// added after the part was written, whose offsets are read from a sibling) is never cached.
-    /// Its rows are not even copyable: the offsets are read, the elements stay empty.
-    if (partially_read_columns.contains(columns_to_read[pos].name))
+    /// A column `fillMissingColumns` synthesizes after the read is never cached - and the lookup
+    /// does not ask for it, see `isColumnFilledAfterReading`. For a member of a `Nested` that was
+    /// added after the part was written, whose offsets are read from a sibling, the rows are not
+    /// even copyable: the offsets are read, the elements stay empty.
+    if (isColumnFilledAfterReading(pos))
         return;
 
     if (!cache_accumulated_columns[pos])
@@ -786,6 +798,12 @@ void MergeTreeReaderWide::addStreams(
 
     if (has_any_stream && !has_all_streams)
         partially_read_columns.insert(name_and_type.name);
+
+    /// Not a single stream of the column is in the part: it was added by an `ALTER` after the
+    /// part was written, and the read produces nothing for it. `partially_read_columns` records
+    /// the other half of the same situation, so `isColumnFilledAfterReading` can ask about both.
+    if (!has_any_stream)
+        columns_absent_from_part.insert(name_and_type.name);
 }
 
 MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)

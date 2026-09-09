@@ -193,6 +193,19 @@ private:
     /// arms `cache_serving` for the range and returns true.
     bool lookupColumnsCache(size_t row_begin, size_t row_end, size_t num_columns);
 
+    /// Whether the column at `pos` is not produced by reading the part but synthesized by
+    /// `fillMissingColumns` afterwards: it is absent from the part altogether (added by an
+    /// `ALTER` after the part was written), or only some of its streams are there (a `Nested`
+    /// member whose offsets come from a sibling). Such a column never gets a cache entry, so a
+    /// lookup must not require one - otherwise a table holding one could never be served from
+    /// the cache - and the serve path must leave it as the disk path does, for
+    /// `fillMissingColumns` to build.
+    bool isColumnFilledAfterReading(size_t pos) const;
+
+    /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
+    /// Filled by `addStreams`.
+    NameSet columns_absent_from_part;
+
     /// Whether the first mark range of this reader can be served from the cache as a whole, and
     /// so its streams need not be prefetched. See `prefetchBeginOfRange`.
     bool canServeFirstRangeFromCache();
