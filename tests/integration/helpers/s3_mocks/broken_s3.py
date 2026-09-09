@@ -1,3 +1,4 @@
+import http.client
 import http.server
 import random
 import socket
@@ -23,12 +24,12 @@ class MockControl:
         self._container = container
         self._port = port
 
-    def _apply(self, url):
+    def _apply(self, url, timeout=10):
         # Retry while the flooded mock is briefly unreachable. Each attempt is short
         # and the total wait is capped, so a wedged mock that accepts the connection
         # but never replies fails within the window instead of stalling for minutes.
         response = ""
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             response = self._cluster.exec_in_container(
                 self._cluster.get_container_id(self._container),
@@ -81,6 +82,29 @@ class MockControl:
     def setup_fake_multpartuploads(self):
         self._apply(
             f"http://localhost:{self._port}/mock_settings/setup_fake_multpartuploads?"
+        )
+
+    def setup_delayed_marker_put(self, path_contains="tmp_"):
+        encoded = urllib.parse.quote(path_contains, safe="")
+        self._apply(
+            f"http://localhost:{self._port}/mock_settings/delayed_marker_put?path_contains={encoded}"
+        )
+
+    def wait_delayed_marker_put(self, timeout=30):
+        self._apply(
+            f"http://localhost:{self._port}/mock_settings/wait_delayed_marker_put",
+            timeout=timeout,
+        )
+
+    def release_delayed_marker_put(self):
+        self._apply(
+            f"http://localhost:{self._port}/mock_settings/release_delayed_marker_put"
+        )
+
+    def wait_delayed_marker_put_completed(self, timeout=30):
+        self._apply(
+            f"http://localhost:{self._port}/mock_settings/wait_delayed_marker_put_completed",
+            timeout=timeout,
         )
 
     def setup_slow_answers(
@@ -359,6 +383,58 @@ class _ServerRuntime:
     class ConnectionRefusedAction(RedirectAction):
         pass
 
+    class DelayedMarkerPut:
+        def __init__(self, path_contains):
+            self.path_contains = path_contains
+            self.arrived = threading.Event()
+            self.release = threading.Event()
+            self.completed = threading.Event()
+            self.claim_lock = threading.Lock()
+            self.claimed = False
+
+        def try_claim(self, path):
+            if self.path_contains not in urllib.parse.unquote(path):
+                return False
+            with self.claim_lock:
+                if self.claimed:
+                    return False
+                self.claimed = True
+                return True
+
+        def forward_after_release(self, request_handler):
+            content_length = int(request_handler.headers.get("Content-Length", 0))
+            body = request_handler.rfile.read(content_length)
+            self.arrived.set()
+            if not self.release.wait(120):
+                request_handler.send_response(500)
+                request_handler.send_header("Content-Length", 0)
+                request_handler.end_headers()
+                return
+
+            headers = dict(request_handler.headers.items())
+            connection = http.client.HTTPConnection(
+                request_handler.server.upstream_host,
+                request_handler.server.upstream_port,
+                timeout=30,
+            )
+            try:
+                connection.request("PUT", request_handler.path, body=body, headers=headers)
+                response = connection.getresponse()
+                response_body = response.read()
+                self.completed.set()
+                request_handler.send_response(response.status)
+                for name, value in response.getheaders():
+                    if name.lower() not in ("connection", "transfer-encoding"):
+                        request_handler.send_header(name, value)
+                request_handler.end_headers()
+                if response_body:
+                    request_handler.wfile.write(response_body)
+            except (BrokenPipeError, ConnectionResetError):
+                # The SDK request is expected to have timed out. The upstream PUT has still landed.
+                pass
+            finally:
+                connection.close()
+
     class CountAfter:
         def __init__(
             self, lock, count_=None, after_=None, action_=None, action_args_=[]
@@ -434,6 +510,8 @@ class _ServerRuntime:
         self.slow_get = None
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
+        self.at_listing = None
+        self.delayed_marker_put = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -447,6 +525,8 @@ class _ServerRuntime:
 
     def reset(self):
         with self.lock:
+            if self.delayed_marker_put is not None:
+                self.delayed_marker_put.release.set()
             self.at_part_upload = None
             self.at_object_upload = None
             self.fake_put_when_length_bigger = None
@@ -456,6 +536,7 @@ class _ServerRuntime:
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
             self.at_listing = None
+            self.delayed_marker_put = None
 
 
 _runtime = _ServerRuntime()
@@ -597,6 +678,31 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set at_object_upload %s", _runtime.at_object_upload)
             return self._ok()
 
+        if path[1] == "delayed_marker_put":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.delayed_marker_put = _ServerRuntime.DelayedMarkerPut(
+                params.get("path_contains", ["tmp_"])[0]
+            )
+            return self._ok()
+
+        if path[1] == "wait_delayed_marker_put":
+            delayed_put = _runtime.delayed_marker_put
+            if delayed_put is None or not delayed_put.arrived.is_set():
+                return self.write_error(425, "delayed marker PUT did not arrive")
+            return self._ok()
+
+        if path[1] == "release_delayed_marker_put":
+            if _runtime.delayed_marker_put is None:
+                return self.write_error(409, "delayed marker PUT is not configured")
+            _runtime.delayed_marker_put.release.set()
+            return self._ok()
+
+        if path[1] == "wait_delayed_marker_put_completed":
+            delayed_put = _runtime.delayed_marker_put
+            if delayed_put is None or not delayed_put.completed.is_set():
+                return self.write_error(425, "delayed marker PUT did not complete")
+            return self._ok()
+
         if path[1] == "fake_puts":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.fake_put_when_length_bigger = int(
@@ -710,6 +816,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 if _runtime.is_fake_upload(upload_id, parts.path):
                     return self._fake_put_ok()
         else:
+            delayed_put = _runtime.delayed_marker_put
+            if delayed_put is not None and delayed_put.try_claim(parts.path):
+                self.log_message("holding first marker PUT %s", parts.path)
+                return delayed_put.forward_after_release(self)
             if _runtime.at_object_upload is not None:
                 if _runtime.at_object_upload.has_effect():
                     self.log_message(

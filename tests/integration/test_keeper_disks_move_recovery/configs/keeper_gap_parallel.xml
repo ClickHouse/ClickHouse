@@ -1,0 +1,27 @@
+<clickhouse>
+    <keeper_server>
+        <use_cluster>false</use_cluster>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/logs</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
+        <create_snapshot_on_exit>false</create_snapshot_on_exit>
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <snapshot_distance>100000</snapshot_distance>
+            <reserved_log_items>1000</reserved_log_items>
+            <rotate_log_storage_interval>1</rotate_log_storage_interval>
+            <compress_logs>false</compress_logs>
+            <log_startup_read_max_streams>4</log_startup_read_max_streams>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>gap_parallel</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>

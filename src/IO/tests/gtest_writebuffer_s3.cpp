@@ -39,6 +39,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
 #include <Common/filesystemHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 
 
@@ -62,6 +63,11 @@ namespace ErrorCodes
     extern const int S3_ERROR;
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event S3CompleteMultipartUploadAdoptedExistingObject;
 }
 
 namespace MockS3
@@ -1497,6 +1503,8 @@ TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotRecoverNoSuchUpload) {
 /// An unconditional completion keeps the existing recover-if-the-object-exists behaviour, which backs
 /// copyS3File and the disk write paths: the conditional gate must not change them.
 TEST_P(SyncAsync, MultipartUnconditionalCompleteStillRecoversNoSuchUpload) {
+    const uint64_t adopted_before
+        = ProfileEvents::global_counters[ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject];
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ true));
 
@@ -1516,6 +1524,9 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteStillRecoversNoSuchUpload) {
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload"], "A");
     EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].contains("clickhouse-write-token"));
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject],
+        adopted_before + 1);
 }
 
 /// A transient MinIO `InvalidPart` on CompleteMultipartUpload must be retried, not surfaced as a

@@ -36,6 +36,7 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Core/Settings.h>
@@ -54,6 +55,7 @@ namespace ProfileEvents
     extern const Event S3ReadRequestsErrors;
     extern const Event S3ReadRequestAttempts;
     extern const Event S3ReadRequestRetryableErrors;
+    extern const Event S3CompleteMultipartUploadAdoptedExistingObject;
 
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3WriteRequestAttempts;
@@ -572,7 +574,10 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
         /// if the key exists, than MultipartUpload has been completed at some of the retries
         /// rewrite outcome with success status
         if (check_outcome.IsSuccess())
+        {
+            ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject);
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+        }
     }
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)

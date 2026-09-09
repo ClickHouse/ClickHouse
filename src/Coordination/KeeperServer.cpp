@@ -759,6 +759,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     state_manager->loadLogStore(state_machine->last_commit_index(), coordination_settings[CoordinationSetting::reserved_log_items]);
 
     state_machine->setLogStore(state_manager->getLogStore().get());
+    state_machine->finishSnapshotRecovery();
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;

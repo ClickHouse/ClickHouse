@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <city.h>
 
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <limits>
 #include <string>
@@ -27,6 +29,8 @@ namespace DB
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+
+class ReadBuffer;
 
 bool isLocalDisk(const IDisk & disk);
 
@@ -89,6 +93,49 @@ using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 
+/// The bytes that identify an immutable Keeper file while it is copied between disks.
+/// The hash construction is fixed by marker version 1: CityHash128 over 2048-byte blocks.
+struct KeeperFileDigest
+{
+    uint64_t size = 0;
+    CityHash_v1_0_2::uint128 hash{0, 0};
+
+    bool operator==(const KeeperFileDigest & other) const
+    {
+        return size == other.size && hash.low64 == other.hash.low64 && hash.high64 == other.hash.high64;
+    }
+};
+
+enum class KeeperMoveMarkerParseError : uint8_t
+{
+    LegacyEmpty,
+    UnknownVersion,
+    Malformed,
+};
+
+using KeeperMoveMarkerParseResult = std::expected<KeeperFileDigest, KeeperMoveMarkerParseError>;
+
+std::string serializeKeeperMoveMarker(const KeeperFileDigest & digest);
+KeeperMoveMarkerParseResult parseKeeperMoveMarker(std::string_view marker);
+KeeperMoveMarkerParseResult readKeeperMoveMarker(const DiskPtr & disk, const std::string & path);
+KeeperFileDigest computeKeeperFileDigest(ReadBuffer & input);
+KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string & path);
+
+/// Remove a Keeper file while holding a sync guard for its parent directory.
+void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path);
+
+enum class KeeperMoveError : uint8_t
+{
+    FailedBeforeMarkerPublication,
+    MarkerPublishedCopyNotCompleted,
+    CopyCompletedDestinationValidationFailed,
+    MarkerRemovalFailed,
+    CallbackRejectedOrThrew,
+    DestinationPublishedSourceRemovalFailed,
+};
+
+using KeeperMoveResult = std::expected<void, KeeperMoveError>;
+
 /// Parse the log index out of a snapshot file name/path. Works for both legacy
 /// ("snapshot_100.bin.zstd") and unique ("snapshot_100_<uuid>.bin.zstd") names.
 uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path);
@@ -101,9 +148,10 @@ std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path);
 /// wrapping when it does not fit.
 int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log);
 
-/// `before_file_remove_op` runs after the copy and before the source removal. Returning
-/// `false` rejects the move: the source is kept, the caller cleans up the copied target.
-void moveFileBetweenDisks(
+/// `path_from` must remain closed and immutable until this function returns. `before_file_remove_op`
+/// runs only after the marker is removed and the destination was validated. Returning `false` keeps
+/// the source. An unexpected result identifies the stage at which the move stopped.
+KeeperMoveResult moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,

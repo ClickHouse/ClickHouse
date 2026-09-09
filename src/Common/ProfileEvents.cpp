@@ -806,6 +806,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3UploadPart, "Number of S3 API UploadPart calls.", ValueType::Number) \
     M(S3AbortMultipartUpload, "Number of S3 API AbortMultipartUpload calls.", ValueType::Number) \
     M(S3CompleteMultipartUpload, "Number of S3 API CompleteMultipartUpload calls.", ValueType::Number) \
+    M(S3CompleteMultipartUploadAdoptedExistingObject, "Number of S3 CompleteMultipartUpload requests that adopted an existing object after NO_SUCH_UPLOAD.", ValueType::Number) \
     M(S3PutObject, "Number of S3 API PutObject calls.", ValueType::Number) \
     M(S3GetObject, "Number of S3 API GetObject calls.", ValueType::Number) \
     \
