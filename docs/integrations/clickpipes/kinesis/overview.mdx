@@ -35,7 +35,9 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Fill out connection details" size="lg" border/>
 
-5. Select Kinesis Stream and starting offset. The UI will display a sample document from the selected source (Kafka topic, etc). You can also enable Enhanced Fan-out for Kinesis streams to improve the performance and stability of your ClickPipe (More information on Enhanced Fan-out can be found [here](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. Select the Kinesis stream, **Data format**, and starting offset. For `Protobuf`, upload a `.proto` file or serialized `FileDescriptorSet` (maximum 768 KiB). No schema registry is required.
+
+   The UI will display a sample document from the selected stream. You can also enable Enhanced Fan-out for Kinesis streams to improve the performance and stability of your ClickPipe (More information on Enhanced Fan-out can be found [here](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Set data format and topic" size="lg" border/>
 
@@ -79,6 +81,7 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
 
 The supported formats are:
 - [JSON](/reference/formats/JSON/JSON)
+- [Protobuf](/reference/formats/Protobuf/Protobuf)
 
 ## Compression {#compression}
 
