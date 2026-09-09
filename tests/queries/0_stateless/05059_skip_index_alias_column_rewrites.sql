@@ -19,7 +19,7 @@ CREATE TABLE test_skip_idx_alias
     INDEX idx s TYPE minmax GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_skip_idx_alias SELECT number FROM numbers(100);
 
