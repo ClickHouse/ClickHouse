@@ -1317,37 +1317,45 @@ It is possible to obtain the same result by applying [GROUP BY](/reference/state
 
 ## DISTINCT in External Memory {#distinct-in-external-memory}
 
-`DISTINCT` can spill temporary data to disk when tracked memory used by the whole query exceeds a
-threshold. By default, `max_bytes_ratio_before_external_distinct` derives this threshold from half of
-the available memory (`0.5`). Available memory is measured when the execution pipeline is built,
-under the strictest applicable server or user memory limit. The query's `max_memory_usage` is not
-used to calculate this fraction. When no applicable limit is configured, the ratio contributes no
-threshold. The absolute setting `max_bytes_before_external_distinct` can also supply a threshold in
-bytes; when both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling
-and its associated preliminary memory shedding.
+`DISTINCT` can write temporary data to disk to process sets of unique values that are too large to
+keep in memory. This requires additional disk I/O and can make queries slower.
 
-These settings are triggers, not hard memory bounds: processing blocks, preparing runs, and merging
-files require additional memory. Key shapes that need serialized storage retain their key values
-even before spilling, and the first spill needs memory to materialize keys from the hash set.
+Two settings control when spilling starts:
 
-Preliminary hash-based `DISTINCT` steps can release their optional hash sets under the same memory
-policy and pass subsequent rows to the final deduplicating step. This is independent of whether the
-final step uses hashing or sorted-prefix deduplication, and can increase work in intervening steps
-such as sorting. The sorted-prefix optimization itself does not spill and may retain a large range
-of rows sharing the same prefix in memory.
+- `max_bytes_before_external_distinct` sets a threshold in bytes of total query memory. It defaults
+  to `0` (disabled).
+- `max_bytes_ratio_before_external_distinct` sets a fraction of available memory under server or
+  user limits, measured at the start of execution. It defaults to `0.5` and has no effect when
+  neither limit applies.
 
-When the threshold is exceeded, the keys retained by the hash set are extracted in batches and
-written into sorted temporary runs. The set stays allocated until its last keys have been extracted.
-Subsequent input is sorted into further runs, some of which may remain in memory. After all input has
-been read, the runs are merged to remove duplicates and keys already emitted before spilling.
+When both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling.
 
-Rows found before spilling can be returned as they are processed. Once spilling starts, producing
-the remaining distinct rows requires reading the rest of the input. If a `LIMIT` is reached before
-the memory threshold, no spilling happens and the query still finishes early.
+`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
+set an absolute threshold below that limit. For example, this query uses a 16 MiB spill threshold
+with a 256 MiB query memory limit:
 
-When the query also has an `ORDER BY` at the same level, the `DISTINCT` runs after the sort and has to return the rows in the sorted order: after the merge, the spilled rows are additionally sorted back into their original order (this sort can also use the disk).
+```sql
+SELECT DISTINCT number % 1000000 AS id
+FROM numbers(2000000)
+SETTINGS
+    max_bytes_before_external_distinct = 16777216,
+    max_bytes_ratio_before_external_distinct = 0,
+    max_memory_usage = 268435456;
+```
 
-`DISTINCT` in external memory supports all the column types: a key column whose type supports only equality checks (e.g. `AggregateFunction`) is spilled in its serialized form and compared byte by byte. Values that are different in the binary representation but compare equal — such as `0.` and `-0.`, or `NaN` values with different payloads — are normally distinct values for `DISTINCT`, but once the data is spilled they may be deduplicated as a single value, same as for `DISTINCT` over sorted data (the `optimize_distinct_in_order` optimization).
+These thresholds do not cap memory usage. Leave room for other query processing and the spill
+itself. Spilling may also start earlier under memory pressure.
+
+Rows can be returned before spilling, and a `LIMIT` satisfied at this stage can finish the query early.
+Once spilling starts, the rest of the input must be read before the remaining results can be returned.
+If the query includes `ORDER BY`, those results are returned in the requested order.
+
+When `DISTINCT` uses input sorted by a prefix of its keys, it does not spill. A large group of rows
+with the same prefix can still use substantial memory.
+
+As with `optimize_distinct_in_order`, spilling may deduplicate floating-point values that have
+different binary representations but compare equal, including `0.0` and `-0.0`, or `NaN` values
+with different payloads.
 )DOCS_MD",
         .syntax = R"(
 SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
