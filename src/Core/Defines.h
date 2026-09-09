@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/defines.h>
+#include <base/types.h>
 #include <base/unit.h>
 
 namespace DB
@@ -40,15 +41,22 @@ static constexpr auto DEFAULT_BLOCK_SIZE
 static constexpr auto DEFAULT_INSERT_BLOCK_SIZE
     = 1048449; /// 1048576 - PADDING_FOR_SIMD - (PADDING_FOR_SIMD - 1) bytes padding that we usually have in arrays
 
-/// Defaults and the 4 KiB floor for the experimental `ReaderExecutor` window, block, and
+/// Defaults and the 128 KiB floor for the experimental `ReaderExecutor` window, block, and
 /// connection tunables (`use_reader_executor`). The `reader_executor_*` settings, their
 /// `ReadSettings` mapping, the validation, and the executor `Options` share these constants.
 /// One definition stops the values from drifting apart.
-static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 4 * 1_MiB;
+static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 8 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_BLOCK_SIZE = 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
-static constexpr size_t MIN_READER_EXECUTOR_SIZE = 4_KiB;
+static constexpr size_t MIN_READER_EXECUTOR_SIZE = 128_KiB;
+
+/// The default memory-pressure thresholds, as a percent of a memory tracker's hard limit. Shared by the
+/// `reader_executor_memory_pressure_*_level_pct` settings and the monitor's built-in thresholds, which are
+/// what `clickhouse-local` classifies against - it never applies the settings.
+static constexpr UInt64 DEFAULT_MEMORY_PRESSURE_ELEVATED_PCT = 75;
+static constexpr UInt64 DEFAULT_MEMORY_PRESSURE_HIGH_PCT = 90;
+static constexpr UInt64 DEFAULT_MEMORY_PRESSURE_CRITICAL_PCT = 95;
 
 static constexpr auto SHOW_CHARS_ON_SYNTAX_ERROR = ptrdiff_t(160);
 /// each period reduces the error counter by 2 times
