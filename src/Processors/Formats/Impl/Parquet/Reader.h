@@ -492,7 +492,10 @@ struct Reader
 
     struct Step
     {
-        ExpressionActionsPtr actions;
+        /// The prewhere expression is executed once per row subgroup, from a task thread which is not known
+        /// in advance. Lease an instance from the pool so that an adaptive one is reused across row
+        /// subgroups (its profile would be useless otherwise) without being shared between threads.
+        ExpressionActionsPoolPtr actions_pool;
         std::optional<String> filter_column_name {};
         std::vector<size_t> input_idxs {}; // indices in extended_sample_block
         std::vector<std::pair<String, size_t>> idxs_in_output_block {};

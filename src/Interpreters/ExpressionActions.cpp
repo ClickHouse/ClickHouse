@@ -37,6 +37,7 @@ namespace ProfileEvents
 {
     extern const Event FunctionExecute;
     extern const Event CompiledFunctionExecute;
+    extern const Event AdaptiveShortCircuitEagerExecutions;
 }
 
 namespace DB
@@ -1194,6 +1195,48 @@ ExpressionActionsPtr ExpressionActions::create(
 }
 
 
+ExpressionActionsPool::ExpressionActionsPool(ExpressionActionsPtr prototype_)
+    : prototype(std::move(prototype_))
+    , is_adaptive(prototype && prototype->getSettings().enable_adaptive_short_circuit_lazy_execution)
+{
+}
+
+ExpressionActionsPool::Lease ExpressionActionsPool::acquire() const
+{
+    /// A plain instance is stateless, so it can be shared by every caller.
+    if (!is_adaptive)
+        return Lease(nullptr, prototype);
+
+    {
+        std::lock_guard lock(mutex);
+        if (!free_instances.empty())
+        {
+            auto instance = std::move(free_instances.back());
+            free_instances.pop_back();
+            return Lease(this, std::move(instance));
+        }
+    }
+
+    /// All the instances are busy: this execution runs concurrently with them, so it needs its own one.
+    return Lease(this, prototype->clone());
+}
+
+void ExpressionActionsPool::release(ExpressionActionsPtr instance) const
+{
+    std::lock_guard lock(mutex);
+    free_instances.push_back(std::move(instance));
+}
+
+void ExpressionActionsPool::Lease::reset()
+{
+    if (pool)
+        pool->release(std::move(instance));
+
+    pool = nullptr;
+    instance = nullptr;
+}
+
+
 AdaptiveExpressionActions::AdaptiveExpressionActions(
     ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
     : ExpressionActions(std::move(actions_dag_), settings_, project_inputs_)
@@ -1232,6 +1275,10 @@ ColumnPtr AdaptiveExpressionActions::executeFunction(
     /// executed arguments. Reduce them here to measure how much they cost.
     if (action.is_lazy_executed)
     {
+        /// Reaching this point means the adaptive decision replaced the lazy execution of this action with
+        /// an eager one - the static schedule would have wrapped it into a `ColumnFunction` instead.
+        ProfileEvents::increment(ProfileEvents::AdaptiveShortCircuitEagerExecutions);
+
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             auto & argument = arguments[i];

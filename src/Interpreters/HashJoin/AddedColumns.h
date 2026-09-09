@@ -158,20 +158,19 @@ public:
         const Block & saved_block_sample,
         const HashJoin & join,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
-        ExpressionActionsPtr additional_filter_expression_,
+        const ExpressionActionsPoolPtr & additional_filter_pool,
         const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
         bool is_asof_join,
         bool is_join_get_,
         bool record_refs_for_stats)
         : left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
-        /// The adaptive implementation is stateful. `AddedColumns` is local to one join
-        /// execution, so give it a separate action instance instead of sharing the join's
-        /// expression prototype with other probe streams.
-        , additional_filter_expression(
-            additional_filter_expression_ && additional_filter_expression_->getSettings().enable_adaptive_short_circuit_lazy_execution
-                ? additional_filter_expression_->clone()
-                : std::move(additional_filter_expression_))
+        /// The adaptive implementation is stateful and `AddedColumns` is local to one probe block, so the
+        /// instance is leased for the lifetime of this object: it is never shared with a concurrent probe,
+        /// and it keeps its profile after being returned to the pool, which a per-block instance could not.
+        , additional_filter_expression_lease(
+            additional_filter_pool ? additional_filter_pool->acquire() : ExpressionActionsPool::Lease())
+        , additional_filter_expression(additional_filter_expression_lease.getPtr())
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , enable_prefetch(join.enableSoftwarePrefetch())
@@ -325,6 +324,7 @@ public:
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
+    ExpressionActionsPool::Lease additional_filter_expression_lease;
     ExpressionActionsPtr additional_filter_expression;
     const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos;
 

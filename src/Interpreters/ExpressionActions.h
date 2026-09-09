@@ -8,6 +8,7 @@
 #include <Functions/IFunction.h>
 
 #include <functional>
+#include <mutex>
 
 namespace DB
 {
@@ -270,6 +271,88 @@ private:
     void updateActionParentProfile(size_t action_index, size_t extra_elapsed) const;
     void identifyNonBeneficialLazyActions() const;
 };
+
+/// A pool of `ExpressionActions` instances for the runtime paths which execute the same expression on many
+/// blocks from a set of threads that is not known in advance (a Parquet reader task, a hash join probe).
+///
+/// `AdaptiveExpressionActions` is stateful and not thread safe, but it revisits its decisions only between
+/// blocks, so an instance must survive many executions to have any effect at all. Creating a fresh instance
+/// for every block is therefore equivalent to disabling the feature. A pooled instance is leased for the
+/// duration of one execution and returned afterwards: the profile is preserved across blocks, and no
+/// instance is ever used by two threads at once.
+///
+/// When the actions are not adaptive, the pool is a no-op: every lease refers to the same stateless
+/// instance and no locking happens.
+class ExpressionActionsPool
+{
+public:
+    explicit ExpressionActionsPool(ExpressionActionsPtr prototype_);
+
+    /// An instance which is exclusively owned by the caller until the lease is destroyed.
+    class Lease
+    {
+    public:
+        Lease() = default;
+        Lease(const ExpressionActionsPool * pool_, ExpressionActionsPtr instance_)
+            : pool(pool_), instance(std::move(instance_))
+        {
+        }
+
+        Lease(const Lease &) = delete;
+        Lease & operator=(const Lease &) = delete;
+
+        Lease(Lease && other) noexcept : pool(other.pool), instance(std::move(other.instance))
+        {
+            other.pool = nullptr;
+        }
+
+        Lease & operator=(Lease && other) noexcept
+        {
+            if (this != &other)
+            {
+                reset();
+                pool = other.pool;
+                instance = std::move(other.instance);
+                other.pool = nullptr;
+            }
+            return *this;
+        }
+
+        ~Lease() { reset(); }
+
+        const ExpressionActionsPtr & getPtr() const { return instance; }
+        const ExpressionActions * get() const { return instance.get(); }
+        const ExpressionActions & operator*() const { return *instance; }
+        const ExpressionActions * operator->() const { return instance.get(); }
+        explicit operator bool() const { return instance != nullptr; }
+
+    private:
+        void reset();
+
+        const ExpressionActionsPool * pool = nullptr;
+        ExpressionActionsPtr instance;
+    };
+
+    /// Take an instance out of the pool, creating one if all of them are busy.
+    Lease acquire() const;
+
+    /// The instance the pool was built from. Safe to use for anything but execution: the sample block,
+    /// the required columns, the settings.
+    const ExpressionActionsPtr & getPrototype() const { return prototype; }
+
+private:
+    void release(ExpressionActionsPtr instance) const;
+
+    ExpressionActionsPtr prototype;
+    bool is_adaptive = false;
+
+    /// The bookkeeping is mutable: leasing an instance does not change the expression itself, and the
+    /// pool is reachable only through const references on the execution paths.
+    mutable std::mutex mutex;
+    mutable std::vector<ExpressionActionsPtr> free_instances;
+};
+
+using ExpressionActionsPoolPtr = std::shared_ptr<ExpressionActionsPool>;
 
 namespace ExpressionActionsChainSteps
 {

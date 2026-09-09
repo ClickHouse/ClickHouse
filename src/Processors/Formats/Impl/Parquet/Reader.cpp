@@ -1189,12 +1189,13 @@ void Reader::preparePrewhere()
             else
                 actions_settings.emplace();
         }
-        Step step { .actions = ExpressionActions::create(dag.clone(), actions_settings.value()) };
+        Step step { .actions_pool = std::make_shared<ExpressionActionsPool>(
+                        ExpressionActions::create(dag.clone(), actions_settings.value())) };
         if (needs_filter)
             step.filter_column_name = filter_column_name;
 
         /// Find inputs in extended sample block.
-        for (const auto & col : step.actions->getRequiredColumnsWithTypes())
+        for (const auto & col : step.actions_pool->getPrototype()->getRequiredColumnsWithTypes())
         {
             size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
@@ -3428,11 +3429,11 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             row_subgroup.filter.rows_pass = 0;
             return;
         }
-        /// Adaptive actions are stateful and `Reader` can process row groups concurrently.
-        /// Create a separate instance for each execution rather than sharing profiling state.
-        auto actions = step.actions;
-        if (actions->getSettings().enable_adaptive_short_circuit_lazy_execution)
-            actions = ExpressionActions::create(actions->getActionsDAG().clone(), actions->getSettings());
+        /// Adaptive actions are stateful and `Reader` can process row subgroups concurrently, so the
+        /// instance is leased for the duration of this execution and returned to the pool afterwards.
+        /// It keeps its profile, which is the whole point of the adaptive mode: a fresh instance per row
+        /// subgroup would never live long enough to revisit a single decision.
+        auto actions = step.actions_pool->acquire();
         actions->execute(block);
 
         for (const auto & [name, idx] : step.idxs_in_output_block)
