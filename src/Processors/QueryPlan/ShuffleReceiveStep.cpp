@@ -28,6 +28,14 @@ void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, con
     }
 
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
+
+    /// One source per sending task. Spread them over `max_threads` streams as a table read does;
+    /// otherwise the steps after the receive would run on as many streams as there are senders.
+    if (settings.max_threads > pipeline.getNumStreams())
+    {
+        pipeline.resize(settings.max_threads);
+        processors = pipeline.getProcessors();
+    }
 }
 
 void ShuffleReceiveStep::serialize(Serialization & ctx) const

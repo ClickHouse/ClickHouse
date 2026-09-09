@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Block_fwd.h>
 
 namespace Poco::Net
 {
@@ -12,6 +13,8 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
+class WriteBufferFromOwnString;
+class Chunk;
 
 namespace StreamingExchangeProtocol
 {
@@ -79,6 +82,11 @@ namespace StreamingExchangeProtocol
         void read(ReadBuffer & in);
         void write(WriteBuffer & out) const;
     };
+
+    /// Appends one Data packet for `chunk` to `out`: the packet header, the flags, the row and column
+    /// counts, the aggregation chunk number when the chunk carries one, and the compressed Native block
+    /// with the columns of `header`. A chunk without rows and columns becomes the end-of-stream packet.
+    void writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBufferFromOwnString & out);
 
     /// The peer address for messages; a socket whose peer is gone may not know it anymore.
     String describePeer(const Poco::Net::StreamSocket & socket);

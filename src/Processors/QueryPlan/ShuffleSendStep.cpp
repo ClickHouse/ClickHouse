@@ -55,8 +55,15 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         if (pipeline.getNumStreams() > max_scatter_streams)
             pipeline.resize(max_scatter_streams);
 
+        /// Where the exchange kind serializes its data, the serialization runs on every stream ahead of
+        /// the merge into the one sink of a bucket; otherwise that sink would do it alone for the bucket.
+        auto serializer = [&](const SharedHeader & header) -> ProcessorPtr
+        {
+            return settings.exchange_lookup->createSerializer(header, exchange_id);
+        };
+
         /// Repartition the data so that stream i carries exactly the rows of bucket i.
-        scatterByPartition(pipeline, num_buckets, key_columns, hash_cast_types);
+        scatterByPartition(pipeline, num_buckets, key_columns, hash_cast_types, serializer);
     }
     size_t bucket = 0;
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type)

@@ -9,6 +9,7 @@ namespace DB
 
 class ISink;
 class ISource;
+class IProcessor;
 class Block;
 
 /// Describes an individual stream of an Exchange, e.g. ShuffleExchange from M buckets to N buckets has M*N streams
@@ -47,6 +48,15 @@ struct IExchangeLookup : boost::noncopyable
 
     virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) = 0;
     virtual std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) = 0;
+
+    /// A processor that turns data chunks into the form the sinks of exchange `exchange_id` send.
+    /// The send steps put one on every stream in front of a sink, so serialization runs on all
+    /// streams instead of in the single sink of a destination. Returns nullptr when the sinks send
+    /// data chunks as they are.
+    virtual std::shared_ptr<IProcessor> createSerializer(SharedHeader /*input_header*/, const String & /*exchange_id*/)
+    {
+        return nullptr;
+    }
 };
 
 using ExchangeLookupPtr = std::shared_ptr<IExchangeLookup>;

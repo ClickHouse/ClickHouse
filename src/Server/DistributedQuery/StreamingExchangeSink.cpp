@@ -6,10 +6,7 @@
 
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeWriter.h>
-#include <Core/ProtocolDefines.h>
+#include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Common/Epoll.h>
@@ -26,7 +23,6 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
@@ -262,9 +258,11 @@ void StreamingExchangeSink::work()
             final_chunk_added = true;
             consume(std::move(current_chunk));
         }
-        else if (current_chunk)
+        else if (current_chunk || current_chunk.getChunkInfos().has<SerializedExchangePacket>())
         {
-            /// It the chunk is not the final, send it only if it is not empty
+            /// A chunk without rows and columns would look like the end-of-stream packet, so it is
+            /// skipped. A ready packet has no columns either; it is sent even for zero rows, because
+            /// it may carry aggregation bucket information.
             consume(std::move(current_chunk));
         }
 
@@ -336,78 +334,11 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     LOG_TEST(log, "Writing chunk with {} rows to exchange stream {}", chunk.getNumRows(), stream_name);
 
-    /// Write packet header stub.
-    /// The actual size will be calculated and overwritten after the chuck is serialized
-    const ssize_t packet_header_offset = out->count();
-    StreamingExchangeProtocol::PacketHeader packet_header{.packet_type = StreamingExchangeProtocol::PacketType::Data, .bytes_size = 0};
-    out->write(reinterpret_cast<const char*>(&packet_header), sizeof(packet_header));
-
-    const bool final_chunk = chunk.empty();
-    auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
-    const bool has_aggregated_chunk_info = !!agg_info;
-    UInt64 flags = 0;
-    if (final_chunk)
-        flags |= 1;
-    if (has_aggregated_chunk_info)
-        flags |= 2;
-    writeVarUInt(flags, *out);
-    writeVarUInt(chunk.getNumRows(), *out);
-    writeVarUInt(chunk.getNumColumns(), *out);
-    /// chunk_num has no BlockInfo field; carry it in the exchange framing so memory-bound merging
-    /// can restore chunk order on the receiver.
-    if (has_aggregated_chunk_info)
-        writeVarUInt(agg_info->chunk_num, *out);
-
-    if (chunk.getNumColumns() > 0)
-    {
-        /// The exchange stream uses the server default codec (now `ZSTD(3)`): `network_compression_method`
-        /// is a per-query setting and the sink has no query settings at hand (it is constructed from a
-        /// header, a connection and a stream name), so the setting is not plumbed here. This is safe:
-        /// each compressed frame is self-describing (the receiver auto-detects the codec via
-        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel —
-        /// `StreamingExchangeProtocol` rejects peers on a different protocol version during the
-        /// handshake, so a stream is never read back by a node expecting a different codec.
-        auto compressed_buf = std::make_unique<CompressedWriteBuffer>(*out);
-        auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_TCP_PROTOCOL_VERSION, input.getSharedHeader());
-
-        Block block = input.getHeader().cloneWithColumns(chunk.getColumns());
-        /// Carry the remaining aggregation metadata in block.info, the same way partial-aggregation
-        /// results are transported for distributed/parallel reads.
-        if (agg_info)
-        {
-            block.info.bucket_num = agg_info->bucket_num;
-            block.info.is_overflows = agg_info->is_overflows;
-            block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
-        }
-        writer->write(block);
-
-        writer->flush();
-        compressed_buf->finalize();
-    }
-
-    /// Fill the actual size in the header
-    {
-        /// `out` is a WriteBufferFromString to we can rely on count() for getting curretn position in the buffer.
-        const ssize_t end_of_packet_offset = out->count();
-        const ssize_t packet_data_size = end_of_packet_offset - packet_header_offset - sizeof(StreamingExchangeProtocol::PacketHeader);
-
-        if (packet_data_size < 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid packet data size: {}", packet_data_size);
-
-        /// The receiver rejects Data packets above this limit; fail here with a clear, local error
-        /// instead of sending one the peer would reject. Splitting large chunks is not implemented yet.
-        if (static_cast<UInt64>(packet_data_size) > StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Exchange data packet of {} bytes exceeds the maximum {}; splitting large chunks is not implemented",
-                packet_data_size, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES);
-
-        /// Fill bytes_size field using memcpy because packet header address in the buffer might not be properly aligned.
-        char * packet_header_start = const_cast<char*>(out->stringView().data()) + packet_header_offset;
-        static_assert(sizeof(StreamingExchangeProtocol::PacketHeader::bytes_size) == sizeof(packet_data_size));
-        memcpy(packet_header_start + offsetof(StreamingExchangeProtocol::PacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
-
-        LOG_TEST(log, "Packet with {} bytes was added to exchange stream {}", packet_data_size, stream_name);
-    }
+    /// A chunk serialized upstream by `StreamingExchangeSerializingTransform` is sent as it is.
+    if (auto packet = chunk.getChunkInfos().extract<SerializedExchangePacket>())
+        out->write(packet->bytes.data(), packet->bytes.size());
+    else
+        StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out);
 
     if (chunk.getNumRows() == 0)
     {

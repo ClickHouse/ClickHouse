@@ -558,33 +558,33 @@ public:
 
     std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto it = exchanges.find(exchange_stream_id.exchange_id);
-        if (it == exchanges.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
-
-        if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSink(input_header, exchange_stream_id);
-        else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSink(input_header, exchange_stream_id);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id);
     }
 
     std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto it = exchanges.find(exchange_stream_id.exchange_id);
-        if (it == exchanges.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
+        return lookupFor(exchange_stream_id.exchange_id).createSource(std::move(output_header), exchange_stream_id);
+    }
 
-        if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSource(output_header, exchange_stream_id);
-        else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSource(output_header, exchange_stream_id);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+    std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id) override
+    {
+        return lookupFor(exchange_id).createSerializer(std::move(input_header), exchange_id);
     }
 
 private:
+    IExchangeLookup & lookupFor(const String & exchange_id) const
+    {
+        auto it = exchanges.find(exchange_id);
+        if (it == exchanges.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_id);
+
+        if (it->second.kind == ExchangeDescription::Kind::Persisted)
+            return *persistent_exchange_lookup;
+        if (it->second.kind == ExchangeDescription::Kind::Streaming)
+            return *streaming_exchange_lookup;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+    }
+
     const ExchangeDescriptions exchanges;
     ExchangeLookupPtr persistent_exchange_lookup;
     ExchangeLookupPtr streaming_exchange_lookup;
