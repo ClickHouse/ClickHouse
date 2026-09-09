@@ -1,27 +1,28 @@
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/JSONUtils.h>
+#include <Formats/PrettyFormatHelpers.h>
+#include <Formats/registerWithNamesAndTypes.h>
+#include <IO/Operators.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/PrettyFormatHelpers.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/JSONUtils.h>
-#include <Formats/registerWithNamesAndTypes.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <Common/CurrentThread.h>
-#include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
+#include <Common/TerminalSize.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/formatReadable.h>
 #include <Common/saturatedDuration.h>
 #include <Common/setThreadName.h>
-#include <Common/TerminalSize.h>
-#include <Common/ThreadPool.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 
 #include <algorithm>
 
@@ -609,12 +610,15 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                         *columns[j],
                         *serializations[j],
                         i,
-                        format_settings.pretty.multiline_fields, serialized_values[j], offsets_inside_serialized_values[j],
+                        format_settings.pretty.multiline_fields,
+                        serialized_values[j],
+                        offsets_inside_serialized_values[j],
                         widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
                         max_widths[j],
                         cut_to_width,
                         type->shouldAlignRightInPrettyFormats(),
-                        isNumber(removeNullable(type)));
+                        isNumber(removeNullable(type)),
+                        isObject(removeNullable(type)));
 
                     if (offsets_inside_serialized_values[j] != serialized_values[j]->size())
                         all_lines_printed = false;
@@ -678,9 +682,18 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
 
 void PrettyBlockOutputFormat::writeValueWithPadding(
-    const IColumn & column, const ISerialization & serialization, size_t row_num,
-    bool split_by_lines, std::optional<String> & serialized_value, size_t & start_from_offset,
-    size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number)
+    const IColumn & column,
+    const ISerialization & serialization,
+    size_t row_num,
+    bool split_by_lines,
+    std::optional<String> & serialized_value,
+    size_t & start_from_offset,
+    size_t value_width,
+    size_t pad_to_width,
+    size_t cut_to_width,
+    bool align_right,
+    bool is_number,
+    bool is_json)
 {
     if (!serialized_value)
     {
@@ -722,6 +735,10 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     /// Highlight trailing spaces.
     if (color && format_settings.pretty.highlight_trailing_spaces)
         serialized_fragment = highlightTrailingSpaces(serialized_fragment);
+
+    /// Highlight JSON syntax.
+    if (color && is_json && format_settings.pretty.highlight_json)
+        serialized_fragment = highlightJSON(serialized_fragment);
 
     const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
     const char * line_feed = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "↴" : "\\";
