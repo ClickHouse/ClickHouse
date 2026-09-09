@@ -342,9 +342,9 @@ String PostgreSQLReplicationHandler::doubleQuoteWithSchema(const String & table_
     auto [schema, table] = getSchemaAndTableName(table_name);
 
     if (schema.empty())
-        return doubleQuoteString(table);
+        return doubleQuoteStringPostgreSQL(table);
 
-    return doubleQuoteString(schema) + '.' + doubleQuoteString(table);
+    return doubleQuoteStringPostgreSQL(schema) + '.' + doubleQuoteStringPostgreSQL(table);
 }
 
 
@@ -731,7 +731,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /// We should not use columns list from getTableAllowedColumns because it may have broken columns order
         Strings allowed_columns;
         for (const auto & column : table_structure->physical_columns->columns)
-            allowed_columns.push_back(doubleQuoteString(column.name));
+            allowed_columns.push_back(doubleQuoteStringPostgreSQL(column.name));
 
         query_str = fmt::format("SELECT {} FROM ONLY {}", boost::algorithm::join(allowed_columns, ","), quoted_name);
     }
@@ -898,7 +898,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
 
         /// 'ONLY' means just a table, without descendants.
-        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteString(publication_name), tables_list);
+        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), tables_list);
         try
         {
             tx.exec(query_str);
@@ -968,7 +968,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
     else
         slot_name = replication_slot;
 
-    query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", doubleQuoteString(slot_name));
+    query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", doubleQuoteStringPostgreSQL(slot_name));
 
     try
     {
@@ -1004,7 +1004,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
 
 void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", doubleQuoteString(publication_name));
+    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", doubleQuoteStringPostgreSQL(publication_name));
     tx.exec(query_str);
     LOG_DEBUG(log, "Dropped publication: {}", doubleQuoteString(publication_name));
 }
@@ -1012,7 +1012,7 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
-    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
+    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
 }
@@ -1022,7 +1022,7 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 {
     try
     {
-        std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
+        std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name));
         ntx.exec(query_str);
         LOG_TRACE(log, "Removed table `{}` from publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
     }
@@ -1295,19 +1295,19 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 part = part.substr(bracket_pos + 1);
                 boost::trim(part);
                 buf << '(';
-                buf << doubleQuoteString(part);
+                buf << doubleQuoteStringPostgreSQL(part);
             }
             else if (part.back() == ')')
             {
                 is_column = false;
                 part = part.substr(0, part.size() - 1);
                 boost::trim(part);
-                buf << doubleQuoteString(part);
+                buf << doubleQuoteStringPostgreSQL(part);
                 buf << ')';
             }
             else if (is_column)
             {
-                buf << doubleQuoteString(part);
+                buf << doubleQuoteStringPostgreSQL(part);
             }
             else
             {
