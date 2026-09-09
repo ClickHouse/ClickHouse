@@ -138,6 +138,28 @@ TEST(CubeRollupRepeatedKeysSerialization, PositionsNotCoveringEveryKeyAreRejecte
         deserializeStep(&RollupStep::deserialize, rollup_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
 }
 
+/// First appearances of key indexes must arrive as 0, 1, 2, ...: the planner assigns a new index to
+/// each expression the first time it sees it while walking the GROUP BY list, so `[1, 0]` covers
+/// every key yet is unreachable from any query. `RollupTransform`'s `__grouping_set` numbering
+/// relies on that order, so executing the payload would return wrong `GROUPING()` bits instead of
+/// failing. Together with the coverage test above this pins the exact set of accepted payloads.
+TEST(CubeRollupRepeatedKeysSerialization, PositionsOutOfFirstOccurrenceOrderAreRejected)
+{
+    tryRegisterAggregateFunctions();
+    /// Covers both keys, so only the ordering rule can reject it.
+    const std::vector<size_t> out_of_order{1, 0};
+
+    CubeStep cube(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, out_of_order);
+    const String cube_bytes = serializeStep(cube, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    EXPECT_THROW(
+        deserializeStep(&CubeStep::deserialize, cube_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
+
+    RollupStep rollup(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, out_of_order);
+    const String rollup_bytes = serializeStep(rollup, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    EXPECT_THROW(
+        deserializeStep(&RollupStep::deserialize, rollup_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
+}
+
 /// The refusal is keyed on the payload, not on the version, so a plan whose GROUP BY list repeats
 /// nothing still ships to that same older peer.
 TEST(CubeRollupRepeatedKeysSerialization, WithoutRepeatedKeysOlderPeersStillAccepted)

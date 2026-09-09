@@ -241,7 +241,6 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
         UInt64 num_positions = 0;
         readVarUInt(num_positions, ctx.in);
         key_positions.resize(num_positions);
-        std::vector<bool> key_is_referenced(keys.size(), false);
         size_t keys_referenced = 0;
         for (auto & position : key_positions)
         {
@@ -249,18 +248,27 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
             readVarUInt(value, ctx.in);
             if (value >= keys.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Grouping key position {} is out of range", value);
-            position = value;
-            if (!key_is_referenced[value])
-            {
-                key_is_referenced[value] = true;
+
+            /// The planner walks the GROUP BY list and assigns a new key index to each expression
+            /// the first time it sees it, so in any payload the sender can build, first appearances
+            /// arrive as 0, 1, 2, ... and, below, every key ends up referenced. Together the two
+            /// checks characterise the valid payloads exactly - any sequence passing both is
+            /// realisable from some GROUP BY list, anything else is not. Executing an out-of-order
+            /// payload would miscompute `GROUPING()`: `RollupTransform`'s `__grouping_set` numbering
+            /// relies on the drop order being the reverse of the key order, which only holds under
+            /// first-occurrence ordering.
+            if (value > keys_referenced)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Grouping key position {} is out of first-occurrence order ({} keys introduced so far)",
+                    value,
+                    keys_referenced);
+            if (value == keys_referenced)
                 ++keys_referenced;
-            }
+
+            position = value;
         }
 
-        /// The positions say where each element of the GROUP BY list refers into the deduplicated
-        /// key list, so by construction every key is referenced at least once. A payload that skips
-        /// a key is not a plan the sender could have built, and executing it would silently drop
-        /// that key from every grouping set instead of failing here.
         if (!key_positions.empty() && keys_referenced != keys.size())
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
