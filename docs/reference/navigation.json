@@ -124,6 +124,7 @@
                     "reference/statements/create/table/replace-table"
                   ]
                 },
+                "reference/statements/create/token",
                 "reference/statements/create/user",
                 "reference/statements/create/view"
               ]
@@ -139,6 +140,7 @@
             "reference/statements/explain",
             "reference/statements/grant",
             "reference/statements/hypothetical-index",
+            "reference/statements/hypothetical-projection",
             "reference/statements/in",
             "reference/statements/insert-into",
             "reference/statements/kill",
@@ -1066,6 +1068,7 @@
         "reference/system-tables/histogram_metric_log",
         "reference/system-tables/histogram_metrics",
         "reference/system-tables/hypothetical_indexes",
+        "reference/system-tables/hypothetical_projections",
         "reference/system-tables/iceberg_files",
         "reference/system-tables/iceberg_history",
         "reference/system-tables/iceberg_metadata_log",
