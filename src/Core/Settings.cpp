@@ -8832,6 +8832,21 @@ Enable transforming the payload of a hash join into a row-major layout.
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0) \
+    DECLARE(Bool, query_plan_derive_not_null_filters_from_joins, true, R"(
+Derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions.
+
+Only conditions of the form `expr1` <op> `expr2` are considered, where <op> is one of `=`, `<`, `<=`, `>`, `>=`. Each side can be a column or an expression that propagates NULLs, such as `col1` + 1, in which case a filter is derived for every column the expression propagates NULLs from.
+
+The derived filters allow converting `OUTER JOIN` to `INNER JOIN`. This setting is only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
+
+The derived filters are not executed unless `query_plan_allow_derived_not_null_filters_execution` is enabled.
+)", 0) \
+    DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
+Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
+)", 0) \
+    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.7, R"(
+The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
+)", 0) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
@@ -9199,34 +9214,34 @@ Takes effect only together with `enable_cascades_optimizer = 1` and `make_distri
 )", BETA) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
-)", BETA) \
+)", 0) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
 Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
 Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
 Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, R"(
 If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, R"(
 Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
 If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
 If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
 Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
@@ -9275,13 +9290,13 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_cd_a_conflict_detector, false, R"(
+    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_a, false, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
 reorderings are valid using the CD-A conflict detector).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_cd_c_conflict_detector, false, R"(
+    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_c, false, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
-are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_cd_a_conflict_detector` when both are enabled.
+are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_conflict_detector_a` when both are enabled.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
