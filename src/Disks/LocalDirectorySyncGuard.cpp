@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -158,9 +159,10 @@ void removeDirectories(const std::vector<fs::path> & dirs)
     }
 }
 
-/// The components of `dir` that lie below `root`, shallowest first. Empty when `root` does not
-/// contain `dir`: with no directory known to predate the store, nothing bounds such a walk.
-std::vector<fs::path> componentsBelow(const fs::path & dir, const fs::path & root)
+/// The components of `dir` that lie below `root`, shallowest first, or nothing at all when `root`
+/// does not contain `dir`: with no directory known to predate the store nothing bounds such a
+/// walk. An empty list is a `dir` that is `root` itself, whose own entry lies above the boundary.
+std::optional<std::vector<fs::path>> componentsBelow(const fs::path & dir, const fs::path & root)
 {
     std::vector<fs::path> result;
     for (fs::path p = dir; p != p.parent_path(); p = p.parent_path())
@@ -172,7 +174,7 @@ std::vector<fs::path> componentsBelow(const fs::path & dir, const fs::path & roo
         }
         result.push_back(p);
     }
-    return {};
+    return std::nullopt;
 }
 
 }
@@ -223,22 +225,21 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
 
     try
     {
-        /// A component that was already there may come from a write that ran with fsync_metadata
-        /// disabled, or from an operator's mkdir, so its entry is not known to be persisted
-        /// either. An object committed in the store is only as durable as every directory
-        /// holding it, so the whole path below `root` is persisted, not only what was created.
-        auto to_persist = componentsBelow(normalized, root);
-        if (to_persist.empty())
+        /// A component that was already there is not known to be persisted either: a write that
+        /// ran with fsync_metadata disabled, and an operator's mkdir, both leave one behind. An
+        /// object is only as durable as every directory holding it, so the whole path is persisted.
+        auto below = componentsBelow(normalized, root);
+        if (!below)
         {
             /// Nothing bounds the walk, so persist only what is known to be owed here: the
             /// components this call created, and `dir`'s own entry when it was already there.
-            to_persist = created;
-            if (to_persist.empty())
-                to_persist.push_back(normalized);
+            below = created;
+            if (below->empty())
+                below->push_back(normalized);
         }
 
         /// Shallowest first, so a directory only becomes durably visible after the one holding it.
-        for (const auto & directory : to_persist)
+        for (const auto & directory : *below)
             syncParentOf(directory);
     }
     catch (...)
