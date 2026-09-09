@@ -1,0 +1,211 @@
+---
+description: 'Run queries independently of the client connection and monitor their execution.'
+sidebarTitle: 'Background queries'
+slug: /operations/background-queries
+title: 'Background queries'
+doc_type: 'guide'
+---
+
+## Overview {#overview}
+Background queries allow clients to submit queries that execute independently of the client session by setting `run_query_in_background=1`. Once submitted, the ClickHouse server responds immediately to the client while the query still run to completion (either success or failure) on the server side
+
+By decoupling query execution from the client network connection, background tasks are fully resilient to client-side disconnects or transient network failures.
+
+Background queries are mainly intended for long-running operations such as `INSERT ... SELECT`,
+`CREATE TABLE ... AS SELECT`, `CREATE MATERIALIZED VIEW ... POPULATE`, or `OPTIMIZE TABLE ... FINAL`
+that must not stop if the client connection drops.
+
+Not every query can be detached from its connection. See [Unsupported query forms](#unsupported-query-forms)
+for the requests that are rejected instead.
+
+<Warning>
+The result of a background query is discarded. It cannot be retrieved or attached to later.
+Use the query's `query_id` to monitor it in `system.processes` while it is running and in `system.query_log` after it finishes.
+</Warning>
+
+A background query does not survive a server restart. Server shutdown behavior is controlled by
+`shutdown_wait_unfinished_queries` and `shutdown_wait_unfinished`.
+
+## Unsupported query forms {#unsupported-query-forms}
+
+A background query outlives the connection that submitted it, so the server must already have everything it needs
+to run the query at the moment it accepts it. Requests that do not satisfy this are rejected synchronously, on the
+submitting connection, and the query never starts.
+
+### Data that streams over the connection {#data-that-streams-over-the-connection}
+
+An `INSERT` is rejected when the server would still need to read data from the submitting connection after dispatching
+the query. 
+
+This can affect both `INSERT ... FORMAT ...` and queries that read through `input`. Such a request is rejected
+with `A query whose data streams over the connection cannot be run in the background`:
+
+```sql
+-- Rejected over the native protocol: the client sends the data separately
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+`clickhouse-client` sends the data of an `INSERT ... FORMAT ...` in separate packets, so that form can never run in the background over the native protocol.
+
+Over HTTP, either form can be accepted when the complete query and its data fit in the initial parsing buffer, which is bounded by `max_query_size`. 
+
+This includes an HTTP query that reads an inline payload through `input`. A larger body keeps streaming past the buffered query text and is rejected.
+
+Do not rely on that size boundary: use `INSERT ... SELECT`, or a table function such as `url` or `s3`, for data that must be loaded in the background.
+
+### Other rejected requests {#other-rejected-requests}
+
+| Request | Error |
+|---|---|
+| `SET run_query_in_background = 1` | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| A query inside an explicit transaction | `Background queries inside transactions are not supported` |
+| A query with `implicit_transaction = 1` | `Background queries with 'implicit_transaction' are not supported` |
+| A secondary query, requested for example with `clickhouse-client --query_kind secondary_query` | `run_query_in_background cannot be used for a secondary query` |
+| A query processing stage other than `Complete`, requested for example with `clickhouse-client --stage with_mergeable_state` | `run_query_in_background cannot be used with the WithMergeableState query processing stage` |
+| The `SETTINGS` clause of a `CREATE` or `ATTACH` that carries a storage definition, because the client sends that clause to the server unresolved | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query` |
+
+The setting is never propagated to the secondary queries of a distributed query: a background distributed `INSERT`
+runs its per-shard queries in the foreground, within the background initial query.
+
+## Submit a background query {#submit-a-background-query}
+
+### Native TCP protocol {#native-tcp-protocol}
+
+With `clickhouse-client`, pass `run_query_in_background` as a command-line setting:
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+You can also use an inline `SETTINGS` clause:
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+The native protocol carries query settings separately from the SQL text. 
+`clickhouse-client` parses most inline query settings and sends them in this settings section. 
+
+Native-protocol drivers can instead pass `run_query_in_background` in their per-query settings map, keeping the SQL text unchanged.
+
+The native protocol does not return a server-generated `query_id`. Native clients should generate a unique ID and send it with the query. 
+
+`clickhouse-client --echo-query-id` does this and prints the ID before submitting the query:
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### HTTP protocol {#http-protocol}
+
+For HTTP requests, pass `run_query_in_background` as a URL parameter:
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+The response includes the generated query ID in the `X-ClickHouse-Query-Id` header:
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+That header only reaches a client that reads the response. When you need a handle on the query that does not depend on the response arriving, send your own `query_id` as a URL parameter instead. 
+
+The client then knows the ID before it makes the request, and can monitor or `KILL` the query on the accepting node even if it never sees the response:
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+Unlike the native protocol, HTTP cannot enable background execution through an inline SQL `SETTINGS` clause:
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+This request returns a `BAD_ARGUMENTS` exception. The HTTP handler must decide whether to create a detached query context before the request body is parsed. 
+
+Pass the setting in the URL, or configure it at the user or profile level.
+
+## Monitor execution {#monitor-execution}
+
+Use the `query_id` to check whether a query is currently running:
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+After the query finishes, inspect `system.query_log` for its final status:
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+The submission request can succeed even if background execution later fails. In that case, the exception is recorded
+in `system.query_log` rather than returned over the original connection.
+
+:::note Clustered and load-balanced deployments
+`system.processes`, `system.query_log`, and `KILL QUERY` are node-local: each one only sees the queries of the server that answers it.
+
+A background query belongs to the server that accepted it, which is not necessarily the one your next request reaches through a load balancer. Read the whole cluster instead:
+
+```sql
+SELECT hostName(), query_id, elapsed, query
+FROM clusterAllReplicas(my_cluster, system.processes)
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+The same applies to `system.query_log`, and cancellation needs the cluster-wide form:
+
+```sql
+KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+:::
+
+## Query log flush delay {#query-log-flush-delay}
+
+Entries are buffered before they appear in `system.query_log`. 
+For self-managed ClickHouse, the example server configuration sets `query_log.flush_interval_milliseconds` to `7500`. 
+
+ClickHouse Cloud entries can take up to 30 seconds to appear. Account for this delay when monitoring short-running background queries.
+
+On a self-managed server, users with sufficient privileges can force the query log to flush. Name the log explicitly so that the other system logs are left alone:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+```
+
+The flush happens on the server that receives the statement. 
+
+A background query is tracked by the server that accepted it, which is not necessarily the one your current session is connected to, so on a cluster flush everywhere before looking the query up:
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
+```
+
+Flushing cluster-wide only makes each server write out its own buffered entries. It does not make another server's `system.query_log` visible locally, so still read the log through `clusterAllReplicas` as described in [Monitor execution](#monitor-execution).

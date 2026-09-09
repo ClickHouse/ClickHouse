@@ -10,17 +10,18 @@ workflow = Workflow.Config(
     name="Hourly",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         Job.Config(
             name="Collect flaky tests",
             command="python3 ./ci/praktika/issue.py --collect-and-upload",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
         Job.Config(
             name="Autoassign approvers",
             command="python3 ./ci/jobs/autoassign_approvers.py",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
         Job.Config(
@@ -31,7 +32,7 @@ workflow = Workflow.Config(
             # the timeout here only catches a run that hangs past that.
             name="Revert CI regressions",
             command="python3 ./ci/jobs/revert_ci_regressions.py",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             # The job runs an AI agent over CI output that a merged pull
             # request can write, so nothing may hand it a GitHub credential
             # before any guard has run: the checkout must not carry the
