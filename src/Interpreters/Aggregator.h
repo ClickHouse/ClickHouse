@@ -134,7 +134,7 @@ public:
         /// An internal limit on hash-table buffers, arenas, and staged records across aggregation
         /// workers. Zero disables accounting. Exceeding the cap throws independently of the row
         /// overflow mode and the spilling threshold.
-        size_t max_bytes_to_group_by = 0;
+        const size_t max_bytes_to_group_by = 0;
 
         struct LimitErrors
         {
@@ -143,7 +143,9 @@ public:
             int bytes = ErrorCodes::TOO_MANY_BYTES;
 
             bool operator==(const LimitErrors &) const = default;
-        } limit_errors;
+        };
+
+        const LimitErrors limit_errors;
 
         /// Two-level aggregation settings (used for a large number of keys).
         /// With how many keys or the size of the aggregation state in bytes,
@@ -233,6 +235,8 @@ public:
             bool overflow_row_,
             size_t max_rows_to_group_by_,
             OverflowMode group_by_overflow_mode_,
+            size_t max_bytes_to_group_by_,
+            LimitErrors limit_errors_,
             size_t group_by_two_level_threshold_,
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,

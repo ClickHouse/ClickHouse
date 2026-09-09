@@ -103,6 +103,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*overflow_row_=*/false,
         settings[Setting::max_rows_to_group_by],
         settings[Setting::group_by_overflow_mode],
+        /*max_bytes_to_group_by=*/0,
+        /*limit_errors=*/{},
         /*group_by_two_level_threshold*/ 0,
         /*group_by_two_level_threshold_bytes*/ 0,
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(

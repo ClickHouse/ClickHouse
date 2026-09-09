@@ -165,6 +165,8 @@ bool tryConvertDistinctToAggregation(
         /*overflow_row=*/false,
         limits.max_rows,
         limits.overflow_mode,
+        limits.max_bytes,
+        {"DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, ErrorCodes::SET_SIZE_LIMIT_EXCEEDED},
         aggregation_settings.group_by_two_level_threshold,
         aggregation_settings.group_by_two_level_threshold_bytes,
         /*max_bytes_before_external_group_by=*/0,
@@ -187,8 +189,6 @@ bool tryConvertDistinctToAggregation(
         aggregation_settings.enable_adaptive_aggregator,
         aggregation_settings.adaptive_aggregator_freeze_threshold,
         aggregation_settings.adaptive_aggregator_freeze_threshold_bytes);
-    params.max_bytes_to_group_by = limits.max_bytes;
-    params.limit_errors = {"DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, ErrorCodes::SET_SIZE_LIMIT_EXCEEDED};
 
     auto aggregation = std::make_unique<AggregatingStep>(
         header,

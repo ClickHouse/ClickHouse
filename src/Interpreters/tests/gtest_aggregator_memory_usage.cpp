@@ -52,12 +52,14 @@ protected:
 
         auto volume = std::make_shared<SingleDiskVolume>("temporary", disk);
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, volume);
-        Aggregator::Params params(
+        return Aggregator::Params(
             Names{"k"},
             aggregates,
             /*overflow_row=*/false,
             /*max_rows_to_group_by=*/0,
             OverflowMode::THROW,
+            /*max_bytes_to_group_by=*/2 * 1024 * 1024,
+            /*limit_errors=*/{},
             /*group_by_two_level_threshold=*/1,
             /*group_by_two_level_threshold_bytes=*/0,
             /*max_bytes_before_external_group_by=*/0,
@@ -80,8 +82,6 @@ protected:
             /*enable_adaptive_aggregator=*/false,
             /*adaptive_aggregator_freeze_threshold=*/0,
             /*adaptive_aggregator_freeze_threshold_bytes=*/0);
-        params.max_bytes_to_group_by = 2 * 1024 * 1024;
-        return params;
     }
 
     void aggregate(Aggregator & aggregator, AggregatedDataVariants & variants, size_t rows) const

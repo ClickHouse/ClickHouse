@@ -1203,6 +1203,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         overflow_row,
         ctx.settings[QueryPlanSerializationSetting::max_rows_to_group_by],
         ctx.settings[QueryPlanSerializationSetting::group_by_overflow_mode],
+        /*max_bytes_to_group_by=*/0,
+        /*limit_errors=*/{},
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold],
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
