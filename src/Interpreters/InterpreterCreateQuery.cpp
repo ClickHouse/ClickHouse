@@ -3691,6 +3691,13 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
+            /// The definition of `AS src` is materialized on the worker, and this node does not
+            /// necessarily have the source table to tell whether it holds credentials, so ask for the
+            /// strongest grant the local path can ask for.
+            if (!create.as_table.empty())
+                getContext()->checkAccess(
+                    AccessType::SELECT, getContext()->resolveDatabase(create.as_database), create.as_table);
+
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
             /// so a worker there would resolve `toTime` with its own default.
             if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup

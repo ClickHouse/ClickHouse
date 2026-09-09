@@ -1,0 +1,8 @@
+with SHOW COLUMNS only:
+-- the entry format version that ships the query as written:
+necessary to have the grant SELECT ON db.url_src
+-- the current entry format version:
+necessary to have the grant SELECT ON db.url_src
+after GRANT SELECT:
+-- the entry format version that ships the query as written:
+URL
