@@ -1146,6 +1146,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
+    global_ctx->write_settings = global_ctx->context->getWriteSettings();
+    std::weak_ptr<GlobalRuntimeContext> weak_global_ctx = global_ctx;
+    global_ctx->cancellation_hook = [weak_global_ctx]
+    {
+        if (auto locked_global_ctx = weak_global_ctx.lock())
+            locked_global_ctx->checkOperationIsNotCanceled();
+        else
+            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+    };
+
     /// For TTLDrop merges, all source parts are fully expired.
     /// Skip creating the read pipeline to avoid opening source parts
     /// and allocating read/prefetch buffers.
@@ -1224,16 +1234,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         *merge_tree_settings,
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
-
-    global_ctx->write_settings = global_ctx->context->getWriteSettings();
-    std::weak_ptr<GlobalRuntimeContext> weak_global_ctx = global_ctx;
-    global_ctx->cancellation_hook = [weak_global_ctx]
-    {
-        if (auto locked_global_ctx = weak_global_ctx.lock())
-            locked_global_ctx->checkOperationIsNotCanceled();
-        else
-            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
-    };
 
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,

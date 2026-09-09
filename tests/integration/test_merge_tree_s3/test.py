@@ -954,6 +954,63 @@ def assert_s3_cancelled(node, table, request, broken_s3, request_kind):
     assert broken_s3.get_request_counts()[request_kind] == count
 
 
+def test_cancelling_horizontal_text_index_merge_stops_s3_retries(
+    s3_cancellation, broken_s3
+):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, version UInt32, value String, "
+        "INDEX idx_value(value) TYPE text(tokenizer='splitByNonAlpha')) "
+        "ENGINE=ReplacingMergeTree(version) ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "enable_vertical_merge_algorithm=0, min_bytes_for_full_part_storage=0"
+    )
+    node.query(f"SYSTEM STOP MERGES {table}")
+    # Keep ordinary column output buffered until the rebuilt text index is finalized.
+    node.query(f"INSERT INTO {table} VALUES (1, 1, 'old'), (2, 1, 'retained')")
+    node.query(f"INSERT INTO {table} VALUES (1, 2, 'new')")
+
+    failpoint = "text_index_pause_before_write_temporary_segment"
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        node.query(f"SYSTEM START MERGES {table}")
+        request = node.get_query_request(f"OPTIMIZE TABLE {table} FINAL", timeout=30)
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        merge_query_id = node.query(
+            "SELECT concat(toString(t.uuid), '::', m.result_part_name) "
+            "FROM system.merges AS m INNER JOIN system.tables AS t "
+            "ON m.database=t.database AND m.table=t.name "
+            f"WHERE m.database=currentDatabase() AND m.table='{table}' "
+            "AND m.merge_algorithm='Horizontal'"
+        ).strip()
+        assert merge_query_id
+        log_line = node.count_log_lines()
+
+        broken_s3.reset()
+        broken_s3.setup_at_object_upload(action="internal_error", count=10000)
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        wait_for_s3_request(broken_s3, "object_upload", count=2)
+
+        write_log = node.exec_in_container(
+            ["tail", "-n", f"+{log_line + 1}", "/var/log/clickhouse-server/clickhouse-server.log"]
+        )
+        merge_log = "\n".join(
+            line for line in write_log.splitlines() if "{" + merge_query_id + "}" in line
+        )
+        assert any(
+            "DiskObjectStorageTransaction: write file " in line
+            and "/text_index_tmp/" in line
+            for line in merge_log.splitlines()
+        ), merge_log
+        assert "writing single part upload started" in merge_log, merge_log
+        assert_s3_cancelled(node, table, request, broken_s3, "object_upload")
+    finally:
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        finally:
+            broken_s3.reset()
+
+
 @pytest.mark.parametrize(
     "storage_policy",
     [

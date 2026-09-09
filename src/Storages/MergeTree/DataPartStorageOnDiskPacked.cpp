@@ -743,6 +743,10 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
         return;
     }
 
+    /// Metadata-only transactions use default settings. Member writes select their settings and callback in `writeFile`.
+    if (!writer->hasWriteSettings())
+        writer->setArchiveWriteSettings(WriteSettings{});
+
     PackedFilesIO::Index old_index;
     bool file_is_rewriten = false;
 

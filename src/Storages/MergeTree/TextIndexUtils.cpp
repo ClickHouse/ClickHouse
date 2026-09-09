@@ -4,6 +4,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Parsers/parseQuery.h>
@@ -30,6 +31,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char text_index_pause_before_write_temporary_segment[];
+}
 
 namespace ErrorCodes
 {
@@ -258,6 +264,8 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
     auto granule = aggregator_text.getGranuleAndReset();
     estimated_allocated_bytes[i] = 0;
     aggregator_text.setCurrentRow(num_processed_rows);
+
+    FailPointInjection::pauseFailPoint(FailPoints::text_index_pause_before_write_temporary_segment);
 
     auto [streams, streams_holders] = makeOutputStreams(
         index_substreams,
