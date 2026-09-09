@@ -64,10 +64,11 @@ void IFramingFormat::setProfileEventsQueue(const InternalProfileEventsQueuePtr &
     profile_events_period_us = period_us;
 }
 
-void IFramingFormat::setProfileTracesQueue(const InternalProfileTracesQueuePtr & queue, UInt64 period_us)
+void IFramingFormat::setProfileTracesQueue(const InternalProfileTracesQueuePtr & queue, UInt64 period_us, bool defer_until_finalize)
 {
     profile_traces_queue = queue;
     profile_traces_period_us = period_us;
+    defer_profile_traces_until_finalize = defer_until_finalize;
 }
 
 bool IFramingFormat::failClosedAfterPartialWrite()
@@ -318,7 +319,7 @@ void IFramingFormat::pumpProfileTraces(bool force)
     if (!profile_traces_queue)
         return;
 
-    if (!force && profile_traces_watch.elapsedMicroseconds() < profile_traces_period_us)
+    if (!force && (defer_profile_traces_until_finalize || profile_traces_watch.elapsedMicroseconds() < profile_traces_period_us))
         return;
 
     if (force)

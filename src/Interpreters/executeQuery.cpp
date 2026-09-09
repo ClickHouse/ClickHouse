@@ -3963,7 +3963,8 @@ void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQue
 }
 
 /// Wire the queues attached by `syncFramingQueuesWithSettings` into the framing format.
-void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & context, const FramingQueues & queues)
+void setFramingQueues(
+    IFramingFormat & framing, const ContextMutablePtr & context, const FramingQueues & queues, bool http_response_fully_buffered)
 {
     if (queues.logs_queue)
         framing.setLogsQueue(queues.logs_queue);
@@ -3973,7 +3974,8 @@ void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & contex
             queues.profile_events_queue, getFQDNOrHostName(), context->getSettingsRef()[Setting::interactive_delay]);
 
     if (queues.profile_traces_queue)
-        framing.setProfileTracesQueue(queues.profile_traces_queue, context->getSettingsRef()[Setting::interactive_delay]);
+        framing.setProfileTracesQueue(
+            queues.profile_traces_queue, context->getSettingsRef()[Setting::interactive_delay], http_response_fully_buffered);
 }
 
 }
@@ -4219,7 +4221,7 @@ void executeQuery(
                     /// here.
                     output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
                     output_format->setFraming(framing, /*for_exception=*/ true);
-                    setFramingQueues(*framing, context, framing_queues);
+                    setFramingQueues(*framing, context, framing_queues, flags.http_response_fully_buffered);
                 }
                 else
                 {
@@ -4364,7 +4366,7 @@ void executeQuery(
 
         output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
         output_format->setFraming(framing);
-        setFramingQueues(*framing, context, framing_queues);
+        setFramingQueues(*framing, context, framing_queues, flags.http_response_fully_buffered);
 
         /// The carrier is not part of the pipeline, so it is finalized explicitly (below, after the
         /// query-finish logging) to flush the pending throttled progress update; the framing format
@@ -4425,7 +4427,7 @@ void executeQuery(
                     output_format_settings);
 
                 output_format->setFraming(framing);
-                setFramingQueues(*framing, context, framing_queues);
+                setFramingQueues(*framing, context, framing_queues, flags.http_response_fully_buffered);
 
                 /// Finalize the framing format ourselves after the query-finish logging (below),
                 /// rather than letting the output format do it during pipeline execution, so the
