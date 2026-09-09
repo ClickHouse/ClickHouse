@@ -292,11 +292,13 @@ def _assert_broadcast_delivered(probe_arrivals):
     of them still delivered 2 states. Worth asserting even so: every other count here is taken
     where a state is serialized, so a broadcast that dropped all of them would pass unnoticed.
 
-    Thread sanitizer loses the whole sweep, not just a topology. It stretches the build side far
-    enough that every probe task has finished its scan and dropped its receive branch before the
-    root can publish, so no arrival is possible and the assertion would be measuring the
-    sanitizer. Under tsan the counts this sweep is built from all came back 0, while the other
-    configurations delivered on every run."""
+    Under thread sanitizer the sweep loses often enough to be unusable in CI, so it is skipped
+    there. Measured over the runs that carry this assertion, each of the two tests calling it went
+    6 passes to 1 failure under tsan and 32 for 32 everywhere else, and the failures arrive as an
+    all-zero sweep. So tsan does not make arrival impossible - it makes it roughly a one-in-seven
+    loss, which is more than a required check can carry when the thing it watches is best-effort
+    by design. Skipping it does give up the configuration where a delivery race would show most
+    readily; the send-side counts, which are exact, stay in force there."""
     if INITIATOR.is_built_with_thread_sanitizer():
         logging.info("skipping the broadcast-arrival check under tsan: %s", probe_arrivals)
         return
