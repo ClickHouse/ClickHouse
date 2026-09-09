@@ -14,13 +14,17 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsObsoleteMacros.h>
+#include <Core/SettingsSecrets.h>
 #include <Core/SettingsTierType.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
+#include <IO/WriteBufferFromString.h>
 #include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <base/sanitizer_defs.h>
 
@@ -834,9 +838,9 @@ Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is ski
     DECLARE(UInt64, reader_executor_max_tail_for_drain, DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN, R"(
 Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_window_size, DEFAULT_READER_EXECUTOR_WINDOW_SIZE, R"(
-Bytes served per read window by the experimental `ReaderExecutor` (the unit a read returns). Must be at least 4 KiB.)", EXPERIMENTAL) \
+Bytes served per read window by the experimental `ReaderExecutor` (the unit a read returns). Must be at least 128 KiB.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_block_size, DEFAULT_READER_EXECUTOR_BLOCK_SIZE, R"(
-Buffer chunk size for the experimental `ReaderExecutor`: source reads fill nodes of at most this size. Must be at least 4 KiB.)", EXPERIMENTAL) \
+Buffer chunk size for the experimental `ReaderExecutor`: source reads fill nodes of at most this size. Must be at least 128 KiB.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -5629,7 +5633,9 @@ Allow to execute alters which affects not only tables metadata, but also data on
 Propagate WITH statements to UNION queries and all subqueries
 )", 0) \
     DECLARE(Bool, enable_materialized_cte, false, R"(
-Enable materialized common table expressions, it will be preferred over enable_global_with_statement
+Enable materialized common table expressions (`WITH <name> AS MATERIALIZED (<subquery>)`).
+When enabled, a CTE declared as `MATERIALIZED` that is referenced more than once is executed once, stored in a temporary table, and all references read from that table. A CTE referenced only once is inlined as an ordinary CTE to avoid the overhead.
+When disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
 )", EXPERIMENTAL) \
     DECLARE(Bool, analyzer_inline_views, false, R"(
 When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
@@ -7370,10 +7376,8 @@ When `readBigAt` populates the userspace page cache, consecutive cache misses ar
 A higher value reduces the number of HTTP requests for cold scans on object storage; a lower value reduces peak transient memory.
 )", 0) \
     \
-    DECLARE(Bool, load_marks_asynchronously, false, R"(
-Load MergeTree marks asynchronously
-
-Cloud default value: `1`.
+    DECLARE(Bool, load_marks_asynchronously, true, R"(
+Load MergeTree marks asynchronously in a background thread pool (see the server setting `load_marks_threadpool_pool_size`), so that the marks of all streams are loaded in parallel. Otherwise, marks are loaded synchronously, one stream after another, which is slow on remote disks for columns with many substreams, such as `JSON`.
 )", 0) \
     DECLARE(Bool, use_streaming_marks_compression, false, R"(
 When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
@@ -7580,6 +7584,8 @@ Maximum time to read from a pipe for receiving information from the threads when
 - **Default value:** Empty string
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
+
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
 
 ### Placeholders
 
@@ -8874,14 +8880,14 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_time_series_table, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW, allow_experimental_time_series_table) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \
@@ -9113,7 +9119,7 @@ Enabling it automatically adjusts settings that control features not supported b
 - `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
@@ -9130,10 +9136,10 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
 )", 0) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
 Total wall-clock time, in milliseconds, a query may spend provisioning stateless workers before execution: leasing them from the discovery service and verifying they are reachable. The query blocks up to this budget for the leased workers to become ready; when it elapses the query proceeds with the workers verified so far, or fails if none became available. Zero waits only for the initial lease-and-verify pass (no retries).
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -9157,7 +9163,7 @@ order. Only shapes where no exchange survives between the read and the sort are 
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
@@ -9215,22 +9221,22 @@ Use hash table size statistics collected from previous executions to size the JO
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
     \
-    /** Experimental timeSeries* aggregate functions. */ \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
-Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
-)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
+    /** timeSeries* aggregate functions (private preview). */ \
+    DECLARE_WITH_ALIAS(Bool, enable_time_series_aggregate_functions, false, R"(
+Enables the `timeSeries*` aggregate functions for Prometheus-like time series resampling, rate, and delta calculation.
+)", PRIVATE_PREVIEW, allow_experimental_time_series_aggregate_functions, allow_experimental_ts_to_grid_aggregate_function) \
     \
     DECLARE(String, promql_database, "", R"(
 Specifies the database name used by the 'promql' dialect. Empty string means the current database.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     \
     DECLARE(String, promql_table, "", R"(
 Specifies the name of a TimeSeries table used by the 'promql' dialect.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     \
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
-)", EXPERIMENTAL, evaluation_time) \
+)", PRIVATE_PREVIEW, evaluation_time) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL) \
@@ -9256,13 +9262,13 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_cd_a_conflict_detector, false, R"(
+    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_a, false, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
 reorderings are valid using the CD-A conflict detector).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_cd_c_conflict_detector, false, R"(
+    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_c, false, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
-are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_cd_a_conflict_detector` when both are enabled.
+are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_conflict_detector_a` when both are enabled.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
@@ -9274,7 +9280,20 @@ Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction 
 Memory limit in bytes per WebAssembly UDF instance.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_input_block_size, 0, R"(
-Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+Maximum number of rows passed to a WebAssembly UDF in a single call. A non-zero value caps the rows per call and applies to every ABI.
+
+Set to 0 to size the calls by their serialized input instead. That applies to `ABI BUFFERED_V1` alone, the only ABI that serializes a whole input block into guest memory: its blocks are split so that a call's input stays within `webassembly_udf_input_split_memory_ratio` of the module's linear memory. `ROW_DIRECT` passes its arguments as WebAssembly values and `ASSEMBLYSCRIPT` builds one object per row, so neither has a serialized input to size a call by, and 0 leaves their pipeline block whole.
+)", EXPERIMENTAL) \
+    DECLARE(Float, webassembly_udf_input_split_memory_ratio, 0.5, R"(
+Fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy. Must be at least 0 and at most 1; the default leaves the other half to the guest for its own working set beside the input buffer.
+
+The margin below 1 is what makes the batching safe: the guest's own data, stack and allocator share that memory and are invisible to the host. A ratio close to 1 leaves nothing for them, so a call sized against it can still fail inside the guest's allocator.
+
+Read only for `ABI BUFFERED_V1`, and it sizes the calls only while `webassembly_udf_max_input_block_size` is 0 - a non-zero block size caps the rows per call instead.
+
+A batch is never taken below a single row, so a row whose own serialized size is past the budget is passed on its own, and one too large for the module's linear memory fails inside the guest's allocator.
+
+Set to 0 to leave the input unsplit: the whole pipeline block is passed in one call.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
@@ -9460,10 +9479,10 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
     /// Dumps profile events to column of type Map(String, String)
-    void dumpToMapColumn(IColumn * column, bool changed_only = true);
+    void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets);
 
     /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
-    FlatStringMap changedToFlatMap() const;
+    FlatStringMap changedToFlatMap(bool show_secrets) const;
 
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
@@ -9556,7 +9575,7 @@ void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util:
     }
 }
 
-void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
+void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets)
 {
     if (!column)
         return;
@@ -9579,6 +9598,8 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 
         const auto & name = accessor.getName(i);
         auto value = accessor.getValueString(*this, i);
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(String(name), value);
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
         ++size;
@@ -9592,7 +9613,9 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
             continue;
 
         const auto & name = custom.first;
-        auto value = setting_field.toString();
+        auto value = setting_field.toString(show_secrets);
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(name, value);
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
         ++size;
@@ -9601,7 +9624,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     offsets.push_back(offsets.back() + size);
 }
 
-FlatStringMap SettingsImpl::changedToFlatMap() const
+FlatStringMap SettingsImpl::changedToFlatMap(bool show_secrets) const
 {
     FlatStringMap result;
 
@@ -9615,14 +9638,25 @@ FlatStringMap SettingsImpl::changedToFlatMap() const
     const size_t num_settings = accessor.size();
     for (size_t i = 0; i < num_settings; ++i)
     {
-        if (accessor.isValueChanged(*this, i))
-            result.add(accessor.getName(i), accessor.getValueString(*this, i));
+        if (!accessor.isValueChanged(*this, i))
+            continue;
+
+        const auto & name = accessor.getName(i);
+        auto value = accessor.getValueString(*this, i);
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(String(name), value);
+        result.add(name, value);
     }
 
     for (const auto & custom : custom_settings_map)
     {
-        if (custom.second.changed)
-            result.add(custom.first, custom.second.toString());
+        if (!custom.second.changed)
+            continue;
+
+        auto value = custom.second.toString(show_secrets);
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(custom.first, value);
+        result.add(custom.first, value);
     }
 
     return result;
@@ -9941,9 +9975,24 @@ VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
     return impl->getHints(name);
 }
 
-String Settings::toString() const
+String Settings::toString(bool show_secrets) const
 {
-    return impl->toString();
+    if (show_secrets)
+        return impl->toString();
+
+    /// Same rendering as `BaseSettings::toString`, with the secrets masked.
+    WriteBufferFromOwnString out;
+    bool first = true;
+    for (const auto & setting : impl->allChanged())
+    {
+        if (!first)
+            out << ", ";
+        auto masked = CoreSettings::renderSecretSettingValue(String(setting.getName()), setting.getValue());
+        out << setting.getName() << " = "
+            << (masked ? *masked : applyVisitor(FieldVisitorToString(), setting.getValue()));
+        first = false;
+    }
+    return out.str();
 }
 
 SettingsChanges Settings::changes() const
@@ -10008,13 +10057,30 @@ VectorWithMemoryTracking<std::string_view> Settings::getUnchangedNames() const
     return setting_names;
 }
 
-void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const
+void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const
 {
     MutableColumns & res_columns = params.res_columns;
 
+    /// `setting_name` may be an alias, so the masking always keys off the canonical name.
+    const auto mask = [&](const auto & setting, String & value)
+    {
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(String(setting.getName()), value);
+    };
+
+    /// For a constraint, whose raw `Field` is at hand: the value of a custom setting can be an AST
+    /// that no plain `Field` formatter hides.
+    const auto mask_field = [&](const auto & setting, const Field & field, String & value)
+    {
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(String(setting.getName()), field, value);
+    };
+
     const auto fill_data_for_setting = [&](std::string_view setting_name, const auto & setting)
     {
-        res_columns[1]->insert(setting.getValueString());
+        String value = setting.getValueString(show_secrets);
+        mask(setting, value);
+        res_columns[1]->insert(value);
         res_columns[2]->insert(setting.isValueChanged());
 
         /// Trim starting/ending newline.
@@ -10034,20 +10100,34 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         /// These two columns can accept strings only.
         if (!min.isNull())
-            min = Settings::valueToStringUtil(setting_name, min);
+        {
+            String min_string = Settings::valueToStringUtil(setting_name, min);
+            mask_field(setting, min, min_string);
+            min = min_string;
+        }
         if (!max.isNull())
-            max = Settings::valueToStringUtil(setting_name, max);
+        {
+            String max_string = Settings::valueToStringUtil(setting_name, max);
+            mask_field(setting, max, max_string);
+            max = max_string;
+        }
 
         Array disallowed_array;
-        for (const auto & value : disallowed_values)
-            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
+        for (const auto & disallowed_value : disallowed_values)
+        {
+            String disallowed_string = Settings::valueToStringUtil(setting_name, disallowed_value);
+            mask_field(setting, disallowed_value, disallowed_string);
+            disallowed_array.emplace_back(disallowed_string);
+        }
 
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
         res_columns[6]->insert(disallowed_array);
         res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getDefaultValueString());
+        String default_value = setting.getDefaultValueString(show_secrets);
+        mask(setting, default_value);
+        res_columns[9]->insert(default_value);
         res_columns[11]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
         res_columns[12]->insert(setting.getTier());
     };
@@ -10073,14 +10153,14 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
     }
 }
 
-void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
+void Settings::dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const
 {
-    impl->dumpToMapColumn(column, changed_only);
+    impl->dumpToMapColumn(column, changed_only, show_secrets);
 }
 
-FlatStringMap Settings::changedToFlatMap() const
+FlatStringMap Settings::changedToFlatMap(bool show_secrets) const
 {
-    return impl->changedToFlatMap();
+    return impl->changedToFlatMap(show_secrets);
 }
 
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
