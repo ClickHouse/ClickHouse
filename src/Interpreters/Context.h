@@ -1267,6 +1267,9 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// Clamping counterpart of `checkSettingsConstraintsForSettingsReset`: reduces `names` to the resets
+    /// allowed by the constraints and returns in `clamped_changes` the assignments replacing the clamped ones.
+    void clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 

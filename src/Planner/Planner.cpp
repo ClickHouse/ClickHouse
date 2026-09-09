@@ -2487,22 +2487,31 @@ static bool isQueryKindEligibleForSubqueryCache(const ContextPtr & query_context
 /// `SETTINGS` clause, or `std::nullopt` when the clause does not mention the setting. `QueryNode`
 /// and `UnionNode` store the clause the same way, so a plain subquery and a `UNION` subquery are
 /// handled alike.
+///
+/// The clause is only inspected for the *presence* of the setting; the value is then read from the
+/// node's own context, which already has the whole clause applied in order (and clamped against the
+/// constraints). `ParserSetQuery` keeps every occurrence, so `SETTINGS use_query_cache = 1,
+/// use_query_cache = 0` - or an assignment followed by `= DEFAULT` - has a last-wins effective value,
+/// which the first entry of `settings_changes` does not report. Returning that first entry would make
+/// this path disagree with every other consumer of the setting, e.g. taking the cache path (and
+/// possibly raising `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
 static std::optional<bool> explicitUseQueryCacheSetting(
     const SettingsChanges & settings_changes, const std::vector<String> & default_settings, const ContextPtr & node_context)
 {
-    for (const auto & change : settings_changes)
-    {
-        if (change.name == "use_query_cache")
-            return change.value.safeGet<bool>();
-    }
+    bool mentioned_in_clause
+        = std::any_of(
+              settings_changes.begin(),
+              settings_changes.end(),
+              [](const auto & change) { return change.name == "use_query_cache"; })
+        || std::any_of(
+              default_settings.begin(),
+              default_settings.end(),
+              [](const auto & setting_name) { return setting_name == "use_query_cache"; });
 
-    for (const auto & setting_name : default_settings)
-    {
-        if (setting_name == "use_query_cache")
-            return node_context->getSettingsRef()[Setting::use_query_cache];
-    }
+    if (!mentioned_in_clause)
+        return {};
 
-    return {};
+    return node_context->getSettingsRef()[Setting::use_query_cache];
 }
 
 static bool shouldUseQueryCacheForSubquery(

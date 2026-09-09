@@ -26,6 +26,9 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
+    /// Reads the `obfuscate_*` settings of `context` and validates them.
+    static std::pair<MarkovModelParameters, UInt64> readParameters(const ContextPtr & context);
+
     ASTPtr inner_query;
     Names column_names;
     ContextPtr context;

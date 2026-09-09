@@ -291,6 +291,63 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
     }
 }
 
+void SettingsConstraints::clampResetToDefault(
+    const Settings & current_settings,
+    std::vector<String> & names,
+    SettingsChanges & clamped_changes,
+    SettingSource source) const
+{
+    std::vector<String> allowed_resets;
+    allowed_resets.reserve(names.size());
+
+    for (const auto & name : names)
+    {
+        if (settingIsBuiltin(name))
+        {
+            /// A reset of a built-in setting is an assignment of its declared default, so it is clamped
+            /// as such. `checkOrClamp` erases a change it refuses, and also one that does not change the
+            /// value - the latter is a no-op reset, so dropping it is what we want either way.
+            const Field default_value = settingDefaultValue(name);
+            SettingsChanges reset_as_change{SettingChange{name, default_value}};
+            checkOrClamp(current_settings, reset_as_change, CLAMP_ON_VIOLATION, source);
+
+            if (reset_as_change.empty())
+                continue;
+
+            if (reset_as_change.front().value == default_value)
+                allowed_resets.push_back(name);
+            else
+                clamped_changes.push_back(reset_as_change.front());
+
+            continue;
+        }
+
+        /// Custom settings have no declared default: resetting one removes it, and there cannot be a
+        /// value constraint for such a setting, so the reset is either performed as written or dropped.
+        Field current_value;
+        bool has_current_value = current_settings.tryGet(name, current_value);
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+        {
+            if (has_current_value)
+                break;
+            has_current_value = current_settings.tryGet(equivalent_name, current_value);
+        }
+
+        if (!has_current_value)
+        {
+            /// Resetting an absent custom setting is a no-op; preserve that behavior.
+            allowed_resets.push_back(name);
+            continue;
+        }
+
+        SettingChange change{name, current_value};
+        if (getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, CLAMP_ON_VIOLATION, source))
+            allowed_resets.push_back(name);
+    }
+
+    names = std::move(allowed_resets);
+}
+
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
 {
     checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);

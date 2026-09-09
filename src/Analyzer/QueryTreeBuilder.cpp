@@ -229,12 +229,21 @@ void applyQueryLevelSettings(
     /// reader's constraints keeps working. A top-level clause still throws
     /// (`applySettingsFromQuery`). Clamp a copy: the node keeps the clause as written, so the tree's
     /// AST and hash are unchanged, and every node executing the subquery clamps it against its own
-    /// constraints. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
+    /// constraints. `SETTINGS name = DEFAULT` is parsed into `default_settings`, not into `changes`, and is
+    /// clamped separately below.
     if (!set_query.changes.empty())
     {
-        auto checked_changes = set_query.changes;
-        updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
-        updated_context->applySettingsChanges(checked_changes);
+        /// One change at a time, so that each is clamped against the context as the preceding changes
+        /// left it. Clamping the whole clause as a batch checks every change against the context as it
+        /// was before the clause, and drops a change that "does not change" that pre-clause value - so
+        /// `SETTINGS use_query_cache = 1, use_query_cache = 0` would drop the trailing `0` and leave the
+        /// subquery with `1`, while the clause reads last-wins everywhere else.
+        for (const auto & change : set_query.changes)
+        {
+            SettingsChanges single_change{change};
+            updated_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
+            updated_context->applySettingsChanges(single_change);
+        }
         settings_changes.insert(settings_changes.end(), set_query.changes.begin(), set_query.changes.end());
     }
 
@@ -246,7 +255,20 @@ void applyQueryLevelSettings(
     if (!set_query.default_settings.empty())
     {
         default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
-        updated_context->resetSettingsToDefaultValue(set_query.default_settings);
+
+        /// A reset is an assignment of the declared default, so it can violate the reader's constraints
+        /// exactly like an explicit assignment - without this, an inner `SETTINGS max_threads = DEFAULT`
+        /// or `additional_table_filters = DEFAULT` would escape a `readonly`, `CONST` or `MIN` / `MAX`
+        /// constraint that the same clause could not escape by writing the value out. The top-level path
+        /// throws (`checkSettingsConstraintsForSettingsReset` in `InterpreterSetQuery`); here, as for the
+        /// `changes` above, clamp instead: a forbidden reset is dropped, a reset past a bound becomes an
+        /// assignment of the clamped value. The node keeps the clause as written, so the tree's AST and
+        /// hash are unchanged.
+        auto allowed_resets = set_query.default_settings;
+        SettingsChanges clamped_resets;
+        updated_context->clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
+        updated_context->resetSettingsToDefaultValue(allowed_resets);
+        updated_context->applySettingsChanges(clamped_resets);
     }
 
     if (!set_query.query_parameters.empty())

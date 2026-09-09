@@ -68,6 +68,23 @@ ColumnsDescription TableFunctionObfuscate::getActualTableStructure(ContextPtr co
     else
         sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], inner_context);
 
+    /// Neither the `obfuscate_*` settings nor the output types are validated here, although that would
+    /// let `DESCRIBE` and `CREATE VIEW` reject a definition that throws on every read. Both checks
+    /// belong to `ObfuscateStep`, which the Planner builds, and neither is sound at this point:
+    ///
+    /// - The types: this structure is the whole inner query, while a read builds a model only for the
+    ///   columns it selects. Rejecting an unsupported type here would refuse a perfectly readable
+    ///   `SELECT supported FROM obfuscate(SELECT supported, unsupported ...)` and a view over it.
+    /// - The settings: `context` is not always the context the read will use. `QueryAnalyzer` hands a
+    ///   table function the nearest query scope's context only when that scope is a *subquery* with a
+    ///   `SETTINGS` clause, and uses the query context otherwise, so when the structure of a
+    ///   `view(SELECT ... FROM obfuscate(...) SETTINGS obfuscate_markov_order = ...)` is derived, the
+    ///   clause is invisible here but applied when the view is read (see
+    ///   `04894_obfuscate_inner_default_settings_remote`, where such a clause repairs an invalid
+    ///   session setting).
+    ///
+    /// `ObfuscateStep` runs as soon as the read columns and the reading context are both known, which
+    /// is the earliest point at which either check answers the question a read would ask.
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
 
