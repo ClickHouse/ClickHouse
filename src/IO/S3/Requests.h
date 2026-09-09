@@ -29,9 +29,6 @@
 
 #include <base/defines.h>
 
-#include <optional>
-#include <string>
-
 namespace DB::S3
 {
 
@@ -64,27 +61,10 @@ inline void setChecksumAlgorithm(R & request)
 }
 };
 
-/// GCS spells these headers with an `x-goog-` prefix and silently ignores the `x-amz-` one, so a
-/// header left untranslated loses its meaning without any error. The list is closed: everything
-/// outside it has no GCS counterpart, or one of a different shape that a rename cannot produce.
-Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
-
-/// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
-/// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
-std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);
-
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
 {
 public:
-    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override
-    {
-        auto headers = BaseRequest::GetRequestSpecificHeaders();
-        if (api_mode != ApiMode::GCS)
-            return headers;
-        return translateHeadersToGCS(std::move(headers));
-    }
-
     Aws::Endpoint::EndpointParameters GetEndpointContextParams() const override
     {
         auto params = BaseRequest::GetEndpointContextParams();
@@ -162,7 +142,11 @@ protected:
     bool is_s3express_bucket = false;
 };
 
-using CopyObjectRequest = ExtendedRequest<Model::CopyObjectRequest>;
+class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
+{
+public:
+    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
+};
 
 class HeadObjectRequest: public ExtendedRequest<Model::HeadObjectRequest>
 {
