@@ -7508,7 +7508,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     }
 }
 
-void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata_version)
+void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata_version, const QueryStatusPtr & process_list_element)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataVersionFromBackup");
     auto zookeeper = getZooKeeper();
@@ -7524,6 +7524,11 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
 
     while (metadata_stat.version < metadata_version - 1)
     {
+        /// Every step of this loop is one ZooKeeper write, and the number of steps comes from the backup,
+        /// so make it interruptible instead of hammering ZooKeeper until it finishes.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         auto code = zookeeper->trySet(table_metadata_path, metadata_str, metadata_stat.version);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
             throw zkutil::KeeperException::fromPath(code, table_metadata_path);
@@ -7575,9 +7580,16 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
             throw zkutil::KeeperException::fromPath(code, replica_metadata_version_path);
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    if (metadata_snapshot->getMetadataVersion() < metadata_version)
-        setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
+    {
+        /// The in-memory metadata is read-modify-written here, and `setInMemoryMetadata` is only an atomic
+        /// pointer swap. Concurrent ALTERs install their new metadata snapshot under the alter lock (see
+        /// `executeMetadataAlter` and `InterpreterAlterQuery`), so without holding it here one of the two
+        /// updates would be silently lost - reverting the table to the pre-ALTER structure.
+        auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        if (metadata_snapshot->getMetadataVersion() < metadata_version)
+            setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
+    }
 
     LOG_INFO(log, "Restored metadata version {} from backup", metadata_version);
 }

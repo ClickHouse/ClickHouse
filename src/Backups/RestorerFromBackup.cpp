@@ -900,20 +900,22 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
     }
 }
 
-static std::optional<Int32> readMetadataVersionFromBackup(
-    const IBackup & backup, const String & metadata_path_in_backup, const String & data_path_in_backup)
+static std::optional<Int32> readMetadataVersionFromBackup(const IBackup & backup, const String & metadata_path_in_backup)
 {
-    String new_path = BackupUtils::getMetadataVersionPathInBackup(metadata_path_in_backup);
-    String legacy_path = fs::path(data_path_in_backup) / "table_metadata_version.txt";
-    String effective_path = backup.fileExists(new_path)    ? new_path
-                          : backup.fileExists(legacy_path) ? legacy_path
-                          : String{};
-    if (effective_path.empty())
+    String path_in_backup = BackupUtils::getMetadataVersionPathInBackup(metadata_path_in_backup);
+    if (!backup.fileExists(path_in_backup))
         return std::nullopt;
-    auto buf = backup.readFile(effective_path);
+    auto buf = backup.readFile(path_in_backup);
     String version_str;
     readStringUntilEOF(version_str, *buf);
-    return parse<Int32>(version_str);
+    Int32 metadata_version = parse<Int32>(version_str);
+    if (metadata_version < 0)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Invalid metadata version {} stored in {} in the backup",
+            metadata_version,
+            path_in_backup);
+    return metadata_version;
 }
 
 void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
@@ -970,23 +972,22 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
             }
         }
 
-        if (restore_settings.structure_only)
+        /// When the table's data is restored, the metadata version is applied right after it (see
+        /// `insertDataToTableImpl`). Otherwise nothing else would apply it, so do it here. Note that
+        /// `structure_only` is not the same condition: `restore_table_data` overrides it both ways.
+        if (!restore_settings.shouldRestoreTableData())
         {
             if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
             {
                 String metadata_path;
-                String data_path;
                 {
                     std::lock_guard lock{mutex};
-                    const auto & table_info = table_infos.at(table_name);
-                    metadata_path = table_info.metadata_path_in_backup;
-                    data_path = table_info.data_path_in_backup;
+                    metadata_path = table_infos.at(table_name).metadata_path_in_backup;
                 }
-                if (auto version = readMetadataVersionFromBackup(*backup, metadata_path, data_path))
-                    replicated_storage->restoreMetadataVersionFromBackup(*version);
+                if (auto version = readMetadataVersionFromBackup(*backup, metadata_path))
+                    replicated_storage->restoreMetadataVersionFromBackup(*version, process_list_element);
             }
         }
-
     }
     catch (Exception & e)
     {
@@ -1072,8 +1073,8 @@ void RestorerFromBackup::insertDataToTableImpl(
 
         if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
         {
-            if (auto version = readMetadataVersionFromBackup(*backup, metadata_path_in_backup, data_path_in_backup))
-                replicated_storage->restoreMetadataVersionFromBackup(*version);
+            if (auto version = readMetadataVersionFromBackup(*backup, metadata_path_in_backup))
+                replicated_storage->restoreMetadataVersionFromBackup(*version, process_list_element);
         }
     }
     catch (Exception & e)

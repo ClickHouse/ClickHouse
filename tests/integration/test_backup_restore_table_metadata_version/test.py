@@ -8,6 +8,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/backup_disk.xml"],
+    external_dirs=["/backups/"],
     with_zookeeper=True,
     macros={"shard": 0, "replica": 1},
     stay_alive=True,
@@ -311,3 +312,92 @@ def test_restore_table_metadata_version_structure_only(start_cluster):
     assert metadata_version("t2") == "2"
 
     node.query("DROP TABLE test_db.t2 SYNC")
+
+
+# `restore_table_data=0` skips the data without setting `structure_only`, so the metadata
+# version must still be applied: `structure_only` alone is not the governing condition.
+def test_restore_table_metadata_version_without_table_data(start_cluster):
+    create_table("t3")
+    node.query(
+        "ALTER TABLE test_db.t3 ADD COLUMN surname Nullable(String) SETTINGS alter_sync = 2"
+    )
+    assert metadata_version("t3") == "1"
+
+    backup_name = new_backup_name()
+    node.query(f"BACKUP TABLE test_db.t3 TO {backup_name}")
+    node.query("DROP TABLE test_db.t3 SYNC")
+    node.query(
+        f"RESTORE TABLE test_db.t3 FROM {backup_name} SETTINGS restore_table_data=0"
+    )
+
+    assert metadata_version("t3") == "1"
+
+    node.query("DROP TABLE test_db.t3 SYNC")
+
+
+# Restoring an older backup into a table which has been altered since must not move the
+# table's metadata version backwards.
+def test_restore_table_metadata_version_never_decreases(start_cluster):
+    create_table("t4")
+    node.query(
+        "ALTER TABLE test_db.t4 ADD COLUMN surname Nullable(String) SETTINGS alter_sync = 2"
+    )
+
+    backup_name = new_backup_name()
+    node.query(f"BACKUP TABLE test_db.t4 TO {backup_name}")
+
+    node.query("ALTER TABLE test_db.t4 ADD COLUMN extra UInt8 SETTINGS alter_sync = 2")
+    assert metadata_version("t4") == "2"
+
+    node.query(
+        f"RESTORE TABLE test_db.t4 FROM {backup_name} "
+        "SETTINGS allow_different_table_def=1"
+    )
+    assert metadata_version("t4") == "2"
+
+    node.query("DROP TABLE test_db.t4 SYNC")
+
+
+# Both replicas of a `Replicated` database must apply the ALTER_METADATA entry created by
+# RESTORE, which goes through the ZooKeeperMetadataTransaction branch of executeMetadataAlter.
+def test_replicated_database_second_replica_applies_restored_version(start_cluster):
+    version_query = (
+        "SELECT metadata_version FROM system.tables "
+        "WHERE database = 'repl_db2' AND name = 't'"
+    )
+    create_db_query = (
+        "CREATE DATABASE repl_db2 "
+        "ENGINE = Replicated('/clickhouse/databases/repl_db2', '{shard}', '{replica}')"
+    )
+    replica1.query(create_db_query)
+    replica2.query(create_db_query)
+    try:
+        replica1.query(
+            "CREATE TABLE repl_db2.t (id UInt64, name Nullable(String)) "
+            "ENGINE = ReplicatedReplacingMergeTree ORDER BY id"
+        )
+        replica1.query("ALTER TABLE repl_db2.t ADD COLUMN surname Nullable(String)")
+        assert replica1.query(version_query).strip() == "1"
+
+        backup_name = new_backup_name()
+        replica1.query(
+            f"BACKUP DATABASE repl_db2 ON CLUSTER 'cluster' TO {backup_name}"
+        )
+        replica1.query("DROP DATABASE repl_db2 SYNC")
+        replica2.query("DROP DATABASE repl_db2 SYNC")
+        replica1.query(
+            f"RESTORE DATABASE repl_db2 ON CLUSTER 'cluster' FROM {backup_name}"
+        )
+
+        for replica in (replica1, replica2):
+            assert_eq_with_retry(replica, version_query, "1")
+
+        # The replication queues are not stuck on that entry: a later ALTER still goes through.
+        replica2.query(
+            "ALTER TABLE repl_db2.t ADD COLUMN extra UInt8 SETTINGS alter_sync = 2"
+        )
+        for replica in (replica1, replica2):
+            assert_eq_with_retry(replica, version_query, "2")
+    finally:
+        replica1.query("DROP DATABASE IF EXISTS repl_db2 SYNC")
+        replica2.query("DROP DATABASE IF EXISTS repl_db2 SYNC")
