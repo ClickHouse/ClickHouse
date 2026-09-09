@@ -332,7 +332,8 @@ void Context::init(const Params& params)
 		if (!params.caLocation.empty())
 		{
 			Poco::File aFile(params.caLocation);
-			if (aFile.isDirectory())
+			bool isDirectory = aFile.isDirectory();
+			if (isDirectory)
 				errCode = SSL_CTX_load_verify_locations(_pSSLContext, 0, Poco::Path::transcode(params.caLocation).c_str());
 			else
 				errCode = SSL_CTX_load_verify_locations(_pSSLContext, Poco::Path::transcode(params.caLocation).c_str(), 0);
@@ -342,7 +343,12 @@ void Context::init(const Params& params)
 				throw SSLContextException(std::string("Cannot load CA file/directory at ") + params.caLocation, msg);
 			}
 			_caPaths.caLocation = params.caLocation;
-			caLocationLoaded = true;
+
+			/// Whether this location is a usable trust store on its own, which decides below whether the
+			/// certificates embedded into the binary may still be added. A file that yields no certificate
+			/// already fails `SSL_CTX_load_verify_locations` above; a directory does not, so it has to be
+			/// checked separately.
+			caLocationLoaded = !isDirectory || poco_dir_contains_certs(params.caLocation);
 		}
 
 		if (params.loadDefaultCAs)
