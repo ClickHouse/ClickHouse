@@ -221,7 +221,9 @@ private:
     bool corrupted = false;
     /// Outcome of the one own-lock cleanup a failed `open` performs; see `tryRemoveOwnLockFile`.
     std::optional<bool> own_lock_cleanup_result;
-    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back.
+    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back. After a
+    /// failed lock write it is set only on a backend that creates the lock exclusively: elsewhere the
+    /// matching contents `removeLockFile` relies on may sit in a lock this attempt wrote over.
     bool created_own_lock_file = false;
     /// `createLockFile` has read the lock file back and found this attempt's own contents in it, so
     /// there is nothing for an immediate re-check to add.

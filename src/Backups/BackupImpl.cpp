@@ -976,10 +976,18 @@ void BackupImpl::createLockFile()
         /// The write may have committed the lock, and no check below is guaranteed to observe it: each
         /// issues its own request and can fail on its own. So the lock is this `open`'s to take back
         /// unless it continues an earlier attempt; `removeLockFile` re-reads it and has the final say.
+        ///
+        /// That final say rests on the lock contents, and they identify this attempt's write only on a
+        /// backend that creates the lock exclusively. Without conditional-create semantics the write ran
+        /// in rewrite mode, so a lock holding this attempt's contents may be one it wrote over the lock
+        /// of the backup that got to the destination first. Removing it on the way out would unfence
+        /// that backup while it is still writing, and a third attempt could then take the destination.
+        /// A lock whose ownership cannot be proven stays: the destination is left fenced, which is the
+        /// safe answer, and the same one `own_write_committed` gives below for continuing.
 #if CLICKHOUSE_CLOUD
         if (!params.resume || !params.resume->continuing_existing_progress)
 #endif
-            created_own_lock_file = true;
+            created_own_lock_file = writer->supportsAtomicCreateIfNotExists();
         try
         {
             lock_contents_match = writer->fileContentsEqual(lock_file_name, lock_file_contents, actual_file_contents);
@@ -995,7 +1003,8 @@ void BackupImpl::createLockFile()
         /// lock in rewrite mode, so a second backup can clobber the lock of the backup that got to the
         /// destination first and then read back its own contents here. Treating that as ownership would let
         /// the second attempt take a destination that is taken, and both would then write to it. On such
-        /// backends the destination stays reported as taken, which is the safe answer.
+        /// backends the destination stays reported as taken, which is the safe answer, and the lock stays
+        /// too (`created_own_lock_file` is false there): its removal would need the same proof.
         const bool own_write_committed = lock_contents_match && writer->supportsAtomicCreateIfNotExists();
 #if CLICKHOUSE_CLOUD
         /// A resumable attempt whose own contents are already there falls through, so a later failure lands
