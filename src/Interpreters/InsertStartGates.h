@@ -77,6 +77,8 @@ public:
     /// group instead: that query has already made (or is making) its pre-write decision for the table
     /// - e.g. an earlier flush or direct write of the same query - and the group write must observe
     /// that decision rather than re-enter the check and count the parts of that earlier write.
+    /// A participant may itself be the registry of a group write - `Buffer` tables can be chained -
+    /// in which case the queries behind it participate as well, see `collectRegistries`.
     explicit InsertStartGates(std::vector<std::shared_ptr<InsertStartGates>> participants_)
         : participants(std::move(participants_))
     {
@@ -103,10 +105,7 @@ public:
         /// All the registries involved are locked at once, in the order of their addresses. That order
         /// is global, so a registry taking part in several group writes cannot deadlock against them.
         std::vector<InsertStartGates *> registries;
-        registries.reserve(participants.size() + 1);
-        registries.push_back(this);
-        for (const auto & participant : participants)
-            registries.push_back(participant.get());
+        collectRegistries(registries);
 
         std::vector<InsertStartGates *> lock_order = registries;
         std::sort(lock_order.begin(), lock_order.end());
@@ -145,6 +144,27 @@ public:
     }
 
 private:
+    /// This registry and, transitively, the registries of every query it writes on behalf of.
+    ///
+    /// The participants of a group write are not necessarily the registries of the queries themselves:
+    /// a `Buffer` flush hands its group registry over to the write into the destination table, and when
+    /// that destination is another `Buffer` the block is buffered there together with that group
+    /// registry, which the second buffer then lists as a single participant of its own later flush. The
+    /// queries behind the wrapper have to observe the write into the final destination just as the
+    /// direct participants do, so the whole participant graph is walked here instead of its first level
+    /// only. The graph is acyclic - a group registry lists only registries that already existed when it
+    /// was constructed - and `participants` is fixed at construction, so no lock is needed to walk it.
+    void collectRegistries(std::vector<InsertStartGates *> & registries)
+    {
+        if (std::find(registries.begin(), registries.end(), this) != registries.end())
+            return;
+
+        registries.push_back(this);
+
+        for (const auto & participant : participants)
+            participant->collectRegistries(registries);
+    }
+
     std::mutex mutex;
     std::unordered_map<StorageIDMaybeEmpty, InsertStartGatePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>
         gates;
