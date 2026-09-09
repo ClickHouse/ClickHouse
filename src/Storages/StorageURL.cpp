@@ -307,14 +307,21 @@ static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-        : generator(uri_, 0, uri_.size(), ',', max_addresses, "url")
-        , max_addresses_upper_bound(max_addresses)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+        : max_addresses_upper_bound(max_addresses)
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
         , filter_context(context)
     {
+        /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
+        /// would break it. It still goes through this iterator, for the `_path` / `_file` filter.
+        if (split_uris)
+            generator.emplace(uri_, 0, uri_.size(), ',', max_addresses, "url");
+        else
+            single_uri = uri_;
+
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+        has_filter = filter_dag.has_value();
 
         std::lock_guard lock(mutex);
         fillBatch();
@@ -328,14 +335,31 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        while (batch_index == batch.size())
+        while (true)
         {
-            if (exhausted)
-                return {};
-            fillBatch();
-        }
+            while (batch_index == batch.size())
+            {
+                if (exhausted)
+                    return {};
+                fillBatch();
+            }
 
-        return batch[batch_index++];
+            String uri = batch[batch_index++];
+
+            /// The filter could not be applied when this address was generated, because its sets are only
+            /// created while the pipeline runs - see `fillBatch`. Apply it as the address is handed out.
+            if (filter_deferred)
+            {
+                std::vector<String> filtered_uris({uri});
+                const std::vector<String> paths({Poco::URI(uri).getPath()});
+                VirtualColumnUtils::filterByPathOrFile(
+                    filtered_uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+                if (filtered_uris.empty())
+                    continue;
+            }
+
+            return uri;
+        }
     }
 
     /// The exact number of addresses when the pattern fitted into the first batch, an upper bound
@@ -346,10 +370,7 @@ public:
         if (exact_size)
             return *exact_size;
 
-        /// Not exhausted, so at least one more address exists beyond the batch; the query can never
-        /// consume more than the limit anyway.
-        const auto total = generator.totalCount();
-        return total ? std::min<UInt64>(*total, max_addresses_upper_bound) : max_addresses_upper_bound;
+        return upperBound();
     }
 
     /// How many streams are worth starting when the caller wants up to `requested` of them. Every
@@ -366,11 +387,8 @@ public:
         if (exact_size)
             return *exact_size;
 
-        if (!filter_dag)
-        {
-            const auto total = generator.totalCount();
-            return total ? std::min<UInt64>(*total, max_addresses_upper_bound) : max_addresses_upper_bound;
-        }
+        if (!has_filter)
+            return upperBound();
 
         while (batch.size() - batch_index < requested && !exhausted && generated < max_addresses_upper_bound)
             fillBatch();
@@ -381,6 +399,15 @@ public:
     }
 
 private:
+    /// Not exhausted, so at least one more address exists beyond the batch; the query can never
+    /// consume more than the limit anyway.
+    size_t upperBound() const TSA_REQUIRES(mutex)
+    {
+        /// A non-exhausted iterator always has a generator: a single URI is exhausted at once.
+        const auto total = generator->totalCount();
+        return total ? std::min<UInt64>(*total, max_addresses_upper_bound) : max_addresses_upper_bound;
+    }
+
     /// Generates the next portion of addresses, applies the `_path` / `_file` filter to it and
     /// appends the survivors to `batch`, keeping the buffered unconsumed ones. Appends nothing only
     /// when the pattern is exhausted or the whole portion was filtered out.
@@ -389,43 +416,61 @@ private:
         batch.erase(batch.begin(), batch.begin() + batch_index);
         batch_index = 0;
 
-        /// Never generate more addresses than the limit allows. Asking for one past it is what makes
-        /// the generator report that the pattern is too large - and only a query that reads that far
-        /// ever asks.
-        size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses_upper_bound - std::min(max_addresses_upper_bound, generated));
-        if (target == 0)
-            target = 1;
-
         Strings fresh;
-        fresh.reserve(target);
-        String uri;
-        while (fresh.size() < target)
-        {
-            if (!generator.next(uri))
-                break;
-            ++generated;
-            fresh.push_back(std::move(uri));
-        }
-        exhausted = generator.isExhausted();
 
-        if (filter_dag && !fresh.empty())
+        if (!generator)
+        {
+            if (!exhausted)
+            {
+                fresh.push_back(single_uri);
+                ++generated;
+            }
+            exhausted = true;
+        }
+        else
+        {
+            /// Never generate more addresses than the limit allows. Asking for one past it is what makes
+            /// the generator report that the pattern is too large - and only a query that reads that far
+            /// ever asks.
+            size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses_upper_bound - std::min(max_addresses_upper_bound, generated));
+            if (target == 0)
+                target = 1;
+
+            fresh.reserve(target);
+            String uri;
+            while (fresh.size() < target)
+            {
+                if (!generator->next(uri))
+                    break;
+                ++generated;
+                fresh.push_back(std::move(uri));
+            }
+            exhausted = generator->isExhausted();
+        }
+
+        if (has_filter && !fresh.empty())
         {
             /// The sets of the filter are built on first use: an empty glob must not run the subqueries
             /// of a `_path IN (...)` predicate, which it did not do when the addresses were materialized
-            /// up front and the filter was skipped for an empty list.
+            /// up front and the filter was skipped for an empty list. A set can stay unbuilt, because it
+            /// is only created while the pipeline runs; then the filter is applied to every address as
+            /// `next` hands it out, rather than to the batch.
             if (!filter_actions)
             {
-                VirtualColumnUtils::buildSetsForDAG(*filter_dag, filter_context);
+                filter_deferred = !VirtualColumnUtils::buildSetsForDAG(*filter_dag, filter_context);
                 filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             }
 
-            std::vector<String> paths;
-            paths.reserve(fresh.size());
-            for (const auto & fresh_uri : fresh)
-                paths.push_back(Poco::URI(fresh_uri).getPath());
+            if (!filter_deferred)
+            {
+                std::vector<String> paths;
+                paths.reserve(fresh.size());
+                for (const auto & fresh_uri : fresh)
+                    paths.push_back(Poco::URI(fresh_uri).getPath());
 
-            VirtualColumnUtils::filterByPathOrFile(
-                fresh, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+                VirtualColumnUtils::filterByPathOrFile(
+                    fresh, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+            }
         }
 
         batch.insert(batch.end(), std::make_move_iterator(fresh.begin()), std::make_move_iterator(fresh.end()));
@@ -433,11 +478,14 @@ private:
 
     std::mutex mutex;
 
-    RemoteDescriptionGenerator generator TSA_GUARDED_BY(mutex);
+    std::optional<RemoteDescriptionGenerator> generator TSA_GUARDED_BY(mutex);
+    String single_uri;
     const size_t max_addresses_upper_bound;
 
+    bool has_filter = false;
     std::optional<ActionsDAG> filter_dag TSA_GUARDED_BY(mutex);
     ExpressionActionsPtr filter_actions TSA_GUARDED_BY(mutex);
+    bool filter_deferred TSA_GUARDED_BY(mutex) = false;
     const NamesAndTypesList filter_virtual_columns;
     const NamesAndTypesList filter_hive_columns;
     const ContextPtr filter_context;
@@ -449,8 +497,8 @@ private:
     std::optional<size_t> exact_size;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -1517,10 +1565,12 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
                 return getFailoverOptions(task->path, max_addresses);
             });
     }
-    else if (is_url_with_globs)
+    else
     {
-        /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
+        /// Iterate through disclosed URLs and make a source for each file. Even a URL
+        /// without globs must go through this iterator: it applies a deferred `_path`
+        /// / `_file` filter before the source opens the URL.
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1539,20 +1589,9 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
 
         num_streams = std::min(num_streams, glob_iterator->sizeForStreams(num_streams));
     }
-    else
-    {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([max_addresses, done = false, &uri = storage->uri]() mutable
-        {
-            if (done)
-                return StorageURLSource::FailoverOptions{};
-            done = true;
-            return getFailoverOptions(uri, max_addresses);
-        });
-        num_streams = 1;
-    }
 }
 
-void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
     const auto & settings = context->getSettingsRef();
@@ -1600,8 +1639,10 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = settings[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
-        pipe.resize(max_num_streams);
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
