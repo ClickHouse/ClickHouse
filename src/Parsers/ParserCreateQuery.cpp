@@ -2757,8 +2757,8 @@ ENGINE = <Engine>
 ...
 ```
 
-The `Default` codec can be specified to reference default compression which may depend on different settings (and properties of data) in runtime.
-Example: `value UInt64 CODEC(Default)` — the same as lack of codec specification.
+The `Default` codec can be specified to reference default compression which may depend on different settings (and properties of data) at runtime.
+For a top-level column, `value UInt64 CODEC(Default)` has the same effective behavior as omitting the codec specification. On a Tuple element, an explicit `CODEC(Default)` also prevents that element from inheriting an enclosing codec.
 See also [Adaptive Codec Selection](#adaptive-codec-selection).
 
 Also you can remove current CODEC from the column and use default compression from config.xml:
@@ -2795,7 +2795,7 @@ The codec after the closing parenthesis belongs to the whole `payload` column. A
 
 An explicit `CODEC(Default)` on an element selects the part's default codec instead of inheriting the column codec.
 
-Element codecs are also supported for nested `Tuple` types and for a `Tuple` reached through `Array`, `Nullable`, or `SimpleAggregateFunction`. These wrappers do not add a name to the codec path. For example:
+Element codecs are also supported for nested `Tuple` types and for a `Tuple` reached through `Array`, `Nullable`, or `SimpleAggregateFunction`. These wrappers are transparent when ClickHouse matches a stream to its Tuple element: adding a supported wrapper does not create another codec declaration level. For example:
 
 ```sql
 CREATE TABLE tuple_array_codec_example
@@ -2809,7 +2809,13 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-For `Nullable(Tuple(...))`, the null map uses the column codec or part default, while streams below the Tuple elements use their element codecs. The same behavior applies when a column-level `NULL` modifier or `data_type_default_nullable` adds the outer Nullable wrapper. The usual `enable_nullable_tuple_type` requirement still applies.
+For `Nullable(Tuple(...))`, the outer null-mask stream is governed by the codec declared for the whole column, or by the part default when the column has no codec. Because the null mask is a structural stream, only generic codec stages apply to it. Streams below the Tuple elements use their element codecs. The same behavior applies when a column-level `NULL` modifier or `data_type_default_nullable` adds the outer Nullable wrapper.
+
+`Nullable` is transparent at any supported level. For example, with `Tuple(sample Nullable(UInt64) CODEC(Delta, ZSTD))`, the value stream uses `Delta, ZSTD`, while the null-mask stream uses only the generic `ZSTD` stage because type-specific codecs do not apply to structural streams. With `Tuple(record Nullable(Tuple(...)) CODEC(ZSTD))`, the null mask for `record` uses `ZSTD`, and declarations on elements inside the wrapped Tuple can override it for their own value streams.
+
+The usual `enable_nullable_tuple_type` requirement still applies whenever the resulting logical type contains `Nullable(Tuple(...))`. Tuple element codecs do not change Nullable's type rules or NULL behavior.
+
+When an otherwise valid typed `MODIFY COLUMN` adds or removes a supported `Nullable` wrapper, the wrapper does not rename the stored element declarations. Omitted element codec clauses therefore continue to preserve those declarations.
 
 To add or change an element codec, use `MODIFY COLUMN` and restate the type of the owning top-level column:
 
