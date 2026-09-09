@@ -1,0 +1,173 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/telflo
+title: 'Отправка данных OpenTelemetry в ClickStack с помощью Telflo'
+sidebarTitle: 'Telflo'
+description: 'Создавайте и разворачивайте конфигурации OpenTelemetry Collector, которые отправляют телеметрию в ClickStack или записывают её напрямую в ClickHouse, а Telflo управляет парком коллекторов'
+doc_type: 'guide'
+keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **Кратко**
+
+  В этом руководстве показано, как отправлять телеметрию в ClickStack из коллекторов OpenTelemetry, управляемых Telflo. Вы узнаете, как:
+
+  * Создать конфигурацию коллектора в визуальном редакторе Telflo или через CLI
+  * Отправлять телеметрию в ClickStack с открытым исходным кодом или в Управляемый ClickStack, либо записывать её напрямую в ClickHouse
+  * Удалённо развёртывать конфигурации на парк коллекторов
+  * Убедиться, что телеметрия попадает в ClickStack или в ваши таблицы ClickHouse
+
+  Требуемое время: 15–20 минут
+</Info>
+
+{/* vale off */}
+
+## Что такое Telflo? {#what-is-telflo}
+
+{/* vale on */}
+
+Telflo — это независимый от поставщика control plane для OpenTelemetry Collector, обеспечивающий централизованное управление конфигурацией коллекторов в масштабах всего парка. Визуальный редактор, тесты конвейеров и удалённое развёртывание конфигураций делают крупные парки управляемыми. Telflo работает со стандартными upstream-сборками OpenTelemetry Collector: нет ни отдельной сборки Telflo, ни проприетарного агента, поэтому коллекторы, которые уже запущены у ваших команд, остаются на той же сборке.
+
+Telflo доступен не только в браузере, но и через [интерфейс командной строки](https://docs.telflo.com/docs/cli/). Объедините его с [MCP-сервером ClickStack](/ru/clickstack/mcp) — и тот же агент, который выполняет запросы к вашей телеметрии, сможет исправить конвейер, который её сформировал.
+
+{/* vale off */}
+
+## Почему Telflo + ClickStack? {#why-telflo-clickstack}
+
+{/* vale on */}
+
+ClickStack обеспечивает ингестию, хранение и аналитические запросы на больших объёмах данных. Telflo централизованно управляет парком OpenTelemetry Collector, которые его наполняют, — на хостах, в кластерах и регионах.
+
+Telflo предоставляет:
+
+* Централизованное управление OpenTelemetry Collector на хостах, в контейнерах и в Kubernetes
+* Визуальное редактирование конвейеров с контролируемым развёртыванием на весь парк или на отдельную группу
+* Проверку изменений на образцах телеметрии до того, как они попадут на продакшн-коллекторы
+* Маршрутизацию одной и той же телеметрии одновременно в ClickStack и другие пункты назначения
+* Обзор парка: какие коллекторы онлайн, что запущено на каждом из них и где конфигурация разошлась с эталонной
+
+<Tip>
+  **Ключевые выводы**
+
+  * **ClickStack принимает, хранит и обрабатывает запросы в большом масштабе**
+  * **Telflo управляет парком коллекторов, которые его наполняют**
+</Tip>
+
+## Предварительные требования {#prerequisites}
+
+* Пункт назначения: [ClickStack с открытым исходным кодом](/ru/clickstack/getting-started/oss), [Управляемый ClickStack](/ru/clickstack/getting-started/managed) или самоуправляемый экземпляр ClickHouse
+* Аккаунт Telflo ([создайте аккаунт на telflo.com](https://telflo.com))
+* Среда для запуска коллекторов: ВМ или кластер Kubernetes
+* **ClickStack с открытым исходным кодом**: конечная точка OTLP вашего ClickStack (`4318` для HTTP, `4317` для gRPC) и ключ API для приёма данных, который можно найти в HyperDX в разделе **Team Settings → API Keys** ([документация для справки](/ru/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* **Управляемый ClickStack**: конечная точка вашего сервиса ClickHouse Cloud (порт `8443`) и пользователь для ингестии (см. [Создание пользователя для ингестии](/ru/clickstack/ingesting-data/collector#creating-an-ingestion-user))
+* **Self-managed ClickHouse**: конечная точка вашего ClickHouse, база данных для [таблиц ClickStack](/ru/clickstack/ingesting-data/schemas) и пользователь с правами на их создание и запись в них (см. [Создание пользователя для ингестии](/ru/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss))
+* Сетевая доступность вашей конечной точки ClickStack или ClickHouse с хостов коллекторов
+
+{/* vale off */}
+
+## Интеграция ClickStack с Telflo {#integrate-telflo-clickstack}
+
+{/* vale on */}
+
+<Steps>
+  <Step title="Создайте конфигурацию коллектора" id="build-configuration">
+    1. Войдите в Telflo. В списке **Configurations** нажмите **New Configuration**, затем **Blank configuration**.
+    2. В поле **Name Your Configuration** введите имя и нажмите **Create**.
+    3. Добавьте приёмники: для каждого типа собираемой телеметрии перетащите на холст соответствующий элемент из палитры.
+    4. Добавьте процессоры: **Memory Limiter** и **Batch**, а также любые другие, необходимые для приведения данных к нужному виду перед отправкой из коллектора. См. [полный список процессоров, поддерживаемых Telflo](https://docs.telflo.com/docs/build/components#processors).
+  </Step>
+
+  <Step title="Добавьте экспортёр" id="add-exporter">
+    Все три варианта используют один и тот же редактор, один и тот же шаг публикации и один и тот же парк агентов; различается только exporter. Выберите вкладку, соответствующую вашему развертыванию: ClickStack с открытым исходным кодом принимает OTLP с ключом ингестии; Управляемый ClickStack и самоуправляемый ClickHouse принимают прямую запись в таблицы ClickStack.
+
+    <Tabs>
+      <Tab title="Open Source ClickStack">
+        1. Перетащите экспортёр **OTLP/HTTP** на холст.
+        2. Укажите в поле **Endpoint** конечную точку OTLP HTTP вашего ClickStack, например `http://clickstack.example.com:4318`.
+        3. В разделе **HTTP Headers** нажмите **Add header**, затем введите `authorization` в поле **Header name** и `${env:CLICKSTACK_INGESTION_KEY}` в поле **Header value**. Telflo запрашивает это значение при установке коллекторов, поэтому ключ никогда не сохраняется в конфигурации.
+
+        Для gRPC используйте экспортёр **OTLP** на порту `4317` с тем же заголовком в разделе **gRPC Metadata Headers**.
+      </Tab>
+
+      <Tab title="Managed ClickStack">
+        Управляемый ClickStack не поставляется с коллектором-шлюзом, поэтому размещённой конечной точки OTLP для отправки телеметрии нет. Именно настраиваемый здесь коллектор и становится таким [шлюзом](/ru/clickstack/ingesting-data/collector#collector-roles): добавьте ему приёмник **OTLP** вместе с экспортёром ClickHouse, и он будет записывать данные в ваш сервис ClickHouse Cloud. Ваши SDK и коллекторы-агенты после этого отправляют в него OTLP на порт `4318` (HTTP) или `4317` (gRPC).
+
+        1. Перетащите экспортёр **ClickHouse** на холст.
+        2. Заполните поле **Endpoint** конечной точкой вашего сервиса ClickHouse Cloud (порт `8443`), укажите в **Database** значение `default`, а в **Username** — пользователя для ингестии.
+        3. Укажите в поле **Password** значение `${env:CLICKHOUSE_PASSWORD}`. Telflo запрашивает это значение при установке коллекторов, поэтому учётные данные никогда не сохраняются в конфигурации.
+        4. В разделе **Schema &amp; Tables**: если [таблицы ClickStack](/ru/clickstack/ingesting-data/schemas) ещё не созданы, оставьте параметр **Create Schema on Startup** включённым — экспортёр создаст их. Отключите его, как только таблицы появятся.
+
+        Оставьте **Batch** перед экспортёром: ClickHouse работает эффективнее всего при вставках батчами. Если у вас уже есть [коллектор ClickStack](/ru/clickstack/ingesting-data/collector#configuring-the-collector) в роли шлюза OTLP, вы можете вместо этого выполнить шаги для Open Source ClickStack, указав в качестве значения заголовка [`OTLP_AUTH_TOKEN`](/ru/clickstack/ingesting-data/collector#securing-the-collector), заданный на этом коллекторе.
+      </Tab>
+
+      <Tab title="Self-managed ClickHouse">
+        Настраиваемый здесь коллектор выступает вашим [шлюзом](/ru/clickstack/ingesting-data/collector#collector-roles): добавьте ему приёмник **OTLP** вместе с экспортёром ClickHouse. Ваши SDK и коллекторы-агенты отправляют в него OTLP, а он записывает данные в ClickHouse.
+
+        1. Перетащите экспортёр **ClickHouse** на холст.
+        2. Заполните поля **Endpoint** (например, `https://clickhouse.example.com:8443`), **Database** и **Username**, указав в **Database** ту базу данных, в которой находятся таблицы ClickStack.
+        3. Укажите в поле **Password** значение `${env:CLICKHOUSE_PASSWORD}`. Telflo запрашивает это значение при установке коллекторов, поэтому учётные данные никогда не сохраняются в конфигурации.
+        4. В разделе **Schema &amp; Tables**: если таблицы ClickStack ещё не созданы, оставьте параметр **Create Schema on Startup** включённым — экспортёр создаст их. Отключите его, как только таблицы появятся.
+
+        Оставьте **Batch** перед экспортёром: ClickHouse работает эффективнее всего при вставках батчами. Если у вас уже есть [коллектор ClickStack](/ru/clickstack/ingesting-data/collector#configuring-the-collector) в роли шлюза OTLP, вы можете вместо этого выполнить шаги для Open Source ClickStack, указав в качестве значения заголовка [`OTLP_AUTH_TOKEN`](/ru/clickstack/ingesting-data/collector#securing-the-collector), заданный на этом коллекторе.
+      </Tab>
+    </Tabs>
+
+    Проведите связи от приёмников через процессоры к экспортёру — по одному конвейеру на каждый тип сигнала. В строке состояния отображается **config valid** либо количество ошибок, которые нужно исправить, а на вкладке **YAML** — сгенерированная конфигурация.
+
+    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="Конвейер коллектора в редакторе Telflo с настроенным экспортёром ClickHouse" size="lg" />
+
+    Перед развёртыванием вы можете пропустить через конфигурацию тестовую телеметрию и посмотреть, что получится на выходе. См. [тестирование в Telflo](https://docs.telflo.com/docs/testing/overview). Кроме того, вы можете описать, чего хотите добиться, и ИИ-ассистент Telflo, который открывается кнопкой **AI** на панели инструментов, сам построит, проверит и протестирует конфигурацию. Ваш собственный агент может сделать то же самое через [Telflo CLI](https://docs.telflo.com/docs/cli/).
+  </Step>
+
+  <Step title="Опубликовать версию" id="publish-version">
+    Нажмите **Publish** на панели инструментов. Опубликованные версии доступны только для чтения; чтобы продолжить доработку, нажмите **Create New Version**.
+  </Step>
+
+  <Step title="Создайте группу агентов и разверните её" id="deploy-collectors">
+    1. Перейдите в раздел **Fleet**, нажмите **New Fleet** и выберите, где будут работать ваши collectors — на ВМ или в Kubernetes. Укажите **Name** и нажмите **Create fleet**.
+    2. На вкладке **Deploy Groups** этого парка нажмите **Assign** для группы **Default** и выберите опубликованную configuration и её version.
+    3. Нажмите **Install** для группы и укажите значение для каждой переменной окружения, на которую ссылается ваша configuration; Telflo добавит их в команду установки. Выполните эту команду там, где должны работать collectors, [следуя инструкциям по установке Telflo](https://docs.telflo.com/docs/fleet-management/install-collectors). Команда содержит install token парка вместе с вашим значением, поэтому обращайтесь с ней как с конфиденциальными данными.
+    4. На вкладке **Collectors** collectors сообщают о состоянии **Pending pickup**, затем **Applying** и, наконец, **In sync**.
+
+    Чтобы выполнить rollout изменения, опубликуйте новую version и назначьте её группе; чтобы откатиться, назначьте ранее развёрнутую version.
+
+    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="Парк Telflo, в котором после rollout все collectors синхронизированы" size="lg" />
+  </Step>
+
+  <Step title="Проверьте телеметрию" id="verify-telemetry">
+    Откройте HyperDX и найдите один из своих сервисов в представлении **Search**; для метрик используйте **Chart Explorer**. В случае Managed ClickStack откройте свой сервис в консоли ClickHouse Cloud и нажмите **Launch ClickStack**. В случае самоуправляемого ClickHouse обращайтесь к [таблицам ClickStack](/ru/clickstack/ingesting-data/schemas) напрямую, например: `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`.
+  </Step>
+</Steps>
+
+## Расширенная конфигурация {#advanced-configuration}
+
+### Fan-out маршрутизация {#fan-out-routing}
+
+Одни и те же данные телеметрии могут одновременно отправляться в ClickStack для долговременного хранения, на другую платформу во время миграции и в SIEM для анализа безопасности. Добавьте экспортёры на холст и подключите их к конвейерам, которые должны передавать в них данные, либо начните с готового конвейера из [библиотеки потоков Telflo](https://telflo.com/flows).
+
+### Сжатие и производительность {#compression-and-performance}
+
+* **Экспортеры OTLP/HTTP и OTLP**: оставьте для **Compression** значение gzip.
+* **ClickHouse exporter**: оставьте **Async Insert** включённым, для **Compression** — значение lz4, и добавьте перед ним в конвейере процессор **Batch**. См. [Оптимизация вставок](/ru/clickstack/ingesting-data/collector#optimizing-inserts).
+
+## Дальнейшие шаги {#next-steps}
+
+* **Создайте панели мониторинга**: создавайте визуализации в HyperDX для журналов, метрик и трейсов
+* **Настройте алерты**: настройте в ClickStack алерты для критических условий
+* **Доработайте с помощью AI assistant**: попросите его скорректировать конвейер или предложить тесты
+* **Переходите от другого поставщика**: [flows](https://telflo.com/flows) берут на себя cutover — заменяют агентов, уже развёрнутых на вашем парке машин, и параллельно отправляют данные в оба backend-соединения, пока вы их сравниваете
+
+## Дополнительные материалы {#read-more}
+
+* [Документация Telflo](https://docs.telflo.com/docs)
+* [Быстрый старт: от пустого холста до развёрнутого коллектора](https://docs.telflo.com/docs/getting-started/quickstart)
+* [Тестирование конфигураций коллектора](https://docs.telflo.com/docs/testing/overview)
+* [Управление парком коллекторов в Telflo](https://docs.telflo.com/docs/fleet-management/overview)
+* [Установка коллекторов](https://docs.telflo.com/docs/fleet-management/install-collectors)
+* [Приём данных с помощью OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry)
+* [Схемы таблиц ClickStack](/ru/clickstack/ingesting-data/schemas)
