@@ -186,10 +186,8 @@ std::optional<PreformattedMessage> getReasonStepCannotBeDistributed(const IQuery
 /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
 std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFromMergeTree * read)
 {
-    /// The old interpreter sets the read order before the plan is optimized (query_plan_read_in_order = 0)
-    /// and builds the FinishSorting above it; see the FinishSorting check in
-    /// getReasonNodeCannotBeDistributed for why such a plan cannot be distributed. A read this
-    /// optimizer asks for in order is requested later and has no order set here yet.
+    /// Only the old interpreter (query_plan_read_in_order = 0) sets the read order this early; it is
+    /// the read half of the FinishSorting rejected in getReasonNodeCannotBeDistributed.
     if (read->getQueryInfo().input_order_info)
         return std::make_optional(PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read"));
 
@@ -323,11 +321,10 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
         if (auto reason = getReasonReadCannotBeDistributed(read); reason.has_value())
             return reason;
 
-    /// The old interpreter plans read-in-order before the query plan is optimized (with
-    /// query_plan_read_in_order = 0), building a FinishSorting this pass never revisits:
-    /// optimizeReadInOrder only converts a Type::Full sorting, so the exchange-safety check in
-    /// findReadingStep cannot see it, and the scatter placed under it may survive and feed it rows
-    /// that are no longer sorted. Reject such a plan instead of returning rows in the wrong order.
+    /// A FinishSorting expects rows already sorted by the read below it. This optimizer creates one
+    /// only from a Full sorting, and only when no exchange separates the read from the sort. The old
+    /// interpreter (query_plan_read_in_order = 0) puts one in the plan up front, unchecked, so a
+    /// scatter inserted below it would break the order it relies on.
     if (const auto * sorting = typeid_cast<const SortingStep *>(&step);
         sorting && (sorting->getType() == SortingStep::Type::FinishSorting || sorting->getType() == SortingStep::Type::PartitionedFinishSorting))
         return PreformattedMessage::create("make_distributed_plan does not support a read-in-order distributed read");
