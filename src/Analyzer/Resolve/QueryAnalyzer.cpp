@@ -210,6 +210,12 @@ bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope
 {
     IdentifierLookup lookup{Identifier{name}, IdentifierLookupContext::EXPRESSION};
 
+    /// An alias whose expression is being resolved right now is not a usable binding:
+    /// `tryResolveIdentifierFromAliases` rejects it to break the alias cycle, so it must not
+    /// count as evidence that the lambda argument shadows something outer either.
+    if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(name) != nullptr)
+        allow_to_check_aliases = false;
+
     return (allow_to_check_aliases && IdentifierResolver::tryBindIdentifierToAliases(lookup, scope))
         || IdentifierResolver::tryBindIdentifierToTableExpressions(lookup, {} /*table_expression_node_to_ignore*/, scope)
         || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(lookup, scope)
