@@ -467,7 +467,7 @@ QueryPlanAndSets QueryPlan::deserializeFramedBody(
             {
                 LimitReadBuffer payload(in, {.read_no_more = payload_size});
                 SCOPE_EXIT({
-                    try { payload.ignoreAll(); } catch (...) {} // NOLINT(bugprone-empty-catch)
+                    try { payload.ignoreAll(); } catch (...) {} // Ok: best-effort step over the frame; a stream ending here is taken by the drain below // NOLINT(bugprone-empty-catch)
                     ++frames_consumed;
                 });
 
@@ -529,7 +529,7 @@ QueryPlanAndSets QueryPlan::deserializeFramedBody(
         {
             skipSizedFrames(in, frames_total - frames_consumed);
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...) // Ok: the drain is best-effort; the original error re-thrown below is what matters // NOLINT(bugprone-empty-catch)
         {
         }
         throw;
@@ -643,7 +643,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             {
                 drainOutlineBody(in, max_plan_bytes);
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...) // Ok: the drain is best-effort; the refusal thrown below is the reported error // NOLINT(bugprone-empty-catch)
             {
             }
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,

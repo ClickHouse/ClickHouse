@@ -330,7 +330,7 @@ QueryPlanAndSets deserializeFramedSets(
         /// boundary for the drain the caller runs.
         LimitReadBuffer body(in, {.read_no_more = payload_size});
         SCOPE_EXIT({
-            try { body.ignoreAll(); } catch (...) {} // NOLINT(bugprone-empty-catch)
+            try { body.ignoreAll(); } catch (...) {} // Ok: best-effort step over the frame; a stream ending here is taken by the caller's drain // NOLINT(bugprone-empty-catch)
             ++frames_consumed;
         });
 
