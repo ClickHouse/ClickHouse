@@ -176,9 +176,9 @@ dataset_laion_5b_mini_for_quick_test = {
     DIMENSION: 768,
 }
 
-# Same 1 million LAION vectors, searched over the `rabitq` quantized codes instead of a vector similarity index
-dataset_laion_5b_1m_quantized_rabitq = {
-    TABLE: "laion_1m_rabitq",
+# 10 million LAION vectors, searched over the `rabitq` quantized codes instead of a vector similarity index
+dataset_laion_5b_10m_quantized_rabitq = {
+    TABLE: "laion_10m_rabitq",
     S3_URLS: [
         "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
     ],
@@ -194,8 +194,8 @@ dataset_laion_5b_1m_quantized_rabitq = {
 }
 
 # Same, with the 2 bits per coordinate `turboquant` codes instead of the 1 bit `rabitq` ones
-dataset_laion_5b_1m_quantized_turboquant = {
-    TABLE: "laion_1m_turboquant",
+dataset_laion_5b_10m_quantized_turboquant = {
+    TABLE: "laion_10m_turboquant",
     S3_URLS: [
         "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
     ],
@@ -210,9 +210,9 @@ dataset_laion_5b_1m_quantized_turboquant = {
     DIMENSION: 768,
 }
 
-# Same 1 million LAION vectors, searched over a `QBit(Int8)` companion column at a query-time precision
-dataset_laion_5b_1m_qbit_int8 = {
-    TABLE: "laion_1m_qbit",
+# 10 million LAION vectors, searched over a `QBit(Int8)` companion column at a query-time precision
+dataset_laion_5b_10m_qbit_int8 = {
+    TABLE: "laion_10m_qbit",
     S3_URLS: [
         "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
     ],
@@ -291,8 +291,8 @@ test_params_laion_5b_1m = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
-test_params_laion_5b_1m_quantized_rabitq = {
-    LIMIT_N: 1000000,
+test_params_laion_5b_10m_quantized_rabitq = {
+    LIMIT_N: 10000000,  # enough granules to avoid a full rescore re-read
     TRUTH_SET_FILES: None,
     QUANTIZATION: None,
     HNSW_M: None,
@@ -303,7 +303,7 @@ test_params_laion_5b_1m_quantized_rabitq = {
     GENERATE_TRUTH_SET: True,
     TRUTH_SET_COUNT: 100,
     RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_1m_100_rabitq",
+    NEW_TRUTH_SET_FILE: "laion_10m_100_rabitq",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: False,
@@ -315,8 +315,8 @@ test_params_laion_5b_1m_quantized_rabitq = {
     FETCH_MULTIPLIERS: [1, 5, 10],
 }
 
-test_params_laion_5b_1m_quantized_turboquant = {
-    LIMIT_N: 1000000,
+test_params_laion_5b_10m_quantized_turboquant = {
+    LIMIT_N: 10000000,  # see rabitq params
     TRUTH_SET_FILES: None,
     QUANTIZATION: None,
     HNSW_M: None,
@@ -327,7 +327,7 @@ test_params_laion_5b_1m_quantized_turboquant = {
     GENERATE_TRUTH_SET: True,
     TRUTH_SET_COUNT: 100,
     RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_1m_100_turboquant",
+    NEW_TRUTH_SET_FILE: "laion_10m_100_turboquant",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: False,
@@ -337,8 +337,8 @@ test_params_laion_5b_1m_quantized_turboquant = {
     FETCH_MULTIPLIERS: [1, 5, 10],
 }
 
-test_params_laion_5b_1m_qbit_int8 = {
-    LIMIT_N: 1000000,
+test_params_laion_5b_10m_qbit_int8 = {
+    LIMIT_N: 10000000,  # match the codec runs
     TRUTH_SET_FILES: None,
     QUANTIZATION: None,
     HNSW_M: None,
@@ -349,7 +349,7 @@ test_params_laion_5b_1m_qbit_int8 = {
     GENERATE_TRUTH_SET: True,
     TRUTH_SET_COUNT: 100,
     RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_1m_100_qbit",
+    NEW_TRUTH_SET_FILE: "laion_10m_100_qbit",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: False,
@@ -1047,18 +1047,18 @@ TESTS_TO_RUN = [
     # ),
     (
         "Test using the laion dataset with the rabitq quantized codec",
-        dataset_laion_5b_1m_quantized_rabitq,
-        test_params_laion_5b_1m_quantized_rabitq,
+        dataset_laion_5b_10m_quantized_rabitq,
+        test_params_laion_5b_10m_quantized_rabitq,
     ),
     (
         "Test using the laion dataset with the turboquant quantized codec",
-        dataset_laion_5b_1m_quantized_turboquant,
-        test_params_laion_5b_1m_quantized_turboquant,
+        dataset_laion_5b_10m_quantized_turboquant,
+        test_params_laion_5b_10m_quantized_turboquant,
     ),
     (
         "Test using the laion dataset with a QBit(Int8) column",
-        dataset_laion_5b_1m_qbit_int8,
-        test_params_laion_5b_1m_qbit_int8,
+        dataset_laion_5b_10m_qbit_int8,
+        test_params_laion_5b_10m_qbit_int8,
     ),
     # (
     #     "Test using the hackernews dataset",
