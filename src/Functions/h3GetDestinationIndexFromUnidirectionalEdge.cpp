@@ -108,16 +108,16 @@ Returns the destination hexagon index from the unidirectional edge [H3](#h3-inde
         {"edge", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the destination hexagon index from the unidirectional edge. Throws `INCORRECT_DATA` if the input is not a valid directed edge unless `functions_h3_default_if_invalid = 1`, in which case it returns `0`.",
+        "Returns the destination hexagon index from the unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
         {"UInt64"}
     };
     FunctionDocumentation::Examples examples = {
         {
             "Get destination index from a unidirectional edge",
-            "SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination",
+            "SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination",
             R"(
 ┌────────destination─┐
-│ 599686043507097599 │
+│ 599686043507097597 │
 └────────────────────┘
             )"
         }

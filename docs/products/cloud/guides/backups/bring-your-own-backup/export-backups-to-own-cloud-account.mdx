@@ -7,8 +7,7 @@ doc_type: 'guide'
 ---
 
 ClickHouse Cloud supports taking backups to your own cloud service provider (CSP) account (AWS S3, Google Cloud Storage, or Azure Blob Storage).
-For details of how ClickHouse Cloud backups work, including "full" vs. "incremental" backups, see the [backups](/products/cloud/guides/backups/review-and-restore-backups) docs. Note that
-backups to your own cloud account behave differently from in-place Cloud backups in one important way: they cannot use native copy (see the note below).
+For details of how ClickHouse Cloud backups work, including "full" vs. "incremental" backups, see the [backups](/products/cloud/guides/backups/review-and-restore-backups) docs.
 
 In this guide, we show examples of how to take full and incremental backups to AWS, GCP, Azure object storage as well as how to restore from the backups.
 
@@ -18,18 +17,7 @@ Any usage where backups are being exported to a different region in the same clo
 Cross-Cloud backups are only supported via the backup/restore commands outlined on this page, and not via the UI.
 </Note>
 
-<Warning>
-**Performance impact vs. in-place backups**  
-Backups to your own bucket cannot use native (server-side) copy. Native copy requires the source and destination to share the same credentials, which is not
-the case here: the source is a ClickHouse-managed bucket and the destination is your own bucket, authenticated with separate credentials.
-
-Because native copy is unavailable, data is downloaded from the source and re-uploaded to your bucket ("copy-through-buffers"). As a result, exporting
-backups to your own bucket is slower and consumes more  resources than standard in-place Cloud backups.
-</Warning>
-
 ## Requirements {#requirements}
-
-Before you run a `BACKUP` command, make sure your ClickHouse user has the `BACKUP` privilege. The `default_role` in ClickHouse Cloud doesn't include this privilege. Contact [ClickHouse Support](https://clickhouse.com/support/program) to request it before exporting backups.
 
 You will need the following details to export/restore backups to your own CSP storage bucket.
 

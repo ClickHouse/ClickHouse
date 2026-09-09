@@ -80,8 +80,6 @@ struct ZooKeeperRequest : virtual Request
 
     /// Writes length, xid, op_num, then the rest.
     void write(WriteBuffer & out, bool use_xid_64, bool supports_tracing = false) const;
-    // Serialized size of the framed request (xid + op_num + body), matching `write`.
-    size_t requestSize(bool use_xid_64) const;
     std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;
@@ -785,7 +783,6 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    void addRootPath(const String & root_path) override;
 
     using RequestValidator = std::function<void(const ZooKeeperRequest &)>;
     void readImpl(ReadBuffer & in, RequestValidator request_validator);
@@ -808,9 +805,6 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
 private:
     static std::optional<OperationType> getOperationType(OpNum op_num);
     void checkOperationType(OperationType type);
-    size_t computeSizeImpl() const;
-
-    mutable std::optional<size_t> cached_size_impl;
 };
 
 struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse
@@ -851,14 +845,6 @@ struct ZooKeeperMultiReadResponse final : public ZooKeeperMultiResponse
     OpNum getOpNum() const override { return OpNum::MultiRead; }
     using ZooKeeperMultiResponse::ZooKeeperMultiResponse;
 };
-
-/// Derive a multi transaction's aggregate error from its subresponses: on a failed multi
-/// the aggregate is left ZOK and the real error is carried only in the failing subresponse
-/// (with ZRUNTIMEINCONSISTENCY on the operations after it), so promote the first non-ZOK,
-/// non-ZRUNTIMEINCONSISTENCY subresponse error to the aggregate. Used both when
-/// deserializing a response from the wire (ZooKeeperMultiResponse::readImpl) and for a
-/// response obtained in-process through KeeperOverDispatcher, which skips readImpl.
-void promoteMultiResponseError(MultiResponse & response);
 
 /// Fake internal coordination (keeper) response. Never received from client
 /// and never send to client.

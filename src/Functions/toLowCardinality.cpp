@@ -28,7 +28,6 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isNullPropagating(const DataTypePtr & /*result_type*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -63,7 +62,7 @@ REGISTER_FUNCTION(ToLowCardinality)
 {
     /// toLowCardinality documentation
     FunctionDocumentation::Description description = R"(
-Converts the input argument to the [LowCardinality](/reference/data-types/lowcardinality) version of same data type.
+Converts the input argument to the [LowCardinality](../data-types/lowcardinality.md) version of same data type.
 
 :::tip
 To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#CAST) function.

@@ -81,29 +81,6 @@ private:
 };
 
 
-/** JOIN does not need a type that is able to represent all the values of both keys (the least supertype).
-  * It is enough to have a type that is able to represent the values that both of the key types have in common
-  * (the most subtype). A value that cannot be represented in this type is not equal to any value from the other
-  * side, so it does not match anything, and `accurateCastOrNull` converts it to NULL.
-  *
-  * For example, for `UInt64` and `Int64` the least supertype does not exist, but the values that both of them
-  * can hold are `[0, 9223372036854775807]`, and all of them fit into `UInt64`.
-  *
-  * The result is never Nullable or LowCardinality. Returns nullptr if there is no such type.
-  */
-DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type);
-
-/** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
-  *
-  * The target of a JOIN key conversion must not have Nullable elements: `accurateCastOrNull` reports an
-  * inexact conversion of a Nullable element by a NULL in place of it, while a non-Nullable element is
-  * reported by a NULL of the whole Tuple. The merge algorithms compare the nested Tuples, where a NULL
-  * element is equal to a NULL element, and they cannot do otherwise: their inputs are sorted by the key,
-  * and a key that is NULL only in a nested element is not ordered to the edge of a block the way a
-  * top-level NULL is.
-  */
-DataTypePtr removeNullableInsideTuple(const DataTypePtr & type);
-
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);
@@ -122,9 +99,6 @@ ColumnRawPtrs getRawPointers(const Columns & columns);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
-
-Int64 getCurrentQueryMemoryUsage();
-Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
 
 /// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
@@ -167,11 +141,6 @@ IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
-
-constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
-{
-    return isRightOrFull(kind) && strictness != JoinStrictness::Asof && strictness != JoinStrictness::Semi;
-}
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
