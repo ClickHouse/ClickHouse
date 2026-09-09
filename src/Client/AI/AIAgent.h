@@ -66,6 +66,12 @@ private:
     /// cannot displace the whole rest of the conversation from the byte budget.
     static constexpr size_t max_tool_result_bytes = 32 * 1024;
 
+    /// The same, for what the model itself writes in one step: its text and each of the string
+    /// arguments of its tool calls. A `run_query` may carry a large statement (inline data, a
+    /// long `IN` list) and a step may be preceded by a long preamble, and neither is reachable by
+    /// dropping turns, by eliding tool results or by cutting the question.
+    static constexpr size_t max_assistant_step_bytes = 32 * 1024;
+
     /// The recent-query context prepended to the question of a turn is held to a budget of its
     /// own. It shares the user message with the question, and `truncateCurrentQuestion` keeps the
     /// beginning of that message, so without a cap of its own an oversized block would survive
@@ -85,11 +91,22 @@ private:
     /// step may return several large results at once, so keeping the whole message would leave
     /// the budget broken. Returns the size of the history that is left.
     size_t elideOldestToolResults(size_t total_bytes);
+    /// Replace the text and the tool-call arguments of the oldest assistant messages until
+    /// `total_bytes` is within the byte budget. What the model wrote is the other half of a turn,
+    /// and the per-step caps bound one step and not their sum: a turn of many steps, each with a
+    /// statement of its own, is over the budget with every single message within its cap. The
+    /// newest step goes last - it is the one the results the model is about to reason over answer.
+    /// Returns the size of the history that is left.
+    size_t elideOldestAssistantSteps(size_t total_bytes);
     /// Cut the question of the current turn down to the byte budget, with a notice of what was
     /// left out. This is the last resort: the question itself is never dropped, so an oversized
     /// one (a pasted log) would otherwise break the budget on its own.
     void truncateCurrentQuestion(size_t total_bytes);
     static ai::JsonValue truncateOversizedToolResult(ai::JsonValue value);
+    /// Cut the text of one assistant step and the string arguments of its tool calls down to
+    /// `max_assistant_step_bytes` each, with a notice of what was left out.
+    static String truncateOversizedAssistantText(String text);
+    static ai::JsonValue truncateOversizedToolCallArguments(ai::JsonValue arguments);
     ai::ToolResult executeToolCall(const ai::ToolCall & call);
 };
 

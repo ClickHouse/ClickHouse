@@ -487,6 +487,140 @@ TEST(AIAgent, HistoryIsTrimmedWhenTheQuestionItselfIsOversized)
     EXPECT_TRUE(question.starts_with("xxxx"));
 }
 
+TEST(AIAgent, HistoryIsTrimmedWhenOneStepCarriesAHugeQueryArgument)
+{
+    /// The arguments of a tool call are stored so the model can see what it asked for, and a
+    /// `run_query` may carry a statement of any size (inline data, a long `IN` list). Dropping
+    /// turns cannot reach it (the current turn must stay), eliding tool results has nothing to
+    /// gain from it, and cutting the question does not touch it - so it is cut on its way into
+    /// the history, and the model is told by how much.
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.run_visible = [](const String &, bool, bool) { return String("Ok."); };
+
+    const String huge_query = "SELECT " + String(1024 * 1024, '1');
+    AgentWithMock harness({toolCallStep("run_query", ai::JsonValue{{"query", huge_query}}), textStep("done")}, hooks);
+    harness.agent->chat("insert a lot of data");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 2u);
+    for (const auto & messages : harness.transport->conversations)
+        EXPECT_LE(conversationBytes(messages), 256u * 1024u);
+
+    /// The call is still there, still answered, and says what was left out of its arguments.
+    const auto & last = harness.transport->conversations.back();
+    size_t calls = 0;
+    size_t results = 0;
+    String stored_query;
+    for (const auto & message : last)
+    {
+        for (const auto & call : message.get_tool_calls())
+        {
+            ++calls;
+            if (call.arguments.is_object() && call.arguments.contains("query"))
+                stored_query = call.arguments["query"].get<std::string>();
+        }
+        results += message.get_tool_results().size();
+    }
+    EXPECT_EQ(calls, 1u);
+    EXPECT_EQ(results, 1u);
+    EXPECT_LT(stored_query.size(), 40u * 1024u);
+    EXPECT_TRUE(stored_query.starts_with("SELECT 111"));
+    EXPECT_NE(stored_query.find("This argument was cut here"), String::npos);
+}
+
+TEST(AIAgent, HistoryIsTrimmedWhenTheModelTextItselfIsOversized)
+{
+    /// The same for the free-form text the model writes before a tool call, and for the text of a
+    /// final answer: neither is bounded by anything the provider promises, and both are stored.
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.run_visible = [](const String &, bool, bool) { return String("Ok."); };
+
+    AIAgentStep verbose_step = toolCallStep("run_query", ai::JsonValue{{"query", "SELECT 1"}});
+    verbose_step.text = String(1024 * 1024, 'p');
+
+    AgentWithMock harness({verbose_step, textStep(String(1024 * 1024, 'a'))}, hooks);
+    harness.agent->chat("explain everything");
+    /// The final answer of the turn is stored too, so it is the next turn that would carry it.
+    harness.agent->chat("and now?");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 3u);
+    for (const auto & messages : harness.transport->conversations)
+        EXPECT_LE(conversationBytes(messages), 256u * 1024u);
+
+    const auto & last = harness.transport->conversations.back();
+    bool saw_cut_notice = false;
+    for (const auto & message : last)
+        if (message.role == ai::kMessageRoleAssistant && message.get_text().find("This text was cut here") != String::npos)
+            saw_cut_notice = true;
+    EXPECT_TRUE(saw_cut_notice);
+    EXPECT_NE(last.back().get_text().find("and now?"), String::npos);
+}
+
+TEST(AIAgent, HistoryIsTrimmedWhenManyStepsEachCarryTheirOwnStatement)
+{
+    /// The per-step caps bound one step, not their sum: a long turn of steps that are each within
+    /// their cap is over the budget anyway, and its assistant messages are what holds the bytes -
+    /// the tool results here are tiny. The oldest steps are given up so the budget holds before
+    /// every model call, and every call keeps the result that answers it.
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.run_visible = [](const String &, bool, bool) { return String("Ok."); };
+
+    AIAgentStep step = toolCallStep("run_query", ai::JsonValue{{"query", "SELECT " + String(30 * 1024, '1')}});
+    step.text = String(30 * 1024, 'p');
+
+    /// The mock repeats its last step, so the turn keeps going until the step limit.
+    AgentWithMock harness({step}, hooks, /*max_steps=*/ 20);
+    harness.agent->chat("go through the tables one by one");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 20u);
+    /// Without this stage the conversation grows past 1 MiB.
+    for (const auto & messages : harness.transport->conversations)
+        EXPECT_LE(conversationBytes(messages), 256u * 1024u);
+
+    const auto & last = harness.transport->conversations.back();
+    ASSERT_FALSE(last.empty());
+    EXPECT_EQ(last.front().role, ai::kMessageRoleUser);
+    EXPECT_FALSE(last.front().has_tool_results());
+    EXPECT_NE(last.front().get_text().find("one by one"), String::npos);
+
+    size_t calls = 0;
+    size_t results = 0;
+    size_t elided = 0;
+    for (const auto & message : last)
+    {
+        for (const auto & call : message.get_tool_calls())
+        {
+            ++calls;
+            if (call.arguments.is_object() && call.arguments.contains("elided"))
+                ++elided;
+        }
+        results += message.get_tool_results().size();
+    }
+    EXPECT_EQ(calls, results);
+    EXPECT_GT(elided, 0u);
+    /// The newest step is what the newest results answer: it keeps its arguments.
+    const auto newest_calls = last.at(last.size() - 2).get_tool_calls();
+    ASSERT_EQ(newest_calls.size(), 1u);
+    EXPECT_TRUE(newest_calls[0].arguments.contains("query"));
+}
+
 TEST(AIAgent, RecentQueryContextDoesNotCrowdOutTheQuestion)
 {
     /// The recent-query context and the question of the turn share one user message, and the

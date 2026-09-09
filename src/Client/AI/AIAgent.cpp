@@ -231,18 +231,23 @@ void AIAgent::chat(const String & user_text)
             else
             {
                 display.showAssistantText(step.text, /*final=*/ true);
-                messages.push_back(ai::Message::assistant(step.text));
+                messages.push_back(ai::Message::assistant(truncateOversizedAssistantText(step.text)));
             }
             return;
         }
 
         display.showAssistantText(step.text, /*final=*/ false);
 
+        /// What the model wrote is displayed and executed in full; what is *stored* for the next
+        /// model call is capped, the way a tool result is. One step must not be able to displace
+        /// the rest of the conversation from the byte budget - and it can: the text before a tool
+        /// call is free-form, and the `query` argument of `run_query` may carry a statement with
+        /// inline data in it.
         std::vector<ai::ToolCallContentPart> call_parts;
         call_parts.reserve(step.tool_calls.size());
         for (const auto & call : step.tool_calls)
-            call_parts.emplace_back(call.id, call.tool_name, call.arguments);
-        messages.push_back(ai::Message::assistant_with_tools(step.text, call_parts));
+            call_parts.emplace_back(call.id, call.tool_name, truncateOversizedToolCallArguments(call.arguments));
+        messages.push_back(ai::Message::assistant_with_tools(truncateOversizedAssistantText(step.text), call_parts));
 
         std::vector<ai::ToolResultContentPart> result_parts;
         result_parts.reserve(step.tool_calls.size());
@@ -320,6 +325,46 @@ ai::JsonValue AIAgent::truncateOversizedToolResult(ai::JsonValue value)
             max_tool_result_bytes, original_size)}};
 }
 
+String AIAgent::truncateOversizedAssistantText(String text)
+{
+    static constexpr std::string_view TEXT_CUT_NOTICE
+        = "\n\n[This text was cut here: {} of its {} bytes did not fit the conversation.]";
+
+    if (text.size() <= max_assistant_step_bytes)
+        return text;
+
+    const size_t original_size = text.size();
+    truncateToUTF8Boundary(text, max_assistant_step_bytes);
+    text += fmt::format(TEXT_CUT_NOTICE, original_size - text.size(), original_size);
+    return text;
+}
+
+ai::JsonValue AIAgent::truncateOversizedToolCallArguments(ai::JsonValue arguments)
+{
+    static constexpr std::string_view ARGUMENT_CUT_NOTICE
+        = "\n\n[This argument was cut here: {} of its {} bytes did not fit the conversation.]";
+
+    /// Every tool of the agent takes an object of scalars, so cutting the strings in it keeps the
+    /// arguments both well-formed and readable for the model. Anything else is left to the
+    /// aggregate stage of the trim, which gives up the whole value.
+    if (!arguments.is_object())
+        return arguments;
+
+    for (auto it = arguments.begin(); it != arguments.end(); ++it)
+    {
+        if (!it->is_string())
+            continue;
+        auto text = it->get<std::string>();
+        if (text.size() <= max_assistant_step_bytes)
+            continue;
+        const size_t original_size = text.size();
+        truncateToUTF8Boundary(text, max_assistant_step_bytes);
+        const size_t kept = text.size();
+        *it = text + fmt::format(ARGUMENT_CUT_NOTICE, original_size - kept, original_size);
+    }
+    return arguments;
+}
+
 void AIAgent::trimHistory()
 {
     /// The history must keep starting at a plain user message: tool results without the
@@ -355,7 +400,7 @@ void AIAgent::trimHistory()
 
     messages.erase(messages.begin(), messages.begin() + drop);
 
-    truncateCurrentQuestion(elideOldestToolResults(total_bytes));
+    truncateCurrentQuestion(elideOldestAssistantSteps(elideOldestToolResults(total_bytes)));
 }
 
 size_t AIAgent::elideOldestToolResults(size_t total_bytes)
@@ -411,6 +456,66 @@ size_t AIAgent::elideOldestToolResults(size_t total_bytes)
             if (auto * result = std::get_if<ai::ToolResultContentPart>(&content[i]))
                 elide(*result);
     }
+
+    return total_bytes;
+}
+
+size_t AIAgent::elideOldestAssistantSteps(size_t total_bytes)
+{
+    /// The tool results are the first thing given up, but they are only half of a turn: the other
+    /// half is what the model wrote - the text before a tool call and the arguments of the call.
+    /// The per-step caps bound one step; a turn of many steps is over the budget with every single
+    /// message within its cap, and neither dropping turns (the current one must stay), nor eliding
+    /// tool results, nor cutting the question can reach those messages. So they are given up too,
+    /// keeping the tool names: a call whose arguments are gone still pairs with the result that
+    /// answers it, which is what the providers require.
+    static constexpr std::string_view TEXT_ELIDED
+        = "(this text was dropped from the conversation to fit its size budget)";
+
+    const ai::JsonValue arguments_elided{
+        {"elided",
+         "The arguments of this call were dropped from the conversation to fit its size budget. "
+         "Repeat the call if you need to see them again."}};
+    const size_t arguments_elided_bytes = arguments_elided.dump().size();
+
+    const auto elide = [&](ai::Message & message)
+    {
+        for (auto & part : message.content)
+        {
+            if (auto * text = std::get_if<ai::TextContentPart>(&part))
+            {
+                /// The accounting below must not go backwards, so nothing is gained from a text
+                /// that is already shorter than the notice replacing it.
+                if (text->text.size() <= TEXT_ELIDED.size())
+                    continue;
+                total_bytes -= text->text.size() - TEXT_ELIDED.size();
+                text->text = TEXT_ELIDED;
+            }
+            else if (auto * call = std::get_if<ai::ToolCallContentPart>(&part))
+            {
+                const size_t arguments_bytes = call->arguments.dump().size();
+                if (arguments_bytes <= arguments_elided_bytes)
+                    continue;
+                total_bytes -= arguments_bytes - arguments_elided_bytes;
+                call->arguments = arguments_elided;
+            }
+        }
+    };
+
+    /// The newest step of the model is what the newest tool results answer, so it is the last one
+    /// to be given up - and it is given up too when it is over the budget on its own.
+    size_t last = messages.size();
+    while (last > 0 && messages[last - 1].role != ai::kMessageRoleAssistant)
+        --last;
+    if (last > 0)
+        --last;
+
+    for (size_t i = 0; i < last && total_bytes > max_history_bytes; ++i)
+        if (messages[i].role == ai::kMessageRoleAssistant)
+            elide(messages[i]);
+
+    if (total_bytes > max_history_bytes && last < messages.size() && messages[last].role == ai::kMessageRoleAssistant)
+        elide(messages[last]);
 
     return total_bytes;
 }
