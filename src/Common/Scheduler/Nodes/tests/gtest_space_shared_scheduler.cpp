@@ -4110,3 +4110,103 @@ TEST(SchedulerSpaceShared, SiblingLimitsSharePolicySuctionSlot)
             "");
     }
 }
+
+
+/// Detaching the subtree which owns a policy-level suction slot must publish the cleared slot
+/// and retry a sibling which was parked while waiting for it.
+static void testDetachingPolicySuctionOwnerRetriesSibling(const String & policy_kind)
+{
+    ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+    SCOPED_TRACE(policy_kind);
+    ASSERT_EXIT(
+        {
+            SpaceSharedTest t;
+            SpaceSharedResourceHolder r(t);
+            SpaceSharedNodePtr policy;
+            if (policy_kind == "fair")
+                policy = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+            else
+                policy = std::make_shared<PrecedenceAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+            ISpaceSharedNode * policy_ptr = policy.get();
+
+            auto first_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, 10000);
+            first_limit->basename = "first";
+            auto first_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+            first_queue->basename = "queue";
+            AllocationQueue * first_queue_ptr = first_queue.get();
+            first_limit->attachChild(first_queue);
+            policy->attachChild(first_limit);
+
+            SchedulerNodeInfo second_info;
+            second_info.setPrecedence(1);
+            auto second_limit = std::make_shared<AllocationLimit>(t.scheduler.event_queue, second_info, 10000);
+            second_limit->basename = "second";
+            auto second_queue = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo{});
+            second_queue->basename = "queue";
+            AllocationQueue * second_queue_ptr = second_queue.get();
+            second_limit->attachChild(second_queue);
+            policy->attachChild(second_limit);
+
+            r.root_node = policy;
+            first_queue.reset();
+            second_queue.reset();
+            second_limit.reset();
+            r.registerResource();
+
+            ManualAllocation first(first_queue_ptr, "first", 6000, true, protectedFromEvictionPolicy());
+            auto first_victim = std::make_unique<ManualAllocation>(first_queue_ptr, "first_victim", 4000);
+
+            auto waiting_policy = protectedFromEvictionPolicy();
+            waiting_policy.max_allocation_before_suction_bytes = 1;
+            ManualAllocation second(second_queue_ptr, "second", 6000, true, waiting_policy);
+            auto second_victim = std::make_unique<ManualAllocation>(second_queue_ptr, "second_victim", 4000);
+            second.protectAfterPressureRounds(1);
+
+            first.increaseAsync(2000);
+            if (!first_victim->waitKillsFor(1, std::chrono::seconds(5)))
+                std::_Exit(2);
+
+            second.increaseAsync(2000);
+            if (!second.waitPressureCountFor(1, std::chrono::seconds(5)))
+                std::_Exit(3);
+            second.recoveryCheckpoint();
+
+            std::promise<void> detached;
+            auto detached_future = detached.get_future();
+            t.scheduler.event_queue.enqueue([&]
+            {
+                EXPECT_EQ(policy_ptr->getSuctionAllocation(), &first);
+                EXPECT_FALSE(second_queue_ptr->retrySuction(second));
+                policy_ptr->removeChild(first_limit.get());
+                EXPECT_EQ(policy_ptr->getSuctionAllocation(), nullptr);
+                if (::testing::Test::HasFailure())
+                    std::_Exit(4);
+                detached.set_value();
+            });
+            if (detached_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+                std::_Exit(5);
+
+            if (!second_victim->waitKillsFor(1, std::chrono::seconds(5)))
+                std::_Exit(6);
+            second_victim.reset();
+            if (!second.waitSyncedFor(std::chrono::seconds(5)))
+                std::_Exit(7);
+            EXPECT_EQ(second.size(), 8000);
+            EXPECT_EQ(second.killCount(), 0u);
+
+            /// Exit without teardown so the intentionally detached live subtree cannot hang cleanup.
+            std::_Exit(::testing::Test::HasFailure() ? 1 : 0);
+        },
+        ::testing::ExitedWithCode(0),
+        "");
+}
+
+TEST(SchedulerSpaceShared, DetachingFairSuctionOwnerRetriesSibling)
+{
+    testDetachingPolicySuctionOwnerRetriesSibling("fair");
+}
+
+TEST(SchedulerSpaceShared, DetachingPrecedenceSuctionOwnerRetriesSibling)
+{
+    testDetachingPolicySuctionOwnerRetriesSibling("precedence");
+}

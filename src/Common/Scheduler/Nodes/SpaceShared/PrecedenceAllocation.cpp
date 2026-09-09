@@ -50,11 +50,15 @@ void PrecedenceAllocation::removeChild(ISchedulerNode * child_base)
         SpaceSharedNodePtr child = iter->second;
         /// Ancestors inspect this subtree while the detach propagates. Exclude the departing
         /// child from policy state first, but retain its parent link for accounting and ownership.
+        const bool detached_suction_owner = child->getSuctionAllocation() != nullptr;
         children.erase(iter);
         propagateUpdate(*child, Update()
             .setDetached(child.get())
             .setIncrease(nullptr)
-            .setDecrease(nullptr));
+            .setDecrease(nullptr)
+            .setSuction(getSuctionAllocation()));
+        if (detached_suction_owner)
+            retrySuspendedIncreases();
         child->setParentNode(nullptr);
         child->updateMinMaxAllocated(std::numeric_limits<ResourceCost>::max());
     }
