@@ -7,6 +7,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <memory>
@@ -14,7 +15,7 @@
 namespace DB
 {
 
-/** Stores data in immutable files, but allows atomic directory renames, which is suitable for MergeTree tables.
+/** Stores data in immutable files, but allows atomic directory renames and hard links, which is suitable for MergeTree tables.
   *
   * The structure in object storage is as follows:
   * - every directory, regardless of its name and depth, is stored in a randomly-named directory at root;
@@ -35,6 +36,27 @@ namespace DB
   * /__meta/xelohvynszqqinrvcygwzpdwvsklbxkk/prefix.path, contents: /hello/
   * /aaealinyzgdzycgcnpgaapdssrjirnnr/test2.txt
   * /gfkoqxvyhaasroiodbeurnftnwieiihy/test1.txt
+  *
+  * The `prefix.path` above is in the implicit form: the files of the directory are whatever blobs are stored under its prefix.
+  * To support hard links, a directory can be switched to the explicit form, where `prefix.path` also lists the files
+  * with the keys of their blobs (see `PrefixPath.h`), so a file can point to a blob under the prefix of another directory:
+  *
+  * /__meta/gfkoqxvyhaasroiodbeurnftnwieiihy/prefix.path, contents:
+  *     /hello/world/
+  *     files: 2
+  *     link.txt    aaealinyzgdzycgcnpgaapdssrjirnnr/test2.txt    42
+  *     test1.txt   gfkoqxvyhaasroiodbeurnftnwieiihy/test1.txt    7
+  *
+  * The number of links to every blob is maintained in memory (and recalculated on load): a blob is removed together with its last link.
+  * New blobs of a directory in the explicit form get random names, so that a new file cannot clobber the blob of a deleted file
+  * that is still linked from elsewhere. Directories that never had hard links stay in the implicit form, so the layout of a disk
+  * without hard links is unchanged.
+  *
+  * The explicit form cannot be read by servers older than the version that introduced it, so a disk that has it is not readable
+  * after a downgrade. Therefore the creation of hard links is off by default and has to be enabled by the `enable_hard_links`
+  * setting of the disk; with hard links disabled, `createHardLink` copies the blob, as it did before, and no directory ever
+  * switches to the explicit form. The explicit form is always *read*, so a disk written with hard links enabled stays usable
+  * after they are disabled again.
   */
 class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataStorage
 {
@@ -43,17 +65,18 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
     void load(bool is_initial_load, bool do_not_load_unchanged_directories);
 
 public:
-    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_);
+    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_, bool hard_links_enabled_);
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
     const std::string & getPath() const override { return storage_path_full; }
-    uint32_t getHardlinkCount(const std::string & /* path */) const override { return 0; }
+    uint32_t getHardlinkCount(const std::string & path) const override;
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return false; }
+    bool supportsHardLinks() const override { return hard_links_enabled; }
     /// Blobs are removed right in the transaction, and there is nothing to replicate.
     bool hasDeadBlobsQueue() const override { return false; }
     bool hasMissingBlobsQueue() const override { return false; }
@@ -85,6 +108,9 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
+    /// Real hard links require the explicit form of `prefix.path`, which older servers cannot read,
+    /// so they are enabled by the `enable_hard_links` setting of the disk. See the comment above.
+    const bool hard_links_enabled;
 
     std::mutex metadata_mutex;
     FsMetadata fs;
@@ -103,6 +129,10 @@ protected:
     UncommittedState uncommitted_state;
     MetadataOperationsHolder operations;
     StoredObjects removed_objects;
+    /// Blob keys chosen by `generateObjectKeyForPath`, by normalized file path, for the files this transaction is going to create.
+    std::unordered_map<std::string, std::string> generated_blob_keys;
+
+    void planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to);
 
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);
@@ -123,7 +153,6 @@ public:
     void removeDirectory(const std::string & path) override;
     void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
 
-    /// Hard links are simulated using server-side copying.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
     void moveFile(const std::string & path_from, const std::string & path_to) override;
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
