@@ -173,7 +173,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
     }
 
     auto status = ISource::prepare();
-    if (status == Status::Finished && !stop_requested.load())
+    if (status == Status::Finished && !stop_requested.load() && !teardown_started.exchange(true))
     {
         /// Only a finish that was not cancelled commits here and claims the teardown. After a
         /// cancel it is left to the destructor: the cancelling thread may still be in
@@ -294,17 +294,17 @@ void PostgreSQLSource<T>::onCancel() noexcept
 
         /// The connection is ours to discard, so a read parked in the client library with no deadline is
         /// woken by taking the transport away. `shutdown` keeps the descriptor valid for that thread.
-        if (connection_holder)
+        if (connection_holder && fd >= 0)
         {
-            if (fd >= 0)
-            {
-                ::shutdown(fd, SHUT_RDWR);
-                connection_torn_down.store(true);
-                LOG_DEBUG(getLogger("PostgreSQLSource"), "Shut the connection down to interrupt the read");
-            }
+            /// A finish already under way has nothing left to wake, and its COMMIT must not be broken.
+            if (teardown_started.exchange(true))
+                return;
+
+            ::shutdown(fd, SHUT_RDWR);
             connection_holder->setBroken();
+            LOG_DEBUG(getLogger("PostgreSQLSource"), "Shut the connection down to interrupt the read");
         }
-        /// A connection that came with the transaction outlives this source, so ask the server instead.
+        /// No transport of our own to take away: ask the server, which only helps while the COPY starts.
         else if (!started.load() && tx_snapshot->conn().is_open())
         {
             finalize(tx_snapshot, nullptr);
@@ -324,7 +324,7 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     /// transaction nothing reached the connection, so it stays healthy and is left in the pool.
     /// A connection already taken down has nothing left to cancel, and the attempt would block.
     if (!finalized.exchange(true) && tx)
-        finalize((stream && !connection_torn_down.load()) ? tx : nullptr, stream.get());
+        finalize((stream && !teardown_started.load()) ? tx : nullptr, stream.get());
 
     stream.reset();
     tx.reset();
