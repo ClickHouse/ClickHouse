@@ -32,17 +32,7 @@ ALWAYS_INLINE UInt16 LZ4_readLE16(const void * mem_ptr)
 template <size_t block_size>
 ALWAYS_INLINE void copyFromOutput(UInt8 * dst, UInt8 * src)
 {
-    /// Match copies may overlap (src points into the already-decoded output).
-    /// When offset < 32, a 256-bit load reads bytes just written in the same
-    /// cache line, causing store-forwarding stalls.  Two 128-bit copies halve
-    /// the stall window.
-    if constexpr (block_size == 32)
-    {
-        __builtin_memcpy(dst, src, 16);
-        __builtin_memcpy(dst + 16, src + 16, 16);
-    }
-    else
-        __builtin_memcpy(dst, src, block_size);
+    __builtin_memcpy(dst, src, block_size);
 }
 
 template <size_t block_size>
@@ -67,19 +57,11 @@ ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t siz
 {
     /// Unrolling with clang is doing >10% performance degrade on x86.
     /// On ARM (Graviton 4) the pragma has no measurable effect.
-    ///
-    /// Same store-forwarding concern as `copyFromOutput`.
     size_t i = 0;
     #pragma nounroll
     do
     {
-        if constexpr (block_size == 32)
-        {
-            __builtin_memcpy(dst, src, 16);
-            __builtin_memcpy(dst + 16, src + 16, 16);
-        }
-        else
-            __builtin_memcpy(dst, src, block_size);
+        __builtin_memcpy(dst, src, block_size);
         dst += block_size;
         src += block_size;
         i += block_size;
@@ -129,8 +111,8 @@ template <>
     {
         [[maybe_unused]] __m64 shuffled = _mm_shuffle_pi8(__m64{}, __m64{});
 
-        std::vector<int> vec;                              // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        std::unordered_set<int> set(vec.begin(), vec.end()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<int> vec;
+        std::unordered_set<int> set(vec.begin(), vec.end());
 
         std::cerr << set.size() << "\n";
         return 0;
@@ -463,11 +445,11 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
     while (true)
     {
-        size_t length = 0;
+        size_t length;
 
         auto continue_read_length = [&]
         {
-            unsigned s = 0;
+            unsigned s;
             do
             {
                 s = *ip++;
@@ -484,7 +466,6 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token >> 4;
 
         UInt8 * copy_end = nullptr;
-        size_t real_length = 0;
 
         /// It might be true fairly often for well-compressed columns.
         /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
@@ -496,14 +477,16 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            /// At least two more bytes have to be available. The check is written as a distance rather
+            /// than as `ip + 1 >= input_end`, because `ip` is allowed to be exactly `input_end` here, and
+            /// then `ip + 1` would be two past the end of the payload - out-of-range pointer arithmetic.
+            /// The same applies to the other availability checks below.
+            if (unlikely(input_end - ip < 2))
                 return false;
             continue_read_length();
         }
 
         /// Copy literals.
-
-        copy_end = op + length;
 
         /// input: Hello, world
         ///        ^-ip
@@ -516,21 +499,27 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
-        if (unlikely(copy_end > output_end))
+        /// The literal has to fit in what is left of the output. `length` is attacker-controlled and
+        /// bounded only by `255 * source_size`, so the check is a distance rather than
+        /// `op + length > output_end`: the latter would form `copy_end` megabytes outside of the
+        /// destination before rejecting it, which is out-of-range pointer arithmetic.
+        if (unlikely(length > static_cast<size_t>(output_end - op)))
             return false;
 
-        // Due to implementation specifics the copy length is always a multiple of copy_amount
-        real_length = 0;
+        copy_end = op + length;
 
-        static_assert(copy_amount == 8 || copy_amount == 16 || copy_amount == 32);
-        if constexpr (copy_amount == 8)
-            real_length = (((length >> 3) + 1) * 8);
-        else if constexpr (copy_amount == 16)
-            real_length = (((length >> 4) + 1) * 16);
-        else if constexpr (copy_amount == 32)
-            real_length = (((length >> 5) + 1) * 32);
-
-        if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
+        /// The literal has to be entirely inside the compressed payload.
+        ///
+        /// It is not enough to check that the copy stays within the `ADDITIONAL_BYTES_AT_END_OF_BUFFER`
+        /// slack reserved after the payload: that slack is uninitialized memory (`PODArray::resize` does
+        /// not zero it), so a crafted block declaring a literal longer than the bytes it actually carries
+        /// would copy uninitialized heap into the decompressed block and still report success. Only the
+        /// unconditional over-read of `wildCopyFromInput` may touch the slack - it exceeds the literal by
+        /// less than `copy_amount` bytes, which is always less than `ADDITIONAL_BYTES_AT_END_OF_BUFFER`,
+        /// and those bytes always land after `copy_end`, where they are either overwritten by the next
+        /// iteration or fall outside of `size_decompressed`.
+        static_assert(copy_amount <= ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+        if (unlikely(length > static_cast<size_t>(input_end - ip)))
             return false;
 
         wildCopyFromInput<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
@@ -543,7 +532,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
     decompress_match:
 
-        if (unlikely(ip + 1 >= input_end))
+        if (unlikely(input_end - ip < 2))
             return false;
 
         /// Get match offset.
@@ -560,7 +549,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token & 0x0F;
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            if (unlikely(input_end - ip < 2))
                 return false;
             continue_read_length();
         }
@@ -568,10 +557,11 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
 
-        copy_end = op + length;
-
-        if (unlikely(copy_end > output_end))
+        /// A distance check, for the same reason as for the literal above.
+        if (unlikely(length > static_cast<size_t>(output_end - op)))
             return false;
+
+        copy_end = op + length;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
           * The worst case when offset = 1 and length = 4
@@ -639,8 +629,13 @@ bool decompress(
     size_t dest_size,
     [[maybe_unused]] PerformanceStatistics & statistics)
 {
-    if (source_size == 0 || dest_size == 0)
+    if (dest_size == 0)
         return true;
+
+    /// There is nothing to decompress from, but the caller expects `dest_size` bytes to be written,
+    /// and would otherwise hand out the previous contents of the destination buffer.
+    if (source_size == 0)
+        return false;
 
     /// When a specific method is forced, always use it regardless of block size.
     /// The size threshold below only applies to the adaptive bandit algorithm
@@ -651,7 +646,7 @@ bool decompress(
         size_t best_variant = statistics.select(variant_size);
 
         Stopwatch watch;
-        bool success = false;
+        bool success;
         if (best_variant == 0)
             success = decompressImpl<8>(source, dest, source_size, dest_size);
         else if (best_variant == 1)

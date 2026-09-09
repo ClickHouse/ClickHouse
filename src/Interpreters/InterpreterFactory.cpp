@@ -1,7 +1,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTCheckDatabaseQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
@@ -17,7 +16,6 @@
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
-#include <Parsers/ASTHypotheticalIndexQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -261,7 +259,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterAlterNamedCollectionQuery";
     }
-    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>() || query->as<ASTCheckDatabaseQuery>())
+    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>())
     {
         interpreter_name = "InterpreterCheckQuery";
     }
@@ -380,10 +378,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDropIndexQuery>())
     {
         interpreter_name = "InterpreterDropIndexQuery";
-    }
-    else if (query->as<ASTHypotheticalIndexQuery>())
-    {
-        interpreter_name = "InterpreterHypotheticalIndexQuery";
     }
     else if (query->as<ASTBackupQuery>())
     {

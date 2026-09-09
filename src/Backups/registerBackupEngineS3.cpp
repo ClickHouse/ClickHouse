@@ -56,8 +56,6 @@ namespace
 #endif
 
 
-void registerBackupEngineS3(BackupFactory &);
-
 void registerBackupEngineS3(BackupFactory & factory)
 {
     auto creator_fn = []([[maybe_unused]] const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>

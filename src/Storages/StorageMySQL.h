@@ -6,7 +6,7 @@
 
 #include <Processors/Sources/MySQLSource.h>
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 namespace Poco
@@ -24,7 +24,7 @@ struct StorageID;
 /** Implements storage in the MySQL database.
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   */
-class StorageMySQL final : public StorageWithCommonVirtualColumns, WithContext
+class StorageMySQL final : public IStorage, WithContext
 {
 public:
     StorageMySQL(
@@ -44,9 +44,7 @@ public:
 
     bool isExternalDatabase() const override { return true; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

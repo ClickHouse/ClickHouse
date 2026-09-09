@@ -58,10 +58,6 @@ class Workflow:
         enable_slack_feed: bool = False
         # Job aliases for easy job reference with `praktika run job_alias --test TEST_NAME` in local environment
         job_aliases: Dict[str, str] = field(default_factory=dict)
-        # If set, every runs_on label (across user-defined and praktika-injected jobs) is
-        # prefixed with this string, except "self-hosted". The intent is to route the
-        # workflow to an isolated fleet of runners that carry the prefixed labels.
-        runs_on_label_prefix: str = ""
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
@@ -119,12 +115,8 @@ class Workflow:
                 if secret.name == name:
                     return secret
                 names.append(secret.name)
-            message = (
-                f"Failed to find secret [{name}] in workflow [{self.name}]. "
-                f"Available workflow secrets: [{names}]"
-            )
-            print(f"ERROR: {message}")
-            raise RuntimeError(message)
+            print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
+            raise
 
         def _enabled_workflow_config(self):
             return (

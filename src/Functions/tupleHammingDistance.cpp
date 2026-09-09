@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 /// tupleHammingDistance function: (Tuple(...), Tuple(...))-> N
 /// Return the number of non-equal tuple elements
-class FunctionTupleHammingDistance final : public ITupleFunction
+class FunctionTupleHammingDistance : public ITupleFunction
 {
 public:
     static constexpr auto name = "tupleHammingDistance";

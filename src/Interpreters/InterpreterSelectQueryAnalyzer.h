@@ -72,6 +72,8 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const override;
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }

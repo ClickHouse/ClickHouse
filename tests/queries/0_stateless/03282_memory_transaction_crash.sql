@@ -1,4 +1,4 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-encrypted-storage
 -- https://github.com/ClickHouse/ClickHouse/issues/72887
 DROP TABLE IF EXISTS t0;
 

@@ -13,7 +13,6 @@ def _add_build_to_version_history():
         f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:"
     )
     commit_parents = Shell.get_output("git log --format=%P -n 1").split(" ")
-    version = CHVersion.get_current_version_as_dict()
     data = {
         "check_start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "pull_request_number": info.pr_number,
@@ -21,13 +20,13 @@ def _add_build_to_version_history():
         "commit_sha": info.sha,
         "commit_url": info.commit_url,
         "parent_commits_sha": commit_parents,
-        "version": version["string"],
+        "version": CHVersion.get_version(),
         "git_ref": info.git_branch,
     }
     print(f"Update version log: [{data}]")
     CIDBCluster().insert_json(table="version_history", json_str=data)
     # stores actual version data in pipline storage, to be used by jobs that need it
-    CHVersion.store_version_data_in_ci_pipeline(version)
+    CHVersion.store_version_data_in_ci_pipeline()
 
 
 if __name__ == "__main__":

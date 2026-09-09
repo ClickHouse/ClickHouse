@@ -6,6 +6,8 @@ title: 'UNDROP TABLE'
 doc_type: 'reference'
 ---
 
+# UNDROP TABLE
+
 Cancels the dropping of the table.
 
 Beginning with ClickHouse version 23.3 it is possible to UNDROP a table in an Atomic database

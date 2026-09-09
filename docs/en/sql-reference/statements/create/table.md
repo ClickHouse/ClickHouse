@@ -92,12 +92,16 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
 SELECT x, toTypeName(x) FROM t1;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─x─┬─toTypeName(x)─┐
 │ 1 │ String        │
 └───┴───────────────┘
@@ -309,8 +313,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 `boolean_expr_1` could by any boolean expression. If constraints are defined for the table, each of them will be checked for every row in `INSERT` query. If any constraint is not satisfied — server will raise an exception with constraint name and checking expression.
 
 Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
-
-Existing constraints across all tables can be inspected via the [`system.constraints`](/operations/system-tables/constraints) table.
 
 ### ASSUME {#assume}
 
@@ -736,12 +738,16 @@ This means the correct clause order is:
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
 SELECT name, comment FROM system.tables WHERE name = 't1';
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─name─┬─comment─────────────┐
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘

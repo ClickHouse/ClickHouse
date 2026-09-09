@@ -1,16 +1,10 @@
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Common/BitHelpers.h>
-#include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 String MarkInCompressedFile::toString() const
 {
@@ -26,7 +20,7 @@ String MarkInCompressedFile::toStringWithRows(size_t rows_num) const
 // Write a range of bits in a bit-packed array.
 // The array must be overallocated by one element.
 // The bit range must be pre-filled with zeros.
-static void writeBits(UInt64 * dest, size_t bit_offset, UInt64 value)
+void writeBits(UInt64 * dest, size_t bit_offset, UInt64 value)
 {
     size_t mod = bit_offset % 64;
     dest[bit_offset / 64] |= value << mod;
@@ -35,7 +29,7 @@ static void writeBits(UInt64 * dest, size_t bit_offset, UInt64 value)
 }
 
 // The array must be overallocated by one element.
-static UInt64 readBits(const UInt64 * src, size_t bit_offset, size_t num_bits)
+UInt64 readBits(const UInt64 * src, size_t bit_offset, size_t num_bits)
 {
     size_t mod = bit_offset % 64;
     UInt64 value = src[bit_offset / 64] >> mod;
@@ -100,12 +94,6 @@ MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
 
 MarkInCompressedFile MarksInCompressedFile::get(size_t idx) const
 {
-    if (idx >= num_marks)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Mark index {} is out of range [0, {})",
-            idx, num_marks);
-
     auto [block, offset] = lookUpMark(idx);
     size_t x = block->min_x + readBits(packed.data(), offset, block->bits_for_x);
     size_t y = block->min_y + (readBits(packed.data(), offset + block->bits_for_x, block->bits_for_y) << block->trailing_zero_bits_in_y);

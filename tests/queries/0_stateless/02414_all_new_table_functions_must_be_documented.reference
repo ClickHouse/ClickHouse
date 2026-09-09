@@ -11,6 +11,8 @@ input
 jdbc
 mysql
 null
+numbers
+numbers_mt
 odbc
 postgresql
 redis

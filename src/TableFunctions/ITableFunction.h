@@ -5,9 +5,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Core/Names.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
@@ -56,7 +53,7 @@ public:
     /** Return array of table function arguments indexes for which query tree analysis must be skipped.
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
       */
-    virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
+    virtual std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
@@ -77,7 +74,7 @@ public:
     /// It returns possible virtual column names of corresponding storage. If select query contains
     /// one of these columns, the structure from insertion table won't be used as a structure hint,
     /// because we cannot determine which column from table correspond to this virtual column.
-    virtual NameSet getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
+    virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
@@ -98,6 +95,9 @@ public:
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
+    /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
+    void checkEngineAccess(ContextPtr context) const;
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -111,6 +111,11 @@ private:
     /// This name is registered in the storage factory and used
     /// to check privileges.
     virtual const char * getStorageEngineName() const = 0;
+    /// Opt in only for engines exposing a server-side capability with no other access gate
+    /// (`Executable` runs a user-provided script). Wrapper engines such as `Merge` or `Loop` are
+    /// gated by their delegated data access, source engines by `checkSourceAccess`.
+    virtual bool requiresTableEngineGrant() const { return false; }
+
     virtual bool isClusterFunction() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check

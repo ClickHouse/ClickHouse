@@ -6,8 +6,6 @@
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 
-#include <Common/threadPoolCallbackRunner.h>
-
 namespace DB
 {
 

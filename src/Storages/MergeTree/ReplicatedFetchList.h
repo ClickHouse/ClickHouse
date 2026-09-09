@@ -25,19 +25,19 @@ struct ReplicatedFetchInfo
 
     std::string source_replica_path;
     std::string source_replica_hostname;
-    UInt16 source_replica_port{};
+    UInt16 source_replica_port;
     std::string interserver_scheme;
     std::string uri;
 
-    UInt8 to_detached{};
+    UInt8 to_detached;
 
-    Float64 elapsed{};
-    Float64 progress{};
+    Float64 elapsed;
+    Float64 progress;
 
-    UInt64 total_size_bytes_compressed{};
-    UInt64 bytes_read_compressed{};
+    UInt64 total_size_bytes_compressed;
+    UInt64 bytes_read_compressed;
 
-    UInt64 thread_id{};
+    UInt64 thread_id;
 };
 
 

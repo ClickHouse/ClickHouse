@@ -49,7 +49,6 @@ StoragePtr TableFunctionFuzzJSON::executeImpl(
     return res;
 }
 
-void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFuzzJSON>(

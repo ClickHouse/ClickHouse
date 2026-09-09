@@ -32,8 +32,8 @@ void OpenSSLInitializer::initialize()
 #if USE_SSL
 
 #ifndef NDEBUG
-    chassert(!initialize_done);
-    chassert(!cleanup_done);
+    assert(!initialize_done);
+    assert(!cleanup_done);
 #endif
 
     if (!initialize_done)
@@ -77,8 +77,8 @@ void OpenSSLInitializer::cleanup()
 #if USE_SSL
 
 #ifndef NDEBUG
-    chassert(initialize_done);
-    chassert(!cleanup_done);
+    assert(initialize_done);
+    assert(!cleanup_done);
 #endif
 
     if (!cleanup_done)

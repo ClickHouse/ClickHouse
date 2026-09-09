@@ -23,7 +23,7 @@ namespace DB
   * set limit_hint to non zero value. So we stop emitting new rows after
   * count of already emitted rows will reach the limit_hint.
   */
-class DistinctSortedTransform final : public ISimpleTransform
+class DistinctSortedTransform : public ISimpleTransform
 {
 public:
     /// Empty columns_ means all columns.

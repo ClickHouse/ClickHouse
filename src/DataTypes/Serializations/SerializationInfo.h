@@ -70,7 +70,6 @@ public:
     virtual void serialializeKindStackBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
-    virtual void writeJSON(WriteBuffer & out, const String * name) const;
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
@@ -83,8 +82,6 @@ public:
     static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 
 protected:
-    virtual void writeJSONFields(WriteBuffer & out, const String * name) const;
-
     const SerializationInfoSettings settings;
 
     ISerialization::KindStack kind_stack;

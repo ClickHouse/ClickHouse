@@ -131,11 +131,11 @@ public:
 
     void advanceRowNumber(RowNumber & x) const
     {
-        chassert(x.block >= first_block_number);
-        chassert(x.block - first_block_number < blocks.size());
+        assert(x.block >= first_block_number);
+        assert(x.block - first_block_number < blocks.size());
 
         const auto block_rows = blockAt(x).rows;
-        chassert(x.row < block_rows);
+        assert(x.row < block_rows);
 
         ++x.row;
         if (x.row < block_rows)
@@ -166,15 +166,15 @@ public:
         }
 
         --x.block;
-        chassert(x.block >= first_block_number);
-        chassert(x.block < first_block_number + blocks.size());
-        chassert(blockAt(x).rows > 0);
+        assert(x.block >= first_block_number);
+        assert(x.block < first_block_number + blocks.size());
+        assert(blockAt(x).rows > 0);
         x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
         auto advanced_retreated_x = x;
         advanceRowNumber(advanced_retreated_x);
-        chassert(advanced_retreated_x == original_x);
+        assert(advanced_retreated_x == original_x);
 #endif
     }
     RowNumber prevRowNumber(const RowNumber & x) const
@@ -189,11 +189,11 @@ public:
 
     void assertValid(const RowNumber & x) const
     {
-        chassert(x.block >= first_block_number);
+        assert(x.block >= first_block_number);
         if (x.block == first_block_number + blocks.size())
-            chassert(x.row == 0);
+            assert(x.row == 0);
         else
-            chassert(x.row < blockRowsNumber(x));
+            assert(x.row < blockRowsNumber(x));
     }
     RowNumber blocksEnd() const
     {

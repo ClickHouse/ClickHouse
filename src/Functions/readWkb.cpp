@@ -7,13 +7,11 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/IColumn.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
 #include <Functions/geometryConverters.h>
 #include <Columns/ColumnVariant.h>
-#include <Interpreters/Context.h>
 
 #include <memory>
 #include <variant>
@@ -28,19 +26,14 @@ extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace Setting
-{
-    extern const SettingsUInt64 max_wkb_geometry_elements;
-}
-
 namespace
 {
 
 template <class ReturnDataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWKB final : public IFunction
+class FunctionReadWKB : public IFunction
 {
 public:
-    explicit FunctionReadWKB(UInt32 max_wkb_elements_) : max_wkb_elements(max_wkb_elements_) {}
+    explicit FunctionReadWKB() = default;
 
     static constexpr const char * name = NameHolder::name;
 
@@ -71,11 +64,7 @@ public:
             auto str = column->getDataAt(i);
             ReadBufferFromString in_buffer(str);
 
-            auto object = parseWKBFormat(in_buffer, max_wkb_elements);
-            if (!std::holds_alternative<Geometry>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Function {}: expected geometry type {}, got variant index {}",
-                    NameHolder::name, ReturnDataTypeName().getName(), object.index());
+            auto object = parseWKBFormat(in_buffer);
             auto boost_object = std::get<Geometry>(object);
             serializer.add(boost_object);
         }
@@ -84,14 +73,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>(
-            static_cast<UInt32>(std::min<UInt64>(context->getSettingsRef()[Setting::max_wkb_geometry_elements], MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT)));
+        return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>();
     }
-
-private:
-    UInt32 max_wkb_elements;
 };
 
 struct ReadWKBPointNameHolder
@@ -119,7 +104,7 @@ struct ReadWKBMultiPolygonNameHolder
     static constexpr const char * name = "readWKBMultiPolygon";
 };
 
-class FunctionReadWKBCommon final : public IFunction
+class FunctionReadWKBCommon : public IFunction
 {
 public:
     enum class WKBTypes
@@ -131,7 +116,7 @@ public:
         Polygon,
     };
 
-    explicit FunctionReadWKBCommon(UInt32 max_wkb_elements_) : max_wkb_elements(max_wkb_elements_) {}
+    explicit FunctionReadWKBCommon() = default;
 
     static constexpr const char * name = "readWKB";
 
@@ -175,7 +160,7 @@ public:
             auto str = column->getDataAt(i);
             ReadBufferFromString in_buffer(str);
 
-            auto object = parseWKBFormat(in_buffer, max_wkb_elements);
+            auto object = parseWKBFormat(in_buffer);
             UInt8 converted_type = -1;
             if (std::holds_alternative<CartesianPoint>(object))
             {
@@ -224,14 +209,10 @@ public:
         return true;
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionReadWKBCommon>(
-            static_cast<UInt32>(std::min<UInt64>(context->getSettingsRef()[Setting::max_wkb_geometry_elements], MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT)));
+        return std::make_shared<FunctionReadWKBCommon>();
     }
-
-private:
-    UInt32 max_wkb_elements;
 };
 
 }
@@ -258,7 +239,7 @@ SELECT toTypeName(readWKBPoint(unhex('0101000000333333333333f33f3333333333330b40
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_point = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_point = {25, 11};
     FunctionDocumentation::Category category_point = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_point = {description_point, syntax_point, arguments_point, {}, returned_value_point, examples_point, introduced_in_point, category_point};
 
@@ -282,7 +263,7 @@ SELECT readWKBLineString(unhex('010200000004000000000000000000f03f000000000000f0
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_linestring = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_linestring = {25, 11};
     FunctionDocumentation::Category category_linestring = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_linestring = {description_linestring, syntax_linestring, arguments_linestring, {}, returned_value_linestring, examples_linestring, introduced_in_linestring, category_linestring};
 
@@ -306,7 +287,7 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_multilinestring = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_multilinestring = {25, 11};
     FunctionDocumentation::Category category_multilinestring = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_multilinestring = {description_multilinestring, syntax_multilinestring, arguments_multilinestring, {}, returned_value_multilinestring, examples_multilinestring, introduced_in_multilinestring, category_multilinestring};
 
@@ -332,7 +313,7 @@ Polygon [[(2,0),(10,0),(10,10),(0,10),(2,0)]]
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_polygon = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_polygon = {25, 11};
     FunctionDocumentation::Category category_polygon = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_polygon = {description_polygon, syntax_polygon, arguments_polygon, {}, returned_value_polygon, examples_polygon, introduced_in_polygon, category_polygon};
 
@@ -359,7 +340,7 @@ readWKBMulti~000024c0')): [[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_multipolygon = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in_multipolygon = {25, 11};
     FunctionDocumentation::Category category_multipolygon = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_multipolygon = {description_multipolygon, syntax_multipolygon, arguments_multipolygon, {}, returned_value_multipolygon, examples_multipolygon, introduced_in_multipolygon, category_multipolygon};
 

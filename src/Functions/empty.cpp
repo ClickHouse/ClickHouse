@@ -28,7 +28,7 @@ struct NameNotEmpty
     static constexpr auto name = "notEmpty";
 };
 
-class ExecutableFunctionJSONEmpty final : public IExecutableFunction
+class ExecutableFunctionJSONEmpty : public IExecutableFunction
 {
 public:
     ExecutableFunctionJSONEmpty(bool negative_, const char * name_) : negative(negative_), function_name(name_) {}

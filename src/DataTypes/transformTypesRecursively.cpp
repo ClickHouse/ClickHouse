@@ -9,7 +9,7 @@
 namespace DB
 {
 
-static TypeIndexesSet getTypesIndexes(const DataTypes & types)
+TypeIndexesSet getTypesIndexes(const DataTypes & types)
 {
     TypeIndexesSet type_indexes;
     for (const auto & type : types)
