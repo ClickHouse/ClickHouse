@@ -726,7 +726,7 @@ void StorageTimeSeries::readImpl(
     /// Run the generated read query on a child context with a few settings pinned so its results
     /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
     auto read_context = Context::createCopy(local_context);
-    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(query_info.isFinal()));
+    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries());
 
     NameSet requested_columns{column_names.begin(), column_names.end()};
     auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
