@@ -55,7 +55,7 @@ std::string getLogicalDirectoryPath(const NormalizedPath & directory)
 {
     if (directory.empty())
         return "/";
-    return directory.string() + "/";
+    return pathToGenericString(directory) + "/";
 }
 
 /// Rewrites the `prefix.path` object of a directory with the given contents.
@@ -74,7 +74,7 @@ void writeDirectoryMetadata(
         info.has_explicit_file_list ? info.files.size() : 0);
 
     auto buf = object_storage.writeObject(
-        StoredObject(metadata_object_key, directory.string()),
+        StoredObject(metadata_object_key, pathToGenericString(directory)),
         WriteMode::Rewrite,
         /*object_attributes*/ std::nullopt,
         /*buf_size*/ 128,
@@ -86,7 +86,7 @@ void writeDirectoryMetadata(
 
 DirectoryRemoteInfo getDirectoryInfoOrThrow(const FsSnapshot & fs_tree, const NormalizedPath & directory)
 {
-    auto info = fs_tree.getDirectoryRemoteInfo(directory);
+    auto info = fs_tree.getDirectoryRemoteInfo(pathToGenericString(directory));
     if (!info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist or is virtual", directory.string());
     return std::move(*info);
@@ -427,9 +427,9 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}', size: {}, blob key: '{}'", path, object.bytes_size, blob_key);
 
-    const auto normalized_path = normalizePath(path);
+    const auto normalized_path = normalizePath(pathToGenericString(path));
     const auto directory = normalized_path.parent_path();
-    const auto file_name = normalized_path.filename().string();
+    const auto file_name = pathToGenericString(normalized_path.filename());
 
     auto directory_info = getDirectoryInfoOrThrow(*fs_tree, directory);
     const std::string default_blob_key = getDefaultBlobKey(directory_info.remote_path, file_name);
@@ -555,7 +555,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
     if (prefix_path_written)
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path);
-        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+        writeDirectoryMetadata(*object_storage, *layout, normalizePath(pathToGenericString(path)).parent_path(), previous_directory_info.value());
         return;
     }
 
@@ -645,7 +645,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     if (prefix_path_written)
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path_to);
-        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+        writeDirectoryMetadata(*object_storage, *layout, normalizePath(pathToGenericString(path_to)).parent_path(), previous_directory_info.value());
     }
 
     if (!copy_attempted)
@@ -681,26 +681,26 @@ void MetadataStorageFromPlainObjectStorageHardLinkOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageHardLinkOperation"), "Creating hard link '{}' to '{}'", path_to, path_from);
 
-    if (!fs_tree->existsFile(path_from))
+    if (!fs_tree->existsFile(pathToGenericString(path_from)))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
-    else if (!fs_tree->existsDirectory(path_to.parent_path()))
+    else if (!fs_tree->existsDirectory(pathToGenericString(path_to.parent_path())))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_to.parent_path());
-    else if (!fs_tree->getDirectoryRemoteInfo(path_to.parent_path()))
+    else if (!fs_tree->getDirectoryRemoteInfo(pathToGenericString(path_to.parent_path())))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_to.parent_path());
-    else if (fs_tree->existsFile(path_to))
+    else if (fs_tree->existsFile(pathToGenericString(path_to)))
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
 
-    const auto normalized_path_from = normalizePath(path_from);
+    const auto normalized_path_from = normalizePath(pathToGenericString(path_from));
     const auto directory_info_from = getDirectoryInfoOrThrow(*fs_tree, normalized_path_from.parent_path());
-    const auto & file_info_from = directory_info_from.files.at(normalized_path_from.filename());
-    const auto blob_key = getBlobKey(directory_info_from, normalized_path_from.filename(), file_info_from);
+    const auto & file_info_from = directory_info_from.files.at(pathToGenericString(normalized_path_from.filename()));
+    const auto blob_key = getBlobKey(directory_info_from, pathToGenericString(normalized_path_from.filename()), file_info_from);
 
-    const auto directory_to = normalizePath(path_to).parent_path();
+    const auto directory_to = normalizePath(pathToGenericString(path_to)).parent_path();
     previous_directory_info = getDirectoryInfoOrThrow(*fs_tree, directory_to);
 
-    fs_tree->recordFile(path_to, FileRemoteInfo{.bytes_size = file_info_from.bytes_size, .last_modified = file_info_from.last_modified, .blob_key = blob_key});
+    fs_tree->recordFile(pathToGenericString(path_to), FileRemoteInfo{.bytes_size = file_info_from.bytes_size, .last_modified = file_info_from.last_modified, .blob_key = blob_key});
     fs_tree->addBlobLink(blob_key);
-    fs_tree->markDirectoryExplicit(directory_to);
+    fs_tree->markDirectoryExplicit(pathToGenericString(directory_to));
 
     prefix_path_written = true;
     writeDirectoryMetadata(*object_storage, *layout, directory_to, getDirectoryInfoOrThrow(*fs_tree, directory_to));
@@ -712,7 +712,7 @@ void MetadataStorageFromPlainObjectStorageHardLinkOperation::undo()
         return;
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageHardLinkOperation"), "Reversing the hard link '{}' to '{}'", path_to, path_from);
-    writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+    writeDirectoryMetadata(*object_storage, *layout, normalizePath(pathToGenericString(path_to)).parent_path(), previous_directory_info.value());
 }
 
 MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlainObjectStorageMoveFileOperation(
@@ -865,10 +865,10 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), "Reversing the metadata rewrite for the move from '{}' to '{}'", path_from, path_to);
 
         if (prefix_path_written_to)
-            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info_to.value());
+            writeDirectoryMetadata(*object_storage, *layout, normalizePath(pathToGenericString(path_to)).parent_path(), previous_directory_info_to.value());
 
         if (prefix_path_written_from)
-            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_from).parent_path(), previous_directory_info_from.value());
+            writeDirectoryMetadata(*object_storage, *layout, normalizePath(pathToGenericString(path_from)).parent_path(), previous_directory_info_from.value());
 
         return;
     }

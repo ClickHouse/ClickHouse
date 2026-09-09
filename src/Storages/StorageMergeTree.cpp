@@ -496,10 +496,10 @@ void StorageMergeTree::removeOwnFilesInDiskRootOnDrop()
 
         /// Otherwise the next table created on the same disk loads the block numbers of this one and deduplicates
         /// (silently skips) its inserts.
-        const auto deduplication_logs_path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
+        const auto deduplication_logs_path = pathToGenericString(fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME);
         if (disk->existsDirectory(deduplication_logs_path))
         {
-            LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path.string());
+            LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path);
             disk->removeRecursive(deduplication_logs_path);
             ++removed_count;
         }
