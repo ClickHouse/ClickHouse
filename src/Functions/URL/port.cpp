@@ -99,6 +99,16 @@ private:
             return default_port;
 
         p = host.data() + host.size();
+
+        /// An IP-literal host is returned without its brackets (RFC 3986, 3.2.2:
+        /// `IP-literal = "[" ( IPv6address / IPvFuture ) "]"`), so for `http://[2001:db8::1]:8080/`
+        /// the port separator follows the closing bracket rather than the host itself.
+        if constexpr (conform_rfc)
+        {
+            if (p < end && *p == ']')
+                ++p;
+        }
+
         if (p >= end || *p != ':')
             return default_port;
         ++p;
