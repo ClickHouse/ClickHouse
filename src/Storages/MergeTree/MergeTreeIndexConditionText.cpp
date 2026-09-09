@@ -927,9 +927,9 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     if (end - start < getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length])
         return {};
 
-    /// The scan matches tokens bytewise, ASCII case-insensitively (`ASCIICaseInsensitiveStringSearcher`), while
-    /// ILIKE folds per code point and also equates U+212A with 'k'. The token keeps the raw bytes, so the scan
-    /// cannot see such an occurrence and would prune a granule holding a matching row.
+    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
+    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
+    /// would prune a granule holding a matching row.
     if (case_insensitive && std::any_of(data + start, data + end, UTF8::isASCIIReachableByCaseFolding))
         return {};
 

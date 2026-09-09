@@ -148,9 +148,11 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
 {
     if (expression_ast)
     {
-        /// Only ASCII lower/upper applied directly to the index column maps 1:1 by byte and therefore
-        /// preserves the substrings the ILIKE matcher finds in the original string. Nested expressions and
-        /// lowerUTF8/upperUTF8 (ICU full case mapping, e.g. `ß` -> `SS`) fold code points ILIKE does not.
+        /// Only ASCII lower/upper applied directly to the index column maps 1:1 by byte, so a token contains
+        /// the same substrings as the original string and an ILIKE served from the dictionary agrees with
+        /// ILIKE on the column. Nested expressions and lowerUTF8/upperUTF8 do not: ICU full case mapping turns
+        /// non-ASCII characters into ASCII letters (`ß` into `SS`), inventing tokens that contain a needle
+        /// which ILIKE never finds in the row, so the index would report rows the predicate rejects.
         const auto * func = expression_ast->as<ASTFunction>();
         if (func && func->arguments && func->arguments->children.size() == 1)
         {

@@ -264,7 +264,7 @@ std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_
 
 bool isASCIIReachableByCaseFolding(char c)
 {
-    /// Derived from Poco's tables rather than hardcoded, so it cannot drift from `compareTrivialUTF8`.
+    /// Derived from Poco's tables rather than hardcoded, so it cannot drift from the folding it describes.
     static const std::array<bool, 128> reachable = []
     {
         std::array<bool, 128> result{};

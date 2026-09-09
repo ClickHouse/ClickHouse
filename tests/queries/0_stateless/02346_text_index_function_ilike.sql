@@ -147,7 +147,6 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
--- A needle containing `k` is not eligible: see 02346_text_index_ilike_utf8_case_folding.
 SELECT '-- Text index for ILIKE function should choose all 4 parts and 40 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
