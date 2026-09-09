@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental while its wire layout is still evolving.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # ColumnBinary/ColumnBinary's COL_COMPLEX Array decoder trusts the wire's guest-controlled
 # offsets array. A non-monotonic offsets array (e.g. [0, 3, 1]) must be rejected instead of
 # being passed through to ColumnArray, where a per-row size difference could underflow into

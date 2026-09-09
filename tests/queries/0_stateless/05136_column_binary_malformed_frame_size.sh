@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is gated behind `allow_experimental_column_binary_format`.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # A `ColumnBinary` frame declares its column data section through descriptor offsets, which are
 # just bytes off the wire. The reader must not size its frame buffer from them in one step: a
 # frame whose descriptor claims a huge data section but carries none must be rejected on the

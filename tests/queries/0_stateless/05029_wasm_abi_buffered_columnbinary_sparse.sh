@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental while its wire layout is still evolving.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # `system.webassembly_modules` is a single server-wide registry, not per-database, so a
 # fixed module name collides when the same test runs concurrently with itself (the flaky
 # check does exactly that): one copy's `DELETE FROM system.webassembly_modules` removes

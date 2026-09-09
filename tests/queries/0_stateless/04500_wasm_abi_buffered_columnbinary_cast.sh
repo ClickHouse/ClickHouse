@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental while its wire layout is still evolving.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 ${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS add_offset_buffered;
 DELETE FROM system.webassembly_modules WHERE name = 'columnar_abi_buffered_cast';

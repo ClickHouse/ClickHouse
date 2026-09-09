@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental while its wire layout is still evolving.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # `ColumnBinaryInputFormat` decodes a frame in place when the read buffer already holds it
 # whole, and otherwise copies it into its own storage. Which branch runs depends only on how
 # the data happens to be buffered, so both must decode a frame identically. Force each branch

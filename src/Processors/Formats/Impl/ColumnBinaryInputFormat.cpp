@@ -297,6 +297,7 @@ void registerInputFormatColumnBinary(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
+        ColumnBinaryWire::checkColumnBinaryFormatIsAllowed(settings.column_binary.allow_experimental);
         return std::make_shared<ColumnBinaryInputFormat>(buf, header, params, settings);
     });
 
@@ -309,12 +310,12 @@ void registerInputFormatColumnBinary(FormatFactory & factory)
 ## Description {#description}
 
 :::note Experimental
-`ColumnBinary` is experimental and its layout is not yet frozen. The frame header carries a magic
-and a format version, and a reader rejects a version it does not implement, so data written by a
-different version is refused rather than misread. What is not promised is that a future version will
-still read it: an incompatible layout change bumps the version and makes frames written today
-unreadable. Use `ColumnBinary` for interchange, and do not rely on it for long-term storage until
-the layout is frozen.
+`ColumnBinary` is experimental and disabled by default; set `allow_experimental_column_binary_format = 1`
+to use it. Its layout is not yet frozen. The frame header carries a magic and a format version, and a
+reader rejects a version it does not implement, so data written by a different version is refused rather
+than misread. What is not promised is that a future version will still read it: an incompatible layout
+change bumps the version and makes frames written today unreadable. Use `ColumnBinary` for interchange,
+and do not rely on it for long-term storage until the layout is frozen.
 :::
 
 `ColumnBinary` is a compact columnar binary format. It is also usable as the wire format of a WebAssembly UDF declared with `ABI BUFFERED_V1 ... SETTINGS serialization_format = 'ColumnBinary'` (see [WebAssembly UDFs](/sql-reference/functions/wasm_udf)). Unlike [Native](./Native.md) and [Buffers](./Buffers.md), which serialize each column independently one after another, `ColumnBinary` writes a single frame per block: a header, a fixed-size descriptor table (one descriptor per column), and then every column's data packed contiguously. All numeric fields are little-endian.

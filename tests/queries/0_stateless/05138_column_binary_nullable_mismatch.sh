@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is gated behind `allow_experimental_column_binary_format`.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # A `ColumnBinary` descriptor and the declared type must agree about nullability, and a frame
 # that disagrees is bad input, not an internal inconsistency: it arrives from a file, a network
 # peer or a WASM guest, so it must be reported as a data error like every other malformed frame.

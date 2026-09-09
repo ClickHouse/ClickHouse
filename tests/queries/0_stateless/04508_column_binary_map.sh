@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental while its wire layout is still evolving.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # Map(K, V) is Array(Tuple(K, V)) under the hood; no dedicated wire tag needed, it's
 # unwrapped to that at every touch point and goes through the existing Array/Tuple path.
 run_roundtrip() {

@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is gated behind `allow_experimental_column_binary_format`.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # A `ColumnBinary` frame carries a fixed header and one fixed-size descriptor per column
 # whatever the row count, so a call pays that metadata once. The splitter measures a row by
 # serializing it alone and subtracting `blockFramingBytes`, so a format whose framing that
