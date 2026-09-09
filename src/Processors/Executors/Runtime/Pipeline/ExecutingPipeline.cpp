@@ -5,7 +5,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -144,25 +143,7 @@ void ExecutingPipeline::cancel(IProcessor::CancelReason reason)
     }
 
     const auto reason_in_force = cancel_reason.load();
-    std::exception_ptr exception_ptr;
-
-    states.forEachProcessor([&](IProcessor & processor, ProcessorState &)
-    {
-        try
-        {
-            processor.cancel(reason_in_force);
-        }
-        catch (...)
-        {
-            if (!exception_ptr)
-                exception_ptr = std::current_exception();
-
-            tryLogCurrentException("ExecutingPipeline");
-        }
-    });
-
-    if (exception_ptr)
-        std::rethrow_exception(exception_ptr);
+    states.forEachProcessor([&](IProcessor & processor, ProcessorState &) { processor.cancel(reason_in_force); });
 }
 
 void ExecutingPipeline::fail(std::exception_ptr exception_)
