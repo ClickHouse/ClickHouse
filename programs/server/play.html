@@ -16266,8 +16266,9 @@ function sqlSettingTokenValue(token)
 /// former persists in the session (when the connection uses a `session_id`), which this page cannot
 /// honor. When the lexer cannot produce a token list - WebAssembly is unavailable, or tokenization
 /// failed - the same walk runs over `fallbackTokenize`'s tokens, so the classification (and every
-/// context rule above) is identical in both paths. The same settings walk detects a query-level
-/// profiler opt-out, so the page's checkbox cannot add profiling settings to a disabled run.
+/// context rule above) is identical in both paths. The same walk detects explicit profiler opt-outs
+/// so the page does not add profiling overrides to them. A standalone `SET` still changes only
+/// session settings; this classification affects the UI additions to that request, not later runs.
 async function detectFramingSetting(query, param_values = {})
 {
     const raw_tokens = await tokenizeWithFallback(query);
@@ -16374,7 +16375,7 @@ async function detectFramingSetting(query, param_values = {})
                             query_setting_disables = false;
                             query_setting_value = undefined;
                         }
-                        if (is_settings && name === 'send_profile_traces') query_disables_profile_traces = false;
+                        if (name === 'send_profile_traces') query_disables_profile_traces = false;
                         ++j;
                         if (continues) { ++j; continue; }
                         break;
@@ -16388,7 +16389,7 @@ async function detectFramingSetting(query, param_values = {})
                     }
                     const value_token = tokens[j];
                     if (!value_token) break;
-                    if (is_settings && name === 'send_profile_traces')
+                    if (name === 'send_profile_traces')
                     {
                         /// `DEFAULT` resets follow all value assignments and restore the canonical false value.
                         if (value_token.type === TT.BareWord && value_token.token.toLowerCase() === 'default')

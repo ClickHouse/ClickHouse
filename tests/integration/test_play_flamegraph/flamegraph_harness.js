@@ -73,6 +73,12 @@ async function main()
         'SELECT 1 SETTINGS `send_profile_traces` = 0',
         'SELECT 1 SETTINGS optimize_move_to_prewhere, send_profile_traces = 0',
         'SELECT 1 SETTINGS send_profile_traces = {enabled:Bool}',
+        'SET send_profile_traces = 0',
+        "SET send_profile_traces = 'false'",
+        'SET send_profile_traces = DEFAULT',
+        'SET send_profile_traces = DEFAULT, send_profile_traces = 1',
+        'SET send_profile_traces = 1, send_profile_traces = DEFAULT',
+        'SET send_profile_traces = {enabled:Bool}',
     ])
         assert.equal((await request(query, {enabled: '0'})).profile_traces, false, query);
     for (const query of [
@@ -83,6 +89,10 @@ async function main()
         'SELECT 1 SETTINGS send_profile_traces = 0, send_profile_traces = 1',
         'SELECT 1 SETTINGS send_profile_traces = 0, send_profile_traces',
         'SELECT 1 SETTINGS send_profile_traces = {enabled:Bool}',
+        'SET send_profile_traces = 1',
+        'SET send_profile_traces = 0, send_profile_traces = 1',
+        'SET send_profile_traces = 0, send_profile_traces',
+        "SELECT 'SET send_profile_traces = 0'",
     ])
     {
         const result = await request(query, {enabled: '1'});
@@ -98,6 +108,14 @@ async function main()
     changingTab.profileTraces = false;
     changingTab.profilerPeriodNs = '100000000';
     assert.equal(new URL((await pendingRequest).url).searchParams.get('query_profiler_cpu_time_period_ns'), '1000000');
+    const sessionTab = {profileTraces: true, profilerPeriodNs: '1000000'};
+    const sessionRequest = query => requestApi.postImpl(sessionTab, 1, query, {}, {}, {}, '', {url: 'http://fixture/'}, 0);
+    assert.equal((await sessionRequest('SET send_profile_traces = 0')).profile_traces, false);
+    assert.equal(sessionTab.profileTraces, true);
+    const followingRequest = await sessionRequest('SELECT 1');
+    assert.equal(followingRequest.profile_traces, true);
+    assert.equal(new URL(followingRequest.url).searchParams.get('query_profiler_cpu_time_period_ns'), '1000000');
+    await assert.rejects(sessionRequest("SET framing_output_format = 'EventStream'"), /whole session/);
     console.log('PASS request settings respect SQL opt-outs, DEFAULT resets, parameters, and lexical query scope');
     for (const clause of [
         "framing_output_format = 'EventStream'",
