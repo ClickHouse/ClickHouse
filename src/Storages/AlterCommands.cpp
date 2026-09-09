@@ -1102,17 +1102,20 @@ void AlterCommand::apply(
         auto new_projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
 
-        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
+        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change.
+        /// Compared as ASTs, not as formatted text (see `sameAST`), so that a restatement which differs only by
+        /// comparison-insensitive spelling - redundant parentheses, or `APPLY SUM` versus `APPLY sum` - is accepted.
         auto definition_without_settings = [](const IAST & definition_ast)
         {
             auto cloned = definition_ast.clone();
             auto & decl = cloned->as<ASTProjectionDeclaration &>();
             cloned->reset(decl.with_settings);
-            return cloned->formatWithSecretsOneLine();
+            FunctionNameNormalizer::visitForComparison(cloned.get());
+            return cloned;
         };
 
         const auto & old_projection = metadata.projections.get(projection_name);
-        if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+        if (!sameAST(definition_without_settings(*old_projection.definition_ast), definition_without_settings(*new_projection.definition_ast)))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
