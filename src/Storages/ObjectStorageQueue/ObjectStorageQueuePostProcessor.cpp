@@ -265,7 +265,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
 
     std::vector<UInt8> succeeded(objects.size(), 0);
 
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         for (size_t i = 0; i < objects.size(); ++i)
             if (succeeded[i])
                 successful_objects.emplace_back(objects[i]);
