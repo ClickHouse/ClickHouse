@@ -116,7 +116,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , idempotency_id(getRandomASCIIString(IDEMPOTENCY_ID_LENGTH))
+    , idempotency_id(getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH))
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -641,6 +641,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
+    req.setIdempotencyId(idempotency_id);
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
@@ -690,18 +691,13 @@ bool WriteBufferFromS3::completeMultipartUpload()
 
         const auto & error = outcome.GetError();
 
-        /// A 412, or a NO_SUCH_UPLOAD reporting an upload id the server already consumed, on our own
-        /// object means this completion was replayed after it had succeeded. Anything we cannot prove
-        /// we wrote is a pre-existing object and must still throw.
-        const bool replayed_after_success = error.GetExceptionName() == "PreconditionFailed"
-            || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
-        if (replayed_after_success && isObjectWrittenByThisBuffer())
+        /// A 412 on our own object means this completion was replayed after it had succeeded. The
+        /// NO_SUCH_UPLOAD case is the same situation reached by a different error, and the client
+        /// resolves it there from the id carried on the request.
+        if (error.GetExceptionName() == "PreconditionFailed" && isObjectWrittenByThisBuffer())
         {
             LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write ({}). {}, Parts: {}",
                      error.GetExceptionName(), getShortLogDetails(), multipart_tags.size());
-            /// The attempt that completed the upload reported an error, so nothing has composed the
-            /// object yet.
-            client_ptr->composeObjectAfterMultipartUpload(bucket, key);
             return true;
         }
 
@@ -758,7 +754,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
 ObjectAttributes WriteBufferFromS3::metadataWithIdempotencyId() const
 {
     auto metadata = object_metadata.value_or(ObjectAttributes{});
-    metadata[IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+    metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
     return metadata;
 }
 

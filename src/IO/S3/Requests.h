@@ -190,10 +190,27 @@ public:
     bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
 };
 
+/// Custom object metadata key under which a writer stamps the id identifying itself.
+static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
+
+/// About 103 bits out of the 26 letters `getRandomASCIIString` draws from, and 22 of the 2 KB S3
+/// allows for an object's user metadata. It only has to be unique among writers racing for one key.
+static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
+
 class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
+
+    /// The id `CreateMultipartUpload` stamped in this object's metadata. Set it and a completion that
+    /// comes back as NO_SUCH_UPLOAD is accepted when, and only when, the object at the key carries it
+    /// -- meaning an earlier attempt of this very upload completed and its response was lost. Left
+    /// empty, the error is reported as it is.
+    void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
+    const Aws::String & getIdempotencyId() const { return idempotency_id; }
+
+private:
+    Aws::String idempotency_id;
 };
 
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;

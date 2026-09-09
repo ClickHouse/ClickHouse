@@ -61,7 +61,7 @@ bool isObjectWrittenWithIdempotencyId(
     try
     {
         auto info = S3::getObjectInfoIfExists(client, bucket, key, /* version_id = */ {}, /* with_metadata = */ true);
-        auto it = info.metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+        auto it = info.metadata.find(S3::IDEMPOTENCY_ID_METADATA_KEY);
         return it != info.metadata.end() && it->second == idempotency_id;
     }
     catch (...)

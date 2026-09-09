@@ -33,21 +33,16 @@ struct Settings;
 /// ascending order, so a genuine InvalidPartOrder cannot originate here). InvalidPart /
 /// InvalidPartOrder are not in the typed S3Errors enum, so the SDK leaves GetErrorType() == UNKNOWN
 /// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD means the
-/// upload id is gone and retrying cannot bring it back, so it is not retried here; the writer
-/// resolves it with `isObjectWrittenWithIdempotencyId`.
+/// upload id is gone and retrying cannot bring it back, so it is not retried here;
+/// `Client::CompleteMultipartUpload` resolves it from the request's idempotency id.
 bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error);
 
-/// Custom object metadata key carrying the writer's idempotency id, see `isObjectWrittenWithIdempotencyId`.
-static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
-
-/// About 103 bits out of the 26 letters `getRandomASCIIString` draws from, and 22 of the 2 KB S3
-/// allows for an object's user metadata. It only has to be unique among writers racing for one key.
-static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
-
-/// True only if the object at `key` carries `idempotency_id`, i.e. the caller wrote it. A writer
-/// stamps an id of its own on the object it creates, which lets a request it has to send again
-/// recognise its earlier attempt's result and tell it apart from an object already at the key. An
-/// absent object, a foreign id, a failed HEAD, and an empty `idempotency_id` all give false.
+/// True only if the object at `key` carries `idempotency_id`, i.e. the caller wrote it. An absent
+/// object, a foreign id, a failed HEAD, and an empty `idempotency_id` all give false.
+///
+/// This is the single-part variant, for a `PutObject` answered with 412: it costs its own HEAD.
+/// A multipart completion does not use it -- `Client::CompleteMultipartUpload` reads the id out of
+/// the HEAD it already performs.
 bool isObjectWrittenWithIdempotencyId(
     const S3::Client & client, const String & bucket, const String & key, const String & idempotency_id, LoggerPtr log);
 

@@ -113,8 +113,9 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        /// Identifies this upload among all writers to `dest_key`, see `isObjectWrittenWithIdempotencyId`.
-        const String idempotency_id = getRandomASCIIString(IDEMPOTENCY_ID_LENGTH);
+        /// Identifies this upload among all writers to `dest_key`. Stamped on the object by
+        /// `CreateMultipartUpload` and handed to the completion, which recovers a lost response with it.
+        const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -144,7 +145,7 @@ namespace
 
             /// Metadata set here lands on the completed object, so a HEAD after completion sees the id.
             auto metadata = object_metadata.value_or(ObjectAttributes{});
-            metadata[IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+            metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
@@ -198,6 +199,7 @@ namespace
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetUploadId(multipart_upload_id);
+            request.setIdempotencyId(idempotency_id);
 
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
             for (size_t i = 0; i < multipart_tags.size(); ++i)
@@ -232,19 +234,6 @@ namespace
                 }
 
                 const auto & error = outcome.GetError();
-
-                /// A NO_SUCH_UPLOAD reporting an upload id the server already consumed, on our own
-                /// object, means this completion was sent again after it had succeeded. Anything we
-                /// cannot prove we wrote is a pre-existing object and must still throw.
-                if (error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
-                    && isObjectWrittenWithIdempotencyId(*client_ptr, dest_bucket, dest_key, idempotency_id, log))
-                {
-                    LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
-                    /// The attempt that completed the upload reported an error, so nothing has
-                    /// composed the object yet.
-                    client_ptr->composeObjectAfterMultipartUpload(dest_bucket, dest_key);
-                    break;
-                }
 
                 if (isTransientCompleteMultipartUploadError(error) && (retries < max_retries))
                 {

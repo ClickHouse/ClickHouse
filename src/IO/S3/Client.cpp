@@ -208,6 +208,12 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
     }
 }
 
+bool objectCarriesIdempotencyId(const Aws::Map<Aws::String, Aws::String> & metadata, const Aws::String & idempotency_id)
+{
+    auto it = metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+    return it != metadata.end() && it->second == idempotency_id;
+}
+
 template <bool IsReadMethod>
 void incrementProfileEvents(ProfileEvents::Event read_event, ProfileEvents::Event write_event)
 {
@@ -553,41 +559,67 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
-    /// A NO_SUCH_UPLOAD is reported as it is. This layer sees only the part list, so it cannot tell an
-    /// upload that was aborted from one whose completion succeeded and lost its response, and an object
-    /// at the key proves neither. The writer knows which object is its own and resolves it there, see
-    /// `isObjectWrittenWithIdempotencyId`, and calls `composeObjectAfterMultipartUpload` once it concludes the
-    /// upload is complete -- by either route, which is why this cannot be keyed on `outcome` here.
+    const auto & key = request.GetKey();
+    const auto & bucket = request.GetBucket();
 
-    if (outcome.IsSuccess())
-        composeObjectAfterMultipartUpload(request.GetBucket(), request.GetKey());
+    /// A conditional completion needs no separate guard: the id proves the object is this upload's
+    /// result, which is what an `If-Match` or `If-None-Match` was asking about in the first place.
+    if (!outcome.IsSuccess()
+        && !request.getIdempotencyId().empty()
+        && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
+    {
+        auto check_request = HeadObjectRequest()
+                                 .WithBucket(bucket)
+                                 .WithKey(key);
+        auto check_outcome = HeadObject(check_request);
+
+        /// The upload id is gone, which happens both when an earlier attempt of this completion
+        /// succeeded and lost its response, and when the upload was aborted. An object at the key
+        /// does not tell those apart -- it may be somebody else's, and accepting it would report
+        /// rows as stored that never were. The id this upload stamped on its own object does, and
+        /// the HEAD already carries it, so this costs no extra request.
+        if (check_outcome.IsSuccess()
+            && objectCarriesIdempotencyId(check_outcome.GetResult().GetMetadata(), request.getIdempotencyId()))
+        {
+            LOG_INFO(
+                log,
+                "Multipart upload was completed by an earlier attempt of this upload. Key: {}, Bucket: {}",
+                key, bucket);
+            outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+        }
+        else
+        {
+            LOG_INFO(
+                log,
+                "Multipart upload was not completed and the key does not hold its result, reporting the error. "
+                "Key: {}, Bucket: {}, Object at key: {}",
+                key, bucket, check_outcome.IsSuccess() ? "another write's" : "absent");
+        }
+    }
+
+    if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
+    {
+        /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
+        /// for the object (e.g. for backups)
+        /// We don't care if the compose fails, because the upload was still successful, only the
+        /// performance for copying the object will be affected
+        S3::ComposeObjectRequest compose_req;
+        compose_req.SetBucket(bucket);
+        compose_req.SetKey(key);
+        compose_req.SetComponentNames({key});
+        compose_req.SetContentType("binary/octet-stream");
+        auto compose_outcome = ComposeObject(compose_req);
+
+        if (compose_outcome.IsSuccess())
+            LOG_TRACE(log, "Composing object was successful");
+        else
+            LOG_INFO(
+                log,
+                "Failed to compose object. Message: {}, Key: {}, Bucket: {}",
+                compose_outcome.GetError().GetMessage(), key, bucket);
+    }
 
     return outcome;
-}
-
-void Client::composeObjectAfterMultipartUpload(const String & bucket, const String & key) const
-{
-    if (provider_type != ProviderType::GCS || !client_settings.gcs_issue_compose_request)
-        return;
-
-    /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
-    /// for the object (e.g. for backups)
-    /// We don't care if the compose fails, because the upload was still successful, only the
-    /// performance for copying the object will be affected
-    S3::ComposeObjectRequest compose_req;
-    compose_req.SetBucket(bucket);
-    compose_req.SetKey(key);
-    compose_req.SetComponentNames({key});
-    compose_req.SetContentType("binary/octet-stream");
-    auto compose_outcome = ComposeObject(compose_req);
-
-    if (compose_outcome.IsSuccess())
-        LOG_TRACE(log, "Composing object was successful");
-    else
-        LOG_INFO(
-            log,
-            "Failed to compose object. Message: {}, Key: {}, Bucket: {}",
-            compose_outcome.GetError().GetMessage(), key, bucket);
 }
 
 Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const

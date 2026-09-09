@@ -214,12 +214,6 @@ public:
     Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
     Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const;
 
-    /// Call once a multipart upload of `key` is known to be complete. Composes the object on GCS with
-    /// `gcs_issue_compose_request`, a no-op elsewhere. `CompleteMultipartUpload` calls it for a
-    /// completion that reported success; a caller that concludes success despite an error -- an
-    /// earlier attempt recognised by its idempotency id -- must call it itself.
-    void composeObjectAfterMultipartUpload(const String & bucket, const String & key) const;
-
     Model::UploadPartOutcome UploadPart(UploadPartRequest & request) const;
     Model::UploadPartCopyOutcome UploadPartCopy(UploadPartCopyRequest & request) const;
 
