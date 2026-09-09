@@ -1071,31 +1071,52 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
     if (tables_list.empty())
         return result;
 
-    /// `fetchRequiredTables` wrote every element through `doubleQuoteWithSchema`, so the table has to be
-    /// looked up by that spelling: the raw name does not occur in the list once a quote in it is doubled
-    /// or a schema is quoted separately.
+    /// `fetchRequiredTables` wrote every element through `doubleQuoteWithSchema`, so the table is looked
+    /// up by that spelling. A column may be spelled exactly like another element's relation, so the list
+    /// is walked element by element and only the relation names are compared.
     const String quoted_table_name = doubleQuoteWithSchema(table_name);
 
-    size_t table_pos = 0;
-    while (true)
+    size_t scan_pos = 0;
+    size_t after_name = std::string::npos;
+    while (scan_pos < tables_list.size())
     {
-        table_pos = tables_list.find(quoted_table_name, table_pos);
-        if (table_pos == std::string::npos)
-            return result;
+        while (scan_pos < tables_list.size() && (tables_list[scan_pos] == ',' || tables_list[scan_pos] == ' '))
+            ++scan_pos;
 
-        const size_t after = table_pos + quoted_table_name.length();
-        /// A whole element, not a suffix of a longer one: the match starts the list or follows a
-        /// separator, and ends the list or is followed by its column list or the next element.
-        const bool starts_element = table_pos == 0 || tables_list[table_pos - 1] == ',' || tables_list[table_pos - 1] == ' ';
-        const bool ends_element = after >= tables_list.length() || tables_list[after] == '('
-            || tables_list[after] == ',' || tables_list[after] == ' ';
-        if (starts_element && ends_element)
+        const size_t name_start = scan_pos;
+        while (scan_pos < tables_list.size() && tables_list[scan_pos] != '(' && tables_list[scan_pos] != ',')
+        {
+            if (tables_list[scan_pos] == '"')
+                scan_pos = skipQuotedIdentifier(tables_list, scan_pos);
+            ++scan_pos;
+        }
+
+        String element = tables_list.substr(name_start, scan_pos - name_start);
+        boost::trim(element);
+        if (element == quoted_table_name)
+        {
+            after_name = scan_pos;
             break;
+        }
 
-        ++table_pos;
+        if (scan_pos < tables_list.size() && tables_list[scan_pos] == '(')
+        {
+            for (; scan_pos < tables_list.size(); ++scan_pos)
+            {
+                if (tables_list[scan_pos] == '"')
+                    scan_pos = skipQuotedIdentifier(tables_list, scan_pos);
+                else if (tables_list[scan_pos] == ')')
+                    break;
+            }
+            if (scan_pos < tables_list.size())
+                ++scan_pos;
+        }
     }
 
-    String column_list = tables_list.substr(table_pos + quoted_table_name.length());
+    if (after_name == std::string::npos)
+        return result;
+
+    String column_list = tables_list.substr(after_name);
     boost::trim(column_list);
     if (column_list.empty() || column_list[0] != '(')
         return result;

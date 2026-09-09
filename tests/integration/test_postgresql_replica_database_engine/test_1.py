@@ -939,6 +939,8 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
     cols_table = "pg_inj_cols"
     cols_quoted_name_table = 'pg_inj_cols_q"n'
     quoted_name = '"' + cols_quoted_name_table.replace('"', '""') + '"'
+    outer_table = "pg_inj_outer"
+    target_table = "pg_inj_target"
     try:
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
@@ -1047,12 +1049,77 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
         # Ongoing replication is where a nested table wider than the publication stops: the snapshot
         # rows are already there, and the row inserted afterwards is the one that never arrives.
         wait_for_rows(f"`test_database`.`{cols_quoted_name_table}`", 6)
+
+        # 7. A requested column can be spelled exactly like another listed relation, so the lookup has to
+        #    compare whole elements of the list rather than any occurrence of the name. Here pg_inj_outer
+        #    asks for a column named pg_inj_target, and it is listed before pg_inj_target's own element.
+        #    Plain names, no schema setting: this shape needs no quote and no non-default setting.
+        pg_manager.drop_materialized_db()
+        cursor.execute(f'DROP TABLE IF EXISTS "{outer_table}"')
+        cursor.execute(f'DROP TABLE IF EXISTS "{target_table}"')
+        cursor.execute(
+            f'CREATE TABLE "{outer_table}" (key integer PRIMARY KEY, '
+            f'"{target_table}" integer, extra integer, not_requested integer)'
+        )
+        cursor.execute(
+            f'CREATE TABLE "{target_table}" '
+            "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
+        )
+        cursor.execute(
+            f'INSERT INTO "{outer_table}" SELECT i, 200 + i, 800 + i, 700 + i'
+            " FROM generate_series(0, 4) AS i"
+        )
+        cursor.execute(
+            f'INSERT INTO "{target_table}" SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i'
+        )
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                "materialized_postgresql_tables_list = "
+                f"'{outer_table}(key, {target_table}, extra), {target_table}(key, val)'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, outer_table)
+        assert_nested_table_is_created(instance, target_table)
+        wait_for_rows(f"`test_database`.`{target_table}`", 5)
+
+        # The element carrying the colliding column keeps its own subset, which a scan that steps over
+        # too much would lose: not_requested exists in PostgreSQL and is not in the list.
+        replicated = sorted(
+            instance.query(
+                "SELECT name FROM system.columns WHERE database = 'test_database'"
+                f" AND table = '{outer_table}'"
+            ).splitlines()
+        )
+        assert replicated == ["_sign", "_version", "extra", "key", "pg_inj_target"], (
+            "the column subset requested for the element that carries the colliding column was "
+            f"not applied: {replicated}"
+        )
+
+        replicated = sorted(
+            instance.query(
+                "SELECT name FROM system.columns WHERE database = 'test_database'"
+                f" AND table = '{target_table}'"
+            ).splitlines()
+        )
+        assert replicated == ["_sign", "_version", "key", "val"], (
+            f"the column subset requested for {target_table} was not applied: the column of the same "
+            f"name in an earlier element was matched instead of the relation: {replicated}"
+        )
+
+        cursor.execute(f'INSERT INTO "{target_table}" VALUES (5, 105, 905)')
+        wait_for_rows(f"`test_database`.`{target_table}`", 6)
     finally:
         for ch_table in ch_tables:
             instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
         pg_manager.drop_materialized_db()
         cursor.execute(f'DROP TABLE IF EXISTS "{cols_table}"')
         cursor.execute(f"DROP TABLE IF EXISTS {quoted_name}")
+        cursor.execute(f'DROP TABLE IF EXISTS "{outer_table}"')
+        cursor.execute(f'DROP TABLE IF EXISTS "{target_table}"')
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
