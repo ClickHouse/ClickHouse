@@ -729,8 +729,10 @@ size_t logEntrySize(const LogEntryPtr & log_entry)
 /// hardcoded. It comes to 184 bytes with libc++ and jemalloc.
 size_t cachedLogEntryFixedOverhead()
 {
-    /// A `shared_ptr` control block begins with a vtable pointer and the strong and weak counters.
-    constexpr size_t control_block_header = sizeof(void *) + 2 * sizeof(long);
+    /// A `shared_ptr` control block begins with a vtable pointer and the strong and weak counters,
+    /// which libc++ declares as `long` - spelled `int64_t` here because `google-runtime-int` rejects
+    /// the former, and the two agree on every platform ClickHouse supports.
+    constexpr size_t control_block_header = sizeof(void *) + 2 * sizeof(int64_t);
     using BufferDeleter = void (*)(nuraft::buffer *);
 
     static const size_t overhead
