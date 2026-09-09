@@ -24,7 +24,6 @@ TEST(GCSHeaderTranslation, RenamesTheTranslatedNames)
     Aws::Http::HeaderValueCollection headers{
         {"x-amz-copy-source", "bucket/key"},
         {"x-amz-metadata-directive", "REPLACE"},
-        {"x-amz-storage-class", "COLDLINE"},
         {"x-amz-meta-owner", "analytics"},
     };
 
@@ -32,21 +31,24 @@ TEST(GCSHeaderTranslation, RenamesTheTranslatedNames)
 
     EXPECT_EQ(headerOrEmpty(translated, "x-goog-copy-source"), "bucket/key");
     EXPECT_EQ(headerOrEmpty(translated, "x-goog-metadata-directive"), "REPLACE");
-    EXPECT_EQ(headerOrEmpty(translated, "x-goog-storage-class"), "COLDLINE");
     EXPECT_EQ(headerOrEmpty(translated, "x-goog-meta-owner"), "analytics");
 
     EXPECT_EQ(translated.count("x-amz-copy-source"), 0u);
     EXPECT_EQ(translated.count("x-amz-metadata-directive"), 0u);
-    EXPECT_EQ(translated.count("x-amz-storage-class"), 0u);
     EXPECT_EQ(translated.count("x-amz-meta-owner"), 0u);
 }
 
-/// Everything outside the list is left alone. Server-side encryption is the case that matters:
-/// GCS spells CMEK as a single `x-goog-encryption-kms-key-name` with a different value, so renaming
-/// the prefix would produce a header GCS ignores just as silently as the one it replaced.
-TEST(GCSHeaderTranslation, LeavesEverythingElseAlone)
+/// Everything outside the list is left alone, including two headers whose values do not carry over.
+///
+/// Storage class is the one that would do harm: the value sets share only STANDARD, so renaming
+/// `x-amz-storage-class: GLACIER` yields `x-goog-storage-class: GLACIER`, which GCS answers with
+/// 400 InvalidStorageClass -- turning a write it quietly ignores today into a failing one.
+/// Server-side encryption is merely useless: GCS spells CMEK as a single
+/// `x-goog-encryption-kms-key-name` with a different value, so a rename is ignored just as silently.
+TEST(GCSHeaderTranslation, LeavesHeadersWhoseValuesDoNotCarryOver)
 {
     Aws::Http::HeaderValueCollection headers{
+        {"x-amz-storage-class", "GLACIER"},
         {"x-amz-server-side-encryption", "aws:kms"},
         {"x-amz-server-side-encryption-aws-kms-key-id", "some-key"},
         {"x-amz-request-payer", "requester"},
@@ -55,6 +57,8 @@ TEST(GCSHeaderTranslation, LeavesEverythingElseAlone)
 
     const auto translated = DB::S3::translateHeadersToGCS(headers);
 
+    EXPECT_EQ(headerOrEmpty(translated, "x-amz-storage-class"), "GLACIER");
+    EXPECT_EQ(translated.count("x-goog-storage-class"), 0u);
     EXPECT_EQ(headerOrEmpty(translated, "x-amz-server-side-encryption"), "aws:kms");
     EXPECT_EQ(headerOrEmpty(translated, "x-amz-server-side-encryption-aws-kms-key-id"), "some-key");
     EXPECT_EQ(headerOrEmpty(translated, "x-amz-request-payer"), "requester");
@@ -77,7 +81,6 @@ TEST(GCSHeaderTranslation, MetadataDirectiveIsNotCustomMetadata)
 TEST(GCSHeaderTranslation, RecognisesTheSameNamesComingBack)
 {
     EXPECT_EQ(DB::S3::translateHeaderNameFromGCS("x-goog-meta-owner"), "x-amz-meta-owner");
-    EXPECT_EQ(DB::S3::translateHeaderNameFromGCS("x-goog-storage-class"), "x-amz-storage-class");
     EXPECT_EQ(DB::S3::translateHeaderNameFromGCS("x-goog-copy-source"), "x-amz-copy-source");
     EXPECT_EQ(DB::S3::translateHeaderNameFromGCS("x-goog-metadata-directive"), "x-amz-metadata-directive");
 
@@ -86,6 +89,7 @@ TEST(GCSHeaderTranslation, RecognisesTheSameNamesComingBack)
     EXPECT_EQ(DB::S3::translateHeaderNameFromGCS("X-Goog-Meta-Owner"), "x-amz-meta-owner");
     EXPECT_EQ(DB::S3::translateHeaderNameFromGCS("X-GOOG-META-CLICKHOUSE-IDEMPOTENCY-ID"), "x-amz-meta-clickhouse-idempotency-id");
 
+    EXPECT_FALSE(DB::S3::translateHeaderNameFromGCS("x-goog-storage-class").has_value());
     EXPECT_FALSE(DB::S3::translateHeaderNameFromGCS("x-goog-generation").has_value());
     EXPECT_FALSE(DB::S3::translateHeaderNameFromGCS("x-goog-hash").has_value());
     EXPECT_FALSE(DB::S3::translateHeaderNameFromGCS("etag").has_value());

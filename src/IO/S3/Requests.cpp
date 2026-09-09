@@ -21,10 +21,14 @@ namespace
 {
 
 /// Translated in both directions; a name added here is renamed going out and recognised coming back.
+///
+/// Only headers whose *values* also carry over belong here: a copy source is a path, a metadata
+/// directive is COPY or REPLACE, and custom metadata is the user's own bytes. A header the two
+/// clouds spell alike but populate differently needs a value mapping instead, and renaming it does
+/// harm -- see the storage class and server-side encryption below.
 constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
     {"x-amz-copy-source", "x-goog-copy-source"},
     {"x-amz-metadata-directive", "x-goog-metadata-directive"},
-    {"x-amz-storage-class", "x-goog-storage-class"},
 };
 
 /// Object metadata is a family rather than one name, so it is matched by prefix.
