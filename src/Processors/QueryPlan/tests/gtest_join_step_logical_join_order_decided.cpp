@@ -113,12 +113,74 @@ TEST(JoinStepLogicalJoinOrderDecided, RoundTripsAtCurrentVersion)
     EXPECT_EQ(undecided_bytes, serializeStep(*restored_undecided, current_version));
 }
 
+TEST(JoinStepLogicalJoinOrderDecided, SmallProbeDecisionRoundTripsAtCurrentVersion)
+{
+    auto declined = makeStep();
+    declined->setRuntimeFilterDeclinedForSmallProbe();
+    auto undecided = makeStep();
+
+    const String declined_bytes = serializeStep(*declined, current_version);
+    const String undecided_bytes = serializeStep(*undecided, current_version);
+
+    EXPECT_NE(declined_bytes, undecided_bytes);
+
+    auto restored_declined = deserializeStep(declined_bytes, current_version);
+    EXPECT_TRUE(restored_declined->isRuntimeFilterDeclinedForSmallProbe());
+    EXPECT_EQ(declined_bytes, serializeStep(*restored_declined, current_version));
+
+    auto restored_undecided = deserializeStep(undecided_bytes, current_version);
+    EXPECT_FALSE(restored_undecided->isRuntimeFilterDeclinedForSmallProbe());
+    EXPECT_EQ(undecided_bytes, serializeStep(*restored_undecided, current_version));
+}
+
+/// The two decisions share one byte, so a serializer that conflated them would still pass the two
+/// tests above. Each of the four combinations has to survive on its own.
+TEST(JoinStepLogicalJoinOrderDecided, DecisionsAreIndependentlyObservable)
+{
+    for (const bool order_decided : {false, true})
+    {
+        for (const bool probe_declined : {false, true})
+        {
+            auto step = makeStep();
+            if (order_decided)
+                step->setOptimized();
+            if (probe_declined)
+                step->setRuntimeFilterDeclinedForSmallProbe();
+
+            auto restored = deserializeStep(serializeStep(*step, current_version), current_version);
+            EXPECT_EQ(restored->isOptimized(), order_decided);
+            EXPECT_EQ(restored->isRuntimeFilterDeclinedForSmallProbe(), probe_declined);
+        }
+    }
+}
+
+/// A clone is the initiator's own copy of the fragment it ships, so it has to reach the same
+/// decisions as the copy the replicas deserialize.
+TEST(JoinStepLogicalJoinOrderDecided, CloneCarriesTheDecisions)
+{
+    auto step = makeStep();
+    step->setOptimized();
+    step->setRuntimeFilterDeclinedForSmallProbe();
+
+    auto cloned = step->clone();
+    const auto * cloned_join = typeid_cast<const JoinStepLogical *>(cloned.get());
+    ASSERT_TRUE(cloned_join);
+    EXPECT_TRUE(cloned_join->isOptimized());
+    EXPECT_TRUE(cloned_join->isRuntimeFilterDeclinedForSmallProbe());
+
+    EXPECT_EQ(serializeStep(*cloned_join, current_version), serializeStep(*step, current_version));
+}
+
 TEST(JoinStepLogicalJoinOrderDecided, PreVersionCarriesNothing)
 {
     auto decided = makeStep();
     decided->setOptimized();
+    decided->setRuntimeFilterDeclinedForSmallProbe();
 
     /// A receiver at the older version reads no byte of it, so a sender must write none.
     EXPECT_EQ(serializeStep(*decided, pre_decision_version), serializeStep(*makeStep(), pre_decision_version));
-    EXPECT_FALSE(deserializeStep(serializeStep(*decided, pre_decision_version), pre_decision_version)->isOptimized());
+
+    auto restored = deserializeStep(serializeStep(*decided, pre_decision_version), pre_decision_version);
+    EXPECT_FALSE(restored->isOptimized());
+    EXPECT_FALSE(restored->isRuntimeFilterDeclinedForSmallProbe());
 }

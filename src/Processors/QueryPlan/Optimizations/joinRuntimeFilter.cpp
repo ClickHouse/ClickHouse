@@ -254,11 +254,26 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
     /// Planning and pipeline overhead outweighs any saving on a tiny probe.
+    ///
+    /// The decision is recorded on the step and travels with a copy of it. It is the one decision
+    /// this pass takes from a row estimate, and estimates are not part of the plan format, so on a
+    /// step taken over the wire `getInputRowsEstimation` is always empty. A receiver re-deciding
+    /// from that empty estimate would add the filter its sender declined, and adding one erases
+    /// every non-hash algorithm below, which takes the sorting step with it. Under plan-based
+    /// parallel replicas that turns the coordinated side's read from `InOrder` into `Default`,
+    /// whose stream identity the initiator never registered with the coordinator, and the
+    /// coordinator then rejects the replica's read request with a logical error.
+    if (join_step->isRuntimeFilterDeclinedForSmallProbe())
+        return false;
+
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
         auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
         if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
+        {
+            join_step->setRuntimeFilterDeclinedForSmallProbe();
             return false;
+        }
     }
 
     /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
