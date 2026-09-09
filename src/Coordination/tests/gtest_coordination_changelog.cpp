@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <future>
 #include <thread>
 
@@ -193,8 +194,12 @@ TEST(CachedLogEntryBytes, MatchesTrackedAllocation)
     /// Every entry gets the same term, so `log_term_infos` does not grow while measuring.
     const auto make_entry = [](size_t payload_size)
     {
-        return nuraft::cs_new<nuraft::log_entry>(
-            /*term=*/1, nuraft::buffer::alloc(payload_size), nuraft::log_val_type::app_log);
+        auto payload = nuraft::buffer::alloc(payload_size);
+        /// `buffer::alloc` leaves the payload uninitialized while `log_entry` checksums it, which
+        /// MSan reports. Real entries always carry written content; the contents are irrelevant here,
+        /// only the allocation is.
+        memset(payload->data_begin(), 0, payload_size);
+        return nuraft::cs_new<nuraft::log_entry>(/*term=*/1, payload, nuraft::log_val_type::app_log);
     };
 
     /// Entries must live and die on the measuring thread: a free elsewhere is charged to that other
