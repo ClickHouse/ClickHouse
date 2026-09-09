@@ -315,17 +315,21 @@ class StatementStallingProxy:
 
 
 class ResponseStallingProxy:
-    """Forwards the PostgreSQL wire protocol, then stops relaying the server's output once the
-    COPY is streaming, holding both sockets open until release() is called.
+    """Forwards the PostgreSQL wire protocol, then withholds the server's output from the first
+    `CopyData` message on, holding both sockets open until release() is called.
 
-    This is the steady state the startup proxies cannot reach: the reading thread is parked
-    inside the client library on a socket that is alive and delivering nothing, and cancellation
-    is only checked between rows. `stall_after_bytes` has to land inside the COPY, past the
-    handshake and `CopyOutResponse`.
+    This is the steady state the startup proxies cannot reach: `CopyOutResponse` has arrived, so
+    `onStart` has returned and the source is in `read_row()` with nothing buffered ahead of it.
+    Cancellation is only checked between rows, and there is no next row.
+
+    Server output is framed into protocol messages only once the client has sent the `COPY`, so
+    the handshake before it (with its unframed SSL reply) is relayed untouched.
     """
 
-    def __init__(self, stall_after_bytes=16 * 1024):
-        self._stall_after_bytes = stall_after_bytes
+    COPY = b"COPY ("
+
+    def __init__(self):
+        self._copy_sent = threading.Event()
         self._release = threading.Event()
         self._stalled = threading.Event()
         self._sock = None
@@ -333,7 +337,8 @@ class ResponseStallingProxy:
         self._stop = False
 
     def _pump(self, source, destination, is_server_to_client):
-        forwarded = 0
+        carry = b""
+        buf = bytearray()
         stalled_once = False
         while not self._stop:
             try:
@@ -345,18 +350,41 @@ class ResponseStallingProxy:
             if not data:
                 break
 
-            if is_server_to_client and not stalled_once and forwarded >= self._stall_after_bytes:
-                stalled_once = True
-                self._stalled.set()
-                # Withhold everything from here on. The bounded wait keeps a failure surfacing
-                # as an assertion rather than as a hung worker.
-                self._release.wait(timeout=60)
-
             try:
-                destination.sendall(data)
+                if not is_server_to_client:
+                    if not self._copy_sent.is_set():
+                        if self.COPY in carry + data:
+                            # Set before forwarding: the server cannot answer what it has not seen.
+                            self._copy_sent.set()
+                        carry = (carry + data)[-(len(self.COPY) - 1) :]
+                    destination.sendall(data)
+                    continue
+
+                # The COPY response starts at a message boundary: the client sends the COPY only
+                # after reading ReadyForQuery, so everything before it has been relayed already.
+                if stalled_once or not self._copy_sent.is_set():
+                    destination.sendall(data)
+                    continue
+
+                buf += data
+                while len(buf) >= 5:
+                    length = 1 + int.from_bytes(buf[1:5], "big")
+                    if len(buf) < length:
+                        break
+                    message = bytes(buf[:length])
+                    del buf[:length]
+                    destination.sendall(message)
+                    if message[:1] == b"H":  # CopyOutResponse
+                        stalled_once = True
+                        self._stalled.set()
+                        # Withhold everything from here on. The bounded wait keeps a failure
+                        # surfacing as an assertion rather than as a hung worker.
+                        self._release.wait(timeout=60)
+                        destination.sendall(bytes(buf))
+                        buf.clear()
+                        break
             except OSError:
                 break
-            forwarded += len(data)
 
         for s in (source, destination):
             try:
@@ -400,7 +428,7 @@ class ResponseStallingProxy:
 
     def wait_until_stalled(self, timeout=60):
         if not self._stalled.wait(timeout=timeout):
-            raise AssertionError("proxy never reached the COPY output")
+            raise AssertionError("proxy never saw CopyOutResponse")
 
     def release(self):
         self._release.set()
@@ -609,8 +637,9 @@ def test_kill_query_while_the_read_is_stalled(started_cluster, setup_streaming_v
 
     The startup tests cover a cancel reaching a connection with no statement running on it. Here
     the statement runs and its output simply stops, leaving the reading thread inside the client
-    library with no deadline. The proxy stays stalled across the kill, so the read can only end
-    if the cancellation reaches the transport itself.
+    library with no deadline. The proxy stalls right after `CopyOutResponse`, so the source has
+    no buffered rows to drain before it blocks, and it stays stalled across the kill, so the read
+    can only end if the cancellation reaches the transport itself.
     """
     proxy = ResponseStallingProxy()
     port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
@@ -641,17 +670,11 @@ ENGINE = PostgreSQL(
     query_thread.start()
 
     try:
-        # The COPY is streaming and its output is withheld, so the source is parked in the
-        # client library rather than between rows.
         proxy.wait_until_stalled()
 
-        assert_eq_with_retry(
-            node1,
-            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
-            "1",
-            retry_count=60,
-            sleep_time=0.5,
-        )
+        # `CopyOutResponse` is all the source has received, so once generate() has begun there is
+        # nothing for it to drain: the next thing it does is block in the read.
+        node1.wait_for_log_line(f"{query_id}.*Generate a chunk from stream")
 
         node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
 
