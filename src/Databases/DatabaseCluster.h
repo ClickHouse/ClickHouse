@@ -18,8 +18,12 @@ namespace DB
   * - connections use the per-replica settings of the cluster configuration (credentials, secure
   *   connections, compression, the inter-server secret) instead of credentials of its own, so the
   *   engine takes no credential arguments and stores no secrets;
-  * - `SHOW CREATE TABLE` prints a `Distributed(cluster_name, database, table)` definition, which is
-  *   the persistent table-engine counterpart of a named cluster.
+  * - `SHOW CREATE TABLE` reports `THERE_IS_NO_QUERY` for every proxy table: the database follows
+  *   configuration reloads, which can change the number of shards, and the implicit `rand()`
+  *   sharding key the live proxy then acquires is used only for INSERT, whereas a standalone
+  *   `Distributed` table would also use it for read shard pruning (see
+  *   `DatabaseCluster::getCreateTableQueryImpl` for this and the other non-equivalent states), so
+  *   no re-executable definition exists and emitting one would recreate a different object.
   */
 class DatabaseCluster final : public DatabaseRemote
 {

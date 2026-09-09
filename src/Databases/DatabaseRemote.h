@@ -110,12 +110,13 @@ public:
 
     /// Reject a chain of `Remote`/`Cluster` databases on this server that refers back to itself
     /// (e.g. `a` -> `b` -> `a`, or a direct self-reference): following it through the local shard
-    /// would recurse forever. Called eagerly from `CREATE DATABASE` — a lazily-reported cycle
-    /// would fail every whole-server scan (`system.tables` and the like) for every user, not just
-    /// the queries that name the database. Deliberately not called on any form of attach: a server
-    /// that persisted such a chain must still start, and the metadata loading of server startup
-    /// attaches the databases with the same `ATTACH` mode as the explicit query, so the two cannot
-    /// be told apart here; `LocalTraversalGuard` breaks the recursion lazily instead.
+    /// would recurse forever. Called eagerly from a user `CREATE DATABASE` or `ATTACH DATABASE`
+    /// — a lazily-reported cycle would fail every whole-server scan (`system.tables` and the like)
+    /// for every user, not just the queries that name the database. Deliberately not called for
+    /// the internal replay of already-persisted metadata (`Arguments::internal` with an attaching
+    /// mode, i.e. the metadata loading of server startup and the restore from a backup): a server
+    /// that persisted such a chain must still start, so there `LocalTraversalGuard` breaks the
+    /// recursion lazily instead.
     void throwIfLocalChainRefersBack() const;
 
 protected:
