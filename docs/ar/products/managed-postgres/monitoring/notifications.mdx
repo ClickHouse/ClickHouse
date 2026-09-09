@@ -1,0 +1,36 @@
+---
+slug: /cloud/managed-postgres/monitoring/notifications
+sidebarTitle: 'الإشعارات'
+title: 'إشعارات ClickHouse Managed Postgres'
+description: 'إشعارات Cloud Console لخدمات ClickHouse Managed Postgres'
+keywords: ['managed postgres', 'الإشعارات', 'التنبيهات', 'التخزين', 'استخدام القرص']
+doc_type: 'دليل'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-notifications-beta" />
+
+يرسل ClickHouse Cloud إشعارات عند حاجة خدمة Managed Postgres
+إلى اهتمام. تُرسَل الإشعارات عبر
+[نظام إشعارات Cloud Console](/ar/products/cloud/features/monitoring/notifications):
+صندوق وارد Console والبريد الإلكتروني وSlack، ويمكن تخصيص كل
+إشعار من قسم **Postgres** في صفحة إعدادات الإشعارات.
+يظهر هذا القسم للمؤسسات التي لديها خدمات Managed Postgres.
+
+<div id="supported-notifications">
+  ## الإشعارات المدعومة
+</div>
+
+| الإشعار عند                           | شرط التنبيه المحدد                                                                                                      | قنوات الإشعارات الافتراضية        | خطوات المعالجة                                                                                                                                           |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| تجاوز استخدام تخزين Postgres عتبة 85% | عندما يصل استخدام التخزين في خدمة Managed Postgres إلى 85% من السعة. لا يُطلَق الإشعار إلا مرة واحدة في اليوم التقويمي. | واجهة المستخدم، البريد الإلكتروني | يتوسع التخزين تلقائيًا عند وصول الاستخدام إلى 90% (فترة توقف قصيرة أثناء التحويل). لا يلزم اتخاذ أي إجراء ما لم يكن التحجيم التلقائي قد بلغ حدّه بالفعل. |
+
+<div id="related">
+  ## صفحات ذات صلة
+</div>
+
+* [إشعارات Cloud](/ar/products/cloud/features/monitoring/notifications) — القنوات ومستويات الخطورة
+  وكيفية تخصيص التسليم
+* [لوحة معلومات Monitoring](/ar/products/managed-postgres/monitoring/dashboard) —
+  مخططات الاستخدام المباشر للقرص وCPU والذاكرة لكل instance

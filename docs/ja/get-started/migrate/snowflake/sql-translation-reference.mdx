@@ -1,0 +1,125 @@
+---
+sidebarTitle: 'SQL変換リファレンス'
+slug: /migrations/snowflake-translation-reference
+description: 'SQL変換リファレンス'
+keywords: ['Snowflake']
+title: 'Snowflake から ClickHouse への移行'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+<div id="data-types">
+  ## データ型
+</div>
+
+<div id="numerics">
+  ### 数値型
+</div>
+
+ClickHouse と Snowflake の間でデータを移行するユーザーは、
+数値型の宣言に関しては ClickHouse のほうがよりきめ細かく指定できることにすぐ気付くでしょう。たとえば、
+Snowflake では数値型として Number 型が提供されています。これではユーザーが
+precision (総桁数) と scale (小数点以下の桁数)
+を、合計 38 桁まで指定する必要があります。整数型の宣言は Number と同義で、
+同じ範囲を持つ固定の precision と scale を定義するだけです。この利便性
+が成り立つのは、precision を変更しても (整数では scale は 0) 、Snowflake では
+ディスク上のデータサイズに影響しないためです。つまり、
+書き込み時に micro partition レベルで、数値の範囲に必要な最小限のバイト数だけが使用されます。ただし、scale は
+保存容量に影響しますが、その分は圧縮である程度相殺されます。`Float64` 型は、
+精度を犠牲にする代わりに、より広い値の範囲を提供します。
+
+これに対して ClickHouse では、浮動小数点数と整数について、
+符号付き・符号なしそれぞれに複数の精度が用意されています。これにより、
+ストレージやメモリのオーバーヘッドを最適化するために、整数に必要な精度を
+明示的に指定できます。Snowflake の Number 型に相当する
+Decimal 型では、さらにその 2 倍となる 76 桁の
+精度と scale がサポートされています。同様の `Float64` に加えて、
+ClickHouse は、精度がそれほど重要ではなく、
+圧縮を優先したい場合のために `Float32` も提供しています。
+
+<div id="strings">
+  ### 文字列
+</div>
+
+ClickHouse と Snowflake では、文字列
+データの保存方法に対する考え方が対照的です。Snowflake の `VARCHAR` は UTF-8 の Unicode 文字を保持し、ユーザーは
+最大長を指定できます。この長さはストレージや
+パフォーマンスには影響せず、文字列の保存には常に必要最小限のバイト数が使用されます。これは主に、下流のツールで役立つ制約を与えるためのものです。`Text` や `NChar` などの他の型は、
+単にこの型の別名です。一方 ClickHouse では、
+`String`
+型によって [すべての文字列データを生のバイト列として](/ja/reference/data-types/string) 保存し (長さの指定は不要) 、
+エンコーディングの扱いはユーザーに委ねられます。その代わり、異なるエンコーディング向けの
+[クエリ時関数](/ja/reference/functions/regular-functions/string-functions#lengthUTF8)
+を利用できます。その理由については、[&quot;Opaque data argument&quot;](https://utf8everywhere.org/#cookie)
+を参照してください。したがって ClickHouse の `String` は、実装上
+Snowflake の Binary 型により近いものです。[Snowflake](https://docs.snowflake.com/en/sql-reference/collation)
+と [ClickHouse](/ja/reference/statements/select/order-by#collation-support) は
+どちらも「照合順序」をサポートしており、文字列のソート方法や比較方法をユーザーが上書きできます。
+
+<div id="semi-structured-data">
+  ### 半構造化型
+</div>
+
+Snowflake は、半構造化
+データ向けに `VARIANT`、`OBJECT`、`ARRAY` 型をサポートしています。
+
+ClickHouse では、これに相当する [`Variant`](/ja/reference/data-types/variant)、
+`Object` (現在はネイティブ `JSON` 型が推奨されており、非推奨) および [`Array`](/ja/reference/data-types/array)
+型を提供しています。さらに、ClickHouse には [`JSON`](/ja/reference/data-types/newjson)
+型があり、これは現在非推奨の `Object('json')` 型に代わるもので、特に
+[他のネイティブ JSON 型と比べて](https://jsonbench.com/)高い性能と優れたストレージ効率を備えています。
+
+ClickHouse は、名前付き [`Tuple`](/ja/reference/data-types/tuple) と Tuple の配列も
+[`Nested`](/ja/reference/data-types/nested-data-structures/index) 型を通じてサポートしており、
+入れ子構造を明示的にマッピングできます。これにより、Snowflake とは異なり、
+階層全体にわたってコーデックや型の最適化を適用できます。Snowflake では、外側の
+オブジェクトに `OBJECT`、`VARIANT`、`ARRAY` 型を使用する必要があり、
+[内部の型を明示的に指定すること](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#characteristics-of-an-object)はできません。
+この内部型付けにより、ClickHouse ではネストされた数値に対するクエリも簡潔になり、
+CAST する必要がなく、索引定義でも使用できます。
+
+ClickHouse では、コーデックと最適化された型をサブ構造にも適用できます。
+これには、ネスト構造を持つデータでも圧縮効率を非常に高く保てるという利点があり、
+フラット化されたデータと同等の圧縮が可能です。これに対して Snowflake では、
+サブ構造に特定の型を適用できないため、[最適な圧縮を実現するにはデータを
+フラット化すること](https://docs.snowflake.com/en/user-guide/semistructured-considerations#storing-semi-structured-data-in-a-variant-column-vs-flattening-the-nested-structure)が推奨されています。
+また Snowflake では、これらのデータ型に対して
+[サイズ制限](https://docs.snowflake.com/en/user-guide/semistructured-considerations#data-size-limitations)も設けられています。
+
+<div id="type-reference">
+  ### 型のリファレンス
+</div>
+
+| Snowflake                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ClickHouse                                                                                                                   | 注記                                                                                                                                                                                                                                |   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | - |
+| [`NUMBER`](https://docs.snowflake.com/en/sql-reference/data-types-numeric)                                                                                                                                                                                                                                                                                                                                                                                                      | [`Decimal`](/ja/reference/data-types/decimal)                                                                                   | ClickHouse は Snowflake の 2 倍の精度とスケールをサポートしており、76 桁に対応します (Snowflake は 38 桁) 。                                                                                                                                                     |   |
+| [`FLOAT`, `FLOAT4`, `FLOAT8`](https://docs.snowflake.com/en/sql-reference/data-types-numeric#data-types-for-floating-point-numbers)                                                                                                                                                                                                                                                                                                                                             | [`Float32`, `Float64`](/ja/reference/data-types/float)                                                                          | Snowflake のすべての浮動小数点型は 64 ビットです。                                                                                                                                                                                                  |   |
+| [`VARCHAR`](https://docs.snowflake.com/en/sql-reference/data-types-text#varchar)                                                                                                                                                                                                                                                                                                                                                                                                | [`String`](/ja/reference/data-types/string)                                                                                     |                                                                                                                                                                                                                                   |   |
+| [`BINARY`](https://docs.snowflake.com/en/sql-reference/data-types-text#binary)                                                                                                                                                                                                                                                                                                                                                                                                  | [`String`](/ja/reference/data-types/string)                                                                                     |                                                                                                                                                                                                                                   |   |
+| [`BOOLEAN`](https://docs.snowflake.com/en/sql-reference/data-types-logical)                                                                                                                                                                                                                                                                                                                                                                                                     | [`Bool`](/ja/reference/data-types/boolean)                                                                                      |                                                                                                                                                                                                                                   |   |
+| [`DATE`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#date)                                                                                                                                                                                                                                                                                                                                                                                                  | [`Date`](/ja/reference/data-types/date), [`Date32`](/ja/reference/data-types/date32)                                               | Snowflake の `DATE` は、ClickHouse より広い日付範囲をサポートしています。たとえば、`Date32` の最小値は `1900-01-01`、`Date` の最小値は `1970-01-01` です。ClickHouse の `Date` は、よりコスト効率の高い (2 バイトの) ストレージを提供します。                                                           |   |
+| [`TIME(N)`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#time)                                                                                                                                                                                                                                                                                                                                                                                               | 直接対応する型はありませんが、[`DateTime`](/ja/reference/data-types/datetime) および [`DateTime64(N)`](/ja/reference/data-types/datetime64) で表現できます。 | `DateTime64` でも精度の考え方は同じです。                                                                                                                                                                                                       |   |
+| [`TIMESTAMP`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp) - [`TIMESTAMP_LTZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz), [`TIMESTAMP_NTZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz), [`TIMESTAMP_TZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz) | [`DateTime`](/ja/reference/data-types/datetime) および [`DateTime64`](/ja/reference/data-types/datetime64)                            | `DateTime` と `DateTime64` では、カラムに TZ パラメータを任意で指定できます。指定がない場合は、サーバーのタイムゾーンが使用されます。さらに、クライアントでは `--use_client_time_zone` パラメータも利用できます。                                                                                              |   |
+| [`VARIANT`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#variant)                                                                                                                                                                                                                                                                                                                                                                                      | [`JSON`, `Tuple`, `Nested`](/ja/reference/formats/index)                                                                        | `JSON` 型は ClickHouse では実験的な機能です。この型では、挿入時にカラムの型が推論されます。代替手段として、`Tuple`、`Nested`、`Array` を使用して明示的に型を定義した構造を構築することもできます。                                                                                                            |   |
+| [`OBJECT`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#object)                                                                                                                                                                                                                                                                                                                                                                                        | [`Tuple`, `Map`, `JSON`](/ja/reference/formats/index)                                                                           | `OBJECT` と `Map` はどちらも、キーが `String` である ClickHouse の `JSON` 型に相当します。ClickHouse では値は一貫した強い型付けである必要がありますが、Snowflake では `VARIANT` を使用します。つまり、キーごとに値の型が異なることを許容します。ClickHouse でこれが必要な場合は、`Tuple` を使用して階層を明示的に定義するか、`JSON` 型を利用してください。 |   |
+| [`ARRAY`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#array)                                                                                                                                                                                                                                                                                                                                                                                          | [`Array`](/ja/reference/data-types/array), [`Nested`](/ja/reference/data-types/nested-data-structures/index)                       | Snowflake の `ARRAY` では、要素にスーパータイプである `VARIANT` が使用されます。一方、ClickHouse ではこれらの要素は厳密に型付けされます。                                                                                                                                         |   |
+| [`GEOGRAPHY`](https://docs.snowflake.com/en/sql-reference/data-types-geospatial#geography-data-type)                                                                                                                                                                                                                                                                                                                                                                            | [`Point`, `Ring`, `Polygon`, `MultiPolygon`](/ja/reference/data-types/geo)                                                      | Snowflake では座標系 (WGS 84) が強制されますが、ClickHouse ではクエリ時に適用されます。                                                                                                                                                                       |   |
+| [`GEOMETRY`](https://docs.snowflake.com/en/sql-reference/data-types-geospatial#geometry-data-type)                                                                                                                                                                                                                                                                                                                                                                              | [`Point`, `Ring`, `Polygon`, `MultiPolygon`](/ja/reference/data-types/geo)                                                      |                                                                                                                                                                                                                                   |   |
+
+| ClickHouse 型      | 説明                                                  |
+| ----------------- | --------------------------------------------------- |
+| `IPv4` and `IPv6` | IP 専用の型で、Snowflake より効率的に保存できる可能性があります。             |
+| `FixedString`     | 固定長のバイト列を扱え、ハッシュに便利です。                              |
+| `LowCardinality`  | 任意の型を辞書エンコードできます。カーディナリティが 100k 未満になると想定される場合に有用です。 |
+| `Enum`            | 名前付きの値を 8 ビットまたは 16 ビットの範囲で効率的にエンコードできます。           |
+| `UUID`            | UUID を効率的に保存するための型です。                               |
+| `Array(Float32)`  | ベクトルは、サポートされている距離関数を使って Float32 の Array として表現できます。  |
+
+最後に、ClickHouse には
+[集約関数の状態](/ja/reference/data-types/aggregatefunction)を保存できるという独自の機能があります。これは
+実装固有の状態ですが、集約結果を保存し、
+後からクエリできるようにします (対応する merge 関数を使用) 。通常、この
+機能は materialized view を通じて利用され、以下で示すように、
+挿入されたデータに対するクエリの増分結果を保存することで、
+ストレージコストを最小限に抑えながら特定のクエリのパフォーマンスを向上させることができます
+(詳細はこちら) 。

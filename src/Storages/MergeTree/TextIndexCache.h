@@ -67,6 +67,23 @@ public:
             ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
         return std::move(cache_entry);
     }
+
+    void setNotFound(UInt128 key)
+    {
+        set(key, notFoundEntry());
+    }
+
+    static bool isNotFound(const MappedPtr & entry)
+    {
+        return entry == notFoundEntry();
+    }
+
+private:
+    static const MappedPtr & notFoundEntry()
+    {
+        static const auto entry = std::make_shared<TokenPostingsInfo>();
+        return entry;
+    }
 };
 
 /// Estimate of the memory usage (bytes) of a text index header in cache

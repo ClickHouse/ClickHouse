@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <IO/S3Common.h>
 #include <IO/S3Defines.h>
+#include <IO/S3/ChecksumAlgorithm.h>
 #include <IO/S3RequestSettings.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
@@ -52,6 +53,7 @@ namespace ErrorCodes
     DECLARE(Bool, allow_multipart_copy, true, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     DECLARE(String, storage_class_name, "", "", 0) \
+    DECLARE(String, upload_checksum_algorithm, "", "", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
     DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
@@ -236,12 +238,23 @@ void S3RequestSettings::validateUploadSettings()
                             (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
     }
 
-    NameSet storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    NameSet storage_class_names {"STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER_IR", "EXPRESS_ONEZONE"};
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && !storage_class_names.contains((*this)[S3RequestSetting::storage_class_name]))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
+            "Setting storage_class has invalid value {}: this storage class is not supported for ClickHouse S3 disks",
             (*this)[S3RequestSetting::storage_class_name].value);
+
+    const auto & upload_checksum_algorithm = (*this)[S3RequestSetting::upload_checksum_algorithm].value;
+    /// An empty value means "use the environment default"; any other value must name an `Algorithm`.
+    if (!upload_checksum_algorithm.empty() && !S3::RequestChecksum::tryParse(upload_checksum_algorithm))
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
+            upload_checksum_algorithm, S3::RequestChecksum::supportedAlgorithms());
+
+    /// Only the name is validated: usability depends on the client (`s3_disable_checksum` and `GCS` send no
+    /// checksum at all), so the FIPS `MD5` rejection lives in `RequestChecksum::getUploadChecksumAlgorithm`.
 
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.
@@ -302,6 +315,9 @@ void S3RequestSettings::normalizeSettings()
 {
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && (*this)[S3RequestSetting::storage_class_name].changed)
         (*this)[S3RequestSetting::storage_class_name] = Poco::toUpperInPlace((*this)[S3RequestSetting::storage_class_name].value);
+
+    if (!(*this)[S3RequestSetting::upload_checksum_algorithm].value.empty() && (*this)[S3RequestSetting::upload_checksum_algorithm].changed)
+        (*this)[S3RequestSetting::upload_checksum_algorithm] = Poco::toUpperInPlace((*this)[S3RequestSetting::upload_checksum_algorithm].value);
 }
 
 void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const
@@ -317,6 +333,14 @@ S3RequestSettings S3RequestSettings::deserialize(ReadBuffer & in, ContextPtr con
     result.finishInit(context->getSettingsRef(), false);
     /// TODO Proxy Configuration
     return result;
+}
+
+std::map<String, String> S3RequestSettings::getSettingsRepresentation() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
+{
+    std::map<String, String> res; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    for (const auto & field : impl->all())
+        res[String{field.getName()}] = field.getValueString(/* show_secrets */ true);
+    return res;
 }
 
 }

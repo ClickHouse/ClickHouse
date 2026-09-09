@@ -1,0 +1,49 @@
+<test>
+  <!-- Duplicate-heavy RIGHT/FULL ALL JOIN with multiple disjuncts: exercises KnownRowsHolder
+       dedup, per-row JoinUsedFlags marking, and the non-joined phase. -->
+
+  <!-- Both disjuncts match the same rows: cross-disjunct dedup, 100 duplicates per key. -->
+  <query>
+    SELECT max(r.k1)
+    FROM (SELECT number % 10000 AS a, number % 10000 AS b FROM numbers_mt(1e7)) AS l
+    RIGHT JOIN (SELECT number % 1000 AS k1, number % 1000 AS k2 FROM numbers(1e5)) AS r
+    ON l.a = r.k1 OR l.b = r.k2
+    FORMAT Null
+  </query>
+
+  <!-- Each probe row matches via at most one disjunct: dedup set is built but never hit. -->
+  <query>
+    SELECT max(r.k1)
+    FROM (SELECT number % 10000 AS a FROM numbers_mt(1e7)) AS l
+    RIGHT JOIN (SELECT number % 1000 AS k1, 1000 + (number % 1000) AS k2 FROM numbers(1e5)) AS r
+    ON l.a = r.k1 OR l.a = r.k2
+    FORMAT Null
+  </query>
+
+  <!-- FULL variant of the overlap case. -->
+  <query>
+    SELECT max(r.k1)
+    FROM (SELECT number % 10000 AS a, number % 10000 AS b FROM numbers_mt(1e7)) AS l
+    FULL JOIN (SELECT number % 1000 AS k1, number % 1000 AS k2 FROM numbers(1e5)) AS r
+    ON l.a = r.k1 OR l.b = r.k2
+    FORMAT Null
+  </query>
+
+  <!-- Single disjunct + cross-table residual condition. -->
+  <query>
+    SELECT max(r.k1)
+    FROM (SELECT number % 10000 AS a, number AS b FROM numbers_mt(1e7)) AS l
+    RIGHT JOIN (SELECT number % 1000 AS k1, number AS k2 FROM numbers(1e5)) AS r
+    ON l.a = r.k1 AND (l.b % 7) &lt; (r.k2 % 9)
+    FORMAT Null SETTINGS join_algorithm = 'parallel_hash'
+  </query>
+
+  <!-- Most build rows never match: stresses the per-row flags scan in the non-joined phase. -->
+  <query>
+    SELECT count()
+    FROM (SELECT number % 1000 AS a FROM numbers(1e5)) AS l
+    RIGHT JOIN (SELECT number % 100000 AS k1, number % 100000 AS k2 FROM numbers_mt(5e6)) AS r
+    ON l.a = r.k1 OR l.a = r.k2
+    FORMAT Null
+  </query>
+</test>

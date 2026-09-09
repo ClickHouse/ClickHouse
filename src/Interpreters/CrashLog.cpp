@@ -136,22 +136,24 @@ void collectCrashLog(
                 [&current_exception_trace_full](std::string_view line) { current_exception_trace_full.push_back(line); });
         }
 
-        CrashLogElement element{
-            static_cast<time_t>(time / 1000000000),
-            time,
-            signal,
-            signal_code,
-            thread_id,
-            query_id,
-            query,
-            trace,
-            trace_full,
-            fault_address,
-            fault_access_type,
-            signal_description,
-            current_exception_trace_full,
-            GIT_HASH,
-            Poco::Environment::osArchitecture()};
-        crash_log_owned->add(std::move(element));
+        crash_log_owned->add([&](CrashLogElement & element)
+        {
+            element = CrashLogElement{
+                static_cast<time_t>(time / 1000000000),
+                time,
+                signal,
+                signal_code,
+                thread_id,
+                query_id,
+                query,
+                trace,
+                trace_full,
+                fault_address,
+                fault_access_type,
+                signal_description,
+                current_exception_trace_full,
+                GIT_HASH,
+                Poco::Environment::osArchitecture()};
+        });
     }
 }

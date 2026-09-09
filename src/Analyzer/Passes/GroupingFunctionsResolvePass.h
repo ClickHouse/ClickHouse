@@ -11,10 +11,10 @@ namespace DB
   * and previous GROUPING function arguments.
   *
   * Example: SELECT grouping(id) FROM test_table GROUP BY id;
-  * Result: SELECT groupingOrdinary(id) FROM test_table GROUP BY id;
+  * Result: SELECT __groupingOrdinary(id) FROM test_table GROUP BY id;
   *
   * Example: SELECT grouping(id), grouping(value) FROM test_table GROUP BY GROUPING SETS ((id), (value));
-  * Result: SELECT groupingForGroupingSets(__grouping_set, id), groupingForGroupingSets(__grouping_set, value)
+  * Result: SELECT __groupingForGroupingSets(__grouping_set, id), __groupingForGroupingSets(__grouping_set, value)
   * FROM test_table GROUP BY GROUPING SETS ((id), (value));
   */
 class GroupingFunctionsResolvePass final : public IQueryTreePass

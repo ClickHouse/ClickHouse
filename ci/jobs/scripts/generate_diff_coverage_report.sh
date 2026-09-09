@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Validate required env vars
-for var in PREV_30_COMMITS CURRENT_COMMIT BASE_COMMIT BRANCH BASE_BRANCH WORKSPACE_PATH; do
+for var in PREV_30_COMMITS PREV_COVERAGE_URLS CURRENT_COMMIT BASE_COMMIT BRANCH BASE_BRANCH WORKSPACE_PATH; do
   if [ -z "${!var:-}" ]; then
     echo "ERROR: Required environment variable $var is not set"
     exit 1
@@ -13,24 +13,39 @@ done
 
 cd ci/tmp
 
+# Every exit-0 path names its outcome here, so an absent marker means the script
+# died before reaching one. A stale marker must therefore not survive.
+OUTCOME_MARKER="diff_outcome.txt"
+rm -f "$OUTCOME_MARKER"
+
 if [[ ! -f "llvm_coverage.info" ]]; then
   echo "ERROR: llvm_coverage.info not found"
   exit 1
 fi
 
-# Try to find .info file from S3, checking up to 30 ancestor commits
+# Try to find .info file from S3, checking up to 30 ancestor commits.
+# The URLs are built by the calling job, which asks praktika for the S3 prefix
+# of each commit, so no S3 key is spelled here.
 IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
+IFS=',' read -ra COVERAGE_URLS <<< "${PREV_COVERAGE_URLS}"
+if [ "${#COMMITS[@]}" -ne "${#COVERAGE_URLS[@]}" ]; then
+  echo "ERROR: PREV_COVERAGE_URLS holds ${#COVERAGE_URLS[@]} entries for ${#COMMITS[@]} commits"
+  exit 1
+fi
 
 FOUND=0
+FOUND_INDEX=0
 FIRST_BASE_COMMIT=""
-for TEST_COMMIT in "${COMMITS[@]}"; do
-COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
+for i in "${!COMMITS[@]}"; do
+TEST_COMMIT="${COMMITS[$i]}"
+COVERAGE_URL="${COVERAGE_URLS[$i]}"
 echo "Checking coverage file for commit ${TEST_COMMIT}..."
 if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
 FIRST_BASE_COMMIT="${TEST_COMMIT}"
 FOUND=1
+FOUND_INDEX=$i
 break
 fi
 done
@@ -40,40 +55,35 @@ if [ $FOUND -eq 0 ]; then
   exit 1
 fi
 
-# Look for a second, older master baseline. The newly-covered-code analysis
-# uses it to cross-validate: a line is considered "newly covered by this PR"
-# only if it is uncovered in BOTH master baselines, which filters out the
-# run-to-run variance of the coverage build (typically ~1000 lines flicker
-# between two adjacent master runs). The second baseline is optional — if
-# none is available, the analysis falls back to single-baseline mode and
-# prints a warning.
-SAW_FIRST=0
-for TEST_COMMIT in "${COMMITS[@]}"; do
-  if [ "${TEST_COMMIT}" = "${FIRST_BASE_COMMIT}" ]; then
-    SAW_FIRST=1
-    continue
-  fi
-  if [ ${SAW_FIRST} -eq 0 ]; then
-    continue
-  fi
-  COVERAGE_URL_2="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
-  echo "Checking second baseline coverage for commit ${TEST_COMMIT}..."
-  if wget --spider "${COVERAGE_URL_2}" 2>&1 | grep -q '200 OK'; then
-    echo "Found second baseline at ${COVERAGE_URL_2}"
-    wget --quiet "${COVERAGE_URL_2}" -O base_llvm_coverage_2.info
-    break
-  fi
-done
-
 export CURRENT_COMMIT
 export BASE_COMMIT
+export FIRST_BASE_COMMIT
 export PR_NUMBER
 export REPO_NAME
 
+# Two separate ranges serve two different purposes:
+#
+# 1. changes.diff (for genhtml --diff-file): anchored at FIRST_BASE_COMMIT so
+#    the diff maps the baseline's line numbers to current. The baseline .info was
+#    produced at FIRST_BASE_COMMIT, so the "before" side of the diff must match.
+#
+# 2. changed_files (for pattern extraction and downstream analysis): anchored at
+#    BASE_COMMIT (the actual PR merge base) so we only see files the PR itself
+#    changed. Using FIRST_BASE_COMMIT here would pull in unrelated master commits
+#    from the gap between FIRST_BASE_COMMIT and BASE_COMMIT — a src/Foo.cpp edit
+#    from that gap would appear in patterns and turn a genuine no_cpp_changes
+#    outcome into report_generated, suppressing the global newly-covered
+#    analysis llvm_coverage_job.py runs for tests-only PRs even though the PR
+#    binary is genuinely unchanged.
+#
+# `gh` reports a failure as a bare "gh: Not Found (HTTP 404)" naming no resource,
+# so each endpoint is echoed before it is requested.
+echo "Fetching diff: repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT}"
 gh api \
   -H "Accept: application/vnd.github.v3.diff" \
-  repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
+  repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT} \
   > changes.diff
+echo "Fetching changed files: repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT}"
 changed_files=$(gh api \
   repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
   --jq '.files[].filename'
@@ -98,6 +108,38 @@ done < <(echo "$changed_files")
 
 if [ ${#patterns[@]} -eq 0 ]; then
   echo "No coverable C/C++ source files changed (contrib/ is excluded from coverage), skipping differential coverage report"
+  # In this outcome llvm_coverage_job.py runs the global newly-covered-lines
+  # analysis instead (see newly_covered_lines.py). Download up to
+  # EXTRA_BASELINES_MAX older master baselines so that analysis can require
+  # agreement between several master runs, filtering out lines that fire only
+  # occasionally on master (background/async code). Only this outcome consumes
+  # them, so the downloads are gated here and C/C++ PRs pay nothing.
+  #
+  # The extras are best-effort: the analysis works with however many are
+  # present, so a flaked download must not fail the script (set -e) and turn an
+  # optional stabilization input into a CI-failure path. A failed download only
+  # removes its partial file - the slot is reused by the next candidate commit.
+  EXTRA_BASELINES_MAX=3
+  slot=2
+  for (( j=FOUND_INDEX+1; j<${#COMMITS[@]}; j++ )); do
+    if [ $((slot - 2)) -ge "$EXTRA_BASELINES_MAX" ]; then
+      break
+    fi
+    TEST_COMMIT="${COMMITS[$j]}"
+    COVERAGE_URL="${COVERAGE_URLS[$j]}"
+    echo "Checking extra baseline for commit ${TEST_COMMIT}..."
+    if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
+      echo "Found extra baseline #$((slot - 1)) at ${COVERAGE_URL}"
+      if wget --quiet "${COVERAGE_URL}" -O "base_llvm_coverage_${slot}.info"; then
+        slot=$((slot + 1))
+      else
+        rm -f "base_llvm_coverage_${slot}.info"
+        echo "WARNING: failed to download extra baseline from ${COVERAGE_URL}, continuing without it"
+      fi
+    fi
+  done
+  echo "Downloaded $((slot - 2)) extra master baselines"
+  echo "no_cpp_changes" > "$OUTCOME_MARKER"
   exit 0
 fi
 
@@ -116,11 +158,15 @@ baseline_sf_count=$(grep -c '^SF:' baseline.changed.info 2>/dev/null || true)
 
 if [ "$current_sf_count" -eq 0 ] && [ "$baseline_sf_count" -eq 0 ]; then
   echo "No coverage data found for changed files (files may be new or not instrumented), skipping differential coverage report"
+  echo "no_coverage_data" > "$OUTCOME_MARKER"
   exit 0
 fi
 
 if [ "$current_sf_count" -eq 0 ]; then
-  echo "Current coverage is empty for changed files (tests may have been removed or disabled). Skipping genhtml — LBC analysis will run separately."
+  # print_uncovered_code.py reads only current.changed.info, so it has no data
+  # to report in this state either.
+  echo "Current coverage is empty for changed files (tests may have been removed or disabled), skipping differential coverage report"
+  echo "current_coverage_empty" > "$OUTCOME_MARKER"
   exit 0
 fi
 
@@ -135,7 +181,7 @@ fi
 genhtml \
   --header-title "${HEADER_TITLE}" \
   --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
-  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
+  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${FIRST_BASE_COMMIT}" \
   --baseline-file baseline.changed.info \
   --diff-file changes.diff \
   --output-directory llvm_coverage_diff_html_report \
@@ -155,3 +201,4 @@ genhtml \
   --flat \
   current.changed.info
 
+echo "report_generated" > "$OUTCOME_MARKER"

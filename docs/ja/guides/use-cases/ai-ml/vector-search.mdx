@@ -1,0 +1,673 @@
+---
+slug: /use-cases/AI/qbit-vector-search
+sidebarTitle: 'QBitによるベクトル検索'
+title: 'ベクトル検索とQBitの概要'
+description: 'QBitによって、ClickHouse のベクトル検索クエリで実行時に精度を調整できる仕組みを学びます。'
+keywords: ['QBit', 'ベクトル検索', 'AI', '埋め込み', 'ANN']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Info>
+  **このガイドでは、次の内容を学びます。**
+
+  * ベクトル検索 の基本を簡単に理解する
+  * 近似最近傍 (ANN) と Hierarchical Navigable Small World (HNSW) について学ぶ
+  * 量子化ビット (QBit) について学ぶ
+  * DBPedia dataset を使って、QBit で ベクトル検索 を実行する
+</Info>
+
+<div id="vector-search-primer">
+  ## ベクトル検索の基礎
+</div>
+
+数学や物理学では、ベクトルは大きさと向きの両方を持つ対象として定義されます。
+多くの場合、空間内の線分や矢印として表され、速度、力、加速度といった量を表現するのに使われます。
+コンピューターサイエンスでは、ベクトルは有限個の数値からなる列です。
+つまり、数値を格納するためのデータ構造です。
+
+機械学習におけるベクトルも、コンピューターサイエンスでいうものと同じデータ構造ですが、そこに格納される数値には特別な意味があります。
+テキストのまとまりや画像を、その内容を表す重要な概念へと落とし込む処理をエンコードと呼びます。
+その結果得られる出力は、それらの重要な概念を数値形式で表した、機械による表現です。
+これが埋め込みであり、ベクトルに格納されます。
+言い換えると、このような文脈上の意味がベクトルに埋め込まれたものを、埋め込みと呼びます。
+
+ベクトル検索は、今やあらゆる場面で使われています。
+音楽のレコメンデーションを支え、大規模言語モデルの回答精度を高めるために外部知識を取得する retrieval-augmented generation (RAG) でも使われており、Google 検索でさえ、ある程度はベクトル検索によって支えられています。
+
+特化型データベースには利点がある一方で、ユーザーは完全に専用化されたベクトルストアよりも、アドホックにベクトル機能を利用できる通常のデータベースを好むことが少なくありません。
+ClickHouse は、[総当たりベクトル検索](/ja/reference/engines/table-engines/mergetree-family/annindexes#exact-nearest-neighbor-search) と、現在の高速なベクトル検索の標準である HNSW を含む [近似最近傍 (ANN) 検索の手法](/ja/reference/engines/table-engines/mergetree-family/annindexes#approximate-nearest-neighbor-search) の両方をサポートしています。
+
+<div id="understanding-embeddings">
+  ### 埋め込みを理解する
+</div>
+
+ベクトル検索の仕組みを理解するために、簡単な例を見てみましょう。
+単語の埋め込み (ベクトル表現) を考えてみます。
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="果物と動物の埋め込みの可視化" />
+
+以下のように、いくつかのサンプル埋め込みを含むテーブルを作成します。
+
+```sql
+CREATE TABLE fruit_animal
+ENGINE = MergeTree
+ORDER BY word
+AS SELECT *
+FROM VALUES(
+  'word String, vec Array(Float64)',
+  ('apple', [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+  ('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+  ('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+  ('dog', [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+  ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533])
+);
+```
+
+指定した埋め込みに最も近い単語を検索できます。
+
+```sql
+SELECT word, L2Distance(
+  vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770]
+) AS distance
+FROM fruit_animal
+ORDER BY distance
+LIMIT 5;
+```
+
+```response
+┌─word───┬────────────distance─┐
+│ apple  │ 0.14639757188169716 │
+│ banana │  1.9989613690076786 │
+│ orange │   2.039041552613732 │
+│ horse  │  2.7555776805484813 │
+│ dog    │   3.382295083120104 │
+└────────┴─────────────────────┘
+```
+
+クエリ埋め込みは &quot;apple&quot; に最も近く (距離が最小) 、2 つの埋め込みを並べて見ると、それがよくわかります。
+
+```response
+apple:           [-0.99105519,1.28887844,-0.43526649,-0.98520696,0.66154391]
+クエリの埋め込み: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
+```
+
+<div id="approximate-nearest-neighbours">
+  ## 近似最近傍 (ANN)
+</div>
+
+大規模なデータセットでは、総当たり検索では時間がかかりすぎます。
+そこで、近似最近傍法が有効になります。
+
+<div id="quantisation">
+  ### 量子化
+</div>
+
+量子化では、より小さい数値型へダウンキャストします。
+数値が小さくなるほどデータ量も小さくなり、データ量が小さいほど距離計算は高速になります。
+ClickHouse のベクトル化クエリ実行エンジンでは、1 回の演算でプロセッサのレジスタにより多くの値を収められるため、スループットが直接向上します。
+
+選択肢は 2 つあります。
+
+1. **量子化したコピーを元のカラムと併せて保持する** - ストレージは 2 倍になりますが、いつでも完全な精度の値にフォールバックできるため安全です
+2. **元の値を完全に置き換える** (INSERT 時にダウンキャストする)  - 容量と I/O を節約できますが、後戻りはできません
+
+<div id="hnsw">
+  ### Hierarchical Navigable Small World (HNSW)
+</div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="HNSWのレイヤー構造" />
+
+HNSW は、複数のノード (ベクトル) からなる階層構造で構築されます。各ノードはランダムに 1 つ以上の層へ割り当てられ、上位の層に現れる確率は指数関数的に低くなります。
+
+検索時には、最上位層のノードから開始し、最も近い近傍に向かって貪欲に移動します。これ以上近いノードが見つからなくなったら、次の、より高密度な層へ下ります。
+
+このレイヤー構造により、HNSW はノード数に対して対数的な検索計算量を実現します。
+
+<Warning>
+  **HNSW の制限**
+
+  主なボトルネックはメモリです。ClickHouse は HNSW の [usearch](https://github.com/unum-cloud/usearch) 実装を使用しています。これはインメモリのデータ構造で、分割をサポートしていません。
+  そのため、データセットが大きくなるほど、それに比例してより多くの RAM が必要になります。
+</Warning>
+
+<div id="comparison-approaches">
+  ### アプローチの比較
+</div>
+
+| カテゴリ    | Brute-force              | HNSW                      | QBit              |
+| ------- | ------------------------ | ------------------------- | ----------------- |
+| **精度**  | 完全                       | 高い                        | 柔軟                |
+| **速度**  | 遅い                       | 速い                        | 柔軟                |
+| **その他** | 量子化: 容量が増える、または精度が元に戻せない | 索引はメモリ内に収まる必要があり、事前に構築も必要 | 依然として O(#records) |
+
+<div id="qbit-deepdive">
+  ## QBit の詳細解説
+</div>
+
+<div id="quantised-bit">
+  ### 量子化ビット (QBit)
+</div>
+
+QBit は、浮動小数点数がビット列として表現される仕組みを利用して、`BFloat16`、`Float32`、`Float64` の値を格納できる新しいデータ構造です。
+各数値を丸ごと格納するのではなく、QBit は値を**ビットプレーン**に分割します。つまり、1 番目のビットをまとめたもの、2 番目のビットをまとめたもの、3 番目のビットをまとめたもの、という形です。
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="QBit のビットプレーンの概念" />
+
+この手法により、従来の量子化における主な制約を解消できます。重複データを保存する必要がなく、値が意味を失うリスクもありません。また、QBit はインメモリ索引を維持するのではなく、保存されたデータを直接処理するため、HNSW の RAM ボトルネックも回避できます。
+
+<Tip>
+  **利点**
+
+  **何より重要なのは、事前に判断を下す必要がないことです。**
+  精度と性能はクエリ時に動的に調整できるため、ユーザーは精度と速度のバランスをほとんど手間なく探れます。
+</Tip>
+
+<Info>
+  **制限**
+
+  QBit はベクトル検索を高速化しますが、計算量は依然として O(n) のままです。つまり、データセットが十分に小さく、HNSW 索引が RAM に余裕を持って収まるのであれば、依然としてそれが最速の選択肢です。
+</Info>
+
+<div id="the-data-type">
+  ### データ型
+</div>
+
+QBitカラムは次のように作成できます。
+
+```sql
+SET allow_experimental_qbit_type = 1;
+CREATE TABLE fruit_animal
+(
+  word String,
+  vec QBit(Float64, 5)
+)
+ENGINE = MergeTree
+ORDER BY word;
+
+INSERT INTO fruit_animal VALUES
+('apple',  [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+('dog',    [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
+```
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="QBit データ構造の転置" />
+
+データが QBit カラムに挿入されると、すべての1番目のビット、すべての2番目のビット、というように同じ位置のビット同士が並ぶように転置されます。これらを**グループ**と呼びます。
+
+各グループは、それぞれ別個の `FixedString(N)` カラムに格納されます。これは長さ N バイトの固定長文字列で、メモリ上では区切りなしで連続して格納されます。こうしたグループはすべて単一の `Tuple` にまとめられ、これが QBit の基盤となる構造を構成します。
+
+**例:** 8×Float64 要素のベクトルから始めると、各グループには 8 ビットが含まれます。Float64 は 64 ビットなので、最終的に 64 個のグループ (各ビットに1つ) になります。したがって、`QBit(Float64, 8)` の内部レイアウトは 64×FixedString(1) カラムからなる Tuple のようになります。
+
+<Tip>
+  元のベクトル長が 8 で割り切れない場合は、8 に揃うように不可視の要素でパディングされます。これにより、完全なバイト単位でのみ動作する FixedString との互換性が確保されます。
+</Tip>
+
+<div id="the-distance-calculation">
+  ### 距離の計算
+</div>
+
+QBit でクエリを実行するには、[`L2DistanceTransposed`](/ja/reference/functions/regular-functions/distance-functions#L2DistanceTransposed) 関数に精度パラメータを指定して使用します。
+
+```sql
+SELECT
+  word,
+  L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 16) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```response
+┌─word───┬────────────distance─┐
+│ apple  │ 0.15196434766705247 │
+│ banana │   1.966091150410285 │
+│ orange │  1.9864477714218596 │
+│ horse  │  2.7306267946594005 │
+│ dog    │  3.2849989362383165 │
+└────────┴─────────────────────┘
+```
+
+3番目のパラメータ (16) は、精度レベルをビット数で指定します。
+
+<div id="io-optimisation">
+  ### I/O 最適化
+</div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="QBit I/O 最適化" />
+
+距離を計算するには、その前に必要なデータをディスクから読み込み、さらにアン転置 (グループ化されたビット表現を完全なベクトルに戻す処理) を行う必要があります。QBit は値を精度レベルごとにビット転置して保存するため、ClickHouse は目的の精度で数値を復元するのに必要な上位ビットプレーンだけを読み取れます。
+
+上記のクエリでは、精度レベル 16 を使用しています。Float64 は 64 ビットなので、先頭の 16 個のビットプレーンだけを読み込み、**データの 75% をスキップ**できます。
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="QBit の再構築" />
+
+読み込み後は、読み込んだビットプレーンから各数値の上位部分だけを復元し、読み込まれていないビットは 0 のままにします。
+
+<div id="calculation-optimisation">
+  ### 計算の最適化
+</div>
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="ダウンキャストの比較" />
+
+Float32 や BFloat16 のような、より小さな型にキャストすれば、この未使用部分をなくせるのではないかと思うかもしれません。実際それは可能ですが、すべての行に明示的なキャストを適用するとコストが高くなります。
+
+その代わりに、参照ベクトルだけをダウンキャストし、QBit データはよりビット幅の小さい値を含んでいるものとして扱えます (つまり、一部のカラムの存在を「忘れる」わけです) 。というのも、そのレイアウトはそうした型を切り詰めたものに対応していることが多いためです。
+
+<div id="bfloat16-optimization">
+  #### BFloat16 の最適化
+</div>
+
+BFloat16 は、Float32 を半分に切り詰めた形式です。符号ビットと 8 ビットの指数はそのままですが、23 ビットの仮数では上位 7 ビットだけを保持します。そのため、QBit カラムの先頭 16 個のビットプレーンを読み取ると、実質的に BFloat16 値のレイアウトを再現できます。したがって、この場合は参照ベクトルを安全に BFloat16 に変換でき、実際にそのようにしています。
+
+<div id="float64-complexity">
+  #### Float64 の複雑さ
+</div>
+
+ただし、Float64 は別物です。11 ビットの指数と 52 ビットの仮数を使用するため、単に Float32 のビット数を 2 倍にしたものではありません。構造も指数バイアスもまったく異なります。Float64 を Float32 のようなより小さいフォーマットにダウンキャストするには、実際に IEEE-754 の変換を行う必要があり、その際に各値は表現可能な最も近い Float32 に丸められます。この丸め処理は計算コストが高くなります。
+
+<Tip>
+  QBit のパフォーマンス要素を詳しく知りたい場合は、[&quot;Let’s vectorize&quot;](https://clickhouse.com/blog/qbit-vector-search#lets-vectorise) を参照してください
+</Tip>
+
+<div id="example">
+  ## DBpedia を使った例
+</div>
+
+Float32 の埋め込みで表現された 100 万件の Wikipedia 記事を含む DBpedia データセットを使った実際の例で、QBit の動作を見てみましょう。
+
+<div id="setup">
+  ### セットアップ
+</div>
+
+まず、テーブルを作成します
+
+```sql
+CREATE TABLE dbpedia
+(
+  id      String,
+  title   String,
+  text    String,
+  vector  Array(Float32) CODEC(NONE)
+) ENGINE = MergeTree ORDER BY (id);
+```
+
+コマンドラインからデータを挿入します:
+
+```bash
+for i in $(seq 0 25); do
+  echo "ファイル ${i} を処理中..."
+  clickhouse client -q "INSERT INTO dbpedia SELECT _id, title, text, \"text-embedding-3-large-1536-embedding\" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/${i}.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;"
+  echo "ファイル ${i} 完了。"
+done
+```
+
+<Tip>
+  データの挿入にはしばらく時間がかかる場合があります。
+  ここでコーヒーブレイクにしましょう！
+</Tip>
+
+または、以下のように個々のSQL文を実行して、25個のParquetファイルをそれぞれ読み込むこともできます。
+
+```sql
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/0.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/1.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+...
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/25.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+```
+
+dbpediaテーブルに100万行あることを確認します。
+
+```sql
+SELECT count(*)
+FROM dbpedia
+```
+
+```response
+┌─count()─┐
+│ 1000000 │
+└─────────┘
+```
+
+次に、QBit カラムを追加します：
+
+```sql
+SET allow_experimental_qbit_type = 1;
+
+-- Float32の埋め込みを持つテーブルがある場合
+ALTER TABLE dbpedia ADD COLUMN qbit QBit(Float32, 1536);
+ALTER TABLE dbpedia UPDATE qbit = vector WHERE 1;
+```
+
+<div id="search-query">
+  ### 検索クエリ
+</div>
+
+月、アポロ11号、スペースシャトル、宇宙飛行士、ロケットといった宇宙関連の検索語すべてに最も関連する概念を探します。
+
+```sql
+SELECT
+    title,
+    text,
+    COUNT(DISTINCT concept) AS num_concepts_matched,
+    MIN(distance) AS min_distance,
+    AVG(distance) AS avg_distance
+FROM (
+         (
+             SELECT title, text, 'Moon' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Moon'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Moon'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Apollo 11' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Apollo 11'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Apollo 11'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Space Shuttle' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Space Shuttle'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Space Shuttle'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Astronaut' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Astronaut'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Astronaut'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Rocket' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Rocket'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Rocket'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+     )
+WHERE title NOT IN ('Moon', 'Apollo 11', 'Space Shuttle', 'Astronaut', 'Rocket')
+GROUP BY title, text
+HAVING num_concepts_matched >= 3
+ORDER BY num_concepts_matched DESC, min_distance ASC
+    LIMIT 10;
+```
+
+このクエリは、5つの概念それぞれについて、意味的に近いエントリ上位1000件を検索します。
+そのうち少なくとも3つの結果に含まれるエントリを返し、一致する概念数と、それらのいずれかへの最小距離 (元の項目は除外) に基づいて順位付けします。
+
+わずか5ビット (符号1ビット + 指数4ビット、仮数はゼロ) を使うと:
+
+```response
+行 1:
+──────
+title:                Aintree railway station
+text:                 For a guide to the various Aintree stations that have existed and their relationship to each other see Aintree Stations.Aintree railway station is a railway station in Aintree, Merseyside, England.  It is on the Ormskirk branch of the Merseyrail network's Northern Line.  Until 1968 it was known as Aintree Sefton Arms after a nearby public house. The station's design reflects the fact it is the closest station to Aintree Racecourse, where the annual Grand National horse race takes place.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 2:
+──────
+title:                AP German Language
+text:                 Advanced Placement German Language (also known as AP German Language or AP German) is a course and examination provided by the College Board through the Advanced Placement Program. This course  is designed to give high school students the opportunity to receive credit in a college-level German language course.Originally the College Board had offered two AP German exams, one with AP German Language and another with AP German Literature.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 3:
+──────
+title:                Adelospondyli
+text:                 Adelospondyli is an order of elongate, presumably aquatic, Carboniferous amphibians.  The skull is solidly roofed, and elongate, with the orbits located very far forward.  The limbs are well developed.  Most adelospondyls belong to the family Adelogyrinidae, although the adelospondyl Acherontiscus has been placed in its own family, Acherontiscidae. The group is restricted to the Mississippian (Serpukhovian Age) of Scotland.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 4:
+──────
+title:                Adrien-Henri de Jussieu
+text:                 Adrien-Henri de Jussieu (23 December 1797 – 29 June 1853) was a French botanist.Born in Paris as the son of botanist Antoine Laurent de Jussieu, he received the degree of Doctor of Medicine in 1824 with a treatise of the plant family Euphorbiaceae.  When his father retired in 1826, he succeeded him at the Jardin des Plantes; in 1845 he became professor of organography of plants.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 5:
+──────
+title:                Alan Taylor (footballer, born 1953)
+text:                 Alan Taylor (born 14 November 1953) is an English former professional footballer best known for his goalscoring exploits with West Ham United in their FA Cup success of 1975, culminating in two goals in that season's final.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 6:
+──────
+title:                Abstract algebraic logic
+text:                 In mathematical logic, abstract algebraic logic is the study of the algebraization of deductive systemsarising as an abstraction of the well-known Lindenbaum-Tarski algebra, and how the resulting algebras are related to logical systems.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 7:
+──────
+title:                Ahsan Saleem Hyat
+text:                 General Ahsan Saleem Hayat (Urdu: احسن سلیم حیات; born 10 January 1948), is a retired four-star general who served as the vice chief of army staff of the Pakistan Army from 2004 until his retirement in 2007. Prior to that, he served as the operational field commander of the V Corps in Sindh Province and was a full-tenured professor of war studies at the National Defence University. He was succeeded by General Ashfaq Parvez Kayani on 8 October 2007.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 8:
+──────
+title:                Al Wafa al Igatha al Islamia
+text:                 There is another organization named Al Wafa (Israel), a charity, in Israel, devoted to womenThere is another organization Jamaiat Al-Wafa LiRayat Al-Musenin which is proscribed by the Israeli government.Al Wafa is an Islamic charity listed in Executive Order 13224 as an entity that supports terrorism.United States intelligence officials state that it was founded in Afghanistan by Adil Zamil Abdull Mohssin Al Zamil,Abdul Aziz al-Matrafi and Samar Khand.According to Saad Madai Saad al-Azmi's Combatant Status Review Tribunal Al Wafa is located in the Wazir Akhbar Khan area ofAfghanistan.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 9:
+───────
+title:                Alex Baumann
+text:                 Alexander Baumann, OC OOnt (born April 21, 1964) is a Canadian former competitive swimmer who won two gold medals and set two world records at the 1984 Summer Olympics in Los Angeles.Born in Prague (former Czechoslovakia), Baumann was raised in Canada after his family moved there in 1969 following the Prague Spring.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+行 10:
+───────
+title:                Alberni-Clayoquot Regional District
+text:                 The Alberni-Clayoquot Regional District (2006 population 30,664) of British Columbia is located on west central Vancouver Island.  Adjacent regional districts it shares borders with are the Strathcona and Comox Valley Regional Districts to the north, and the Nanaimo and Cowichan Valley Regional Districts to the east. The regional district offices are located in Port Alberni.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+10 rows in set. Elapsed: 0.542 sec. Processed 5.01 million rows, 1.86 GB (9.24 million rows/s., 3.43 GB/s.)
+Peak memory usage: 327.04 MiB.
+```
+
+**パフォーマンス:** 10 行が返されました。経過時間: 0.271 秒。846 万行、4.54 GB を処理しました (毎秒 3119 万行、16.75 GB/s) 。ピークメモリ使用量: **739.82 MiB**。
+
+<Accordion title="総当たり検索との性能比較">
+  ```sql
+  SELECT 
+      title,
+      text,
+      COUNT(DISTINCT concept) AS num_concepts_matched,
+      MIN(distance) AS min_distance,
+      AVG(distance) AS avg_distance
+  FROM (
+      (
+          SELECT title, text, 'Moon' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Moon'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Moon'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+      UNION ALL
+      (
+          SELECT title, text, 'Apollo 11' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Apollo 11'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Apollo 11'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+      UNION ALL
+      (
+          SELECT title, text, 'Space Shuttle' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Space Shuttle'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Space Shuttle'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+      UNION ALL
+      (
+          SELECT title, text, 'Astronaut' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Astronaut'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Astronaut'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+      UNION ALL
+      (
+          SELECT title, text, 'Rocket' AS concept,
+                 L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Rocket'), 5) AS distance
+          FROM dbpedia
+          WHERE title != 'Rocket'
+          ORDER BY distance ASC
+          LIMIT 1000
+      )
+  )
+  WHERE title NOT IN ('Moon', 'Apollo 11', 'Space Shuttle', 'Astronaut', 'Rocket')
+  GROUP BY title, text
+  HAVING num_concepts_matched >= 3
+  ORDER BY num_concepts_matched DESC, min_distance ASC
+  LIMIT 10;
+  ```
+
+  ```response
+  Row 1:
+  ──────
+  title:                Apollo program
+  text:                 The Apollo program, also known as Project Apollo, was the third United States human spaceflight program carried out by the National Aeronautics and Space Administration (NASA), which accomplished landing the first humans on the Moon from 1969 to 1972. First conceived during Dwight D. Eisenhower's administration as a three-man spacecraft to follow the one-man Project Mercury which put the first Americans in space, Apollo was later dedicated to President John F.
+  num_concepts_matched: 4
+  min_distance:         0.82420665
+  avg_distance:         1.0207901149988174
+
+  Row 2:
+  ──────
+  title:                Apollo 8
+  text:                 Apollo 8, the second human spaceflight mission in the United States Apollo space program, was launched on December 21, 1968, and became the first manned spacecraft to leave Earth orbit, reach the Earth's Moon, orbit it and return safely to Earth.
+  num_concepts_matched: 4
+  min_distance:         0.8285278
+  avg_distance:         1.0357224345207214
+
+  Row 3:
+  ──────
+  title:                Lunar Orbiter 1
+  text:                 The Lunar Orbiter 1 robotic (unmanned) spacecraft, part of the Lunar Orbiter Program, was the first American spacecraft to orbit the Moon.  It was designed primarily to photograph smooth areas of the lunar surface for selection and verification of safe landing sites for the Surveyor and Apollo missions. It was also equipped to collect selenodetic, radiation intensity, and micrometeoroid impact data.The spacecraft was placed in an Earth parking orbit on August 10, 1966 at 19:31 (UTC).
+  num_concepts_matched: 4
+  min_distance:         0.94581836
+  avg_distance:         1.0584313124418259
+
+  Row 4:
+  ──────
+  title:                Apollo (spacecraft)
+  text:                 The Apollo spacecraft was composed of three parts designed to accomplish the American Apollo program's goal of landing astronauts on the Moon by the end of the 1960s and returning them safely to Earth.  The expendable (single-use) spacecraft consisted of a combined Command/Service Module (CSM) and a Lunar Module (LM).
+  num_concepts_matched: 4
+  min_distance:         0.9643517
+  avg_distance:         1.0367188602685928
+
+  Row 5:
+  ──────
+  title:                Surveyor 1
+  text:                 Surveyor 1 was the first lunar soft-lander in the unmanned  Surveyor program of the National Aeronautics and Space Administration (NASA, United States). This lunar soft-lander gathered data about the lunar surface that would be needed for the manned Apollo Moon landings that began in 1969.
+  num_concepts_matched: 4
+  min_distance:         0.9738264
+  avg_distance:         1.0988530814647675
+
+  Row 6:
+  ──────
+  title:                Spaceflight
+  text:                 Spaceflight (also written space flight) is ballistic flight into or through outer space. Spaceflight can occur with spacecraft with or without humans on board. Examples of human spaceflight include the Russian Soyuz program, the U.S. Space shuttle program, as well as the ongoing International Space Station. Examples of unmanned spaceflight include space probes that leave Earth orbit, as well as satellites in orbit around Earth, such as communications satellites.
+  num_concepts_matched: 4
+  min_distance:         0.9831049
+  avg_distance:         1.060678943991661
+
+  Row 7:
+  ──────
+  title:                Skylab
+  text:                 Skylab was a space station launched and operated by NASA and was the United States' first space station. Skylab orbited the Earth from 1973 to 1979, and included a workshop, a solar observatory, and other systems. It was launched unmanned by a modified Saturn V rocket, with a weight of 169,950 pounds (77 t).  Three manned missions to the station, conducted between 1973 and 1974 using the Apollo Command/Service Module (CSM) atop the smaller Saturn IB, each delivered a three-astronaut crew.
+  num_concepts_matched: 4
+  min_distance:         0.99155205
+  avg_distance:         1.0769911855459213
+
+  Row 8:
+  ──────
+  title:                Orbital spaceflight
+  text:                 An orbital spaceflight (or orbital flight) is a spaceflight in which a spacecraft is placed on a trajectory where it could remain in space for at least one orbit. To do this around the Earth, it must be on a free trajectory which has an altitude at perigee (altitude at closest approach) above 100 kilometers (62 mi) (this is, by at least one convention, the boundary of space).  To remain in orbit at this altitude requires an orbital speed of ~7.8 km/s.
+  num_concepts_matched: 4
+  min_distance:         1.0075209
+  avg_distance:         1.085978478193283
+
+  Row 9:
+  ───────
+  title:                Dragon (spacecraft)
+  text:                 Dragon is a partially reusable spacecraft developed by SpaceX, an American private space transportation company based in Hawthorne, California. Dragon is launched into space by the SpaceX Falcon 9 two-stage-to-orbit launch vehicle, and SpaceX is developing a crewed version called the Dragon V2.During its maiden flight in December 2010, Dragon became the first commercially built and operated spacecraft to be recovered successfully from orbit.
+  num_concepts_matched: 4
+  min_distance:         1.0222818
+  avg_distance:         1.0942841172218323
+
+  Row 10:
+  ───────
+  title:                Space capsule
+  text:                 A space capsule is an often manned spacecraft which has a simple shape for the main section, without any wings or other features to create lift during atmospheric reentry.Capsules have been used in most of the manned space programs to date, including the world's first manned spacecraft Vostok and Mercury, as well as in later Soviet Voskhod, Soyuz, Zond/L1, L3, TKS, US Gemini, Apollo Command Module, Chinese Shenzhou and US, Russian and Indian manned spacecraft currently being developed.
+  num_concepts_matched: 4
+  min_distance:         1.0262821
+  avg_distance:         1.0882147550582886
+  ```
+
+  **パフォーマンス:** 10 rows in set. Elapsed: 1.157 sec. 処理済み: 1,000万行、32.76 GB (864万行/秒、28.32 GB/秒) Peak memory usage: **6.05 GiB**。
+</Accordion>
+
+<div id="key-insight">
+  ### 重要な知見
+</div>
+
+結果はどうだったでしょうか。単に良いだけではありません。驚くほど優れていました。浮動小数点数から仮数をすべて取り除き、指数の半分を削っても、なお意味のある情報を保てるとは一見するとわかりません。
+
+**QBit の重要な知見は、重要でないビットを無視してもベクトル検索は機能する、ということです。**
+
+優れたセマンティック検索の品質を維持しながら、メモリ使用量は **6.05 GB から 740 MB** に削減されました。
+
+<div id="result">
+  ## 結論
+</div>
+
+QBit は、浮動小数点数をビットプレーンとして格納するカラム型です。
+これにより、ベクトル検索時に読み取るビット数を選べるため、データを変更せずに再現率と性能を調整できます。
+ベクトル検索の各手法には、再現率・精度・性能のトレードオフを左右する固有のパラメータがあります。
+通常、これらは事前に決めておく必要があります。
+選択を誤ると、多くの時間とリソースを無駄にし、後から方針を変えるのも容易ではありません。
+QBit なら、初期段階でそうした判断を下す必要はありません。
+精度と速度のトレードオフはクエリ時に直接調整できるため、試しながら最適なバランスを探れます。
+
+***
+
+*2025年10月28日公開の、Raufs Dunamalijevs による[ブログ記事](https://clickhouse.com/blog/qbit-vector-search)をもとに編集*

@@ -7,15 +7,30 @@ delimited, bot-owned section into the PR body, e.g.:
 
     <!-- ch-version-info:start -->
     ### Version info
-    - Merged into: `26.6.1.1`
+    - Merged into: `26.6.1.1` (included in `26.6` and later)
     - Backported to: `25.12.1.100`, `25.8.1.200`
     <!-- ch-version-info:end -->
+
+For an original PR the `Merged into` version comes from the default branch's
+commit counter: master keeps stamping `26.6.1.<n>` where `n` counts master
+commits, so such a version is not a `release/26.6` build and is not comparable
+with release-branch build numbers. What it does mean is that the change landed
+on master before the `release/26.6` branch was cut, so it is present in `26.6`
+from the branch's first build and in every later release -- the annotation
+spells that out. Backport PRs get a bare version -- theirs is a real
+release-branch build.
 
 The version is taken from the CIDB `version_history` table, populated per build
 by `ci/jobs/scripts/workflow_hooks/version_log.py`. Each build stores the
 commit it ran on (`commit_sha`) and the computed `version`. A PR's merge commit
 (`PullRequest.merge_commit_sha`) equals that `commit_sha` for the post-merge
 build, so a single lookup maps PR -> version.
+
+A PR is a backport whenever its base branch is a release branch (`26.6` in the
+public repo, `release/26.6` in the private one) -- regardless of how its head
+branch is named, so a revert of a backport or a manual/ad-hoc backport that
+never went through the cherry-pick bot's `backport/<release>/<number>`
+convention still gets its own `Merged into` line. See `is_release_branch`.
 
 For an original PR (merged to the default branch) we additionally scan the
 active release branches for its backport PRs (`backport/<release>/<pr_number>`)
@@ -37,10 +52,12 @@ write a guessed/placeholder version.
 
 Backports are normally merged *later* than the original PR, often after the
 original has left the lookback window. This is handled: a merged backport PR
-pulls its original PR back in (by the `backport/<release>/<number>` head ref)
-and the original's `Backported to` list is recomputed by an authoritative scan
-of all active release branches -- see `partition_merged_prs`. So every backport
-merge, whenever it happens, refreshes the original PR.
+pulls its original PR back in, when the original's number can be recovered
+(from the `backport/<release>/<number>` head ref or, failing that, the
+cherry-pick bot's PR title), and the original's `Backported to` list is
+recomputed by an authoritative scan of all active release branches -- see
+`partition_merged_prs`. So every backport merge, whenever it happens, refreshes
+the original PR.
 
 Works in both the public and private repositories. The repo is taken from
 `GITHUB_REPOSITORY`; release branches are read from the open `release` PRs, so
@@ -64,7 +81,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 
-# Heavy imports (github, clickhouse_helper, ...) are done lazily inside main() so
+# Heavy imports (github, ci.praktika, ...) are done lazily inside main() so
 # that the pure helpers below stay importable for unit tests without PyGithub.
 
 SECTION_START = "<!-- ch-version-info:start -->"
@@ -83,7 +100,28 @@ DEFAULT_LOOKBACK_DAYS = 30
 # Backport branches are named `backport/<release>/<original_pr_number>`; this
 # mirrors cherry_pick.py:ReleaseBranch.bp_branch. Group 1 is the release (which
 # may itself contain slashes, e.g. `release/26.5`), group 2 the original number.
+# Used only as a best-effort way to recover the *originating* PR number for a
+# backport -- classification itself is driven by the base branch (see
+# `is_release_branch`), not by this pattern, since real backports also land
+# through revert branches and manual/ad-hoc naming that never matches it.
 BACKPORT_BRANCH_RE = re.compile(r"^backport/(.+)/(\d+)$")
+
+# A release branch's own name: the public repo names them bluntly `26.6`,
+# `26.7`, ...; the private repo names them `release/26.6`, `release/26.7`, ...
+# Anything merged into a branch matching this is a backport -- a real
+# release-branch build -- regardless of how its head branch is named. This
+# catches revert-of-backport PRs (GitHub prefixes their head with
+# `revert-<n>-`) and manual/ad-hoc backports that don't follow the cherry-pick
+# bot's `backport/...` convention, none of which `BACKPORT_BRANCH_RE` sees.
+RELEASE_BRANCH_RE = re.compile(r"^(?:release/)?\d+\.\d+$")
+
+# The cherry-pick bot titles a backport PR "Backport #<original> to <release>:
+# ..." (and a stage-1 PR into the intermediate branch "Cherry pick #<original>
+# to <release>: ..."). Matched only at the start of the title, so a revert PR
+# (titled `Revert "Backport #<n> to ...`) does not match -- reverting a
+# backport un-ships the original from that release, so it must not be
+# attributed to the original's `Backported to` list.
+BACKPORT_TITLE_RE = re.compile(r"^(?:Backport|Cherry pick) #(\d+) to ")
 
 # Mirrors tests/ci/pr_info.py:Labels -- a PR carrying any of these has (or is
 # meant to have) backports, so it is worth scanning release branches for them.
@@ -111,11 +149,37 @@ def version_key(version: str) -> Tuple[int, ...]:
     return tuple(int(part) for part in version.split(".") if part.isdigit())
 
 
-def render_section(merged_into: Optional[str], backported_to: List[str]) -> str:
-    """Render the inner markdown of the version-info section (no delimiters)."""
+def release_series(version: str) -> Optional[str]:
+    """The release series a version belongs to: `26.6.1.1291` -> `26.6`."""
+    parts = version.split(".")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        return f"{parts[0]}.{parts[1]}"
+    return None
+
+
+def render_section(
+    merged_into: Optional[str],
+    backported_to: List[str],
+    from_default_branch: bool = False,
+) -> str:
+    """Render the inner markdown of the version-info section (no delimiters).
+
+    ``from_default_branch`` marks ``merged_into`` as a default-branch version:
+    its last number is the default branch's commit counter, so `26.2.1.1291`
+    is not a `release/26.2` build. It means the change landed before the
+    `release/26.2` branch was cut, so it is included in `26.2` from the
+    branch's first build and in every later release -- which is what the
+    annotation says. Backport PRs pass ``False``: their version is a real
+    release-branch build and is rendered bare.
+    """
     lines = ["### Version info"]
     if merged_into:
-        lines.append(f"- Merged into: `{merged_into}`")
+        note = ""
+        if from_default_branch:
+            series = release_series(merged_into)
+            if series:
+                note = f" (included in `{series}` and later)"
+        lines.append(f"- Merged into: `{merged_into}`{note}")
     if backported_to:
         versions = ", ".join(f"`{v}`" for v in backported_to)
         lines.append(f"- Backported to: {versions}")
@@ -163,10 +227,32 @@ def original_pr_number_from_backport_ref(head_ref: str) -> Optional[int]:
     return int(match.group(2)) if match else None
 
 
-def release_from_backport_ref(head_ref: str) -> Optional[str]:
-    """Extract the release branch from a `backport/<release>/<number>` ref."""
-    match = BACKPORT_BRANCH_RE.match(head_ref)
-    return match.group(1) if match else None
+def original_pr_number_from_title(title: str) -> Optional[int]:
+    """Extract the original PR number from the cherry-pick bot's PR title.
+
+    Recovers the original for backports whose head ref does not match
+    ``BACKPORT_BRANCH_RE`` (manual/ad-hoc backports, renamed branches), as long
+    as the bot-generated title survived. Returns ``None`` for anything else,
+    including reverts -- see ``BACKPORT_TITLE_RE``.
+    """
+    match = BACKPORT_TITLE_RE.match(title)
+    return int(match.group(1)) if match else None
+
+
+def is_release_branch(
+    base_ref: str, default_branch: str, release_branches: Set[str]
+) -> bool:
+    """True if ``base_ref`` is a release branch -- i.e. every PR merged into it
+    is a backport (a real release-branch build), independent of how its head
+    branch happens to be named.
+
+    ``release_branches`` are the currently *open* release branches (from
+    `GitHub.get_release_pulls`); ``RELEASE_BRANCH_RE`` is a fallback so a PR
+    merged into an already-closed (EOL) release branch is still recognized.
+    """
+    if base_ref == default_branch:
+        return False
+    return base_ref in release_branches or bool(RELEASE_BRANCH_RE.match(base_ref))
 
 
 def has_backport_label(label_names: List[str]) -> bool:
@@ -180,43 +266,51 @@ class MergedPR(NamedTuple):
     """Minimal view of a merged PR used for classification (test-friendly)."""
 
     number: int
+    title: str
     head_ref: str
     base_ref: str
     label_names: List[str]
 
 
 def partition_merged_prs(
-    prs: Iterable[MergedPR], default_branch: str
+    prs: Iterable[MergedPR], default_branch: str, release_branches: Iterable[str]
 ) -> Tuple[Set[int], Set[int], Set[int]]:
     """Classify merged PRs into backports and originals.
 
     Returns ``(backport_numbers, original_numbers, need_scan)``:
-      * ``backport_numbers`` -- PRs whose head is `backport/<release>/<number>`;
-        each gets its own `Merged into` line.
+      * ``backport_numbers`` -- PRs merged into a release branch (see
+        ``is_release_branch``); each gets its own `Merged into` line regardless
+        of how its head branch is named.
       * ``original_numbers`` -- PRs merged into ``default_branch``, plus the
-        originals referenced by any backport above (even if those originals are
-        not in the merged set themselves -- the "backport merged later" case).
+        originals referenced by any backport above whose original PR number
+        could be recovered (from its head ref or, failing that, its title --
+        even if that original is not in the merged set itself, the "backport
+        merged later" case).
       * ``need_scan`` -- originals worth scanning the release branches for
         backports: any original referenced by a backport, plus originals that
         carry a backport label.
 
     PRs carrying an ignore label (see ``IGNORE_LABELS``) are dropped entirely.
     """
+    release_branches = set(release_branches)
     backport_numbers: Set[int] = set()
     original_numbers: Set[int] = set()
     need_scan: Set[int] = set()
     for pr in prs:
         if has_ignore_label(pr.label_names):
             continue
-        original_number = original_pr_number_from_backport_ref(pr.head_ref)
-        if original_number is not None:
-            backport_numbers.add(pr.number)
-            original_numbers.add(original_number)
-            need_scan.add(original_number)
-        elif pr.base_ref == default_branch:
+        if pr.base_ref == default_branch:
             original_numbers.add(pr.number)
             if has_backport_label(pr.label_names):
                 need_scan.add(pr.number)
+        elif is_release_branch(pr.base_ref, default_branch, release_branches):
+            backport_numbers.add(pr.number)
+            original_number = original_pr_number_from_backport_ref(
+                pr.head_ref
+            ) or original_pr_number_from_title(pr.title)
+            if original_number is not None:
+                original_numbers.add(original_number)
+                need_scan.add(original_number)
     return backport_numbers, original_numbers, need_scan
 
 
@@ -338,7 +432,9 @@ def scan_backport_versions(
     )
 
 
-def apply_issue_section(gh, repo, issue_number: int, section_body: str, dry_run: bool) -> bool:
+def apply_issue_section(
+    gh, repo, issue_number: int, section_body: str, dry_run: bool
+) -> bool:
     """Upsert the version-info section into an issue's body. Returns True if it
     changed. The issue is fetched live so the body reflects the current state."""
     issue = repo.get_issue(issue_number)
@@ -403,7 +499,11 @@ def update_original_pr(
     if not merged_into and not backported:
         # Nothing known yet -- the post-merge build has likely not finished.
         return False
-    section_body = render_section(merged_into, backported)
+    # Annotate the version with the release series that first includes the
+    # change: an original PR's version is the default branch's commit counter,
+    # which is easy to mistake for a release-branch build when the version
+    # prefix matches (see render_section).
+    section_body = render_section(merged_into, backported, from_default_branch=True)
     changed = apply_section(gh, repo, info, section_body, dry_run)
     # Mirror the section into the body of the issues this PR resolved (its
     # "Development" links). Only PRs that actually close an issue pay for this.
@@ -469,10 +569,17 @@ def main() -> int:
     infos_by_number = {info.number: info for info in merged_infos}
     backport_numbers, original_numbers, need_scan = partition_merged_prs(
         (
-            MergedPR(info.number, info.head_ref, info.base_ref, info.label_names)
+            MergedPR(
+                info.number,
+                info.title,
+                info.head_ref,
+                info.base_ref,
+                info.label_names,
+            )
             for info in merged_infos
         ),
         repo.default_branch,
+        release_branches,
     )
 
     # Originals referenced only by a backport (merged later, after the original
@@ -494,15 +601,14 @@ def main() -> int:
             )
 
     # Release branches to scan = the currently-open releases plus any release a
-    # backport merged into this window. The latter catches releases whose
-    # `release` PR is already closed (so they are not in `release_branches`) but
-    # that still receive backports -- otherwise the original's `Backported to`
-    # would miss those versions.
+    # backport merged into this window (its base ref *is* the release branch
+    # now, so this is exact -- no head-ref parsing involved). The latter catches
+    # releases whose `release` PR is already closed (so they are not in
+    # `release_branches`) but that still receive backports -- otherwise the
+    # original's `Backported to` would miss those versions.
     scan_release_branches = set(release_branches)
     for number in backport_numbers:
-        release = release_from_backport_ref(infos_by_number[number].head_ref)
-        if release:
-            scan_release_branches.add(release)
+        scan_release_branches.add(infos_by_number[number].base_ref)
 
     # Resolve every scanned original's backports up front via batched GraphQL.
     # `scan_failed` holds originals whose scan errored; they are skipped below so

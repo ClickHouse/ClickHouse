@@ -1,15 +1,15 @@
 -- Tags: no-fasttest
 -- ^ the Iguana codec lives in a contrib library that is not built in fast test.
 
-SELECT '-- experimental gate (allow_experimental_codecs defaults to 0)';
+SELECT '-- experimental gate (enable_iguana_codec defaults to 0)';
 DROP TABLE IF EXISTS iguana_gate;
 -- Without the setting the experimental codec must be rejected.
 CREATE TABLE iguana_gate (s String CODEC(Iguana)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
-SET allow_experimental_codecs = 1;
+SET enable_iguana_codec = 1;
 
 SELECT '-- system.codecs';
-SELECT name, is_compression, is_generic_compression, is_experimental
+SELECT name, is_compression, is_generic_compression, is_experimental, tier
 FROM system.codecs WHERE name = 'Iguana';
 
 SELECT '-- String round-trip (skewed -> ANS, random -> raw fallback, plus edge cases)';
