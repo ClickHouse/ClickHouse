@@ -75,6 +75,7 @@ namespace FailPoints
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
     extern const char object_storage_queue_fail_tags_fetch[];
+    extern const char object_storage_queue_pause_after_blocked_files_replay_cap[];
 }
 
 namespace ErrorCodes
@@ -754,24 +755,47 @@ void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::s
 
 void ObjectStorageQueueSource::FileIterator::rememberBlockedFile(ObjectInfoPtr object)
 {
+    const auto & path = object->getPath();
+    const auto domain = getOrderingDomain(path);
+
+    /// This domain already dropped a smaller file: everything from that path on is blocked
+    /// until a fresh listing pass lists it again, so retaining this one would only replay it
+    /// into a range which must not be processed yet.
+    const auto dropped = dropped_blocked_files_per_domain.find(domain);
+    if (dropped != dropped_blocked_files_per_domain.end() && dropped->second <= path)
+        return;
+
     /// Retaining the blocked files only saves them a relisting, so the memory spent on it
     /// must not depend on the size of the namespace: a foreign-held file near the beginning
     /// of a large domain blocks everything after it, which can be millions of objects.
-    /// Beyond the cap the file is dropped and listed again by the next pass.
+    /// Beyond the cap the file is dropped and listed again by the next pass. The dropped
+    /// range leaves this pass, so it also keeps its domain blocked from that path on
+    /// (`isBlockedByForeignHeldFile`): once the blocker resolves the pass may still hand out
+    /// later files of the domain, and committing one of them would advance the `processed`
+    /// pointer past the dropped files and skip them forever.
     if (blocked_files_count >= max_blocked_files_to_replay)
     {
+        if (dropped == dropped_blocked_files_per_domain.end())
+            dropped_blocked_files_per_domain.emplace(domain, path);
+        else
+            dropped->second = path;
+
         if (!std::exchange(blocked_files_replay_capped, true))
         {
             LOG_TRACE(
                 log,
                 "Not retaining more than {} files blocked by a foreign-held file of their ordering domain, "
-                "the rest will be listed again by the next pass",
+                "the rest of their domains stays blocked until the next listing pass lists them again",
                 max_blocked_files_to_replay);
+
+            /// Test-only: park right after the first drop, so a test can resolve the blocker
+            /// of the domain while the listing pass is still running.
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_blocked_files_replay_cap);
         }
         return;
     }
 
-    blocked_files_per_domain[getOrderingDomain(object->getPath())].push_back(std::move(object));
+    blocked_files_per_domain[domain].push_back(std::move(object));
     ++blocked_files_count;
 }
 
@@ -790,11 +814,22 @@ void ObjectStorageQueueSource::FileIterator::recheckBlockedFilesForDomain(const 
 
 bool ObjectStorageQueueSource::FileIterator::isBlockedByForeignHeldFile(const std::string & path)
 {
-    if (mode != ObjectStorageQueueMode::ORDERED || foreign_held_files_per_domain.empty())
+    if (mode != ObjectStorageQueueMode::ORDERED
+        || (foreign_held_files_per_domain.empty() && dropped_blocked_files_per_domain.empty()))
         return false;
 
-    const auto it = foreign_held_files_per_domain.find(getOrderingDomain(path));
-    return it != foreign_held_files_per_domain.end() && *it->second.begin() < path;
+    const auto domain = getOrderingDomain(path);
+
+    const auto it = foreign_held_files_per_domain.find(domain);
+    if (it != foreign_held_files_per_domain.end() && *it->second.begin() < path)
+        return true;
+
+    /// The files this pass dropped at the replay cap are not covered by it any more, so
+    /// nothing at or above the smallest dropped path of the domain may be processed before a
+    /// fresh listing pass lists that range again: the `processed` pointer of the domain would
+    /// otherwise move past the dropped files and declare them processed forever.
+    const auto dropped = dropped_blocked_files_per_domain.find(domain);
+    return dropped != dropped_blocked_files_per_domain.end() && dropped->second <= path;
 }
 
 void ObjectStorageQueueSource::FileIterator::registerUnresolvedSetProcessing(const std::string & path)

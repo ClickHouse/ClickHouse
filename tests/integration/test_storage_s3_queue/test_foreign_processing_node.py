@@ -1202,3 +1202,93 @@ def test_paused_streaming_does_not_busy_loop_on_overdue_recheck(started_cluster)
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+BLOCKED_FILES_CAP_PAUSE_FAILPOINT = "object_storage_queue_pause_after_blocked_files_replay_cap"
+
+
+def test_files_dropped_by_the_replay_cap_are_not_skipped_in_ordered_mode(started_cluster):
+    """The replay cap must not let the `processed` pointer move past the dropped files.
+
+    While a foreign-held file blocks its ordering domain, the later files of the domain are
+    retained so that they can be replayed as soon as the blocker resolves; beyond
+    `max_blocked_files_to_replay` they are dropped and left to the next listing pass. That is
+    only safe while nothing of the domain is processed in the meantime: the blocker can
+    resolve in the middle of the pass (here: the foreign observation expires and is rechecked
+    at a batch boundary), and processing the files listed after the dropped range would
+    advance the `processed` pointer past it, so the next pass would treat the dropped files as
+    already processed and never ingest them.
+
+    The failpoint parks the listing right after the first file is dropped, which is where the
+    foreign `processing` node is released - so the blocker resolves with the dropped range
+    still inside this pass and files above it still unlisted.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_replay_cap_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # `max_blocked_files_to_replay` is 1000: one blocker, 1000 retained files, and enough
+    # files above them to have both a dropped range and files listed after the blocker
+    # resolves.
+    files_to_generate = 1102
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_list_objects_batch_size": 100,
+            "s3queue_polling_min_timeout_ms": 1000,
+            "s3queue_polling_max_timeout_ms": 1000,
+            "s3queue_polling_backoff_ms": 0,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 1,
+        },
+    )
+
+    # `test_0.csv` is the smallest path of the only ordering domain, so it blocks all of it.
+    conflict_file = f"{files_path}/test_0.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {BLOCKED_FILES_CAP_PAUSE_FAILPOINT}")
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # The listing parks as soon as the cap drops the first blocked file.
+        wait_failpoint_paused(node, BLOCKED_FILES_CAP_PAUSE_FAILPOINT)
+
+        assert get_count() == 0
+
+        # The foreign processor released the file without committing it. The cached
+        # observation (TTL 1 s) is already expired by the time the listing resumes, so the
+        # blocker is rechecked at the next batch boundary - in the middle of the pass.
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+        time.sleep(2)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BLOCKED_FILES_CAP_PAUSE_FAILPOINT}")
+
+    try:
+        # Every file is ingested exactly once: the files dropped by the cap are listed again
+        # by a later pass instead of being cut off by an advanced `processed` pointer.
+        run_with_retry(lambda x: x == files_to_generate, get_count, retries=180)
+        assert get_count() == files_to_generate
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )

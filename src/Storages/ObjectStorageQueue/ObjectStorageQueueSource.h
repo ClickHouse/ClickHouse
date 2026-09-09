@@ -143,12 +143,23 @@ public:
         /// This is only a shortcut, so the number of retained files is capped: a blocker
         /// near the beginning of a large namespace would otherwise buffer the whole rest
         /// of its domain in memory. Beyond the cap the files are simply not retained and
-        /// the next listing pass lists them again (the `processed` pointer cannot advance
-        /// past the blocker, so they stay within the listed range).
+        /// the next listing pass lists them again, which is why the domain has to stay blocked
+        /// from the smallest dropped path on for the rest of this pass, see
+        /// `dropped_blocked_files_per_domain`.
         static constexpr size_t max_blocked_files_to_replay = 1000;
         std::map<OrderingDomain, ObjectInfos> blocked_files_per_domain TSA_GUARDED_BY(next_mutex);
         size_t blocked_files_count TSA_GUARDED_BY(next_mutex) = 0;
         bool blocked_files_replay_capped TSA_GUARDED_BY(next_mutex) = false;
+
+        /// Ordered mode only. The smallest path of a domain dropped by the cap above.
+        /// Dropping a blocked file is only safe while the whole range above the blocker stays
+        /// unprocessed. The blocker can resolve in the middle of the listing pass (a foreign
+        /// observation expires and is rechecked at a batch boundary, or the foreign processor
+        /// commits), after which this iterator would hand out the later files of the domain
+        /// and advance the `processed` pointer past the dropped range, which declares it
+        /// processed forever. So a domain which lost a file to the cap stays blocked from that
+        /// path on until a fresh listing pass - a new iterator - lists the range again.
+        std::map<OrderingDomain, std::string> dropped_blocked_files_per_domain TSA_GUARDED_BY(next_mutex);
 
         /// Ordered mode only. Committing a file declares every smaller path of its domain
         /// processed, so while a file of the domain
