@@ -126,9 +126,11 @@ Not built for Windows, and why:
 What stands between a binary that links and one that works.
 
 **Run more of it.** CI executes `clickhouse.exe local --query "SELECT 1"` under Wine on every
-pull request - the startup path and one pipeline. Everything past that is still unexecuted: the
-client against a real server, `clickhouse-local` over actual files, any of the test suites, and
-the binary on a real Windows machine rather than on Wine. Note for a development host that is
+pull request - the startup path and one pipeline - plus the focused checks in
+`utils/windows-selftest`. Everything past that is still unexecuted: the client against a real
+server, `clickhouse-local` over actual files, any of the test suites, and the binary on a real
+Windows machine rather than on Wine, which stubs enough of the platform that some behaviour
+cannot be checked there at all (see [CI](#ci)). Note for a development host that is
 not `x86_64`: an `x86_64` PE needs an `x86_64` host, or an emulator such as FEX, which Wine on
 ARM does not ship.
 
@@ -185,7 +187,8 @@ mirrors the POSIX code, and it is wrong.
 
 ## CI {#ci}
 
-The `Build (amd_windows)` job builds `clickhouse` and `clickhouse-windows-ported`. It is
+The `Build (amd_windows)` job builds `clickhouse`, `clickhouse-windows-ported` and
+`clickhouse-windows-selftest`. It is
 defined by `BuildTypes.AMD_WINDOWS` in `ci/defs/defs.py`, its cmake flags in
 `ci/jobs/build_clickhouse.py`, and it runs in the `clickhouse/binary-builder` image, which
 installs `mingw-w64`. The job publishes no artifact: `clickhouse.exe` is not something to hand
@@ -200,3 +203,20 @@ temporary data directory, the thread pools and one query pipeline. Everything th
 implements for Windows - the console queries, the socket and file-mapping wrappers,
 `setThreadName`, the loopback `WakeupFd` - was written against the documentation and had never
 been executed before this step existed, so this is where those assumptions are checked.
+
+Answering a query does not reach all of it, and the cross-build configures with
+`ENABLE_TESTS=0`, so behaviour that is on no path a `SELECT` takes has nowhere else to be
+checked. `utils/windows-selftest` is that place: a small executable, linking only `_poco_net`
+and `common`, that the same step runs right after `clickhouse.exe`. It covers the emulation of
+`MSG_DONTWAIT`, which Winsock has no equivalent for, and the memory limit a job object imposes,
+which is what a Windows container caps a process with. Add a check there for anything the port
+implements that a query does not exercise.
+
+One limit of running on Wine rather than on Windows is worth knowing before writing such a
+check: Wine stubs whole interfaces while reporting success. `QueryInformationJobObject` for
+`JobObjectExtendedLimitInformation` zeroes the caller's struct and returns true (see
+`NtQueryInformationJobObject` in Wine's `dlls/ntdll/unix/sync.c`), so a limit set with
+`SetInformationJobObject` cannot be read back and the clamp in `getMemoryAmountOrZero` cannot
+be observed end to end there. The self-test therefore exercises the decision - `windowsJobObjectMemoryLimit`,
+which is declared separately for this reason - against the values the operating system would
+supply, and separately asserts that whatever the job does report, the amount stays within it.
