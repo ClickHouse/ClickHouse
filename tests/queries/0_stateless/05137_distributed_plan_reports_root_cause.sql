@@ -24,9 +24,10 @@ SELECT throwIf(rowNumberInAllBlocks() > 10, 'main task fails') FROM t_root_cause
 SELECT x, count() FROM t_root_cause WHERE NOT throwIf(x = 777, 'reading task fails') GROUP BY x FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- The worker reports the failing task late, so every follow-on failure reaches the initiator first.
+-- The failpoint fires once, so it is enabled before each query.
 SYSTEM ENABLE FAILPOINT distributed_plan_delay_root_cause_report;
-
 SELECT throwIf(rowNumberInAllBlocks() > 10, 'main task fails') FROM t_root_cause FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SYSTEM ENABLE FAILPOINT distributed_plan_delay_root_cause_report;
 SELECT x, count() FROM t_root_cause WHERE NOT throwIf(x = 777, 'reading task fails') GROUP BY x FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SYSTEM DISABLE FAILPOINT distributed_plan_delay_root_cause_report;
