@@ -36,9 +36,11 @@ SELECT
     anyLast(JSONHas(join_stats, 'Left')),
     anyLast(JSONHas(join_stats, 'Right')),
     anyLast(JSONHas(join_stats, 'HashTable')),
-    -- The build side reads the whole right table, and the hash table holds one entry per key.
-    anyLast(JSONExtractUInt(join_stats, 'Right', 'Rows')),
-    anyLast(JSONExtractUInt(join_stats, 'HashTable', 'UniqueKeys')),
+    -- Counts are asserted as invariants rather than as values. Which table ends up on the build
+    -- side is the optimiser's choice, and the test harness randomises settings that influence it,
+    -- so pinning `Right.Rows` to the size of one table passes or fails depending on the draw.
+    anyLast(JSONExtractUInt(join_stats, 'Right', 'Rows')) > 0,
+    anyLast(JSONExtractUInt(join_stats, 'HashTable', 'UniqueKeys')) > 0,
     anyLast(JSONExtractUInt(join_stats, 'HashTable', 'Memory')) > 0,
     -- How many rows the probe side sees is not pinned: a runtime filter built from the right side
     -- prunes the left scan first, so the count depends on an optimisation, not on the join. What

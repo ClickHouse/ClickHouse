@@ -20,7 +20,10 @@ public:
         return query_plan.value();
     }
 
-    bool hasQueryPlan() const { return query_plan.has_value(); }
+    /// Whether a plan was captured for this query, which stays true after the plan itself has been
+    /// released. Callers use it to decide whether there is anything to render or to log, and both
+    /// of those outlive the plan.
+    bool hasQueryPlan() const { return plan_captured; }
 
     /// Serializes the plan as JSON and keeps the result, so that a later getPlanJSON returns it.
     /// With a pipeline the plan carries per-step runtime statistics, and the call must happen
@@ -44,6 +47,17 @@ public:
 
     void setMaxDescriptionLength(size_t max_length) { max_description_length = max_length; }
 
+    /// Drops the captured plan. A QueryPlan owns a QueryPlanResourceHolder -- storages, table
+    /// locks, contexts -- so holding one after the query has finished keeps a table from being
+    /// dropped: `DROP TABLE` waits for the last storage reference under
+    /// `database_atomic_wait_for_drop_and_detach_synchronously`, which the stateless tests set.
+    /// Nothing needs the plan once it has been serialized.
+    void releasePlan()
+    {
+        query_plan.reset();
+        pretty_names.reset();
+    }
+
     /// Instruments the pipeline so per-step timings are collected, by attaching a
     /// StepWallClockRegistry built from the captured plan. Without it the per-processor stopwatch
     /// is never started (see ExecutionThreadContext.cpp) and every step renders as
@@ -54,6 +68,7 @@ private:
 
     bool canRender() const { return query_plan && query_plan->isInitialized() && pretty_names.has_value(); }
 
+    bool plan_captured = false;
     size_t max_description_length {0};
     std::optional<QueryPlan> query_plan;
     std::optional<PrettyNamesPerPlan> pretty_names;

@@ -44,6 +44,7 @@ String toJSONString(JSONBuilder::ItemPtr item)
 
 void QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
 {
+    plan_captured = true;
     query_plan.emplace(std::move(plan_));
     pretty_names.emplace(
         QueryPlanFormat::buildPrettyNamesPerPlan(*query_plan)
@@ -76,6 +77,11 @@ void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
 
 void QueryPlanProfiler::render(const QueryPipeline * pipeline)
 {
+    /// Rendering twice would throw away the version that has the statistics, and the second call
+    /// would have no plan left to read anyway.
+    if (plan_json)
+        return;
+
     if (!canRender())
     {
         plan_json.emplace();
@@ -137,5 +143,7 @@ void QueryPlanProfiler::render(const QueryPipeline * pipeline)
             plan_json.emplace();
         }
     }
+
+    releasePlan();
 }
 }
