@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -1098,6 +1099,425 @@ def test_shutdown_dedup_off_no_duplicates(started_cluster):
     node.query(f"DROP TABLE {mv_table_name} SYNC")
     node.query(f"DROP TABLE {table_name} SYNC")
     node.query(f"DROP TABLE {dst_table_name} SYNC")
+
+
+def _insert_one_big_file(started_cluster, node, table_name, files_path, rows):
+    file_name = f"file_{table_name}_{uuid.uuid4()}.csv"
+    s3_function = (
+        f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+        f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
+        f" 'minio', '{minio_secret_key}')"
+    )
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function} "
+        f"select number, randomString(100) FROM numbers({rows})"
+    )
+
+
+def _wait_for_parked_file(node, table_name, timeout=30):
+    """
+    Wait until `object_storage_queue_park_in_generate` actually holds a file
+    mid-processing: the source logs "Parked in generateImpl" on the first parked
+    iteration. Waiting on weaker signals (e.g. `rows_processed > 0`) is racy —
+    they appear one `generateImpl` call before the park, and a shutdown started
+    in that gap would be handled by the chunk-boundary path instead of the
+    executor-level cancellation under test. The file name embeds `table_name`,
+    which keeps the match specific to this test.
+    """
+    node.wait_for_log_line(
+        f"Parked in generateImpl on failpoint .file: {files_prefix(table_name)}",
+        timeout=timeout,
+    )
+    return True
+
+
+def files_prefix(table_name):
+    return f"{table_name}_data/file_{table_name}_"
+
+
+def _cancelled_files_count(node):
+    return int(
+        node.query(
+            "SELECT sum(value) FROM system.events "
+            "WHERE event = 'ObjectStorageQueueCancelledFiles'"
+        )
+        or 0
+    )
+
+
+class _QueryThread(threading.Thread):
+    """Run a query in the background, keeping its exception for the test to check."""
+
+    def __init__(self, node, sql):
+        super().__init__()
+        self.node = node
+        self.sql = sql
+        self.error = None
+
+    def run(self):
+        try:
+            self.node.query(self.sql)
+        except Exception as e:
+            self.error = e
+
+
+def test_drop_table_with_stuck_pipeline(started_cluster):
+    """
+    A pipeline parked inside a blocking call never reaches the chunk-boundary
+    shutdown checks in `generateImpl`, so `DROP TABLE` used to block on
+    `task->deactivate` for as long as the pipeline stayed stuck (hours in
+    production). The executor-level cancel callback must abort the pipeline
+    within seconds of shutdown, and the in-flight file must land in `Cancelled`
+    state (not `Failed`).
+
+    Unfixed, the `DROP TABLE` below stays blocked until the finally-block
+    disables the failpoint, and the elapsed-time assertion fails.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_drop_stuck_pipeline_{generate_random_string()}"
+    dst_table_name = f"a_{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
+            # Disable dedup to prove the `table_is_being_dropped` clause of the
+            # cancel gate alone allows the abort.
+            "deduplication_v2": 0,
+        },
+    )
+
+    # One file large enough to require multiple `reader->pull` calls, so the
+    # park failpoint (firing after `processed_rows > 0`) lands mid-file.
+    _insert_one_big_file(started_cluster, node, table_name, files_path, rows=500000)
+
+    cancelled_before = _cancelled_files_count(node)
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_park_in_generate")
+    drop_thread = None
+    try:
+        mv_table_name = f"{table_name}_mv"
+        create_mv(node, table_name, dst_table_name, mv_name=mv_table_name, format=format)
+
+        assert _wait_for_parked_file(node, table_name), (
+            "object_storage_queue_park_in_generate failpoint did not park the "
+            "source within 30s — test cannot exercise the stuck-pipeline shutdown path."
+        )
+
+        start = time.monotonic()
+        drop_thread = _QueryThread(node, f"DROP TABLE {table_name} SYNC")
+        drop_thread.start()
+        drop_thread.join(30)
+        drop_blocked = drop_thread.is_alive()
+        drop_seconds = time.monotonic() - start
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_park_in_generate")
+        if drop_thread is not None:
+            drop_thread.join(120)
+
+    assert drop_thread.error is None, f"DROP TABLE failed: {drop_thread.error}"
+    assert not drop_blocked, (
+        f"DROP TABLE is still blocked {drop_seconds:.1f}s after shutdown started: "
+        "the stuck streaming pipeline was not cancelled"
+    )
+
+    # The in-flight file must have been cancelled, not failed.
+    assert _cancelled_files_count(node) > cancelled_before
+
+    node.query(f"DROP TABLE {mv_table_name} SYNC")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
+
+
+@pytest.mark.parametrize("dedup", [0, 1])
+def test_detach_with_stuck_pipeline(started_cluster, dedup):
+    """
+    Plain shutdown (DETACH) must cancel a stuck pipeline only when
+    `deduplication_v2` is enabled: without dedup, aborting mid-file would
+    duplicate already-inserted rows on retry, so shutdown keeps the
+    process-file-fully behavior and the executor cancel gate must not fire.
+
+    dedup=1: DETACH returns within seconds; the file is retried after ATTACH
+             and dedup keeps the destination row count exact.
+    dedup=0: DETACH stays blocked while the pipeline is parked (the must-not-act
+             probe for the dedup clause of the cancel gate); once the failpoint
+             releases the pipeline, the file is processed to EOF exactly once.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_detach_stuck_pipeline_{dedup}_{generate_random_string()}"
+    dst_table_name = f"a_{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
+            "deduplication_v2": dedup,
+        },
+    )
+
+    rows_per_file = 500000
+    _insert_one_big_file(started_cluster, node, table_name, files_path, rows=rows_per_file)
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_park_in_generate")
+    detach_thread = None
+    try:
+        mv_table_name = f"{table_name}_mv"
+        create_mv(node, table_name, dst_table_name, mv_name=mv_table_name, format=format)
+
+        assert _wait_for_parked_file(node, table_name), (
+            "object_storage_queue_park_in_generate failpoint did not park the "
+            "source within 30s — test cannot exercise the stuck-pipeline shutdown path."
+        )
+
+        detach_thread = _QueryThread(node, f"DETACH TABLE {table_name} SYNC")
+        detach_thread.start()
+
+        if dedup:
+            # The dedup clause of the cancel gate lets shutdown abort the pipeline.
+            detach_thread.join(30)
+            assert not detach_thread.is_alive(), (
+                "DETACH TABLE is still blocked 30s after shutdown started with "
+                "deduplication enabled: the stuck streaming pipeline was not cancelled"
+            )
+        else:
+            # Without dedup the gate must NOT fire: shutdown keeps waiting for the
+            # in-flight file. Prove the pipeline is still parked well past the
+            # cancel callback interval (1s).
+            detach_thread.join(10)
+            assert detach_thread.is_alive(), (
+                "DETACH TABLE returned while the pipeline was parked with "
+                "deduplication disabled: mid-file abort would duplicate rows"
+            )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_park_in_generate")
+        if detach_thread is not None:
+            detach_thread.join(120)
+            assert not detach_thread.is_alive()
+
+    assert detach_thread.error is None, f"DETACH TABLE failed: {detach_thread.error}"
+    node.query(f"ATTACH TABLE {table_name}")
+
+    # In both configurations the destination must converge to the exact row
+    # count: dedup=1 retries the cancelled file and dedup drops the duplicates;
+    # dedup=0 processed the file to EOF exactly once before shutdown completed.
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM {dst_table_name}",
+        str(rows_per_file),
+        retry_count=120,
+        sleep_time=1,
+    )
+
+    node.query(f"DROP TABLE {mv_table_name} SYNC")
+    node.query(f"DROP TABLE {table_name} SYNC")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
+
+
+def test_cleanup_keeps_live_processing_nodes(started_cluster):
+    """
+    The TTL cleanup (`persistent_processing_node_ttl_seconds`) reaps processing
+    nodes and bucket locks orphaned by dead servers. It must skip nodes owned by
+    executions still running in this process: deleting them fails the execution's
+    commit with `Transaction failed: ... (No node)` and releases the bucket to
+    concurrent acquisition.
+
+    Parks an execution mid-file well past a tiny TTL and asserts its processing
+    node and bucket lock survive the cleanup (unfixed: both are deleted under
+    the running execution), then releases the pipeline and asserts the file
+    commits successfully.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_cleanup_live_nodes_{generate_random_string()}"
+    dst_table_name = f"a_{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "buckets": 2,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 3,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 500,
+            "deduplication_v2": 0,
+        },
+    )
+
+    rows_per_file = 500000
+    _insert_one_big_file(started_cluster, node, table_name, files_path, rows=rows_per_file)
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_park_in_generate")
+    try:
+        mv_table_name = f"{table_name}_mv"
+        create_mv(node, table_name, dst_table_name, mv_name=mv_table_name, format=format)
+
+        assert _wait_for_parked_file(node, table_name), (
+            "object_storage_queue_park_in_generate failpoint did not park the "
+            "source within 30s — test cannot exercise the live-node cleanup path."
+        )
+
+        def live_nodes():
+            processing = set(zk.get_children(f"{keeper_path}/processing"))
+            bucket_locks = set()
+            for bucket in zk.get_children(f"{keeper_path}/buckets"):
+                try:
+                    zk.get(f"{keeper_path}/buckets/{bucket}/lock")
+                    bucket_locks.add(bucket)
+                except NoNodeError:
+                    pass
+            return processing, bucket_locks
+
+        processing_nodes, bucket_locks = live_nodes()
+        assert len(processing_nodes) >= 1
+        assert len(bucket_locks) >= 1
+
+        # Sit past the TTL through several cleanup runs; the nodes belong to a
+        # live (parked) execution and must survive.
+        time.sleep(6)
+
+        processing_nodes_after, bucket_locks_after = live_nodes()
+        assert processing_nodes_after == processing_nodes, (
+            "TTL cleanup deleted the processing node of a live execution"
+        )
+        assert bucket_locks_after == bucket_locks, (
+            "TTL cleanup deleted the bucket lock of a live execution"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_park_in_generate")
+
+    # The released execution must commit successfully: its processing node was
+    # not deleted underneath it.
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM {dst_table_name}",
+        str(rows_per_file),
+        retry_count=120,
+        sleep_time=1,
+    )
+    node.query("SYSTEM FLUSH LOGS system.s3queue_log")
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_log "
+                f"WHERE table = '{table_name}' AND status = 'Processed'"
+            )
+        )
+        >= 1
+    )
+
+    node.query(f"DROP TABLE {mv_table_name} SYNC")
+    node.query(f"DROP TABLE {table_name} SYNC")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
+
+
+def test_cleanup_revalidates_before_removal(started_cluster):
+    """
+    Between collecting stale candidates and removing them, a processing node can
+    be deleted and recreated — and Keeper versions restart from 0 on recreation,
+    so the version collected with the candidate cannot guard the removal. The
+    cleanup must re-validate each candidate right before removing it and skip
+    nodes whose mtime is fresh again.
+
+    Pauses the cleanup between collection and removal with the
+    `object_storage_queue_cleanup_pause_before_removal` failpoint, recreates the
+    collected node meanwhile, and asserts the recreated node survives (unfixed:
+    `tryRemove(node, version=0)` matches the recreated node and deletes it).
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_cleanup_revalidate_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 3,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 500,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    stale_path = f"{keeper_path}/processing/test_stale"
+    zk.create(stale_path, b"somedata")
+
+    node.query(
+        "SYSTEM ENABLE FAILPOINT object_storage_queue_cleanup_pause_before_removal"
+    )
+    try:
+        # Once the node passes the TTL, the cleanup collects it as a removal
+        # candidate and pauses at the failpoint before removing it. Wait for the
+        # pause to engage so the recreation below deterministically lands inside
+        # the collection-to-removal window.
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_cleanup_pause_before_removal PAUSE",
+            timeout=30,
+        )
+        # Recreate the node while the cleanup is paused mid-removal: fresh
+        # mtime, and the Keeper version restarts from 0 (same as collected).
+        zk.delete(stale_path)
+        zk.create(stale_path, b"newdata")
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT object_storage_queue_cleanup_pause_before_removal"
+        )
+
+    # The released cleanup must re-validate, see the fresh mtime and skip.
+    time.sleep(1)
+    assert zk.get(stale_path)[0] == b"newdata"
+
+    # Once the recreated node genuinely expires, the cleanup must still remove it.
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        try:
+            zk.get(stale_path)
+            time.sleep(0.5)
+        except NoNodeError:
+            break
+    else:
+        assert False, "recreated node was never cleaned up after its TTL expired"
+
+    node.query(f"DROP TABLE {table_name} SYNC")
 
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])

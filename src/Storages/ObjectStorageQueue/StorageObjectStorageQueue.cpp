@@ -1079,22 +1079,55 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         try
         {
             std::atomic_bool cancelled_mid_insert = false;
+            std::atomic_bool cancelled_by_shutdown = false;
             CompletedPipelineExecutor executor(block_io.pipeline);
-            /// Aborting while the insert is running and reprocessing re-adds the same rows
-            /// that is only safe when deduplication is on.
-            if (is_deduplication_v2)
-                executor.setCancelCallback(
-                    [this, cycle_epoch, &cancelled_mid_insert]
+
+            /// Abort the in-flight insert before its durable boundary when either:
+            ///  - a `SYSTEM STOP`/`CANCEL` bumped the cancel epoch, or
+            ///  - shutdown was called: the chunk-boundary shutdown checks in `generateImpl`
+            ///    cannot run while the pipeline is stuck inside a blocking call, so `shutdown`
+            ///    would otherwise block on `task->deactivate` indefinitely, so cancel at the
+            ///    executor level too.
+            /// Aborting while the insert is running and reprocessing re-adds the same rows, which
+            /// is only safe when deduplication is on; the shutdown abort additionally covers a plain
+            /// `DROP` (`table_is_being_dropped`), where the table and its offsets are going away.
+            executor.setCancelCallback(
+                [this, is_deduplication_v2, cycle_epoch, &cancelled_mid_insert, &cancelled_by_shutdown]
+                {
+                    if (is_deduplication_v2 && stream_control.isCancelRequested(cycle_epoch))
                     {
-                        if (stream_control.isCancelRequested(cycle_epoch))
-                        {
-                            cancelled_mid_insert = true;
-                            return true;
-                        }
-                        return false;
-                    },
-                    std::max<UInt64>(100, queue_context->getSettingsRef()[Setting::interactive_delay] / 1000));
+                        cancelled_mid_insert = true;
+                        return true;
+                    }
+                    if (shutdown_called && (table_is_being_dropped || is_deduplication_v2))
+                    {
+                        cancelled_by_shutdown = true;
+                        return true;
+                    }
+                    return false;
+                },
+                std::max<UInt64>(100, queue_context->getSettingsRef()[Setting::interactive_delay] / 1000));
             executor.execute();
+
+            /// A cancelled pipeline can finish without an exception (e.g. a source
+            /// cancelled between `work` calls), leaving files unfinished and the sink
+            /// possibly unfinalized — committing as success could mark files Processed
+            /// whose rows were never written. Route it through the failed-commit path.
+            if (cancelled_by_shutdown)
+            {
+                /// Log with the storage logger: when the executor-level cancel wins the race,
+                /// the chunk-boundary shutdown checks in `generateImpl` never run, so their
+                /// log line is absent. `test_drop_table` depends on this log message.
+                LOG_DEBUG(
+                    log,
+                    "{} (streaming pipeline was cancelled)",
+                    table_is_being_dropped ? "Table is being dropped" : "Shutdown was called");
+
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "{} (streaming pipeline was cancelled)",
+                    table_is_being_dropped ? "Table is being dropped" : "Shutdown was called");
+            }
 
             if (cancelled_mid_insert)
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption was interrupted");

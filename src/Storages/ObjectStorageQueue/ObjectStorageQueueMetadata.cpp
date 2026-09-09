@@ -22,6 +22,7 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/DDLTask.h>
 #include <shared_mutex>
 #include <Core/ServerUUID.h>
@@ -65,6 +66,11 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_cleanup_pause_before_removal[];
 }
 
 namespace ObjectStorageQueueSetting
@@ -244,10 +250,11 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
         {
             return std::make_shared<ObjectStorageQueueIFileMetadata::FileStatus>(path);
         });
+    FileMetadataPtr file_metadata;
     switch (mode)
     {
         case ObjectStorageQueueMode::ORDERED:
-            return std::make_shared<ObjectStorageQueueOrderedFileMetadata>(
+            file_metadata = std::make_shared<ObjectStorageQueueOrderedFileMetadata>(
                 zookeeper_path,
                 path,
                 file_status,
@@ -261,8 +268,9 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 partitioning_mode,
                 filename_parser.get(),
                 log);
+            break;
         case ObjectStorageQueueMode::UNORDERED:
-            return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
+            file_metadata = std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
                 zookeeper_path,
                 path,
                 file_status,
@@ -271,7 +279,10 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 use_persistent_processing_nodes,
                 zookeeper_name,
                 log);
+            break;
     }
+    file_metadata->setLocalActiveNodes(local_active_nodes);
+    return file_metadata;
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -332,8 +343,30 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
 ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 {
-    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
-        zookeeper_path, bucket, use_persistent_processing_nodes, persistent_processing_node_ttl_seconds, zookeeper_name, log);
+    /// Register the lock path before creating it in Keeper (fencing against the
+    /// TTL cleanup, see ObjectStorageQueueLocalActiveNodes); on failure to acquire,
+    /// the registration is dropped. The holder unregisters on release.
+    const auto bucket_lock_path = (zookeeper_path / "buckets" / toString(bucket) / "lock").string();
+    if (!local_active_nodes->tryAdd(bucket_lock_path))
+    {
+        LOG_TEST(log, "Bucket lock path {} is being inspected by the cleanup, will retry later", bucket_lock_path);
+        return nullptr;
+    }
+
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr holder;
+    SCOPE_EXIT({
+        if (!holder)
+            local_active_nodes->remove(bucket_lock_path);
+    });
+    holder = ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
+        zookeeper_path,
+        bucket,
+        use_persistent_processing_nodes,
+        persistent_processing_node_ttl_seconds,
+        zookeeper_name,
+        log,
+        local_active_nodes);
+    return holder;
 }
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
@@ -1553,7 +1586,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     }
 
     auto current_time = getCurrentTime();
-    std::vector<std::pair<String, int32_t>> nodes_to_remove;
+    Strings nodes_to_remove;
     Strings get_batch;
     auto get_paths = [&]
     {
@@ -1577,7 +1610,17 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
                 get_batch[i], response[i].stat.mtime, persistent_processing_node_ttl_seconds.load(), current_time);
 
             if (response[i].stat.mtime / 1000 + persistent_processing_node_ttl_seconds < current_time)
-                nodes_to_remove.emplace_back(get_batch[i], response[i].stat.version);
+            {
+                /// The TTL reaps nodes orphaned by dead servers. A node owned by an
+                /// execution still running in this process is not orphaned, no matter
+                /// how old: removing it would fail the execution's commit.
+                if (local_active_nodes->contains(get_batch[i]))
+                {
+                    LOG_TRACE(log, "Node {} is owned by a live local execution, skipping", get_batch[i]);
+                    continue;
+                }
+                nodes_to_remove.push_back(get_batch[i]);
+            }
         }
         get_batch.clear();
     };
@@ -1607,15 +1650,44 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     }
 
     size_t removed = 0;
-    for (const auto & node_with_version : nodes_to_remove)
+    for (const auto & node : nodes_to_remove)
     {
-        const auto & node = node_with_version.first;
-        const auto version = node_with_version.second;
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_cleanup_pause_before_removal);
+
+        /// Take the removal lock: it fails while a live local execution owns the
+        /// path, and local creators back off while it is held, so no local create
+        /// can land inside the revalidate+remove window below.
+        if (!local_active_nodes->tryLockForRemoval(node))
+        {
+            LOG_TRACE(log, "Node {} is owned by a live local execution, skipping", node);
+            continue;
+        }
+        SCOPE_EXIT({ local_active_nodes->unlockRemoval(node); });
+
+        /// Re-validate right before removal: the node may have been recreated
+        /// since collection (fresh mtime), and recreation resets the Keeper
+        /// version, so the collected state cannot guard the removal.
+        Coordination::Stat stat;
+        std::string data;
+        bool exists = false;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
+        {
+            exists = getZooKeeper()->tryGet(node, data, &stat);
+        });
+        if (!exists)
+            continue;
+        if (stat.mtime / 1000 + persistent_processing_node_ttl_seconds >= getCurrentTime())
+        {
+            LOG_TRACE(log, "Node {} was recreated since collection, skipping", node);
+            continue;
+        }
+
         LOG_TRACE(log, "Removing stale processing node: {}", node);
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
-            code = getZooKeeper()->tryRemove(node, version);
+            code = getZooKeeper()->tryRemove(node, stat.version);
         });
         if (code == Coordination::Error::ZOK)
             ++removed;

@@ -129,6 +129,48 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::N
     return metadata;
 }
 
+bool ObjectStorageQueueLocalActiveNodes::tryAdd(const std::string & path)
+{
+    std::lock_guard lock(mutex);
+    if (removal_locks.contains(path))
+        return false;
+    ++path_counts[path];
+    return true;
+}
+
+void ObjectStorageQueueLocalActiveNodes::remove(const std::string & path)
+{
+    std::lock_guard lock(mutex);
+    auto it = path_counts.find(path);
+    if (it == path_counts.end())
+    {
+        chassert(false);
+        return;
+    }
+    if (--it->second == 0)
+        path_counts.erase(it);
+}
+
+bool ObjectStorageQueueLocalActiveNodes::contains(const std::string & path) const
+{
+    std::lock_guard lock(mutex);
+    return path_counts.contains(path);
+}
+
+bool ObjectStorageQueueLocalActiveNodes::tryLockForRemoval(const std::string & path)
+{
+    std::lock_guard lock(mutex);
+    if (path_counts.contains(path))
+        return false;
+    return removal_locks.insert(path).second;
+}
+
+void ObjectStorageQueueLocalActiveNodes::unlockRemoval(const std::string & path)
+{
+    std::lock_guard lock(mutex);
+    removal_locks.erase(path);
+}
+
 ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     const std::string & path_,
     const std::string & zookeeper_name_,
@@ -155,9 +197,50 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
 {
 }
 
+bool ObjectStorageQueueIFileMetadata::tryRegisterInLocalActiveNodes()
+{
+    if (registered_in_local_active_nodes)
+        return true;
+    if (local_active_nodes && !local_active_nodes->tryAdd(processing_node_path))
+        return false;
+    registered_in_local_active_nodes = true;
+    return true;
+}
+
+void ObjectStorageQueueIFileMetadata::unregisterFromLocalActiveNodes()
+{
+    if (!registered_in_local_active_nodes)
+        return;
+    registered_in_local_active_nodes = false;
+    if (local_active_nodes)
+        local_active_nodes->remove(processing_node_path);
+}
+
+void ObjectStorageQueueIFileMetadata::setProcessingNodeCreated()
+{
+    if (created_processing_node)
+        return;
+    created_processing_node = true;
+    /// The fencing protocol registered the path before the node was created;
+    /// this only covers flows that did not pass through the registration.
+    [[maybe_unused]] bool registered = tryRegisterInLocalActiveNodes();
+    chassert(registered);
+}
+
+void ObjectStorageQueueIFileMetadata::clearProcessingNodeCreated()
+{
+    created_processing_node = false;
+    unregisterFromLocalActiveNodes();
+}
+
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
     auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata");
+
+    /// Unregister even when the removal below fails or never runs: the owner is
+    /// gone, so the TTL cleanup must be able to reap the node.
+    SCOPE_EXIT({ unregisterFromLocalActiveNodes(); });
+
     if (created_processing_node)
     {
         std::string current_exception;
@@ -314,6 +397,12 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     if (!processing_lock.try_lock())
         return {};
 
+    if (!tryRegisterInLocalActiveNodes())
+    {
+        LOG_TEST(log, "Processing node path {} is being inspected by the cleanup, will retry later", processing_node_path);
+        return false;
+    }
+
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
     auto [success, file_state] = setProcessingImpl();
@@ -358,6 +447,12 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         return std::nullopt;
     }
 
+    if (!tryRegisterInLocalActiveNodes())
+    {
+        LOG_TEST(log, "Processing node path {} is being inspected by the cleanup, will retry later", processing_node_path);
+        return std::nullopt;
+    }
+
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
     return prepareProcessingRequestsImpl(requests, processing_id);
 }
@@ -369,13 +464,14 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         chassert(!file_state.has_value() || *file_state == FileStatus::State::None);
         chassert(!processor_info.empty());
 
-        created_processing_node = true;
+        setProcessingNodeCreated();
         file_status->onProcessing();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
     }
     else
     {
         chassert(!created_processing_node);
+        unregisterFromLocalActiveNodes();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
 
         if (file_state.has_value() && file_state.value() != FileStatus::State::None)
@@ -390,7 +486,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 {
     chassert(created_processing_node);
     SCOPE_EXIT({
-        created_processing_node = false;
+        clearProcessingNodeCreated();
     });
 
     auto state = file_status->state.load();
@@ -517,7 +613,7 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 
     SCOPE_EXIT({
         file_status->onProcessed();
-        created_processing_node = false;
+        clearProcessingNodeCreated();
 
         LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
     });
@@ -544,7 +640,7 @@ void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
 {
     SCOPE_EXIT({
         (*file_status).reset();
-        created_processing_node = false;
+        clearProcessingNodeCreated();
     });
 
     LOG_TRACE(log, "File {} processing was reset for retry (rows: {})", path, file_status->processed_rows.load());
@@ -566,7 +662,7 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
 
     SCOPE_EXIT({
         file_status->onFailed(exception_message);
-        created_processing_node = false;
+        clearProcessingNodeCreated();
 
         LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
     });
