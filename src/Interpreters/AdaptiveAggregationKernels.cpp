@@ -1217,8 +1217,15 @@ void Aggregator::drainAdaptiveBucketForMerge(
         dest,
         [&](auto & method)
         {
+            const auto bytes_before = params.max_bytes_to_group_by
+                ? method.data.impls[bucket_index].getBufferSizeInBytes() + arena->allocatedBytes() : 0;
             drained = drainAdaptiveBucketBacklog<AdaptiveKeyStorage::BorrowFromChunk>(
                 method, arena, backlog, bucket_index, records_available, places_scratch, is_cancelled);
+            if (params.max_bytes_to_group_by)
+            {
+                const auto bytes_after = method.data.impls[bucket_index].getBufferSizeInBytes() + arena->allocatedBytes();
+                updateAndCheckMemoryUsage(static_cast<Int64>(bytes_after) - static_cast<Int64>(bytes_before));
+            }
         });
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
@@ -1559,18 +1566,8 @@ static AggregatedDataVariantsPtr detachSharedDrainTable(AdaptiveAggregationSessi
 
 static size_t stagedChunkBytes(const StagedChunk & chunk)
 {
-    const size_t key_bytes = chunk.keys.key_bytes.allocated_bytes();
-    size_t bytes = chunk.keys.routing_hashes.allocated_bytes() + key_bytes + chunk.keys.key_offsets.allocated_bytes();
-    if (!chunk.keys.fixed_key_size)
-        bytes += key_bytes;
-
-    if (const auto * counts = std::get_if<StagedChunk::CountPayload>(&chunk.payload))
-        return bytes + counts->multiplicities.allocated_bytes();
-
-    for (const auto & column : std::get<StagedChunk::AggregatePayload>(chunk.payload).argument_columns)
-        if (column)
-            bytes += column->allocatedBytes();
-    return bytes;
+    /// Pressure drains copy variable-width keys into an arena before releasing the staged bytes.
+    return chunk.allocatedBytes() + (chunk.keys.fixed_key_size ? 0 : chunk.keys.key_bytes.allocated_bytes());
 }
 
 /// The staged footprint of the records [begin, end) of a chunk, charged the way `stagedChunkBytes`
@@ -1806,6 +1803,8 @@ size_t Aggregator::drainStagedBatch(
                 checkLimits(table.size(), no_more_keys);
             }
         });
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(table);
     return drained;
 }
 
