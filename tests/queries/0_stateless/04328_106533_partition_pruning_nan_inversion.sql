@@ -97,6 +97,31 @@ SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1);
 
 DROP TABLE t_106533_partlevel;
 
+-- A filtered query reaches _minmax_count_projection through its own part-minmax condition, built in
+-- getMinMaxCountProjectionBlock. The projection groups by the partition columns and its filter has to be
+-- computable from them, so the partition predicate is the filter here. `nan <= 3.` is false, which leaves
+-- the NaN row alone in the false partition, and then that one part's bound decides the whole count.
+
+DROP TABLE IF EXISTS t_106533_proj_filtered;
+
+CREATE TABLE t_106533_proj_filtered (val Float64) ENGINE = MergeTree PARTITION BY (val <= 3.)
+ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_proj_filtered VALUES (3.0), (nan);
+
+SELECT count() FROM t_106533_proj_filtered WHERE NOT (val <= 3.)
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT count() FROM t_106533_proj_filtered WHERE NOT (val <= 3.)
+SETTINGS optimize_use_projections = 0, use_skip_indexes = 0, use_partition_pruning = 0,
+use_statistics_for_part_pruning = 0;
+-- The pair proves nothing unless the first arm is served by the projection: a builder that prunes every
+-- part returns an empty block, which drops the candidate instead of answering from it.
+SELECT countIf(explain LIKE '%_minmax_count_projection%')
+FROM (EXPLAIN SELECT count() FROM t_106533_proj_filtered WHERE NOT (val <= 3.)
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1);
+
+DROP TABLE t_106533_proj_filtered;
+
 -- An all-finite part is still pruned for a range no value satisfies. A separate single-part table keeps
 -- this merge-stable (the Min-Max prunes the only part, so EXPLAIN shows Parts: 0/1).
 
