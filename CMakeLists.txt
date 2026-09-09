@@ -18,6 +18,11 @@ set (CMAKE_POLICY_DEFAULT_CMP0126 NEW)
 project(ClickHouse LANGUAGES C CXX ASM)
 
 option(ENABLE_FILC "Use the experimental FilC compiler and runtime" OFF)
+option(ENABLE_FILC_LARGE_CODE_MODEL "Use FilC with the x86-64 large code model" OFF)
+
+if (ENABLE_FILC_LARGE_CODE_MODEL AND NOT ENABLE_FILC)
+    message(FATAL_ERROR "ENABLE_FILC_LARGE_CODE_MODEL requires ENABLE_FILC")
+endif ()
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
@@ -348,6 +353,13 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # Align functions and loops to reduce performance sensitivity to code layout changes,
 # providing more stable benchmarks.
 set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+
+if (ENABLE_FILC_LARGE_CODE_MODEL)
+    # FilC expands ClickHouse beyond the signed 32-bit relocation range on x86-64.
+    # Use 64-bit code/data references and the matching large-model FilC CRT objects.
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -mcmodel=large -fno-align-functions -fno-align-loops")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
+endif ()
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
