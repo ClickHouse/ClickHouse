@@ -2808,12 +2808,14 @@ TEST_F(MetadataPlainRewritableDiskTest, ReplaceFileThenHardLinkAndRewriteInSameT
         tx->createDirectory("C");
         size_t size_from = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "replacing");
         tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size_from)});
-        size_t size_to = writeObject(object_storage, tx->generateObjectKeyForPath("B/f1").serialize(), "replaced");
-        tx->createMetadataFile("B/f1", {StoredObject("f1", "f1", size_to)});
+        size_t size_other = writeObject(object_storage, tx->generateObjectKeyForPath("B/other").serialize(), "other");
+        tx->createMetadataFile("B/other", {StoredObject("other", "other", size_other)});
         tx->commit(DB::NoCommitOptions{});
     }
 
-    /// The same, for a replace over an existing file.
+    /// The same through `replaceFile`. The target must not exist yet: for a move that copies the blob the target gets
+    /// the default location of its own path, which is also the key a file already sitting there would have, so a
+    /// pre-existing target hides a stale transaction view instead of exposing it.
     {
         auto tx = metadata->createTransaction();
         tx->replaceFile("A/f1", "B/f1");
@@ -2829,10 +2831,12 @@ TEST_F(MetadataPlainRewritableDiskTest, ReplaceFileThenHardLinkAndRewriteInSameT
     EXPECT_FALSE(metadata->existsFile("A/f1"));
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "rewritten");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/f1").front().remote_path), "replacing");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/other").front().remote_path), "other");
 
     metadata = restartMetadataStorage(test);
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "rewritten");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/f1").front().remote_path), "replacing");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/other").front().remote_path), "other");
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, EmptyDirectoryMetadataIsNotLoadedAsRoot)
