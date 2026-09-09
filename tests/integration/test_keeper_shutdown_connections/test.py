@@ -1,5 +1,6 @@
 import socket
 import struct
+import time
 
 import pytest
 
@@ -44,10 +45,17 @@ def open_keeper_session(session_timeout):
         assert protocol_version == 0
         assert session_id != 0
         assert negotiated_timeout == session_timeout
-        return client
+        return client, session_id
     except Exception:
         client.close()
         raise
+
+
+def wait_for_log_contains(substring, timeout=10):
+    deadline = time.monotonic() + timeout
+    while not node.contains_in_log(substring):
+        assert time.monotonic() < deadline, f"Log line did not appear: {substring}"
+        time.sleep(0.1)
 
 
 def test_idle_connection_does_not_delay_shutdown(started_cluster):
@@ -62,7 +70,7 @@ def test_idle_connection_does_not_delay_shutdown(started_cluster):
     graceful_shutdown_deadline_seconds = 30
     assert graceful_shutdown_deadline_seconds * 1000 < session_timeout_ms
 
-    client = open_keeper_session(session_timeout=session_timeout_ms)
+    client, _ = open_keeper_session(session_timeout=session_timeout_ms)
     clickhouse_pid = node.get_process_pid("clickhouse server")
     assert clickhouse_pid is not None
     node.exec_in_container(
@@ -85,6 +93,11 @@ def test_idle_connection_does_not_delay_shutdown(started_cluster):
 
 
 def test_http_control_request_finishes_before_keeper_shutdown(started_cluster):
+    node.query("DROP TABLE IF EXISTS replicated_table SYNC")
+    node.restart_clickhouse()
+    keeper_utils.wait_nodes(cluster, [node])
+
+    idle_client, idle_session_id = open_keeper_session(session_timeout=60_000)
     client = socket.create_connection((node.ip_address, 9182), timeout=5)
     client.settimeout(10)
     request_body = b"value"
@@ -95,9 +108,8 @@ def test_http_control_request_finishes_before_keeper_shutdown(started_cluster):
         b"Expect: 100-continue\r\n"
         + f"Content-Length: {len(request_body)}\r\n\r\n".encode()
     )
-    client.sendall(request)
+    client.sendall(request + request_body[:-1])
     assert client.recv(4096).startswith(b"HTTP/1.1 100 Continue")
-    client.sendall(request_body[:-1])
 
     clickhouse_pid = node.get_process_pid("clickhouse server")
     assert clickhouse_pid is not None
@@ -106,8 +118,8 @@ def test_http_control_request_finishes_before_keeper_shutdown(started_cluster):
     )
 
     try:
-        node.wait_for_log_line(
-            "Closed all Keeper HTTP-control listening sockets. Waiting for 1 outstanding connections."
+        wait_for_log_contains(
+            "Closed all non-Keeper-TCP listening sockets. Waiting for 1 outstanding connections."
         )
 
         client.sendall(request_body[-1:])
@@ -116,9 +128,14 @@ def test_http_control_request_finishes_before_keeper_shutdown(started_cluster):
             response.extend(data)
         assert response.startswith(b"HTTP/1.1 201 Created")
 
+        wait_for_log_contains(
+            f"Keeper TCP drain started, closing session #{idle_session_id}"
+        )
+        wait_for_log_contains("Trying to close ")
         node.wait_start_failed(30)
     finally:
         client.close()
+        idle_client.close()
         if node.get_process_pid("clickhouse server") is not None:
             node.stop_clickhouse(kill=True)
         node.start_clickhouse()

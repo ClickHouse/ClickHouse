@@ -686,33 +686,33 @@ try
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t keeper_tcp_connections = 0;
-        size_t keeper_http_connections = 0;
+        size_t non_keeper_tcp_connections = 0;
         for (auto & server : *servers)
         {
             server.stop();
             if (is_keeper_tcp_server(server))
                 keeper_tcp_connections += server.currentConnections();
             else
-                keeper_http_connections += server.currentConnections();
+                non_keeper_tcp_connections += server.currentConnections();
         }
 
-        /// Keeper TCP handlers need dispatcher shutdown to release pending session-ID waits, but
-        /// HTTP handlers need live Keeper state until they finish. Stop all listeners and close
-        /// the TCP sockets first, then drain the HTTP handlers before tearing Keeper down.
+        /// Stop Keeper TCP handlers before draining the remaining protocol handlers. The latter
+        /// need the Keeper state and RAFT to remain live until they finish.
+        global_context->getKeeperDispatcher()->beginTCPConnectionDrain();
         KeeperTCPHandler::closeAllConnections();
 
-        if (keeper_http_connections)
+        if (non_keeper_tcp_connections)
         {
-            LOG_INFO(log, "Closed all Keeper HTTP listening sockets. Waiting for {} outstanding connections.", keeper_http_connections);
-            keeper_http_connections = waitServersToFinish(
+            LOG_INFO(log, "Closed all non-Keeper-TCP listening sockets. Waiting for {} outstanding connections.", non_keeper_tcp_connections);
+            non_keeper_tcp_connections = waitServersToFinish(
                 *servers,
                 servers_lock,
                 config().getInt("shutdown_wait_unfinished", 5),
                 [&](const auto & server) { return !is_keeper_tcp_server(server); });
 
-            if (keeper_http_connections)
+            if (non_keeper_tcp_connections)
             {
-                LOG_INFO(log, "Closed connections to Keeper HTTP servers. But {} remain. Will shutdown forcefully.", keeper_http_connections);
+                LOG_INFO(log, "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.", non_keeper_tcp_connections);
                 safeExit(0);
             }
         }

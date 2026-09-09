@@ -1518,9 +1518,12 @@ try
         );
     }
 
-    auto close_keeper_connections = []
+    auto begin_keeper_tcp_connection_drain = [&]
     {
 #if USE_NURAFT
+        if (auto dispatcher = global_context->tryGetKeeperDispatcher())
+            dispatcher->beginTCPConnectionDrain();
+
         KeeperTCPHandler::closeAllConnections();
 #endif
     };
@@ -1561,7 +1564,7 @@ try
 
         LOG_DEBUG(log, "Shut down storages.");
         size_t keeper_tcp_connections = 0;
-        size_t keeper_http_connections = 0;
+        size_t non_keeper_tcp_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
@@ -1573,32 +1576,32 @@ try
                     if (is_keeper_tcp_server(server))
                         keeper_tcp_connections += server.currentConnections();
                     else
-                        keeper_http_connections += server.currentConnections();
+                        non_keeper_tcp_connections += server.currentConnections();
                 }
             }
         }
 
-        /// Keeper TCP handlers need dispatcher shutdown to release pending session-ID waits, but
-        /// HTTP-control handlers need live Keeper state until they finish. Stop all listeners and
-        /// close the TCP sockets first, then drain the HTTP handlers before tearing Keeper down.
-        close_keeper_connections();
+        /// Stop Keeper TCP handlers before draining the remaining pre-table protocol handlers.
+        /// Those handlers include HTTP control, interserver HTTP/HTTPS, and Prometheus; they need
+        /// the embedded Keeper and RAFT to remain live until they finish.
+        begin_keeper_tcp_connection_drain();
 
-        if (keeper_http_connections)
+        if (non_keeper_tcp_connections)
         {
-            LOG_INFO(log, "Closed all Keeper HTTP-control listening sockets. Waiting for {} outstanding connections.", keeper_http_connections);
-            keeper_http_connections = waitServersToFinish(
+            LOG_INFO(log, "Closed all non-Keeper-TCP listening sockets. Waiting for {} outstanding connections.", non_keeper_tcp_connections);
+            non_keeper_tcp_connections = waitServersToFinish(
                 servers_to_start_before_tables,
                 servers_lock,
                 server_settings[ServerSetting::shutdown_wait_unfinished],
                 [&](const auto & server) { return !is_keeper_tcp_server(server); });
 
-            if (keeper_http_connections)
+            if (non_keeper_tcp_connections)
             {
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(
                     log,
-                    "Closed connections to Keeper HTTP-control servers. But {} remain. Will shutdown forcefully.",
-                    keeper_http_connections);
+                    "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.",
+                    non_keeper_tcp_connections);
                 safeExit(0, LeakCheck::SkipAndReport);
             }
         }

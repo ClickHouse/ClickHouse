@@ -88,6 +88,10 @@ private:
     /// stop all activity and join threads.
     std::atomic<bool> shutting_down{false};
 
+    /// Flag to stop Keeper TCP connection handlers before the full dispatcher shutdown.
+    /// It lets non-TCP protocol handlers finish while the Keeper state and RAFT remain live.
+    std::atomic<bool> tcp_connections_draining{false};
+
     /// Set after all request and response producers have stopped. Queue accounting can be
     /// finalized after the TCP handlers have released their pending responses.
     std::atomic<bool> ready_to_finish_shutdown{false};
@@ -172,6 +176,12 @@ public:
 
     /// Returns true if signalShutdown() was called.
     bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
+
+    /// Stop accepting and processing Keeper TCP connections before the full dispatcher shutdown.
+    void beginTCPConnectionDrain();
+
+    /// Returns true after beginTCPConnectionDrain was called.
+    bool isTCPConnectionDrainStarted() const { return tcp_connections_draining.load(std::memory_order_acquire); }
 
     /// Begin executing a four-letter command unless shutdown has started. Each successful call
     /// must be matched by finishFourLetterCommand.

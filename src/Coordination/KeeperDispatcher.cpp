@@ -465,10 +465,15 @@ void KeeperDispatcher::signalShutdown()
     early_shutdown_wait_cv.notify_all();
 }
 
+void KeeperDispatcher::beginTCPConnectionDrain()
+{
+    tcp_connections_draining.store(true, std::memory_order_release);
+}
+
 bool KeeperDispatcher::tryBeginFourLetterCommand()
 {
     std::lock_guard lock(four_letter_command_mutex);
-    if (shutting_down.load(std::memory_order_relaxed))
+    if (isTCPConnectionDrainStarted() || shutting_down.load(std::memory_order_relaxed))
         return false;
 
     ++running_four_letter_commands;

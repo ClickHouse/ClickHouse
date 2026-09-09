@@ -95,6 +95,7 @@ private:
     std::optional<CompressedWriteBuffer> compressed_out;
 
     std::atomic<bool> connected{false};
+    std::atomic<bool> closing_for_shutdown{false};
 
     void runImpl();
 
