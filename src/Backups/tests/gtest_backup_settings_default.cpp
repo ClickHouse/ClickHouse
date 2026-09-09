@@ -2,6 +2,7 @@
 #include <Backups/RestoreSettings.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/UUID.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -92,8 +93,39 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryResolvesANameInBothCarriers
             max_threads_values.push_back(change.value);
 
     ASSERT_FALSE(max_threads_values.empty()) << "the whole setting vanished from the rebuild";
-    EXPECT_EQ(Settings{}.get("max_threads"), max_threads_values.back())
+    /// The default's TEXT, not its `Field` form: `SettingFieldMaxThreads::operator Field` is not
+    /// invertible, see the test below.
+    EXPECT_EQ(Field(Settings{}.getDefaultValueString("max_threads")), max_threads_values.back())
         << "the last value the receiver applies is not the declared default, so the reset lost";
+}
+
+/// `max_threads` defaults to `auto(N)`, where N is the host's own core count, and
+/// `SettingFieldMaxThreads::operator Field` yields only the resolved N, dropping `is_auto`. Forwarding
+/// that `Field` would pin every receiving host to the INITIATOR's core count, while the reset it stands
+/// for leaves each host on its own auto value. The declared default's text carries `is_auto` across,
+/// because `stringToMaxThreads` reads back the `auto(...)` form as auto. The same field type backs
+/// `max_insert_threads`, `max_final_threads` and `max_parsing_threads`.
+TEST(BackupSettingsDefault, BackupCopySettingsToQueryKeepsAnAutoDefaultAuto)
+{
+    const String query = "BACKUP TABLE t TO Disk('d', 'b') SETTINGS max_threads = DEFAULT";
+    ASTPtr holder;
+    ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
+    ASSERT_NE(nullptr, backup_query) << "query: " << query;
+
+    BackupSettings settings = BackupSettings::fromBackupQuery(*backup_query);
+    settings.copySettingsToQuery(*backup_query);
+
+    ASSERT_NE(nullptr, backup_query->settings);
+    const auto & rebuilt = backup_query->settings->as<const ASTSetQuery &>();
+    const auto * change = rebuilt.changes.tryGet("max_threads");
+    ASSERT_NE(nullptr, change) << "the core reset was dropped instead of being resolved";
+
+    /// What the receiving host does with the change it parsed out of the forwarded text.
+    SettingFieldMaxThreads received{UInt64{4}};
+    received = *change;
+    EXPECT_TRUE(received.is_auto)
+        << "the receiving host is pinned to the initiator's thread count instead of its own auto value: "
+        << backup_query->formatWithSecretsOneLine();
 }
 
 /// A name with no declared default cannot be forwarded as a value, so the rebuild drops its overrides

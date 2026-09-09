@@ -62,6 +62,10 @@ CoreSettingsFromQuery extractCoreSettings(
 /// override. Order is what decides that, so this holds for an alias spelling of the same field too.
 ///
 /// A name with no declared default has its overrides dropped instead, which is the same end state.
+///
+/// The default travels as its textual form whenever the setting's `operator Field` is not invertible, so
+/// that a default the `Field` cannot express - `max_threads`, whose default is `auto(N)` for the host's
+/// own N - still resets on the receiving host instead of pinning it to this host's resolved value.
 void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<String> & default_names);
 
 }

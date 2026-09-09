@@ -82,7 +82,21 @@ void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<St
             continue;
         }
 
-        changes.emplace_back(name, declared_defaults.get(name));
+        Field default_value = declared_defaults.get(name);
+
+        /// `operator Field` is not invertible for every setting type, and then the `Field` does not carry
+        /// the reset. `SettingFieldMaxThreads::operator Field` drops `is_auto` and yields the resolved
+        /// thread count, so shipping it would pin every receiving host to this host's number instead of
+        /// letting each recompute its own auto value (`max_insert_threads`, `max_final_threads` and
+        /// `max_parsing_threads` are the same field type). Reconstructing the field from that `Field` and
+        /// comparing its text to the default's text detects exactly the types where this happens; there
+        /// the default's own text is what resets the setting, because `parseFromString` restores the auto
+        /// form (see `stringToMaxThreads`).
+        const String default_string = declared_defaults.getDefaultValueString(name);
+        if (Settings::valueToStringUtil(name, default_value) != default_string)
+            default_value = default_string;
+
+        changes.emplace_back(name, std::move(default_value));
     }
 }
 
