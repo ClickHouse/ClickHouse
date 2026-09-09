@@ -723,24 +723,10 @@ size_t logEntrySize(const LogEntryPtr & log_entry)
 }
 
 /// Bytes charged for one entry in `latest_logs_cache` on top of the entry's own buffer. Besides the
-/// payload buffer, each cached entry keeps three heap blocks alive, and no standard type exposes
-/// their sizes - `sizeof(std::shared_ptr<T>)` is the two-pointer handle, not the control block it
-/// points at - so each block is spelled out here in terms of what it actually stores:
-///
-///   1. `cs_new<log_entry>` is `make_shared`, which puts the control block and the entry in one
-///      block: the control block header followed by the `log_entry` itself.
-///   2. The entry's buffer carries a second, separate control block, because `buffer::alloc` builds
-///      its `shared_ptr` from a raw pointer plus a deleter instead of by `make_shared`. Such a
-///      block also stores the managed pointer and the deleter; its allocator is the default one,
-///      which is empty and adds nothing.
-///   3. The map keeps a node per entry - intrusive next pointer, cached hash, key and value - plus
-///      one bucket slot, since the default maximum load factor is one element per bucket.
-///
+/// payload buffer, each cached entry keeps three heap blocks alive.
 /// Every block is then rounded up to the allocator's size class, which is what
 /// `getActualAllocationSize` computes, so the total follows the allocator instead of being
-/// hardcoded. It comes to 184 bytes with libc++ and jemalloc, verified against jemalloc's
-/// `stats.allocated` over 200000 cached entries: `nallocx(payload + 16) + 184` matched the measured
-/// allocation exactly for every payload from 64 bytes to 4 KiB.
+/// hardcoded. It comes to 184 bytes with libc++ and jemalloc.
 size_t cachedLogEntryFixedOverhead()
 {
     /// A `shared_ptr` control block begins with a vtable pointer and the strong and weak counters.
