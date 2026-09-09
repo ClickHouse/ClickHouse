@@ -5,6 +5,7 @@
 #include <Processors/Executors/Runtime/ThreadsQueue.h>
 #include <Processors/Executors/Runtime/TasksQueue.h>
 #include <Common/ISlotControl.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -69,7 +70,7 @@ public:
     void finish();
     bool isFinished() const { return finished; }
 
-    void rethrowFirstThreadException();
+    void rethrowFirstThreadException(const LoggerPtr & log);
 
     void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
     void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock);
