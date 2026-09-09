@@ -183,7 +183,7 @@ void buildLayoutParameterKeyValueCollection(
             }
 
             AutoPtr<Element> field_element(doc->createElement(element_name));
-            AutoPtr<Text> field_text(doc->createTextNode(convertFieldToString(field)));
+            AutoPtr<Text> field_text(doc->createTextNode(convertFieldToSettingValueString(field)));
             field_element->appendChild(field_text);
             entry_element->appendChild(field_element);
         };
@@ -231,7 +231,7 @@ void buildLayoutConfiguration(
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToSettingValueString(value)));
             setting_change_element->appendChild(setting_value);
         }
     }
