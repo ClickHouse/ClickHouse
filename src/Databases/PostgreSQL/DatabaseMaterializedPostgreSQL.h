@@ -197,6 +197,15 @@ private:
     /// the slot advances past the changes of the removed ones. Guarded by `handler_mutex`.
     bool manual_repair_required = false;
 
+    /// Set while the partial-drop recovery marker is still on disk after replication has been started
+    /// again. Removing the marker is the last step of the recovery, and it can fail on its own (a
+    /// transient metadata-disk error), so the failure must not be swallowed: it propagates to
+    /// `tryStartSynchronization`, which reschedules the startup task, and the rescheduled run retries
+    /// only the removal (replication is already running). Otherwise a leftover marker would silently
+    /// force a create-style startup - a full resnapshot - after every subsequent server restart.
+    /// Guarded by `handler_mutex`.
+    bool partial_drop_recovery_marker_removal_pending = false;
+
     BackgroundSchedulePoolTaskHolder startup_task;
     std::atomic<bool> shutdown_called = false;
 

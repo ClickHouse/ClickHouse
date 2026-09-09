@@ -777,7 +777,30 @@ def test_failed_detach_remains_retryable_after_failed_rollback(started_cluster):
     assert table_name in instance.query("SHOW TABLES FROM test_database").split()
 
     # Restart reconstructs the publication from the restored list before it republishes the wrapper, so
-    # the surviving table is not merely visible: it resumes replication before the retry.
+    # the surviving table is not merely visible: it resumes replication before the retry. Wait for the
+    # publication to contain the table again before writing to PostgreSQL: logical decoding filters a
+    # change by the publication as it was when the change was written, so a row inserted while the
+    # table is still missing from the publication would never be replicated. The startup that rebuilds
+    # the publication runs in the background and can need a retry, so the wait is not merely cosmetic.
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+    )
+    cursor = conn.cursor()
+    for _ in range(60):
+        cursor.execute(
+            "SELECT count() FROM pg_publication_tables WHERE pubname = 'postgres_database_ch_publication' "
+            f"AND tablename = '{table_name}'"
+        )
+        if cursor.fetchall()[0][0] == 1:
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError(
+            f"Table {table_name} was not re-added to the publication after the restart"
+        )
+
     instance.query(
         f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
     )

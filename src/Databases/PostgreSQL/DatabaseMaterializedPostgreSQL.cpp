@@ -148,7 +148,17 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     /// task idempotent instead. Failed startups never set the flag: `tryStartSynchronization` keeps
     /// retrying them as before.
     if (synchronization_started)
+    {
+        /// The only thing an already started synchronization can still owe is the removal of the
+        /// partial-drop recovery marker (see `removePartialDropRecoveryMarker` below). Retry just that:
+        /// rebuilding the handler is neither needed nor safe here.
+        if (partial_drop_recovery_marker_removal_pending)
+        {
+            removePartialDropRecoveryMarker();
+            partial_drop_recovery_marker_removal_pending = false;
+        }
         return;
+    }
 
     /// Simulates the background startup failing before the replication handler has been built, to make the
     /// attach/restart window - in which `replication_handler` is still null while the database is already
@@ -243,7 +253,11 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 
     /// Replication is running with the full set of tables again, so a partially applied `DROP DATABASE`
     /// (if there was one) is repaired and must not force a create-style startup after the next restart.
+    /// A failure here must not be lost: the flag makes the startup task, which `tryStartSynchronization`
+    /// reschedules on any exception, retry the removal alone through the branch at the top of this method.
+    partial_drop_recovery_marker_removal_pending = true;
     removePartialDropRecoveryMarker();
+    partial_drop_recovery_marker_removal_pending = false;
 }
 
 
