@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/typeid_cast.h>
 
 using namespace DB;
 
@@ -163,7 +164,7 @@ TEST(JoinStepLogicalDecisions, CloneCarriesTheDecisions)
     step->setRuntimeFilterDeclinedForSmallProbe();
 
     auto cloned = step->clone();
-    const auto * cloned_join = typeid_cast<const JoinStepLogical *>(cloned.get());
+    auto * cloned_join = typeid_cast<JoinStepLogical *>(cloned.get());
     ASSERT_TRUE(cloned_join);
     EXPECT_TRUE(cloned_join->isOptimized());
     EXPECT_TRUE(cloned_join->isRuntimeFilterDeclinedForSmallProbe());
