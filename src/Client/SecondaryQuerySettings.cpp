@@ -38,9 +38,18 @@ void stripProfileTraceOptInsFromQuery(const ASTPtr & query)
         nodes.pop_back();
         if (auto * set_query = node->as<ASTSetQuery>())
         {
-            std::erase_if(set_query->changes, [](const SettingChange & change)
+            bool last_profile_traces_value = false;
+            for (const auto & change : set_query->changes)
             {
-                return change.name == "send_profile_traces" && SettingFieldBool(change.value).value;
+                /// Validate every occurrence, including values overridden by a later duplicate.
+                if (change.name == "send_profile_traces")
+                    last_profile_traces_value = SettingFieldBool(change.value).value;
+            }
+
+            std::erase_if(set_query->changes, [last_profile_traces_value](const SettingChange & change)
+            {
+                /// A final opt-in must also remove earlier opt-outs from the same clause.
+                return change.name == "send_profile_traces" && (last_profile_traces_value || SettingFieldBool(change.value).value);
             });
         }
         for (const auto & child : node->children)
