@@ -28,7 +28,11 @@ public:
 
     /// Renders the preview block into text lines (using the `PrettyCompactNoEscapes` format),
     /// cutting it to fit the terminal. The block fully replaces the previous preview.
-    void setPreview(const Block & block, ContextPtr context);
+    /// Returns false when this frame cannot be rendered under the current terminal geometry; the
+    /// stored preview is then left untouched, and the caller must clear it (see
+    /// `clearPreviewOutput` and `resetPreview`), because the previous frame no longer represents
+    /// the current intermediate result.
+    [[nodiscard]] bool setPreview(const Block & block, ContextPtr context);
 
     /// Paints the current preview below the cursor line and returns the cursor.
     void writePreview(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &);

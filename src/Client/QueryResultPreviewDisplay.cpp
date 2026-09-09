@@ -31,11 +31,11 @@ namespace
     }
 }
 
-void QueryResultPreviewDisplay::setPreview(const Block & block, ContextPtr context)
+bool QueryResultPreviewDisplay::setPreview(const Block & block, ContextPtr context)
 {
     auto [terminal_width, terminal_height] = getTerminalSize(in_fd, err_fd);
     if (terminal_width == 0 || terminal_height < 8)
-        return;
+        return false;
 
     auto format_settings = getFormatSettings(context);
     format_settings.is_writing_to_terminal = false;
@@ -62,13 +62,14 @@ void QueryResultPreviewDisplay::setPreview(const Block & block, ContextPtr conte
     /// Rendering a line wider than the terminal would wrap and break the cursor arithmetic.
     for (const auto & line : new_lines)
         if (UTF8::computeWidth(reinterpret_cast<const UInt8 *>(line.data()), line.size()) > terminal_width)
-            return;
+            return false;
 
     if (new_lines.size() + 3 > terminal_height)
-        return;
+        return false;
 
     std::lock_guard lock(mutex);
     lines = std::move(new_lines);
+    return true;
 }
 
 void QueryResultPreviewDisplay::writePreview(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)

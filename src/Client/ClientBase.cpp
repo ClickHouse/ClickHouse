@@ -871,28 +871,28 @@ void ClientBase::onPreviewData(Block & block)
     const bool hidden_by_progress_table = need_render_progress_table && progress_table_toggle_on.load();
 
     /// An empty preview says the intermediate result is empty at the moment (e.g. `HAVING`
-    /// filtered every row out); it replaces the previous preview, which has to leave the screen.
-    if (block.rows() == 0)
+    /// filtered every row out), and a frame that does not fit the current terminal geometry cannot
+    /// be shown at all. Both replace the previous preview, which has to leave the screen: keeping it
+    /// would resurrect rows that are no longer the current intermediate result.
+    if (block.rows() != 0 && query_result_preview_display.setPreview(block, client_context))
     {
-        /// While the progress table owns this band it repaints it on every update, so erasing the
-        /// screen here would wipe the table out instead of the (already overpainted) preview - forget
-        /// the preview without touching the terminal.
-        if (!hidden_by_progress_table)
-        {
-            std::unique_lock lock(tty_mutex);
-            query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
-        }
-        query_result_preview_display.resetPreview();
+        if (hidden_by_progress_table)
+            return;
+
+        std::unique_lock lock(tty_mutex);
+        query_result_preview_display.writePreview(*tty_buf, lock);
         return;
     }
 
-    query_result_preview_display.setPreview(block, client_context);
-
-    if (hidden_by_progress_table)
-        return;
-
-    std::unique_lock lock(tty_mutex);
-    query_result_preview_display.writePreview(*tty_buf, lock);
+    /// While the progress table owns this band it repaints it on every update, so erasing the
+    /// screen here would wipe the table out instead of the (already overpainted) preview - forget
+    /// the preview without touching the terminal.
+    if (!hidden_by_progress_table)
+    {
+        std::unique_lock lock(tty_mutex);
+        query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
+    }
+    query_result_preview_display.resetPreview();
 }
 
 
