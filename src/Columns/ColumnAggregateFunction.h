@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
+#include <Compression/ICompressionCodec.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
@@ -229,7 +230,15 @@ public:
     /// than one copy suggests (and not at all once a copy outgrows the codec's match window), so the
     /// compressed figure is measured on a repeated sample rather than scaled from one copy.
     /// `skip_rows` omits leading values not written by their carrier, such as `ColumnSparse`'s implicit default.
-    SampledStateSizes sampledStateSizes(size_t max_states_to_serialize, size_t repetitions = 1, size_t skip_rows = 0) const;
+    ///
+    /// `codec` is the codec the measured payload is compressed with - the interserver codec for a wire
+    /// estimate - and decides both what the sample is compressed with and how far a copy can be matched
+    /// against the previous ones (`compressionMatchWindowSize`). The factory default is used when it is null.
+    SampledStateSizes sampledStateSizes(
+        size_t max_states_to_serialize,
+        size_t repetitions = 1,
+        size_t skip_rows = 0,
+        const CompressionCodecPtr & codec = nullptr) const;
 
     size_t byteSizeAt(size_t n) const override;
 

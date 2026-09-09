@@ -20,6 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
@@ -113,12 +114,45 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     dataflow_cache.update(cache_key, res);
 }
 
-/// Tries to estimate compressed size of a column by serializing a sample of it.
-static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column)
+bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type)
 {
-    NullWriteBuffer null_buf;
-    CompressedWriteBuffer compressed_buf(null_buf);
+    size_t num_streams = 0;
+    bool stream_is_column_itself = false;
+    serialization.enumerateStreams(
+        [&](const auto & substream_path)
+        {
+            ++num_streams;
+            const auto & substream_type = substream_path.back().data.type;
+            stream_is_column_itself
+                = ISerialization::isSpecialCompressionAllowed(substream_path) && substream_type && substream_type->equals(*type);
+        },
+        type);
+    return num_streams == 1 && stream_is_column_itself;
+}
+
+/// The codec the sample of `column` is to be compressed with.
+///
+/// What the sample buffer holds is only known here: the serialization is picked from the column at hand, so
+/// a column stored `Sparse` (or `Replicated`) arrives as several substreams funnelled into the one buffer,
+/// and the column read from the part keeps the pre-`ALTER` type until the mutation that rewrites it has
+/// run. A type-specific codec then measures a stream it was never resolved for. Some codecs merely
+/// mismeasure it, but one that validates its input rejects it outright - `ALP` throws `CANNOT_COMPRESS` on
+/// a byte count that is not a whole number of floats.
+static const CompressionCodecPtr & chooseSampleCodec(
+    const ISerialization & serialization, const ColumnWithTypeAndName & column, const ColumnCodecs & codecs)
+{
+    const bool sample_matches_type_specific_codec = codecs.type_specific && codecs.type_specific_for->equals(*column.type)
+        && isSerializedAsSingleStreamOfColumnType(serialization, column.type);
+    return sample_matches_type_specific_codec ? codecs.type_specific : codecs.generic;
+}
+
+/// Tries to estimate compressed size of a column by serializing a sample of it.
+static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const ColumnCodecs & codecs)
+{
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
+    const auto & codec = chooseSampleCodec(*serialization, column, codecs);
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf, codec);
     // To avoid spending too much time on serialization, we limit the number of rows to serialize.
     const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
     NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
@@ -137,16 +171,18 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 /// exactly wrong for a payload that is incompressible on its own. Serialize the sample enough times to
 /// fill one compressed block and extrapolate the remaining copies from it, the same way
 /// `ColumnAggregateFunction::sampledStateSizes` measures the repetitions of a constant state.
-static std::pair<size_t, size_t> estimateRepeatedCompressedColumnSize(const ColumnWithTypeAndName & column, size_t repetitions)
+static std::pair<size_t, size_t>
+estimateRepeatedCompressedColumnSize(const ColumnWithTypeAndName & column, size_t repetitions, const ColumnCodecs & codecs)
 {
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
+    const auto & codec = chooseSampleCodec(*serialization, column, codecs);
     // To avoid spending too much time on serialization, we limit the number of rows to serialize.
     const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
 
     auto serialize_copies = [&](size_t copies)
     {
         NullWriteBuffer null_buf;
-        CompressedWriteBuffer compressed_buf(null_buf);
+        CompressedWriteBuffer compressed_buf(null_buf, codec);
         for (size_t copy = 0; copy < copies; ++copy)
             NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
         compressed_buf.finalize();
@@ -165,11 +201,13 @@ static std::pair<size_t, size_t> estimateRepeatedCompressedColumnSize(const Colu
         = std::min(repetitions, std::max<size_t>(1, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
 
     size_t compressed_bytes = one_copy_compressed_bytes;
-    /// A truncated sample can fit in LZ4's 64 KiB match window even when a materialized copy cannot.
+    /// A truncated sample can fit in the codec's match window even when a materialized copy cannot.
     /// Measuring repeated samples in that shape would falsely carry their cross-copy compression over to
-    /// the actual output, so retain the one-copy ratio instead.
-    static constexpr size_t lz4_match_window = 64 * 1024;
-    if (estimated_one_copy_bytes > lz4_match_window || measured_repetitions == 1)
+    /// the actual output, so retain the one-copy ratio instead. The window is a property of the codec the
+    /// payload is compressed with - 64 KiB for `LZ4`, a whole compressed block for the `ZSTD(3)` default -
+    /// so it is taken from the codec chosen above rather than assumed.
+    const size_t match_window = compressionMatchWindowSize(*codec);
+    if (estimated_one_copy_bytes > match_window || measured_repetitions == 1)
     {
         /// A single copy already exhausts the measurement budget. Do not serialize another giant
         /// payload merely to estimate its marginal compressed size; conservatively assume that the
@@ -285,7 +323,12 @@ static bool hasAggregateStateLeaf(const IColumn & column)
 /// is taken apart into its one-row payload, which `NativeWriter::writeData` materializes back to the
 /// column's row count, so everything below such a carrier counts that many times.
 static void sampleNonStatePartsCompression(
-    const ColumnPtr & column, const DataTypePtr & type, size_t repetitions, size_t & sample_bytes, size_t & compressed_bytes)
+    const ColumnPtr & column,
+    const DataTypePtr & type,
+    size_t repetitions,
+    const ColumnCodecs & codecs,
+    size_t & sample_bytes,
+    size_t & compressed_bytes)
 {
     /// The leaf itself is measured from its serialized states by the caller.
     if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
@@ -301,9 +344,9 @@ static void sampleNonStatePartsCompression(
         /// instead; either way the repetitions are measured rather than scaled from one copy, which would
         /// pin their compression ratio to one copy's.
         const auto [sample, compressed] = repetitions > 1 && column->size() != 1
-            ? estimateRepeatedCompressedColumnSize({column, type, {}}, repetitions)
+            ? estimateRepeatedCompressedColumnSize({column, type, {}}, repetitions, codecs)
             : estimateCompressedColumnSize(
-                  {repetitions > 1 ? ColumnPtr(ColumnConst::create(column, repetitions)) : column, type, {}});
+                  {repetitions > 1 ? ColumnPtr(ColumnConst::create(column, repetitions)) : column, type, {}}, codecs);
         sample_bytes += sample;
         compressed_bytes += compressed;
         return;
@@ -316,7 +359,7 @@ static void sampleNonStatePartsCompression(
         /// a constant `Array` become cumulative (`n, 2n, ...`) on the wire; wrapping an offsets subcolumn
         /// in another `ColumnConst` would incorrectly serialize the same offset repeatedly.
         sampleNonStatePartsCompression(
-            const_column->convertToFullColumn(), type, repetitions, sample_bytes, compressed_bytes);
+            const_column->convertToFullColumn(), type, repetitions, codecs, sample_bytes, compressed_bytes);
         return;
     }
     if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get()))
@@ -324,9 +367,9 @@ static void sampleNonStatePartsCompression(
         if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
         {
             sampleNonStatePartsCompression(
-                nullable_column->getNullMapColumnPtr(), std::make_shared<DataTypeUInt8>(), repetitions, sample_bytes, compressed_bytes);
+                nullable_column->getNullMapColumnPtr(), std::make_shared<DataTypeUInt8>(), repetitions, codecs, sample_bytes, compressed_bytes);
             sampleNonStatePartsCompression(
-                nullable_column->getNestedColumnPtr(), nullable_type->getNestedType(), repetitions, sample_bytes, compressed_bytes);
+                nullable_column->getNestedColumnPtr(), nullable_type->getNestedType(), repetitions, codecs, sample_bytes, compressed_bytes);
             return;
         }
     }
@@ -337,7 +380,7 @@ static void sampleNonStatePartsCompression(
         {
             for (size_t i = 0; i < tuple_column->tupleSize(); ++i)
                 sampleNonStatePartsCompression(
-                    tuple_column->getColumnPtr(i), tuple_type->getElements()[i], repetitions, sample_bytes, compressed_bytes);
+                    tuple_column->getColumnPtr(i), tuple_type->getElements()[i], repetitions, codecs, sample_bytes, compressed_bytes);
             return;
         }
     }
@@ -346,9 +389,9 @@ static void sampleNonStatePartsCompression(
         if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
             sampleNonStatePartsCompression(
-                array_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, sample_bytes, compressed_bytes);
+                array_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, codecs, sample_bytes, compressed_bytes);
             sampleNonStatePartsCompression(
-                array_column->getDataPtr(), array_type->getNestedType(), repetitions, sample_bytes, compressed_bytes);
+                array_column->getDataPtr(), array_type->getNestedType(), repetitions, codecs, sample_bytes, compressed_bytes);
             return;
         }
     }
@@ -357,7 +400,7 @@ static void sampleNonStatePartsCompression(
         if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
         {
             sampleNonStatePartsCompression(
-                map_column->getNestedColumnPtr(), map_type->getNestedType(), repetitions, sample_bytes, compressed_bytes);
+                map_column->getNestedColumnPtr(), map_type->getNestedType(), repetitions, codecs, sample_bytes, compressed_bytes);
             return;
         }
     }
@@ -372,14 +415,15 @@ static void sampleNonStatePartsCompression(
             variant_type && variant_type->getVariants().size() == variant_column->getNumVariants())
         {
             sampleNonStatePartsCompression(
-                variant_column->getLocalDiscriminatorsPtr(), std::make_shared<DataTypeUInt8>(), repetitions, sample_bytes, compressed_bytes);
+                variant_column->getLocalDiscriminatorsPtr(), std::make_shared<DataTypeUInt8>(), repetitions, codecs, sample_bytes, compressed_bytes);
             sampleNonStatePartsCompression(
-                variant_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, sample_bytes, compressed_bytes);
+                variant_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, codecs, sample_bytes, compressed_bytes);
             for (size_t i = 0; i < variant_column->getNumVariants(); ++i)
                 sampleNonStatePartsCompression(
                     variant_column->getVariantPtrByGlobalDiscriminator(i),
                     variant_type->getVariants()[i],
                     repetitions,
+                    codecs,
                     sample_bytes,
                     compressed_bytes);
             return;
@@ -395,6 +439,7 @@ static void sampleNonStatePartsCompression(
             dynamic_column->getVariantColumnPtr(),
             dynamic_column->getVariantInfo().variant_type,
             repetitions,
+            codecs,
             sample_bytes,
             compressed_bytes);
         return;
@@ -402,11 +447,12 @@ static void sampleNonStatePartsCompression(
     else if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column.get()))
     {
         sampleNonStatePartsCompression(
-            sparse_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, sample_bytes, compressed_bytes);
+            sparse_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, codecs, sample_bytes, compressed_bytes);
         sampleNonStatePartsCompression(
             sparse_column->getValuesPtr()->cut(1, sparse_column->getValuesPtr()->size() - 1),
             type,
             repetitions,
+            codecs,
             sample_bytes,
             compressed_bytes);
         return;
@@ -500,6 +546,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     size_t serialized_state_values = 0;
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
+    /// Only output columns get here, and they model what a replica sends to the initiator rather than
+    /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
+    /// The transfer codec is `network_compression_method`, whose default the default codec matches.
+    /// It is generic, so it applies to any serialization layout.
+    const ColumnCodecs codecs{.generic = CompressionCodecFactory::instance().getDefaultCodec()};
     if (serialize_states)
     {
         /// The same ~1000-sample target as `Aggregator::estimateSizeOfCompressedState` uses for a
@@ -521,7 +572,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             /// handling of the repetitions a constant carrier puts on the wire: identical copies
             /// compress far better than one copy suggests, so the repeated payload is measured there
             /// instead of scaling the one-copy figures, which would keep the one-copy ratio.
-            const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize, repetitions, skip_rows);
+            /// The states are compressed with the same codec as the rest of the output: the sample and the
+            /// match window its repetitions are judged against must both describe the wire.
+            const auto sizes
+                = aggregate_column->sampledStateSizes(max_states_to_serialize, repetitions, skip_rows, codecs.generic);
             serialized_state_bytes += sizes.bytes;
             sample_bytes += sizes.sample_bytes;
             compressed_bytes += sizes.compressed_bytes;
@@ -543,12 +597,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             /// derive the compression ratio from a different population of bytes than the total it divides.
             if (col_has_states[i])
             {
-                sampleNonStatePartsCompression(cols[i].column, cols[i].type, 1, sample_bytes, compressed_bytes);
+                sampleNonStatePartsCompression(cols[i].column, cols[i].type, 1, codecs, sample_bytes, compressed_bytes);
                 continue;
             }
             if (!sample_block)
                 continue;
-            auto [sample, compressed] = estimateCompressedColumnSize(cols[i]);
+            auto [sample, compressed] = estimateCompressedColumnSize(cols[i], codecs);
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
@@ -671,6 +725,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const NameSet & partially_read_columns,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
+    const ColumnCodecByName & column_codecs,
+    const CompressionCodecPtr & default_codec,
     size_t read_bytes,
     std::optional<bool> & should_continue_sampling)
 {
@@ -728,7 +784,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                     // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
                     if (part_columns.contains(column.name))
                     {
-                        const auto [sample, compressed] = estimateCompressedColumnSize(column);
+                        const auto codec_it = column_codecs.find(column.name);
+                        /// A column with no `CODEC` of its own is written with the part's default codec,
+                        /// which is generic, so it applies to any serialization layout.
+                        const auto [sample, compressed] = estimateCompressedColumnSize(
+                            column,
+                            codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
                         sample_bytes += sample;
                         compressed_bytes += compressed;
                     }

@@ -9,6 +9,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -543,17 +544,19 @@ size_t ColumnAggregateFunction::sampledSerializedStateBytes(size_t max_states_to
 }
 
 ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledStateSizes(
-    size_t max_states_to_serialize, size_t repetitions, size_t skip_rows) const
+    size_t max_states_to_serialize, size_t repetitions, size_t skip_rows, const CompressionCodecPtr & codec) const
 {
     SampledStateSizes res;
     const size_t rows = data.size() - skip_rows;
     if (rows == 0 || repetitions == 0)
         return res;
 
+    const CompressionCodecPtr & sample_codec = codec ? codec : CompressionCodecFactory::instance().getDefaultCodec();
+
     /// The same periodic sample as in sampledSerializedStateBytes, serialized through a compression buffer
     /// so that the uncompressed figure and the compression ratio are measured on the same states.
     NullWriteBuffer null_buf;
-    CompressedWriteBuffer compressed_buf(null_buf);
+    CompressedWriteBuffer compressed_buf(null_buf, sample_codec);
 
     const size_t limit = std::max<size_t>(max_states_to_serialize, 1);
     const size_t period = (rows + limit - 1) / limit;
@@ -582,13 +585,17 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
     res.bytes *= repetitions;
 
     size_t compressed = one_copy_compressed_bytes;
-    /// LZ4 cannot reference data farther than 64 KiB back. A truncated sample may fit in that window even
-    /// though one materialized copy does not; measuring repetitions of such a sample would then invent
-    /// cross-copy compression that the actual output cannot have. Keep the one-copy ratio in that case.
-    static constexpr size_t lz4_match_window = 64 * 1024;
+    /// A codec cannot reference data farther back than its match window - 64 KiB for `LZ4`, a whole
+    /// compressed block for `ZSTD`. A truncated sample may fit in that window even though one materialized
+    /// copy does not; measuring repetitions of such a sample would then invent cross-copy compression that
+    /// the actual output cannot have. Keep the one-copy ratio in that case. The window has to come from the
+    /// codec the payload is actually compressed with: with the `ZSTD(3)` default, copies of a payload well
+    /// past 64 KiB still compress against each other inside one block, and pinning them to the one-copy
+    /// ratio would overstate the output by the cross-copy ratio.
+    const size_t match_window = compressionMatchWindowSize(*sample_codec);
     if (repetitions > 1)
     {
-        if (estimated_one_copy_bytes > lz4_match_window)
+        if (estimated_one_copy_bytes > match_window)
         {
             compressed = one_copy_compressed_bytes * repetitions;
         }
@@ -613,7 +620,7 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
             else
             {
                 NullWriteBuffer repeated_null_buf;
-                CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf);
+                CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf, sample_codec);
                 for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
                     for (size_t i = 0; i < rows; i += period)
                         func->serialize(data[skip_rows + i], repeated_compressed_buf, version);
