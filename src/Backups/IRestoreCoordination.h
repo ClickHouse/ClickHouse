@@ -7,7 +7,6 @@
 namespace DB
 {
 enum class UserDefinedSQLObjectType : uint8_t;
-enum class WorkloadEntityType : uint8_t;
 class ASTCreateQuery;
 struct ZooKeeperRetriesInfo;
 
