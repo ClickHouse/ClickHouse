@@ -243,7 +243,9 @@ echo 'a compatibility carried by a CREATE settings clause is checked the same wa
 # The clause is not an engine setting, so it is moved to the context from there rather than reaching it
 # through a `SET`. The control carries a version that derives an allowed value, so the refusal cannot be
 # the grant, the engine or the clause itself.
+# The test config sets table_engines_require_grant, so naming the engine is a precondition both arms need.
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE ON ${CLICKHOUSE_DATABASE}.* TO ${USER_STREAM}"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${USER_STREAM}"
 U=$(user_session_url a16 "${USER_STREAM}")
 ${CLICKHOUSE_CURL} -sS "$U" -d "CREATE TABLE ${CLICKHOUSE_DATABASE}.t1_05047 (x Int) ENGINE = MergeTree ORDER BY x SETTINGS compatibility = '26.7'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
 ${CLICKHOUSE_CURL} -sS "$U" -d "CREATE TABLE ${CLICKHOUSE_DATABASE}.t2_05047 (x Int) ENGINE = MergeTree ORDER BY x SETTINGS compatibility = '26.8'"
