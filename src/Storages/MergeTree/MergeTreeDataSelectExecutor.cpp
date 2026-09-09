@@ -2234,7 +2234,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// the key's order agree on everything the range algebra asks. Returns whether the pair was
     /// replaced: a replaced pair no longer stands for the equal boundaries `equal_boundaries_mask`
     /// reports.
-    auto repair_boundary_pair = [&key_order](size_t column, FieldRef & left, FieldRef & right)
+    /// Set once a pair has been replaced: the mark ranges then no longer follow the condition's own
+    /// continuity, because a granule the condition describes as wholly matching may hold rows the
+    /// filter rejects. Only the exactness of the analysis is affected - a replaced pair claims nothing
+    /// about the column, so it can only widen `can_be_true`.
+    bool boundary_pair_repaired = false;
+
+    auto repair_boundary_pair = [&key_order, &boundary_pair_repaired](size_t column, FieldRef & left, FieldRef & right)
     {
         if (!fieldHasNullInside(left) && !fieldHasNullInside(right))
             return false;
@@ -2246,6 +2252,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         left = key_order.physicalStartExtreme(column);
         right = key_order.physicalEndExtreme(column);
+        boundary_pair_repaired = true;
         return true;
     };
 
@@ -2582,8 +2589,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                             /// range is then simply dropped, the same as in a release build.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+                            /// A repaired boundary pair breaks the same assumption in its own way: the
+                            /// granule between two marks that `Field` order cannot compare is analysed as
+                            /// the whole universe, so an interior granule of a continuous range can hold
+                            /// rows the filter rejects.
 #ifndef NDEBUG
-                            if (used_key_prefix_loaded_in_memory)
+                            if (used_key_prefix_loaded_in_memory && !boundary_pair_repaired)
                             {
                                 auto describe_condition = [](const KeyCondition & condition)
                                 {
