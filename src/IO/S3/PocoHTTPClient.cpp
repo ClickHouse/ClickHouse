@@ -13,7 +13,6 @@
 #include <functional>
 
 #include <Common/logger_useful.h>
-#include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
@@ -695,19 +694,13 @@ void PocoHTTPClient::makeRequestInternalImpl(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            /// GCS answers with custom object metadata under `x-goog-meta-`, while the SDK builds
-            /// `GetMetadata()` only from `x-amz-meta-` (see HeadObjectResult). Add the `x-amz-meta-`
-            /// spelling alongside so a reader sees the metadata GCS actually returned; the request
-            /// side does the mirror rename in `translateHeadersToGCS`. Only GCS emits this prefix,
-            /// so the alias is inert against every other store.
-            static constexpr std::string_view gcs_meta_prefix = "x-goog-meta-";
+            /// GCS answers in its own spelling and the SDK parses only the `x-amz-` one, so add
+            /// that alongside for the headers the request side renames. The original is kept too.
             const auto add_response_header = [&](const std::string & name, const std::string & value)
             {
                 response->AddHeader(name, value);
-                /// HTTP/1.1 preserves the case a server sent, so match the prefix case-insensitively.
-                if (name.size() > gcs_meta_prefix.size()
-                    && equalsCaseInsensitive(std::string_view(name).substr(0, gcs_meta_prefix.size()), gcs_meta_prefix))
-                    response->AddHeader("x-amz" + name.substr(std::string_view("x-goog").size()), value);
+                if (auto amz_name = translateHeaderNameFromGCS(name))
+                    response->AddHeader(*amz_name, value);
             };
 
             if (enable_s3_requests_logging)

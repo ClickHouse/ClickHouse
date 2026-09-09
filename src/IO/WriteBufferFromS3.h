@@ -96,13 +96,11 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
-    /// Identifies this buffer among all writers to `key`. Sent as custom object metadata, so a
-    /// request this buffer has to send again can recognise the object its earlier attempt wrote and
-    /// tell it apart from one already there. Empty when nothing will read it back, which keeps the
-    /// id off the objects of ordinary single-part writes and keeps their error path free of a
-    /// HEAD. Minted for a create-if-absent write in the constructor, and for every multipart upload
-    /// in `createMultipartUpload`; both run on the thread that owns this buffer, before any part is
-    /// scheduled, and every reader runs on that thread too.
+    /// Identifies this buffer among all writers to `key`, see `isObjectWrittenWithIdempotencyId`.
+    /// Empty when nothing reads it back, which keeps it off ordinary single-part writes. Minted for
+    /// a create-if-absent write in the constructor and for every multipart upload in
+    /// `createMultipartUpload`, both on the owning thread before any part is scheduled; every reader
+    /// runs on that thread too.
     String idempotency_id;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);

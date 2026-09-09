@@ -113,9 +113,7 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        /// Identifies this upload among all writers to `dest_key`. Sent as custom object metadata, so
-        /// a completion this helper has to send again can recognise the object its earlier attempt
-        /// wrote and tell it apart from an object that was already there.
+        /// Identifies this upload among all writers to `dest_key`, see `isObjectWrittenWithIdempotencyId`.
         const String idempotency_id = getRandomASCIIString(IDEMPOTENCY_ID_LENGTH);
 
         /// Represents a task uploading a single part.

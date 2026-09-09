@@ -417,9 +417,9 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// A multipart completion can come back as NO_SUCH_UPLOAD after an earlier attempt of it had
-    /// succeeded, and only the id tells that apart from an upload that was really aborted over an
-    /// object somebody else wrote. So every multipart upload carries one, conditional or not.
+    /// A completion can come back as NO_SUCH_UPLOAD after an earlier attempt of it succeeded, and
+    /// only the id tells that from an upload really aborted over somebody else's object. So every
+    /// multipart upload carries one, conditional or not.
     if (idempotency_id.empty())
         idempotency_id = getRandomASCIIString(IDEMPOTENCY_ID_LENGTH);
 

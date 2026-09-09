@@ -29,6 +29,9 @@
 
 #include <base/defines.h>
 
+#include <optional>
+#include <string>
+
 namespace DB::S3
 {
 
@@ -61,11 +64,14 @@ inline void setChecksumAlgorithm(R & request)
 }
 };
 
-/// GCS accepts the same headers as S3 but under an `x-goog-` prefix, and a request may not mix the
-/// two. Rename what the SDK set before it goes on the wire. An `x-amz-` header left in place is not
-/// rejected but silently ignored, so a header that carries meaning has to be translated or its
-/// meaning is lost. `PocoHTTPClient` performs the mirror translation on the response.
+/// GCS spells these headers with an `x-goog-` prefix and silently ignores the `x-amz-` one, so a
+/// header left untranslated loses its meaning without any error. The list is closed: everything
+/// outside it has no GCS counterpart, or one of a different shape that a rename cannot produce.
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
+
+/// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
+/// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
+std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);
 
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
