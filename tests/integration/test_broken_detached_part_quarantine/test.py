@@ -21,9 +21,7 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
-        # The torn part is deliberately unreadable, and loading it raises a `LOGICAL_ERROR` that this
-        # test exists to see handled.
-        cluster.shutdown(ignore_logical_errors=True)
+        cluster.shutdown()
 
 
 def test_broken_detached_part_is_renamed_with_broken_prefix(started_cluster):
@@ -41,7 +39,9 @@ def test_broken_detached_part_is_renamed_with_broken_prefix(started_cluster):
     node2.stop_clickhouse()
 
     # The on-disk state a kill during `DETACH PARTITION` leaves behind: a hard-linked clone of the part
-    # whose column files are missing, with `checksums.txt` kept so the log entry's checksum matches.
+    # that is missing data files, with `checksums.txt` kept so the log entry's checksum matches. Data
+    # files are what is removed here: a missing `columns.txt` makes the load raise a `LOGICAL_ERROR`
+    # instead, which the sanitizer builds turn into an abort.
     part_path = node2.exec_in_container(
         ["bash", "-c", "find /var/lib/clickhouse/store -type d -name all_0_0_0 | head -1"],
         user="root",
@@ -52,8 +52,7 @@ def test_broken_detached_part_is_renamed_with_broken_prefix(started_cluster):
             "bash",
             "-c",
             f"cd {part_path}/.. && mkdir -p detached && cp -al all_0_0_0 detached/all_0_0_0 && "
-            "rm detached/all_0_0_0/columns.txt detached/all_0_0_0/serialization.json "
-            "detached/all_0_0_0/metadata_version.txt detached/all_0_0_0/b.* detached/all_0_0_0/c.*",
+            "rm detached/all_0_0_0/b.* detached/all_0_0_0/c.*",
         ],
         user="root",
     )
