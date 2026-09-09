@@ -5,8 +5,13 @@
 #if defined(__SSE4_1__)
 #    include <smmintrin.h>
 #    include <tmmintrin.h>
-#elif USE_SIMDUTF && defined(__aarch64__)
-#    include <simdutf.h>
+#elif defined(__aarch64__)
+#    if USE_SIMDUTF
+#        include <simdutf.h>
+#    endif
+#    if USE_UTF8_RANGE
+#        include <utf8_range.h>
+#    endif
 #endif
 
 /// inspired by https://github.com/cyb70289/utf8/
@@ -71,7 +76,9 @@ namespace UTF8
 namespace
 {
 
-UInt8 isValidUTF8Scalar(const UInt8 * data, UInt64 len)
+/// Every caller sits behind an `#if`, and on aarch64 the vectorised paths cover the whole length
+/// range, so in that configuration this function has no caller at all.
+[[maybe_unused]] UInt8 isValidUTF8Scalar(const UInt8 * data, UInt64 len)
 {
     while (len)
     {
@@ -323,13 +330,22 @@ UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
 {
 #if defined(__SSE4_1__)
     return isValidUTF8SSE(data, len);
-#elif USE_SIMDUTF && defined(__aarch64__)
-    /// simdutf reads its input in blocks of this size, so a shorter input costs a full block either way.
-    static constexpr UInt64 simdutf_block_size = 64;
-    if (len < simdutf_block_size)
-        return isValidUTF8Scalar(data, len);
-    /// The _with_errors variant tests for errors after every block, so malformed input stops the scan early.
-    return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
+#elif defined(__aarch64__)
+#    if USE_SIMDUTF
+    /// simdutf pads anything shorter than its 64-byte block into a full block, so below this length it
+    /// does the work of one full block whatever the input size. The _with_errors variant tests for
+    /// errors after every block, so malformed input stops the scan early.
+    static constexpr UInt64 simdutf_min_len = 64;
+    if (len >= simdutf_min_len)
+        return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
+#    endif
+#    if USE_UTF8_RANGE
+    /// utf8_range_IsValid accumulates its error vector across the whole buffer before testing it, while
+    /// ValidPrefix stops at the first malformed block; the position it returns is the only extra work.
+    return utf8_range_ValidPrefix(reinterpret_cast<const char *>(data), len) == len;
+#    else
+    return isValidUTF8Scalar(data, len);
+#    endif
 #else
     return isValidUTF8Scalar(data, len);
 #endif

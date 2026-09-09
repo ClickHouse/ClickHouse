@@ -47,6 +47,7 @@
 #cmakedefine01 USE_ORC
 #cmakedefine01 USE_ARROW
 #cmakedefine01 USE_PROTOBUF
+#cmakedefine01 USE_UTF8_RANGE
 #cmakedefine01 USE_MSGPACK
 #cmakedefine01 USE_ICU
 #cmakedefine01 USE_MYSQL

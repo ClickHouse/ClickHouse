@@ -171,6 +171,8 @@ if (TARGET ch_contrib::silk_fibers)
 endif ()
 if (TARGET ch_contrib::protobuf)
     set(USE_PROTOBUF 1)
+    # protobuf links the utf8_range validator and exports its header, so it needs no target of its own
+    set(USE_UTF8_RANGE 1)
 endif()
 if (TARGET ch_contrib::msgpack)
     set(USE_MSGPACK 1)
