@@ -8,7 +8,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -303,6 +303,7 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+            thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
             if (user_process_list.user_temp_data_on_disk)
             {
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings
@@ -814,30 +815,44 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 }
 
 
-CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current_query_id)
+void ProcessList::registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys[{connection_id, secret_key}] = query_id;
+}
+
+
+void ProcessList::unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys.erase({connection_id, secret_key});
+}
+
+
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key)
 {
     QueryStatusPtr elem;
 
     {
         LockAndBlocker lock(mutex);
+
+        /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
+        /// unknown connection.
+        auto cancellation_key = postgresql_cancellation_keys.find({process_id, secret_key});
+        if (cancellation_key == postgresql_cancellation_keys.end())
+            return CancellationCode::NotFound;
+
+        const String & current_query_id = cancellation_key->second;
         auto query_user = queries_to_user.find(current_query_id);
         if (query_user == queries_to_user.end())
             return CancellationCode::NotFound;
 
-        /// The caller identifies the target only by the `postgres:<connection id>:<secret key>` query id
-        /// that the server itself assigns to statements of a PostgreSQL connection. That string is not
-        /// reserved to the PostgreSQL interface, though: other interfaces let a client pick an arbitrary
-        /// query id (e.g. the HTTP `query_id` parameter), so a query of another user could impersonate the
-        /// shape. The secret key is only a credential for ids the server assigned, so a query that did not
-        /// arrive through the PostgreSQL interface is treated as not found rather than cancelled.
+        /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
         elem = tryGetProcessListElement(current_query_id, query_user->second);
         if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
             return CancellationCode::NotFound;
 
-        /// The verified entry is marked under the same lock and cancelled below by pointer. Re-resolving
-        /// the query id after releasing the lock would open a race: the PostgreSQL query could finish and
-        /// the freed id could be taken by a new query of the same user from another interface, and the
-        /// cancel would hit a query that never passed the interface check above.
+        /// Keep the verified entry by pointer to prevent query-id reuse races.
         elem->is_cancelling = true;
     }
 

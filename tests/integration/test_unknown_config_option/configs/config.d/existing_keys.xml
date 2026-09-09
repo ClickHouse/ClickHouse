@@ -54,6 +54,10 @@
     <azure>
         <use_native_copy>true</use_native_copy>
     </azure>
+    <!-- The CatBoost integration (and with it `catboostEvaluate` and the CatBoost part of the
+         library bridge) is removed, but a config carried over an upgrade may still contain the
+         `catboost_lib_path` stanza. It must stay accepted as a no-op instead of failing startup. -->
+    <catboost_lib_path>/var/lib/clickhouse/catboost_lib/</catboost_lib_path>
     <library_bridge>
         <host>localhost</host>
         <port>9012</port>

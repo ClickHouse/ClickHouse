@@ -1,7 +1,11 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string_view>
 #include <vector>
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
 #include <Server/PostgreSQLHandler.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
@@ -24,14 +28,14 @@
 #include <Server/TCPServer.h>
 #include <boost/algorithm/string/trim.hpp>
 #include <base/scope_guard.h>
-#include <pcg_random.hpp>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/SettingSource.h>
 #include <Common/SettingsChanges.h>
+#include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
 #include <Core/PostgreSQLProtocol.h>
@@ -56,11 +60,13 @@
 #include <Processors/Formats/PostgreSQLArrayText.h>
 
 #if USE_SSL
+#    include <Common/OpenSSLHelpers.h>
 #    include <Server/CertificateReloader.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
 #    include <Poco/Net/Utility.h>
 #    include <Poco/StringTokenizer.h>
+#    include <openssl/rand.h>
 #endif
 
 namespace DB
@@ -82,6 +88,8 @@ namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int OPENSSL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
@@ -272,6 +280,44 @@ private:
     bool protocol_error = false;
     String abort_reason;
 };
+
+UInt32 generateRandomUInt32()
+{
+    UInt32 secret_key = 0;
+
+#if USE_SSL
+    if (RAND_bytes(reinterpret_cast<unsigned char *>(&secret_key), sizeof(secret_key)) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
+#else
+    const int random_fd = ::open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (random_fd == -1)
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open /dev/urandom");
+
+    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(random_fd); });
+
+    auto * position = reinterpret_cast<char *>(&secret_key);
+    size_t bytes_remaining = sizeof(secret_key);
+    while (bytes_remaining > 0)
+    {
+        ssize_t bytes_read = ::read(random_fd, position, bytes_remaining);
+        if (bytes_read == -1)
+        {
+            if (errno == EINTR)
+                continue;
+
+            throw ErrnoException(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read from /dev/urandom");
+        }
+
+        if (bytes_read == 0)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of /dev/urandom");
+
+        position += bytes_read;
+        bytes_remaining -= bytes_read;
+    }
+#endif
+
+    return secret_key;
+}
 
 /// Some PostgreSQL drivers issue session-management commands during connection
 /// setup or teardown that have no ClickHouse equivalent, for example `RESET ALL`
@@ -669,13 +715,9 @@ PostgreSQLHandler::PostgreSQLHandler(
     , authentication_manager(auth_methods_)
     , prepared_statements_manager(std::nullopt)
 {
-    /// The secret key belongs to the connection, not to a single statement: it is handed to the client
-    /// once, in `BackendKeyData`, and the client presents it back on a separate connection to cancel
-    /// whatever this connection is running. Every statement of this connection therefore runs under the
-    /// query id `postgres:<connection id>:<secret key>`, which is both unguessable and the id a cancel
-    /// request resolves to. Statements of one connection run one after another, so reusing the id is safe.
-    pcg64_fast gen{randomSeed()};
-    secret_key = std::uniform_int_distribution<Int32>(0, INT32_MAX)(gen);
+    /// `BackendKeyData` identifies every statement on this connection for cancellation.
+    secret_key = generateRandomUInt32();
+    query_id_token = generateRandomUInt32();
 
     changeIO(socket());
 
@@ -762,15 +804,26 @@ void PostgreSQLHandler::run()
 
     session->setClientConnectionId(connection_id);
 
+    /// A `CancelRequest` for this connection arrives on a different connection, so the secret has
+    /// to be reachable from the whole server for as long as this one is open.
+    server.context()->getProcessList().registerPostgreSQLCancellationKey(connection_id, secret_key, currentQueryId());
+    SCOPE_EXIT({ server.context()->getProcessList().unregisterPostgreSQLCancellationKey(connection_id, secret_key); });
+
     try
     {
         if (!startup())
             return;
 
+        /// Emit `ReadyForQuery` only at explicit protocol boundaries.
+        need_ready_for_query = true;
+
         while (tcp_server.isOpen())
         {
-            if (!is_query_in_progress)
+            if (need_ready_for_query)
+            {
                 message_transport->send(PostgreSQLProtocol::Messaging::ReadyForQuery(), true);
+                need_ready_for_query = false;
+            }
 
             constexpr size_t connection_check_timeout = 1; // 1 second
             while (!in->poll(1000000 * connection_check_timeout))
@@ -780,10 +833,8 @@ void PostgreSQLHandler::run()
             if (!tcp_server.isOpen())
                 return;
 
-            /// PostgreSQL requires an extended-protocol error to discard all messages through the next
-            /// `Sync`. Keep the connection alive for that recovery point instead of treating an unsupported
-            /// `Bind` parameter as a fatal socket error.
-            if (ignore_extended_query_messages_until_sync
+            /// After an extended-query error, discard through `Sync` but honor `Terminate`.
+            if (ignore_until_sync
                 && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::SYNC
                 && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE)
             {
@@ -794,38 +845,46 @@ void PostgreSQLHandler::run()
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
+                    /// A simple query is a complete protocol cycle, and it also destroys the
+                    /// unnamed prepared statement and the unnamed portal.
+                    in_extended_query_cycle = false;
+                    prepared_statements_manager.dropUnnamedStatementAndPortal();
                     processQuery();
+                    need_ready_for_query = true;
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
                     LOG_DEBUG(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
-                    is_query_in_progress = true;
+                    /// An extended-query cycle ends at its `Sync` or at a simple query.
+                    in_extended_query_cycle = true;
                     processParseQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
-                    is_query_in_progress = true;
+                    in_extended_query_cycle = true;
                     processBindQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::EXECUTE:
-                    is_query_in_progress = true;
+                    in_extended_query_cycle = true;
                     processExecuteQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::SYNC:
-                    is_query_in_progress = false;
+                    /// `Sync` ends the cycle and produces one `ReadyForQuery`.
+                    in_extended_query_cycle = false;
                     processSyncQuery();
+                    need_ready_for_query = true;
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE:
-                    is_query_in_progress = true;
+                    in_extended_query_cycle = true;
                     processDescribeQuery();
+                    message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::FLUSH:
-                    is_query_in_progress = true;
                     message_transport->send(
                         PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR,
@@ -834,13 +893,10 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Client tried to access via extended query protocol");
                     message_transport->dropMessage();
-                    /// `Flush` is a complete extended-protocol message. Once it
-                    /// has produced an error, discard the remaining messages in
-                    /// the cycle through the matching `Sync`.
-                    ignore_extended_query_messages_until_sync = true;
+                    recoverFromRejectedMessage();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
-                    is_query_in_progress = true;
+                    in_extended_query_cycle = true;
                     processCloseQuery();
                     message_transport->flush();
                     break;
@@ -853,6 +909,7 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
+                    recoverFromRejectedMessage();
             }
         }
     }
@@ -861,6 +918,17 @@ void PostgreSQLHandler::run()
         log->log(exc);
     }
 
+}
+
+void PostgreSQLHandler::recoverFromRejectedMessage()
+{
+    /// A rejected message belonging to an extended-query cycle is recovered at that
+    /// cycle's `Sync`, which is where its `ReadyForQuery` comes from. Without an open
+    /// cycle there is no `Sync` to wait for, so the client is owed one right away.
+    if (in_extended_query_cycle)
+        ignore_until_sync = true;
+    else
+        need_ready_for_query = true;
 }
 
 bool PostgreSQLHandler::startup()
@@ -1029,14 +1097,30 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
     message_transport->flush();
 }
 
-String PostgreSQLHandler::queryIdFor(Int32 connection_id_, Int32 secret_key_)
+String PostgreSQLHandler::queryIdFor(Int32 connection_id_, UInt32 query_id_token_)
 {
-    return fmt::format("postgres:{:d}:{:d}", connection_id_, secret_key_);
+    /// The random component is a token of its own and never the secret from `BackendKeyData`:
+    /// `system.processes` and `system.query_log` expose query IDs verbatim, while the secret
+    /// authenticates `CancelRequest`. It still has to be here, because a query ID that another
+    /// interface can predict can be occupied to keep a PostgreSQL statement from starting.
+    return fmt::format("postgres:{:d}:{:d}", connection_id_, query_id_token_);
 }
 
 String PostgreSQLHandler::currentQueryId() const
 {
-    return queryIdFor(connection_id, secret_key);
+    return queryIdFor(connection_id, query_id_token);
+}
+
+void PostgreSQLHandler::assignStatementQueryId(ContextMutablePtr query_context)
+{
+    /// One statement, one query ID: a query ID may be held by only one query at a time across the
+    /// whole server, so an ID that outlived its statement would keep the next one from starting.
+    query_id_token = generateRandomUInt32();
+
+    const String query_id = currentQueryId();
+    query_context->setCurrentQueryId(query_id);
+    /// `CancelRequest` names the connection, so its entry has to follow the current statement.
+    server.context()->getProcessList().registerPostgreSQLCancellationKey(connection_id, secret_key, query_id);
 }
 
 void PostgreSQLHandler::cancelRequest()
@@ -1044,16 +1128,11 @@ void PostgreSQLHandler::cancelRequest()
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
-    /// A cancel request arrives on a connection of its own which, by the protocol, never authenticates:
-    /// the pair of numbers it carries is the credential, and the secret key half of it is what makes the
-    /// query id of the connection being cancelled unguessable. So there is no authenticated session here
-    /// to make a query context from - cancel the query through the process list directly.
-    ///
-    /// PostgreSQL answers a cancel request with nothing at all and closes the connection, whatever the
-    /// outcome, so that a caller cannot probe for live backends. Report the outcome to the log only.
-    String query_id = queryIdFor(msg->process_id, msg->secret_key);
-    CancellationCode code = server.context()->getProcessList().sendCancelToPostgreSQLQuery(query_id);
-    LOG_DEBUG(log, "Cancellation of query {}: {}", query_id, code == CancellationCode::CancelSent ? "sent" : "not sent");
+    /// The process ID and secret key authenticate this otherwise unauthenticated request.
+    /// PostgreSQL exposes no response, so report the outcome only to the log.
+    CancellationCode code = server.context()->getProcessList().sendCancelToPostgreSQLQuery(msg->process_id, msg->secret_key);
+    LOG_DEBUG(log, "Cancellation request for connection {}: {}", msg->process_id,
+        code == CancellationCode::CancelSent ? "sent" : "not sent");
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -1093,9 +1172,16 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 /// Removing the qualifier at the token level maps such queries onto them.
 /// String literals are left intact - only a `pg_catalog` identifier that is not
 /// itself qualified and is followed by a dot and another identifier is removed.
+/// PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG` names
+/// the same schema and is matched case-insensitively; a quoted identifier keeps its
+/// case in PostgreSQL, so only the exact `"pg_catalog"` spelling is matched there.
 static String removePgCatalogQualifier(const String & query)
 {
-    if (!query.contains("pg_catalog"))
+    static constexpr std::string_view pg_catalog = "pg_catalog";
+
+    /// A fast path for the common case of a query that does not mention the schema at all.
+    if (std::search(query.begin(), query.end(), pg_catalog.begin(), pg_catalog.end(),
+            [](char a, char b) { return equalsCaseInsensitive(a, b); }) == query.end())
         return query;
 
     std::vector<Token> tokens;
@@ -1106,7 +1192,7 @@ static String removePgCatalogQualifier(const String & query)
     auto is_pg_catalog = [](const Token & token)
     {
         std::string_view text(token.begin, token.size());
-        return (token.type == TokenType::BareWord && text == "pg_catalog")
+        return (token.type == TokenType::BareWord && equalsCaseInsensitive(text, pg_catalog))
             || (token.type == TokenType::QuotedIdentifier && text == "\"pg_catalog\"");
     };
 
@@ -1215,7 +1301,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(currentQueryId());
+        assignStatementQueryId(query_context);
 
         /// PostgreSQL's CSV convention is that an empty unquoted field means NULL (a quoted empty string
         /// stays an empty string), while ClickHouse's CSV default marker is `\N`. Apply the marker the
@@ -1557,7 +1643,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(currentQueryId());
+        assignStatementQueryId(query_context);
 
         /// PostgreSQL's CSV convention is that an empty unquoted field means NULL (a quoted empty string is
         /// written as `""`), while ClickHouse's CSV default marker is `\N`. Apply the marker the client
@@ -1894,7 +1980,7 @@ void PostgreSQLHandler::processQuery()
                 break;
 
             auto query_context = session->makeQueryContext();
-            query_context->setCurrentQueryId(currentQueryId());
+            assignStatementQueryId(query_context);
 
             if (processExecute(sql_query, query_context))
                 continue;
@@ -1912,7 +1998,7 @@ void PostgreSQLHandler::processQuery()
 
             UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
+            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
         }
 
     }
@@ -2036,7 +2122,7 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
 
     UInt64 affected_rows = executeQueryWithTracking(std::move(result_query), query_context, command);
 
-    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
+    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
 
     return true;
 }
@@ -2093,7 +2179,8 @@ void PostgreSQLHandler::processParseQuery()
         auto statement = make_intrusive<ASTPreparedStatement>();
         statement->function_name = query->function_name;
         statement->function_body = removePgCatalogQualifier(query->sql_query);
-        prepared_statements_manager.addStatement(statement.get(), query->parameter_types);
+        statement->parameter_types = query->parameter_types;
+        prepared_statements_manager.addStatement(statement.get());
         message_transport->send(PostgreSQLProtocol::Messaging::ParseQueryComplete(), true);
     }
     catch (const Exception & e)
@@ -2106,7 +2193,8 @@ void PostgreSQLHandler::processParseQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        ignore_extended_query_messages_until_sync = true;
+        /// Keep the connection alive and discard messages through `Sync`.
+        ignore_until_sync = true;
     }
 }
 
@@ -2130,7 +2218,8 @@ void PostgreSQLHandler::processBindQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        ignore_extended_query_messages_until_sync = true;
+        /// Keep the connection alive and discard messages through `Sync`.
+        ignore_until_sync = true;
     }
 }
 
@@ -2170,7 +2259,7 @@ void PostgreSQLHandler::processExecuteQuery()
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bounded Execute is not supported in the PostgreSQL wire protocol");
 
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(currentQueryId());
+        assignStatementQueryId(query_context);
 
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
         prepareSystemTables(query_context, sql_query);
@@ -2182,7 +2271,7 @@ void PostgreSQLHandler::processExecuteQuery()
 
         UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
-        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
     }
     catch (const Exception & e)
     {
@@ -2202,7 +2291,7 @@ void PostgreSQLHandler::processExecuteQuery()
         /// does for the simple-query protocol).
         if (nothing_sent_for_failed_statement)
         {
-            ignore_extended_query_messages_until_sync = true;
+            ignore_until_sync = true;
             return;
         }
         throw;
@@ -2267,7 +2356,8 @@ void PostgreSQLHandler::processCloseQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        ignore_extended_query_messages_until_sync = true;
+        /// Keep the connection alive and discard messages through `Sync`.
+        ignore_until_sync = true;
     }
 }
 
@@ -2284,7 +2374,7 @@ void PostgreSQLHandler::processSyncQuery()
     /// (see `attachBindQuery`), so resetting the single bind slot is
     /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
     prepared_statements_manager.resetBindQuery();
-    ignore_extended_query_messages_until_sync = false;
+    ignore_until_sync = false;
 }
 
 bool PostgreSQLHandler::isEmptyQuery(const String & query)

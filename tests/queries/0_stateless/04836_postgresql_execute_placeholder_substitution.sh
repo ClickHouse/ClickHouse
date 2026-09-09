@@ -51,12 +51,12 @@ SQL
 
 # An error terminates the connection on this protocol path, so each wrong-arity case runs in a psql
 # invocation of its own, and only the informative part of the error is pinned down.
-run_psql <<'SQL' | grep -oE "Wrong number of parameters for prepared statement '[a-z_]+': the statement [a-z]+ [^,]+, but [0-9]+ [a-z()]* ?were supplied"
+run_psql <<'SQL' | grep -oE "EXECUTE supplies [0-9]+ argument\(s\) but the prepared statement has [0-9]+ parameter\(s\)"
 PREPARE too_few AS SELECT $1 + $2;
 EXECUTE too_few(1);
 SQL
 
-run_psql <<'SQL' | grep -oE "Wrong number of parameters for prepared statement '[a-z_]+': the statement [a-z]+ [^,]+, but [0-9]+ [a-z()]* ?were supplied"
+run_psql <<'SQL' | grep -oE "EXECUTE supplies [0-9]+ argument\(s\) but the prepared statement has [0-9]+ parameter\(s\)"
 PREPARE too_many AS SELECT $1;
 EXECUTE too_many(1, 2);
 SQL

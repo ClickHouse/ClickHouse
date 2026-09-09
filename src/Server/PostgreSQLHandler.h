@@ -68,15 +68,23 @@ private:
     bool ssl_enabled = false;
     bool secure_required = false;
     Int32 connection_id = 0;
-    /// Unguessable, fixed for the lifetime of the connection, and sent to the client in `BackendKeyData`:
-    /// a cancel request presenting it is honoured without authentication. See the constructor.
-    Int32 secret_key = 0;
+    UInt32 secret_key = 0;
+    /// The public random component of the current statement's query ID.
+    UInt32 query_id_token = 0;
+
+    /// Emit one `ReadyForQuery` at the next protocol boundary.
+    bool need_ready_for_query = false;
 
     /// If set, overrides the `default_session_user` server setting for this listener.
     std::optional<String> default_session_user;
 
-    bool is_query_in_progress = false;
-    bool ignore_extended_query_messages_until_sync = false;
+    /// Discard extended-query messages through the next `Sync`.
+    bool ignore_until_sync = false;
+
+    /// True between the first Parse/Bind/Describe/Execute/Close of an extended-query
+    /// cycle and the `Sync`, or the simple `Query`, that ends it. Outside such a cycle
+    /// no `Sync` is coming.
+    bool in_extended_query_cycle = false;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
@@ -102,9 +110,12 @@ private:
 
     void cancelRequest();
 
-    /// The query id every statement of this connection runs under, which a cancel request resolves to.
+    /// The query id the current statement runs under, which a cancel request resolves to.
     String currentQueryId() const;
-    static String queryIdFor(Int32 connection_id_, Int32 secret_key_);
+    static String queryIdFor(Int32 connection_id_, UInt32 query_id_token_);
+
+    /// Give the statement that is about to run its own query id, and point cancellation at it.
+    void assignStatementQueryId(ContextMutablePtr query_context);
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 
@@ -135,6 +146,8 @@ private:
     void processExecuteQuery();
     void processCloseQuery();
     void processSyncQuery();
+
+    void recoverFromRejectedMessage();
 
     UInt64 executeQueryWithTracking(
         String && sql_query,

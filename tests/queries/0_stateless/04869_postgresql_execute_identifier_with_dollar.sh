@@ -42,7 +42,7 @@ SQL
 
 # An error terminates the connection on this protocol path, so the wrong-arity case runs in a psql
 # invocation of its own, and only the informative part of the error is pinned down.
-run_psql <<'SQL' | grep -oE "Wrong number of parameters for prepared statement '[a-z_]+': the statement [a-z]+ [^,]+, but [0-9]+ [a-z()]* ?were supplied"
+run_psql <<'SQL' | grep -oE "EXECUTE supplies [0-9]+ argument\(s\) but the prepared statement has [0-9]+ parameter\(s\)"
 PREPARE only_inside_identifier AS SELECT foo$1bar FROM (SELECT 5 AS foo$1bar);
 EXECUTE only_inside_identifier(42);
 SQL
