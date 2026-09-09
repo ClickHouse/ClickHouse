@@ -702,6 +702,35 @@ def test_url_archive_path_braces_are_expanded_without_index_listing():
         assert "first argument generates too many result addresses" in error
 
 
+def test_url_archive_combined_expansion_limit():
+    settings = {
+        "allow_experimental_url_wildcard_from_index_pages": 0,
+        "glob_expansion_max_elements": 2,
+    }
+    two_shards_one_path = (
+        "http://resolver:8087/data/archive_identity/archive.zip?shard={0,1} :: value.tsv"
+    )
+    table_functions = [
+        f"url('{two_shards_one_path}', 'TSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{two_shards_one_path}', 'TSV', 'x UInt64')",
+    ]
+    for table_function in table_functions:
+        assert node1.query(f"SELECT sum(x) FROM {table_function}", settings=settings).strip() == "303"
+
+    two_shards_two_paths = (
+        "http://resolver:8087/data/archive_identity/archive{0,1}.zip?shard={0,1} :: value.tsv"
+    )
+    queries = [
+        f"SELECT * FROM url('{two_shards_two_paths}', 'TSV', 'x UInt64')",
+        f"SELECT * FROM urlCluster('test_cluster_two_shards', '{two_shards_two_paths}', 'TSV', 'x UInt64')",
+    ]
+    for query in queries:
+        reset_index_page_server_stats()
+        error = node1.query_and_get_error(query, settings=settings)
+        assert "first argument generates too many result addresses" in error
+        assert get_index_page_server_stats() == {}
+
+
 def test_url_cluster_rejects_bucket_granularity_for_archives():
     error = node1.query_and_get_error(
         "SELECT sum(x) FROM urlCluster("

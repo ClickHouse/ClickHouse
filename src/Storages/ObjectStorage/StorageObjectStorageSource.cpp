@@ -480,9 +480,20 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 "url")
             : Strings{reading_path.path};
 
+        const auto & url_shards = web_object_storage.getURLShards();
+        const size_t max_expanded_elements = query_settings.list_object_keys_size;
+        /// Host/query shards and path selectors are expanded independently, but every indexed key
+        /// is their Cartesian product. Bound that final product before reserving or materializing it.
+        if (!expanded_paths.empty() && url_shards.size() > max_expanded_elements / expanded_paths.size())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table function 'url': first argument generates too many result addresses");
+        }
+
         RelativePathsWithMetadata indexed_paths;
-        indexed_paths.reserve(web_object_storage.getURLShards().size() * expanded_paths.size());
-        for (size_t source_index = 0; source_index < web_object_storage.getURLShards().size(); ++source_index)
+        indexed_paths.reserve(url_shards.size() * expanded_paths.size());
+        for (size_t source_index = 0; source_index < url_shards.size(); ++source_index)
         {
             for (const auto & expanded_path : expanded_paths)
                 indexed_paths.emplace_back(std::make_shared<RelativePathWithMetadata>(expanded_path, source_index));
