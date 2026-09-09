@@ -1042,19 +1042,6 @@ void WorkloadEntityStorageBase::backup(
         if (inserted)
         {
             it->second = local_entities;
-            /// Warn when a backed-up workload references an entity defined in the server configuration: such
-            /// config-defined entities are not part of the backup, so restoring it on a server that does not
-            /// already have that entity in its configuration will fail. `other_entities` holds the config-defined
-            /// entities; a reference target present there but absent from the SQL snapshot is such a case.
-            for (const auto & snapshot_entry : it->second)
-                forEachReference(snapshot_entry.second, [&](const String & target, const String & source, ReferenceType type)
-                {
-                    if (!it->second.contains(target) && other_entities.contains(target))
-                        LOG_WARNING(log, "Backed up workload entity '{}' references {} '{}' defined in the server "
-                            "configuration, which is not included in the backup; restoring it requires '{}' to "
-                            "already exist on the destination server.",
-                            source, type == ReferenceType::ForResource ? "resource" : "parent workload", target, target);
-                });
             /// Drop the snapshot when the backup operation ends, whether it succeeds or fails. The cleanup runs
             /// from the scope_guard's destructor, held alive by a post task, so it fires even if a later table's
             /// backupData() throws before post tasks run (post tasks run only after all backupData() calls
@@ -1072,6 +1059,19 @@ void WorkloadEntityStorageBase::backup(
         {
             if (getEntityType(ast) != entity_type)
                 continue;
+            /// Warn when an entity being backed up references one defined in the server configuration: such
+            /// config-defined entities are not part of the backup (they belong to the server config), so a
+            /// restore on a server that lacks them in its config will fail. Evaluated only over the entities
+            /// selected for this call (past the entity_type filter above), so a resources-only backup does not
+            /// warn about workloads and vice versa. `other_entities` holds the config-defined entities.
+            forEachReference(ast, [&](const String & target, const String & source, ReferenceType type)
+            {
+                if (!it->second.contains(target) && other_entities.contains(target))
+                    LOG_WARNING(log, "Backed up workload entity '{}' references {} '{}' defined in the server "
+                        "configuration, which is not included in the backup; restoring it requires '{}' to "
+                        "already exist on the destination server.",
+                        source, type == ReferenceType::ForResource ? "resource" : "parent workload", target, target);
+            });
             backup_entries.emplace_back(
                 escapeForFileName(entity_name) + ".sql",
                 std::make_shared<BackupEntryFromMemory>(ast->formatWithSecretsOneLine()));
