@@ -22,9 +22,7 @@ ClickHouse 处理的数据通常存储在运行 ClickHouse server 的机器的�
   3. 如需处理 Hadoop Distributed File System (不支持) 中的数据，请使用 [HDFS](/zh/reference/engines/table-engines/integrations/hdfs) 表引擎。
 </Note>
 
-<div id="configuring-external-storage">
-  ## 配置外部存储
-</div>
+## 配置外部存储 {#configuring-external-storage}
 
 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 和 [`Log`](/zh/reference/engines/table-engines/log-family/log)
 家族的表引擎可分别通过类型为 `s3`、`azure_blob_storage`、`hdfs` (不支持) 的磁盘，将数据存储到 `S3`、`AzureBlobStorage`、`HDFS` (不支持) 中。
@@ -175,9 +173,7 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-<div id="refresh-parts-interval-and-table-disk">
-  ## refresh_parts_interval 和 table_disk
-</div>
+## refresh_parts_interval 和 table_disk {#refresh-parts-interval-and-table-disk}
 
 此设置适用于非 Replicated 的 MergeTree 表。在这类表中，parts 可能由外部写入，因此需要从存储中刷新元数据以重新发现这些 parts。
 
@@ -197,9 +193,7 @@ MergeTree 设置 `refresh_parts_interval` 可定期从底层存储刷新数据�
   此设置仅适用于 parts 由外部写入且需要刷新元数据的非复制表 MergeTree 表。
 </Note>
 
-<div id="dynamic-configuration">
-  ## 动态配置
-</div>
+## 动态配置 {#dynamic-configuration}
 
 也可以在配置文件中不预先定义磁盘，直接指定存储配置，而是在 `CREATE`/`ATTACH` 查询设置中进行配置。
 
@@ -320,13 +314,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-<div id="s3-storage">
-  ### 使用 S3 存储
-</div>
+### 使用 S3 存储 {#s3-storage}
 
-<div id="required-parameters-s3">
-  #### 必需参数
-</div>
+#### 必需参数 {#required-parameters-s3}
 
 | 参数                  | 说明                                                                                                                                    |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -334,11 +324,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `access_key_id`     | 用于身份验证的 S3 访问密钥 ID。                                                                                                                   |
 | `secret_access_key` | 用于身份验证的 S3 私密访问密钥。                                                                                                                    |
 
-<div id="optional-parameters-s3">
-  #### 可选参数
-</div>
+#### 可选参数 {#optional-parameters-s3}
 
-| 参数                                       | 描述                                                                                                                                                                        | 默认值                            |
+| 参数                                              | 描述                                                                                                                                                                                 | 默认值                                      |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | `region`                                        | S3 区域名称。                                                                                                                                                                           | -                                        |
 | `support_batch_delete`                          | 控制是否检查对批量删除的支持。使用 Google Cloud Storage (GCS) 时，请将其设为 `false`，因为 GCS 不支持批量删除。                                                                                                       | `true`                                   |
@@ -348,8 +336,8 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `proxy`                                         | S3 端点的代理配置。`proxy` 块中的每个 `uri` 元素都应包含一个代理 URL。                                                                                                                                     | -                                        |
 | `connect_timeout_ms`                            | 套接字连接超时时间 (毫秒) 。                                                                                                                                                                   | `10000` (10 秒)                           |
 | `request_timeout_ms`                            | 请求超时时间 (毫秒) 。                                                                                                                                                                      | `5000` (5 秒)                             |
-| `retry_attempts`                                | 失败请求的重试次数。                                                                                                                                                                         | `10`                                     |
-| `single_read_retries`                           | 读取过程中连接中断时的重试次数。                                                                                                                                                                   | `4`                                      |
+| `s3_retry_attempts`                             | 失败请求的重试次数。                                                                                                                                                                         | `500`                                    |
+| `s3_max_single_read_retries`                    | 读取过程中连接中断时的重试次数。                                                                                                                                                                   | `4`                                      |
 | `min_bytes_for_seek`                            | 使用寻道操作而不是顺序读取时的最小字节数。                                                                                                                                                              | `1 MB`                                   |
 | `metadata_path`                                 | 用于存储 S3 元数据文件的本地文件系统路径。                                                                                                                                                            | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`                             | 如果为 `true`，则在启动期间跳过磁盘访问检查。                                                                                                                                                         | `false`                                  |
@@ -362,17 +350,15 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `s3_max_put_burst`                              | 达到 RPS 限制前允许的最大并发 PUT 请求数。                                                                                                                                                         | 与 `s3_max_put_rps` 相同                    |
 | `s3_max_get_rps`                                | 开始限流前每秒允许的最大 GET 请求数。                                                                                                                                                              | `0` (无限制)                                |
 | `s3_max_get_burst`                              | 达到 RPS 限制前允许的最大并发 GET 请求数。                                                                                                                                                         | 与 `s3_max_get_rps` 相同                    |
-| `key_template`                                  | 使用 [re2](https://github.com/google/re2/wiki/Syntax) 语法定义对象键的生成格式。要求启用 `storage_metadata_write_full_object_key` 标志。与 `endpoint` 中的 `root path` 不兼容。需要指定 `key_compatibility_prefix`。 | -                                        |
-| `key_compatibility_prefix`                      | 与 `key_template` 配合使用时必需。用于指定 `endpoint` 中先前的 `root path`，以便读取旧版本元数据。                                                                                                              | -                                        |
+| `key_template`                                  | 使用 [re2](https://github.com/google/re2/wiki/Syntax) 语法定义对象键的生成格式。要求启用 `storage_metadata_write_full_object_key` 标志。与 `endpoint` 中的 `根路径` 不兼容。需要指定 `key_compatibility_prefix`。 | -                                        |
+| `key_compatibility_prefix`                      | 与 `key_template` 配合使用时必需。用于指定 `endpoint` 中先前的 `根路径`，以便读取旧版本元数据。                                                                                                              | -                                        |
 | `read_only`                                     | 仅允许从该磁盘读取。                                                                                                                                                                         | -                                        |
 
 <Note>
   Google Cloud Storage (GCS) 也支持使用类型 `s3`。请参阅 [基于 GCS 的 MergeTree](/zh/integrations/connectors/data-sources/gcs)。
 </Note>
 
-<div id="plain-storage">
-  ### 使用 Plain Storage
-</div>
+### 使用 Plain Storage {#plain-storage}
 
 在 `22.10` 版本中，引入了一种新的磁盘类型 `s3_plain`，可提供一次写入型存储。
 它的配置参数与 `s3` 磁盘类型相同。
@@ -413,9 +399,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </s3_plain>
 ```
 
-<div id="s3-plain-rewritable-storage">
-  ### 使用 S3 Plain Rewritable 存储
-</div>
+### 使用 S3 Plain Rewritable 存储 {#s3-plain-rewritable-storage}
 
 `24.4` 中引入了一种新的磁盘类型 `s3_plain_rewritable`。
 与 `s3_plain` 磁盘类型类似，它不需要额外的存储空间来保存
@@ -455,9 +439,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 自 `24.5` 起，可以使用 `plain_rewritable` 元数据类型来配置任何对象存储磁盘
 (`s3`、`azure`、`local`) 。
 
-<div id="azure-blob-storage">
-  ### 使用 Azure Blob 存储
-</div>
+### 使用 Azure Blob 存储 {#azure-blob-storage}
 
 `MergeTree` 家族表引擎可使用类型为 `azure_blob_storage` 的磁盘将数据存储到 [Azure Blob 存储](https://azure.microsoft.com/en-us/services/storage/blobs/) 中。
 
@@ -482,9 +464,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-<div id="azure-blob-storage-connection-parameters">
-  #### 连接参数
-</div>
+#### 连接参数 {#azure-blob-storage-connection-parameters}
 
 | 参数                          | 描述                                                                                                        | 默认值                 |
 | --------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------- |
@@ -500,9 +480,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `account_name`      | 用于通过 Shared Key 进行身份验证 (与 `account_key` 配合使用) 。  |
 | `account_key`       | 用于通过 Shared Key 进行身份验证 (与 `account_name` 配合使用) 。 |
 
-<div id="azure-blob-storage-limit-parameters">
-  #### 限制参数
-</div>
+#### 限制参数 {#azure-blob-storage-limit-parameters}
 
 | 参数                                   | 描述                             |
 | ------------------------------------ | ------------------------------ |
@@ -513,9 +491,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `thread_pool_size`                   | 用于实例化 `IDiskRemote` 的最大线程数。    |
 | `s3_max_inflight_parts_for_one_file` | 单个对象的并发 PUT 请求最大数量。            |
 
-<div id="azure-blob-storage-other-parameters">
-  #### 其他参数
-</div>
+#### 其他参数 {#azure-blob-storage-other-parameters}
 
 | 参数                        | 描述                       | 默认值                            |
 | -------------------------------- | --------------------------------- | ---------------------------------------- |
@@ -531,9 +507,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   在 ClickHouse 22.8 及更高版本中，零拷贝复制默认处于禁用状态。不建议在生产环境中使用此功能。
 </Info>
 
-<div id="using-hdfs-storage-unsupported">
-  ## 使用 HDFS 存储 (不支持)
-</div>
+## 使用 HDFS 存储 (不支持) {#using-hdfs-storage-unsupported}
 
 在此示例配置中：
 
@@ -574,9 +548,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 请注意，HDFS 在某些特殊情况下可能无法正常工作。
 
-<div id="encrypted-virtual-file-system">
-  ### 使用数据加密
-</div>
+### 使用数据加密 {#encrypted-virtual-file-system}
 
 你可以对存储在 [S3](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)、[HDFS](#using-hdfs-storage-unsupported) (不受支持) 的外部磁盘或本地磁盘上的数据进行加密。要启用加密模式，必须在配置文件中定义一个类型为 `encrypted` 的磁盘，并选择一个用于保存数据的底层磁盘。`encrypted` 磁盘会在写入时即时加密所有文件，而从 `encrypted` 磁盘读取文件时则会自动解密。因此，你可以像使用普通磁盘一样使用 `encrypted` 磁盘。
 
@@ -601,9 +573,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 将同一文件写入 `disk2` 时，实际上它会以加密方式写入物理磁盘上的 `/path1/path2/store/all_1_1_0/data.bin` 路径。
 
-<div id="required-parameters-encrypted-disk">
-  ### 必需参数
-</div>
+### 必需参数 {#required-parameters-encrypted-disk}
 
 | Parameter | Type   | Description                                            |
 | --------- | ------ | ------------------------------------------------------ |
@@ -611,9 +581,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `disk`    | String | 用于底层存储的磁盘类型。                                           |
 | `key`     | Uint64 | 用于加密和解密的密钥。可通过 `key_hex` 以十六进制形式指定。也可使用 `id` 属性指定多个密钥。 |
 
-<div id="optional-parameters-encrypted-disk">
-  ### 可选参数
-</div>
+### 可选参数 {#optional-parameters-encrypted-disk}
 
 | 参数               | 类型     | 默认值           | 描述                                                                                                        |
 | ---------------- | ------ | ------------- | --------------------------------------------------------------------------------------------------------- |
@@ -644,9 +612,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-<div id="using-local-cache">
-  ### 使用本地缓存
-</div>
+### 使用本地缓存 {#using-local-cache}
 
 从 22.3 版本开始，可以在存储配置中为磁盘配置本地缓存。
 对于 22.3 - 22.7 版本，仅 `s3` 磁盘类型支持缓存。对于 &gt;= 22.8 版本，所有磁盘类型都支持缓存：S3、Azure、Local、Encrypted 等。
@@ -731,9 +697,7 @@ File Cache **磁盘配置设置**：
 
 > **注意**：Size 值支持 `ki`、`Mi`、`Gi` 等单位 (例如 `10Gi`) 。
 
-<div id="file-cache-query-profile-settings">
-  ## File Cache 查询/profile 设置
-</div>
+## File Cache 查询/profile 设置 {#file-cache-query-profile-settings}
 
 | Setting                                                                 | Type    | Default                 | Description                                                                            |
 | ----------------------------------------------------------------------- | ------- | ----------------------- | -------------------------------------------------------------------------------------- |
@@ -750,28 +714,20 @@ File Cache **磁盘配置设置**：
   较早版本可能不支持其中某些功能。
 </Warning>
 
-<div id="cache-system-tables-file-cache">
-  #### 缓存相关系统表
-</div>
+#### 缓存相关系统表 {#cache-system-tables-file-cache}
 
 | Table Name                    | Description        | Requirements                            |
 | ----------------------------- | ------------------ | --------------------------------------- |
 | `system.filesystem_cache`     | 显示文件系统缓存的当前状态。     | 无                                       |
 | `system.filesystem_cache_log` | 提供每个查询的详细缓存使用统计信息。 | 需要 `enable_filesystem_cache_log = true` |
 
-<div id="cache-commands-file-cache">
-  #### 缓存命令
-</div>
+#### 缓存命令 {#cache-commands-file-cache}
 
-<div id="system-clear-filesystem-cache-on-cluster">
-  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
-</div>
+##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
 
 仅当未提供 `<cache_name>` 时，才支持此命令
 
-<div id="show-filesystem-caches">
-  ##### `SHOW FILESYSTEM CACHES`
-</div>
+##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
 
 显示 server 上已配置的文件系统缓存列表。
 (对于小于或等于 `22.8` 的版本，该命令名为 `SHOW CACHES`)
@@ -786,9 +742,7 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-<div id="describe-filesystem-cache">
-  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
-</div>
+##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
 
 显示指定缓存的配置及一些常规统计信息。
 缓存名称可通过 `SHOW FILESYSTEM CACHES` 命令获取。 (在小于或等于 `22.8` 的版本中，
@@ -811,9 +765,7 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                           |                        | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                           |                        | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
-<div id="web-storage">
-  ### 使用静态 Web 存储 (只读)
-</div>
+### 使用静态 Web 存储 (只读) {#web-storage}
 
 这是一个只读磁盘。其数据只能读取，不能修改。新表
 通过 `ATTACH TABLE` 查询加载到该磁盘 (见下方示例) 。本地磁盘
@@ -1075,18 +1027,14 @@ SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy='web';
 ```
 
-<div id="required-parameters-s3">
-  #### 必需参数
-</div>
+#### 必需参数 {#static-web-storage-required-parameters}
 
 | 参数         | 描述                                                      |
 | ---------- | ------------------------------------------------------- |
 | `type`     | `web`。否则不会创建该磁盘。                                        |
 | `endpoint` | `path` 格式的端点 URL。端点 URL 必须包含一个用于存储数据的根路径，也就是数据上传后的存储位置。 |
 
-<div id="optional-parameters-s3">
-  #### 可选参数
-</div>
+#### 可选参数 {#optional-parameters-web}
 
 | 参数                                  | 描述                  | 默认值       |
 | ----------------------------------- | ------------------- | --------- |
@@ -1105,9 +1053,7 @@ SETTINGS storage_policy='web';
 
 使用 [http&#95;max&#95;single&#95;read&#95;retries](/zh/concepts/features/configuration/server-config/storing-data#web-storage) 设置来限制单次 HTTP 读取期间的最大重试次数。
 
-<div id="zero-copy">
-  ### 零拷贝复制 (尚不适用于生产环境)
-</div>
+### 零拷贝复制 (尚不适用于生产环境) {#zero-copy}
 
 可以在 `S3` 和 `HDFS` (不受支持) 磁盘上使用零拷贝复制，但不建议这样做。零拷贝复制是指：如果数据远程存储在多台机器上并且需要同步，则只复制元数据 (数据分区片段的路径) ，而不复制数据本身。
 

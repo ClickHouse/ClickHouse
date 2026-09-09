@@ -29,9 +29,7 @@ ClickHouse で処理されるデータは通常、ClickHouse server が稼働し
   3. Hadoop Distributed File System (非サポート) 内のデータを扱うには、[HDFS](/ja/reference/engines/table-engines/integrations/hdfs) テーブルエンジン を使用します。
 </Note>
 
-<div id="configuring-external-storage">
-  ## 外部ストレージを構成する
-</div>
+## 外部ストレージを構成する {#configuring-external-storage}
 
 [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) および [`Log`](/ja/reference/engines/table-engines/log-family/log)
 ファミリーのテーブルエンジンでは、型がそれぞれ `s3`、`azure_blob_storage`、`hdfs` (未サポート) のディスクを使用して、データを `S3`、`AzureBlobStorage`、`HDFS` (未サポート) に保存できます。
@@ -182,9 +180,7 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-<div id="refresh-parts-interval-and-table-disk">
-  ## refresh_parts_interval と table_disk
-</div>
+## refresh_parts_interval と table_disk {#refresh-parts-interval-and-table-disk}
 
 この設定は、パーツが外部から書き込まれる可能性があり、ストレージ上のメタデータを再検出する必要がある、非レプリケートの MergeTree テーブルを対象としています。
 
@@ -204,9 +200,7 @@ MergeTree 設定 `refresh_parts_interval` は、基盤ストレージからデ�
   この設定が適用されるのは、パーツが外部から書き込まれ、メタデータのリフレッシュが必要な非レプリケートの MergeTree テーブルだけです。
 </Note>
 
-<div id="dynamic-configuration">
-  ## 動的構成
-</div>
+## 動的構成 {#dynamic-configuration}
 
 構成ファイル内でディスクを事前定義しなくてもストレージ構成を指定できますが、その場合は
 `CREATE`/`ATTACH` クエリの設定で構成します。
@@ -330,13 +324,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-<div id="s3-storage">
-  ### S3ストレージの利用
-</div>
+### S3ストレージの利用 {#s3-storage}
 
-<div id="required-parameters-s3">
-  #### 必須パラメータ
-</div>
+#### 必須パラメータ {#required-parameters-s3}
 
 | パラメータ               | 説明                                                                                                                                                         |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -344,11 +334,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `access_key_id`     | 認証に使用する S3 のアクセスキー ID。                                                                                                                                     |
 | `secret_access_key` | 認証に使用する S3 のシークレットアクセスキー。                                                                                                                                  |
 
-<div id="optional-parameters-s3">
-  #### オプションパラメータ
-</div>
+#### オプションパラメータ {#optional-parameters-s3}
 
-| パラメータ                                       | Description                                                                                                                                                                                                            | デフォルト値                            |
+| パラメータ                                           | Description                                                                                                                                                                                                            | デフォルト値                                   |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | `region`                                        | S3 のリージョン名。                                                                                                                                                                                                            | -                                        |
 | `support_batch_delete`                          | バッチ削除のサポートを確認するかどうかを制御します。Google Cloud Storage (GCS) を使用する場合、GCS はバッチ削除をサポートしていないため、`false` に設定してください。                                                                                                                 | `true`                                   |
@@ -358,8 +346,8 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `proxy`                                         | S3 エンドポイントのプロキシ設定です。`proxy` ブロック内の各 `uri` 要素には、プロキシ URL を含める必要があります。                                                                                                                                                   | -                                        |
 | `connect_timeout_ms`                            | ソケット接続のタイムアウト (ミリ秒) 。                                                                                                                                                                                                  | `10000` (10 秒)                           |
 | `request_timeout_ms`                            | リクエストのタイムアウト (ミリ秒) 。                                                                                                                                                                                                   | `5000` (5 秒)                             |
-| `retry_attempts`                                | 失敗したリクエストの再試行回数。                                                                                                                                                                                                       | `10`                                     |
-| `single_read_retries`                           | 読み取り中に接続が切断された場合の再試行回数。                                                                                                                                                                                                | `4`                                      |
+| `s3_retry_attempts`                             | 失敗したリクエストの再試行回数。                                                                                                                                                                                                       | `500`                                    |
+| `s3_max_single_read_retries`                    | 読み取り中に接続が切断された場合の再試行回数。                                                                                                                                                                                                | `4`                                      |
 | `min_bytes_for_seek`                            | シーケンシャル読み取りの代わりに seek 操作を使用する最小バイト数。                                                                                                                                                                                   | `1 MB`                                   |
 | `metadata_path`                                 | S3 メタデータファイルを保存するローカルファイルシステム上のパス。                                                                                                                                                                                     | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`                             | `true` の場合、起動時のディスクアクセスチェックをスキップします。                                                                                                                                                                                   | `false`                                  |
@@ -380,9 +368,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   Google Cloud Storage (GCS) は、`s3` タイプを使用してもサポートされています。[GCS backed MergeTree](/ja/integrations/connectors/data-sources/gcs) を参照してください。
 </Note>
 
-<div id="plain-storage">
-  ### Plain Storage の使用
-</div>
+### Plain Storage の使用 {#plain-storage}
 
 `22.10` では、新しいディスクタイプ `s3_plain` が導入され、追記不可のストレージを提供します。
 この設定パラメータは、`s3` ディスクタイプと同じです。
@@ -422,9 +408,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </s3_plain>
 ```
 
-<div id="s3-plain-rewritable-storage">
-  ### S3 Plain Rewritable Storage の使用
-</div>
+### S3 Plain Rewritable Storage の使用 {#s3-plain-rewritable-storage}
 
 新しいディスクタイプ `s3_plain_rewritable` は `24.4` で導入されました。
 `s3_plain` ディスクタイプと同様に、メタデータファイル用の追加ストレージは必要ありません。代わりに、メタデータは S3 に保存されます。
@@ -458,9 +442,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 `24.5` 以降では、`plain_rewritable` メタデータタイプを使用して任意のオブジェクトストレージディスク
 (`s3`、`azure`、`local`) を設定できます。
 
-<div id="azure-blob-storage">
-  ### Azure Blob Storage の使用
-</div>
+### Azure Blob Storage の使用 {#azure-blob-storage}
 
 `MergeTree` ファミリーのテーブルエンジンでは、`azure_blob_storage` タイプのディスクを使用して
 データを [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) に保存できます。
@@ -486,9 +468,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-<div id="azure-blob-storage-connection-parameters">
-  #### 接続パラメーター
-</div>
+#### 接続パラメーター {#azure-blob-storage-connection-parameters}
 
 | パラメーター                     | 説明                                                                                                                          | デフォルト値              |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------- |
@@ -504,9 +484,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `account_name`      | Shared Key を使用する認証用 (`account_key` と併用) 。  |
 | `account_key`       | Shared Key を使用する認証用 (`account_name` と併用) 。 |
 
-<div id="azure-blob-storage-limit-parameters">
-  #### 制限パラメータ
-</div>
+#### 制限パラメータ {#azure-blob-storage-limit-parameters}
 
 | Parameter                            | Description                                       |
 | ------------------------------------ | ------------------------------------------------- |
@@ -517,9 +495,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `thread_pool_size`                   | `IDiskRemote` のインスタンス化に使用するスレッドの最大数。              |
 | `s3_max_inflight_parts_for_one_file` | 単一オブジェクトに対する put リクエストの最大同時実行数。                   |
 
-<div id="azure-blob-storage-other-parameters">
-  #### その他のパラメータ
-</div>
+#### その他のパラメータ {#azure-blob-storage-other-parameters}
 
 | パラメータ                            | 説明                                            | デフォルト値                                   |
 | -------------------------------- | --------------------------------------------- | ---------------------------------------- |
@@ -535,9 +511,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   ゼロコピーレプリケーションは、ClickHouse バージョン 22.8 以降ではデフォルトで無効化されています。この機能は本番環境での使用は推奨されません。
 </Info>
 
-<div id="using-hdfs-storage-unsupported">
-  ## HDFS ストレージの使用 (未サポート)
-</div>
+## HDFS ストレージの使用 (未サポート) {#using-hdfs-storage-unsupported}
 
 この構成例では、次のように設定されています。
 
@@ -578,9 +552,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 HDFS は一部の特殊なケースでは正常に動作しない可能性がある点に留意してください。
 
-<div id="encrypted-virtual-file-system">
-  ### データ暗号化を使用する
-</div>
+### データ暗号化を使用する {#encrypted-virtual-file-system}
 
 [S3](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) や [HDFS](#using-hdfs-storage-unsupported) (未サポート) の外部ディスク、またはローカルディスクに保存されるデータは暗号化できます。暗号化モードを有効にするには、設定ファイルで `encrypted` 型のディスクを定義し、データの保存先となるディスクを指定する必要があります。`encrypted` ディスクは、書き込まれるすべてのファイルをリアルタイムで暗号化し、`encrypted` ディスク上のファイルを読み取る際には自動的に復号します。そのため、`encrypted` ディスクは通常のディスクと同じように扱えます。
 
@@ -605,9 +577,7 @@ HDFS は一部の特殊なケースでは正常に動作しない可能性があ
 
 同じファイルを `disk2` に書き込む場合、実際には物理ディスク上の `/path1/path2/store/all_1_1_0/data.bin` というpathに暗号化された状態で書き込まれます。
 
-<div id="required-parameters-encrypted-disk">
-  ### 必須パラメータ
-</div>
+### 必須パラメータ {#required-parameters-encrypted-disk}
 
 | パラメータ  | 型      | 説明                                                                  |
 | ------ | ------ | ------------------------------------------------------------------- |
@@ -615,9 +585,7 @@ HDFS は一部の特殊なケースでは正常に動作しない可能性があ
 | `disk` | String | 下位ストレージに使用するディスクの種類。                                                |
 | `key`  | Uint64 | 暗号化と復号に使用するキーです。`key_hex` を使って16進数で指定できます。複数のキーは `id` 属性を使って指定できます。 |
 
-<div id="optional-parameters-encrypted-disk">
-  ### 任意のパラメータ
-</div>
+### 任意のパラメータ {#optional-parameters-encrypted-disk}
 
 | パラメータ            | 型      | デフォルト         | 説明                                                                                                                              |
 | ---------------- | ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -648,9 +616,7 @@ HDFS は一部の特殊なケースでは正常に動作しない可能性があ
 </clickhouse>
 ```
 
-<div id="using-local-cache">
-  ### ローカル cache の使用
-</div>
+### ローカル cache の使用 {#using-local-cache}
 
 バージョン 22.3 以降では、ストレージ構成内のディスクに対してローカル cache を設定できます。
 バージョン 22.3 ～ 22.7 では、cache は `s3` ディスク type でのみサポートされます。バージョン &gt;= 22.8 では、cache は S3、Azure、Local、Encrypted など、あらゆるディスク type でサポートされます。
@@ -735,9 +701,7 @@ File Cache **ディスク設定**:
 
 > **注**: サイズ値は `ki`、`Mi`、`Gi` などの単位をサポートします (例: `10Gi`) 。
 
-<div id="file-cache-query-profile-settings">
-  ## ファイルcacheのクエリ/プロファイル設定
-</div>
+## ファイルcacheのクエリ/プロファイル設定 {#file-cache-query-profile-settings}
 
 | 設定                                                                      | 型   | デフォルト                   | 説明                                                                                                                         |
 | ----------------------------------------------------------------------- | --- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -754,28 +718,20 @@ File Cache **ディスク設定**:
   それ以前のバージョンでは、一部サポートされていない場合があります。
 </Warning>
 
-<div id="cache-system-tables-file-cache">
-  #### cache関連のシステムテーブル
-</div>
+#### cache関連のシステムテーブル {#cache-system-tables-file-cache}
 
 | テーブル名                         | 説明                         | 要件                                         |
 | ----------------------------- | -------------------------- | ------------------------------------------ |
 | `system.filesystem_cache`     | ファイルシステムcacheの現在の状態を表示します。 | なし                                         |
 | `system.filesystem_cache_log` | クエリごとの詳細なcache使用統計を提供します。  | `enable_filesystem_cache_log = true` が必要です |
 
-<div id="cache-commands-file-cache">
-  #### cacheコマンド
-</div>
+#### cacheコマンド {#cache-commands-file-cache}
 
-<div id="system-clear-filesystem-cache-on-cluster">
-  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
-</div>
+##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
 
 このコマンドは、`<cache_name>` が指定されていない場合にのみ使用できます
 
-<div id="show-filesystem-caches">
-  ##### `SHOW FILESYSTEM CACHES`
-</div>
+##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
 
 server に設定されているファイルシステムcacheの一覧を表示します。
 (`22.8` 以下のバージョンでは、このコマンドは `SHOW CACHES` という名前です)
@@ -790,9 +746,7 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-<div id="describe-filesystem-cache">
-  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
-</div>
+##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
 
 特定の cache の設定と、いくつかの一般的な統計情報を表示します。
 cache 名は `SHOW FILESYSTEM CACHES` コマンドで確認できます。 (`22.8` 以下のバージョンでは、
@@ -815,9 +769,7 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                           |                        | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                           |                        | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
-<div id="web-storage">
-  ### 静的 Web ストレージ (読み取り専用) の使用
-</div>
+### 静的 Web ストレージ (読み取り専用) の使用 {#web-storage}
 
 これは読み取り専用ディスクです。そのデータは読み取られるだけで、変更されることはありません。新しいテーブル
 は `ATTACH TABLE` クエリによってこのディスクに読み込まれます (下の例を参照) 。ローカルディスク
@@ -1081,18 +1033,14 @@ SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy='web';
 ```
 
-<div id="static-web-storage-required-parameters">
-  #### パラメータ
-</div>
+#### パラメータ {#static-web-storage-required-parameters}
 
 | パラメーター     | 説明                                                                           |
 | ---------- | ---------------------------------------------------------------------------- |
 | `type`     | `web`。それ以外の場合、ディスクは作成されません。                                                  |
 | `endpoint` | `path` 形式のエンドポイント URL。エンドポイント URL には、アップロードされたデータの保存先となるルートパスが含まれている必要があります。 |
 
-<div id="static-web-storage-required-parameters">
-  #### パラメータ
-</div>
+#### パラメータ {#optional-parameters-web}
 
 | Parameter                           | Description                      | Default Value |
 | ----------------------------------- | -------------------------------- | ------------- |
@@ -1111,9 +1059,7 @@ SETTINGS storage_policy='web';
 
 単一の HTTP 読み取り中の最大再試行回数を制限するには、設定 [http&#95;max&#95;single&#95;read&#95;retries](/ja/concepts/features/configuration/server-config/storing-data#web-storage) を使用します。
 
-<div id="zero-copy">
-  ### ゼロコピーレプリケーション (本番環境での利用は非推奨)
-</div>
+### ゼロコピーレプリケーション (本番環境での利用は非推奨) {#zero-copy}
 
 `S3` および `HDFS` (未サポート) ディスクでは、ゼロコピーレプリケーションを使用できますが、推奨されません。ゼロコピーレプリケーションとは、データが複数のマシン上のリモートストレージに保存されており、それらを同期する必要がある場合に、データ本体ではなくメタデータ (データパーツへのパス) のみをレプリケーションする仕組みを指します。
 

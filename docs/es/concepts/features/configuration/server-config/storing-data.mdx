@@ -27,9 +27,7 @@ que pueden resultar costosos. Para evitar almacenar los datos localmente, se adm
   3. para trabajar con datos en Hadoop Distributed File System (no compatible), use el motor de tabla [HDFS](/es/reference/engines/table-engines/integrations/hdfs).
 </Note>
 
-<div id="configuring-external-storage">
-  ## Configurar almacenamiento externo
-</div>
+## Configurar almacenamiento externo {#configuring-external-storage}
 
 Los motores de tabla de la familia [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) y [`Log`](/es/reference/engines/table-engines/log-family/log)
 pueden almacenar datos en `S3`, `AzureBlobStorage` y `HDFS` (no compatible) usando un disco de tipo `s3`,
@@ -180,9 +178,7 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-<div id="refresh-parts-interval-and-table-disk">
-  ## refresh_parts_interval y table_disk
-</div>
+## refresh_parts_interval y table_disk {#refresh-parts-interval-and-table-disk}
 
 Esta configuración está pensada para tablas MergeTree no replicadas en las que las partes pueden escribirse externamente y la detección de metadatos debe actualizarse desde el almacenamiento.
 
@@ -202,9 +198,7 @@ Para la actualización automática de partes, asegúrese de que los metadatos se
   Esta configuración solo se aplica a tablas MergeTree no replicadas en las que las partes se escriben externamente y se requiere actualizar los metadatos.
 </Note>
 
-<div id="dynamic-configuration">
-  ## Configuración dinámica
-</div>
+## Configuración dinámica {#dynamic-configuration}
 
 También es posible especificar la configuración de almacenamiento sin definir previamente un
 disco en el archivo de configuración, ya que puede configurarse en los
@@ -329,13 +323,9 @@ donde `web` procede del archivo de configuración del servidor:
 </storage_configuration>
 ```
 
-<div id="s3-storage">
-  ### Uso del almacenamiento S3
-</div>
+### Uso del almacenamiento S3 {#s3-storage}
 
-<div id="required-parameters-s3">
-  #### Parámetros obligatorios
-</div>
+#### Parámetros obligatorios {#required-parameters-s3}
 
 | Parámetro           | Descripción                                                                                                                                                                                                |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -343,9 +333,7 @@ donde `web` procede del archivo de configuración del servidor:
 | `access_key_id`     | ID de la clave de acceso de S3 utilizada para la autenticación.                                                                                                                                            |
 | `secret_access_key` | Clave de acceso secreta de S3 utilizada para la autenticación.                                                                                                                                             |
 
-<div id="optional-parameters-s3">
-  #### Parámetros opcionales
-</div>
+#### Parámetros opcionales {#optional-parameters-s3}
 
 | Parámetro                                       | Descripción                                                                                                                                                                                                                                                                                                                                             | Valor predeterminado                     |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -357,8 +345,8 @@ donde `web` procede del archivo de configuración del servidor:
 | `proxy`                                         | Configuración del proxy para el endpoint de S3. Cada elemento `uri` dentro del bloque `proxy` debe contener una URL de proxy.                                                                                                                                                                                                                           | -                                        |
 | `connect_timeout_ms`                            | Tiempo de espera de conexión del socket, en milisegundos.                                                                                                                                                                                                                                                                                               | `10000` (10 segundos)                    |
 | `request_timeout_ms`                            | Tiempo de espera de la solicitud, en milisegundos.                                                                                                                                                                                                                                                                                                      | `5000` (5 segundos)                      |
-| `retry_attempts`                                | Número de reintentos para solicitudes fallidas.                                                                                                                                                                                                                                                                                                         | `10`                                     |
-| `single_read_retries`                           | Número de reintentos ante caídas de conexión durante la lectura.                                                                                                                                                                                                                                                                                        | `4`                                      |
+| `s3_retry_attempts`                             | Número de reintentos para solicitudes fallidas.                                                                                                                                                                                                                                                                                                         | `500`                                    |
+| `s3_max_single_read_retries`                    | Número de reintentos ante caídas de conexión durante la lectura.                                                                                                                                                                                                                                                                                        | `4`                                      |
 | `min_bytes_for_seek`                            | Número mínimo de bytes para usar la operación `seek` en lugar de la lectura secuencial.                                                                                                                                                                                                                                                                 | `1 MB`                                   |
 | `metadata_path`                                 | Ruta local del sistema de archivos donde se almacenan los archivos de metadatos de S3.                                                                                                                                                                                                                                                                  | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`                             | Si es `true`, omite las comprobaciones de acceso al disco durante el arranque.                                                                                                                                                                                                                                                                          | `false`                                  |
@@ -371,17 +359,15 @@ donde `web` procede del archivo de configuración del servidor:
 | `s3_max_put_burst`                              | Número máximo de solicitudes PUT simultáneas antes de alcanzar el límite de RPS.                                                                                                                                                                                                                                                                        | Igual que `s3_max_put_rps`               |
 | `s3_max_get_rps`                                | Número máximo de solicitudes GET por segundo antes de aplicar throttling.                                                                                                                                                                                                                                                                               | `0` (ilimitado)                          |
 | `s3_max_get_burst`                              | Número máximo de solicitudes GET simultáneas antes de alcanzar el límite de RPS.                                                                                                                                                                                                                                                                        | Igual que `s3_max_get_rps`               |
-| `key_template`                                  | Define el formato de generación de claves de objeto mediante la sintaxis de [re2](https://github.com/google/re2/wiki/Syntax). Requiere la marca `storage_metadata_write_full_object_key`. Es incompatible con `root path` en `endpoint`. Requiere `key_compatibility_prefix`.                                                                           | -                                        |
-| `key_compatibility_prefix`                      | Obligatorio con `key_template`. Especifica el `root path` anterior de `endpoint` para leer versiones antiguas de metadatos.                                                                                                                                                                                                                             | -                                        |
+| `key_template`                                  | Define el formato de generación de claves de objeto mediante la sintaxis de [re2](https://github.com/google/re2/wiki/Syntax). Requiere la marca `storage_metadata_write_full_object_key`. Es incompatible con `ruta raíz` en `endpoint`. Requiere `key_compatibility_prefix`.                                                                           | -                                        |
+| `key_compatibility_prefix`                      | Obligatorio con `key_template`. Especifica la `ruta raíz` anterior de `endpoint` para leer versiones antiguas de metadatos.                                                                                                                                                                                                                             | -                                        |
 | `read_only`                                     | Solo permite leer desde el disco.                                                                                                                                                                                                                                                                                                                       | -                                        |
 
 <Note>
   Google Cloud Storage (GCS) también es compatible mediante el tipo `s3`. Consulte [GCS backed MergeTree](/es/integrations/connectors/data-sources/gcs).
 </Note>
 
-<div id="plain-storage">
-  ### Uso de Plain Storage
-</div>
+### Uso de Plain Storage {#plain-storage}
 
 En `22.10` se introdujo un nuevo tipo de disco, `s3_plain`, que proporciona almacenamiento de escritura única.
 Sus parámetros de configuración son los mismos que los del tipo de disco `s3`.
@@ -422,9 +408,7 @@ Configuración:
 </s3_plain>
 ```
 
-<div id="s3-plain-rewritable-storage">
-  ### Uso de almacenamiento S3 simple reescribible
-</div>
+### Uso de almacenamiento S3 simple reescribible {#s3-plain-rewritable-storage}
 
 Se introdujo un nuevo tipo de disco `s3_plain_rewritable` en `24.4`.
 Al igual que el tipo de disco `s3_plain`, no requiere almacenamiento adicional para
@@ -464,9 +448,7 @@ es igual a
 A partir de la versión `24.5`, es posible configurar cualquier disco de almacenamiento de objetos
 (`s3`, `azure`, `local`) con el tipo de metadatos `plain_rewritable`.
 
-<div id="azure-blob-storage">
-  ### Uso de Azure Blob Storage
-</div>
+### Uso de Azure Blob Storage {#azure-blob-storage}
 
 Los motores de tabla de la familia `MergeTree` pueden almacenar datos en [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
 mediante un disco de tipo `azure_blob_storage`.
@@ -492,9 +474,7 @@ Configuración:
 </storage_configuration>
 ```
 
-<div id="azure-blob-storage-connection-parameters">
-  #### Parámetros de conexión
-</div>
+#### Parámetros de conexión {#azure-blob-storage-connection-parameters}
 
 | Parámetro                           | Descripción                                                                                                                                                                                                                                              | Valor predeterminado |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
@@ -510,9 +490,7 @@ Parámetros de autenticación (el disco intentará usar todos los métodos dispo
 | `account_name`      | Para la autenticación mediante Shared Key (se usa con `account_key`).  |
 | `account_key`       | Para la autenticación mediante Shared Key (se usa con `account_name`). |
 
-<div id="azure-blob-storage-limit-parameters">
-  #### Parámetros de límite
-</div>
+#### Parámetros de límite {#azure-blob-storage-limit-parameters}
 
 | Parámetro                            | Descripción                                                                    |
 | ------------------------------------ | ------------------------------------------------------------------------------ |
@@ -523,9 +501,7 @@ Parámetros de autenticación (el disco intentará usar todos los métodos dispo
 | `thread_pool_size`                   | Número máximo de hilos para la creación de instancias de `IDiskRemote`.        |
 | `s3_max_inflight_parts_for_one_file` | Número máximo de solicitudes PUT simultáneas para un solo objeto.              |
 
-<div id="azure-blob-storage-other-parameters">
-  #### Otros parámetros
-</div>
+#### Otros parámetros {#azure-blob-storage-other-parameters}
 
 | Parámetro                        | Descripción                                                                              | Valor predeterminado                     |
 | -------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -541,9 +517,7 @@ Pueden encontrarse ejemplos de configuraciones funcionales en el directorio de p
   La replicación zero-copy está deshabilitada de forma predeterminada en ClickHouse versión 22.8 y posteriores. Esta funcionalidad no se recomienda para uso en producción.
 </Info>
 
-<div id="using-hdfs-storage-unsupported">
-  ## Uso del almacenamiento HDFS (sin soporte)
-</div>
+## Uso del almacenamiento HDFS (sin soporte) {#using-hdfs-storage-unsupported}
 
 En esta configuración de ejemplo:
 
@@ -584,9 +558,7 @@ HDFS no tiene soporte y, por lo tanto, podrían surgir problemas al usarlo. No d
 
 Ten en cuenta que HDFS puede no funcionar en casos límite.
 
-<div id="encrypted-virtual-file-system">
-  ### Uso del cifrado de datos
-</div>
+### Uso del cifrado de datos {#encrypted-virtual-file-system}
 
 Puede cifrar los datos almacenados en discos externos [S3](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) o [HDFS](#using-hdfs-storage-unsupported) (no compatible), o en un disco local. Para activar el modo de cifrado, en el archivo de configuración debe definir un disco del tipo `encrypted` y elegir el disco en el que se guardarán los datos. Un disco `encrypted` cifra todos los archivos escritos en tiempo real y, al leer archivos desde un disco `encrypted`, los descifra automáticamente. Así, puede trabajar con un disco `encrypted` como si fuera uno normal.
 
@@ -611,9 +583,7 @@ Por ejemplo, cuando ClickHouse escribe datos de una tabla en un archivo `store/a
 
 Al escribir el mismo archivo en `disk2`, en realidad se escribirá en el disco físico en la ruta `/path1/path2/store/all_1_1_0/data.bin`, en modo cifrado.
 
-<div id="required-parameters-encrypted-disk">
-  ### Parámetros requeridos
-</div>
+### Parámetros requeridos {#required-parameters-encrypted-disk}
 
 | Parámetro | Tipo   | Descripción                                                                                                                                                     |
 | --------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -621,9 +591,7 @@ Al escribir el mismo archivo en `disk2`, en realidad se escribirá en el disco f
 | `disk`    | String | Tipo de disco que se utilizará para el almacenamiento subyacente.                                                                                               |
 | `key`     | Uint64 | Clave para el cifrado y descifrado. Puede especificarse en formato hexadecimal mediante `key_hex`. Se pueden especificar varias claves usando el atributo `id`. |
 
-<div id="optional-parameters-encrypted-disk">
-  ### Parámetros opcionales
-</div>
+### Parámetros opcionales {#optional-parameters-encrypted-disk}
 
 | Parámetro        | Tipo   | Predeterminado  | Descripción                                                                                                                                                   |
 | ---------------- | ------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -654,9 +622,7 @@ Ejemplo de configuración del disco:
 </clickhouse>
 ```
 
-<div id="using-local-cache">
-  ### Uso de la caché local
-</div>
+### Uso de la caché local {#using-local-cache}
 
 Es posible configurar una caché local sobre discos en la configuración de almacenamiento a partir de la versión 22.3.
 En las versiones 22.3 - 22.7, la caché solo es compatible con el tipo de disco `s3`. En las versiones &gt;= 22.8, la caché es compatible con cualquier tipo de disco: S3, Azure, Local, Encrypted, etc.
@@ -741,9 +707,7 @@ Estos ajustes deben definirse en la sección de configuración del disco.
 
 > **Nota**: Los valores de tamaño admiten unidades como `ki`, `Mi`, `Gi`, etc. (p. ej., `10Gi`).
 
-<div id="file-cache-query-profile-settings">
-  ## Configuración de consulta/perfil de la caché del sistema de archivos
-</div>
+## Configuración de consulta/perfil de la caché del sistema de archivos {#file-cache-query-profile-settings}
 
 | Configuración                                                           | Tipo     | Predeterminado          | Descripción                                                                                                                                                                                               |
 | ----------------------------------------------------------------------- | -------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -760,28 +724,20 @@ Estos ajustes deben definirse en la sección de configuración del disco.
   es posible que algunas opciones no estén disponibles en versiones anteriores.
 </Warning>
 
-<div id="cache-system-tables-file-cache">
-  #### Tablas del sistema de la caché del sistema de archivos
-</div>
+#### Tablas del sistema de la caché del sistema de archivos {#cache-system-tables-file-cache}
 
 | Nombre de la tabla            | Descripción                                                           | Requisitos                                    |
 | ----------------------------- | --------------------------------------------------------------------- | --------------------------------------------- |
 | `system.filesystem_cache`     | Muestra el estado actual de la caché del sistema de archivos.         | Ninguno                                       |
 | `system.filesystem_cache_log` | Proporciona estadísticas detalladas del uso de la caché por consulta. | Requiere `enable_filesystem_cache_log = true` |
 
-<div id="cache-commands-file-cache">
-  #### Comandos de la caché
-</div>
+#### Comandos de la caché {#cache-commands-file-cache}
 
-<div id="system-clear-filesystem-cache-on-cluster">
-  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
-</div>
+##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
 
 Este comando solo se admite cuando no se proporciona `<cache_name>`
 
-<div id="show-filesystem-caches">
-  ##### `SHOW FILESYSTEM CACHES`
-</div>
+##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
 
 Muestra una lista de las cachés del sistema de archivos configuradas en el servidor.
 (En las versiones anteriores o iguales a `22.8`, el comando se llama `SHOW CACHES`)
@@ -796,9 +752,7 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-<div id="describe-filesystem-cache">
-  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
-</div>
+##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
 
 Muestra la configuración de la caché y algunas estadísticas generales de una caché concreta.
 El nombre de la caché puede obtenerse con el comando `SHOW FILESYSTEM CACHES`. (En versiones anteriores
@@ -821,9 +775,7 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                               |                                 | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                               |                                 | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
-<div id="web-storage">
-  ### Uso de almacenamiento web estático (solo lectura)
-</div>
+### Uso de almacenamiento web estático (solo lectura) {#web-storage}
 
 Este es un disco de solo lectura. Sus datos solo se leen y nunca se modifican. Una tabla nueva
 se carga en este disco mediante la consulta `ATTACH TABLE` (consulte el ejemplo a continuación). En realidad, el disco local
@@ -1088,18 +1040,14 @@ SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy='web';
 ```
 
-<div id="required-parameters-s3">
-  #### Parámetros obligatorios
-</div>
+#### Parámetros obligatorios {#static-web-storage-required-parameters}
 
 | Parámetro  | Descripción                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `type`     | `web`. De lo contrario, el disco no se crea.                                                                                 |
 | `endpoint` | La URL del endpoint en formato `path`. La URL del endpoint debe incluir una ruta raíz donde se almacenan los datos cargados. |
 
-<div id="optional-parameters-s3">
-  #### Parámetros opcionales
-</div>
+#### Parámetros opcionales {#optional-parameters-web}
 
 | Parámetro                           | Descripción                                                                                 | Valor predeterminado |
 | ----------------------------------- | ------------------------------------------------------------------------------------------- | -------------------- |
@@ -1118,9 +1066,7 @@ Si la URL no es accesible al cargar el disco mientras el servidor inicia las tab
 
 Usa la configuración [http&#95;max&#95;single&#95;read&#95;retries](/es/concepts/features/configuration/server-config/storing-data#web-storage) para limitar el número máximo de reintentos durante una sola lectura HTTP.
 
-<div id="zero-copy">
-  ### Replicación zero-copy (no lista para producción)
-</div>
+### Replicación zero-copy (no lista para producción) {#zero-copy}
 
 La replicación zero-copy es posible, pero no se recomienda, con discos `S3` y `HDFS` (no compatibles). La replicación zero-copy significa que, si los datos se almacenan de forma remota en varias máquinas y es necesario sincronizarlos, solo se replican los metadatos (las rutas a las partes de datos), pero no los datos en sí.
 

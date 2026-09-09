@@ -27,9 +27,7 @@ que podem ser caros. Para evitar armazenar dados localmente, há suporte às seg
   3. para trabalhar com dados no Hadoop Distributed File System (sem suporte), use o motor de tabela [HDFS](/pt-BR/reference/engines/table-engines/integrations/hdfs).
 </Note>
 
-<div id="configuring-external-storage">
-  ## Configurar armazenamento externo
-</div>
+## Configurar armazenamento externo {#configuring-external-storage}
 
 Os motores de tabela das famílias [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) e [`Log`](/pt-BR/reference/engines/table-engines/log-family/log)
 podem armazenar dados em `S3`, `AzureBlobStorage` e `HDFS` (sem suporte) usando um disco dos tipos `s3`,
@@ -180,9 +178,7 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-<div id="refresh-parts-interval-and-table-disk">
-  ## refresh_parts_interval and table_disk
-</div>
+## refresh_parts_interval and table_disk {#refresh-parts-interval-and-table-disk}
 
 Esta configuração se destina a tabelas MergeTree não replicadas, nas quais as partes podem ser gravadas externamente e a descoberta de metadados precisa ser atualizada a partir do armazenamento.
 
@@ -202,9 +198,7 @@ Para a atualização automática de partes, garanta que os metadados sejam compa
   Esta configuração se aplica apenas a tabelas MergeTree não replicadas nas quais as partes são gravadas externamente e a atualização de metadados é necessária.
 </Note>
 
-<div id="dynamic-configuration">
-  ## Configuração dinâmica
-</div>
+## Configuração dinâmica {#dynamic-configuration}
 
 Também é possível especificar a configuração de armazenamento sem um disco
 predefinido no arquivo de configuração; em vez disso, ela pode ser definida nas
@@ -329,13 +323,9 @@ em que `web` vem do arquivo de configuração do servidor:
 </storage_configuration>
 ```
 
-<div id="s3-storage">
-  ### Usando o armazenamento S3
-</div>
+### Usando o armazenamento S3 {#s3-storage}
 
-<div id="required-parameters-s3">
-  #### Parâmetros obrigatórios
-</div>
+#### Parâmetros obrigatórios {#required-parameters-s3}
 
 | Parâmetro           | Descrição                                                                                                                                                                                                          |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -343,9 +333,7 @@ em que `web` vem do arquivo de configuração do servidor:
 | `access_key_id`     | ID da chave de acesso do S3 usada para autenticação.                                                                                                                                                               |
 | `secret_access_key` | Chave de acesso secreta do S3 usada para autenticação.                                                                                                                                                             |
 
-<div id="optional-parameters-s3">
-  #### Parâmetros opcionais
-</div>
+#### Parâmetros opcionais {#optional-parameters-s3}
 
 | Parâmetro                                       | Descrição                                                                                                                                                                                                                                                                                                                                                              | Valor padrão                                  |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
@@ -357,8 +345,8 @@ em que `web` vem do arquivo de configuração do servidor:
 | `proxy`                                         | Configuração de proxy para o endpoint do S3. Cada elemento `uri` dentro do bloco `proxy` deve conter uma URL de proxy.                                                                                                                                                                                                                                                 | -                                             |
 | `connect_timeout_ms`                            | Timeout de conexão do socket em milissegundos.                                                                                                                                                                                                                                                                                                                         | `10000` (10 segundos)                         |
 | `request_timeout_ms`                            | Timeout da requisição em milissegundos.                                                                                                                                                                                                                                                                                                                                | `5000` (5 segundos)                           |
-| `retry_attempts`                                | Número de tentativas para refazer requisições com falha.                                                                                                                                                                                                                                                                                                               | `10`                                          |
-| `single_read_retries`                           | Número de tentativas para refazer leituras quando houver queda de conexão.                                                                                                                                                                                                                                                                                             | `4`                                           |
+| `s3_retry_attempts`                             | Número de tentativas para refazer requisições com falha.                                                                                                                                                                                                                                                                                                               | `500`                                         |
+| `s3_max_single_read_retries`                    | Número de tentativas para refazer leituras quando houver queda de conexão.                                                                                                                                                                                                                                                                                             | `4`                                           |
 | `min_bytes_for_seek`                            | Número mínimo de bytes para usar a operação de seek em vez de leitura sequencial.                                                                                                                                                                                                                                                                                      | `1 MB`                                        |
 | `metadata_path`                                 | Caminho no sistema de arquivos local para armazenar arquivos de metadados do S3.                                                                                                                                                                                                                                                                                       | `/var/lib/clickhouse/disks/<disk_name>/`      |
 | `skip_access_check`                             | Se `true`, ignora as verificações de acesso ao disco durante a inicialização.                                                                                                                                                                                                                                                                                          | `false`                                       |
@@ -379,9 +367,7 @@ em que `web` vem do arquivo de configuração do servidor:
   O Google Cloud Storage (GCS) também é compatível usando o tipo `s3`. Consulte [GCS backed MergeTree](/pt-BR/integrations/connectors/data-sources/gcs).
 </Note>
 
-<div id="plain-storage">
-  ### Usando Plain Storage
-</div>
+### Usando Plain Storage {#plain-storage}
 
 Na versão `22.10`, foi introduzido um novo tipo de disco, `s3_plain`, que oferece armazenamento de gravação única.
 Os parâmetros de configuração dele são os mesmos do tipo de disco `s3`.
@@ -422,9 +408,7 @@ Configuração:
 </s3_plain>
 ```
 
-<div id="s3-plain-rewritable-storage">
-  ### Usando o armazenamento S3 Plain Rewritable
-</div>
+### Usando o armazenamento S3 Plain Rewritable {#s3-plain-rewritable-storage}
 
 Um novo tipo de disco `s3_plain_rewritable` foi introduzido na versão `24.4`.
 Assim como o tipo de disco `s3_plain`, ele não requer armazenamento adicional para
@@ -464,9 +448,7 @@ Configuração:
 A partir da versão `24.5`, é possível configurar qualquer disco de armazenamento de objetos
 (`s3`, `azure`, `local`) com o tipo de metadados `plain_rewritable`.
 
-<div id="azure-blob-storage">
-  ### Usando o Azure Blob Storage
-</div>
+### Usando o Azure Blob Storage {#azure-blob-storage}
 
 Os motores de tabela da família `MergeTree` podem armazenar dados no [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
 usando um disco do tipo `azure_blob_storage`.
@@ -492,9 +474,7 @@ Trecho de configuração:
 </storage_configuration>
 ```
 
-<div id="azure-blob-storage-connection-parameters">
-  #### Parâmetros de conexão
-</div>
+#### Parâmetros de conexão {#azure-blob-storage-connection-parameters}
 
 | Parâmetro                           | Descrição                                                                                                                                                                                                                            | Valor padrão        |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
@@ -510,9 +490,7 @@ Parâmetros de autenticação (o disco tentará todos os métodos disponíveis *
 | `account_name`      | Para autenticação usando Shared Key (usado com `account_key`).  |
 | `account_key`       | Para autenticação usando Shared Key (usado com `account_name`). |
 
-<div id="azure-blob-storage-limit-parameters">
-  #### Parâmetros de limite
-</div>
+#### Parâmetros de limite {#azure-blob-storage-limit-parameters}
 
 | Parâmetro                            | Descrição                                                                         |
 | ------------------------------------ | --------------------------------------------------------------------------------- |
@@ -523,9 +501,7 @@ Parâmetros de autenticação (o disco tentará todos os métodos disponíveis *
 | `thread_pool_size`                   | Número máximo de threads para a instanciação de `IDiskRemote`.                    |
 | `s3_max_inflight_parts_for_one_file` | Número máximo de requisições PUT simultâneas para um único objeto.                |
 
-<div id="azure-blob-storage-other-parameters">
-  #### Outros parâmetros
-</div>
+#### Outros parâmetros {#azure-blob-storage-other-parameters}
 
 | Parâmetro                        | Descrição                                                                            | Valor padrão                             |
 | -------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------- |
@@ -541,9 +517,7 @@ Exemplos de configurações funcionais podem ser encontrados no diretório de te
   A replicação zero-copy é desabilitada por padrão no ClickHouse versão 22.8 e posteriores. Este recurso não é recomendado para uso em produção.
 </Info>
 
-<div id="using-hdfs-storage-unsupported">
-  ## Usando armazenamento HDFS (sem suporte)
-</div>
+## Usando armazenamento HDFS (sem suporte) {#using-hdfs-storage-unsupported}
 
 Nesta configuração de exemplo:
 
@@ -584,9 +558,7 @@ Vale lembrar que o HDFS não tem suporte e, portanto, podem ocorrer problemas ao
 
 Tenha em mente que o HDFS pode não funcionar em casos de borda.
 
-<div id="encrypted-virtual-file-system">
-  ### Usando criptografia de dados
-</div>
+### Usando criptografia de dados {#encrypted-virtual-file-system}
 
 Você pode criptografar os dados armazenados em discos externos [S3](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) ou [HDFS](#using-hdfs-storage-unsupported) (sem suporte), ou em um disco local. Para ativar o modo de criptografia, no arquivo de configuração, você deve definir um disco do tipo `encrypted` e escolher o disco em que os dados serão salvos. Um disco `encrypted` criptografa todos os arquivos gravados em tempo real e, quando você lê arquivos de um disco `encrypted`, ele os descriptografa automaticamente. Assim, você pode trabalhar com um disco `encrypted` como se fosse um disco normal.
 
@@ -611,9 +583,7 @@ Por exemplo, quando o ClickHouse grava dados de uma tabela no arquivo `store/all
 
 Ao gravar o mesmo arquivo em `disk2`, ele será, na prática, gravado no disco físico no caminho `/path1/path2/store/all_1_1_0/data.bin`, em modo criptografado.
 
-<div id="required-parameters-encrypted-disk">
-  ### Parâmetros obrigatórios
-</div>
+### Parâmetros obrigatórios {#required-parameters-encrypted-disk}
 
 | Parâmetro | Tipo   | Descrição                                                                                                                                                   |
 | --------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -621,9 +591,7 @@ Ao gravar o mesmo arquivo em `disk2`, ele será, na prática, gravado no disco f
 | `disk`    | String | Tipo de disco usado no armazenamento subjacente.                                                                                                            |
 | `key`     | Uint64 | Chave para criptografar e descriptografar. Pode ser especificada em hexadecimal com `key_hex`. É possível especificar várias chaves usando o atributo `id`. |
 
-<div id="optional-parameters-encrypted-disk">
-  ### Parâmetros opcionais
-</div>
+### Parâmetros opcionais {#optional-parameters-encrypted-disk}
 
 | Parâmetro        | Tipo   | Padrão         | Descrição                                                                                                                                                        |
 | ---------------- | ------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -654,9 +622,7 @@ Exemplo de configuração de disco:
 </clickhouse>
 ```
 
-<div id="using-local-cache">
-  ### Usando cache local
-</div>
+### Usando cache local {#using-local-cache}
 
 É possível configurar cache local em discos na configuração de armazenamento a partir da versão 22.3.
 Nas versões 22.3 - 22.7, o cache é suportado apenas para o tipo de disco `s3`. Nas versões &gt;= 22.8, o cache é suportado para qualquer tipo de disco: S3, Azure, Local, Encrypted etc.
@@ -741,9 +707,7 @@ Essas configurações devem ser definidas na seção de configuração de disco.
 
 > **Observação**: Valores de tamanho aceitam unidades como `ki`, `Mi`, `Gi` etc. (por exemplo, `10Gi`).
 
-<div id="file-cache-query-profile-settings">
-  ## Configurações de consulta/perfil do cache do sistema de arquivos
-</div>
+## Configurações de consulta/perfil do cache do sistema de arquivos {#file-cache-query-profile-settings}
 
 | Configuração                                                            | Tipo     | Padrão                  | Descrição                                                                                                                                                                                        |
 | ----------------------------------------------------------------------- | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -760,28 +724,20 @@ Essas configurações devem ser definidas na seção de configuração de disco.
   em versões anteriores, alguns recursos podem não ter suporte.
 </Warning>
 
-<div id="cache-system-tables-file-cache">
-  #### Tabelas de sistema do cache
-</div>
+#### Tabelas de sistema do cache {#cache-system-tables-file-cache}
 
 | Nome da tabela                | Descrição                                                     | Requisitos                                  |
 | ----------------------------- | ------------------------------------------------------------- | ------------------------------------------- |
 | `system.filesystem_cache`     | Exibe o estado atual do cache do sistema de arquivos.                     | Nenhum                                      |
 | `system.filesystem_cache_log` | Fornece estatísticas detalhadas de uso do cache por consulta. | Requer `enable_filesystem_cache_log = true` |
 
-<div id="cache-commands-file-cache">
-  #### Comandos do cache
-</div>
+#### Comandos do cache {#cache-commands-file-cache}
 
-<div id="system-clear-filesystem-cache-on-cluster">
-  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
-</div>
+##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
 
 Este comando só é compatível quando nenhum `<cache_name>` é fornecido
 
-<div id="show-filesystem-caches">
-  ##### `SHOW FILESYSTEM CACHES`
-</div>
+##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
 
 Exibe uma lista dos caches do sistema de arquivos configurados no servidor.
 (Em versões menores ou iguais à `22.8`, o comando se chama `SHOW CACHES`)
@@ -796,9 +752,7 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-<div id="describe-filesystem-cache">
-  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
-</div>
+##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
 
 Mostra a configuração do cache e algumas estatísticas gerais de um cache específico.
 O nome do cache pode ser obtido com o comando `SHOW FILESYSTEM CACHES`. (Para versões anteriores
@@ -821,9 +775,7 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                           |                               | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                           |                               | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
-<div id="web-storage">
-  ### Usando armazenamento web estático (somente leitura)
-</div>
+### Usando armazenamento web estático (somente leitura) {#web-storage}
 
 Este é um disco somente leitura. Seus dados apenas são lidos e nunca modificados. Uma nova tabela
 é carregada nesse disco com a consulta `ATTACH TABLE` (veja o exemplo abaixo). O disco local
@@ -1088,18 +1040,14 @@ SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy='web';
 ```
 
-<div id="required-parameters-s3">
-  #### Parâmetros obrigatórios
-</div>
+#### Parâmetros obrigatórios {#static-web-storage-required-parameters}
 
 | Parâmetro  | Descrição                                                                                                            |
 | ---------- | -------------------------------------------------------------------------------------------------------------------- |
 | `type`     | `web`. Caso contrário, o disco não é criado.                                                                         |
 | `endpoint` | A URL do endpoint no formato `path`. A URL do endpoint deve conter um caminho raiz para armazenar os dados enviados. |
 
-<div id="optional-parameters-s3">
-  #### Parâmetros opcionais
-</div>
+#### Parâmetros opcionais {#optional-parameters-web}
 
 | Parâmetro                           | Descrição                                                                          | Valor padrão     |
 | ----------------------------------- | ---------------------------------------------------------------------------------- | ---------------- |
@@ -1118,9 +1066,7 @@ Se a URL não estiver acessível durante o carregamento do disco, quando o servi
 
 Use a configuração [http&#95;max&#95;single&#95;read&#95;retries](/pt-BR/concepts/features/configuration/server-config/storing-data#web-storage) para limitar o número máximo de tentativas durante uma única leitura HTTP.
 
-<div id="zero-copy">
-  ### Replicação zero-copy (não pronta para produção)
-</div>
+### Replicação zero-copy (não pronta para produção) {#zero-copy}
 
 A replicação zero-copy é possível, mas não é recomendada, com discos `S3` e `HDFS` (não compatível). Replicação zero-copy significa que, se os dados estiverem armazenados remotamente em várias máquinas e precisarem ser sincronizados, apenas os metadados serão replicados (caminhos para as partes de dados), e não os dados em si.
 
