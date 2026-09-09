@@ -2,7 +2,6 @@
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} FORMAT Null;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/clickhouse/05137_text_index_replicated_database_alter/{database}', 'shard1', 'replica1') FORMAT Null;
-SET database_replicated_allow_explicit_uuid = 1;
 
 -- The initiating replica validates a new definition as `CREATE`; a follower only replays a
 -- definition after it has been committed by the initiator.
@@ -23,7 +22,7 @@ ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tab ADD INDEX idx t TYPE text(tokenizer = 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
 
 -- A full-definition `ATTACH` is fresh DDL on the initiating replica, even in a `Replicated` database.
-ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached UUID 'f1b33c88-07ad-4eea-b293-4c6e1fd367b2'
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.attached
 (
     t Array(Array(String)),
     INDEX idx t TYPE text(tokenizer = 'splitByNonAlpha')
