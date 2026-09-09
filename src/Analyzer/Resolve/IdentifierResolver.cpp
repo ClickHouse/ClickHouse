@@ -1147,6 +1147,39 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
     return JoinTableSide::Left;
 }
 
+/** A qualifier that is the alias of one table expression and merely the table name of another refers to
+  * the alias: an alias replaces the table name of the table expression it is given to, which is how the
+  * old analyzer and other SQL implementations read it. Returns the side the qualifier is an alias of, or
+  * nothing when it is an alias of both sides or of neither.
+  *
+  * Example: `SELECT t1.rev FROM t0 AS t1 INNER JOIN t2 ON ... INNER JOIN t1 AS right_1 ON ...`, where
+  * `t1` is at once the alias of `t0` and the name of the third table of the query. Without the
+  * precedence the two readings are equally good and the identifier is reported as ambiguous.
+  */
+static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
+    const QueryTreeNodePtr & left_resolved_identifier,
+    const QueryTreeNodePtr & right_resolved_identifier,
+    const std::string & qualifier)
+{
+    auto resolved_by_alias = [&](const QueryTreeNodePtr & resolved_identifier)
+    {
+        const auto * column = resolved_identifier->as<ColumnNode>();
+        if (!column)
+            return false;
+
+        const auto & source = column->getColumnSource();
+        return source && source->hasAlias() && source->getAlias() == qualifier;
+    };
+
+    const bool left_by_alias = resolved_by_alias(left_resolved_identifier);
+    const bool right_by_alias = resolved_by_alias(right_resolved_identifier);
+
+    if (left_by_alias == right_by_alias)
+        return {};
+
+    return left_by_alias ? JoinTableSide::Left : JoinTableSide::Right;
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
     const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -1193,6 +1226,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
                 if (resolved_side == JoinTableSide::Right)
                     resolve_result = identifier;
             }
+        }
+        else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
+                     ? std::optional<JoinTableSide>{}
+                     : choseSideByQualifierAliasFromJoin(
+                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup.identifier.front()))
+        {
+            if (*qualifier_alias_side == JoinTableSide::Right)
+                resolve_result = identifier;
         }
         else if (!prefer_left_table)
         {
@@ -1676,6 +1717,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 resolved_side = JoinTableSide::Left;
                 resolved_identifier = left_resolved_identifier;
             }
+        }
+        else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
+                     ? std::optional<JoinTableSide>{}
+                     : choseSideByQualifierAliasFromJoin(
+                         left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier.front()))
+        {
+            resolved_side = *qualifier_alias_side;
+            resolved_identifier = (resolved_side == JoinTableSide::Left) ? left_resolved_identifier : right_resolved_identifier;
         }
         else if (identifier_lookup.identifier.isShort()
             && innerJoinKeyColumnsAreEquated(from_join_node, left_resolved_identifier, right_resolved_identifier))
