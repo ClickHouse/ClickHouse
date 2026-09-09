@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsNonAllocatingEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -87,7 +88,8 @@ public:
     ~PendingWaitTime()
     {
         if (elapsed_microseconds)
-            counters->increment(ProfileEvents::ConcurrencyControlWaitMicroseconds, *elapsed_microseconds);
+            counters->incrementNonAllocating(
+                ProfileEvents::nonAllocatingEvent<ProfileEvents::ConcurrencyControlWaitMicroseconds>(), *elapsed_microseconds);
     }
 
 private:

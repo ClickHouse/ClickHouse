@@ -2,6 +2,11 @@
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsNonAllocatingEvents.h>
+#include <Common/MemoryTracker.h>
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+#include <Common/ProfileEventsPagedExperiment/adapter.h>
+#endif
 #include <Common/PerCPU.h>
 #include <Common/CurrentThread.h>
 #include <Common/TraceSender.h>
@@ -11,10 +16,6 @@
 #include <Common/NamePrompter.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
-
-#if USE_JEMALLOC
-#    include <Common/memory.h>
-#endif
 
 #include <cfloat>
 #include <random>
@@ -1764,6 +1765,19 @@ namespace ProfileEvents
     APPLY_FOR_EVENTS(M)
 #undef M
 constexpr Event END = Event(__COUNTER__);
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+static_assert(static_cast<size_t>(END) == PagedExperimentStorage::EventCount);
+
+std::span<const uint16_t> PagedExperiment::requiredHotEvents() noexcept
+{
+    static const std::array required = {
+#define M(NAME) static_cast<uint16_t>(NAME),
+        APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M)
+#undef M
+    };
+    return required;
+}
+#endif
 
 /// Row stride padded so each per-CPU row ends on a cache-line boundary. Without this the last
 /// few events of one row share a cache line with the first events of the next row, causing
@@ -1771,42 +1785,6 @@ constexpr Event END = Event(__COUNTER__);
 constexpr size_t counts_per_cache_line = DB::CH_CACHE_LINE_SIZE / sizeof(Count);
 static_assert((counts_per_cache_line & (counts_per_cache_line - 1)) == 0);
 constexpr size_t per_cpu_stride = (static_cast<size_t>(END) + counts_per_cache_line - 1) & ~(counts_per_cache_line - 1);
-
-#if USE_JEMALLOC
-/// Split single-row allocations at a 4 KiB multiple to reduce allocator size-class rounding.
-/// This is independent of the operating system page size. Keep small
-/// catalogues in one allocation. Exact multiples need no tail. The geometry includes external events.
-constexpr size_t counts_per_allocation_chunk = 4096 / sizeof(Count);
-static_assert(4096 % sizeof(Count) == 0);
-constexpr size_t single_row_prefix = static_cast<size_t>(END) < counts_per_allocation_chunk
-    ? static_cast<size_t>(END)
-    : static_cast<size_t>(END) / counts_per_allocation_chunk * counts_per_allocation_chunk;
-constexpr size_t single_row_tail = static_cast<size_t>(END) - single_row_prefix;
-
-ALWAYS_INLINE inline bool hasSplitStorage(VariableContext level)
-{
-    if (level != VariableContext::Thread && level != VariableContext::Process)
-        return false;
-
-    /// Use the same aligned allocation estimator as tracked `new[]`. Do this once, before any
-    /// split object is published; event updates never call the allocator or this predicate.
-    static const bool saves_memory = []
-    {
-        if constexpr (single_row_tail == 0)
-            return false;
-        else
-        {
-            constexpr auto alignment = std::align_val_t{DB::CH_CACHE_LINE_SIZE};
-            const size_t dense_bytes = Memory::getActualAllocationSize(static_cast<size_t>(END) * sizeof(Count), alignment);
-            const size_t prefix_bytes = Memory::getActualAllocationSize(single_row_prefix * sizeof(Count), alignment);
-            const size_t tail_bytes = Memory::getActualAllocationSize(single_row_tail * sizeof(Count), alignment);
-            /// Require a net saving after the additional owner, rather than merely a smaller request.
-            return dense_bytes > prefix_bytes + tail_bytes + sizeof(AlignedCounters);
-        }
-    }();
-    return saves_memory;
-}
-#endif
 
 /// Cell count for a layout: `cpus` padded rows, or a compact single row of raw events.
 ALWAYS_INLINE inline size_t cellCount(uint32_t cpus)
@@ -1821,8 +1799,12 @@ ALWAYS_INLINE inline std::atomic_ref<Count> cell(Count * counters, size_t cpu, E
     return std::atomic_ref<Count>(counters[cpu * per_cpu_stride + event]);
 }
 
-ALWAYS_INLINE inline AlignedCounters allocateCounters(size_t n)
+ALWAYS_INLINE inline AlignedCounters allocateCounters(size_t n, [[maybe_unused]] VariableContext level)
 {
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (level == VariableContext::Process)
+        PagedExperiment::requireDenseProcessCounters();
+#endif
     return AlignedCounters(new (std::align_val_t{DB::CH_CACHE_LINE_SIZE}) Count[n] {});
 }
 
@@ -1900,25 +1882,21 @@ Counters::Counters(VariableContext level_, Counters * parent_)
     /// other levels stay single-row (`cpus == 0`). `cpus` is read once and the allocation is
     /// sized from it, so the layout and the row count cannot disagree.
     : cpus(level_ == VariableContext::User ? user_counters_cpus.load(std::memory_order_relaxed) : 0)
-#if USE_JEMALLOC
-    , counters_holder(allocateCounters(hasSplitStorage(level_) ? single_row_prefix : cellCount(cpus.load(std::memory_order_relaxed))))
-    , tail_holder(hasSplitStorage(level_) ? allocateCounters(single_row_tail) : AlignedCounters{})
-#else
-    , counters_holder(allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
-#endif
+    , counters_holder(allocateCounters(cellCount(cpus.load(std::memory_order_relaxed)), level_))
     , parent(parent_)
     , level(level_)
 {
     counters = counters_holder.get();
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (level == VariableContext::Process)
+        PagedExperiment::constructed(counters, sizeof(Counters));
+#endif
 }
 
 Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
-#if USE_JEMALLOC
-    , tail_holder(std::move(src.tail_holder))
-#endif
     , parent(src.parent.exchange(nullptr, std::memory_order_acquire))
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_acquire))
     , should_trace_holder(std::move(src.should_trace_holder))
@@ -1927,37 +1905,43 @@ Counters::Counters(Counters && src) noexcept
 {
 }
 
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+Counters::~Counters()
+{
+    if (level == VariableContext::Process && counters)
+    {
+        PagedExperiment::destroyed(counters);
+        if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
+            PagedExperiment::destroy(std::exchange(counters, nullptr));
+    }
+}
+#endif
+
 void Counters::resetCounters()
 {
     if (!counters)
         return;
-#if USE_JEMALLOC
-    const size_t total = tail_holder ? single_row_prefix : cellCount(cpus.load(std::memory_order_relaxed));
-#else
-    const size_t total = cellCount(cpus.load(std::memory_order_relaxed));
-#endif
-    for (size_t i = 0; i < total; ++i)
-        std::atomic_ref<Count>(counters[i]).store(0, std::memory_order_relaxed);
-#if USE_JEMALLOC
-    if (tail_holder)
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
     {
-        for (size_t i = 0; i < single_row_tail; ++i)
-            std::atomic_ref<Count>(tail_holder[i]).store(0, std::memory_order_relaxed);
+        PagedExperiment::reset(counters);
+        return;
     }
 #endif
+    const size_t total = cellCount(cpus.load(std::memory_order_relaxed));
+    for (size_t i = 0; i < total; ++i)
+        std::atomic_ref<Count>(counters[i]).store(0, std::memory_order_relaxed);
 }
 
 Count Counters::load(Event event) const
 {
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
+        return PagedExperiment::load(counters, static_cast<PagedExperimentStorage::Event>(event));
+#endif
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
     if (!rows)
-    {
-#if USE_JEMALLOC
-        if (event >= single_row_prefix && tail_holder)
-            return std::atomic_ref<Count>(tail_holder[event - single_row_prefix]).load(std::memory_order_relaxed);
-#endif
         return cell(counters, 0, event).load(std::memory_order_relaxed);
-    }
     Count sum = 0;
     for (uint32_t s = 0; s < rows; ++s)
         sum += cell(counters, s, event).load(std::memory_order_relaxed);
@@ -1990,6 +1974,13 @@ void Counters::setTraceAllProfileEvents()
 
 void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
 {
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
+    {
+        PagedExperiment::add(counters, static_cast<PagedExperimentStorage::Event>(event), amount);
+        return;
+    }
+#endif
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
     if (rows)
     {
@@ -1998,10 +1989,6 @@ void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
         const size_t row = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) : 0;
         cell(counters, row, event).fetch_add(amount, std::memory_order_relaxed);
     }
-#if USE_JEMALLOC
-    else if (event >= single_row_prefix && tail_holder)
-        std::atomic_ref<Count>(tail_holder[event - single_row_prefix]).fetch_add(amount, std::memory_order_relaxed);
-#endif
     else
         cell(counters, 0, event).fetch_add(amount, std::memory_order_relaxed);
 }
@@ -2039,20 +2026,15 @@ Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
-#if USE_JEMALLOC
-    if (tail_holder)
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+    if (PagedExperiment::kind(counters) != PagedExperiment::Mode::Dense)
     {
-        for (size_t i = 0; i < single_row_prefix; ++i)
-            res.counters_holder[i] = std::atomic_ref<Count>(counters[i]).load(std::memory_order_relaxed);
-        for (size_t i = 0; i < single_row_tail; ++i)
-            res.counters_holder[single_row_prefix + i] = std::atomic_ref<Count>(tail_holder[i]).load(std::memory_order_relaxed);
+        PagedExperiment::snapshot(counters, res.counters_holder.get());
+        return res;
     }
-    else
 #endif
-    {
-        for (Event i = Event(0); i < num_counters; ++i)
-            res.counters_holder[i] = load(i);
-    }
+    for (Event i = Event(0); i < num_counters; ++i)
+        res.counters_holder[i] = load(i);
     return res;
 }
 
@@ -2269,6 +2251,12 @@ void Counters::increment(Event event, Count amount)
         DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
 }
 
+void Counters::incrementNonAllocating(NonAllocatingEvent event, Count amount) noexcept
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    increment(event.value(), amount);
+}
+
 void Counters::incrementNoTrace(Event event, Count amount)
 {
     Counters * current = this;
@@ -2289,7 +2277,14 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
     do
     {
-        current->fetchAdd(event, amount, -1);
+#if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
+        if (PagedExperiment::kind(current->counters) != PagedExperiment::Mode::Dense)
+        {
+            PagedExperiment::addSignalSafe(current->counters, static_cast<PagedExperimentStorage::Event>(event), amount);
+        }
+        else
+#endif
+            current->fetchAdd(event, amount, -1);
         current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
