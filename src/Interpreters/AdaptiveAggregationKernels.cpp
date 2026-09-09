@@ -35,6 +35,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationDrainedRecords;
     extern const Event AdaptiveAggregationPressureSweeps;
     extern const Event AdaptiveAggregationPressureDrainedRecords;
+    extern const Event AdaptiveAggregationSpillDrains;
     extern const Event AdaptiveAggregationResidueReleases;
 }
 
@@ -1565,6 +1566,26 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
 
 void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const
 {
+    drainStagedChunksBatch(shared, /*only_over_trigger=*/true);
+}
+
+size_t Aggregator::drainStagedChunksForSpill(AdaptiveAggregationSession & shared, size_t at_least_bytes) const
+{
+    size_t released = 0;
+    while (released < at_least_bytes)
+    {
+        const size_t batch_bytes = drainStagedChunksBatch(shared, /*only_over_trigger=*/false);
+        if (!batch_bytes)
+            break;
+        released += batch_bytes;
+    }
+    if (released)
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpillDrains);
+    return released;
+}
+
+size_t Aggregator::drainStagedChunksBatch(AdaptiveAggregationSession & shared, bool only_over_trigger) const
+{
     PaddedPODArray<AggregateDataPtr> places_scratch;
 
     /// The coordinator lock is held only to claim work: a batch of chunks carrying about one
@@ -1575,16 +1596,17 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
     /// keeps accumulating toward the floor instead of fragmenting per producer.
     std::vector<StagedChunkPtr> batch;
     size_t batch_records = 0;
+    size_t batch_allocated_bytes = 0;
     size_t estimated_bytes = 0;
     AggregatedDataVariants::Type routing_type = AggregatedDataVariants::Type::EMPTY;
     {
         std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
-        if (getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
-            return;
+        if (only_over_trigger && getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
+            return 0;
 
         auto chunks = shared.backlog.takeAllForPressureDrain();
         if (chunks.empty())
-            return;
+            return 0;
 
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
 
@@ -1594,6 +1616,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
         {
             batch_records += chunks[split]->keys.size();
             batch_key_bytes += chunks[split]->keys.key_bytes.size();
+            batch_allocated_bytes += chunks[split]->allocatedBytes();
         }
         batch.assign(std::make_move_iterator(chunks.begin()), std::make_move_iterator(chunks.begin() + split));
         for (size_t i = split; i < chunks.size(); ++i)
@@ -1632,7 +1655,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             sweep_lock.unlock();
             if (detached_shared)
                 spillDetachedAdaptiveTable(shared, *detached_shared);
-            return;
+            return batch_allocated_bytes;
         }
 
         routing_type = shared.early_drain_variants->type;
@@ -1654,7 +1677,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
     {
         for (auto & chunk : batch)
             shared.backlog.requeue(chunk);
-        return;
+        return 0;
     }
 
     auto local = createAdaptiveDrainTable(routing_type);
@@ -1675,6 +1698,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
     if (drained_records)
         spillDetachedAdaptiveTable(shared, *local);
+    return batch_allocated_bytes;
 }
 
 std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregationSession & shared) const

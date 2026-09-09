@@ -335,6 +335,11 @@ public:
     /// deliberately - pausing production is the backpressure that makes the bound hold.
     void drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
 
+    /// The same valve driven by an explicit spill request instead of the external threshold:
+    /// drains batch after batch until at least this many staged bytes are released or the
+    /// backlogs are empty. Returns the staged bytes released.
+    size_t drainStagedChunksForSpill(AdaptiveAggregationSession & shared, size_t at_least_bytes) const;
+
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
     /// merge goes external, spilling at the part floor as it goes, and throws if anything
     /// would be left behind.
@@ -345,6 +350,10 @@ public:
     /// memory sampled with none of it resident and no detached table in flight. Empty when no
     /// producer ever froze, so there is no shared table, or when the query was cancelled.
     std::optional<Int64> releaseAdaptiveDrainResidue(AdaptiveAggregationSession & shared) const;
+
+    /// One claim-drain-write round of the valve. Returns the staged bytes released, zero when
+    /// nothing was claimed (under the trigger when it is checked, empty backlogs, or cancelled).
+    size_t drainStagedChunksBatch(AdaptiveAggregationSession & shared, bool only_over_trigger) const;
 
     /** This array serves two purposes.
       *

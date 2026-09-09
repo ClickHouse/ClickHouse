@@ -22,6 +22,18 @@ StagedChunk::AggregatePayload & StagedChunk::AggregatePayload::operator=(Aggrega
     = default;
 StagedChunk::AggregatePayload::~AggregatePayload() = default;
 
+size_t StagedChunk::allocatedBytes() const
+{
+    size_t bytes = keys.routing_hashes.allocated_bytes() + keys.key_bytes.allocated_bytes() + keys.key_offsets.allocated_bytes();
+    if (const auto * counts = std::get_if<CountPayload>(&payload))
+        bytes += counts->multiplicities.allocated_bytes();
+    else
+        for (const auto & column : std::get<AggregatePayload>(payload).argument_columns)
+            if (column)
+                bytes += column->allocatedBytes();
+    return bytes;
+}
+
 void Aggregator::prepareStagedChunk(StagedChunk & block) const
 {
     auto & payload = std::get<StagedChunk::AggregatePayload>(block.payload);

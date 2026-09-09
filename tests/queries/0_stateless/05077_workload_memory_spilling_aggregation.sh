@@ -17,7 +17,7 @@ function cleanup()
 trap cleanup EXIT
 
 # The per-operator thresholds are disabled, so the only spill trigger is the workload soft limit.
-# The adaptive aggregation stays enabled: its tables must leave the adaptive path to be flushed.
+# The adaptive aggregation stays enabled: its spill requests are served by draining the staged backlog.
 settings=(
   --workload "$workload"
   --max_bytes_before_external_group_by 0
@@ -35,7 +35,7 @@ SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
-SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['AdaptiveAggregationPressureStandDowns'] > 0, Settings['enable_adaptive_aggregator']
+SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['AdaptiveAggregationSpillDrains'] > 0, Settings['enable_adaptive_aggregator']
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND event_date >= yesterday()

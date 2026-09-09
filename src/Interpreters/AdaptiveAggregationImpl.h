@@ -159,6 +159,9 @@ struct StagedChunk
 
     bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
 
+    /// The chunk's heap footprint: the key side plus the payload's arrays or columns.
+    size_t allocatedBytes() const;
+
     /// Debug-only structural invariants, checked at publication.
     bool wellFormed() const
     {
