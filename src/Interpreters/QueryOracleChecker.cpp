@@ -293,19 +293,15 @@ String stripAggregateCombinators(String name)
 /// for `analysisOfVariance`, `STDDEV_POP`/`VAR_SAMP`/`COVAR_POP` for the
 /// `stddev*`/`var*`/`covar*` families — and listing each alias by hand is the
 /// kind of bookkeeping that rots silently: one missing spelling is one false
-/// oracle mismatch reddening master CI. Resolve through the factory instead.
-/// `isAlias` looks the raw name up in the case-sensitive map and only a
-/// lowercased name up in the case-insensitive one, so retry lowercased before
-/// giving up. Over-matching a spelling ClickHouse would not resolve at all only
-/// skips one more query, which is safe.
+/// oracle mismatch reddening master CI. Resolve through the factory instead:
+/// `getAliasToOrName` consults both alias maps, so a case-insensitive alias
+/// resolves through any spelling of it (`StdDev_Pop` as much as `STDDEV_POP`),
+/// and a name that is not an alias comes back unchanged. Over-matching a
+/// spelling ClickHouse would not resolve at all only skips one more query,
+/// which is safe.
 String resolveAggregateAlias(const String & name)
 {
-    const auto & factory = AggregateFunctionFactory::instance();
-    if (factory.isAlias(name))
-        return factory.aliasTo(name);
-    if (const String name_lower = Poco::toLower(name); factory.isAlias(name_lower))
-        return factory.aliasTo(name_lower);
-    return name;
+    return AggregateFunctionFactory::instance().getAliasToOrName(name);
 }
 
 /// True if `name`, after removing zero or more combinator suffixes, names an
