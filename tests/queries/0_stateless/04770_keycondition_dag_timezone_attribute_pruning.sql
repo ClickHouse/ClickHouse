@@ -75,6 +75,11 @@ DROP TABLE IF EXISTS oracle_saf_outer;
 DROP TABLE IF EXISTS k_saf_outer;
 DROP TABLE IF EXISTS oracle_saf_outer_bool;
 DROP TABLE IF EXISTS k_saf_outer_bool;
+DROP TABLE IF EXISTS oracle_variant;
+DROP TABLE IF EXISTS k_variant;
+DROP TABLE IF EXISTS oracle_variant_amb;
+DROP TABLE IF EXISTS k_variant_amb;
+DROP TABLE IF EXISTS src_variant_amb;
 
 -- The oracle: identical data and predicate, no key transform to get wrong.
 CREATE TABLE oracle_utc (ts DateTime('UTC')) ENGINE = Memory;
@@ -524,6 +529,51 @@ SELECT 'pruning_arr_selected_parts', ProfileEvents['SelectedParts'] FROM system.
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = '04770_pruning_arr';
 
+-- A `Variant` key column. `DataTypeVariant::equals` recurses into the alternatives, so a timezone
+-- declared inside one is as invisible to it as a bare one, and the element comes back unrelabelled.
+-- `Variant` is refused as a partition key (that minmax index needs `min`), so the carrier is a sorting
+-- key. Both directions are asserted: unfixed, `=` loses the matching row and `!=` keeps it.
+SET enable_variant_type = 1;
+
+CREATE TABLE oracle_variant (v Variant(DateTime('UTC'), String)) ENGINE = Memory;
+INSERT INTO oracle_variant SELECT CAST(toDateTime(1675195200, 'UTC') AS Variant(DateTime('UTC'), String));
+INSERT INTO oracle_variant SELECT CAST(toDateTime(1677614400, 'UTC') AS Variant(DateTime('UTC'), String));
+SELECT 'oracle_variant', count() FROM oracle_variant WHERE v = CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String));
+SELECT 'oracle_variant_neq', count() FROM oracle_variant WHERE v != CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String));
+
+CREATE TABLE k_variant (v Variant(DateTime('UTC'), String)) ENGINE = MergeTree ORDER BY toString(v)
+    SETTINGS index_granularity = 1;
+INSERT INTO k_variant SELECT CAST(toDateTime(1675195200, 'UTC') AS Variant(DateTime('UTC'), String));
+INSERT INTO k_variant SELECT CAST(toDateTime(1677614400, 'UTC') AS Variant(DateTime('UTC'), String));
+SELECT 'control_variant', count() FROM k_variant WHERE v = CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String));
+SELECT 'control_variant_neq', count() FROM k_variant WHERE v != CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String));
+
+-- The counts above stay right even if the walk merely declines the pair, because a declined atom reads
+-- every part. This pins that the key is USED: one granule of the two, with the key column's own zone in
+-- the condition. Stable whether or not the two parts have merged, since `index_granularity` is 1.
+SELECT 'control_variant_prunes', count() FROM (
+    EXPLAIN indexes = 1 SELECT v FROM k_variant
+    WHERE v = CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String))
+) WHERE explain ILIKE '%Granules: 1/2%';
+
+-- Alternatives are paired by position, and position is only a canonical name order, so a Variant holding
+-- two alternatives that are `equals`-equal to each other (here two `DateTime` zones, which needs
+-- `allow_suspicious_variant_types`) admits several pairings. Relabelling under one of them would announce
+-- one alternative's values as another's, so the pair has to be refused rather than adopted.
+SET allow_suspicious_variant_types = 1;
+
+CREATE TABLE src_variant_amb (v Variant(DateTime('Asia/Kolkata'), DateTime('Europe/Berlin'), String)) ENGINE = Memory;
+INSERT INTO src_variant_amb SELECT CAST(toDateTime(1675195200, 'Europe/Berlin') AS Variant(DateTime('Asia/Kolkata'), DateTime('Europe/Berlin'), String));
+
+CREATE TABLE oracle_variant_amb (v Variant(DateTime('Europe/Berlin'), DateTime('UTC'), String)) ENGINE = Memory;
+INSERT INTO oracle_variant_amb SELECT CAST(toDateTime(1675195200, 'Europe/Berlin') AS Variant(DateTime('Europe/Berlin'), DateTime('UTC'), String));
+SELECT 'oracle_variant_ambiguous', count() FROM oracle_variant_amb WHERE v IN (SELECT v FROM src_variant_amb);
+
+CREATE TABLE k_variant_amb (v Variant(DateTime('Europe/Berlin'), DateTime('UTC'), String)) ENGINE = MergeTree
+    ORDER BY toString(v) SETTINGS index_granularity = 1;
+INSERT INTO k_variant_amb SELECT CAST(toDateTime(1675195200, 'Europe/Berlin') AS Variant(DateTime('Europe/Berlin'), DateTime('UTC'), String));
+SELECT 'control_variant_ambiguous', count() FROM k_variant_amb WHERE v IN (SELECT v FROM src_variant_amb);
+
 DROP TABLE oracle_utc;
 DROP TABLE k_yyyymm;
 DROP TABLE k_todate;
@@ -587,3 +637,8 @@ DROP TABLE oracle_saf_outer;
 DROP TABLE k_saf_outer;
 DROP TABLE oracle_saf_outer_bool;
 DROP TABLE k_saf_outer_bool;
+DROP TABLE oracle_variant;
+DROP TABLE k_variant;
+DROP TABLE oracle_variant_amb;
+DROP TABLE k_variant_amb;
+DROP TABLE src_variant_amb;

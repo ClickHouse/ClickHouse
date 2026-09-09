@@ -100,3 +100,10 @@ pruning_selected_parts	1
 pruning_arr_active_parts	2
 pruning_arr_count	1
 pruning_arr_selected_parts	1
+oracle_variant	1
+oracle_variant_neq	1
+control_variant	1
+control_variant_neq	1
+control_variant_prunes	1
+oracle_variant_ambiguous	1
+control_variant_ambiguous	1
