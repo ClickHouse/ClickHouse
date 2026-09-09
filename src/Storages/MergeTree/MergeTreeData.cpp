@@ -76,9 +76,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
