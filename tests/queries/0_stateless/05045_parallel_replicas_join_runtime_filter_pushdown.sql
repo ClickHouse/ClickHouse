@@ -10,6 +10,9 @@ INSERT INTO pr_rf_probe SELECT number, number FROM numbers(100000);
 CREATE TABLE pr_rf_build (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO pr_rf_build SELECT number FROM numbers(10);
 
+-- Join runtime filters require the analyzer. On the old-analyzer runs the query plans with no join
+-- and no parallel replicas at all, leaving the assertion below nothing to check.
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
