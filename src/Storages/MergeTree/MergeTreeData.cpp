@@ -3322,8 +3322,115 @@ void MergeTreeData::startStatisticsCache()
     }
 }
 
+bool MergeTreeData::mayRetirePartsFromMemory(bool strict_takeover) const
+{
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+        return false;
+
+    /// Only a follower (or a takeover scan, which runs before writes are enabled) reconciles its
+    /// active set with the storage listing: a writing leader can have just published a part that a
+    /// cached listing does not show yet.
+    return strict_takeover || !mayMutateSharedStorage();
+}
+
+void MergeTreeData::forgetRetiredParts(const DataPartsVector & retired_parts, DataPartsLock & parts_lock)
+{
+    for (const auto & part : retired_parts)
+    {
+        auto it = data_parts_by_info.find(part->info);
+        if (it == data_parts_by_info.end())
+            continue;
+
+        /// The part is still `Active` here, so it counts towards the table's size counters and
+        /// the column and secondary index size caches (`loadDataPart` adds that contribution
+        /// when it loads a part into the `Active` state). Forgetting it without subtracting
+        /// the contribution would leave `totalRows` / `totalBytes` / `getActivePartsCount`
+        /// reporting a table that no longer has any active parts, and everything built on
+        /// `getTotalActiveSizeInBytes` — the `RESTORE` non-empty-table check, the drop-size
+        /// check, the insert part-limit throttling — acting on that stale value. This mirrors
+        /// the active branch of `removePartsFromWorkingSet` and inverts `restoreAndActivatePart`.
+        removePartContributionToColumnAndSecondaryIndexSizes(part);
+        removePartContributionToUncompressedBytesInPatches(part);
+        removePartContributionToDataVolume(part);
+
+        /// Forget the part entirely instead of moving it to `Outdated`: there is nothing left
+        /// for this replica to clean up on the storage, and a follower must not attempt such a
+        /// cleanup anyway.
+        modifyPartState(it, DataPartState::Temporary, parts_lock);
+        data_parts_indexes.erase(it);
+    }
+}
+
+size_t MergeTreeData::retirePartsRelocatedToAnotherDisk(
+    const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover)
+{
+    /// `MOVE PARTITION TO DISK` / `MOVE PARTITION TO VOLUME` and `TTL`-driven moves keep the part
+    /// directory name and change only the disk the part lives on, which makes a moved part
+    /// invisible to both of the other halves of the refresh: its directory is still somewhere in
+    /// the listing, so it has not "vanished", and its `MergeTreePartInfo` is still in
+    /// `data_parts_by_info`, which is what decides whether a listed part is "newly appeared". The
+    /// replica would keep an active part pointing at the copy the leader has already deleted from
+    /// the old disk — serving reads from a path that no longer exists, and carrying that dangling
+    /// part into its own leadership after a failover. The storage policies this is about are
+    /// exactly the multi-volume ones `leader_election` accepts (every disk shared `S3` +
+    /// `plain_rewritable`), so the part really is readable by every replica at its new location.
+    ///
+    /// Forgetting the stale part here, BEFORE the newly appeared parts are loaded, is what lets
+    /// the copy on the new disk be picked up by the very same scan: `loadDataPart` inserts the
+    /// part it loads into `data_parts_indexes`, which is keyed by the part info, so with the old
+    /// copy still in memory the new one is rejected as a duplicate — and a takeover scan
+    /// (`strict_takeover`) removes a duplicate from the shared storage, which here would delete
+    /// the only remaining copy of the part.
+    ///
+    /// This leaves a window in which the part is in neither place, so a concurrent read on this
+    /// replica misses it. The window is bounded by the load of a single part, and it is strictly
+    /// better than the alternative: by the time the move becomes visible here the copy this
+    /// replica points at is already gone from the shared storage, so those reads are broken
+    /// anyway. The scan is also self-healing — if the load fails, the next refresh retries it.
+    if (!mayRetirePartsFromMemory(strict_takeover))
+        return 0;
+
+    DataPartsVector relocated_parts;
+
+    {
+        auto parts_lock = lockParts();
+
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active, DataPartKind::Regular))
+        {
+            const auto disk_name = part->getDataPartStorage().getDiskName();
+            const auto part_directory = part->getDataPartStorage().getPartDirectory();
+
+            /// A broken disk is not scanned at all, so its parts are unknown, not moved away.
+            auto directories_on_disk = part_directories_by_disk.find(disk_name);
+            if (directories_on_disk == part_directories_by_disk.end())
+                continue;
+
+            /// Still where this replica remembers it. This also covers the window in the middle of
+            /// a move, when the source copy has not been removed yet and both disks list the part:
+            /// it counts as moved only once the source copy is gone.
+            if (directories_on_disk->second.contains(part_directory))
+                continue;
+
+            for (const auto & [other_disk_name, directories_on_other_disk] : part_directories_by_disk)
+            {
+                if (other_disk_name == disk_name || !directories_on_other_disk.contains(part_directory))
+                    continue;
+
+                LOG_INFO(log, "Retiring active part {}: the shared storage has it on disk {} now, not on disk {}",
+                    part->name, other_disk_name, disk_name);
+                relocated_parts.push_back(part);
+                break;
+            }
+        }
+
+        forgetRetiredParts(relocated_parts, parts_lock);
+    }
+
+    return relocated_parts.size();
+}
+
 size_t MergeTreeData::retirePartsVanishedFromStorage(
-    const NameSet & part_directories_on_storage, const NameSet & scanned_disks, bool strict_takeover)
+    const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover)
 {
     /// Under `leader_election` the refresh scan is the only channel through which a replica learns
     /// about changes made by the current leader, and it used to be additive-only: a part that the
@@ -3340,10 +3447,12 @@ size_t MergeTreeData::retirePartsVanishedFromStorage(
     /// refresh re-adds the parts it finds. Only a follower (or a takeover scan, which runs before
     /// writes are enabled) does this: a writing leader can have just published a part that a
     /// cached listing does not show yet.
-    if (!(*getSettings())[MergeTreeSetting::leader_election])
-        return 0;
-
-    if (!strict_takeover && mayMutateSharedStorage())
+    ///
+    /// A part counts as vanished only when its directory is gone from the disk this replica holds
+    /// it on: the same directory name appearing on another disk of the policy means the leader
+    /// moved the part, which `retirePartsRelocatedToAnotherDisk` has already handled earlier in
+    /// the scan.
+    if (!mayRetirePartsFromMemory(strict_takeover))
         return 0;
 
     DataPartsVector vanished_parts;
@@ -3354,40 +3463,18 @@ size_t MergeTreeData::retirePartsVanishedFromStorage(
         for (const auto & part : getDataPartsStateRange(DataPartState::Active, DataPartKind::Regular))
         {
             /// A broken disk is not scanned at all, so its parts are unknown, not vanished.
-            if (!scanned_disks.contains(part->getDataPartStorage().getDiskName()))
+            auto directories_on_disk = part_directories_by_disk.find(part->getDataPartStorage().getDiskName());
+            if (directories_on_disk == part_directories_by_disk.end())
                 continue;
 
-            if (part_directories_on_storage.contains(part->getDataPartStorage().getPartDirectory()))
-                continue;
-
-            vanished_parts.push_back(part);
-        }
-
-        for (const auto & part : vanished_parts)
-        {
-            auto it = data_parts_by_info.find(part->info);
-            if (it == data_parts_by_info.end())
+            if (directories_on_disk->second.contains(part->getDataPartStorage().getPartDirectory()))
                 continue;
 
             LOG_INFO(log, "Retiring active part {}: it no longer exists on the shared storage", part->name);
-
-            /// The part is still `Active` here, so it counts towards the table's size counters and
-            /// the column and secondary index size caches (`loadDataPart` adds that contribution
-            /// when it loads a part into the `Active` state). Forgetting it without subtracting
-            /// the contribution would leave `totalRows` / `totalBytes` / `getActivePartsCount`
-            /// reporting a table that no longer has any active parts, and everything built on
-            /// `getTotalActiveSizeInBytes` — the `RESTORE` non-empty-table check, the drop-size
-            /// check, the insert part-limit throttling — acting on that stale value. This mirrors
-            /// the active branch of `removePartsFromWorkingSet` and inverts `restoreAndActivatePart`.
-            removePartContributionToColumnAndSecondaryIndexSizes(part);
-            removePartContributionToUncompressedBytesInPatches(part);
-            removePartContributionToDataVolume(part);
-
-            /// Forget the part entirely instead of moving it to `Outdated`: there is nothing left
-            /// to clean up on the storage, and a follower must not attempt such a cleanup anyway.
-            modifyPartState(it, DataPartState::Temporary, parts_lock);
-            data_parts_indexes.erase(it);
+            vanished_parts.push_back(part);
         }
+
+        forgetRetiredParts(vanished_parts, parts_lock);
     }
 
     return vanished_parts.size();
@@ -3406,18 +3493,18 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
 
     PartLoadingTree::PartLoadingInfos parts_to_load;
 
-    /// The full set of part directories seen by this scan, together with the disks it covered.
-    /// Used below to retire active parts that vanished from the shared storage (see the comment
-    /// there); a part on a disk that was not scanned (broken) must not be retired.
-    NameSet part_directories_on_storage;
-    NameSet scanned_disks;
+    /// The full set of part directories seen by this scan, keyed by the disk each was found on.
+    /// Used below to reconcile the active set with the shared storage: to follow the parts the
+    /// leader moved between disks, and to retire the ones it deleted (see the comments there). A
+    /// part on a disk that was not scanned (broken) must not be retired.
+    PartDirectoriesByDisk part_directories_by_disk;
 
     for (const auto & disk_ptr : disks)
     {
         if (disk_ptr->isBroken())
             continue;
 
-        scanned_disks.insert(disk_ptr->getName());
+        auto & directories_on_disk = part_directories_by_disk[disk_ptr->getName()];
 
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
@@ -3429,11 +3516,16 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
 
             if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
             {
-                part_directories_on_storage.insert(it->name());
+                directories_on_disk.insert(it->name());
                 parts_to_load.emplace_back(*part_info, it->name(), disk_ptr);
             }
         }
     }
+
+    /// Forget the parts the leader moved to another disk before deciding what is "newly appeared":
+    /// the copy on the new disk carries the same part info, so it only counts as new — and can only
+    /// be loaded at all — once the stale one is gone.
+    size_t relocated_parts = retirePartsRelocatedToAnotherDisk(part_directories_by_disk, strict_takeover);
 
     auto loading_tree = PartLoadingTree::build(std::move(parts_to_load), relative_data_path);
 
@@ -3562,13 +3654,13 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     if (have_parts_with_version_metadata)
         transactions_enabled.store(true);
 
-    size_t retired_parts = retirePartsVanishedFromStorage(part_directories_on_storage, scanned_disks, strict_takeover);
+    size_t retired_parts = retirePartsVanishedFromStorage(part_directories_by_disk, strict_takeover);
 
     auto old_parts = grabOldParts(true);
 
     watch.stop();
-    LOG_DEBUG(log, "Refreshing data parts (added {} items, retired {} items, removed {} items) took {:.3f} seconds",
-        parts_to_add.size(), retired_parts, old_parts.size(), watch.elapsedSeconds());
+    LOG_DEBUG(log, "Refreshing data parts (added {} items, relocated {} items, retired {} items, removed {} items) took {:.3f} seconds",
+        parts_to_add.size(), relocated_parts, retired_parts, old_parts.size(), watch.elapsedSeconds());
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());

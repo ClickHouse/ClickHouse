@@ -2477,7 +2477,7 @@ def test_move_partition_dest_publish_undone_when_source_publish_fails(started_cl
                 pass
 
 
-SHARED_UUID_COMMIT_UNDO = "12345678-abcd-abcd-abcd-12345678ab24"
+SHARED_UUID_COMMIT_UNDO = "12345678-abcd-abcd-abcd-12345678ab53"
 
 
 def test_insert_publish_undone_when_lease_goes_stale_before_commit(started_cluster):
@@ -4271,6 +4271,262 @@ def test_vanished_parts_retired_on_takeover(started_cluster):
         assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
             "2", "4",
         ], "The dropped partition came back after reloading from the shared storage"
+    finally:
+        for node in (node1, node2):
+            try:
+                ensure_node_up(node)
+            except Exception:
+                pass
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
+SHARED_UUID_MOVED_PARTS_REFRESH = "12345678-abcd-abcd-abcd-12345678ab51"
+SHARED_UUID_MOVED_PARTS_TAKEOVER = "12345678-abcd-abcd-abcd-12345678ab52"
+
+MOVED_PARTS_COLUMNS = "(x UInt64) ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x"
+
+# The leader must really delete the source copy during the test — that is the situation both
+# tests below are about — so it cleans up outdated parts as soon as they appear.
+MOVED_PARTS_SETTINGS = (
+    f"{TABLE_SETTINGS},"
+    " old_parts_lifetime = 0,"
+    " merge_tree_clear_old_parts_interval_seconds = 1,"
+    " cleanup_delay_period = 1, cleanup_delay_period_random_add = 0"
+)
+
+
+def _partition_disks(node, table, partition):
+    """The disks the node currently has parts of `partition` on, active and outdated alike."""
+    return sorted(
+        node.query(
+            f"SELECT DISTINCT disk_name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND partition = '{partition}'"
+        ).split()
+    )
+
+
+def _active_partition_disk(node, table, partition):
+    """The disk the node believes the active part of `partition` is on, or '' if it has none."""
+    return node.query(
+        f"SELECT DISTINCT disk_name FROM system.parts WHERE database = currentDatabase()"
+        f" AND table = '{table}' AND active AND partition = '{partition}'"
+    ).strip()
+
+
+def _wait_until(predicate, timeout=90):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(1)
+    return False
+
+
+def _move_partition_and_wait_for_cleanup(leader, table, partition, disk):
+    """Move `partition` to `disk` on the leader and wait until the source copy is really gone."""
+    leader.query(f"ALTER TABLE {table} MOVE PARTITION {partition} TO DISK '{disk}'")
+    assert _active_partition_disk(leader, table, partition) == disk, (
+        f"MOVE PARTITION did not put partition {partition} on disk {disk}"
+    )
+    assert _wait_until(
+        lambda: _partition_disks(leader, table, partition) == [disk]
+    ), (
+        "The leader did not clean up the source copy of the moved partition, so the scenario "
+        f"under test was not reached (partition {partition} is still on "
+        f"{_partition_disks(leader, table, partition)})"
+    )
+
+
+def test_moved_parts_followed_by_follower_refresh(started_cluster):
+    """
+    Regression for the disk-blind refresh path. `MOVE PARTITION TO DISK` / `MOVE PARTITION TO
+    VOLUME` and `TTL`-driven moves keep the part directory name and change only the disk the part
+    lives on, and the refresh scan used to key its listing of the shared storage by the bare
+    directory name. A moved part was therefore neither "vanished" (the directory name is still in
+    the listing, on the other disk) nor "newly appeared" (`data_parts_by_info` already holds that
+    part info), so a follower kept an active part pointing at the copy the leader had already
+    deleted from the old disk: reads of that partition go to a path that no longer exists, and the
+    dangling part is carried into this replica's own leadership after a failover.
+
+    `leader_election` accepts multi-volume policies as long as every disk is a shared
+    `plain_rewritable` S3 disk, which is exactly what this module's `s3` policy is (volume `main`
+    is disk `s3`, volume `move` is disk `s3_move`), so this is a supported configuration rather
+    than one the setting rejects.
+
+    Here the move is observed through the follower's periodic refresh; the takeover scan is
+    covered by `test_moved_parts_followed_on_takeover`.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_moved_parts_refresh"
+
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_MOVED_PARTS_REFRESH}' {MOVED_PARTS_COLUMNS}
+            SETTINGS {MOVED_PARTS_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (3)")
+        node1.query(f"INSERT INTO {table} VALUES (2), (4)")
+
+        node2.query(
+            f"""
+            ATTACH TABLE {table} UUID '{SHARED_UUID_MOVED_PARTS_REFRESH}' {MOVED_PARTS_COLUMNS}
+            SETTINGS {MOVED_PARTS_SETTINGS}
+            """
+        )
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        assert leader == node1, "node1 must stay the leader for this scenario"
+        follower = followers[0]
+
+        # The follower needs one periodic refresh to pick up the parts: its snapshot of the
+        # `plain_rewritable` path map predates the table.
+        assert _wait_until(
+            lambda: follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split()
+            == ["1", "2", "3", "4"]
+        ), "The follower did not load the parts written by the leader"
+        assert _active_partition_disk(follower, table, "1") == "s3", (
+            "Precondition: the follower must start out holding the partition on the source disk"
+        )
+
+        _move_partition_and_wait_for_cleanup(node1, table, "1", "s3_move")
+
+        # The whole point: the follower must follow the part to its new disk. Before the fix it
+        # kept pointing at the deleted copy on `s3` indefinitely.
+        assert _wait_until(
+            lambda: _active_partition_disk(follower, table, "1") == "s3_move"
+        ), (
+            "The follower did not follow the moved partition to its new disk, it still reports "
+            f"{_active_partition_disk(follower, table, '1')!r}"
+        )
+        assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
+            "1", "2", "3", "4",
+        ], "The follower cannot read the partition the leader moved to another disk"
+        assert follower.contains_in_log("the shared storage has it on disk"), (
+            "The relocated-parts retirement never ran on the follower"
+        )
+
+        # And the moved partition must survive the failover that the stale disk pointer used to
+        # break: the new leader reads and serves it from the disk it is actually on.
+        node1.stop_clickhouse(kill=True)
+        wait_for_leader([follower], table_name=table)
+        assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
+            "1", "2", "3", "4",
+        ], "The new leader lost the partition the previous leader had moved"
+        assert _active_partition_disk(follower, table, "1") == "s3_move"
+
+        # A full reload from the shared storage must agree — in particular, nothing removed the
+        # moved part from the storage while reconciling the two disks.
+        follower.query(f"DETACH TABLE {table}")
+        follower.query(f"ATTACH TABLE {table}")
+        wait_for_leader([follower], table_name=table)
+        assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
+            "1", "2", "3", "4",
+        ], "The moved partition is not on the shared storage any more"
+        assert _active_partition_disk(follower, table, "1") == "s3_move"
+    finally:
+        for node in (node1, node2):
+            try:
+                ensure_node_up(node)
+            except Exception:
+                pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
+def test_moved_parts_followed_on_takeover(started_cluster):
+    """
+    The same disk-blind refresh defect as `test_moved_parts_followed_by_follower_refresh`, but
+    reconciled by the leadership takeover scan instead of the periodic follower refresh. This is
+    both the dangerous case and the deterministic one: the replica with the stale disk pointer
+    becomes the writer, and the scan is forced by the leadership change rather than by a timer.
+
+    The takeover scan is also the path that must not "fix" the move by deleting data. It replays
+    the cleanup the read-only follower loaders skip, and a copy whose part info is already in
+    memory is reported as a duplicate — which the takeover scan removes from the shared storage.
+    Retiring the stale part before anything is loaded is what keeps the moved copy from being
+    mistaken for such a duplicate, so the `DETACH` / `ATTACH` at the end (a full reload from the
+    shared storage) is the assertion that the only remaining copy of the partition is still there.
+
+    The follower's periodic refresh is frozen with `merge_tree_refresh_parts_skip` once it has
+    loaded the parts, so it provably keeps its pre-move view while the leader performs the move.
+    The takeover scan calls `loadNewlyAppearedParts` directly and is not affected by it.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    failpoint = "merge_tree_refresh_parts_skip"
+    table = "test_moved_parts_takeover"
+
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_MOVED_PARTS_TAKEOVER}' {MOVED_PARTS_COLUMNS}
+            SETTINGS {MOVED_PARTS_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (3)")
+        node1.query(f"INSERT INTO {table} VALUES (2), (4)")
+
+        node2.query(
+            f"""
+            ATTACH TABLE {table} UUID '{SHARED_UUID_MOVED_PARTS_TAKEOVER}' {MOVED_PARTS_COLUMNS}
+            SETTINGS {MOVED_PARTS_SETTINGS}
+            """
+        )
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        assert leader == node1, "node1 must stay the leader for this scenario"
+        follower = followers[0]
+
+        assert _wait_until(
+            lambda: follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split()
+            == ["1", "2", "3", "4"]
+        ), "The follower did not load the parts written by the leader"
+
+        follower.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        assert _active_partition_disk(follower, table, "1") == "s3"
+
+        _move_partition_and_wait_for_cleanup(node1, table, "1", "s3_move")
+
+        # Precondition: the move is invisible to the follower, whose refresh is frozen.
+        assert _active_partition_disk(follower, table, "1") == "s3", (
+            "The follower refreshed although its periodic refresh is disabled"
+        )
+
+        node1.stop_clickhouse(kill=True)
+        wait_for_leader([follower], table_name=table)
+        follower.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        assert _active_partition_disk(follower, table, "1") == "s3_move", (
+            "The takeover scan did not follow the moved partition to its new disk, the new leader "
+            f"still reports {_active_partition_disk(follower, table, '1')!r}"
+        )
+        rows = follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split()
+        assert rows == ["1", "2", "3", "4"], (
+            f"The new leader cannot read the partition the previous leader moved, got: {rows}"
+        )
+
+        # The takeover scan must not have removed the moved copy from the shared storage as a
+        # duplicate of the stale part it was replacing: reload everything and look again.
+        follower.query(f"DETACH TABLE {table}")
+        follower.query(f"ATTACH TABLE {table}")
+        wait_for_leader([follower], table_name=table)
+        rows = follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split()
+        assert rows == ["1", "2", "3", "4"], (
+            f"The takeover scan deleted the moved partition from the shared storage, got: {rows}"
+        )
+        assert _active_partition_disk(follower, table, "1") == "s3_move"
     finally:
         for node in (node1, node2):
             try:

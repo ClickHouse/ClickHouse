@@ -870,13 +870,29 @@ public:
     /// read-only (a follower merely skips parts it cannot load).
     size_t loadNewlyAppearedParts(bool strict_takeover = false);
 
+    /// The part directories a refresh scan found, keyed by the disk holding them. A disk that was
+    /// scanned but holds no part directory is present with an empty set; a broken disk, which is
+    /// not scanned at all, is absent altogether. The disk is part of the key because
+    /// `MOVE PARTITION TO DISK` / `MOVE PARTITION TO VOLUME` and `TTL`-driven moves keep the part
+    /// directory name and change only the disk the part lives on, so a listing keyed by the bare
+    /// directory name cannot tell a moved part from an unchanged one.
+    using PartDirectoriesByDisk = std::unordered_map<String, NameSet>;
+
     /// Retire (forget) active parts that are no longer present on the shared storage, according to
     /// the listing collected by `loadNewlyAppearedParts`. Only for `leader_election`, and only on a
     /// replica that is not currently writing (a follower refresh, or a takeover scan that runs
     /// before writes are enabled). Returns the number of retired parts. See the implementation for
     /// why this is what makes coverage-based retirements converge across replicas.
     size_t retirePartsVanishedFromStorage(
-        const NameSet & part_directories_on_storage, const NameSet & scanned_disks, bool strict_takeover);
+        const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
+
+    /// Retire (forget) active parts whose directory is gone from the disk this replica holds them
+    /// on and is present on another disk of the storage policy: the leader moved them. Runs before
+    /// `loadNewlyAppearedParts` decides what is newly appeared, so that the copy on the new disk is
+    /// loaded by the same scan. Same gating as `retirePartsVanishedFromStorage`. Returns the number
+    /// of retired parts.
+    size_t retirePartsRelocatedToAnotherDisk(
+        const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -2499,6 +2515,15 @@ private:
 
     void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
     void removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
+
+    /// Whether a refresh scan may drop active parts from memory to match the shared storage: only
+    /// under `leader_election`, and only on a replica that is not currently writing — a writing
+    /// leader can have just published a part that a cached listing does not show yet.
+    bool mayRetirePartsFromMemory(bool strict_takeover) const;
+
+    /// Drop the in-memory record of the given active parts. Shared by the two retirement passes of
+    /// `loadNewlyAppearedParts`; the caller logs why each part is being retired.
+    void forgetRetiredParts(const DataPartsVector & retired_parts, DataPartsLock & parts_lock);
 
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
