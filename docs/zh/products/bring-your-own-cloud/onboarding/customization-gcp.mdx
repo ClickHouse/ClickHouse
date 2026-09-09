@@ -9,9 +9,7 @@ doc_type: '参考'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-<div id="customer-managed-vpc-gcp">
-  ## 适用于 GCP 的客户自管 VPC (BYO-VPC)
-</div>
+## 适用于 GCP 的客户自管 VPC (BYO-VPC) {#customer-managed-vpc-gcp}
 
 如果您希望使用现有 VPC 部署 ClickHouse BYOC，而不是由 ClickHouse Cloud 预配新的 VPC，请按以下步骤操作。这样做可以让您更好地控制网络配置，并将 ClickHouse BYOC 集成到现有网络基础设施中。
 
@@ -20,6 +18,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     1. 在 [ClickHouse BYOC 支持的区域](/zh/products/cloud/reference/supported-regions)中，为 ClickHouse Kubernetes (GKE) 集群至少分配 1 个私有子网。请确保该子网的 CIDR 范围至少为 `/24` (例如 10.0.0.0/24) ，以便为 GKE 集群节点提供足够的 IP 地址。
     2. 在该私有子网中，至少分配 1 个供 GKE 集群 Pod (容器组) 使用的辅助 IPv4 范围。该辅助范围必须至少为 `/21`。较小的范围无法为 GKE 集群完成预配提供足够的 Pod (容器组) IP 地址，基础设施设置将会失败。
     3. 在该子网上启用 **Private Google Access**。这样，GKE 节点无需外部 IP 地址即可访问 Google API 和服务。
+
+    <Note>
+      若要通过 [Private Service Connect](/zh/cloud/reference/byoc/onboarding/network-gcp#setup-psc) 暴露服务，您还需要在该 VPC 中创建一个用途为 `PRIVATE_SERVICE_CONNECT` 的专用子网。您可以现在创建，也可以稍后在启用 private link 之前创建。
+    </Note>
 
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="BYOC GCP 子网详情，显示主 IPv4 范围和辅助 IPv4 范围，且已启用 Private Google Access" />
   </Step>

@@ -85,7 +85,7 @@ doc_type: '参考'
 ### 网络与安全 {#network-and-security}
 
 <Accordion title="我们能否限制或撤销安装期间授予的权限？">
-  在 AWS 和 GCP 上，您可以从一开始就缩减授权范围：引导制品支持参数配置，因此在使用自有 VPC 时，您可以不授予管理 VPC 网络拓扑的权限 (CloudFormation 中的 `IncludeVPCWritePermissions`、Terraform 模块中的 `include_vpc_write_permissions`) 。在 GCP 上，这仅会缩小拓扑管理的权限范围——ClickHouse 仍保留对其在 VPC 内拥有的网络资源的写入权限，例如 Private Service Connect NAT 子网、服务附件和入口地址。在 AWS 上，您还可以——目前处于私有预览阶段，需通过支持团队启用——自行管理 IAM 角色 (`IncludeIAMWritePermissions=false`，请参阅[客户管理的 IAM 角色](/zh/products/bring-your-own-cloud/onboarding/customization-aws)) ；跨账户角色则通过外部 ID 防范混淆代理访问。在 Azure 上，引导模块目前授予固定的订阅范围角色，且不提供范围限定参数。对于所有云平台，某些权限仅为特定功能所需；如果您永远不会使用这些功能，则可移除这些权限——如需将权限范围缩小至制品提供的范围以外，请联系支持团队。
+  在 AWS 和 GCP 上，您可以从一开始就缩减授权范围：引导制品支持参数配置，因此在使用自有 VPC 时，您可以不授予管理 VPC 网络拓扑的权限 (CloudFormation 中的 `IncludeVPCWritePermissions`、Terraform 模块中的 `include_vpc_write_permissions`) 。在 GCP 上，这仅会缩小拓扑管理的权限范围——ClickHouse 仍保留对其在 VPC 内拥有的网络资源的写入权限，例如 Private Service Connect 服务附件和入口地址。Private Service Connect NAT 子网不在其中：在使用自有 VPC 时，您需要在启用 private link 之前[自行创建它](/zh/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc)。在 AWS 上，您还可以——目前处于私有预览阶段，需通过支持团队启用——自行管理 IAM 角色 (`IncludeIAMWritePermissions=false`，请参阅[客户管理的 IAM 角色](/zh/products/bring-your-own-cloud/onboarding/customization-aws)) ；跨账户角色则通过外部 ID 防范混淆代理访问。在 Azure 上，引导模块目前授予固定的订阅范围角色，且不提供范围限定参数。对于所有云平台，某些权限仅为特定功能所需；如果您永远不会使用这些功能，则可移除这些权限——如需将权限范围缩小至制品提供的范围以外，请联系支持团队。
 
   完成预配后，请勿单方面从管理身份中移除权限：ClickHouse 会持续协调基础设施，缺少权限会导致预配、升级和支持工作受阻。若要更改已授予的权限或完全退役，请与支持团队协调 (请参阅下方有关退役的问题) 。
 </Accordion>
