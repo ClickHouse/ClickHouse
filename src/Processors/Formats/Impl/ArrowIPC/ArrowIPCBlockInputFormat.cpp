@@ -685,20 +685,33 @@ bool variantElementWidensTo(const DataTypePtr & alternative, size_t width)
     return which.isInteger() && alternative->getSizeOfValueInMemory() > width;
 }
 
-/// Whether a decoded `Variant` element can be repaired into a requested alternative. An alternative is
-/// admitted only where the ordinary (non-union) Arrow column path already reaches it from a column decoded
-/// as `decoded`. `Bool` and `UInt8` must not accept each other's alternative even though they compare
-/// equal, otherwise both elements of `union<bool, int8>` requested as `Variant(Bool, UInt8)` stay
-/// ambiguous. A composite matches nothing, since `castColumn` pairs tuple fields by name while this walk
-/// keeps the decoded names, so a name-differing target field would be defaulted rather than rejected.
-/// `Date32` matches nothing, since whether a day number is range-checked, saturated or copied verbatim is
-/// decided by the decoder from its own hint, which this post-decode layer cannot supply.
+/// The natural pairing of a decoded element with an alternative: the alternative it was itself inferred
+/// as. Decoded element names are unique (the decoder rejects a union whose children map to one ClickHouse
+/// type), so no two elements ever prefer the same alternative.
+bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & alternative)
+{
+    return ArrowIPC::stripHint(alternative)->getName() == decoded->getName();
+}
+
+/// Whether a decoded `Variant` element can be repaired into a requested alternative: always its own decoded type, and
+/// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from a column decoded as
+/// `decoded`. `Bool` and `UInt8` must not accept each other's alternative even though they compare equal, otherwise
+/// both elements of `union<bool, int8>` requested as `Variant(Bool, UInt8)` stay ambiguous. A composite is never
+/// substituted, since `castColumn` pairs tuple fields by name while this walk keeps the decoded names, so a
+/// name-differing target field would be defaulted rather than rejected. `Date32` is never substituted, since whether a
+/// day number is range-checked, saturated or copied verbatim is decided by the decoder from its own hint, which this
+/// post-decode layer cannot supply.
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
 {
     const DataTypePtr to = ArrowIPC::stripHint(alternative);
     const WhichDataType from(decoded);
     const WhichDataType which(to);
 
+    /// An element that no conversion arm admits must still be able to claim its own alternative: otherwise it leaves
+    /// that alternative to a sibling, and the sibling is left ambiguous by an element that was never a candidate for
+    /// anything.
+    if (variantElementPrefersType(decoded, alternative))
+        return true;
     if (isBool(decoded))
         return which.isUInt8() || which.isEnum8() || variantElementWidensTo(to, 0);
     if (from.isInt8() || from.isUInt8())
@@ -733,14 +746,6 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
     if (from.isTime64())
         return which.isTime64();
     return false;
-}
-
-/// The natural pairing of a decoded element with an alternative: the alternative it was itself inferred
-/// as. Decoded element names are unique (the decoder rejects a union whose children map to one ClickHouse
-/// type), so no two elements ever prefer the same alternative.
-bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & alternative)
-{
-    return ArrowIPC::stripHint(alternative)->getName() == decoded->getName();
 }
 
 /// The alternative each element of a decoded `Variant` must be repaired into, in the decoded type's global

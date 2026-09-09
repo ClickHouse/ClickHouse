@@ -84,6 +84,17 @@ columns = {
     # A `date32` branch is excluded by design: whether a day number is range-checked, saturated or copied
     # verbatim is decided inside the decoder, from a hint this post-decode repair cannot supply.
     "date32_utf8": dense([pa.array([19000, 19001], type=pa.date32()), pa.array(["x", "y"])], ["d", "s"]),
+    # `date64` decodes to `DateTime`, which no conversion admits, while `uint32` admits both `DateTime` and
+    # `UInt64`. The `date64` branch has to claim `DateTime` itself, or the `uint32` branch stays ambiguous.
+    "uint32_date64": dense(
+        [pa.array([7, 8], type=pa.uint32()),
+         pa.array([19000 * 86400000, 19001 * 86400000], type=pa.date64())], ["i", "d"]),
+    # Claiming its own alternative is not converting into it: a `Date32` branch stays excluded from
+    # substitution and keeps the day numbers the flat column path returns, while its sibling widens.
+    "uint32_date32": dense(
+        [pa.array([7, 8], type=pa.uint32()), pa.array([19000, 19001], type=pa.date32())], ["i", "d"]),
+    # The same day numbers outside a union, to compare that branch against.
+    "date32_flat": pa.array([19000, 19001, 19000, 19001], type=pa.date32()),
     # Both branches can only take `UInt8`, so any assignment would put two branches on one alternative.
     "bool_uint8": dense([pa.array([True, False]), pa.array([7, 8], type=pa.uint8())], ["b", "i"]),
     # A dense branch whose retained slot the decoder gathers away, so the repair never sees the value 9.
@@ -116,11 +127,11 @@ for fmt, factory in (("Arrow", ipc.new_file), ("ArrowStream", ipc.new_stream)):
         writer.write_batch(batch)
 PY
 
-# usage: read_column <column> <requested type> [format]
+# usage: read_column <column> <requested type> [format] [settings]
 read_column()
 {
     ${CLICKHOUSE_CLIENT} --query \
-        "SELECT $1, toTypeName($1) FROM file('${DATA}/unions.${3:-Arrow}', '${3:-Arrow}', \$\$$1 $2\$\$)"
+        "SELECT $1, toTypeName($1) FROM file('${DATA}/unions.${3:-Arrow}', '${3:-Arrow}', \$\$$1 $2\$\$)${4:+ SETTINGS $4}"
 }
 
 # usage: rejected <column> <requested type>; prints the reported conversion, not merely a failure
@@ -156,6 +167,13 @@ echo "--- a retained slot no row selects must not reach the Enum8 repair ---"
 read_column retained "Variant(Enum8('a' = 1, 'b' = 2))"
 echo "--- nor decide the width of the values that are selected ---"
 read_column aliased_retained 'Variant(IPv6, UInt32)'
+# `session_timezone` is randomized in CI and `DateTime` renders in it, so the arm pins the zone it prints in.
+echo "--- a branch no conversion admits claims its own alternative, which disambiguates its sibling ---"
+read_column uint32_date64 'Variant(UInt64, DateTime)' Arrow "session_timezone = 'UTC'"
+echo "--- claiming it is not converting into it: an excluded branch keeps its own values ---"
+read_column uint32_date32 'Variant(UInt64, Date32)'
+echo "--- which are the values the flat column path returns for the same days ---"
+read_column date32_flat 'Date32'
 echo "--- the Arrow child order need not be the sorted Variant order ---"
 read_column utf8_int32 'Variant(String, UInt32)'
 echo "--- a sparse union ---"
