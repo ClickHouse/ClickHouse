@@ -58,6 +58,7 @@ private:
 /// `existing_root` is a directory `dir` lives under that no create reaching here makes (the
 /// server's data path): every component between the two has its entry persisted, whoever made it,
 /// nothing above it is opened, and a root not containing `dir` persists only new components and `dir`.
+/// Containment holds between the two paths as they resolve, not as they are spelled.
 void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec, const String & existing_root = {});
 
 /// Same, but reports a failure to create the directory by throwing instead of through `ec`.

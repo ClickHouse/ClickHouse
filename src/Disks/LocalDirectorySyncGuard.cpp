@@ -159,6 +159,21 @@ void removeDirectories(const std::vector<fs::path> & dirs)
     }
 }
 
+/// A store path is canonicalized by its caller while the data path keeps whatever form the
+/// configuration gave it, so only resolved forms are comparable. Both resolve or neither is used:
+/// resolving one alone can miss a containment the raw spellings would have matched.
+std::pair<fs::path, fs::path> resolvedForComparison(const fs::path & dir, const fs::path & root)
+{
+    std::error_code dir_ec;
+    fs::path canonical_dir = fs::weakly_canonical(dir, dir_ec);
+    std::error_code root_ec;
+    fs::path canonical_root = fs::weakly_canonical(root, root_ec);
+
+    if (dir_ec || root_ec)
+        return {dir, root};
+    return {canonical_dir, canonical_root};
+}
+
 /// The components of `dir` that lie below `root`, shallowest first, or nothing at all when `root`
 /// does not contain `dir`: with no directory known to predate the store nothing bounds such a
 /// walk. An empty list is a `dir` that is `root` itself, whose own entry lies above the boundary.
@@ -228,7 +243,9 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
         /// A component that was already there is not known to be persisted either: a write that
         /// ran with fsync_metadata disabled, and an operator's mkdir, both leave one behind. An
         /// object is only as durable as every directory holding it, so the whole path is persisted.
-        auto below = componentsBelow(normalized, root);
+        /// Resolved after the creates above, so every component of the path resolves as it now is.
+        const auto [resolved_dir, resolved_root] = resolvedForComparison(normalized, root);
+        auto below = componentsBelow(resolved_dir, resolved_root);
         if (!below)
         {
             /// Nothing bounds the walk, so persist only what is known to be owed here: the

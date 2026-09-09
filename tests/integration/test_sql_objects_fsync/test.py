@@ -340,8 +340,11 @@ def test_store_directory_of_an_unsynced_write_is_persisted_later():
     # The same holds when only part of the path is there, which is what an operator's `mkdir -p`
     # of the parents leaves behind: the store directory is created here, but the entries of the
     # directories above it are no more persisted than in the case above.
+    # The parents are named directly, since `mkdir -p {WORKLOAD_DIR}/..` has to create the leaf in
+    # order to resolve `..` through it, which would leave the whole path behind: the case above.
     node.exec_in_container(["bash", "-c", f"rm -rf {WORKLOAD_ROOT}"])
-    node.exec_in_container(["bash", "-c", f"mkdir -p {WORKLOAD_DIR}/.."])
+    node.exec_in_container(["bash", "-c", f"mkdir -p {WORKLOAD_ROOT}/entities"])
+    assert not _exists(WORKLOAD_DIR), f"{WORKLOAD_DIR} exists, so this is not the parents-only case"
     _, dir_sync = _run("CREATE RESOURCE pd_partial (WRITE DISK pd_partial_disk)", 1)
     assert dir_sync >= 4, (
         f"only {dir_sync} directory syncs, so an ancestor this call found rather than created "
