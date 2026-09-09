@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 namespace DB
@@ -10,7 +11,11 @@ class QueryPipeline;
 class QueryPlanProfiler
 {
 public:
-    static bool canEnableProfiler(const ContextPtr & context, bool internal);
+    /// Whether this query should have its plan captured. Everything the capture costs -- keeping
+    /// the plan, per-processor timings, and the join analyze mode -- is decided here, so the
+    /// condition has to describe the queries that can actually end up with a `query_plan` value,
+    /// not merely those that asked for one.
+    static bool canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal);
 
     void setQueryPlan(QueryPlan plan_);
 

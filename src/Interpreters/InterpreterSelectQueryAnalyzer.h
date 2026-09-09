@@ -94,8 +94,6 @@ public:
         return query_plan_with_parallel_replicas_builder;
     }
 
-    bool supportsPlanProfiling() const override { return true; }
-
 private:
     ASTPtr query;
     ContextMutablePtr context;

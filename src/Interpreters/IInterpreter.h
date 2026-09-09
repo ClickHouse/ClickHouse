@@ -28,8 +28,6 @@ public:
 
     virtual void setPlanProfiler(QueryPlanProfilerPtr) {}
 
-    virtual bool supportsPlanProfiling() const { return false; }
-
     // Fill query log element with query kind, query databases, query tables and query columns.
     void extendQueryLogElem(
         QueryLogElement & elem,

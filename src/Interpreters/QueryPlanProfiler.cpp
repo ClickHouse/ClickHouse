@@ -5,6 +5,8 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryPlanProfiler.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
 #include <Common/JSONBuilder.h>
@@ -19,11 +21,22 @@ namespace DB
 
 namespace Setting
 {
+extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsBool log_queries;
 extern const SettingsBool log_query_plans;
 }
 
 namespace
 {
+
+/// The statements whose plan can be captured: those InterpreterFactory routes to
+/// InterpreterSelectQueryAnalyzer, currently the only interpreter that supports plan profiling.
+/// Widen this as other interpreters gain support -- it is the single place that decides which
+/// queries pay for the capture.
+bool isSupportedQuery(const ASTPtr & ast)
+{
+    return ast && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
+}
 
 String toJSONString(JSONBuilder::ItemPtr item)
 {
@@ -51,18 +64,31 @@ void QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
     );
 }
 
-bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, bool internal)
+bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal)
 {
     if (internal)
         return false;
 
-    if (!context->getSettingsRef()[Setting::log_query_plans])
+    const auto & settings = context->getSettingsRef();
+
+    if (!settings[Setting::log_query_plans])
+        return false;
+
+    /// The plan is stored on the `system.query_log` row, so without that row there is nowhere to
+    /// put it and capturing would be pure cost.
+    if (!settings[Setting::log_queries])
         return false;
 
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
 
-    return true;
+    /// Asks the statement rather than the interpreter because the join analyze mode has to be
+    /// decided before the interpreter exists: that is the last moment at which it still reaches
+    /// the planner.
+    if (!isSupportedQuery(ast))
+        return false;
+
+    return settings[Setting::allow_experimental_analyzer];
 }
 
 void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const

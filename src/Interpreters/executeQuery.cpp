@@ -3096,13 +3096,11 @@ static BlockIO executeQueryImpl(
                 ///
                 /// `Derived` rather than `Exact`: it is the mode EXPLAIN ANALYZE uses unless asked
                 /// for matched rows, and it counts per probed block instead of per row.
-                ///
-                /// The condition is the profiler's, minus the part that needs an interpreter, so a
-                /// query that turns out not to be profiled -- an INSERT SELECT, say -- may collect
-                /// join counters nobody reads. It only applies to queries that asked for plan
-                /// logging, and only to those with joins.
-                if (out_ast && QueryPlanProfiler::canEnableProfiler(context, internal))
+                if (QueryPlanProfiler::canEnableProfiler(context, out_ast, internal))
+                {
+                    context->enablePlanProfiler();
                     context->setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+                }
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
@@ -3178,11 +3176,10 @@ static BlockIO executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                     }
 
-                    if (interpreter->supportsPlanProfiling() && QueryPlanProfiler::canEnableProfiler(context, internal))
-                    {
-                        context->enablePlanProfiler();
-                        interpreter->setPlanProfiler(context->getPlanProfiler());
-                    }
+                    /// Non-null only when the check above enabled it, so the condition is not
+                    /// repeated here.
+                    if (auto plan_profiler = context->getPlanProfiler())
+                        interpreter->setPlanProfiler(plan_profiler);
 
                     res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
