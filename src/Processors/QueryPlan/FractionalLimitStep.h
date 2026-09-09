@@ -42,6 +42,10 @@ public:
 
     bool hasCorrelatedExpressions() const override { return false; }
 
+    /// The fraction is resolved against the whole result, so `apply_prelimit` never pushes this to a
+    /// shard and it runs on the initiator.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     /// Streams below the framed format.
     void serializeLegacy(Serialization & ctx) const;

@@ -39,6 +39,11 @@ public:
 
     bool hasCorrelatedExpressions() const override { return false; }
 
+    /// `LIMIT -n` returns the *last* `n` rows, and `addPreliminaryLimitStep` can push it to the shard, so
+    /// this step can be the replica-output boundary. It is a top-N taken from the tail, so like
+    /// `LimitStep` its output is replicated: every replica ships its own last `n` rows.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     /// Streams below the framed format.
     void serializeLegacy(Serialization & ctx) const;

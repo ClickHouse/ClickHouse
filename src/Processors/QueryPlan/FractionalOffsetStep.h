@@ -29,6 +29,8 @@ public:
     /// The framed format: the wire struct is what the manifest in `FractionalOffsetStep.cpp` declares.
     FractionalOffsetWire toWire() const;
     static QueryPlanStepPtr fromWire(FractionalOffsetWire wire, Deserialization & ctx);
+    /// Like `FractionalLimitStep`: the fraction is resolved against the whole result.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     /// Streams below the framed format.

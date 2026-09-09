@@ -96,11 +96,20 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
 /// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
 /// or `WITH CUBE` can be shipped under `make_distributed_plan`.
-/// Version 10 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
+/// Version 10 adds the part storage-type tag (with the blob-list manifest payload) to the worker read
+/// step, in the slot of the former `is_packed` flag. The values 0/1 are wire-compatible with the flag;
+/// only the new tag 2 requires this version, and the serializer refuses to emit it towards older peers.
+/// Version 11 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
-/// Version 11 adds the ReadInOrder info in the reading step in the plan.
-/// Version 12 is the framed format. The head is two fixed fields, `[version][format_kind]`, and does
+/// Version 12 adds the ReadInOrder info in the reading step in the plan.
+/// Version 13 adds the `only_merge` flag (bit 128) on `AggregatingStep`, set on the merge step
+/// synthesized by the Cascades aggregation-pushdown transformation. Both sides gate the flag on
+/// the version, so a mixed-version cluster fails at plan time instead of at runtime.
+/// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
+/// can be shipped under `make_distributed_plan`.
+/// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
+/// Version 16 is the framed format. The head is two fixed fields, `[version][format_kind]`, and does
 /// not change again: every later body layout keeps those two fields, so a reader that does not know
 /// the layout can still reject the plan on the kind. The version is a coarse gate - a reader refuses a
 /// version above the one it supports - but the deciding checks are the step names, settings and set
@@ -109,23 +118,23 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// settings. Each step payload and each set follows the outline as its own sized frame - a size then
 /// that many bytes - so a reader walks the plan one payload at a time and to its exact end with no
 /// total length. A reader can check the whole plan or print its shape from the outline alone.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 12;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
 /// The version writers use unless a query asks for another one. It can stay below
 /// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` for a release after a new version lands: the fleet then
 /// reads the new version everywhere before anyone writes it, and users can try it per query with
 /// `query_plan_serialization_version`. Move it up once the new version has proven itself.
-static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 12;
+static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 16;
 /// Body layout of a framed stream, named in the head so a reader knows what it is looking at instead
 /// of inferring it from the version. 0 is never written. Every new layout takes the next value and
 /// names the plan version that introduced it.
 static constexpr auto DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE = 1;
 /// First version with the framed format.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 12;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 16;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
 /// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
-/// Not tied to `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`: the plan is cached and written per peer
-/// version, so a replica that is merely older is served a stream it can read rather than the
-/// newest one, and only a replica below the flag itself has to be left out.
+/// Not tied to `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`: the plan is written per peer version (clamped
+/// to what the peer can read), so a replica that is merely older is served a stream it can read rather
+/// than the newest one, and only a replica below the flag itself has to be left out.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
@@ -138,13 +147,22 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 /// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
 /// `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOBS_LIST_PARTS = 10;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 10;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 11;
 /// First query-plan serialization version that carries the ReadInOrder info
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER = 11;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER = 12;
+/// First query-plan serialization version with the `only_merge` flag (bit 128) on `AggregatingStep`,
+/// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
+/// mixed-version cluster fails at plan time.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
+/// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
+/// `LimitRangeStep` for `make_distributed_plan`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
+/// Version 3 added the error code of a failed task to its status reply.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

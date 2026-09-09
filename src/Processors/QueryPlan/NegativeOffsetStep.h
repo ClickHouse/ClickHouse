@@ -28,6 +28,8 @@ public:
     /// The framed format: the wire struct is what the manifest in `NegativeOffsetStep.cpp` declares.
     NegativeOffsetWire toWire() const;
     static QueryPlanStepPtr fromWire(NegativeOffsetWire wire, Deserialization & ctx);
+    /// Like `OffsetStep`: a negative `OFFSET` applies to the whole result, so it runs on the initiator.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     /// Streams below the framed format.

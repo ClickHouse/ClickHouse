@@ -99,6 +99,7 @@ const QueryPlanStepRegistry::StepSerializationInfo * QueryPlanStepRegistry::getS
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry);
+void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
@@ -109,6 +110,7 @@ void registerWindowStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry);
+void registerLimitRangeStep(QueryPlanStepRegistry & registry);
 void registerFractionalLimitStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
@@ -143,6 +145,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
 
     registerExpressionStep(registry);
     registerUnionStep(registry);
+    registerIntersectOrExceptStep(registry);
     registerDistinctStep(registry);
     registerSortingStep(registry);
     registerAggregatingStep(registry);
@@ -153,6 +156,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerArrayJoinStep(registry);
     registerLimitByStep(registry);
     registerLimitStep(registry);
+    registerLimitRangeStep(registry);
     registerFractionalLimitStep(registry);
     registerFractionalOffsetStep(registry);
     registerNegativeLimitStep(registry);
