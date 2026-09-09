@@ -147,7 +147,7 @@ std::vector<ProcessorState *> Poller::poll(int timeout_ms)
     }
 
     constexpr size_t max_events = 16;
-    epoll_event events[max_events];
+    epoll_event events[max_events]{};
     size_t num_events = epoll.getManyReady(max_events, events, timeout_ms);
 
     std::lock_guard lock(mutex);
