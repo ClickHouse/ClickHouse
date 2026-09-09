@@ -209,6 +209,7 @@ private:
 
     std::atomic<int> is_stopped{0};
     bool preserve_order = false;
+    bool row_index_column = false;
 };
 
 class VortexSchemaReader final : public ISchemaReader

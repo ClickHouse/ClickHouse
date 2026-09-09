@@ -128,6 +128,10 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
         query_info.prewhere_info);
+    // Delete transforms in data lakes need row numbers
+    format_filter_info->need_row_numbers = lazy_row_index_registry != nullptr
+        || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns)
+        || configuration->isDataLakeConfiguration();
 
     for (size_t i = 0; i < num_streams; ++i)
     {

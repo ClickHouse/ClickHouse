@@ -116,6 +116,9 @@ struct FormatFilterInfo
     /// return exactly these rows; with `FormatSettings::parquet::preserve_order` they are returned
     /// in this exact order. Supported by Parquet and Vortex.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    // True if someone will use ChunkInfoRowNumbers downstream
+    bool need_row_numbers = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;

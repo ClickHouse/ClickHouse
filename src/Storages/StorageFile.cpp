@@ -2432,6 +2432,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->need_row_numbers
+        = lazy_row_index_registry != nullptr || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -2561,6 +2563,7 @@ public:
                 /// so the deferred columns are read without any filtering expressions.
                 auto format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, getContext(), nullptr, nullptr, nullptr);
                 format_filter_info->rows_to_read = file.rows;
+                format_filter_info->need_row_numbers = true;
 
                 if (object_with_metadata)
                 {

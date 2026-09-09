@@ -14,6 +14,7 @@
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -48,6 +49,26 @@ using namespace Vortex;
 /// still making progress. Finding it idle this many times in a row means it never will again.
 static constexpr auto PROGRESS_CHECK_PERIOD = std::chrono::seconds(1);
 static constexpr size_t IDLE_CHECKS_BEFORE_STUCK = 3;
+
+// Convert Vortex's row_idx() column into ChunkInfoRowNumbers
+static std::shared_ptr<ChunkInfoRowNumbers> convertToRowNumbers(const arrow::Array & row_index_column)
+{
+    const auto & values = assert_cast<const arrow::UInt64Array &>(row_index_column);
+    const size_t num_rows = values.length();
+    if (num_rows == 0)
+        return std::make_shared<ChunkInfoRowNumbers>(0);
+
+    const UInt64 first = values.Value(0);
+    const UInt64 last = values.Value(num_rows - 1);
+    if (last - first + 1 == num_rows)
+        return std::make_shared<ChunkInfoRowNumbers>(first);
+
+    // TODO(myrrc): this is very inefficient
+    auto info = std::make_shared<ChunkInfoRowNumbers>(first, IColumnFilter(last - first + 1, 0));
+    for (size_t i = 0; i < num_rows; ++i)
+        (*info->applied_filter)[values.Value(i) - first] = 1;
+    return info;
+}
 
 /// The C entry points the library calls. An exception escaping one of them would unwind into Rust,
 /// so everything they reach is `noexcept`.
@@ -236,7 +257,17 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
 
             ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**batch);
 
-            auto table = arrow::Table::FromRecordBatches({*batch});
+            std::shared_ptr<ChunkInfoRowNumbers> row_numbers_info;
+            auto data_batch = *batch;
+            if (row_index_column)
+            {
+                row_numbers_info = convertToRowNumbers(*data_batch->column(0));
+                auto removed = data_batch->RemoveColumn(0);
+                throwFromArrowStatusIfFailed(removed.status());
+                data_batch = *removed;
+            }
+
+            auto table = arrow::Table::FromRecordBatches({data_batch});
             throwFromArrowStatusIfFailed(table.status());
 
             auto converter = takeConverter();
@@ -246,6 +277,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
             BlockMissingValues * missing_values_ptr
                 = format_settings.defaults_for_omitted_fields ? &delivered_chunk.missing_values : nullptr;
             delivered_chunk.chunk = converter->arrowTableToCHChunk(*table, (*table)->num_rows(), nullptr, missing_values_ptr);
+            if (row_numbers_info)
+                delivered_chunk.chunk.getChunkInfos().add(std::move(row_numbers_info));
         }
 
         {
@@ -462,6 +495,10 @@ void VortexBlockInputFormat::prepareReader()
     options.columns = column_name_pointers.data();
     options.num_columns = column_name_pointers.size();
     options.filter = plan.filter.get();
+
+    row_index_column = false;
+    options.row_index_column = format_filter_info && format_filter_info->need_row_numbers;
+
     /// Splits allowed in flight at once: being read, decoded, or queued for `read`. Two per
     /// decoding thread leaves each thread something to decode while the next split is still being
     /// read. The limit is low because it counts splits and not bytes, and the decoded chunks of a
@@ -477,7 +514,9 @@ void VortexBlockInputFormat::prepareReader()
     /// will be imported with has to exist beforehand: the file schema projected to the requested
     /// columns, the same way the library projects it.
     arrow::FieldVector scan_fields;
-    scan_fields.reserve(plan.column_names.size());
+    scan_fields.reserve(plan.column_names.size() + 1);
+    if (row_index_column)
+        scan_fields.push_back(arrow::field("_row_index", arrow::uint64(), /* nullable */ false));
     for (const auto & name : plan.column_names)
         scan_fields.push_back(file_schema->GetFieldByName(name));
     scan_schema = arrow::schema(std::move(scan_fields));

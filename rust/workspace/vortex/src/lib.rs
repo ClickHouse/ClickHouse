@@ -28,7 +28,7 @@ use std::task::{Context, Poll, Waker};
 use arrow_array::cast::AsArray;
 use arrow_array::ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema};
 use arrow_array::{Array, RecordBatch, StructArray};
-use arrow_schema::{Field, Schema, SchemaRef};
+use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use async_task::Runnable;
 use concurrent_queue::ConcurrentQueue;
 use futures::future::BoxFuture;
@@ -39,12 +39,13 @@ use vortex::arrow::ArrowSessionExt;
 use vortex::buffer::{Alignment, Buffer, ByteBufferMut};
 use vortex::dtype::{FieldName, Nullability};
 use vortex::error::{vortex_err, VortexResult};
-use vortex::expr::{get_item, is_null, lit, not, root, select, Expression};
+use vortex::expr::{get_item, is_null, lit, merge, not, pack, root, select, Expression};
 use vortex::extension::datetime::{Date, TimeUnit, Timestamp, TimestampOptions};
 use vortex::file::{OpenOptionsSessionExt, VortexFile, WriteOptionsSessionExt};
 use vortex::io::runtime::{AbortHandle, AbortHandleRef, Executor, Handle, Task};
 use vortex::io::session::RuntimeSessionExt;
 use vortex::io::{CoalesceConfig, IoBuf, VortexReadAt, VortexWrite};
+use vortex::layout::layouts::row_idx::row_idx;
 use vortex::scalar::Scalar;
 use vortex::scalar_fn::fns::binary::Binary;
 use vortex::scalar_fn::fns::operators::Operator;
@@ -645,6 +646,9 @@ pub struct FFI_VortexScanOptions {
     // 0 means the whole file
     pub row_selection_len: u64,
 
+    // If true, prepend a row_idx() column to output
+    pub row_index_column: bool,
+
     /// The number of splits that may be in flight at once: being read, being decoded, or already
     /// handed over and not yet released. 0 selects the default. This is what keeps the scan from
     /// running ahead of the caller; the reads underneath are bounded separately by
@@ -806,6 +810,8 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
             if !options.is_null() {
                 let options = &*options;
 
+                let mut projection: Option<Expression> = None;
+
                 if !options.columns.is_null() {
                     let mut names = Vec::with_capacity(options.num_columns as usize);
                     for i in 0..options.num_columns {
@@ -828,15 +834,34 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                         .iter()
                         .map(|name| FieldName::from(name.as_str()))
                         .collect();
+                    projection = Some(select(field_names, root()));
+                    schema = Arc::new(Schema::new(fields));
+                }
+
+                if options.row_index_column {
+                    let name = "_row_index";
+                    if schema.field_with_name(name).is_ok() {
+                        return Err(format!(
+                            "the row index column name '{name}' collides with a projected column"
+                        ));
+                    }
+                    let row_idx_struct = pack([(name, row_idx())], Nullability::NonNullable);
+                    projection = Some(merge([row_idx_struct, projection.unwrap_or_else(root)]));
+                    let mut fields = Vec::with_capacity(schema.fields.len() + 1);
+                    fields[0] = Arc::new(Field::new(name, DataType::UInt64, false));
+                    fields.extend_from_slice(&schema.fields);
+                    schema = Arc::new(Schema::new(fields));
+                }
+
+                if let Some(projection) = projection {
                     // `with_projection` and `with_filter` take an expression already bound to
                     // the file's type, which is where a column that is not in the file or a
                     // comparison of two types that cannot be compared is now caught.
                     builder = builder.with_projection(
-                        select(field_names, root())
+                        projection
                             .bind(reader.file.dtype())
                             .map_err(|e| e.to_string())?,
                     );
-                    schema = Arc::new(Schema::new(fields));
                 }
 
                 if !options.filter.is_null() {
@@ -1860,6 +1885,7 @@ mod tests {
             row_range_end: 0,
             row_selection_begin: ptr::null(),
             row_selection_len: 0,
+            row_index_column: false,
             max_splits_in_flight: 0,
         }
     }
@@ -1940,20 +1966,28 @@ mod tests {
             0
         );
         let file_schema = Schema::try_from(&ffi_schema).expect("schema");
-        if options.columns.is_null() {
-            return Arc::new(file_schema);
+        let mut fields: Vec<Field> = if options.columns.is_null() {
+            file_schema
+                .fields()
+                .iter()
+                .map(|field| field.as_ref().clone())
+                .collect()
+        } else {
+            (0..options.num_columns as usize)
+                .map(|i| {
+                    let name = unsafe { CStr::from_ptr(*options.columns.add(i)) }
+                        .to_str()
+                        .expect("utf-8 name");
+                    file_schema
+                        .field_with_name(name)
+                        .expect("a column of the file")
+                        .clone()
+                })
+                .collect()
+        };
+        if options.row_index_column {
+            fields.insert(0, Field::new("_row_index", DataType::UInt64, false));
         }
-        let fields: Vec<Field> = (0..options.num_columns as usize)
-            .map(|i| {
-                let name = unsafe { CStr::from_ptr(*options.columns.add(i)) }
-                    .to_str()
-                    .expect("utf-8 name");
-                file_schema
-                    .field_with_name(name)
-                    .expect("a column of the file")
-                    .clone()
-            })
-            .collect();
         Arc::new(Schema::new(fields))
     }
 
