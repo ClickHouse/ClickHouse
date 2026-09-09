@@ -4,11 +4,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
-#include <Common/FailPoint.h>
 #include <Common/SharedMutex.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -37,15 +35,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int FAULT_INJECTED;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace FailPoints
-{
-    extern const char grace_hash_join_fail_in_delayed_block_read[];
 }
 
 namespace
@@ -55,12 +47,10 @@ namespace
     public:
         AccumulatedBlockReader(TemporaryBlockStreamReaderHolder reader_,
                                std::mutex & mutex_,
-                               size_t result_block_size_ = 0,
-                               bool inject_read_failure_ = false)
+                               size_t result_block_size_ = 0)
             : reader(std::move(reader_))
             , mutex(mutex_)
             , result_block_size(result_block_size_)
-            , inject_read_failure(inject_read_failure_)
         {
             if (!reader)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader is nullptr");
@@ -75,39 +65,17 @@ namespace
 
             Blocks blocks;
             size_t rows_read = 0;
-            // One AccumulatedBlockReader is shared between concurrent DelayedJoinedBlocksWorkerTransform
-            // threads. If reader->read() throws (e.g. a mid-read MEMORY_LIMIT_EXCEEDED cancels the
-            // underlying ReadBuffer), mark the reader finished before propagating so a sibling worker
-            // does not re-enter read() on the now-canceled buffer (which trips chassert(!isCanceled())).
-            try
+            do
             {
-                do
+                Block block = reader->read();
+                rows_read += block.rows();
+                if (block.empty())
                 {
-                    // Only the left (delayed) reader arms this, so the failure can only be injected
-                    // into the reader that several workers share. Canceling the buffer before
-                    // throwing reproduces what ReadBuffer::next does on a real mid-read failure.
-                    if (inject_read_failure)
-                        fiu_do_on(FailPoints::grace_hash_join_fail_in_delayed_block_read,
-                        {
-                            reader.getHolder()->cancel();
-                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in delayed block read");
-                        });
-
-                    Block block = reader->read();
-                    rows_read += block.rows();
-                    if (block.empty())
-                    {
-                        eof = true;
-                        return concatenateBlocks(blocks);
-                    }
-                    blocks.push_back(std::move(block));
-                } while (rows_read < result_block_size);
-            }
-            catch (...)
-            {
-                eof = true;
-                throw;
-            }
+                    eof = true;
+                    return concatenateBlocks(blocks);
+                }
+                blocks.push_back(std::move(block));
+            } while (rows_read < result_block_size);
 
             return concatenateBlocks(blocks);
         }
@@ -117,7 +85,6 @@ namespace
         std::mutex & mutex;
 
         const size_t result_block_size;
-        const bool inject_read_failure;
         bool eof = false;
     };
 
@@ -207,13 +174,8 @@ public:
     AccumulatedBlockReader getLeftTableReader()
     {
         ensureState(State::JOINING_BLOCKS);
-        return AccumulatedBlockReader(left_file.getReadStream(), left_file_mutex, 0, /*inject_read_failure_=*/true);
+        return AccumulatedBlockReader(left_file.getReadStream(), left_file_mutex);
     }
-
-    /// Spilled bytes for this bucket. Only called after the join
-    /// has finished, when no thread is writing to the files.
-    TemporaryDataBuffer::Stat leftSpillStat() const { return left_file.getHolder()->getStat(); }
-    TemporaryDataBuffer::Stat rightSpillStat() const { return right_file.getHolder()->getStat(); }
 
     const size_t idx;
 
@@ -294,8 +256,7 @@ GraceHashJoin::GraceHashJoin(
     SharedHeader left_sample_block_,
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
-    bool any_take_last_row_,
-    size_t external_join_threshold_)
+    bool any_take_last_row_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
@@ -303,7 +264,6 @@ GraceHashJoin::GraceHashJoin(
     , any_take_last_row{any_take_last_row_}
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
-    , external_join_threshold(external_join_threshold_)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope({
@@ -366,17 +326,6 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
         return false;
     bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
-    /// Wrapper-only auto-spill: when `SpillingHashJoin` drives this instance, it passes its
-    /// memory cap as `external_join_threshold`. We must keep spilling under the same cap;
-    /// otherwise the in-memory bucket would just keep growing and the wrapper's spill decision
-    /// would be meaningless. We use half the threshold for the same reason as the wrapper: the
-    /// in-memory hash table doubles its buffer in power-of-two steps, transiently holding 3X
-    /// the previous size, so rehashing buckets early prevents that doubling from exceeding the
-    /// cap. Standalone `grace_hash` instances pass 0 and rely solely on
-    /// `max_rows_in_join` / `max_bytes_in_join`.
-    if (!has_overflow && external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold)
-        has_overflow = true;
-
     if (has_overflow)
         LOG_TRACE(log, "Memory overflow, size exceeded {} / {} bytes, {} / {} rows",
             ReadableSize(total_bytes), ReadableSize(table_join->sizeLimits().max_bytes),
@@ -432,7 +381,6 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets()
     LOG_TRACE(log, "Rehashing from {} to {}", current_size, to_size);
 
     addBuckets(to_size - current_size);
-    ++stats.num_rehashes;
 
     return buckets;
 }
@@ -489,12 +437,8 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 JoinResultPtr GraceHashJoin::joinBlock(Block block)
 {
-    /// Check if hash join post build optimizations could be performed.
-    if (hash_join && getNumBuckets() <= 1)
-    {
-        std::lock_guard lock(hash_join_mutex);
-        hash_join->runPostBuildPhase();
-    }
+    if (rightTableCanBeReranged())
+        tryRerangeRightTableData();
 
     if (block.rows() == 0)
         return hash_join->joinBlock(block);
@@ -529,77 +473,15 @@ const Block & GraceHashJoin::getTotals() const
 size_t GraceHashJoin::getTotalRowCount() const
 {
     std::lock_guard lock(hash_join_mutex);
-    /// A failed rehash leaves no in-memory join until the next `addBlockToJoinImpl` rebuilds one,
-    /// and the spill scheduler reads these counts from another thread meanwhile.
-    if (!hash_join)
-        return 0;
+    assert(hash_join);
     return hash_join->getTotalRowCount();
 }
 
 size_t GraceHashJoin::getTotalByteCount() const
 {
     std::lock_guard lock(hash_join_mutex);
-    if (!hash_join)
-        return 0;
+    chassert(hash_join);
     return hash_join->getTotalByteCount();
-}
-
-void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
-{
-    UInt64 right_table_rows = in_memory_join.getRightTableRowCount();
-    right_rows += right_table_rows;
-    unique_keys += in_memory_join.getTotalRowCount();
-    peak_in_memory_bytes = std::max(peak_in_memory_bytes, in_memory_join.getPeakBuildBytes());
-
-    if (const auto * match_stats = in_memory_join.getMatchStats())
-    {
-        left_rows_total += match_stats->getInputLeft();
-
-        matched_left.add(match_stats->getMatchedLeft());
-        matched_right.add(match_stats->getMatchedRight(right_table_rows));
-    }
-}
-
-GraceHashJoin::GraceHashJoinStats GraceHashJoin::collectStats() const
-{
-    GraceHashJoinStats result = stats;
-
-    if (current_bucket && hash_join)
-        result.foldIn(*hash_join);
-
-    Buckets buckets_snapshot = getCurrentBuckets();
-    result.num_buckets = buckets_snapshot.size();
-    for (const auto & bucket : buckets_snapshot)
-    {
-        result.left_spilled_compressed_bytes += bucket->leftSpillStat().compressed_size;
-        result.right_spilled_compressed_bytes += bucket->rightSpillStat().compressed_size;
-    }
-    return result;
-}
-
-StepAnalysisReport GraceHashJoin::getAnalysisReport() const
-{
-    const GraceHashJoinStats stats_snapshot = collectStats();
-
-    StepAnalysisReport report = buildMatchedRowsReport({
-        .left_rows = stats_snapshot.left_rows_total,
-        .matched_left = stats_snapshot.matched_left.get(),
-        .right_rows = stats_snapshot.right_rows,
-        .matched_right = stats_snapshot.matched_right.get()});
-
-    MetricList hash_table_metrics;
-    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, stats_snapshot.unique_keys);
-    hash_table_metrics.emplace_back(MetricKey::Memory, stats_snapshot.peak_in_memory_bytes);
-    hash_table_metrics.emplace_back(MetricKey::Buckets, stats_snapshot.num_buckets);
-    hash_table_metrics.emplace_back(MetricKey::Rehashes, stats_snapshot.num_rehashes);
-    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
-
-    MetricList spill_metrics;
-    spill_metrics.emplace_back(MetricKey::LeftSpilled, stats_snapshot.left_spilled_compressed_bytes);
-    spill_metrics.emplace_back(MetricKey::RightSpilled, stats_snapshot.right_spilled_compressed_bytes);
-    report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
-
-    return report;
 }
 
 bool GraceHashJoin::alwaysReturnsEmptySet() const
@@ -794,9 +676,6 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
-    if (hash_join)
-        stats.foldIn(*hash_join);
-
     size_t prev_keys_num = 0;
     if (hash_join && buckets.size() > 1)
     {
@@ -836,7 +715,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
-    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, /*is_concurrent_hash_join*/ false);
+    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id);
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
@@ -877,62 +756,24 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
                 return;
         }
         auto prev_keys_num = hash_join->getTotalRowCount();
-        size_t pre_total_bytes = hash_join->getTotalByteCount();
 
-        /// Pre-check: rehash when the in-memory bucket alone is already past half of the
-        /// wrapper-supplied auto-spill cap. The inner `HashJoin::addBlockToJoin` grows its
-        /// hash buffer in power-of-two steps. Doubling from X to 2X transiently holds 3X
-        /// (old buffer + new buffer being filled), so a post-add check can race with that
-        /// doubling and observe the OOM only as an allocator exception.
-        ///
-        /// We trigger the rehash on the existing table size and deliberately do NOT factor
-        /// in the incoming block: `block.allocatedBytes()` is a misleading lower bound on
-        /// the actual hash-table cost (cell overhead, load-factor padding, resize peaks),
-        /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
-        /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`. Skipped for
-        /// standalone `grace_hash` instances (`external_join_threshold == 0`); they still
-        /// rely on the post-insert `hasMemoryOverflow` check against
-        /// `max_rows_in_join` / `max_bytes_in_join`.
-        const bool pre_threshold_overflow = external_join_threshold > 0
-            && pre_total_bytes * 2 >= external_join_threshold;
+        hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+        size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
+        size_t hash_join_total_bytes = hash_join->getTotalByteCount();
+        if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
+            return;
 
-        bool block_added = false;
-        if (!pre_threshold_overflow)
-        {
-            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
-            block_added = true;
-            size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
-            size_t hash_join_total_bytes = hash_join->getTotalByteCount();
-            if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
-                return;
-        }
-
-        if (block_added)
-            current_block = {};
-        /// else: we did not add the block, so we must include it when re-scattering after rehash.
+        current_block = {};
 
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
         buckets_snapshot = rehashBuckets();
         force_spill = false;
-        /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
-        stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
-        /// `releaseJoinedBlocks` resets the join's data before it finishes allocating, so detach
-        /// first: a throw must not leave `hash_join` pointing at a join whose data is gone.
-        auto released_join = std::move(hash_join);
-        auto right_blocks = released_join->releaseJoinedBlocks(/* restructure */ false);
-        released_join.reset();
+        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
+        hash_join = nullptr;
 
         {
             Blocks current_blocks;
-            current_blocks.reserve(right_blocks.size() + 1);
-
-            if (current_block.rows() > 0)
-            {
-                Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, buckets_snapshot.size());
-                flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
-                current_blocks.emplace_back(std::move(blocks[bucket_index]));
-            }
-
+            current_blocks.reserve(right_blocks.size());
             for (const auto & right_block : right_blocks)
             {
                 Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
@@ -943,12 +784,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
             current_block = concatenateBlocks(current_blocks);
         }
 
-        /// `rehashBuckets` doubles the bucket count from N to 2N. Of the `prev_keys_num` rows that
-        /// were in this bucket, about half map to bucket `i` and half to bucket `i + N` under the
-        /// new modulus, so ~half stay here and the rest are flushed to disk. Reserving for the
-        /// full `prev_keys_num` would allocate a power-of-two buffer for the pre-rehash size and
-        /// immediately blow past `max_bytes_before_external_join`.
-        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num);
 
         if (current_block.rows() > 0)
             hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
@@ -959,6 +795,20 @@ size_t GraceHashJoin::getNumBuckets() const
 {
     std::shared_lock lock(rehash_mutex);
     return buckets.size();
+}
+
+bool GraceHashJoin::rightTableCanBeReranged() const
+{
+    if (hash_join && getNumBuckets() <= 1)
+        return hash_join->rightTableCanBeReranged();
+    return false;
+}
+
+void GraceHashJoin::tryRerangeRightTableData()
+{
+    std::lock_guard lock(hash_join_mutex);
+    if (hash_join)
+        hash_join->tryRerangeRightTableData();
 }
 
 GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const

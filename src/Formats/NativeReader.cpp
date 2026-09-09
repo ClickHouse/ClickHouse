@@ -86,7 +86,7 @@ void NativeReader::resetParser()
 
 void NativeReader::readData(
     const ISerialization & serialization,
-    IColumn & column,
+    ColumnPtr & column,
     ReadBuffer & istr,
     const FormatSettings * format_settings,
     size_t rows,
@@ -117,13 +117,13 @@ void NativeReader::readData(
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
 
-    if (column.size() != rows)
+    if (column->size() != rows)
         throw Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}",
-            column.size(),
+            column->size(),
             rows);
 }
 
@@ -201,7 +201,7 @@ Block NativeReader::read()
         String type_name;
         if (format_settings && format_settings->native.decode_types_in_binary_format)
         {
-            column.type = decodeDataType(istr, format_settings->binary.max_binary_type_complexity);
+            column.type = decodeDataType(istr);
             type_name = column.type->getName();
         }
         else
@@ -213,16 +213,15 @@ Block NativeReader::read()
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
-        MutableColumnPtr read_column;
+        ColumnPtr read_column;
 
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
             /// in-memory state, it should be able to handle all possible serialization variants.
-            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations(
-                server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
 
-            UInt8 has_custom = 0;
+            UInt8 has_custom;
             readBinary(has_custom, istr);
             if (has_custom)
                 info->deserializeFromKindsBinary(istr);
@@ -253,7 +252,7 @@ Block NativeReader::read()
         {
             const auto * format = format_settings ? &*format_settings : nullptr;
             NameAndTypePair name_and_type = {column.name, column.type};
-            readData(*serialization, *read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
+            readData(*serialization, read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
         }
 
         column.column = std::move(read_column);
@@ -270,16 +269,7 @@ Block NativeReader::read()
 
                 if (!header_column.type->equals(*column.type))
                 {
-                    /// In the event of the same aggregate function but of a different variant (e.g. Window vs Aggregate),
-                    /// we should try to convert and read, since the difference in `Window` vs `Aggregate` is not a
-                    /// user-facing type difference but rather an internal implementation detail.
-                    /// This can happen when external sort spills blocks to disk: the header carries the Window variant from the query plan,
-                    /// but `NativeReader` deserializes the type name and resolves it via `AggregateFunctionFactory`, which always produces the
-                    /// Aggregation variant.
-                    const auto * header_agg_type = typeid_cast<const DataTypeAggregateFunction *>(header_column.type.get());
-                    bool convertible_agg_variant = header_agg_type && header_agg_type->equalsIgnoringVariant(*column.type);
-
-                    if ((format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant)
+                    if (format_settings && format_settings->native.allow_types_conversion)
                     {
                         try
                         {
@@ -354,7 +344,7 @@ Block NativeReader::read()
     }
 
     if (res.rows() != rows)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
 }
