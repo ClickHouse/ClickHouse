@@ -437,12 +437,12 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             }
             new_table_metadata.tracked_files_ttl_sec = value;
         }
-        else if (change.name == "failed_file_ttl_sec")
+        else if (change.name == "failed_files_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.failed_files_ttl_sec == value)
             {
-                LOG_TRACE(log, "Setting `failed_file_ttl_sec` already equals {}. "
+                LOG_TRACE(log, "Setting `failed_files_ttl_sec` already equals {}. "
                         "Will do nothing", value);
                 continue;
             }

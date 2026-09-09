@@ -38,11 +38,11 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_failed_file_ttl_sec(started_cluster):
+def test_failed_files_ttl_sec(started_cluster):
     """Test that failed files are automatically removed after TTL expires"""
     node = started_cluster.instances["instance"]
 
-    table_name = f"test_failed_file_ttl_{uuid.uuid4().hex[:8]}"
+    table_name = f"test_failed_files_ttl_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
@@ -60,7 +60,7 @@ def test_failed_file_ttl_sec(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "failed_file_ttl_sec": ttl_sec,
+            "failed_files_ttl_sec": ttl_sec,
             "cleanup_interval_min_ms": cleanup_interval_ms,
             "cleanup_interval_max_ms": cleanup_interval_ms,
             "s3queue_loading_retries": 0,  # Fail immediately without retries
@@ -354,11 +354,11 @@ def test_system_drop_ordered_mode_blocked(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
-def test_failed_file_ttl_ordered_mode_no_cleanup(started_cluster):
-    """Test that failed_file_ttl_sec setting does not trigger cleanup in ordered mode.
+def test_failed_files_ttl_ordered_mode_no_cleanup(started_cluster):
+    """Test that failed_files_ttl_sec setting does not trigger cleanup in ordered mode.
 
     In ordered mode, cleanup_failed_files is disabled by design (matching cleanup_processed_files
-    pattern), so setting failed_file_ttl_sec has no effect and the periodic cleanup thread
+    pattern), so setting failed_files_ttl_sec has no effect and the periodic cleanup thread
     simply skips the failed files path.
     """
     node = started_cluster.instances["instance"]
@@ -368,7 +368,7 @@ def test_failed_file_ttl_ordered_mode_no_cleanup(started_cluster):
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
-    # Create table in ordered mode with failed_file_ttl_sec set
+    # Create table in ordered mode with failed_files_ttl_sec set
     # This should be accepted but ignored (cleanup_failed_files will be false)
     create_table(
         started_cluster,
@@ -378,7 +378,7 @@ def test_failed_file_ttl_ordered_mode_no_cleanup(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "failed_file_ttl_sec": 3,  # Will be ignored in ordered mode
+            "failed_files_ttl_sec": 3,  # Will be ignored in ordered mode
             "cleanup_interval_min_ms": 2000,
             "cleanup_interval_max_ms": 2000,
             "s3queue_loading_retries": 0,
@@ -423,8 +423,8 @@ def test_failed_file_ttl_ordered_mode_no_cleanup(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
-def test_failed_file_ttl_does_not_reset_retry_counter(started_cluster):
-    """Test that failed_file_ttl_sec cleanup does NOT reset the retry counter.
+def test_failed_files_ttl_does_not_reset_retry_counter(started_cluster):
+    """Test that failed_files_ttl_sec cleanup does NOT reset the retry counter.
 
     This test verifies the fix for the bug where TTL cleanup was deleting .retriable
     nodes (which store the retry count), causing the retry counter to reset to 0
@@ -447,7 +447,7 @@ def test_failed_file_ttl_does_not_reset_retry_counter(started_cluster):
 
     # Set up timing to create the race condition:
     # - polling_min_timeout_ms=5000: 5 seconds between retry attempts
-    # - failed_file_ttl_sec=2: TTL cleanup tries to delete nodes after 2 seconds
+    # - failed_files_ttl_sec=2: TTL cleanup tries to delete nodes after 2 seconds
     # - cleanup_interval=2000ms: cleanup sweep runs every 2 seconds
     # This means cleanup runs 2-3 times between retry attempts, exercising the race.
     #
@@ -463,7 +463,7 @@ def test_failed_file_ttl_does_not_reset_retry_counter(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_loading_retries": 3,  # Allow 3 retries before terminal failure
-            "failed_file_ttl_sec": 2,  # TTL shorter than retry interval
+            "failed_files_ttl_sec": 2,  # TTL shorter than retry interval
             "cleanup_interval_min_ms": 2000,
             "cleanup_interval_max_ms": 2000,
             "polling_min_timeout_ms": 5000,  # 5 seconds between retries

@@ -28,7 +28,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
-    extern const ObjectStorageQueueSettingsUInt64 failed_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt64 failed_files_ttl_sec;
 
 }
 
@@ -76,7 +76,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
-    , failed_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::failed_file_ttl_sec])
+    , failed_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::failed_files_ttl_sec])
     , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
 {
     processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
@@ -85,7 +85,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     else
         processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
 
-    failed_files_ttl_sec_changed = engine_settings[ObjectStorageQueueSetting::failed_file_ttl_sec].changed;
+    failed_files_ttl_sec_changed = engine_settings[ObjectStorageQueueSetting::failed_files_ttl_sec].changed;
 
     // Validate regex partitioning configuration
     if (partitioning_mode == "regex")
@@ -213,7 +213,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
-    , failed_files_ttl_sec(getOrDefault(json, "failed_files_ttl_sec", "", getOrDefault(json, "failed_file_ttl_sec", "s3queue_", tracked_files_ttl_sec.load())))
+    , failed_files_ttl_sec(getOrDefault(json, "failed_files_ttl_sec", "", tracked_files_ttl_sec.load()))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
 {
     validateMode(mode);

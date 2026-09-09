@@ -115,7 +115,6 @@ struct ObjectStorageQueueTableMetadata
             "tracked_files_limit",
             "tracked_file_ttl_sec",
             "tracked_files_ttl_sec",
-            "failed_file_ttl_sec",
             "failed_files_ttl_sec",
         };
         return settings_names.contains(name);

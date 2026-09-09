@@ -282,7 +282,7 @@ The operation acquires a distributed lock to prevent concurrent cleanup operatio
 This command is currently supported only for **unordered mode** S3Queue/AzureQueue tables. For ordered mode tables, it throws a `NOT_IMPLEMENTED` error. Support for ordered mode will be added in a future release.
 </Note>
 
-Terminal failed files can also be cleaned up automatically using the [`failed_file_ttl_sec`](/engines/table-engines/integrations/s3queue#failed_file_ttl_sec) table setting, which removes old terminal failed file entries based on a time-to-live.
+Terminal failed files can also be cleaned up automatically using the [`failed_files_ttl_sec`](/engines/table-engines/integrations/s3queue#failed_files_ttl_sec) table setting, which removes old terminal failed file entries based on a time-to-live.
 
 **Required Permission**
 

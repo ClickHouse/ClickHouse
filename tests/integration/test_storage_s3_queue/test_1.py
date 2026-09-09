@@ -358,7 +358,7 @@ def test_max_set_age(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "tracked_file_ttl_sec": max_age,
-            "failed_file_ttl_sec": max_age,  # Explicit opt-in for failed-file cleanup (no longer implicit via tracked_file_ttl_sec)
+            "failed_files_ttl_sec": max_age,  # Explicit opt-in for failed-file cleanup (no longer implicit via tracked_file_ttl_sec)
             "cleanup_interval_min_ms": 100,
             "cleanup_interval_max_ms": 200,
             "polling_max_timeout_ms": 1000,
@@ -462,7 +462,7 @@ def test_max_set_age(started_cluster, mode):
     )
 
     ## In ordered mode, once a file fails and successful files after it have been processed,
-    ## the failed file won't be reprocessed even after failed_file_ttl_sec cleanup because
+    ## the failed file won't be reprocessed even after failed_files_ttl_sec cleanup because
     ## ordered mode only processes up to max_processed_file marker. The failed file (named with 'z_'
     ## prefix to be lexicographically last) is now "in the past" relative to successful files
     ## processed earlier, so TTL cleanup doesn't allow reprocessing in ordered mode.
