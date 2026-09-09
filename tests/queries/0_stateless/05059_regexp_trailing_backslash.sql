@@ -64,3 +64,37 @@ WHERE match(s, 'abc\\')
 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError CANNOT_COMPILE_REGEXP }
 
 DROP TABLE regexp_token_idx;
+
+-- A full-text index with an invalid splitByRegexp tokenizer regexp
+-- must fail when the index is created.
+DROP TABLE IF EXISTS regexp_text_invalid_tokenizer;
+
+CREATE TABLE regexp_text_invalid_tokenizer
+(
+    s String,
+    INDEX idx s TYPE text(tokenizer = splitByRegexp('abc\\'))
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError CANNOT_COMPILE_REGEXP }
+
+-- A full-text index with the default splitByNonAlpha tokenizer must
+-- still reject an invalid regexp used by match().
+DROP TABLE IF EXISTS regexp_text_idx;
+
+CREATE TABLE regexp_text_idx
+(
+    s String,
+    INDEX idx s TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO regexp_text_idx VALUES ('nothing here');
+
+SELECT count()
+FROM regexp_text_idx
+WHERE match(s, 'abc\\')
+SETTINGS force_data_skipping_indices = 'idx'; -- { serverError CANNOT_COMPILE_REGEXP }
+
+DROP TABLE regexp_text_idx;
