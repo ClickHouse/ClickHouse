@@ -1,0 +1,14 @@
+a finer-scale constant
+2
+2
+0
+a representable constant still prunes
+1
+1
+the same shape in a partition key
+2
+2
+1
+a String constant that is not the key rendering
+1
+1

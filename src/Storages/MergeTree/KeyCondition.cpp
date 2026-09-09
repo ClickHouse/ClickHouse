@@ -2144,8 +2144,18 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 
 
 /// Cast column to target_type and fail if the cast introduces NULLs.
-static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
+///
+/// `out_is_exact` reports whether every value also survived the cast unchanged. A value that fits the
+/// target but loses information on the way - `DateTime64(6)` truncated to `DateTime64(3)`, `'007'`
+/// read as `7` - is not a NULL, so the probe below cannot see it, and a constant normalized that way
+/// stands for a different value than the query asked for. Whoever relies on the cast for an equality
+/// atom has to treat such an atom as relaxed: the key point it names has more than one preimage, so
+/// `notEquals` must not exclude it.
+static bool castColumnWithoutNulls(
+    ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type, bool & out_is_exact)
 {
+    out_is_exact = true;
+
     if (canBeSafelyCast(type, target_type))
     {
         column = castColumnAccurate({column, type, ""}, target_type);
@@ -2178,6 +2188,23 @@ static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const
         if (b)
             return false;
 
+    /// Every value fits, so ask the reverse cast whether anything was lost on the way. A target the
+    /// reverse cast cannot represent, a value that does not come back, or a value that comes back
+    /// different all leave the cast inexact, which costs only the `can_be_false` half of the analysis.
+    const DataTypePtr source_probe_type = removeLowCardinality(type);
+    if ((!source_probe_type->isNullable() && !source_probe_type->canBeInsideNullable())
+        || !canBeAccurateCastOrNullTarget(source_probe_type))
+    {
+        out_is_exact = false;
+    }
+    else
+    {
+        ColumnPtr forward_column = castColumnAccurate({column, type, ""}, probe_type);
+        ColumnPtr back_column = castColumnAccurateOrNull({forward_column, probe_type, ""}, source_probe_type);
+        for (size_t i = 0, size = column->size(); i < size && out_is_exact; ++i)
+            out_is_exact = (*back_column)[i] == (*column)[i];
+    }
+
     /// No NULLs were introduced, so the cast is accurate for every value. Produce the requested
     /// target_type (which may be LowCardinality and/or Nullable); the accurate cast cannot throw
     /// here because the probe above already proved every value fits.
@@ -2201,9 +2228,11 @@ static bool convertColumnForDeterministicDag(
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
     DataTypePtr & out_type,
-    bool & out_transform_applied)
+    bool & out_transform_applied,
+    bool & out_cast_is_exact)
 {
     out_transform_applied = false;
+    out_cast_is_exact = true;
 
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
@@ -2262,7 +2291,8 @@ static bool convertColumnForDeterministicDag(
             out_column = input_column;
             out_type = input_type;
 
-            if (!input_type->equals(*cast_result_type) && !castColumnWithoutNulls(out_column, out_type, cast_result_type))
+            if (!input_type->equals(*cast_result_type)
+                && !castColumnWithoutNulls(out_column, out_type, cast_result_type, out_cast_is_exact))
                 return false;
 
             return finalizeTransformedColumn(out_column, out_type);
@@ -2274,7 +2304,7 @@ static bool convertColumnForDeterministicDag(
             return true;
         }
 
-        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
+        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type, out_cast_is_exact))
             return false;
     }
 
@@ -2352,9 +2382,15 @@ static bool applyDeterministicDagToColumn(
     ColumnPtr transform_input_column;
     DataTypePtr transform_input_type;
     bool transform_applied = false;
+    bool cast_is_exact = true;
 
     if (!convertColumnForDeterministicDag(
-            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied))
+            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied, cast_is_exact))
+        return false;
+
+    /// A set atom has no relaxed form here - `notIn` would exclude a key point that has more than one
+    /// preimage - so a normalization that lost information declines index analysis altogether.
+    if (!cast_is_exact)
         return false;
 
     if (transform_applied)
@@ -2505,8 +2541,9 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     ColumnPtr transform_input_column;
     DataTypePtr transform_input_type;
     bool transform_applied = false;
+    bool cast_is_exact = true;
     if (!convertColumnForDeterministicDag(
-            const_column, out_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied))
+            const_column, out_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied, cast_is_exact))
         return false;
 
     /// The direct-CAST fast path converts and transforms in one step, so it produces no intermediate value
@@ -2525,8 +2562,11 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     /// The comparison reads the constant in the domain of the column the key expression consumes, where a
     /// NaN equals no value, not even itself. The transform maps it to an ordinary key value that the index
     /// compares as equal, so the atom is stricter than the predicate and its `can_be_false` is not usable.
+    /// A normalization that lost information leaves the key point with more than one preimage, so the
+    /// atom is stricter than the predicate for the same reason a non-injective transform is.
     out_atom_is_exact = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name)
-        && !transform_input_has_nan;
+        && !transform_input_has_nan
+        && cast_is_exact;
 
     Field transformed_value = (*transformed_const_column)[0];
 
