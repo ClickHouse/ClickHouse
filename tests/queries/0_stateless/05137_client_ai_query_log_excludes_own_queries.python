@@ -259,6 +259,14 @@ def read_until(master, debug_log_fd, predicate, timeout):
     return output
 
 
+def leave_ai_mode(master, debug_log_fd):
+    """A `?` turn leaves the client in AI chat mode, where the prompt is `:?` and a line is sent to
+    the model as another question rather than run as SQL. Backspace on the empty line switches back
+    and restores the SQL prompt, which is what the wait below is for."""
+    os.write(master, b"\x7f")
+    read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+
 def report_client_if_gone(child_pid, session):
     """Print how the client ended if it is gone. The expected output has no such line, so it shows
     up in the diff of the failure instead of leaving only unmet expectations behind."""
@@ -324,6 +332,7 @@ def run_session(session, turns, const_log_comment, probe, debug_log_fd):
         for question, statements in turns:
             os.write(master, question.encode() + b"\n")
             read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+            leave_ai_mode(master, debug_log_fd)
             for statement in statements:
                 os.write(master, statement.encode() + b"\n")
                 read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)

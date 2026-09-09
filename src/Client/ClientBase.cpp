@@ -4964,8 +4964,10 @@ Block ClientBase::fetchInternalQueryResult(
     if (!session_is_readonly)
         settings_to_send = networkCompressionSettings(client_context->getSettingsRef());
 
-    /// Left empty for the queries of the `help` command, so the server assigns the query id.
-    String query_id;
+    /// Left empty for the queries of the `help` command, so the server assigns the query id. This
+    /// is not the `query_id` member: that one is the query id of the session, which the queries
+    /// running behind the user's back have no business carrying.
+    String internal_query_id;
 
 #if USE_CLIENT_AI
     /// Tag the queries the agent runs internally (schema exploration, documentation lookups, the
@@ -4980,7 +4982,7 @@ Block ClientBase::fetchInternalQueryResult(
     /// stays out of the history of the user - in this session and in every earlier one, whatever
     /// its settings allowed.
     if (from_ai_agent)
-        query_id = fmt::format("{}{}", AI_AGENT_QUERY_ID_PREFIX, UUIDHelpers::generateV4());
+        internal_query_id = fmt::format("{}{}", AI_AGENT_QUERY_ID_PREFIX, UUIDHelpers::generateV4());
 
     /// The `log_comment` marker is kept on top of it: it is the one marker the queries the agent
     /// runs *visibly* on the user's connection can carry, since those keep the query id of a query
@@ -5044,7 +5046,7 @@ Block ClientBase::fetchInternalQueryResult(
             connection_parameters.timeouts,
             query,
             params,
-            query_id,
+            internal_query_id,
             QueryProcessingStage::Complete,
             settings_to_send ? &*settings_to_send : nullptr,
             &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
