@@ -83,7 +83,7 @@ private:
     ObjectAttributes metadataWithIdempotencyId() const;
 
     /// True only if the object stored under `key` carries this buffer's `idempotency_id`, i.e. this
-    /// buffer wrote it. Absent object, absent or foreign id, or a failed HEAD all give false.
+    /// buffer wrote it. Absent object, foreign id, or a failed HEAD all give false.
     bool isObjectWrittenByThisBuffer() const;
 
     /// Returns true if not a single byte was written to the buffer

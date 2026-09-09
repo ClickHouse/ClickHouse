@@ -54,6 +54,7 @@ bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
 bool isObjectWrittenWithIdempotencyId(
     const S3::Client & client, const String & bucket, const String & key, const String & idempotency_id, LoggerPtr log)
 {
+    /// Not reachable from the writers, which always mint one, but an empty id proves nothing.
     if (idempotency_id.empty())
         return false;
 

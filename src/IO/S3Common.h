@@ -47,7 +47,7 @@ static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 /// True only if the object at `key` carries `idempotency_id`, i.e. the caller wrote it. A writer
 /// stamps an id of its own on the object it creates, which lets a request it has to send again
 /// recognise its earlier attempt's result and tell it apart from an object already at the key. An
-/// absent object, an absent or foreign id, and a failed HEAD all give false.
+/// absent object, a foreign id, a failed HEAD, and an empty `idempotency_id` all give false.
 bool isObjectWrittenWithIdempotencyId(
     const S3::Client & client, const String & bucket, const String & key, const String & idempotency_id, LoggerPtr log);
 

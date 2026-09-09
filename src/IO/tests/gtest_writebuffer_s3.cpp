@@ -1702,6 +1702,100 @@ TEST_F(WBS3Test, CopyDataToS3FileRetriesInvalidPart) {
     EXPECT_EQ(bStore.objects["copy_data_invalid_part_retry"].size(), payload.size());
 }
 
+/// The completion recovery in UploadHelper::completeMultipartUpload is separate code from the write
+/// buffer's: its own id, its own NO_SUCH_UPLOAD branch, its own authorship check. It backs backups and
+/// server-side copies, so it gets the same two arms. Here the earlier attempt did complete the upload
+/// server-side and only its response was lost, which is success.
+TEST_F(WBS3Test, CopyDataToS3FileAbsorbsNoSuchUploadForOwnObject) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ true));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings()[Setting::s3_check_objects_after_upload] = false;
+
+    S3::S3RequestSettings request_settings;
+    request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
+
+    client->resetCounters();
+
+    const String payload = "copy_no_such_upload_payload";
+    auto create_read_buffer = [&]() -> std::unique_ptr<SeekableReadBuffer>
+    {
+        return std::make_unique<ReadBufferFromOwnString>(payload);
+    };
+
+    copyDataToS3File(
+        create_read_buffer,
+        /* offset= */ 0,
+        /* size= */ payload.size(),
+        client,
+        bucket,
+        "copy_data_no_such_upload_own",
+        request_settings,
+        /* blob_storage_log= */ nullptr,
+        /* schedule= */ {},
+        /* object_metadata= */ std::nullopt);
+
+    /// The id was consulted rather than existence assumed, and the completed upload is not aborted.
+    EXPECT_GE(client->counters.headObject, 1u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["copy_data_no_such_upload_own"].size(), payload.size());
+    EXPECT_FALSE(bStore.object_metadata["copy_data_no_such_upload_own"].at("clickhouse-idempotency-id").empty());
+}
+
+/// The data-loss arm on the copy path: the upload was really aborted and somebody else's object sits at
+/// the key. Reporting success would acknowledge a copy that never happened and leave the old object
+/// being served, which is the bug this pull request exists to fix. See issue #114348.
+TEST_F(WBS3Test, CopyDataToS3FileDoesNotMaskForeignObjectOnNoSuchUpload) {
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("copy_data_no_such_upload_foreign", "OLD");
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ false));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings()[Setting::s3_check_objects_after_upload] = false;
+
+    S3::S3RequestSettings request_settings;
+    request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
+
+    const String payload = "copy_no_such_upload_payload";
+    auto create_read_buffer = [&]() -> std::unique_ptr<SeekableReadBuffer>
+    {
+        return std::make_unique<ReadBufferFromOwnString>(payload);
+    };
+
+    EXPECT_THROW({
+        try {
+            copyDataToS3File(
+                create_read_buffer,
+                /* offset= */ 0,
+                /* size= */ payload.size(),
+                client,
+                bucket,
+                "copy_data_no_such_upload_foreign",
+                request_settings,
+                /* blob_storage_log= */ nullptr,
+                /* schedule= */ {},
+                /* object_metadata= */ std::nullopt);
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    /// The prior object is untouched and carries no id of ours.
+    EXPECT_EQ(bStore.objects["copy_data_no_such_upload_foreign"], "OLD");
+    EXPECT_FALSE(bStore.object_metadata["copy_data_no_such_upload_foreign"].contains("clickhouse-idempotency-id"));
+}
+
 /// copyS3File routing between whole-object CopyObject and ranged UploadPartCopy. A small copy would take
 /// CopyObject, which carries no byte range and copies the ENTIRE source; a partial-range copy must therefore
 /// force UploadPartCopy, which sets a CopySourceRange per part -- but only when S3 would accept the source as
