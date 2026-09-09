@@ -257,6 +257,11 @@ TEST(TransformQueryForExternalDatabase, DynamicConstant)
     checkNewAnalyzer(state, {"field"},
           R"(SELECT field FROM test.table WHERE field NOT IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic)))",
           R"(SELECT "field" FROM "test"."table" WHERE "field" NOT IN (3))");
+
+    /// A multi-element list travels as one constant `tuple`, so it is the only shape that observes its elements left unnamed too.
+    checkNewAnalyzer(state, {"field"},
+          R"(SELECT field FROM test.table WHERE field IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic), CAST(CAST('3', 'Enum8(\'3\' = 4)') AS Dynamic)))",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IN (3, 4))");
 }
 
 TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
