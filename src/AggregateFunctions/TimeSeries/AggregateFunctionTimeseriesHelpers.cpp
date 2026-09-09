@@ -9,6 +9,8 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesCompensatedSum.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesCount.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
@@ -1294,11 +1296,299 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
         documentation_timeSeriesResampleToGridWithStaleness});
     factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness");
 
+    /// timeSeriesSumToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesSumToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like sum_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating the sum are considered within the specified time window.
+
+The samples can be passed in one of three forms:
+- as two arguments `timestamp` and `value`, where each row holds a single sample;
+- as two arrays of timestamps and values, where each row holds a whole time series;
+- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
+:::warning
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesSumToGrid = R"(
+timeSeriesSumToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+timeSeriesSumToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesSumToGrid = {
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesSumToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesSumToGrid = {"Returns the sum of values on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::Examples examples_timeSeriesSumToGrid = {
+    {
+        "Basic usage with individual timestamp-value pairs",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
+    90 AS start_ts,       -- start of timestamp grid
+    90 + 120 AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
+SELECT timeSeriesSumToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)
+FROM
+(
+    -- This subquery converts arrays of timestamps and values into rows of `timestamp`, `value`
+    SELECT
+        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
+        ts_and_val.1 AS timestamp,
+        ts_and_val.2 AS value
+);
+        )",
+        R"(
+┌─timeSeriesSumToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,2,5,9,7,4,5,18]                                                            │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Using array arguments",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
+    90 AS start_ts,
+    90 + 120 AS end_ts,
+    15 AS step_seconds,
+    45 AS window_seconds
+SELECT timeSeriesSumToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
+        )",
+        R"(
+┌─timeSeriesSumToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
+│ [NULL,NULL,2,5,9,7,4,5,18]                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesSumToGrid = {26, 9};
+    FunctionDocumentation::Category category_timeSeriesSumToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesSumToGrid = {description_timeSeriesSumToGrid, syntax_timeSeriesSumToGrid, arguments_timeSeriesSumToGrid, parameters_timeSeriesSumToGrid, returned_value_timeSeriesSumToGrid, examples_timeSeriesSumToGrid, introduced_in_timeSeriesSumToGrid, category_timeSeriesSumToGrid};
+
+    factory.registerFunction("timeSeriesSumToGrid",
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                return std::make_shared<AggregateFunctionTimeseriesSumToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+        },
+        documentation_timeSeriesSumToGrid});
+
+    /// timeSeriesAvgToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesAvgToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like avg_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating the average are considered within the specified time window.
+
+The samples can be passed in one of three forms:
+- as two arguments `timestamp` and `value`, where each row holds a single sample;
+- as two arrays of timestamps and values, where each row holds a whole time series;
+- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
+:::warning
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesAvgToGrid = R"(
+timeSeriesAvgToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+timeSeriesAvgToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesAvgToGrid = {
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesAvgToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesAvgToGrid = {"Returns the average of values on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::Examples examples_timeSeriesAvgToGrid = {
+    {
+        "Basic usage with individual timestamp-value pairs",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
+    90 AS start_ts,       -- start of timestamp grid
+    90 + 120 AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
+SELECT timeSeriesAvgToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)
+FROM
+(
+    -- This subquery converts arrays of timestamps and values into rows of `timestamp`, `value`
+    SELECT
+        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
+        ts_and_val.1 AS timestamp,
+        ts_and_val.2 AS value
+);
+        )",
+        R"(
+┌─timeSeriesAvgToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,1,1.6666666,2.25,3.5,4,5,6]                                                │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Using array arguments",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
+    90 AS start_ts,
+    90 + 120 AS end_ts,
+    15 AS step_seconds,
+    45 AS window_seconds
+SELECT timeSeriesAvgToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
+        )",
+        R"(
+┌─timeSeriesAvgToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
+│ [NULL,NULL,1,1.6666666,2.25,3.5,4,5,6]                                                  │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesAvgToGrid = {26, 9};
+    FunctionDocumentation::Category category_timeSeriesAvgToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesAvgToGrid = {description_timeSeriesAvgToGrid, syntax_timeSeriesAvgToGrid, arguments_timeSeriesAvgToGrid, parameters_timeSeriesAvgToGrid, returned_value_timeSeriesAvgToGrid, examples_timeSeriesAvgToGrid, introduced_in_timeSeriesAvgToGrid, category_timeSeriesAvgToGrid};
+
+    factory.registerFunction("timeSeriesAvgToGrid",
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                return std::make_shared<AggregateFunctionTimeseriesAvgToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+        },
+        documentation_timeSeriesAvgToGrid});
+
+    /// timeSeriesCountToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesCountToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like count_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the number of samples within the specified time window is counted.
+
+The samples can be passed in one of three forms:
+- as two arguments `timestamp` and `value`, where each row holds a single sample;
+- as two arrays of timestamps and values, where each row holds a whole time series;
+- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
+
+If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
+
+:::warning
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesCountToGrid = R"(
+timeSeriesCountToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+timeSeriesCountToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesCountToGrid = {
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesCountToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesCountToGrid = {"Returns the count of samples on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::Examples examples_timeSeriesCountToGrid = {
+    {
+        "Basic usage with individual timestamp-value pairs",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
+    90 AS start_ts,       -- start of timestamp grid
+    90 + 120 AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
+SELECT timeSeriesCountToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)
+FROM
+(
+    -- This subquery converts arrays of timestamps and values into rows of `timestamp`, `value`
+    SELECT
+        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
+        ts_and_val.1 AS timestamp,
+        ts_and_val.2 AS value
+);
+        )",
+        R"(
+┌─timeSeriesCountToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,2,3,4,2,1,1,3]                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Using array arguments",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
+    90 AS start_ts,
+    90 + 120 AS end_ts,
+    15 AS step_seconds,
+    45 AS window_seconds
+SELECT timeSeriesCountToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
+        )",
+        R"(
+┌─timeSeriesCountToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
+│ [NULL,NULL,2,3,4,2,1,1,3]                                                                 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesCountToGrid = {26, 9};
+    FunctionDocumentation::Category category_timeSeriesCountToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesCountToGrid = {description_timeSeriesCountToGrid, syntax_timeSeriesCountToGrid, arguments_timeSeriesCountToGrid, parameters_timeSeriesCountToGrid, returned_value_timeSeriesCountToGrid, examples_timeSeriesCountToGrid, introduced_in_timeSeriesCountToGrid, category_timeSeriesCountToGrid};
+
+    factory.registerFunction("timeSeriesCountToGrid",
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                return std::make_shared<AggregateFunctionTimeseriesCount<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+        },
+        documentation_timeSeriesCountToGrid});
+
     /// timeSeriesHistogramLastToGrid documentation
     FunctionDocumentation::Description description_timeSeriesHistogramLastToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and native histograms and re-samples this data to a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the most recent (within the specified time window) histogram sample is chosen.
 
-The histogram argument is the payload tuple of the `histograms` target table of a `TimeSeries` table: `Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64))`.
+The histogram argument is the payload tuple of the `histograms` target table of a `TimeSeries` table: `Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64))`.
 
 :::warning
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
@@ -1324,7 +1614,7 @@ timeSeriesHistogramLastToGrid(start_timestamp, end_timestamp, grid_step, stalene
         R"(
 SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
-    (0, 0, 0., 1., 2., 0., [], [], [], [], [])::Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64)) AS histogram,
+    (0, 0, 0., 1., 2., 0., [], [], [], [], [], 1, 0, [], [])::Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64)) AS histogram,
     90 AS start_ts,       -- start of timestamp grid
     90 + 120 AS end_ts,   -- end of timestamp grid
     15 AS step_seconds,   -- step of timestamp grid
@@ -1336,9 +1626,9 @@ FROM
 );
         )",
         R"(
-┌─timeSeriesHistogramLastToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, histogram)────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [NULL,NULL,(0,0,0,1,2,0,[],[],[],[],[]),(0,0,0,1,2,0,[],[],[],[],[]),(0,0,0,1,2,0,[],[],[],[],[]),(0,0,0,1,2,0,[],[],[],[],[]),NULL,(0,0,0,1,2,0,[],[],[],[],[]),(0,0,0,1,2,0,[],[],[],[],[])] │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesHistogramLastToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, histogram)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [NULL,NULL,(0,0,0,1,2,0,[],[],[],[],[],0,0,[],[]),(0,0,0,1,2,0,[],[],[],[],[],0,0,[],[]),(0,0,0,1,2,0,[],[],[],[],[],0,0,[],[]),(0,0,0,1,2,0,[],[],[],[],[],0,0,[],[]),NULL,(0,0,0,1,2,0,[],[],[],[],[],0,0,[],[]),(0,0,0,1,2,0,[],[],[],[],[],0,0,[],[])] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -1365,7 +1655,7 @@ FROM
         FunctionDocumentation::Description description = fmt::format(R"(
 Aggregate function that takes time series data as pairs of timestamps and native histograms and calculates [PromQL-like {}](https://prometheus.io/docs/prometheus/latest/querying/functions/#{}) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `{}` are considered within the specified time window.
 
-The histogram argument is the payload tuple of the `histograms` target table of a `TimeSeries` table: `Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64))`.
+The histogram argument is the payload tuple of the `histograms` target table of a `TimeSeries` table: `Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64))`.
 
 The result at each grid point is the payload tuple of a synthetic gauge histogram, computed like Prometheus' `histogramRate`/`extrapolatedRate` (counter resets are detected and handled for `rate`/`increase`; `delta` treats the samples as gauges). The value is NULL if there are not enough samples within the window (fewer than two), or if the window mixes histograms with exponential and custom bucket schemas.
 
@@ -1406,7 +1696,7 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
 SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [130, 140]::Array(UInt32) AS timestamps,
-    [(0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], []), (0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [])]::Array(Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64))) AS histograms,
+    [(0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], []), (0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [], 8, 0, [2, 6], [])]::Array(Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64))) AS histograms,
     90 AS start_ts,       -- start of timestamp grid
     90 + 120 AS end_ts,   -- end of timestamp grid
     15 AS step_seconds,   -- step of timestamp grid
@@ -1448,7 +1738,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramRateToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramRateToGrid", "rate", "rate", "rate",
-            "[NULL,NULL,NULL,NULL,(6,0,0,0.2222222222222222,0.611111111111111,0,[(0,2)],[0.05555555555555555,0.16666666666666666],[],[],[]),(6,0,0,0.2222222222222222,0.611111111111111,0,[(0,2)],[0.05555555555555555,0.16666666666666666],[],[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(6,0,0,0.2222222222222222,0.611111111111111,0,[(0,2)],[0.05555555555555555,0.16666666666666666],[],[],[],0,0,[],[]),(6,0,0,0.2222222222222222,0.611111111111111,0,[(0,2)],[0.05555555555555555,0.16666666666666666],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 
     register_histogram_rate_function("timeSeriesHistogramIncreaseToGrid",
         []<typename TimestampType, typename IntervalType>(const DataTypes & argument_types, const Array & parameters, TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
@@ -1456,7 +1746,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramIncreaseToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramIncreaseToGrid", "increase", "increase", "increase",
-            "[NULL,NULL,NULL,NULL,(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[]),(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 
     register_histogram_rate_function("timeSeriesHistogramDeltaToGrid",
         []<typename TimestampType, typename IntervalType>(const DataTypes & argument_types, const Array & parameters, TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
@@ -1464,7 +1754,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramDeltaToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramDeltaToGrid", "delta", "delta", "delta",
-            "[NULL,NULL,NULL,NULL,(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[]),(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),(6,0,0,10,27.5,0,[(0,2)],[2.5,7.5],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 
     register_histogram_rate_function("timeSeriesHistogramInstantRateToGrid",
         []<typename TimestampType, typename IntervalType>(const DataTypes & argument_types, const Array & parameters, TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
@@ -1472,7 +1762,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramInstantRateToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramInstantRateToGrid", "irate", "irate", "instant rate",
-            "[NULL,NULL,NULL,NULL,(6,0,0,0.4,1.1,0,[(0,2)],[0.1,0.3],[],[],[]),(6,0,0,0.4,1.1,0,[(0,2)],[0.1,0.3],[],[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(6,0,0,0.4,1.1,0,[(0,2)],[0.1,0.3],[],[],[],0,0,[],[]),(6,0,0,0.4,1.1,0,[(0,2)],[0.1,0.3],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 
     register_histogram_rate_function("timeSeriesHistogramInstantDeltaToGrid",
         []<typename TimestampType, typename IntervalType>(const DataTypes & argument_types, const Array & parameters, TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
@@ -1480,7 +1770,7 @@ FROM
             return std::make_shared<AggregateFunctionTimeseriesHistogramInstantDeltaToGrid<TimestampType, IntervalType>>(argument_types, parameters, start, end, step, window, scale);
         },
         make_histogram_rate_documentation("timeSeriesHistogramInstantDeltaToGrid", "idelta", "idelta", "instant delta",
-            "[NULL,NULL,NULL,NULL,(6,0,0,4,11,0,[(0,2)],[1,3],[],[],[]),(6,0,0,4,11,0,[(0,2)],[1,3],[],[],[]),NULL,NULL,NULL]"));
+            "[NULL,NULL,NULL,NULL,(6,0,0,4,11,0,[(0,2)],[1,3],[],[],[],0,0,[],[]),(6,0,0,4,11,0,[(0,2)],[1,3],[],[],[],0,0,[],[]),NULL,NULL,NULL]"));
 }
 
 }

@@ -191,15 +191,12 @@ void StoragePrometheusQuery::readImpl(
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    /// The generated SQL relies on `AS MATERIALIZED` (see SQLSubqueryType::MATERIALIZED_TABLE) to avoid re-evaluating
-    /// shared subqueries, which needs `enable_materialized_cte`; enable it unless the user set it explicitly.
-    auto query_context = context;
+    /// Isolate the settings required by generated PromQL from the outer query: `AS MATERIALIZED`
+    /// (SQLSubqueryType::MATERIALIZED_TABLE) has effect only with `enable_materialized_cte` enabled.
+    auto query_context = Context::createCopy(context);
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
-    {
-        auto context_copy = Context::createCopy(context);
-        context_copy->setSetting("enable_materialized_cte", true);
-        query_context = context_copy;
-    }
+        query_context->setSetting("enable_materialized_cte", true);
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

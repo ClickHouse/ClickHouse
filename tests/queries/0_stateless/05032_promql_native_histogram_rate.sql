@@ -21,23 +21,23 @@ CREATE TABLE ts_nh_rate ENGINE = TimeSeries SETTINGS store_native_histograms = 1
 -- e3@130 (RESET: count 2, sum 5), e4@140 (count 5, sum 11).
 INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
     ('nh_counter', map('job', 'counter'), [
-        (toDateTime64(110, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], []),
-        (toDateTime64(120, 3), 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], []),
-        (toDateTime64(130, 3), 0, 0, 0., 2., 5., 0., [(0, 1)], [2.], [], [], []),
-        (toDateTime64(140, 3), 0, 0, 0., 5., 11., 0., [(0, 2)], [2., 3.], [], [], [])]);
+        (toDateTime64(110, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], []),
+        (toDateTime64(120, 3), 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [], 8, 0, [2, 6], []),
+        (toDateTime64(130, 3), 0, 0, 0., 2., 5., 0., [(0, 1)], [2.], [], [], [], 2, 0, [2], []),
+        (toDateTime64(140, 3), 0, 0, 0., 5., 11., 0., [(0, 2)], [2., 3.], [], [], [], 5, 0, [2, 3], [])]);
 
 -- nh_gauge{job='gauge'}: flags 6 = gauge counter-reset hint; g1@120 (count 5, sum 11), g2@140 (count 3, sum 6).
 INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
     ('nh_gauge', map('job', 'gauge'), [
-        (toDateTime64(120, 3), 6, 0, 0., 5., 11., 0., [(0, 2)], [2., 3.], [], [], []),
-        (toDateTime64(140, 3), 6, 0, 0., 3., 6., 0., [(0, 2)], [1., 2.], [], [], [])]);
+        (toDateTime64(120, 3), 6, 0, 0., 5., 11., 0., [(0, 2)], [2., 3.], [], [], [], 5, 0, [2, 3], []),
+        (toDateTime64(140, 3), 6, 0, 0., 3., 6., 0., [(0, 2)], [1., 2.], [], [], [], 3, 0, [1, 2], [])]);
 
 -- nh_custom{job='custom'}: custom buckets [1,2,4]; c1@110 (count 4), c2@120 (count 8), c2b@140 (count 12).
 INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
     ('nh_custom', map('job', 'custom'), [
-        (toDateTime64(110, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.]),
-        (toDateTime64(120, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.]),
-        (toDateTime64(140, 3), 0, -53, 0., 12., 30., 0., [(0, 3)], [1., 3., 8.], [], [], [1., 2., 4.])]);
+        (toDateTime64(110, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.], 4, 0, [1, 3], []),
+        (toDateTime64(120, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.], 8, 0, [0, 2, 6], []),
+        (toDateTime64(140, 3), 0, -53, 0., 12., 30., 0., [(0, 3)], [1., 3., 8.], [], [], [1., 2., 4.], 12, 0, [1, 3, 8], [])]);
 
 -- pure_float{job='float'}: 4@110, 8@120, 14@140.
 INSERT INTO ts_nh_rate (metric_name, tags, time_series) VALUES
@@ -48,14 +48,14 @@ INSERT INTO ts_nh_rate (metric_name, tags, time_series) VALUES
     ('mixed', map('job', 'mixed'), [(toDateTime64(108, 3), 100)]);
 INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
     ('mixed', map('job', 'mixed'), [
-        (toDateTime64(130, 3), 0, 0, 0., 2., 5., 0., [(0, 1)], [2.], [], [], []),
-        (toDateTime64(140, 3), 0, 0, 0., 5., 11., 0., [(0, 2)], [2., 3.], [], [], [])]);
+        (toDateTime64(130, 3), 0, 0, 0., 2., 5., 0., [(0, 1)], [2.], [], [], [], 2, 0, [2], []),
+        (toDateTime64(140, 3), 0, 0, 0., 5., 11., 0., [(0, 2)], [2., 3.], [], [], [], 5, 0, [2, 3], [])]);
 
 -- mixed2{job='mixed2'}: a histogram at 110 (e1) and a float at 140.
 INSERT INTO ts_nh_rate (metric_name, tags, time_series) VALUES
     ('mixed2', map('job', 'mixed2'), [(toDateTime64(140, 3), 50)]);
 INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
-    ('mixed2', map('job', 'mixed2'), [(toDateTime64(110, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [])]);
+    ('mixed2', map('job', 'mixed2'), [(toDateTime64(110, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
 
 SELECT '-- rate over the counter series (a reset between the 2nd and 3rd samples): the increase is';
 SELECT '-- e4 - nulled(e2) = e4 (the 1st sample is nulled because e3 resets against e2), extrapolated';

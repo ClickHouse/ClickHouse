@@ -571,6 +571,12 @@ protected:
         appendSpansToResultColumn(state.negative_spans_blob, bucket.negative_spans, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeSpans)));
         appendFloatsToResultColumn(state.negative_values_blob, bucket.negative_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeValues)));
         appendFloatsToResultColumn(state.custom_values_blob, bucket.custom_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::CustomValues)));
+        /// The exact integer carriers are not tracked in the state (this layer reads the Float64 count/sum),
+        /// so they stay zero/empty here, as they are for a float-flavor histogram.
+        tuple_to.getColumn(Idx::CountInt).insertDefault();
+        tuple_to.getColumn(Idx::ZeroCountInt).insertDefault();
+        tuple_to.getColumn(Idx::PositiveValuesInt).insertDefault();
+        tuple_to.getColumn(Idx::NegativeValuesInt).insertDefault();
     }
 
     /// Decodes one sample record (see `TimeSeriesHistogramSamplesBucket`) into the kernel's `TimeSeriesFloatHistogram`,
@@ -616,6 +622,11 @@ protected:
         appendSpansVectorToResultColumn(result.negative_spans, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeSpans)));
         appendFloatsVectorToResultColumn(result.negative_buckets, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeValues)));
         appendFloatsVectorToResultColumn(result.custom_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::CustomValues)));
+        /// A computed histogram is a float one, so the exact integer carriers stay zero/empty (as in appendBucketToResultColumns).
+        tuple_to.getColumn(Idx::CountInt).insertDefault();
+        tuple_to.getColumn(Idx::ZeroCountInt).insertDefault();
+        tuple_to.getColumn(Idx::PositiveValuesInt).insertDefault();
+        tuple_to.getColumn(Idx::NegativeValuesInt).insertDefault();
     }
 
     /// Compute the grid timestamp `start_timestamp + grid_index * step` in unsigned 64-bit arithmetic: avoids signed overflow/UBSAN

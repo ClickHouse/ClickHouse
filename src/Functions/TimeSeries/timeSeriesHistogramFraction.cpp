@@ -159,7 +159,7 @@ returns NaN, and `lower >= upper` returns 0. If the histogram is NULL the functi
     {
         "Example",
         R"(
-SELECT timeSeriesHistogramFraction((0, 0, 0., 4., 6., 0., [(1, 2)], [2., 2.], [], [], [])::Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64)), 1, 3) AS fraction
+SELECT timeSeriesHistogramFraction((0, 0, 0., 4., 6., 0., [(1, 2)], [2., 2.], [], [], [], 4, 0, [2, 2], [])::Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64)), 1, 3) AS fraction
         )",
         R"(
 ┌─fraction──────────┐

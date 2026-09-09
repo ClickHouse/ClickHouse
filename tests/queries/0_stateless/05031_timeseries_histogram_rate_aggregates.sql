@@ -27,7 +27,12 @@ CREATE TABLE hist_samples
     positive_values Array(Float64),
     negative_spans Array(Tuple(offset Int32, length UInt32)),
     negative_values Array(Float64),
-    custom_values Array(Float64)
+    custom_values Array(Float64),
+    -- The exact integer carriers of the payload tuple; derived here so the sample rows below stay readable.
+    count_int UInt64 MATERIALIZED toUInt64(count),
+    zero_count_int UInt64 MATERIALIZED toUInt64(zero_count),
+    positive_values_int Array(UInt64) MATERIALIZED arrayMap(v -> toUInt64(v), positive_values),
+    negative_values_int Array(UInt64) MATERIALIZED arrayMap(v -> toUInt64(v), negative_values)
 ) ENGINE = MergeTree ORDER BY timestamp;
 
 INSERT INTO hist_samples VALUES
@@ -38,13 +43,13 @@ INSERT INTO hist_samples VALUES
 
 SELECT '-- counter with a mid-window reset, exponential schema: `timeSeriesHistogramIncreaseToGrid` over';
 SELECT '-- samples e1@110 (count 4), e2@120 (count 8), e3@130 (RESET, count 2), e4@140 (count 5), window 45';
-SELECT timeSeriesHistogramIncreaseToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramIncreaseToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 SELECT '-- the same series: `timeSeriesHistogramRateToGrid` divides the increase by the window (45)';
-SELECT timeSeriesHistogramRateToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramRateToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 SELECT '-- the same series with `DateTime64(3)` timestamps (millisecond grid): the increase is identical';
-SELECT timeSeriesHistogramIncreaseToGrid(90, 210, 15, 45)(toDateTime64(timestamp, 3), tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramIncreaseToGrid(90, 210, 15, 45)(toDateTime64(timestamp, 3), tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 TRUNCATE TABLE hist_samples;
 INSERT INTO hist_samples VALUES
@@ -52,10 +57,10 @@ INSERT INTO hist_samples VALUES
     (140, 6, 0, 0., 3., 6., 0., [(0, 2)], [1., 2.], [], [], []);
 
 SELECT '-- gauge series g1@120 (count 5), g2@140 (count 3): `timeSeriesHistogramDeltaToGrid` (no reset handling)';
-SELECT timeSeriesHistogramDeltaToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramDeltaToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 SELECT '-- the same series: `timeSeriesHistogramInstantDeltaToGrid` over the two most recent samples, no extrapolation';
-SELECT timeSeriesHistogramInstantDeltaToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramInstantDeltaToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 TRUNCATE TABLE hist_samples;
 INSERT INTO hist_samples VALUES
@@ -66,7 +71,7 @@ INSERT INTO hist_samples VALUES
 
 SELECT '-- custom buckets [1,2,4], counter with a mid-window reset: `timeSeriesHistogramIncreaseToGrid` over';
 SELECT '-- c1@110 (count 4), c2@120 (count 8), c4@130 (RESET, count 2), c2@140 (count 8), window 45';
-SELECT timeSeriesHistogramIncreaseToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramIncreaseToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 TRUNCATE TABLE hist_samples;
 INSERT INTO hist_samples VALUES
@@ -77,14 +82,14 @@ SELECT '-- extrapolation boundary: samples e1@140, e2@150 with window 60 sit fur
 SELECT '-- extrapolation threshold from the range edges at grid point 180 -> extrapolate by half';
 SELECT '-- the average sample spacing on both sides; at 195 the window (135,195] holds both samples,';
 SELECT '-- at 165 the window (105,165] holds both too, but durationToEnd == 30 >= threshold there';
-SELECT timeSeriesHistogramRateToGrid(120, 210, 15, 60)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramRateToGrid(120, 210, 15, 60)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 TRUNCATE TABLE hist_samples;
 INSERT INTO hist_samples VALUES
     (140, 0, 0, 0., 5., 11., 0., [(0, 2)], [2., 3.], [], [], []);
 
 SELECT '-- a single sample in the window can not produce a rate: `timeSeriesHistogramDeltaToGrid` over e4@140';
-SELECT timeSeriesHistogramDeltaToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramDeltaToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 TRUNCATE TABLE hist_samples;
 INSERT INTO hist_samples VALUES
@@ -93,13 +98,13 @@ INSERT INTO hist_samples VALUES
 
 SELECT '-- `timeSeriesHistogramInstantRateToGrid` over e1@120, e2@140 (no reset) and e2@120, e3@140 (reset:';
 SELECT '-- the result is the newest sample scaled to per-second, mirroring upstream `instantValue`)';
-SELECT timeSeriesHistogramInstantRateToGrid(150, 150, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramInstantRateToGrid(150, 150, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 TRUNCATE TABLE hist_samples;
 INSERT INTO hist_samples VALUES
     (120, 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], []),
     (140, 0, 0, 0., 2., 5., 0., [(0, 1)], [2.], [], [], []);
-SELECT timeSeriesHistogramInstantRateToGrid(150, 150, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramInstantRateToGrid(150, 150, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 TRUNCATE TABLE hist_samples;
 INSERT INTO hist_samples VALUES
@@ -107,7 +112,7 @@ INSERT INTO hist_samples VALUES
     (140, 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], []);
 
 SELECT '-- schema reduction: `timeSeriesHistogramRateToGrid` over e5@120 (schema 1) and e2@140 (schema 0)';
-SELECT timeSeriesHistogramRateToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramRateToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 TRUNCATE TABLE hist_samples;
 INSERT INTO hist_samples VALUES
@@ -115,6 +120,6 @@ INSERT INTO hist_samples VALUES
     (140, 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], []);
 
 SELECT '-- zero-threshold reconciliation: `timeSeriesHistogramRateToGrid` over ez@120 (zt 0.1) and e2@140 (zt 0)';
-SELECT timeSeriesHistogramRateToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values)) FROM hist_samples;
+SELECT timeSeriesHistogramRateToGrid(90, 210, 15, 45)(timestamp, tuple(flags, `schema`, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values, count_int, zero_count_int, positive_values_int, negative_values_int)) FROM hist_samples;
 
 DROP TABLE hist_samples;
