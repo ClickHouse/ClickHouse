@@ -291,7 +291,8 @@ static NameSet collectIndicesRebuiltByMutation(
     /// claim a rebuild it does not perform.
     NameSet updated_columns;
     /// `MutationsInterpreter::prepare` recomputes MATERIALIZED columns only from the columns its
-    /// commands name, never from a column TTL target, so that subset seeds the closure below.
+    /// commands name and from the columns it clears, never from a column TTL target, so that subset
+    /// seeds the closure below (`need_materialized_analysis` in `MutationsInterpreter.cpp`).
     NameSet command_updated_columns;
     for (const auto & command : commands)
     {
@@ -349,10 +350,22 @@ static NameSet collectIndicesRebuiltByMutation(
         return true;
     };
 
+    /// A cleared column is recomputed from its default, so `prepare` seeds it into the dependency
+    /// analysis alongside the columns its commands update (`columns_for_dependencies` in
+    /// `MutationsInterpreter::prepare`). An index over such a column is already caught by
+    /// `cleared_columns` below; this seed is what carries the clear through the dependency graph.
+    NameSet closure_seed = command_updated_columns;
+    for (const auto & column : cleared_columns)
+    {
+        closure_seed.insert(column);
+        updated_columns.insert(column);
+    }
+
     /// `MutationsInterpreter` also rewrites MATERIALIZED columns that depend on a directly updated
-    /// column. Include that closure before asking for ordinary column dependencies: an index can be
-    /// rebuilt solely because it reads one of those MATERIALIZED columns.
-    if (!command_updated_columns.empty())
+    /// or cleared column. Include that closure before asking for ordinary column dependencies: an
+    /// index can be rebuilt solely because it reads one of those MATERIALIZED columns, without
+    /// reading the updated or cleared column itself.
+    if (!closure_seed.empty())
     {
         const auto & columns = metadata_snapshot->getColumns();
 
@@ -381,7 +394,7 @@ static NameSet collectIndicesRebuiltByMutation(
                 NameSet(materialized->dependencies.begin(), materialized->dependencies.end()));
         }
 
-        NameSet reachable = command_updated_columns;
+        NameSet reachable = closure_seed;
         bool found_affected_materialized = true;
         while (found_affected_materialized)
         {

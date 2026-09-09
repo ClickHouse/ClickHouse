@@ -2,7 +2,7 @@
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
--- Cases 30-32c of the series started in 04165_skip_index_stale_type_after_alter and continued in
+-- Cases 30-32d of the series started in 04165_skip_index_stale_type_after_alter and continued in
 -- 04869_skip_index_stale_type_absent_column: the sibling index that decides whether the mutation may
 -- record an absent column is rebuilt through something the commands do not name -- a column TTL, a
 -- `MATERIALIZE TTL`, or a `MATERIALIZED` column. The series is split across files because one test
@@ -203,3 +203,47 @@ DROP TABLE t_sibling_materialize_ttl_rebuilt;
 DROP TABLE t_sibling_materialized_rebuilt;
 DROP TABLE t_sibling_materialized_alias_rebuilt;
 DROP TABLE t_sibling_materialized_ttl_only;
+
+SELECT '-- 32d. a sibling index rebuilt through a MATERIALIZED column over a cleared column';
+-- Case 32 with `CLEAR COLUMN e` in place of `UPDATE e = e + 1`. The commands name no index column
+-- here either, and they name no updated column at all: `MutationsInterpreter::prepare` seeds the
+-- MATERIALIZED closure from the cleared columns as well, recomputes m from e's default and rebuilds
+-- idx_old with it. `collectIndicesRebuiltByMutation` has to seed the same closure from
+-- `cleared_columns`, or it reports idx_old as carried over and c stays absent, which leaves the
+-- freshly materialized idx_new with nothing to compare against and refusing at 16/16.
+DROP TABLE IF EXISTS t_sibling_materialized_cleared_rebuilt;
+CREATE TABLE t_sibling_materialized_cleared_rebuilt (
+    k UInt64,
+    d DateTime,
+    c String TTL d + INTERVAL 1 SECOND,
+    e UInt64,
+    m UInt64 MATERIALIZED e * 2,
+    INDEX idx_old (c, m) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_sibling_materialized_cleared_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), number + 1 FROM numbers(64);
+ALTER TABLE t_sibling_materialized_cleared_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_cleared_rebuilt' AND active AND column = 'c';
+ALTER TABLE t_sibling_materialized_cleared_rebuilt MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_materialized_cleared_rebuilt ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_materialized_cleared_rebuilt CLEAR COLUMN e, MATERIALIZE INDEX idx_new
+    SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_materialized_cleared_rebuilt;
+-- One command set, or the case stops covering the shape it is about.
+SELECT uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_cleared_rebuilt' AND command LIKE '%idx_new%';
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_cleared_rebuilt' AND active AND column = 'c';
+-- m was recomputed from the cleared e, so idx_old was written from current data rather than carried.
+SELECT count() = 64 FROM t_sibling_materialized_cleared_rebuilt WHERE m = 0;
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_cleared_rebuilt';
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialized_cleared_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialized_cleared_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() FROM t_sibling_materialized_cleared_rebuilt WHERE c = '150';
+SELECT count() FROM t_sibling_materialized_cleared_rebuilt WHERE c = '150' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_sibling_materialized_cleared_rebuilt WHERE c = '';
+SELECT count() FROM t_sibling_materialized_cleared_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
