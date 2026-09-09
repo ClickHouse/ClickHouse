@@ -14,7 +14,7 @@ FROM (EXPLAIN PIPELINE SELECT DISTINCT number FROM numbers_mt(10000));
 SELECT countIf(explain LIKE '%AggregatingTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT number FROM numbers_mt(10000) SETTINGS query_plan_convert_distinct_to_aggregation = 0);
 
--- Disabling all plan optimizations or serializing a plan also disables the replacement.
+-- Disabling plan optimizations retains `DISTINCT`; serialization settings allow initiator-side conversion.
 SELECT countIf(explain LIKE '%AggregatingTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT number FROM numbers_mt(10000) SETTINGS query_plan_enable_optimizations = 0);
 SELECT countIf(explain LIKE '%AggregatingTransform%') > 0

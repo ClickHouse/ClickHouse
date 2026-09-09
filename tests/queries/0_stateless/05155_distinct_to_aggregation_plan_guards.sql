@@ -4,7 +4,7 @@ SET max_threads = 4;
 SET max_block_size = 1000;
 SET query_plan_remove_redundant_distinct = 0;
 
--- Prepared source pipelines retain `DISTINCT` because their bounds and auxiliary streams are opaque.
+-- Unbounded prepared sources retain `DISTINCT`; finite values use aggregation.
 SELECT countIf(explain LIKE '%AggregatingTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT DISTINCT x FROM generateRandom('x UInt64'));
 SELECT countIf(explain LIKE '%AggregatingTransform%') > 0
