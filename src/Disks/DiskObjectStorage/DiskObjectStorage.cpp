@@ -136,13 +136,8 @@ DiskObjectStorage::DiskObjectStorage(
     , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
-    /// A metadata storage that never defers blob removal or replication gets no background threads at all.
-    , blob_killer(metadata_storage->hasDeadBlobsQueue()
-        ? std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages, wrapped_disk ? wrapped_disk->blob_killer : nullptr)
-        : nullptr)
-    , blob_copier(metadata_storage->hasMissingBlobsQueue()
-        ? std::make_shared<BlobCopierThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages)
-        : nullptr)
+    , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages, wrapped_disk ? wrapped_disk->blob_killer : nullptr))
+    , blob_copier(std::make_shared<BlobCopierThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
     , copy_object_pool(std::make_shared<ThreadPool>(
         CurrentMetrics::DiskObjectStorageCopyObjectThreads,
         CurrentMetrics::DiskObjectStorageCopyObjectThreadsActive,
@@ -259,10 +254,8 @@ DiskObjectStorage::DiskObjectStorage(
             propagateResourceNamesNoLock();
         });
     cluster->applyNewSettings(config, config_prefix);
-    if (blob_killer)
-        blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
-    if (blob_copier)
-        blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
+    blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
+    blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
     copy_object_pool->setMaxThreads(getCopyObjectThreadPoolSize(config, config_prefix));
 }
 
@@ -542,10 +535,8 @@ void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
 
-    if (blob_killer)
-        blob_killer->shutdown();
-    if (blob_copier)
-        blob_copier->shutdown();
+    blob_killer->shutdown();
+    blob_copier->shutdown();
 
     metadata_storage->shutdown();
     for (const auto & [location, _] : cluster->getConfiguration())
@@ -562,24 +553,19 @@ void DiskObjectStorage::startupImpl()
     for (const auto & [location, _] : cluster->getConfiguration())
         object_storages->takePointingTo(location)->startup();
 
-    if (blob_killer)
-        blob_killer->startup();
+    blob_killer->startup();
+    blob_copier->startup();
 
-    if (blob_copier)
+    LOG_INFO(log, "Waiting until all expected blobs are replicated to local location");
+    Stopwatch wait_round;
+    while (metadata_storage->hasUnreplicatedBlobs(cluster->getLocalLocation()))
     {
-        blob_copier->startup();
+        wait_round.restart();
 
-        LOG_INFO(log, "Waiting until all expected blobs are replicated to local location");
-        Stopwatch wait_round;
-        while (metadata_storage->hasUnreplicatedBlobs(cluster->getLocalLocation()))
-        {
-            wait_round.restart();
+        blob_copier->triggerAndWait();
 
-            blob_copier->triggerAndWait();
-
-            if (auto elapsed = wait_round.elapsedMilliseconds(); elapsed < 1000)
-                sleepForMilliseconds(1000 - elapsed);
-        }
+        if (auto elapsed = wait_round.elapsedMilliseconds(); elapsed < 1000)
+            sleepForMilliseconds(1000 - elapsed);
     }
 
     LOG_INFO(log, "Disk {} started up", name);
@@ -998,10 +984,6 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
 
 void DiskObjectStorage::waitBlobsCleanup()
 {
-    /// This disk removes blobs synchronously, so at this point everything is already removed.
-    if (!blob_killer)
-        return;
-
     blob_killer->triggerAndWait();
 }
 
@@ -1034,10 +1016,8 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
     wait_blob_removal = config.getBool(config_prefix + ".wait_for_blob_removal", context->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]);
-    if (blob_killer)
-        blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
-    if (blob_copier)
-        blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
+    blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
+    blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
     copy_object_pool->setMaxThreads(getCopyObjectThreadPoolSize(config, config_prefix));
 }
 

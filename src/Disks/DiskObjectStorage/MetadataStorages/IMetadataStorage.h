@@ -338,9 +338,9 @@ public:
     virtual int64_t getDeadBlobsQueueEstimate() { return 0; }
 
     /// Whether this storage ever puts anything into the queue of dead blobs above. The queue is drained in
-    /// background by `BlobKillerThread`, which is not created at all for a storage that answers `false`:
+    /// background by `BlobKillerThread`, which never schedules its task for a storage that answers `false`:
     /// `plain` and `plain_rewritable` remove blobs synchronously inside the transaction and the `web`
-    /// storages are read-only, so for them the thread would only wake up every second to find nothing to do.
+    /// storages are read-only, so for them the task would only wake up every second to find nothing to do.
     virtual bool hasDeadBlobsQueue() const { return true; }
 
     struct BlobsReplication

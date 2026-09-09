@@ -1,13 +1,14 @@
 -- The `plain_rewritable` metadata storage (like `plain` and `web`) removes blobs synchronously inside the
--- transaction and never replicates them, so a disk using it must not create the background
--- `BlobKillerThread` and `BlobCopierThread`. A disk with the default `local` metadata still gets both.
+-- transaction and never replicates them, so a disk using it must never schedule the background tasks of
+-- `BlobKillerThread` and `BlobCopierThread`. A disk with the default `local` metadata still runs the killer.
 
 CREATE TABLE t_local_metadata (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
     name = '05136_local_metadata',
     type = 'object_storage',
     object_storage_type = 'local',
-    path = 'disks/05136_local_metadata/');
+    metadata_type = 'local',
+    path = 'disks/05136_local_metadata_blobs/');
 
 CREATE TABLE t_plain_rewritable (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
@@ -19,11 +20,20 @@ SETTINGS disk = disk(
 
 SYSTEM FLUSH LOGS text_log;
 
-SELECT 'local metadata', countDistinct(logger_name) FROM system.text_log
-WHERE logger_name IN ('05136_local_metadata::BlobKillerThread', '05136_local_metadata::BlobCopierThread');
+SELECT 'local metadata, blob killer started', count() > 0 FROM system.text_log
+WHERE logger_name = '05136_local_metadata::BlobKillerThread' AND message LIKE 'Execution started%';
 
-SELECT 'plain_rewritable', count() FROM system.text_log
-WHERE logger_name IN ('05136_plain_rewritable::BlobKillerThread', '05136_plain_rewritable::BlobCopierThread');
+SELECT 'plain_rewritable, blob killer started', count() FROM system.text_log
+WHERE logger_name = '05136_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%';
+
+SELECT 'plain_rewritable, blob killer not needed', count() > 0 FROM system.text_log
+WHERE logger_name = '05136_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution is not needed%';
+
+SELECT 'plain_rewritable, blob copier not needed', count() > 0 FROM system.text_log
+WHERE logger_name = '05136_plain_rewritable::BlobCopierThread' AND message LIKE 'Execution is not needed%';
+
+-- Nothing is deferred on such a disk, so waiting for the cleanup returns immediately instead of hanging.
+SYSTEM WAIT BLOBS CLEANUP '05136_plain_rewritable';
 
 DROP TABLE t_local_metadata;
 DROP TABLE t_plain_rewritable;

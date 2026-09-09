@@ -1,2 +1,4 @@
-local metadata	2
-plain_rewritable	0
+local metadata, blob killer started	1
+plain_rewritable, blob killer started	0
+plain_rewritable, blob killer not needed	1
+plain_rewritable, blob copier not needed	1
