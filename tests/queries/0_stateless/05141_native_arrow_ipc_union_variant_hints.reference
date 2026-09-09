@@ -75,6 +75,16 @@ y	Variant(IPv4, String)
 x	Variant(DateTime, String)
 1970-01-01 00:00:08	Variant(DateTime, String)
 y	Variant(DateTime, String)
+--- and DateTime64, which the flat uint32 column reaches at any scale ---
+1970-01-01 00:00:07.000	Variant(DateTime64(3, \'UTC\'), String)
+x	Variant(DateTime64(3, \'UTC\'), String)
+1970-01-01 00:00:08.000	Variant(DateTime64(3, \'UTC\'), String)
+y	Variant(DateTime64(3, \'UTC\'), String)
+--- the same seconds the flat column path returns for that request ---
+1970-01-01 00:00:07.000	DateTime64(3, \'UTC\')
+1970-01-01 00:00:08.000	DateTime64(3, \'UTC\')
+1970-01-01 00:00:07.000	DateTime64(3, \'UTC\')
+1970-01-01 00:00:08.000	DateTime64(3, \'UTC\')
 --- and a duration branch claims the alternative its int64 sibling could otherwise take ---
 7	Variant(Int128, IntervalSecond)
 5	Variant(Int128, IntervalSecond)
@@ -113,6 +123,8 @@ true	Variant(Bool, UInt8)
 Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 --- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---
 Cannot convert type Variant(DateTime64(3, 'UTC'), String) to Variant(DateTime, String).
+--- a uint32 branch offered a wider integer beside DateTime64 takes neither ---
+Cannot convert type Variant(String, UInt32) to Variant(DateTime64(3, 'UTC'), Int64, String).
 --- two branches may never end up on one alternative ---
 Cannot convert type Variant(Bool, UInt8) to Variant(String, UInt8).
 --- an int8 branch is never re-declared as Bool, so this stays rejected ---
@@ -136,6 +148,7 @@ unparseable_binary_int32	Variant(Int32, String)
 date32_utf8	Variant(Date32, String)					
 uint32_date64	Variant(DateTime, UInt32)					
 uint32_utf8	Variant(String, UInt32)					
+uint32_flat	Nullable(UInt32)					
 ts_utf8	Variant(DateTime64(3, \'UTC\'), String)					
 int64_duration	Variant(Int64, IntervalSecond)					
 uint32_date32	Variant(Date32, UInt32)					

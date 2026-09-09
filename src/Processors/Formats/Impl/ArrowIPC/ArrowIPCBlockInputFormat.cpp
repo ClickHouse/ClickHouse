@@ -700,8 +700,9 @@ bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & 
 /// composite is never substituted, since this walk keeps the decoded field names and a cast between tuples with
 /// differing names fills the target fields instead of rejecting them. `Date32` is never substituted,
 /// since the decoder decides from its own hint whether a day number is range-checked, saturated or copied verbatim,
-/// and this layer cannot supply one; a decoded `UInt16` may take `Date`, and a decoded `DateTime` a `DateTime64`,
-/// since those decodes read no hint and every value they produce is in range, while the narrowing reverse is refused.
+/// and this layer cannot supply one; a decoded `UInt16` may take `Date`, and a decoded `UInt32` or `DateTime` a
+/// `DateTime64`, since those decodes read no hint and every value they produce is in range at every scale, while the
+/// narrowing reverse is refused.
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
 {
     const DataTypePtr to = ArrowIPC::stripHint(alternative);
@@ -722,7 +723,7 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
             || (from.isUInt16() && which.isDate());
     if (from.isInt32() || from.isUInt32())
         return which.isInt32() || which.isUInt32() || variantElementWidensTo(to, 4)
-            || (from.isUInt32() && (which.isIPv4() || which.isDateTime()));
+            || (from.isUInt32() && (which.isIPv4() || which.isDateTime() || which.isDateTime64()));
     if (from.isInt64() || from.isUInt64())
         return which.isInt64() || which.isUInt64() || variantElementWidensTo(to, 8)
             || (from.isInt64() && which.isInterval());

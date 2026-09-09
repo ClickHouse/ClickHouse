@@ -119,6 +119,8 @@ columns = {
     # A `uint32` branch beside a branch that cannot take either of its special targets, so the branch
     # must take them itself: the two encodings the ClickHouse Arrow writer uses for IPv4 and DateTime.
     "uint32_utf8": dense([pa.array([7, 8], type=pa.uint32()), pa.array(["x", "y"])], ["i", "s"]),
+    # The same second counts outside a union, to compare that branch against.
+    "uint32_flat": pa.array([7, 8, 7, 8], type=pa.uint32()),
     # An Arrow timestamp decodes to DateTime64, and the narrowing DateTime target is refused: the cast
     # would drop sub-second precision and wrap anything outside 1970-2106.
     "ts_utf8": dense([pa.array([19000 * 86400000, 19001 * 86400000], type=pa.timestamp("ms", tz="UTC")),
@@ -225,6 +227,10 @@ echo "--- a uint32 branch takes IPv4, the encoding the writer uses for it ---"
 read_column uint32_utf8 'Variant(IPv4, String)'
 echo "--- and DateTime, its other writer encoding ---"
 read_column uint32_utf8 'Variant(DateTime, String)' Arrow "session_timezone = 'UTC'"
+echo "--- and DateTime64, which the flat uint32 column reaches at any scale ---"
+read_column uint32_utf8 "Variant(DateTime64(3, 'UTC'), String)"
+echo "--- the same seconds the flat column path returns for that request ---"
+read_column uint32_flat "DateTime64(3, 'UTC')"
 echo "--- and a duration branch claims the alternative its int64 sibling could otherwise take ---"
 read_column int64_duration 'Variant(IntervalSecond, Int128)' Arrow "allow_suspicious_variant_types = 1"
 echo "--- claiming it is not converting into it: an excluded branch keeps its own values ---"
@@ -243,6 +249,8 @@ echo "--- a date32 branch is excluded by design, so this stays rejected ---"
 rejected date32_utf8 'Variant(Int32, String)'
 echo "--- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---"
 rejected ts_utf8 'Variant(DateTime, String)'
+echo "--- a uint32 branch offered a wider integer beside DateTime64 takes neither ---"
+rejected uint32_utf8 "Variant(Int64, DateTime64(3, 'UTC'), String)"
 echo "--- two branches may never end up on one alternative ---"
 rejected bool_uint8 'Variant(UInt8, String)'
 echo "--- an int8 branch is never re-declared as Bool, so this stays rejected ---"
