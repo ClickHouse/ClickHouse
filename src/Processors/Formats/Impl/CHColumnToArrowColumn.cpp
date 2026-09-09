@@ -1720,11 +1720,14 @@ namespace DB
                 value_column = columns[1];
             }
 
-            bool is_key_nullable = false;
-            auto key_arrow_type = getArrowType(key_type, key_column, column_name, format_name, settings, &is_key_nullable, for_builder);
-            return arrow::map(
-                key_arrow_type,
-                getArrowChildField("value", val_type, value_column, format_name, settings, for_builder));
+            /// Build the key field explicitly rather than letting `arrow::map` synthesize it from a bare
+            /// type: `DataTypeMap::isValidKeyType` allows an opaque key such as `Map(JSON, ...)`, which
+            /// needs the same `clickhouse.opaque` tag as the value. An Arrow map's key field is always
+            /// non-nullable, which is what `arrow::map` produced and what a ClickHouse map key always is.
+            auto key_field
+                = getArrowChildField("key", key_type, key_column, format_name, settings, for_builder)->WithNullable(false);
+            auto value_field = getArrowChildField("value", val_type, value_column, format_name, settings, for_builder);
+            return std::make_shared<arrow::MapType>(std::move(key_field), std::move(value_field));
         }
 
         if (isDateTime64(column_type))
@@ -1829,10 +1832,13 @@ namespace DB
                 "The type '{}' of a column '{}' is not supported for conversion into {} data format.",
                 column_type->getName(), column_name, format_name);
         /// One serialized value per row: `serializeText` into a `utf8` column, `serializeBinary` into a
-        /// `binary` one. See `fillArrowArrayWithOpaqueColumnData`.
+        /// `binary` one. See `fillArrowArrayWithOpaqueColumnData`. An aggregate state is the exception:
+        /// `SerializationAggregateFunction::serializeText` writes the raw state bytes, which are not text,
+        /// so it goes into a `binary` column in either mode - an Arrow `utf8` column must hold valid UTF-8.
         if (out_opaque_type_name)
             *out_opaque_type_name = column_type->getName();
-        if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT)
+        if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT
+            && !WhichDataType(column_type).isAggregateFunction())
             return arrow::utf8();
         return arrow::binary();
     }

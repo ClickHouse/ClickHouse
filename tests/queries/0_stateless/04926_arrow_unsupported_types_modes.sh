@@ -60,21 +60,49 @@ ${CLICKHOUSE_LOCAL} --query "
 
 # The opaque column is tagged as an Arrow extension type carrying the original ClickHouse type name, so a
 # consumer can tell it apart from a genuine string or binary column. A reader that does not know the
-# extension name (as here, `pyarrow`) sees the plain storage type.
+# extension name (as here, `pyarrow`) sees the plain storage type. An aggregate state stays `binary` even in
+# `text` mode: `serializeText` writes its raw state bytes, and an Arrow `string` column must hold valid UTF-8.
+# A map's key is tagged too - `Map(JSON, ...)` is a legal type.
 echo "=== pyarrow: storage type and clickhouse.opaque tag ==="
-for mode in text binary; do
-    write "SELECT '{\"a\":1}'::JSON AS x" "output_format_arrow_unsupported_types = '${mode}'"
-    python3 - "${DATA_FILE}" "${mode}" <<'PY'
+dump_schema() {
+    python3 - "${DATA_FILE}" "$1" <<'PY'
 import sys
 import pyarrow as pa
 
 with pa.OSFile(sys.argv[1], "rb") as source:
     schema = pa.ipc.open_stream(source).schema
 
-field = schema.field("x")
-metadata = {key.decode(): value.decode() for key, value in (field.metadata or {}).items()}
-print(sys.argv[2], field.type, metadata.get("ARROW:extension:name"), metadata.get("ARROW:extension:metadata"), sep="\t")
+
+def dump(field, path):
+    metadata = {key.decode(): value.decode() for key, value in (field.metadata or {}).items()}
+    print(sys.argv[2], path, field.type, metadata.get("ARROW:extension:name"),
+          metadata.get("ARROW:extension:metadata"), sep="\t")
+    for i in range(field.type.num_fields):
+        dump(field.type.field(i), f"{path}.{field.type.field(i).name}")
+
+
+for f in schema:
+    dump(f, f.name)
 PY
+}
+
+for mode in text binary; do
+    write "SELECT '{\"a\":1}'::JSON AS x" "output_format_arrow_unsupported_types = '${mode}'"
+    dump_schema "json/${mode}"
+done
+
+# 128 puts the high bit in the first byte of the state, so the payload is not valid UTF-8.
+for mode in text binary; do
+    write "SELECT sumState(toUInt64(128)) AS x" "output_format_arrow_unsupported_types = '${mode}'"
+    dump_schema "aggregate/${mode}"
+    ${CLICKHOUSE_LOCAL} --query "
+        SELECT finalizeAggregation(CAST(x AS AggregateFunction(sum, UInt64)))
+        FROM file('${DATA_FILE}', 'ArrowStream')"
+done
+
+for mode in text binary; do
+    write "SELECT CAST(map('{\"a\":1}', 1), 'Map(JSON, UInt8)') AS x" "output_format_arrow_unsupported_types = '${mode}'"
+    dump_schema "map/${mode}"
 done
 
 rm -f "${DATA_FILE}"

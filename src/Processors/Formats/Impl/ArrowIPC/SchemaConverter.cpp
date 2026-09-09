@@ -760,13 +760,26 @@ buildField(
                             "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
                             type->getName());
                     case FormatSettings::ArrowUnsupportedTypes::TEXT:
-                        type_type = flatbuf::Type_Utf8;
-                        type_offset = flatbuf::CreateUtf8(b).Union();
-                        break;
                     case FormatSettings::ArrowUnsupportedTypes::BINARY:
-                        type_type = flatbuf::Type_Binary;
-                        type_offset = flatbuf::CreateBinary(b).Union();
+                    {
+                        /// An aggregate state is written as `Binary` even in `text` mode:
+                        /// `SerializationAggregateFunction::serializeText` writes the raw state bytes, which
+                        /// are not text, and an Arrow `Utf8` column must hold valid UTF-8.
+                        const bool as_utf8
+                            = settings.arrow.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT
+                            && !which.isAggregateFunction();
+                        if (as_utf8)
+                        {
+                            type_type = flatbuf::Type_Utf8;
+                            type_offset = flatbuf::CreateUtf8(b).Union();
+                        }
+                        else
+                        {
+                            type_type = flatbuf::Type_Binary;
+                            type_offset = flatbuf::CreateBinary(b).Union();
+                        }
                         break;
+                    }
                 }
                 opaque_type_name = t->getName();
                 break;

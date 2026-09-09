@@ -649,6 +649,54 @@ def test_doget_nested_unsupported_type_is_tagged():
         assert child.metadata[b"ARROW:extension:metadata"] == b"JSON"
 
 
+# A map key can be an opaque type too (`DataTypeMap::isValidKeyType` allows it), so it carries the tag on its
+# own field rather than only the value.
+def test_doget_unsupported_map_key_is_tagged():
+    node.query("CREATE TABLE mytable (id Int64, m Map(JSON, UInt8)) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, map('{"a":1}', 7))""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_path("mytable")
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    entries = reader.read_all().schema.field("m").type.field(0).type
+
+    key, value = entries.field(0), entries.field(1)
+    assert key.name == "key" and not key.nullable
+    assert key.type == pa.binary()
+    assert key.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
+    assert key.metadata[b"ARROW:extension:metadata"] == b"JSON"
+    assert value.type == pa.uint8()
+    assert value.metadata is None
+
+
+# `serializeText` of an aggregate state writes its raw state bytes, which are not valid UTF-8, so the column
+# stays Arrow `binary` even in `text` mode rather than being advertised as a string.
+def test_doget_aggregate_state_is_binary_in_text_mode():
+    node.query("CREATE TABLE mytable (id Int64, s AggregateFunction(sum, UInt64)) ORDER BY id")
+    node.query("INSERT INTO mytable SELECT 10, sumState(toUInt64(128))")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_command(
+        "SELECT s FROM mytable SETTINGS output_format_arrow_unsupported_types = 'text'"
+    )
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    actual = reader.read_all()
+
+    field = actual.schema.field("s")
+    assert field.type == pa.binary()
+    assert field.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
+    # The high bit of the leading byte is what makes this payload invalid UTF-8.
+    assert actual.column("s").to_pylist() == [b"\x80\x00\x00\x00\x00\x00\x00\x00"]
+
+
 # The opaque payload is produced by the query's own format settings, so a setting that changes how a value
 # serializes is honored and the bytes are the ones `FORMAT Arrow` would write for the same query. Here
 # `output_format_binary_write_json_as_string` turns the binary encoding of `JSON` into a length-prefixed
