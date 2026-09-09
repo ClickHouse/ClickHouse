@@ -1,0 +1,137 @@
+<test>
+    <!--
+        Focused ceiling test for the exact-type numeric-array search path.
+
+        The arrays are stored in a Memory table so the timed queries measure the search, not array
+        construction. The UInt32 needle keeps the comparison in the same type. The missing-needle
+        query is the deliberately adversarial case: every one of 4096 values has to be inspected.
+        The three hit positions show how the same path behaves when it can stop early.
+
+        Keep this alongside the broad array tests: it measures the long-row scan where SIMD can
+        have a clear signal, not a representative distribution of array lengths.
+
+        The threshold table below covers threshold - 1, threshold, threshold + one vector, and
+        twice the threshold for every supported element width.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>8192</max_block_size>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</create_query>
+    <create_query>
+        CREATE TABLE perf_array_index_simd_numeric (arr Array(UInt32)) ENGINE = Memory
+    </create_query>
+    <create_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</create_query>
+    <create_query>
+        CREATE TABLE perf_array_index_simd_thresholds
+        (
+            u8_63 Array(UInt8),
+            u8_64 Array(UInt8),
+            u8_96 Array(UInt8),
+            u8_128 Array(UInt8),
+            u16_31 Array(UInt16),
+            u16_32 Array(UInt16),
+            u16_48 Array(UInt16),
+            u16_64 Array(UInt16),
+            u32_15 Array(UInt32),
+            u32_16 Array(UInt32),
+            u32_24 Array(UInt32),
+            u32_32 Array(UInt32),
+            u64_7 Array(UInt64),
+            u64_8 Array(UInt64),
+            u64_12 Array(UInt64),
+            u64_16 Array(UInt64)
+        ) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO perf_array_index_simd_numeric
+        SELECT materialize(range(4096)::Array(UInt32))
+        FROM numbers(50000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO perf_array_index_simd_thresholds
+        SELECT
+            materialize(range(63)::Array(UInt8)),
+            materialize(range(64)::Array(UInt8)),
+            materialize(range(96)::Array(UInt8)),
+            materialize(range(128)::Array(UInt8)),
+            materialize(range(31)::Array(UInt16)),
+            materialize(range(32)::Array(UInt16)),
+            materialize(range(48)::Array(UInt16)),
+            materialize(range(64)::Array(UInt16)),
+            materialize(range(15)::Array(UInt32)),
+            materialize(range(16)::Array(UInt32)),
+            materialize(range(24)::Array(UInt32)),
+            materialize(range(32)::Array(UInt32)),
+            materialize(range(7)::Array(UInt64)),
+            materialize(range(8)::Array(UInt64)),
+            materialize(range(12)::Array(UInt64)),
+            materialize(range(16)::Array(UInt64))
+        FROM numbers(20000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>needle</name>
+            <values>
+                <value>0</value>
+                <value>2048</value>
+                <value>4095</value>
+                <value>4294967295</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>
+        SELECT sum(has(arr, toUInt32({needle})))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(arr, toUInt32({needle})))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT sum(
+            has(u8_63, toUInt8(0)) + indexOf(u8_63, toUInt8(62))
+            + has(u8_64, toUInt8(63)) + indexOf(u8_64, toUInt8(63))
+            + has(u8_96, toUInt8(255)) + indexOf(u8_96, toUInt8(255))
+            + has(u8_128, toUInt8(0)) + indexOf(u8_128, toUInt8(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(
+            has(u16_31, toUInt16(0)) + indexOf(u16_31, toUInt16(30))
+            + has(u16_32, toUInt16(31)) + indexOf(u16_32, toUInt16(31))
+            + has(u16_48, toUInt16(65535)) + indexOf(u16_48, toUInt16(65535))
+            + has(u16_64, toUInt16(0)) + indexOf(u16_64, toUInt16(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(
+            has(u32_15, toUInt32(0)) + indexOf(u32_15, toUInt32(14))
+            + has(u32_16, toUInt32(15)) + indexOf(u32_16, toUInt32(15))
+            + has(u32_24, toUInt32(4294967295)) + indexOf(u32_24, toUInt32(4294967295))
+            + has(u32_32, toUInt32(0)) + indexOf(u32_32, toUInt32(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(
+            has(u64_7, toUInt64(0)) + indexOf(u64_7, toUInt64(6))
+            + has(u64_8, toUInt64(7)) + indexOf(u64_8, toUInt64(7))
+            + has(u64_12, toUInt64('18446744073709551615'))
+            + indexOf(u64_12, toUInt64('18446744073709551615'))
+            + has(u64_16, toUInt64(0)) + indexOf(u64_16, toUInt64(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</drop_query>
+</test>

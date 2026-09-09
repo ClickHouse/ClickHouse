@@ -31,6 +31,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -48,6 +49,16 @@ namespace ErrorCodes
 }
 
 using NullMap = PaddedPODArray<UInt8>;
+
+#if USE_MULTITARGET_CODE
+namespace ArrayIndexImpl
+{
+size_t findUInt(const UInt8 * data, size_t size, UInt8 value);
+size_t findUInt(const UInt16 * data, size_t size, UInt16 value);
+size_t findUInt(const UInt32 * data, size_t size, UInt32 value);
+size_t findUInt(const UInt64 * data, size_t size, UInt64 value);
+}
+#endif
 
 /// ConcreteActions -- what to do when the index was found.
 
@@ -166,7 +177,7 @@ public:
     }
 
     template <size_t Case, typename Data, typename Target>
-    static constexpr ResultType linearSearch(
+    static ResultType linearSearch(
         const Data & data,
         const Target & target,
         size_t array_size,
@@ -176,6 +187,38 @@ public:
         ArrOffset current_offset)
     {
         ResultType current = 0;
+
+#if USE_MULTITARGET_CODE
+        if constexpr (
+            Case == 1 && RightArgIsConstant && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>)
+            && std::is_same_v<Data, PaddedPODArray<Initial>> && std::is_same_v<Target, Result> && std::is_same_v<Initial, Result>
+            && (std::is_same_v<Initial, UInt8> || std::is_same_v<Initial, UInt16> || std::is_same_v<Initial, UInt32>
+                || std::is_same_v<Initial, UInt64>))
+        {
+            /// Keep short-array regressions on the scalar path; the 64-byte minimum amortises vector setup costs.
+            constexpr size_t simd_min_size = 64 / sizeof(Initial);
+            if (array_size >= simd_min_size)
+            {
+                /// Check one vector scalarly so a hit at the beginning does not pay SIMD setup costs.
+                constexpr size_t scalar_prefix_size = 32 / sizeof(Initial);
+                for (size_t j = 0; j < scalar_prefix_size; ++j)
+                {
+                    if (data[current_offset + j] == target)
+                    {
+                        ConcreteAction::apply(current, j);
+                        return current;
+                    }
+                }
+
+                const auto found
+                    = ArrayIndexImpl::findUInt(data.data() + current_offset + scalar_prefix_size, array_size - scalar_prefix_size, target);
+                if (found != static_cast<size_t>(-1))
+                    ConcreteAction::apply(current, found + scalar_prefix_size);
+                return current;
+            }
+        }
+#endif
+
         for (size_t j = 0; j < array_size; ++j)
         {
             if constexpr (Case == 2) /// Right arg is Nullable
@@ -227,7 +270,7 @@ public:
 private:
     /** Looking for the target element index in the data (array) */
     template <size_t Case, typename Data, typename Target>
-    static constexpr ResultType getIndex(
+    static ResultType getIndex(
         const Data & data,
         const Target & target,
         size_t array_size,
