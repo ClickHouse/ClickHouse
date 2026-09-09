@@ -37,6 +37,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
@@ -3292,13 +3293,31 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
 const StorageDistributed * getDistributedStorageFromTableExpression(const QueryTreeNodePtr & table_expression)
 {
-    const auto * table_node = table_expression->as<TableNode>();
-    if (table_node)
-        return typeid_cast<const StorageDistributed *>(table_node->getStorage().get());
+    StoragePtr storage;
+    if (const auto * table_node = table_expression->as<TableNode>())
+        storage = table_node->getStorage();
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+        storage = table_function_node->getStorage();
+    else
+        return nullptr;
 
-    const auto * table_function_node = table_expression->as<TableFunctionNode>();
-    if (table_function_node)
-        return typeid_cast<const StorageDistributed *>(table_function_node->getStorage().get());
+    /// `Alias`, `MaterializedView` and `StorageProxy` (for example `lazy_load_tables`) forward
+    /// `read` to a nested storage. If that nested storage is `Distributed`, the join still fans
+    /// out across shards, so look through the wrappers before deciding.
+    for (size_t i = 0; storage && i < 16; ++i)
+    {
+        if (const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get()))
+            return distributed;
+
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+            storage = proxy->getNested();
+        else if (const auto * alias = storage->as<StorageAlias>())
+            storage = alias->tryGetTargetTable();
+        else if (const auto * materialized_view = storage->as<StorageMaterializedView>())
+            storage = materialized_view->tryGetTargetTable();
+        else
+            break;
+    }
 
     return nullptr;
 }
