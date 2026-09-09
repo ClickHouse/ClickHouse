@@ -1002,7 +1002,7 @@ def test_cancelling_horizontal_text_index_merge_stops_s3_retries(
             and "/text_index_tmp/" in line
             for line in merge_log.splitlines()
         ), merge_log
-        assert "writing single part upload started" in merge_log, merge_log
+        assert broken_s3.get_request_counts()["part_upload"] == 0
         assert_s3_cancelled(node, table, request, broken_s3, "object_upload")
     finally:
         try:
