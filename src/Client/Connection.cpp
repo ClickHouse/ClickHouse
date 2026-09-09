@@ -1018,7 +1018,7 @@ CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings)
 
 static std::optional<String> queryWithoutProfileTraceSettings(const String & query, const Settings * settings)
 {
-    if (query.find("send_profile_traces") == String::npos)
+    if (!query.contains("send_profile_traces"))
         return std::nullopt;
 
     ParserQuery parser(query.data() + query.size(), settings && (*settings)[Setting::allow_settings_after_format_in_insert]);
