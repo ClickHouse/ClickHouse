@@ -316,6 +316,7 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
+    std::swap(not_null_filters_derived_left, not_null_filters_derived_right);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -646,41 +647,21 @@ void JoinStepLogicalLookup::optimize(const QueryPlanOptimizationSettings & optim
     child_plan.optimize(optimization_settings);
 }
 
-/// When we have an expression like `a AND b`, it can work even when `a` and `b` are non-boolean values,
-/// because the AND operator will implicitly convert them to booleans. The result will be either boolean or nullable.
-/// In some cases we need to split `a` and `b` into separate expressions, but we want to preserve the same
-/// boolean conversion behavior as if they were still part of the original AND expression.
+/// Splitting `a AND b` into separate conditions loses the boolean conversion `AND` applied to each
+/// side, so a non-boolean one has to be converted explicitly to read the same way.
 static JoinActionRef toBoolIfNeeded(JoinActionRef condition)
 {
     const auto & condition_type = condition.getType();
-    auto output_type = removeNullable(condition_type);
-    WhichDataType which_type(output_type);
-    if (which_type.isUInt8())
+    if (WhichDataType(removeNullable(condition_type)).isUInt8())
         return condition;
 
-    /// A `Nothing`-typed condition (e.g. a non-equi predicate over a column of type Nothing, such as
-    /// the result of `ARRAY JOIN []`) cannot be coerced by `AND`: `and(Nothing, true)` stays `Nothing`
-    /// because Nothing is the bottom type. Cast it to a boolean instead. The column has no values, so the
-    /// predicate matches no rows. removeNullable folds Nullable(Nothing) into Nothing as well.
-    if (which_type.isNothing())
-    {
-        DataTypePtr bool_ty = std::make_shared<DataTypeUInt8>();
-        if (isNullableOrLowCardinalityNullable(condition_type))
-            bool_ty = makeNullable(bool_ty);
-        return JoinActionRef::transform({condition}, [&bool_ty](auto & dag, auto && nodes)
-        {
-            return &dag.addCast(*nodes.at(0), bool_ty, {}, nullptr);
-        });
-    }
+    DataTypePtr bool_type = std::make_shared<DataTypeUInt8>();
+    if (isNullableOrLowCardinalityNullable(condition_type))
+        bool_type = makeNullable(bool_type);
 
-    return JoinActionRef::transform({condition}, [](auto & dag, auto && nodes)
+    return JoinActionRef::transform({condition}, [&bool_type](auto & dag, auto && nodes)
     {
-        JoinActionRef::AddFunction function_and(JoinConditionOperator::And);
-        DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-        auto rhs_column = uint8_ty->createColumnConst(0, 1);
-        const auto & rhs_node = dag.addColumn(std::move(rhs_column), uint8_ty, "true");
-        nodes.push_back(&rhs_node);
-        return function_and(dag, nodes);
+        return &dag.addBooleanCondition(*nodes.at(0), bool_type, nullptr);
     });
 }
 
@@ -780,6 +761,9 @@ static void predicateOperandsToCommonType(
         {
             if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
             {
+                /// A converted key must report a NULL at the top level; see `removeNullableInsideTuple`.
+                subtype = JoinCommon::removeNullableInsideTuple(subtype);
+
                 /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
                 /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
                 /// applies only when the storage key itself is the subtype, so that only the probe side is converted.
@@ -1590,10 +1574,19 @@ static QueryPlanNode buildPhysicalJoinImpl(
             used_expressions.push_back(left_pre_filter_condition);
         }
 
-        if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
+        /// A `StorageJoin` right side is a prebuilt join read by stored column name rather than a
+        /// stream, so no query-specific filter can be evaluated over it. The other two terms negate
+        /// `build_mixed_join_expression` below, so such a condition becomes a post-join filter.
+        const bool right_condition_is_applied_after_join
+            = prepared_join_storage.storage_join && !is_disjunctive_condition && canPushDownFromOn(join_operator);
+
+        if (!right_condition_is_applied_after_join)
         {
-            table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-            used_expressions.push_back(right_pre_filter_condition);
+            if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
+            {
+                table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+                used_expressions.push_back(right_pre_filter_condition);
+            }
         }
     }
 
@@ -2339,6 +2332,8 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->not_null_filters_derived_left = not_null_filters_derived_left;
+    result_step->not_null_filters_derived_right = not_null_filters_derived_right;
 
     return result_step;
 }

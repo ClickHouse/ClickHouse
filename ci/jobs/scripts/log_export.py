@@ -1,8 +1,8 @@
 """Export of the `system.*_log` tables of a local server to the CI Logs cluster.
 
 Every check exports its system logs the same way: for each system log table a
-`Distributed` table (`system.<table>_sender`) is created next to it, fed by a
-materialized view (`system.<table>_watcher`) that adds the columns identifying
+`Distributed` table (`<export database>.<table>_sender`) is created, fed by a
+materialized view (`<export database>.<table>_watcher`) that adds the columns identifying
 the CI run. The rows are then sent to the CI Logs cluster in the background, by
 the server itself. The tables and the views are created by
 `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`; this module holds what
@@ -50,13 +50,15 @@ CI_LOGS_SENDER_USER_CONFIG = "./tests/config/users.d/ci_logs_sender.yaml"
 # The port of the local server to export from, for `setup_log_cluster.sh`.
 SERVER_PORT_ENV = "LOG_EXPORT_SERVER_PORT"
 
+# The local database of the export tables; must match the default of
+# `LOG_EXPORT_DATABASE` in `setup_log_cluster.sh`, which creates them.
+LOG_EXPORT_DATABASE = "ci_logs_export"
+
 # The `Distributed` tables the export sends through, created by `start` as
-# `system.<log table>_sender`. `endsWith` rather than `LIKE '%\_sender'`, to
-# keep the escape of the underscore out of a query that goes through a shell
-# command line.
+# `<LOG_EXPORT_DATABASE>.<log table>_sender`
 SENDER_TABLES_QUERY = (
     "SELECT database || '.' || name FROM system.tables "
-    "WHERE database = 'system' AND endsWith(name, '_sender') AND engine = 'Distributed'"
+    f"WHERE database = '{LOG_EXPORT_DATABASE}' AND endsWith(name, '_sender') AND engine = 'Distributed'"
 )
 
 _credentials = None
