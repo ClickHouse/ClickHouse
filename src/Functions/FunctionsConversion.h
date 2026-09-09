@@ -4367,7 +4367,12 @@ struct ToDateMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field & left, const Field & right)
     {
-        const IDataType & type = removeLowCardinalityAndNullable(type_with_wrappers);
+        const IDataType * type_without_wrappers = &type_with_wrappers;
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_without_wrappers))
+            type_without_wrappers = low_cardinality_type->getDictionaryType().get();
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type_without_wrappers))
+            type_without_wrappers = nullable_type->getNestedType().get();
+        const IDataType & type = *type_without_wrappers;
         auto which = WhichDataType(type);
         if (which.isDateOrDate32() || which.isTime() || which.isTime64() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8()
             || which.isUInt16())
@@ -4407,7 +4412,12 @@ struct ToDateTimeMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field &, const Field &)
     {
-        const IDataType & type = removeLowCardinalityAndNullable(type_with_wrappers);
+        const IDataType * type_without_wrappers = &type_with_wrappers;
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_without_wrappers))
+            type_without_wrappers = low_cardinality_type->getDictionaryType().get();
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type_without_wrappers))
+            type_without_wrappers = nullable_type->getNestedType().get();
+        const IDataType & type = *type_without_wrappers;
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);

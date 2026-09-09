@@ -98,8 +98,4 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
 /// Removes LowCardinality and Nullable in a correct order and returns T
 /// if the type is LowCardinality(T) or LowCardinality(Nullable(T)); type otherwise
 DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type);
-
-/// The same, for a type that is not held by a `DataTypePtr`. The result is a part of `type`, so it
-/// lives as long as `type` does.
-const IDataType & removeLowCardinalityAndNullable(const IDataType & type);
 }
