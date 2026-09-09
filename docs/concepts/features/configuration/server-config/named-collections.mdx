@@ -61,6 +61,8 @@ To manage named collections with DDL a user must have the `named_collection_cont
       <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex replace=true>
       <access_management>1</access_management>
       <named_collection_control>1</named_collection_control>
+      <!-- Uncomment to also let this user see the values stored in named collections. -->
+      <!-- <show_named_collections_secrets>1</show_named_collections_secrets> -->
     </default>
   </users>
 </clickhouse>
@@ -69,6 +71,8 @@ To manage named collections with DDL a user must have the `named_collection_cont
 <Tip>
 In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
 </Tip>
+
+`named_collection_control` allows the user to create, alter and drop named collections, but not to read back the values that are already stored in them. That is a separate privilege, `SHOW NAMED COLLECTIONS SECRETS`, enabled by the [`show_named_collections_secrets`](/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) setting. A user can only grant the privileges that they have themselves, so while `show_named_collections_secrets` is disabled, the user does not have the complete set of privileges and `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` is rejected with `(Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)`.
 
 ### Storage for named collections {#storage-for-named-collections}
 
