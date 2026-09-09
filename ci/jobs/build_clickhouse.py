@@ -442,7 +442,9 @@ def main():
             # `clickhouse-windows-ported` is built alongside it because it is derived from the
             # contrib list rather than from what the binary happens to link, so it keeps a
             # newly added third-party library covered even when nothing depends on it yet.
-            targets = "clickhouse clickhouse-windows-ported"
+            # `clickhouse-windows-selftest` carries the runtime checks that answering a query
+            # does not reach; it is named here because `ENABLE_UTILS` is off in this build.
+            targets = "clickhouse clickhouse-windows-ported clickhouse-windows-selftest"
         else:
             targets = "clickhouse-bundle"
 
@@ -545,6 +547,11 @@ def main():
                         f"{wine_env} wine wineboot --init",
                         f"{wine_env} wine {build_dir}/programs/clickhouse.exe --version",
                         f'{wine_env} wine {build_dir}/programs/clickhouse.exe local --query "SELECT 1"',
+                        # Answering a query leaves the rest of the port untested: the emulation
+                        # of socket flags Winsock does not have, and the memory limit a job
+                        # object imposes, are on no path a `SELECT` takes. See
+                        # `utils/windows-selftest`.
+                        f"{wine_env} wine {build_dir}/utils/windows-selftest/clickhouse-windows-selftest.exe",
                     ],
                     # Run all of them even after one fails. The step still fails if any command
                     # does, but while the port is being brought up every round of this job is the
