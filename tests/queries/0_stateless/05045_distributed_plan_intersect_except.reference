@@ -1,0 +1,12 @@
+-- intersect distinct, rule-based
+501	1	999
+-- intersect all, rule-based
+502
+-- except distinct, rule-based
+499	0	499
+-- except all, rule-based
+499
+-- intersect distinct, cascades
+501	1	999
+-- except all, cascades
+499

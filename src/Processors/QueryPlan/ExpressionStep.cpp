@@ -77,8 +77,12 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
+    /// All streams of the pipe have the same header, so compute the transformed header once
+    /// instead of in every ExpressionTransform instance: the computation is linear in the size
+    /// of the DAG, and there is one transform per stream.
+    auto transformed_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(pipeline.getHeader(), expression->getActionsDAG()));
     pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                { return std::make_shared<ExpressionTransform>(header, expression, dataflow_cache_updater); });
+                                { return std::make_shared<ExpressionTransform>(header, transformed_header, expression, dataflow_cache_updater); });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
@@ -91,9 +95,10 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
             &columns_contain_compiled_function);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
+        auto converted_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(pipeline.getHeader(), convert_actions->getActionsDAG()));
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
-            return std::make_shared<ExpressionTransform>(header, convert_actions);
+            return std::make_shared<ExpressionTransform>(header, converted_header, convert_actions);
         });
     }
 }

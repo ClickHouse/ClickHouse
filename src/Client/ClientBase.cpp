@@ -3,6 +3,7 @@
 
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/ClientSlashCommands.h>
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
@@ -64,10 +65,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <IO/Ask.h>
@@ -100,6 +100,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -230,6 +232,29 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
                 fs::remove(tmp_file);
         }
     }
+}
+
+/// Whether the argument of the interactive `\d` command is the name of a table, as in `\d hits`,
+/// rather than a continuation of the `SHOW TABLES` query that a bare `\d` expands to, as in
+/// `\d FROM system` or `\d NOT LIKE 'hits%'`. A table named after one of these clauses has to be
+/// quoted, which is also what tells it apart from the clause.
+bool isTableNameArgument(std::string_view argument)
+{
+    static constexpr auto show_tables_clauses = std::to_array<std::string_view>(
+        {"FROM", "IN", "NOT", "LIKE", "ILIKE", "WHERE", "LIMIT", "INTO", "FORMAT", "SETTINGS", "PARALLEL"});
+
+    while (!argument.empty() && isWhitespaceASCII(argument.front()))
+        argument.remove_prefix(1);
+
+    /// An unquoted name begins an identifier, a quoted one starts with a backtick or a double
+    /// quote. Anything else is not a name: no argument at all, or the `;` of a bare command.
+    if (argument.empty()
+        || !(isValidIdentifierBegin(argument.front()) || argument.front() == '`' || argument.front() == '"'))
+        return false;
+
+    const std::string_view first_word(argument.begin(), std::ranges::find_if(argument, isWhitespaceASCII));
+
+    return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
@@ -651,11 +676,17 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             throw;
         }
     }
+    else if (dialect == Dialect::kusto)
+    {
+        /// KQL is lexically a different language, so it does not go through the SQL
+        /// tokenizer at all. Any failure is thrown; the interactive path below already
+        /// reports a thrown exception the same way it reports a returned message.
+        res = parseKQLQuery(
+            pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
     else
     {
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-        else if (dialect == Dialect::prql)
+        if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
@@ -669,10 +700,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             String message;
             try
             {
-                if (dialect == Dialect::kusto)
-                    res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-                else
-                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             }
             catch (const Exception & e)
             {
@@ -689,10 +717,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         }
         else
         {
-            if (dialect == Dialect::kusto)
-                res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-            else
-                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
     }
 
@@ -1610,7 +1635,11 @@ std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
     if (!settings.hasSettingsChangedByCompatibility())
         return {};
     Settings result = settings;
-    result.resetSettingsChangedByCompatibility();
+    /// Keep the derived values but clear their `changed` flags: `Connection::sendQuery` picks the
+    /// client-side network codec from the values (so `compatibility` rolls back the codec of the
+    /// compressed packets this client sends), while only changed settings are serialized (so the
+    /// server re-derives them from `compatibility` itself and honors its own constraints).
+    result.markSettingsChangedByCompatibilityAsUnchanged();
     return result;
 }
 
@@ -3129,10 +3158,17 @@ void ClientBase::processParsedSingleQuery(
     /// at, and emitting `BEL` would just contaminate the captured stderr stream.
     /// The default lives here (not in the CLI option) so that a value from the
     /// client config file is not clobbered when the flag is omitted.
+    ///
+    /// The threshold is checked against the client's own clock rather than
+    /// `elapsedSeconds`, which prefers the server-reported time. The server-reported time only
+    /// advances when a `Progress` packet arrives, and no final `Progress` packet is sent when a query
+    /// fails, so on the error path it is stale by an unbounded amount - enough to skip the chime for a
+    /// query that clearly ran past the threshold. The wall-clock time the user waited for is also what
+    /// the chime is about.
     UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 5);
     if (chime_threshold_seconds > 0
         && stderr_is_a_tty
-        && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+        && progress_indication.clientElapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
     {
         error_stream << '\x07';
         error_stream.flush();
@@ -3413,6 +3449,25 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 is_first = false;
                 have_error |= buzz_house;
                 error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
+
+                /// The AST fuzzer feeds whole test files to one session, often several files in
+                /// a row, so a statement that does not parse is expected rather than a finding -
+                /// e.g. SQL DDL of the next file read under a `dialect = 'kusto'` a previous file
+                /// left behind. Skip the statement and keep fuzzing (the per-query parse in
+                /// `processWithASTFuzzer` tolerates syntax errors the same way).
+                if (query_fuzzer_runs && !buzz_house)
+                {
+                    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
+                    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    Tokens tokens(this_query_begin, all_queries_end);
+                    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                        ++token_iterator;
+                    this_query_begin = token_iterator->end;
+                    current_exception.reset();
+                    continue;
+                }
+
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -3686,6 +3741,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
     /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
     /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    /// The `/`-form is also offered by the completion of the line editor - keep the `/`-commands
+    /// dispatched here in sync with `clientSlashCommands`.
     if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
         && (is_interactive || supportsLocalMetaCommands()))
     {
@@ -3758,6 +3815,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Interactive `help`/`man` command (in all of the forms `help`, `/help`, `man`, `/man`): render the
     /// embedded documentation for a word from `system.documentation`. Gated like the other meta-commands,
     /// so that batch `clickhouse-client` still parses a query starting with `help`/`man` as SQL.
+    /// The `/`-forms are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
     if (is_interactive || supportsLocalMetaCommands())
     {
         for (const std::string_view prefix : {"help", "/help", "man", "/man"})
@@ -3817,6 +3876,15 @@ bool ClientBase::processQueryText(const String & text)
         return true;
     }
 #endif
+
+    /// A mistake in the name of a `/`-command would otherwise be parsed as SQL and reported as a
+    /// syntax error at the `/`, which tells the user nothing about the command they meant. Gated
+    /// like the commands themselves, so batch `clickhouse-client` still treats the input as SQL.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
+    }
 
     if (query_fuzzer_runs)
     {
@@ -3982,6 +4050,10 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     {
         std::string result;
 
+        /// Only the compression knobs: the rest of the session settings must not leak into this
+        /// client-issued helper query. See `networkCompressionSettings`.
+        const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
         /// This is a complete query exchange on the shared connection, so it follows the same
         /// resynchronization discipline as the regular queries: recover from a previous failed
         /// exchange first, arm the flag for the time of the exchange (so that a transport or
@@ -4000,7 +4072,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                 {},  /// query_parameters
                 "",  /// query_id
                 QueryProcessingStage::Complete,
-                nullptr,  /// settings
+                &compression_settings,  /// settings (so the network codec honors `network_compression_method`)
                 nullptr,  /// client_info
                 false,    /// with_pending_data
                 {},       /// external_roles
@@ -4069,6 +4141,10 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
 {
     const NameToNameMap query_parameters_for_help{{"word", word}};
 
+    /// Only the compression knobs: the rest of the session settings must not leak into this
+    /// client-issued helper query. See `networkCompressionSettings`.
+    const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
     /// See the comment in `executeQueryForSingleString`: this exchange follows the same
     /// resynchronization discipline as the regular queries.
     if (connection_needs_resynchronization)
@@ -4082,7 +4158,7 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
             query_parameters_for_help,
             "", /// query_id
             QueryProcessingStage::Complete,
-            nullptr, /// settings
+            &compression_settings, /// settings (so the network codec honors `network_compression_method`)
             &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
             false, /// with_pending_data
             {}, /// external_roles
@@ -4365,7 +4441,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
-        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
+        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight (hints need color). The suggestion hints also need the suggestions, so --disable_suggestion turns those off, while the client's /-commands are a static list and stay hinted. Disable with --hints 0.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -4723,7 +4799,7 @@ void ClientBase::runInteractive()
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
             if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }
@@ -4806,12 +4882,14 @@ void ClientBase::runInteractive()
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
-        /// Hints need color, so they are enabled only together with highlighting.
-        /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
-        /// turns off autocompletion entirely, including the hints.
+        /// Hints need color, so they are enabled only together with highlighting. Client slash
+        /// commands have a static list and can therefore remain hinted when suggestions are off.
         .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
-            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
-            && !getClientConfiguration().getBool("disable_suggestion", false),
+            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
+        .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
+        /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
+        /// `processQueryText`, so offer them here.
+        .enable_slash_commands = true,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
@@ -4840,11 +4918,22 @@ void ClientBase::runInteractive()
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr->enableBracketedPaste();
 
-    static const std::initializer_list<std::pair<String, String>> backslash_aliases =
+    /// The `psql`-style commands. `\d` follows `psql` in expanding to a listing of the tables when
+    /// it is used without an argument and to a description of a table when a table name is given.
+    struct BackslashAlias
+    {
+        std::string_view command;
+        std::string_view query;
+        /// The query to use when the argument is the name of a table; empty if the command has no
+        /// such form and the argument always continues `query`.
+        std::string_view query_for_table;
+    };
+
+    static const std::initializer_list<BackslashAlias> backslash_aliases =
         {
-            { "\\l", "SHOW DATABASES" },
-            { "\\d", "SHOW TABLES" },
-            { "\\c", "USE" },
+            { "\\l", "SHOW DATABASES", {} },
+            { "\\d", "SHOW TABLES", "DESCRIBE TABLE" },
+            { "\\c", "USE", {} },
         };
 
     static const std::initializer_list<String> repeat_last_input_aliases =
@@ -4890,18 +4979,20 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        for (const auto & [alias, command] : backslash_aliases)
+        for (const auto & [command, query, query_for_table] : backslash_aliases)
         {
-            auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
+            auto it = std::search(input.begin(), input.end(), command.begin(), command.end());
             if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
             {
-                it += alias.size();
-                if (it == input.end() || isWhitespaceASCII(*it))
+                it += command.size();
+                if (it == input.end() || isWhitespaceASCII(*it) || *it == ';')
                 {
-                    String new_input = command;
-                    // append the rest of input to the command
+                    const std::string_view argument(it, input.end());
+
+                    String new_input{!query_for_table.empty() && isTableNameArgument(argument) ? query_for_table : query};
+                    // append the rest of input to the query
                     // for parameters support, e.g. \c db_name -> USE db_name
-                    new_input.append(it, input.end());
+                    new_input.append(argument);
                     input = std::move(new_input);
                     break;
                 }
@@ -4935,7 +5026,7 @@ void ClientBase::runInteractive()
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
             if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }
