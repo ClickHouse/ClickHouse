@@ -22,20 +22,25 @@ struct RemoteDescriptionCaller
     String description = "Table function 'remote'";
     /// The setting that raises the limit on the number of generated addresses.
     String max_addresses_setting = TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING;
-    /// Whether to explain that, unlike object storage, this surface cannot list the existing files.
-    bool cannot_list_files = false;
+    /// Set for the surfaces that cannot list the existing files (the `url` family: HTTP has no
+    /// listing) to the object storage surface recommended instead, phrased for the message, e.g.
+    /// `'s3' (or another object storage table function)`. The recommendation has to match the kind
+    /// of the surface that was invoked: a table engine cannot be replaced by a table function, and
+    /// a clustered table function needs a clustered replacement. Empty when listing is possible.
+    String listing_alternative;
 };
 
 /// A surface that expands the pattern into addresses it has to request one by one, without any listing.
 inline RemoteDescriptionCaller globCaller(String description)
 {
-    return {std::move(description), GLOB_EXPANSION_MAX_ELEMENTS_SETTING, /*cannot_list_files=*/false};
+    return {std::move(description), GLOB_EXPANSION_MAX_ELEMENTS_SETTING, /*listing_alternative=*/ {}};
 }
 
 /// The same, for the `url` family: HTTP provides no listing at all, which is worth explaining.
-inline RemoteDescriptionCaller urlCaller(String description)
+/// `listing_alternative` names the object storage surface to use instead - see the field.
+inline RemoteDescriptionCaller urlCaller(String description, String listing_alternative)
 {
-    return {std::move(description), GLOB_EXPANSION_MAX_ELEMENTS_SETTING, /*cannot_list_files=*/true};
+    return {std::move(description), GLOB_EXPANSION_MAX_ELEMENTS_SETTING, std::move(listing_alternative)};
 }
 
 /// `generated` is the number of addresses the pattern produces; it is not always known, because the

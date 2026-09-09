@@ -2645,7 +2645,7 @@ void registerStorageURL(StorageFactory & factory)
                     config.http_method,
                     partition_by,
                     /* distributed_processing */ false,
-                    urlCaller(TABLE_ENGINE_URL_CALLER));
+                    tableEngineURLCaller());
             }
 
             if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -2671,7 +2671,7 @@ void registerStorageURL(StorageFactory & factory)
                 object_storage_args.push_back(engine_arg->clone());
             StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
 
-            auto configuration = std::make_shared<StorageWebConfiguration>(urlCaller(TABLE_ENGINE_URL_CALLER));
+            auto configuration = std::make_shared<StorageWebConfiguration>(tableEngineURLCaller());
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the

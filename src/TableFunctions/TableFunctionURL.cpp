@@ -574,7 +574,7 @@ SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wiki
 
 -- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
 SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
--- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 10001,
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
 -- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
 ```
 

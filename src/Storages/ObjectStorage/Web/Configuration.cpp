@@ -113,7 +113,7 @@ void WebStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wi
 }
 
 StorageWebConfiguration::StorageWebConfiguration()
-    : StorageWebConfiguration(urlCaller(TABLE_FUNCTION_URL_CALLER))
+    : StorageWebConfiguration(tableFunctionURLCaller())
 {
 }
 

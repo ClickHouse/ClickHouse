@@ -104,7 +104,8 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
     /// the user actually called.
     glob_caller = RemoteDescriptionCaller{
         fmt::format("Table function '{}'", (secure && name == "remote") ? "remoteSecure" : name),
-        TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING};
+        TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING,
+        /*listing_alternative=*/ {}};
     help_message = PreformattedMessage::create(
         "Table function '{}' requires from {} to {} parameters: "
         "{}",
