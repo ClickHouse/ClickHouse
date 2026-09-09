@@ -22,7 +22,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/SharedThreadPools.h>
@@ -38,7 +37,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_ELF;
     extern const int CANNOT_PARSE_DWARF;
-    extern const int THERE_IS_NO_COLUMN;
 }
 
 enum DwarfColumn
@@ -79,7 +77,7 @@ enum DwarfColumn
 
 static NamesAndTypesList getHeaderForDWARF()
 {
-    NamesAndTypes cols(COL_COUNT);
+    std::vector<NameAndTypePair> cols(COL_COUNT);
     cols[COL_OFFSET] = {"offset", std::make_shared<DataTypeUInt64>()};
     cols[COL_SIZE] = {"size", std::make_shared<DataTypeUInt32>()};
     cols[COL_TAG] = {"tag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -112,28 +110,6 @@ static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
         }
     });
     return name_to_idx;
-}
-
-static const DataTypes & getColumnTypes()
-{
-    static const DataTypes types = []
-    {
-        DataTypes res;
-        for (const auto & c : getHeaderForDWARF())
-            res.push_back(c.type);
-        return res;
-    }();
-    return types;
-}
-
-/// The DWARF format has a fixed set of columns, so a name that is not one of them can not be read.
-static size_t getColumnIdx(const std::string & name)
-{
-    const auto & name_to_idx = getColumnNameToIdx();
-    auto it = name_to_idx.find(name);
-    if (it == name_to_idx.end())
-        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", name);
-    return it->second;
 }
 
 DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u)
@@ -210,10 +186,6 @@ DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader head
             append(attr_forms, name);
     }
     attr_form_dict_column = ColumnUnique<ColumnString>::create(std::move(attr_forms), /*is_nullable*/ false);
-
-    /// Reject unknown column names up front instead of failing in the middle of parsing.
-    for (const std::string & name : getPort().getHeader().getNames())
-        getColumnIdx(name);
 }
 
 DWARFBlockInputFormat::~DWARFBlockInputFormat()
@@ -403,9 +375,10 @@ uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const 
 Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 {
     const auto & header = getPort().getHeader();
+    const auto & column_name_to_idx = getColumnNameToIdx();
     std::array<bool, COL_COUNT> need{};
     for (const std::string & name : header.getNames())
-        need[getColumnIdx(name)] = true;
+        need[column_name_to_idx.at(name)] = true;
 
     /// For parallel arrays, we nominate one of them to be responsible for populating the offsets vector.
     need[COL_ATTR_NAME] = need[COL_ATTR_NAME] || need[COL_ATTR_FORM] || need[COL_ATTR_INT] || need[COL_ATTR_STR];
@@ -764,7 +737,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     Columns cols;
     for (const std::string & name : header.getNames())
     {
-        switch (getColumnIdx(name))
+        switch (column_name_to_idx.at(name))
         {
             case COL_OFFSET:
                 cols.push_back(std::exchange(col_offset, nullptr));
@@ -850,18 +823,6 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column index");
         }
     }
-
-    /// The requested header may declare types other than the ones produced above.
-    const auto & native_types = getColumnTypes();
-    size_t pos = 0;
-    for (const std::string & name : header.getNames())
-    {
-        ColumnWithTypeAndName column(cols[pos], native_types[getColumnIdx(name)], name);
-        castColumnToRequestedType(column, header.getByName(name).type);
-        cols[pos] = std::move(column.column);
-        ++pos;
-    }
-
     return Chunk(std::move(cols), num_rows);
 }
 

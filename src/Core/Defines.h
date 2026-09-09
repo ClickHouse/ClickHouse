@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/defines.h>
-#include <base/types.h>
 #include <base/unit.h>
 
 namespace DB
@@ -40,23 +39,6 @@ static constexpr auto DEFAULT_BLOCK_SIZE
   */
 static constexpr auto DEFAULT_INSERT_BLOCK_SIZE
     = 1048449; /// 1048576 - PADDING_FOR_SIMD - (PADDING_FOR_SIMD - 1) bytes padding that we usually have in arrays
-
-/// Defaults and the 128 KiB floor for the experimental `ReaderExecutor` window, block, and
-/// connection tunables (`use_reader_executor`). The `reader_executor_*` settings, their
-/// `ReadSettings` mapping, the validation, and the executor `Options` share these constants.
-/// One definition stops the values from drifting apart.
-static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 8 * 1_MiB;
-static constexpr size_t DEFAULT_READER_EXECUTOR_BLOCK_SIZE = 1_MiB;
-static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
-static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
-static constexpr size_t MIN_READER_EXECUTOR_SIZE = 128_KiB;
-
-/// The default memory-pressure thresholds, as a percent of a memory tracker's hard limit. Shared by the
-/// `reader_executor_memory_pressure_*_level_pct` settings and the monitor's built-in thresholds, which are
-/// what `clickhouse-local` classifies against - it never applies the settings.
-static constexpr UInt64 DEFAULT_MEMORY_PRESSURE_ELEVATED_PCT = 75;
-static constexpr UInt64 DEFAULT_MEMORY_PRESSURE_HIGH_PCT = 90;
-static constexpr UInt64 DEFAULT_MEMORY_PRESSURE_CRITICAL_PCT = 95;
 
 static constexpr auto SHOW_CHARS_ON_SYNTAX_ERROR = ptrdiff_t(160);
 /// each period reduces the error counter by 2 times
@@ -134,15 +116,10 @@ static constexpr auto DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES = 1'000'000;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
-static constexpr auto DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE = 256_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO = 0.5;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES = 1000;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE = 1_GiB;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_SIZE_RATIO = 0.5;
-static constexpr auto DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES = 1000;
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE = 512_MiB;
 static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_SIZE_RATIO = 0.5;
@@ -150,9 +127,6 @@ static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES = 5000;
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE = 50_MiB;
-static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE = 1_GiB;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES = 1024uz;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;

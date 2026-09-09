@@ -88,19 +88,19 @@ echo "$ALTERED"
 
 
 # A presigned URL carries its credential in the query parameters rather than in the userinfo, and
-# `s3_base` is documented to hold that form. Both the query text and the `Settings` map must hide it.
+# `url_base` holds a whole URL, so it can carry that form. Both the query text and the `Settings` map must hide it.
 PRESIGNED_CANARY="c05056presignedsignature"
 PRESIGNED_QUERY_ID="05056_presigned_$CLICKHOUSE_DATABASE"
 PRESIGNED="https://bucket.s3.amazonaws.com/f.csv?X-Amz-Credential=AKIAIOSFODNN7EXAMPLE&X-Amz-Signature=$PRESIGNED_CANARY"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=$PRESIGNED_QUERY_ID&log_queries=1&log_formatted_queries=1" \
-    --data-binary "SELECT 1 SETTINGS s3_base = '$PRESIGNED'"
+    --data-binary "SELECT 1 SETTINGS url_base = '$PRESIGNED'"
 
 for _ in {1..60}; do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     PRESIGNED_LOGGED=$($CLICKHOUSE_CLIENT -q "SELECT
             position(query, '[HIDDEN]') > 0,
-            position(Settings['s3_base'], '[HIDDEN]') > 0,
-            position(concat(query, formatted_query, Settings['s3_base']), '$PRESIGNED_CANARY') = 0
+            position(Settings['url_base'], '[HIDDEN]') > 0,
+            position(concat(query, formatted_query, Settings['url_base']), '$PRESIGNED_CANARY') = 0
         FROM system.query_log
         WHERE current_database = currentDatabase() AND query_id = '$PRESIGNED_QUERY_ID' AND type = 'QueryFinish'")
     [ -n "$PRESIGNED_LOGGED" ] && break
@@ -128,7 +128,7 @@ $CLICKHOUSE_CLIENT --user "$GS_USER" --password p -q "SELECT
     getSettingOrDefault('format_avro_schema_registry_url', '')"
 
 # A value with no credential in it is returned untouched, so the function stays usable.
-$CLICKHOUSE_CLIENT -q "SELECT getSetting('s3_base') SETTINGS s3_base = 's3://bucket/prefix/'"
+$CLICKHOUSE_CLIENT -q "SELECT getSetting('url_base') SETTINGS url_base = 's3://bucket/prefix/'"
 
 $CLICKHOUSE_CLIENT -q "DROP USER $GS_USER"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $GS_PROFILE"

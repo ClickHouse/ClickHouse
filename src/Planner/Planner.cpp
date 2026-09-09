@@ -1,6 +1,4 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Planner/Planner.h>
-#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
@@ -12,11 +10,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
 #include <Common/MemoryTrackerUtils.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Common/saturatedDuration.h>
-#include <base/scope_guard.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
@@ -36,7 +31,6 @@
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
@@ -51,22 +45,21 @@
 #include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertColumnToType.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -105,7 +98,6 @@ namespace ProfileEvents
 {
     extern const Event SelectQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
-    extern const Event QueryPlanBuildMicroseconds;
 }
 
 namespace DB
@@ -125,8 +117,6 @@ namespace Setting
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
-    extern const SettingsBool enable_group_by_top_k_optimization;
-    extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool extremes;
     extern const SettingsBool force_aggregation_in_order;
@@ -143,7 +133,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
-    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
@@ -170,23 +159,16 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool enable_adaptive_aggregator;
-    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
-    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
-    extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const SettingsBool make_distributed_plan;
-    extern const SettingsBool query_plan_enable_optimizations;
-    extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
 }
 
 namespace ServerSetting
@@ -203,7 +185,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_LIMIT_EXPRESSION;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace
@@ -255,23 +236,13 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
   */
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const TableExpressionNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter)
 {
     bool collect_filters = false;
+    const auto & settings = query_context->getSettingsRef();
 
-    /// `table_nodes` also holds the nested query and union scopes, and the settings may be set only in one
-    /// of them, so the top-level context alone is not enough to tell whether the estimation will run.
-    const bool parallel_replicas_estimation_enabled = std::ranges::any_of(table_nodes, [](const TableExpressionNodePtr & scope)
-    {
-        const auto * scope_query = scope->as<QueryNode>();
-        const auto * scope_union = scope->as<UnionNode>();
-        if (!scope_query && !scope_union)
-            return false;
-
-        const auto & scope_context = scope_query ? scope_query->getContext() : scope_union->getContext();
-        return scope_context->canUseParallelReplicasOnInitiator()
-            && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
-    });
+    bool parallel_replicas_estimation_enabled
+        = query_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
 
     auto storage_requires_filter_collection = [parallel_replicas_estimation_enabled](const StoragePtr & storage_ptr)
     {
@@ -280,12 +251,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             return true;
         if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
             return true;
-        /// Every cluster engine hands paths out to replicas through `getTaskIteratorExtension`, which
-        /// prunes them with this predicate. The initiator's plan for such a read stops at
-        /// `WithMergeableState` (`IStorageCluster::getQueryProcessingStage`), so there is no `Filter` step
-        /// above `ReadFromCluster` to collect the `WHERE` from - without this the predicate is null and
-        /// no `_path` / `_file` pruning happens at all.
-        if (dynamic_cast<const IStorageCluster *>(raw))
+        if (typeid_cast<const StorageObjectStorageCluster *>(raw))
             return true;
         if (typeid_cast<const StorageView *>(raw))
             return true;
@@ -438,7 +404,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     auto context = query_node ? query_node->getContext() : union_node->getContext();
 
     auto table_expressions_nodes
-        = extractTableExpressions(static_pointer_cast<ITableExpressionNode>(query_tree_node), false /* add_array_join */, true /* recursive */);
+        = extractTableExpressions(query_tree_node, false /* add_array_join */, true /* recursive */);
 
     return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter);
 }
@@ -463,18 +429,18 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
 }
 
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
-std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
+std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
 {
-    const IColumn & value = *node.getColumn();
-    const DataTypePtr & type = node.getResultType();
-
     // First check if it is nonnegative limit since they are more common
-    if (ColumnPtr converted = convertColumnToTypeOrNull(value, type, std::make_shared<DataTypeUInt64>()))
-        return {converted->getUInt(0), 0, false};
+    const Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
+    if (!converted_value_uint.isNull())
+        return {converted_value_uint.safeGet<UInt64>(), 0, false};
 
-    if (ColumnPtr converted = convertColumnToTypeOrNull(value, type, std::make_shared<DataTypeInt64>()))
+    const Field converted_value_int = convertFieldToType(field, DataTypeInt64());
+
+    if (!converted_value_int.isNull())
     {
-        Int64 int_value = converted->getInt(0);
+        Int64 int_value = converted_value_int.safeGet<Int64>();
 
         chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
@@ -482,87 +448,14 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
         return {magnitude, 0, true};
     }
 
-    if (ColumnPtr converted = convertColumnToTypeOrNull(value, type, std::make_shared<DataTypeFloat64>()))
-        return {0, converted->getFloat64(0), false};
+    Field converted_value_float = convertFieldToType(field, DataTypeFloat64());
+    if (!converted_value_float.isNull())
+        return {0, converted_value_float.safeGet<Float64>(), false};
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
         "The value {} of LIMIT/OFFSET expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
-        applyVisitor(FieldVisitorToString(), node.getValue()));
-}
-
-struct LimitRangeConditions
-{
-    ActionsDAG actions;
-    std::optional<String> start_column_name;
-    std::optional<String> end_column_name;
-};
-
-/// Builds the boundary conditions of a `LIMIT` range as one DAG over the columns of `header`, so a
-/// subexpression shared by `AFTER` and `UNTIL` is computed once; the DAG keeps only the inputs the
-/// conditions read. With `INTERPOLATE`, `FillingStep` writes the interpolated values only into the column
-/// named after the interpolated alias (see `addWithFillStepIfNeeded`), while the projection expression the
-/// alias was computed from keeps default values on the filled rows. A boundary that refers to such an alias
-/// is therefore redirected to the alias column, as `Project names` does for the query result.
-LimitRangeConditions buildLimitRangeConditions(
-    const SharedHeader & header,
-    const QueryNode & query_node,
-    const PlannerContextPtr & planner_context)
-{
-    ActionsDAG actions;
-    for (const auto & column : header->getColumnsWithTypeAndName())
-        actions.addInput(column);
-
-    const auto correlated_columns_set = query_node.getCorrelatedColumnsSet();
-    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
-    auto add_boundary = [&](const QueryTreeNodePtr & boundary_node, const String & description) -> std::optional<String>
-    {
-        if (!boundary_node)
-            return std::nullopt;
-
-        auto [boundary_nodes, correlated_subtrees] = actions_visitor.visit(actions, boundary_node);
-        correlated_subtrees.assertEmpty("in " + description + " expression");
-
-        const auto * output = boundary_nodes.at(0);
-        if (!output->result_type->canBeUsedInBooleanContext())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "{} expression must be boolean, got {}",
-                description,
-                output->result_type->getName());
-        }
-
-        /// `AFTER` and `UNTIL` with the same expression share one output column.
-        if (!actions.tryFindInOutputs(output->result_name))
-            actions.getOutputs().push_back(output);
-        return output->result_name;
-    };
-
-    auto start_column_name = add_boundary(query_node.getLimitAfter(), "LIMIT AFTER");
-    auto end_column_name = add_boundary(query_node.getLimitUntil(), "LIMIT UNTIL");
-
-    Names condition_names;
-    for (const auto & column_name : {start_column_name, end_column_name})
-        if (column_name)
-            condition_names.push_back(*column_name);
-
-    if (query_node.hasInterpolate())
-    {
-        ActionsDAG interpolated_columns(header->getColumnsWithTypeAndName());
-        for (const auto & interpolate_node : query_node.getInterpolate()->as<ListNode &>().getNodes())
-        {
-            const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            const auto & alias_column = interpolated_columns.findInOutputs(interpolate_node_typed.getExpressionName());
-            auto expression_name = calculateActionNodeName(interpolate_node_typed.getExpression(), *planner_context);
-            interpolated_columns.addOrReplaceInOutputs(interpolated_columns.addAlias(alias_column, expression_name));
-        }
-
-        actions = ActionsDAG::merge(std::move(interpolated_columns), std::move(actions));
-    }
-
-    actions.removeUnusedActions(condition_names);
-    return {std::move(actions), std::move(start_column_name), std::move(end_column_name)};
+        applyVisitor(FieldVisitorToString(), field));
 }
 
 class QueryAnalysisResult
@@ -595,26 +488,24 @@ public:
         {
             /// Constness of limit is validated during query analysis stage
             std::tie(limit_length, fractional_limit, is_limit_length_negative)
-                = getLimitOffsetValue(query_node.getLimit()->as<ConstantNode &>());
+                = getLimitOffsetValue(query_node.getLimit()->as<ConstantNode &>().getValue());
 
             if (query_node.hasOffset() && (limit_length || fractional_limit > 0))
             {
                 /// Constness of offset is validated during query analysis stage
                 std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
-                    = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>());
+                    = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>().getValue());
             }
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
             std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
-                = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>());
+                = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>().getValue());
         }
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT, FRACTIONAL LIMIT/OFFSET
         if (limit_length != 0 &&
-            !query_node.hasLimitAfter() &&
-            !query_node.hasLimitUntil() &&
             !query_node.isDistinct() &&
             !query_node.isLimitWithTies() &&
             !query_node.hasLimitBy() &&
@@ -631,15 +522,22 @@ public:
         {
             Float64 fractional_limitby_limit = 0;
             std::tie(limit_by_length, fractional_limitby_limit, is_limit_by_length_negative)
-                = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>());
+                = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>().getValue());
 
             Float64 fractional_limitby_offset = 0;
             if (query_node.hasLimitByOffset())
                 std::tie(limit_by_offset, fractional_limitby_offset, is_limit_by_offset_negative)
-                    = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>());
+                    = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>().getValue());
 
             if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
+        }
+
+
+        if (query_node.isLimitWithTies())
+        {
+            if (is_limit_length_negative)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
     }
 
@@ -731,16 +629,14 @@ ALWAYS_INLINE void addFilterStep(
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
+    const SelectQueryInfo & select_query_info,
     bool aggregate_descriptions_remove_arguments = false)
 {
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
-    /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
-    /// max_size_to_preallocate is still carried here because it is consumed at runtime.
     const auto stats_collecting_params = StatsCollectingParams(
-        /*key_=*/ 0,
+        calculateCacheKey(select_query_info.query),
         settings[Setting::collect_hash_table_stats_during_aggregation],
         query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
@@ -780,12 +676,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_parallel_single_level_merge],
-        settings[Setting::enable_packed_string_keys_in_aggregation],
-        settings[Setting::enable_adaptive_aggregator],
-        settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     return aggregator_params;
 }
@@ -801,148 +692,19 @@ SortDescription getSortDescriptionFromNames(const Names & names)
     return order_descr;
 }
 
-void applyTopKPushdownToPartialAggregation(
-    AggregatingStep & aggregating_step,
-    const QueryNode & query_node,
-    PlannerExpressionsAnalysisResult & expression_analysis_result,
-    const QueryAnalysisResult & query_analysis_result,
-    const Settings & settings)
-{
-    if (!settings[Setting::enable_group_by_top_k_optimization])
-        return;
-
-    /// The distributed planner splits aggregation itself; see the matching gate
-    /// in `tryOptimizeGroupByTopK`.
-    if (settings[Setting::make_distributed_plan])
-        return;
-
-    /// With `serialize_query_plan` the follower executes the initiator's
-    /// serialized sub-plan instead of planning the query text, and
-    /// `AggregatingStep::serialize` deliberately does not carry `top_k` (the
-    /// plan-serialization protocol has no version negotiation, so appending
-    /// fields would break older followers).  Annotating the step here would
-    /// only mislead: EXPLAIN would show a Top-K the followers never run.
-    if (settings[Setting::serialize_query_plan])
-        return;
-
-    /// Pruning undercounts `rows_before_limit_at_least` in exact mode.
-    if (settings[Setting::exact_rows_before_limit])
-        return;
-
-    /// `partial_sorting_limit` is `limit + offset` and is already zero for
-    /// DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN and fractional or
-    /// negative values (see `QueryAnalysisResult`).
-    const UInt64 limit = query_analysis_result.partial_sorting_limit;
-    if (limit == 0)
-        return;
-    if (settings[Setting::query_plan_max_limit_for_top_k_optimization] != 0
-        && limit > settings[Setting::query_plan_max_limit_for_top_k_optimization])
-        return;
-
-    if (limit > Aggregator::Params::TopKParams::max_k)
-    {
-        LOG_DEBUG(
-            getLogger("Planner"),
-            "Skipping GROUP BY top-K optimization: the requested heap size {} is larger than the maximum {}",
-            limit, Aggregator::Params::TopKParams::max_k);
-        return;
-    }
-
-    /// These consume all groups on the initiator, so local pruning would change
-    /// their input: HAVING / QUALIFY filter ranked groups back in, window
-    /// functions and TOTALS/ROLLUP/CUBE aggregate across all of them.
-    if (expression_analysis_result.hasHaving() || expression_analysis_result.hasWindow() || expression_analysis_result.hasQualify())
-        return;
-    if (query_node.isGroupByWithTotals() || query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets)
-        return;
-    if (query_node.hasInterpolate())
-        return;
-
-    /// An arrayJoin in the projection (or ORDER BY expressions) changes row
-    /// multiplicity after the aggregation: a group can expand to zero rows, so
-    /// the smallest N groups no longer guarantee N result rows and pruning
-    /// loses groups the limit still needs.
-    const auto & projection_actions = expression_analysis_result.getProjection().projection_actions;
-    if (projection_actions && projection_actions->dag.hasArrayJoin())
-        return;
-    if (expression_analysis_result.hasSort() && expression_analysis_result.getSort().before_order_by_actions->dag.hasArrayJoin())
-        return;
-
-    const auto & params = aggregating_step.getParams();
-    if (aggregating_step.isGroupingSets() || params.overflow_row || params.max_rows_to_group_by > 0 || params.keys.empty())
-        return;
-
-    if (aggregating_step.inOrder())
-        return;
-
-    /// ORDER BY must be a leading prefix of the GROUP BY keys, by action name.
-    /// Both name sets come from the same `PlannerContext`, so a name match means
-    /// the same expression; anything else (a function of a key, a projection
-    /// alias reusing the name) produces a different action name and is rejected.
-    const auto & sort_description = query_analysis_result.sort_description;
-    if (sort_description.empty() || sort_description.size() > params.keys.size())
-        return;
-
-    /// The heap ranks the keys as the aggregation produced them, while the sort runs above the projection and the
-    /// ORDER BY expressions. Matching names is not enough on its own: require that both DAGs forward the key
-    /// untouched, the same invariant `tryOptimizeGroupByTopK` enforces on the plan-level expression chain.
-    const auto * before_order_by_dag
-        = expression_analysis_result.hasSort() ? &expression_analysis_result.getSort().before_order_by_actions->dag : nullptr;
-
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
-    directions.reserve(sort_description.size());
-    nulls_directions.reserve(sort_description.size());
-
-    for (size_t i = 0; i < sort_description.size(); ++i)
-    {
-        if (sort_description[i].column_name != params.keys[i])
-            return;
-
-        if (projection_actions && !isSortKeyPassThrough(projection_actions->dag, params.keys[i]))
-            return;
-
-        if (before_order_by_dag && !isSortKeyPassThrough(*before_order_by_dag, params.keys[i]))
-            return;
-
-        if (sort_description[i].collator || sort_description[i].with_fill)
-            return;
-
-        directions.push_back(sort_description[i].direction);
-        nulls_directions.push_back(sort_description[i].nulls_direction);
-    }
-
-    aggregating_step.applyTopKOptimization(
-        Aggregator::Params::TopKParams{
-            .k = limit,
-            .directions = std::move(directions),
-            .nulls_directions = std::move(nulls_directions),
-            .key_columns = sort_description.size(),
-            .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
-        });
-}
-
 void addAggregationStep(QueryPlan & query_plan,
-    const QueryNode & query_node,
-    PlannerExpressionsAnalysisResult & expression_analysis_result,
+    const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info)
 {
-    auto aggregation_analysis_result = expression_analysis_result.getAggregation();
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result);
+    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info);
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
 
-    /// With GROUPING SETS, `AggregatingStep::transformPipeline` returns from the grouping-sets branch
-    /// before any `AggregatingInOrderTransform` is built, so in-order state here only misleads later
-    /// steps: with `enable_memory_bound_merging_of_aggregation_results` a distributed query would take
-    /// `MergingAggregatedStep::applyOrder` and then fail in `MergingAggregatedStep::transformPipeline`.
-    const bool force_aggregation_in_order
-        = settings[Setting::force_aggregation_in_order] && aggregation_analysis_result.grouping_sets_parameters_list.empty();
-
-    if (force_aggregation_in_order)
+    if (settings[Setting::force_aggregation_in_order])
     {
         group_by_sort_description = getSortDescriptionFromNames(aggregation_analysis_result.aggregation_keys);
         sort_description_for_merging = group_by_sort_description;
@@ -983,19 +745,15 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        force_aggregation_in_order);
-
-    if (!query_analysis_result.aggregate_final)
-        applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
-
+        settings[Setting::force_aggregation_in_order],
+        settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
 void addMergingAggregatedStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context,
-    const std::unordered_map<String, String> & shard_collapse_duplicate_keys)
+    const PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1015,93 +773,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    const auto & analysis_keys = aggregation_analysis_result.aggregation_keys;
-
-    /// When the query reads from a Distributed table whose duplicate-ALIAS GROUP BY keys the shard collapsed into a
-    /// single key before computing two-level bucket numbers (see `buildShardCollapseFanOut`), the initiator must merge
-    /// by only the representative key columns. Otherwise the initiator would bucket by more key columns than the shard
-    /// did, so equal groups from different shards could land in different two-level buckets and never merge.
-    /// `merge_keys` drops the duplicate keys; the dropped columns are reconstructed (aliased to their representative)
-    /// after the merge so the output header is unchanged.
-    Names merge_keys;
-    std::vector<std::pair<String /*duplicate*/, String /*representative*/>> dropped_duplicate_keys;
-    if (!shard_collapse_duplicate_keys.empty() && aggregation_analysis_result.grouping_sets_parameters_list.empty())
-    {
-        const NameSet analysis_keys_set(analysis_keys.begin(), analysis_keys.end());
-        merge_keys.reserve(analysis_keys.size());
-        for (const auto & key : analysis_keys)
-        {
-            auto it = shard_collapse_duplicate_keys.find(key);
-            /// Drop `key` only when it is a recognized duplicate AND its representative is itself a merge key, so the
-            /// representative remains available to reconstruct the dropped column after merging.
-            if (it != shard_collapse_duplicate_keys.end() && analysis_keys_set.contains(it->second))
-                dropped_duplicate_keys.emplace_back(key, it->second);
-            else
-                merge_keys.push_back(key);
-        }
-        if (dropped_duplicate_keys.empty())
-            merge_keys = analysis_keys;
-    }
-    else
-    {
-        /// A grouping set holding two keys that the shard collapsed onto the same column is rejected: the shard buckets
-        /// that set by one key while the initiator buckets it by both, so a single/two-level partial mix splits the same
-        /// group across buckets (the wrong-results defect the non-grouping-sets branch fixes by merging on the collapsed
-        /// set). Carrying the collapse through the grouping-sets merge machinery is unsupported, so reject rather than
-        /// silently return wrong results. Each used key is canonicalized through the collapse map (a duplicate maps to
-        /// its representative; any other key maps to itself), and a set is rejected when two of its keys share a
-        /// canonical representative -- this covers shapes where the representative itself is absent from the set, e.g.
-        /// ((a2, a3)) with a1, a2, a3 all collapsing onto a1. Sets that keep one key each (e.g. ((a1), (a2))) are
-        /// unaffected. With both two-level thresholds at 0 no shard can build a bucketed state, so the mismatch is
-        /// unreachable and the query keeps working.
-        const bool two_level_aggregation_possible = settings[Setting::group_by_two_level_threshold] != 0
-            || settings[Setting::group_by_two_level_threshold_bytes] != 0;
-        if (!shard_collapse_duplicate_keys.empty() && !aggregation_analysis_result.grouping_sets_parameters_list.empty()
-            && two_level_aggregation_possible)
-        {
-            for (const auto & grouping_set : aggregation_analysis_result.grouping_sets_parameters_list)
-            {
-                std::unordered_map<String, String> representative_to_used_key;
-                for (const auto & key : grouping_set.used_keys)
-                {
-                    auto it = shard_collapse_duplicate_keys.find(key);
-                    const String & representative = it != shard_collapse_duplicate_keys.end() ? it->second : key;
-                    auto [pos, inserted] = representative_to_used_key.emplace(representative, key);
-                    if (!inserted)
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "GROUP BY GROUPING SETS with duplicate ALIAS columns that expand to the same expression "
-                            "({} and {}) over a Distributed table is not supported, as it can produce incorrect results "
-                            "under two-level aggregation. Please use distinct expressions in the grouping sets.",
-                            pos->second, key);
-                }
-            }
-        }
-        merge_keys = analysis_keys;
-    }
-
-    const auto & keys = merge_keys;
-
-    /// Drop the duplicate key columns from the input before merging so the merge sees the same key layout the shard
-    /// produced (representative keys followed by aggregate states). They are reconstructed right after the merge.
-    /// The aggregate columns are unaffected: they are matched by name in the merge, not by position.
-    if (!dropped_duplicate_keys.empty())
-    {
-        NameSet drop_set;
-        for (const auto & [duplicate_name, representative_name] : dropped_duplicate_keys)
-            drop_set.insert(duplicate_name);
-
-        ActionsDAG drop_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-        ActionsDAG::NodeRawConstPtrs kept_outputs;
-        kept_outputs.reserve(drop_dag.getOutputs().size());
-        for (const auto * output : drop_dag.getOutputs())
-            if (!drop_set.contains(output->result_name))
-                kept_outputs.push_back(output);
-        drop_dag.getOutputs() = std::move(kept_outputs);
-
-        auto drop_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(drop_dag));
-        drop_step->setStepDescription("Drop collapsed duplicate-ALIAS GROUP BY keys before merge");
-        query_plan.addStep(std::move(drop_step));
-    }
+    const auto & keys = aggregation_analysis_result.aggregation_keys;
 
     /// For count() without parameters try to use just one thread
     /// Typically this will either be a trivial count or a really small number of states
@@ -1119,8 +791,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         max_threads,
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_packed_string_keys_in_aggregation]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
@@ -1147,61 +818,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::aggregation_in_order_max_block_bytes],
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
     query_plan.addStep(std::move(merging_aggregated));
-
-    /// Reconstruct the canonical aggregated layout the rest of the plan expects: all original aggregation keys first,
-    /// in their declared order, then the aggregate-state columns. The merge produced [representative keys, aggregate
-    /// states] (dropping the duplicate keys); each dropped key is identical to its representative (which the merge
-    /// kept), so it is restored as an alias and placed back in its original key position. Emitting the full
-    /// [keys..., aggregate states...] layout (rather than appending the duplicates at the end) is required because a
-    /// following ROLLUP/CUBE step reads the merged block positionally - the first keys_size columns as the GROUP BY
-    /// keys and the remaining columns as aggregate states - and ROLLUP/CUBE reach this path with an empty
-    /// grouping_sets_parameters_list, so they are not excluded by the guard above.
-    if (!dropped_duplicate_keys.empty())
-    {
-        std::unordered_map<std::string_view, String> representative_by_duplicate;
-        for (const auto & [duplicate_name, representative_name] : dropped_duplicate_keys)
-            representative_by_duplicate.emplace(duplicate_name, representative_name);
-
-        ActionsDAG reconstruct_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-        std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
-        for (const auto * output : reconstruct_dag.getOutputs())
-            output_by_name.emplace(output->result_name, output);
-
-        const NameSet analysis_keys_set(analysis_keys.begin(), analysis_keys.end());
-
-        ActionsDAG::NodeRawConstPtrs new_outputs;
-        new_outputs.reserve(reconstruct_dag.getOutputs().size() + dropped_duplicate_keys.size());
-
-        /// 1. All original aggregation keys, in their declared order: a representative is kept as-is, a dropped
-        ///    duplicate is restored as an alias of its representative.
-        for (const auto & key : analysis_keys)
-        {
-            auto dup_it = representative_by_duplicate.find(key);
-            if (dup_it != representative_by_duplicate.end())
-            {
-                auto rep_it = output_by_name.find(dup_it->second);
-                if (rep_it != output_by_name.end())
-                    new_outputs.push_back(&reconstruct_dag.addAlias(*rep_it->second, key));
-            }
-            else
-            {
-                auto it = output_by_name.find(key);
-                if (it != output_by_name.end())
-                    new_outputs.push_back(it->second);
-            }
-        }
-
-        /// 2. The aggregate-state columns (everything in the merge output that is not a GROUP BY key), in order.
-        for (const auto * output : reconstruct_dag.getOutputs())
-            if (!analysis_keys_set.contains(output->result_name))
-                new_outputs.push_back(output);
-
-        reconstruct_dag.getOutputs() = std::move(new_outputs);
-
-        auto reconstruct_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(reconstruct_dag));
-        reconstruct_step->setStepDescription("Reconstruct collapsed duplicate-ALIAS GROUP BY keys");
-        query_plan.addStep(std::move(reconstruct_step));
-    }
 }
 
 void addTotalsHavingStep(QueryPlan & query_plan,
@@ -1247,6 +863,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const QueryNode & query_node)
 {
     if (!query_node.isGroupByWithCube() && !query_node.isGroupByWithRollup())
@@ -1258,6 +875,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     auto aggregator_params = getAggregatorParams(planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        select_query_info,
         true /*aggregate_descriptions_remove_arguments*/);
 
     if (query_node.isGroupByWithRollup())
@@ -1272,20 +890,6 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
             query_plan.getCurrentHeader(), std::move(aggregator_params), true /*final*/, settings[Setting::group_by_use_nulls]);
         query_plan.addStep(std::move(cube_step));
     }
-}
-
-/// Whether the final LimitStep is built with `always_read_till_end`, i.e. it must not cancel its
-/// input early. Shared by `addDistinctStep` and `addLimitStep` so the two cannot drift apart.
-bool limitAlwaysReadsTillEnd(
-    const QueryAnalysisResult & query_analysis_result, const Settings & settings, const QueryNode & query_node)
-{
-    if (settings[Setting::exact_rows_before_limit])
-        return true;
-
-    if (query_node.isGroupByWithTotals())
-        return !query_node.hasOrderBy();
-
-    return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
 }
 
 void addDistinctStep(QueryPlan & query_plan,
@@ -1306,25 +910,9 @@ void addDistinctStep(QueryPlan & query_plan,
     /** If after this stage of DISTINCT
       * 1. ORDER BY is not executed.
       * 2. There is no LIMIT BY.
-      * 3. There is a non-zero LIMIT (a bare OFFSET without a LIMIT still populates limit_offset, but
-      *    limit_length + limit_offset would then bound the head by the offset alone and drop the tail
-      *    that OFFSET must return).
-      * 4. LIMIT is not negative (a negative LIMIT takes rows from the tail, so it cannot bound
-      *    the number of distinct rows collected from the head).
-      * 5. LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
-      *    all rows are read, so it cannot bound the number of distinct rows either).
-      * 6. LIMIT is not WITH TIES (the tie suffix of the last row is unbounded).
-      * 7. The LIMIT does not read till end: such a LIMIT needs the whole stream, either to count
-      *    `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short.
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
-        && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
-        && limit_length != 0
-        && !query_analysis_result.is_limit_length_negative
-        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0
-        && !query_node.isLimitWithTies()
-        && !limitAlwaysReadsTillEnd(query_analysis_result, settings, query_node))
+    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy())
     {
         if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_hint_for_distinct = limit_length + limit_offset;
@@ -1575,60 +1163,11 @@ void addLimitByStep(
     }
 }
 
-void addLimitRangeStep(
-    QueryPlan & query_plan,
-    const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context,
-    const QueryNode & query_node,
-    UsefulSets & useful_sets)
-{
-    if (query_node.isLimitWithTies())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
-
-    if (query_node.hasOffset())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET is not supported together with LIMIT AFTER/UNTIL");
-
-    if (query_analysis_result.is_limit_length_negative
-        || query_analysis_result.is_limit_offset_negative
-        || query_analysis_result.fractional_limit > 0
-        || query_analysis_result.fractional_offset > 0)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional and negative LIMIT/OFFSET are not supported with LIMIT AFTER/UNTIL");
-    }
-
-    std::optional<UInt64> limit_length;
-    if (query_node.hasLimit())
-        limit_length = query_analysis_result.limit_length;
-
-    auto conditions = buildLimitRangeConditions(query_plan.getCurrentHeader(), query_node, planner_context);
-    appendSetsFromActionsDAG(conditions.actions, useful_sets);
-
-    const auto & query_context = planner_context->getQueryContext();
-    const Settings & settings = query_context->getSettingsRef();
-    bool always_read_till_end = settings[Setting::exact_rows_before_limit];
-    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
-        always_read_till_end = true;
-    if (!query_node.isGroupByWithTotals() && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
-        always_read_till_end = true;
-
-    auto limit_range_step = std::make_unique<LimitRangeStep>(
-        query_plan.getCurrentHeader(),
-        std::move(conditions.actions),
-        std::move(conditions.start_column_name),
-        std::move(conditions.end_column_name),
-        query_node.isLimitAfterAll(),
-        limit_length,
-        always_read_till_end);
-    limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
-    query_plan.addStep(std::move(limit_range_step));
-}
-
 void addPreliminaryLimitStep(
     QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    bool do_not_skip_offset,
-    bool is_shard_limit)
+    bool do_not_skip_offset)
 {
     UInt64 limit_offset = query_analysis_result.limit_offset;
     UInt64 limit_length = query_analysis_result.limit_length;
@@ -1651,8 +1190,6 @@ void addPreliminaryLimitStep(
     {
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
-        if (is_shard_limit)
-            limit->markAsShardLimit();
         if (do_not_skip_offset)
             limit->setStepDescription("preliminary LIMIT (with OFFSET)");
         else
@@ -1662,8 +1199,6 @@ void addPreliminaryLimitStep(
     else if (is_limit_length_negative && is_limit_offset_negative)
     {
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
-        if (is_shard_limit)
-            limit->markAsShardLimit();
 
         query_plan.addStep(std::move(limit));
     }
@@ -1674,8 +1209,6 @@ void addPreliminaryLimitStep(
         query_plan.addStep(std::move(offset));
 
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
-        if (is_shard_limit)
-            limit->markAsShardLimit();
         query_plan.addStep(std::move(limit));
     }
     else // if (!is_limit_length_negative && is_limit_offset_negative)
@@ -1684,10 +1217,8 @@ void addPreliminaryLimitStep(
 
         query_plan.addStep(std::move(offset));
 
-        auto limit = std::make_unique<LimitStep>(
-            query_plan.getCurrentHeader(), limit_length, 0, settings[Setting::exact_rows_before_limit]);
-        if (is_shard_limit)
-            limit->markAsShardLimit();
+        auto limit
+            = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), limit_length, 0, settings[Setting::exact_rows_before_limit]);
         query_plan.addStep(std::move(limit));
     }
 }
@@ -1696,8 +1227,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr planner_context,
     const PlannerQueryProcessingInfo & query_processing_info,
-    const QueryTreeNodePtr & query_tree,
-    const SelectQueryOptions & select_query_options)
+    const QueryTreeNodePtr & query_tree)
 {
     const auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
@@ -1722,7 +1252,6 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
 
     bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
-        && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree
         && !query_analysis_result.query_has_array_join_in_join_tree
         && query_analysis_result.fractional_limit == 0
@@ -1737,12 +1266,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     bool apply_offset = !query_processing_info.isToAggregationState();
     if (apply_prelimit)
     {
-        addPreliminaryLimitStep(
-            query_plan,
-            query_analysis_result,
-            planner_context,
-            /* do_not_skip_offset= */ !apply_offset,
-            select_query_options.is_local_shard_plan);
+        addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, /* do_not_skip_offset= */!apply_offset);
         return true;
     }
 
@@ -1825,16 +1349,8 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies()
-        && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
-    {
-        addPreliminaryLimitStep(
-            query_plan,
-            query_analysis_result,
-            planner_context,
-            /* do_not_skip_offset= */ true,
-            select_query_options.is_local_shard_plan);
-    }
+        addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
 
 void addWindowSteps(QueryPlan & query_plan,
@@ -1924,7 +1440,10 @@ void addLimitStep(
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    /** Special cases handled by the predicate:
+    bool always_read_till_end = settings[Setting::exact_rows_before_limit];
+    bool limit_with_ties = query_node.isLimitWithTies();
+
+    /** Special cases:
       *
       * 1. If there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
       *  otherwise TOTALS is counted according to incomplete data.
@@ -1933,8 +1452,11 @@ void addLimitStep(
       *  then when using LIMIT, you should read the data to the end, rather than cancel the query earlier,
       *  because if you cancel the query, we will not get `totals` data from the remote server.
       */
-    bool always_read_till_end = limitAlwaysReadsTillEnd(query_analysis_result, settings, query_node);
-    bool limit_with_ties = query_node.isLimitWithTies();
+    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
+        always_read_till_end = true;
+
+    if (!query_node.isGroupByWithTotals() && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
+        always_read_till_end = true;
 
     SortDescription limit_with_ties_sort_description;
 
@@ -1992,11 +1514,7 @@ void addLimitStep(
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
     {
-        auto limit = std::make_unique<NegativeLimitStep>(
-            query_plan.getCurrentHeader(), limit_length, limit_offset, limit_with_ties, limit_with_ties_sort_description);
-
-        if (limit_with_ties)
-            limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
+        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
         query_plan.addStep(std::move(limit));
     }
@@ -2006,12 +1524,7 @@ void addLimitStep(
 
         query_plan.addStep(std::move(offset));
 
-        auto limit = std::make_unique<NegativeLimitStep>(
-            query_plan.getCurrentHeader(), limit_length, 0, limit_with_ties, limit_with_ties_sort_description);
-
-        if (limit_with_ties)
-            limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
-
+        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
         query_plan.addStep(std::move(limit));
     }
     else if (!is_limit_length_negative && is_limit_offset_negative)
@@ -2238,14 +1751,6 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
             if (!materialized_cte->hasPlanOrBuilt())
             {
                 auto cte_subquery = cte_table_node->getMaterializedCTESubquery();
-                /// A by-name reference carries no subquery, but a standalone pipeline still needs a
-                /// gate for it, and the handle alone is enough to build one. The writer stays with
-                /// whoever holds the subquery.
-                if (!cte_subquery && select_query_options.force_materialize_cte)
-                {
-                    ctes.push_back(materialized_cte);
-                    continue;
-                }
                 if (!cte_subquery)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "CTE '{}' does not have query tree, but was not planned yet",
@@ -2381,9 +1886,12 @@ static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
 
     const auto & client_info = mutable_context->getClientInfo();
+    auto min_major = static_cast<UInt64>(DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
+    auto min_minor = static_cast<UInt64>(DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
 
     bool need_to_disable_two_level_aggregation = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        client_info.connection_tcp_protocol_version < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+        client_info.connection_client_version_major < min_major &&
+        client_info.connection_client_version_minor < min_minor;
 
     if (need_to_disable_two_level_aggregation)
     {
@@ -2435,17 +1943,6 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    /// Measure only the outermost plan build. buildQueryPlanIfNeeded recurses through
-    /// nested planners (union branches, subqueries, CTEs) on the same thread, so without
-    /// a guard each nested build would add its own time to the same event and double-count
-    /// subplans (the event could then exceed the real plan-build wall time).
-    static thread_local size_t query_plan_build_depth = 0;
-    std::optional<ProfileEventTimeIncrement<Microseconds>> plan_build_time_watch;
-    if (query_plan_build_depth == 0)
-        plan_build_time_watch.emplace(ProfileEvents::QueryPlanBuildMicroseconds);
-    ++query_plan_build_depth;
-    SCOPE_EXIT({ --query_plan_build_depth; });
-
     LOG_TRACE(
         log,
         "Query to stage {}{}",
@@ -2456,7 +1953,6 @@ void Planner::buildQueryPlanIfNeeded()
         buildPlanForUnionNode();
     else
         buildPlanForQueryNode();
-
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
@@ -2546,31 +2042,12 @@ void Planner::buildPlanForUnionNode()
         /// Add distinct transform
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
-        /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
-        /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
-        /// already narrow their output to one stream, so a preliminary step there is pure overhead.
-        const bool add_pre_distinct = union_mode == SelectUnionMode::UNION_DISTINCT && preliminaryDistinctIsUseful(max_threads);
-
-        if (add_pre_distinct)
-        {
-            auto pre_distinct_step = std::make_unique<DistinctStep>(
-                query_plan.getCurrentHeader(),
-                limits,
-                0 /*limit hint*/,
-                query_plan.getCurrentHeader()->getNames(),
-                true /*pre distinct*/);
-            pre_distinct_step->setStepDescription("Preliminary DISTINCT");
-            query_plan.addStep(std::move(pre_distinct_step));
-        }
-
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
             limits,
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);
-        if (add_pre_distinct)
-            distinct_step->setStepDescription("DISTINCT");
         query_plan.addStep(std::move(distinct_step));
     }
 
@@ -2697,6 +2174,7 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
+    select_query_info.merge_tree_enable_remove_parts_from_snapshot_optimization = select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization;
 
     if (!select_query_info.has_window && query_node.hasQualify())
     {
@@ -2775,7 +2253,7 @@ void Planner::buildPlanForQueryNode()
     if (query_context->canUseTaskBasedParallelReplicas())
     {
         auto & query_node_typed = query_tree->as<QueryNode &>();
-        const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTreeNodeTyped(), true, true);
+        const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTree(), true, true);
         for (const auto & it : table_expression_nodes)
         {
             auto * table_node = it->as<TableNode>();
@@ -2783,16 +2261,12 @@ void Planner::buildPlanForQueryNode()
                 continue;
 
             const auto & modifiers = table_node->getTableExpressionModifiers();
-            /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
-            if (modifiers.has_value()
-                && (modifiers->hasFinal()
-                    || (modifiers->hasStream() && query_context->canUseParallelReplicasOnInitiator())))
+            if (modifiers.has_value() && modifiers->hasFinal())
             {
-                const auto * modifier = modifiers->hasFinal() ? "FINAL" : "STREAM";
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "{} modifier is not supported with parallel replicas", modifier);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
 
-                LOG_DEBUG(log, "{} modifier is not supported with parallel replicas. Query will be executed without using them.", modifier);
+                LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 break;
@@ -2817,13 +2291,8 @@ void Planner::buildPlanForQueryNode()
     }
 
     JoinTreeQueryPlan join_tree_query_plan;
-    /// With plan-based parallel replicas the planner builds a plain, normal local plan; distribution is
-    /// applied later as a plan transformation (QueryPlanOptimizations::applyParallelReplicas). So skip the
-    /// old parallel-replicas planning path here (it would emit ReadFromLocalReplica /
-    /// ReadFromRemoteParallelReplicas, e.g. inside a view/union inner query) and use the normal plan.
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
-        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node
-        && !settings[Setting::parallel_replicas_plan_based])
+        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node)
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
     }
@@ -2887,7 +2356,7 @@ void Planner::buildPlanForQueryNode()
         if (expression_analysis_result.hasAggregation())
         {
             const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
-            addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, join_tree_query_plan.shard_collapse_duplicate_keys);
+            addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
         }
     }
 
@@ -2909,7 +2378,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context);
+            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
 
         /** If we have aggregation, we can't execute any later-stage
@@ -3000,7 +2469,7 @@ void Planner::buildPlanForQueryNode()
 
             if (!query_processing_info.isFirstStage())
             {
-                addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, join_tree_query_plan.shard_collapse_duplicate_keys);
+                addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
             }
 
             bool having_executed = false;
@@ -3011,7 +2480,7 @@ void Planner::buildPlanForQueryNode()
                 having_executed = true;
             }
 
-            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
@@ -3111,8 +2580,7 @@ void Planner::buildPlanForQueryNode()
             query_analysis_result,
             planner_context,
             query_processing_info,
-            query_tree,
-            select_query_options);
+            query_tree);
 
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
         if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())
@@ -3140,9 +2608,7 @@ void Planner::buildPlanForQueryNode()
             addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
         }
 
-        /// WITH FILL / INTERPOLATE must run only on the finalizing node, over the merged stream,
-        /// not per shard (which would duplicate fill rows and break the INTERPOLATE column on merge).
-        if (query_node.hasOrderBy() && query_processing_info.isFinalizingStage())
+        if (query_node.hasOrderBy())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
@@ -3151,16 +2617,12 @@ void Planner::buildPlanForQueryNode()
         /// either stage because OFFSET means skipping rows from the entire query result, not from each
         /// shard individually.
         const bool apply_offset = !query_processing_info.isToAggregationState();
-        const bool has_limit_range = query_node.hasLimitAfter() || query_node.hasLimitUntil();
-
-        /// WITH TIES needs ORDER BY columns that are removed by projection, so it must run before extremes.
-        if (!has_limit_range && query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
+        if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
-        /// Extremes are computed before the final LIMIT, matching normal LIMIT semantics.
         addExtremesStepIfNeeded(query_plan, planner_context);
 
-        bool limit_applied = applied_prelimit || (has_limit_range && apply_limit && apply_offset) || (query_node.isLimitWithTies() && apply_offset);
+        bool limit_applied = applied_prelimit || (query_node.isLimitWithTies() && apply_offset);
 
         /** Limit is no longer needed if there is prelimit.
           *
@@ -3168,23 +2630,7 @@ void Planner::buildPlanForQueryNode()
           * This is the case for various optimizations for distributed queries,
           * and when LIMIT cannot be applied it will be applied on the initiator anyway.
           */
-        if (has_limit_range && apply_limit && apply_offset)
-        {
-            /// Keep the AFTER/UNTIL boundary columns (which may not be selected) available for the range
-            /// step, since it runs before "Project names" would drop them.
-            if (expression_analysis_result.hasLimitRange())
-                addExpressionStep(
-                    planner_context,
-                    query_plan,
-                    expression_analysis_result.getLimitRange().before_limit_range_actions,
-                    /*correlated_subtrees=*/{},
-                    select_query_options,
-                    "Before LIMIT range (AFTER/UNTIL)",
-                    useful_sets);
-
-            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
-        }
-        else if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
+        if (query_node.hasLimit() && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
         else if (!limit_applied && apply_offset && query_node.hasOffset())
             addOffsetStep(query_plan, query_analysis_result);
@@ -3219,9 +2665,6 @@ void Planner::buildPlanForQueryNode()
         && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
         && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
         && !client_info.is_replicated_database_internal
-        // A local shard/replica plan is united into the parent pipeline in this process, where
-        // nothing unmarshalls the blocks.
-        && !select_query_options.is_local_plan_for_distributed_query
     )
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
@@ -3239,7 +2682,7 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();
-        auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
+        auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
         QueryResultCache::Key key(
             ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
