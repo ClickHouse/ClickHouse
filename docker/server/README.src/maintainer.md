@@ -1,1 +1,0 @@
-[ClickHouse Inc.](%%GITHUB-REPO%%)

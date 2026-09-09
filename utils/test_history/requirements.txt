@@ -1,3 +1,0 @@
-pygithub==1.43.5
-tabulate==0.8.6
-termcolor==1.1.0

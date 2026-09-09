@@ -1,1 +1,0 @@
-This directory is needed because rdkafka files have #include "../config.h"
