@@ -119,7 +119,7 @@ TEST(QueryStatusCancellationException, StoredExceptionDoesNotAliasTheCallersObje
     }
     catch (Exception & e)
     {
-        const std::string message = e.message();
+        const std::string & message = e.message();
 
         EXPECT_NE(message.find(cancellation_reason), std::string::npos)
             << "the consumer lost the cancellation reason: " << message;
