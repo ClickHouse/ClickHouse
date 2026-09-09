@@ -136,6 +136,32 @@ SELECT c0.`a.b`, c0.c FROM file(currentDatabase() || '_04401_dot.arrow', 'Arrow'
 1	p
 2	q
 3	r
+-- The ORC reader resolves the dotted name against the file's struct itself, and folding the names
+-- case-insensitively does not reorder the two candidates either.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_dot.orc', 'ORC')
+SELECT c0 FROM values('c0 Tuple(`a.b` UInt32, a Tuple(b UInt32), c String)', (tuple(1, tuple(101), 'p')), (tuple(2, tuple(102), 'q')), (tuple(3, tuple(103), 'r')));
+SELECT `c0.a.b`, `c0.c` FROM file(currentDatabase() || '_04401_dot.orc', 'ORC', '`c0.a.b` UInt32, `c0.c` String') ORDER BY `c0.c`;
+1	p
+2	q
+3	r
+SELECT `c0.a.b`, `c0.c` FROM file(currentDatabase() || '_04401_dot.orc', 'ORC', '`c0.a.b` UInt32, `c0.c` String') ORDER BY `c0.c` SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+1	p
+2	q
+3	r
+SELECT c0.`a.b`, c0.c FROM file(currentDatabase() || '_04401_dot.orc', 'ORC', 'c0 Tuple(`a.b` UInt32, a Tuple(b UInt32), c String)') ORDER BY c0.c;
+1	p
+2	q
+3	r
+-- Which of the two candidates that is depends on the order the schema declares them in, so where the
+-- struct root comes first, compare the two reads instead of pinning either candidate's values.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_dotrev.orc', 'ORC')
+SELECT c0 FROM values('c0 Tuple(a Tuple(b UInt32), `a.b` UInt32, c String)', (tuple(tuple(101), 1, 'p')), (tuple(tuple(102), 2, 'q')), (tuple(tuple(103), 3, 'r')));
+SELECT
+    (SELECT count() FROM file(currentDatabase() || '_04401_dotrev.orc', 'ORC', '`c0.a.b` UInt32, `c0.c` String')),
+    (SELECT count() FROM (SELECT `c0.a.b` FROM file(currentDatabase() || '_04401_dotrev.orc', 'ORC', '`c0.a.b` UInt32, `c0.c` String')
+                          EXCEPT
+                          SELECT c0.`a.b` FROM file(currentDatabase() || '_04401_dotrev.orc', 'ORC', 'c0 Tuple(a Tuple(b UInt32), `a.b` UInt32, c String)')));
+3	0
 -- Only the exact lowercase `null` is reserved as an element name, so `Null` is legal, and a request
 -- for either it or the parent's virtual null-map subcolumn resolves the same way a direct
 -- `SELECT c0.<name>` does: exactly for `Null`, and to the null map for `null`.
