@@ -47,7 +47,6 @@ TEST(QuoteString, PostgreSQLIdentifier)
         doubleQuoteStringPostgreSQL("a\"; CREATE TABLE injected_marker(x integer); --"),
         "\"a\"\"; CREATE TABLE injected_marker(x integer); --\"");
 
-    /// A trailing backslash stays literal, so the closing quote still closes the identifier. Escaping
-    /// it leaves the identifier unterminated and PostgreSQL swallows the rest of the query.
+    /// A trailing backslash stays literal, so the closing quote still closes the identifier.
     EXPECT_EQ(doubleQuoteStringPostgreSQL("a\\"), "\"a\\\"");
 }
