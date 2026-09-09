@@ -278,10 +278,10 @@ private:
     };
 
     /// The outcome of `applyDistributedPlanFallbackToLocal` for this plan. Later calls do not
-    /// re-verify the plan; they only re-apply the recorded outcome to the settings. This is correct
-    /// only while every caller passes settings that agree on the inputs of the decision
+    /// re-verify the plan, they only re-apply the recorded outcome to the settings. This is correct
+    /// only while every caller passes the same settings as the inputs of the decision
     /// (`enable_cascades_optimizer`, the `distributed_plan_default_*_bucket_count` values, the
-    /// projection force flags); today they all come from the same query context.
+    /// projection force flags). It holds today because they all come from the same query context.
     DistributedPlanDecision distributed_plan_decision = DistributedPlanDecision::Undecided;
 };
 
