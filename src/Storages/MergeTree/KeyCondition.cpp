@@ -4581,10 +4581,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
         return atom_it->second(out, const_value);
     }
-    if (node.tryGetConstant(const_value, const_type))
+    /// For cases where it says, for example, `WHERE 0 AND something`.
+    /// A constant whose type has no boolean reading (`String`, `Decimal`, a wide integer) can only
+    /// reach a condition position inside `indexHint`, which never evaluates its arguments, so it
+    /// states nothing about the data and must leave the atom unknown.
+    if (node.tryGetConstant(const_value, const_type) && const_type->canBeUsedInBooleanContext())
     {
-        /// For cases where it says, for example, `WHERE 0 AND something`
-
         if (const_value.isNull())
         {
             out.function = RPNElement::ALWAYS_FALSE;

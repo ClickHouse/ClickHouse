@@ -3291,6 +3291,8 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// A NULL input converts to NULL only when the target is Nullable.
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
@@ -4942,6 +4944,9 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// A NULL input converts to NULL only when the target is Nullable; otherwise the conversion
+    /// throws rather than returning a NULL, so it must not be treated as propagating.
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     /// CAST(Nothing, T) -> T
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
