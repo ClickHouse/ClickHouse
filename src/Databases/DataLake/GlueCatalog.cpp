@@ -682,21 +682,56 @@ bool GlueCatalog::createTable(
     String written_metadata_file;
 
     /// The initial metadata file staged below must not outlive a registration that did not happen: it is
-    /// written with `If-None-Match: *`, so a leftover permanently blocks every retry. Removing it is safe
-    /// because only this call can have created it - a writer that lost the `If-None-Match` race returns
-    /// before staging anything.
+    /// written with `If-None-Match: *`, so a leftover permanently blocks every retry. A failed `CreateTable`
+    /// is ambiguous on its own - the HTTP layer retries connection failures, so the entry may have been
+    /// committed with only its response lost - so the file is removed only once `GetTable` shows that
+    /// nothing in the catalog points at it. When that check cannot answer, the file stays: an orphan is
+    /// recoverable, a catalog entry pointing at a deleted metadata file is not.
     bool registered = false;
     SCOPE_EXIT_SAFE({
-        if (!registered && written_metadata_storage)
+        if (registered || !written_metadata_storage)
+            return;
+
+        Aws::Glue::Model::GetTableRequest get_request;
+        get_request.SetDatabaseName(namespace_name);
+        get_request.SetName(table_name);
+        auto get_outcome = glue_client->GetTable(get_request);
+
+        if (get_outcome.IsSuccess())
         {
-            LOG_INFO(
+            const auto & table_parameters = get_outcome.GetResult().GetTable().GetParameters();
+            auto it = table_parameters.find("metadata_location");
+            if (it != table_parameters.end() && it->second == effective_metadata_path)
+            {
+                LOG_INFO(
+                    log,
+                    "Table {}.{} is registered in the Glue catalog and points at {}, keeping that file",
+                    namespace_name,
+                    table_name,
+                    effective_metadata_path);
+                return;
+            }
+        }
+        else if (get_outcome.GetError().GetErrorType() != Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+        {
+            LOG_WARNING(
                 log,
-                "Table {}.{} was not registered in the Glue catalog, removing the staged initial metadata file {}",
+                "Cannot tell whether table {}.{} was registered in the Glue catalog: {}. "
+                "Keeping the staged initial metadata file {}",
                 namespace_name,
                 table_name,
+                get_outcome.GetError().GetMessage(),
                 written_metadata_file);
-            written_metadata_storage->removeObjectIfExists(DB::StoredObject(written_metadata_file));
+            return;
         }
+
+        LOG_INFO(
+            log,
+            "Table {}.{} was not registered in the Glue catalog, removing the staged initial metadata file {}",
+            namespace_name,
+            table_name,
+            written_metadata_file);
+        written_metadata_storage->removeObjectIfExists(DB::StoredObject(written_metadata_file));
     });
 
     if (effective_metadata_path.empty() && metadata_content && metadata_content->has("location"))
@@ -771,7 +806,7 @@ bool GlueCatalog::createTable(
 
     if (!response.IsSuccess())
     {
-        /// The staged metadata file is removed by the scope guard, so `IF NOT EXISTS` leaves nothing behind.
+        /// The scope guard drops the staged metadata file unless the existing entry points at it.
         if (if_not_exists && response.GetError().GetErrorType() == Aws::Glue::GlueErrors::ALREADY_EXISTS)
             return false;
         throw DB::Exception(
