@@ -1,6 +1,5 @@
 import logging
 import time
-import uuid
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -841,51 +840,68 @@ def test_limit_pushdown(started_cluster):
     """
     )
 
+    def remote_queries():
+        """The queries `ReadFromPostgreSQL` has logged for this table, in order."""
+        lines = node1.grep_in_log("Query: SELECT.*test_limit_pushdown").splitlines()
+        return [line.split("Query: ", 1)[1] for line in lines]
+
     def run(query, **settings):
-        """Return the query result and the number of rows read from PostgreSQL."""
-        query_id = str(uuid.uuid4())
-        result = node1.query(query, query_id=query_id, settings=settings)
-        node1.query("SYSTEM FLUSH LOGS query_log")
-        read_rows = node1.query(
-            f"SELECT read_rows FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-        return result.strip(), int(read_rows.strip())
+        """Return the query result and the queries that were sent to PostgreSQL because of it.
+
+        The number of rows read locally cannot tell whether the `LIMIT` was pushed down: the
+        pipeline stops pulling from the source as soon as the local `LIMIT` is satisfied, so a
+        query that reads a whole remote table still reports only the rows it consumed. The query
+        text that reached PostgreSQL is the only direct evidence.
+        """
+        before = len(remote_queries())
+        result = node1.query(query, settings=settings)
+        for _ in range(30):
+            after = remote_queries()
+            if len(after) > before:
+                break
+            time.sleep(0.5)
+        return result.strip(), after[before:]
 
     # The LIMIT is sent to PostgreSQL, so only the requested rows are read.
-    assert run("SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 5)") == (
-        "5",
-        5,
-    )
+    result, queries = run("SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 5)")
+    assert result == "5"
+    assert len(queries) == 1 and queries[0].endswith("LIMIT 5")
 
-    # The OFFSET is applied locally, so the rows it skips are read remotely as well.
-    assert run(
+    # The OFFSET is applied locally, so the rows it skips have to be read remotely as well.
+    result, queries = run(
         "SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 5 OFFSET 3)"
-    ) == ("5", 8)
+    )
+    assert result == "5"
+    assert len(queries) == 1 and queries[0].endswith("LIMIT 8")
 
-    # The setting turned off restores reading the whole table.
-    assert run(
+    # The setting turned off sends no LIMIT at all.
+    result, queries = run(
         "SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 5)",
         external_storage_push_down_limit=0,
-    ) == ("5", 100)
+    )
+    assert result == "5"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
 
     # `limit + offset` overflows UInt64, so no limit can be pushed down. The plan-level limit of
     # `ReadFromPostgreSQL` comes from `LimitStep::getLimitForSorting`, which uses 0 as the overflow
     # sentinel; it must not become a remote `LIMIT 0`, which would turn "all rows except the first"
     # into "no rows".
-    assert run(
+    result, queries = run(
         "SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 18446744073709551615 OFFSET 1)"
-    ) == ("99", 100)
-
-    # A real `LIMIT 0` still reads nothing.
-    assert run("SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 0)") == (
-        "0",
-        0,
     )
+    assert result == "99"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+
+    # A real `LIMIT 0` returns nothing and never asks PostgreSQL for a single row.
+    result, _ = run("SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 0)")
+    assert result == "0"
 
     # ORDER BY is applied locally, so the remote result must not be truncated.
-    assert run(
+    result, queries = run(
         "SELECT count() FROM (SELECT * FROM pg_limit_pushdown ORDER BY id DESC LIMIT 5)"
-    ) == ("5", 100)
+    )
+    assert result == "5"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
 
     cursor.execute("DROP TABLE test_limit_pushdown")
     node1.query("DROP TABLE pg_limit_pushdown")
