@@ -27,6 +27,8 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 `ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
 
+`CREATE USER` requires the [CREATE USER](/reference/statements/grant#access-management) privilege. `OR REPLACE` overwrites an existing user of the same name - its authentication methods, its granted roles and its settings - so it additionally requires the [DROP USER](/reference/statements/grant#access-management) privilege. The `DROP USER` privilege is required on every name listed in the statement whether or not that user already exists, so the statement cannot be used to find out which users exist.
+
 ## Identification {#identification}
 
 There are multiple ways of user identification:
