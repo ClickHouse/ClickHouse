@@ -2,6 +2,7 @@
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -124,7 +125,9 @@ public:
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
         }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
+        /// `buildImpl` receives the arguments before the default `LowCardinality` implementation
+        /// strips them (unlike `getReturnTypeImpl`), so the time zone type is checked without it.
+        if (arguments.size() == 1 && !isStringOrFixedString(removeLowCardinality(arguments[0].type)))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());

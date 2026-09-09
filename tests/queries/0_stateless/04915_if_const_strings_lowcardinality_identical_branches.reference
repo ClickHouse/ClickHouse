@@ -1,0 +1,16 @@
+Identical constant branches keep String in both if and multiIf
+sum	String
+sum	String
+sum	String
+sum	String
+Identical constant branches keep String for more than one condition too
+sum	String
+sum	String
+Identical constant NULL branches keep their type
+\N	Nullable(String)
+\N	Nullable(String)
+Distinct constant branches still get LowCardinality
+max	LowCardinality(String)
+sum	LowCardinality(String)
+sum	LowCardinality(String)
+sum	LowCardinality(String)

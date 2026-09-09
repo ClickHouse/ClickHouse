@@ -1,10 +1,12 @@
 #include <functional>
+#include <DataTypes/DataTypeLowCardinality.h>
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <Functions/FunctionsCodingIP.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -41,6 +43,26 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+
+/// Functions that take over the `LowCardinality` execution path themselves
+/// (`useDefaultImplementationForLowCardinalityColumns` returns `false`) still have to preserve the
+/// `LowCardinality` output contract: a `LowCardinality` argument must produce a `LowCardinality` result.
+/// This re-wraps a fully materialized result column back into `LowCardinality`, matching the return type
+/// declared by `getReturnTypeImpl`.
+ColumnPtr wrapResultInLowCardinality(ColumnPtr result, const DataTypePtr & result_type, size_t input_rows_count)
+{
+    if (!result_type->lowCardinality())
+        return result;
+
+    auto column_lc = result_type->createColumn();
+    assert_cast<ColumnLowCardinality &>(*column_lc).insertRangeFromFullColumn(*result, 0, input_rows_count);
+    return column_lc;
+}
+
 }
 
 
@@ -292,55 +314,161 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(removeNullable(arguments[0])))
+        if (!isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
         }
 
-        auto result_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
+        DataTypePtr result_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
+            result_type = makeNullable(result_type);
+        else if (removeLowCardinality(arguments[0])->isNullable())
+            result_type = makeNullable(result_type);
 
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        /// Preserve the LowCardinality output contract when the input is LowCardinality.
+        if (arguments[0]->lowCardinality())
+            return std::make_shared<DataTypeLowCardinality>(result_type);
+
+        return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr column = arguments[0].column;
-        ColumnPtr null_map_column;
-        const NullMap * null_map = nullptr;
-        if (column->isNullable())
+
+        ColumnPtr result;
+        if (const auto * col_lc = checkAndGetColumn<ColumnLowCardinality>(column.get()))
         {
-            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
-            column = column_nullable->getNestedColumnPtr();
-            null_map_column = column_nullable->getNullMapColumnPtr();
-            null_map = &column_nullable->getNullMapData();
+            /// The LowCardinality fast path cannot honor the runtime Throw -> Default fallback selected by
+            /// `cast_ipv4_ipv6_default_on_conversion_error`, and it only supports a `String` dictionary with
+            /// `UInt8`/`UInt16`/`UInt32` indexes. In any unsupported case, materialize the column and fall
+            /// through to the regular path which already handles every argument type and mode.
+            bool can_use_fast_path = true;
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+                can_use_fast_path = !cast_ipv4_ipv6_default_on_conversion_error;
+
+            if (can_use_fast_path)
+                result = executeLowCardinality(*col_lc, input_rows_count);
+
+            if (!result)
+                column = col_lc->convertToFullColumnIfLowCardinality();
         }
 
-        if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+        if (!result)
         {
-            if (cast_ipv4_ipv6_default_on_conversion_error)
+            ColumnPtr null_map_column;
+            const NullMap * null_map = nullptr;
+            if (column->isNullable())
             {
-                auto result = convertToIPv6<IPStringToNumExceptionMode::Default, ColumnFixedString>(column, null_map);
+                const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
+                null_map_column = column_nullable->getNullMapColumnPtr();
+                null_map = &column_nullable->getNullMapData();
+                column = column_nullable->getNestedColumnPtr();
+            }
+
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+            {
+                if (cast_ipv4_ipv6_default_on_conversion_error)
+                {
+                    result = convertToIPv6<IPStringToNumExceptionMode::Default, ColumnFixedString>(column, null_map);
+                    if (null_map && !result->isNullable())
+                        result = ColumnNullable::create(result, null_map_column);
+                }
+            }
+
+            if (!result)
+            {
+                result = convertToIPv6<exception_mode, ColumnFixedString>(column, null_map);
                 if (null_map && !result->isNullable())
-                    return ColumnNullable::create(result, null_map_column);
-                return result;
+                    result = ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
             }
         }
 
-        auto result = convertToIPv6<exception_mode, ColumnFixedString>(column, null_map);
-        if (null_map && !result->isNullable())
-            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
-        return result;
+        /// Preserve the LowCardinality output contract when the input is LowCardinality (see getReturnTypeImpl).
+        return wrapResultInLowCardinality(std::move(result), result_type, input_rows_count);
     }
 
 private:
+    ColumnPtr executeLowCardinality(const ColumnLowCardinality& column, size_t input_rows_count) const
+    {
+        auto col_res = ColumnFixedString::create(IPV6_BINARY_LENGTH);
+        auto & vec_res = col_res->getChars();
+        vec_res.resize(input_rows_count * IPV6_BINARY_LENGTH);
+
+        ColumnUInt8::MutablePtr col_null_map_to;
+        ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+        const auto & dictionary = column.getDictionary();
+        auto has_null = false;
+
+        const auto * nested_column = dictionary.getNestedColumn().get();
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(nested_column))
+        {
+            has_null = true;
+            nested_column = col_nullable->getNestedColumnPtr().get();
+        }
+
+        if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+        {
+            col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            vec_null_map_to = &col_null_map_to->getData();
+        }
+
+
+        /// Only a `String` dictionary is handled here; signal the caller to use the regular path otherwise
+        /// (e.g. for a `FixedString` dictionary).
+        const auto * column_string = checkAndGetColumn<ColumnString>(nested_column);
+        if (!column_string)
+            return {};
+
+        auto check_is_null = [&](size_t idx) { return has_null && idx == dictionary.getNullValueIndex(); };
+
+        auto process_indexes = [&](const auto& indexes)
+        {
+            for (size_t i = 0, o = 0; i != input_rows_count; ++i, o += IPV6_BINARY_LENGTH)
+            {
+                const auto idx = indexes[i];
+                auto const is_null = check_is_null(idx);
+                if (is_null)
+                {
+                    std::fill_n(&vec_res[o], IPV6_BINARY_LENGTH, 0);
+                    if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+                        (*vec_null_map_to)[i] = true;
+                    continue;
+                }
+
+                const auto & value = column_string->getDataAt(idx);
+                const char * src_value = reinterpret_cast<const char *>(value.data());
+                const auto src_value_size = value.size();
+                const char * src_value_end = src_value + src_value_size;
+                unsigned char * res_value = reinterpret_cast<unsigned char *>(&vec_res[o]);
+                detail::convertToIPv6Impl<exception_mode>(src_value, src_value_end, res_value, [&](auto v){ (*vec_null_map_to)[i] = v;});
+            }
+        };
+
+        const auto * index_column = column.getIndexesPtr().get();
+        if (const auto * col8 = checkAndGetColumn<ColumnUInt8>(index_column))
+            process_indexes(col8->getData());
+        else if (const auto * col16 = checkAndGetColumn<ColumnUInt16>(index_column))
+            process_indexes(col16->getData());
+        else if (const auto * col32 = checkAndGetColumn<ColumnUInt32>(index_column))
+            process_indexes(col32->getData());
+        else
+            /// A wider index type (e.g. `UInt64`) is not handled here; signal the caller to use the regular path.
+            return {};
+
+        if ((has_null || exception_mode == IPStringToNumExceptionMode::Null) && !col_res->isNullable())
+            return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
+        return col_res;
+    }
+
+
     bool cast_ipv4_ipv6_default_on_conversion_error = false;
 };
 
@@ -463,55 +591,158 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(removeNullable(arguments[0])))
+        if (!isString(removeLowCardinalityAndNullable(arguments[0])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
         }
 
-        auto result_type = std::make_shared<DataTypeUInt32>();
+        DataTypePtr result_type = std::make_shared<DataTypeUInt32>();
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
+            result_type = makeNullable(result_type);
+        else if (removeLowCardinality(arguments[0])->isNullable())
+            result_type = makeNullable(result_type);
 
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        /// Preserve the LowCardinality output contract when the input is LowCardinality.
+        if (arguments[0]->lowCardinality())
+            return std::make_shared<DataTypeLowCardinality>(result_type);
+
+        return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr column = arguments[0].column;
-        ColumnPtr null_map_column;
-        const NullMap * null_map = nullptr;
-        if (column->isNullable())
+
+        ColumnPtr result;
+        if (const auto * col_lc = checkAndGetColumn<ColumnLowCardinality>(column.get()))
         {
-            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
-            column = column_nullable->getNestedColumnPtr();
-            null_map_column = column_nullable->getNullMapColumnPtr();
-            null_map = &column_nullable->getNullMapData();
+            /// The LowCardinality fast path cannot honor the runtime Throw -> Default fallback selected by
+            /// `cast_ipv4_ipv6_default_on_conversion_error`, and it only supports a `String` dictionary with
+            /// `UInt8`/`UInt16`/`UInt32` indexes. In any unsupported case, materialize the column and fall
+            /// through to the regular path which already handles every argument type and mode.
+            bool can_use_fast_path = true;
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+                can_use_fast_path = !cast_ipv4_ipv6_default_on_conversion_error;
+
+            if (can_use_fast_path)
+                result = executeLowCardinality(*col_lc, input_rows_count);
+
+            if (!result)
+                column = col_lc->convertToFullColumnIfLowCardinality();
         }
 
-        if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+        if (!result)
         {
-            if (cast_ipv4_ipv6_default_on_conversion_error)
+            ColumnPtr null_map_column;
+            const NullMap * null_map = nullptr;
+            if (column->isNullable())
             {
-                auto result = convertToIPv4<IPStringToNumExceptionMode::Default, ColumnUInt32>(column, null_map);
+                const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
+                null_map_column = column_nullable->getNullMapColumnPtr();
+                null_map = &column_nullable->getNullMapData();
+                column = column_nullable->getNestedColumnPtr();
+            }
+
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+            {
+                if (cast_ipv4_ipv6_default_on_conversion_error)
+                {
+                    result = convertToIPv4<IPStringToNumExceptionMode::Default, ColumnUInt32>(column, null_map);
+                    if (null_map && !result->isNullable())
+                        result = ColumnNullable::create(result, null_map_column);
+                }
+            }
+
+            if (!result)
+            {
+                result = convertToIPv4<exception_mode, ColumnUInt32>(column, null_map);
                 if (null_map && !result->isNullable())
-                    return ColumnNullable::create(result, null_map_column);
-                return result;
+                    result = ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
             }
         }
 
-        auto result = convertToIPv4<exception_mode, ColumnUInt32>(column, null_map);
-        if (null_map && !result->isNullable())
-            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
-        return result;
+        /// Preserve the LowCardinality output contract when the input is LowCardinality (see getReturnTypeImpl).
+        return wrapResultInLowCardinality(std::move(result), result_type, input_rows_count);
     }
 
 private:
+    ColumnPtr executeLowCardinality(const ColumnLowCardinality& column, size_t input_rows_count) const
+    {
+        auto col_res = ColumnUInt32::create();
+        auto & vec_res = col_res->getData();
+        vec_res.resize(input_rows_count);
+
+        ColumnUInt8::MutablePtr col_null_map_to;
+        ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+        const auto & dictionary = column.getDictionary();
+        auto has_null = false;
+
+        const auto * nested_column = dictionary.getNestedColumn().get();
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(nested_column))
+        {
+            has_null = true;
+            nested_column = col_nullable->getNestedColumnPtr().get();
+        }
+
+        if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+        {
+            col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+            vec_null_map_to = &col_null_map_to->getData();
+        }
+
+
+        /// Only a `String` dictionary is handled here; signal the caller to use the regular path otherwise
+        /// (e.g. for a `FixedString` dictionary).
+        const auto * column_string = checkAndGetColumn<ColumnString>(nested_column);
+        if (!column_string)
+            return {};
+
+        auto check_is_null = [&](size_t idx) { return has_null && idx == dictionary.getNullValueIndex(); };
+
+        auto process_indexes = [&](const auto& indexes)
+        {
+            for (size_t i = 0; i != input_rows_count; ++i)
+            {
+                const auto idx = indexes[i];
+                auto const is_null = check_is_null(idx);
+                if (is_null)
+                {
+                    vec_res[i] = 0;
+                    if (exception_mode == IPStringToNumExceptionMode::Null || has_null)
+                        (*vec_null_map_to)[i] = true;
+                    continue;
+                }
+
+                const auto & value = column_string->getDataAt(idx);
+                const char * src_value = reinterpret_cast<const char *>(value.data());
+                const char * src_end = src_value + value.size();
+                convertToIPv4Impl<exception_mode>(src_value, src_end, vec_res[i], [&](auto v){ (*vec_null_map_to)[i] = v; });
+            }
+        };
+
+        const auto * index_column = column.getIndexesPtr().get();
+        if (const auto * col8 = checkAndGetColumn<ColumnUInt8>(index_column))
+            process_indexes(col8->getData());
+        else if (const auto * col16 = checkAndGetColumn<ColumnUInt16>(index_column))
+            process_indexes(col16->getData());
+        else if (const auto * col32 = checkAndGetColumn<ColumnUInt32>(index_column))
+            process_indexes(col32->getData());
+        else
+            /// A wider index type (e.g. `UInt64`) is not handled here; signal the caller to use the regular path.
+            return {};
+
+        if ((has_null || exception_mode == IPStringToNumExceptionMode::Null) && !col_res->isNullable())
+            return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
+        return col_res;
+    }
+
     bool cast_ipv4_ipv6_default_on_conversion_error = false;
 };
 

@@ -81,6 +81,8 @@ namespace Setting
     extern const SettingsBool legacy_column_name_of_tuple_literal;
     extern const SettingsBool normalize_function_names;
     extern const SettingsBool optimize_if_chain_to_multiif;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool optimize_group_by_function_keys;
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsBool optimize_move_to_prewhere;
@@ -1554,7 +1556,19 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         && !select_options.ignore_ast_optimizations;
 
     bool optimize_multiif_to_if_v = ast_optimizations_allowed && settings[Setting::optimize_multiif_to_if];
-    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], optimize_multiif_to_if_v);
+    /// The legacy AST rewrite of an `if` chain to `multiIf` is purely syntactic: the synthesized `multiIf`
+    /// is resolved from the query settings, so with `optimize_if_transform_const_strings_to_lowcardinality`
+    /// it returns `LowCardinality(String)` while the `if` chain it replaces returns plain `String`
+    /// (`FunctionIf` strips `LowCardinality` from its arguments before inferring the return type, and the
+    /// else-branch of the outer `if` is a nested `if`, not a constant). The analyzer's `IfChainToMultiIfPass`
+    /// keeps the type by building its `multiIf` with the optimization disabled, which an AST-level rewrite
+    /// cannot express. Disable the legacy rewrite instead, so that the result type does not depend on
+    /// `enable_analyzer`. The condition mirrors `FunctionMultiIf::create`, where
+    /// `optimize_if_transform_strings_to_enum` supersedes the `LowCardinality` optimization.
+    const bool if_chain_to_multiif = settings[Setting::optimize_if_chain_to_multiif]
+        && !(settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+             && !settings[Setting::optimize_if_transform_strings_to_enum]);
+    TreeOptimizer::optimizeIf(query, result.aliases, if_chain_to_multiif, optimize_multiif_to_if_v);
 
     if (ast_optimizations_allowed)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
@@ -1670,7 +1684,19 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], false);
+    /// The legacy AST rewrite of an `if` chain to `multiIf` is purely syntactic: the synthesized `multiIf`
+    /// is resolved from the query settings, so with `optimize_if_transform_const_strings_to_lowcardinality`
+    /// it returns `LowCardinality(String)` while the `if` chain it replaces returns plain `String`
+    /// (`FunctionIf` strips `LowCardinality` from its arguments before inferring the return type, and the
+    /// else-branch of the outer `if` is a nested `if`, not a constant). The analyzer's `IfChainToMultiIfPass`
+    /// keeps the type by building its `multiIf` with the optimization disabled, which an AST-level rewrite
+    /// cannot express. Disable the legacy rewrite instead, so that the result type does not depend on
+    /// `enable_analyzer`. The condition mirrors `FunctionMultiIf::create`, where
+    /// `optimize_if_transform_strings_to_enum` supersedes the `LowCardinality` optimization.
+    const bool if_chain_to_multiif = settings[Setting::optimize_if_chain_to_multiif]
+        && !(settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+             && !settings[Setting::optimize_if_transform_strings_to_enum]);
+    TreeOptimizer::optimizeIf(query, result.aliases, if_chain_to_multiif, false);
 
     if (allow_aggregations)
     {
