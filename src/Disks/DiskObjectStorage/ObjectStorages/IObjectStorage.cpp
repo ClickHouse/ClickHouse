@@ -81,10 +81,8 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes,
     const std::function<void()> & cancellation_hook)
 {
-    if (&object_storage_to == this)
+    if (&object_storage_to == this && !cancellation_hook)
     {
-        if (cancellation_hook)
-            cancellation_hook();
         copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
     }
 
