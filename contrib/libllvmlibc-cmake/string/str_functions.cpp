@@ -7,9 +7,11 @@
 // addresses aligned to its whole stride, so no load ever crosses a page
 // boundary: reading past the buffer or past the first match stays inside a
 // page that is known to be mapped, and the bytes outside [s, s + n) are masked
-// off before the result is used. Not built
-// under sanitizers: their interceptors define strong `memchr`/`strlen` and the
-// wrapped libc versions carry the range checks.
+// off before the result is used. `n` is treated as a count of bytes left to
+// look at and never added to the pointer, since callers may pass a limit that
+// overstates the buffer, up to SIZE_MAX. Not built under sanitizers: their
+// interceptors define strong `memchr`/`strlen` and the wrapped libc versions
+// carry the range checks.
 
 #if defined(__x86_64__)
 
@@ -98,43 +100,53 @@ extern "C" void *memchr(const void *s, int c, size_t n) noexcept {
   if (n == 0)
     return nullptr;
   const char *p = static_cast<const char *>(s);
-  const char *end = p + n;
   const vec_t needle = splat(static_cast<unsigned char>(c));
 
+  // `n` is only an upper bound on how far to look, never turned into a
+  // pointer: callers may pass an `n` that overstates the buffer and rely on
+  // the search stopping at the first match (musl's strnlen passes the caller's
+  // limit, realpath's is PATH_MAX past a shorter string, strndup(s, -1) passes
+  // SIZE_MAX), so `p + n` may lie outside the object or wrap the address space
+  // altogether. The search is driven by the number of bytes left to look at,
+  // and the pointer only ever advances to the next aligned block, which is at
+  // most `n` bytes in.
+  //
   // First block: drop the bytes before `p`.
   const char *a = align_down(p);
-  uint64_t m = eq_mask(a, needle) >> (p - a);
-  // Bytes at or past `end` are not part of the buffer. `end - p` can only be
-  // < VEC here if the whole buffer fits into this first block.
-  if (static_cast<size_t>(end - p) < VEC)
-    m &= (uint64_t{1} << (end - p)) - 1;
+  const size_t head = static_cast<size_t>(p - a);
+  uint64_t m = eq_mask(a, needle) >> head;
+  // Bytes at or past `p + n` are not part of the buffer. This can only happen
+  // in the first block if the whole buffer fits into it.
+  if (n < VEC)
+    m &= (uint64_t{1} << n) - 1;
   if (m)
     return const_cast<char *>(p + __builtin_ctzll(m));
-
+  // The first block covered `VEC - head` bytes of the buffer.
+  if (n <= VEC - head)
+    return nullptr;
+  size_t remaining = n - (VEC - head);
   a += VEC;
-  // Callers may pass an `n` that overstates the buffer and rely on the search
-  // stopping at the first match (musl's strnlen passes the caller's limit,
-  // realpath's is PATH_MAX past a shorter string), so `end` does not bound the
-  // readable memory. Re-align to the 4 * VEC stride before the unrolled loop:
-  // a 4 * VEC-aligned group never crosses a page, so it is only ever read
-  // beyond the match within the page that holds the match.
-  for (; a + VEC <= end && (reinterpret_cast<uintptr_t>(a) & (4 * VEC - 1));
-       a += VEC) {
+
+  // Re-align to the 4 * VEC stride before the unrolled loop: a 4 * VEC-aligned
+  // group never crosses a page, so it is only ever read beyond the match
+  // within the page that holds the match.
+  for (; remaining >= VEC && (reinterpret_cast<uintptr_t>(a) & (4 * VEC - 1));
+       a += VEC, remaining -= VEC) {
     m = eq_mask(a, needle);
     if (m)
       return const_cast<char *>(a + __builtin_ctzll(m));
   }
-  for (; a + 4 * VEC <= end; a += 4 * VEC)
+  for (; remaining >= 4 * VEC; a += 4 * VEC, remaining -= 4 * VEC)
     if (const char *r = scan4(a, needle))
       return const_cast<char *>(r);
-  for (; a + VEC <= end; a += VEC) {
+  for (; remaining >= VEC; a += VEC, remaining -= VEC) {
     m = eq_mask(a, needle);
     if (m)
       return const_cast<char *>(a + __builtin_ctzll(m));
   }
 
-  if (a < end) {
-    m = eq_mask(a, needle) & ((uint64_t{1} << (end - a)) - 1);
+  if (remaining) {
+    m = eq_mask(a, needle) & ((uint64_t{1} << remaining) - 1);
     if (m)
       return const_cast<char *>(a + __builtin_ctzll(m));
   }
