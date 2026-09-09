@@ -111,7 +111,8 @@ TEST(AzureReadBigAt, DoesNotTrustResponseLength)
 
     auto buffer = makeBuffer();
 
-    buffer->getFileSize(); /// readBigAt needs the blob client, created lazily by the sizing call
+    /// The documented handshake: supportsReadAt is the required setup call before readBigAt.
+    ASSERT_TRUE(buffer->supportsReadAt());
 
     struct Storage
     {
