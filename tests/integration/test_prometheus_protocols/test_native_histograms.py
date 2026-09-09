@@ -14,7 +14,6 @@ from .prometheus_test_utils import (
     types_pb2,
 )
 
-
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
@@ -63,7 +62,8 @@ def send(write_request):
 
 HISTOGRAM_COLUMNS = (
     "timestamp, flags, schema, zero_threshold, count, sum, zero_count,"
-    " positive_spans, positive_values, negative_spans, negative_values, custom_values"
+    " positive_spans, positive_values, negative_spans, negative_values, custom_values,"
+    " count_int, zero_count_int, positive_values_int, negative_values_int"
 )
 
 
@@ -116,6 +116,10 @@ def test_int_histogram():
                 "[(-1,1)]",
                 "[2]",
                 "[]",
+                "10",
+                "2",
+                "[3,2,3]",
+                "[2]",
             ]
         ]
     )
@@ -189,6 +193,10 @@ def test_float_histogram_and_nhcb():
                 "[]",
                 "[]",
                 "[]",
+                "0",
+                "0",
+                "[]",
+                "[]",
             ],
             [
                 "2024-01-01 00:00:03.000",
@@ -203,6 +211,10 @@ def test_float_histogram_and_nhcb():
                 "[]",
                 "[]",
                 "[0.1,0.5,1]",
+                "7",
+                "0",
+                "[2,3,4]",
+                "[]",
             ],
         ]
     )
@@ -262,6 +274,18 @@ def test_table_without_histograms_target_drops_histograms():
         positive_deltas=[1],
         timestamp=1704067208000,
     )
+
+    # system.events is cumulative per server (and omits zero-valued counters), so compare deltas.
+    def histogram_events():
+        return {
+            line.split("\t")[0]: int(line.split("\t")[1])
+            for line in node.query(
+                "SELECT event, value FROM system.events"
+                " WHERE event IN ('PrometheusRemoteWriteHistograms', 'PrometheusRemoteWriteDroppedHistograms')"
+            ).splitlines()
+        }
+
+    events_before = histogram_events()
     # The write succeeds (204): samples are stored, histograms are dropped with a warning.
     send(
         make_write_request(
@@ -273,11 +297,16 @@ def test_table_without_histograms_target_drops_histograms():
         "SELECT timestamp, value FROM timeSeriesSamples(prometheus)"
     ) == TSV([["2024-01-01 00:00:07.000", "1"]])
     assert node.contains_in_log("Dropping 1 native histogram samples")
+    events_after = histogram_events()
+    # A dropped histogram is counted both as received (PrometheusRemoteWriteHistograms) and as
+    # dropped, so the difference of the two events shows what was actually stored (nothing here).
     assert (
-        node.query(
-            "SELECT value FROM system.events WHERE event = 'PrometheusRemoteWriteDroppedHistograms'"
-        )
-        == "1\n"
+        events_after.get("PrometheusRemoteWriteHistograms", 0)
+        == events_before.get("PrometheusRemoteWriteHistograms", 0) + 1
+    )
+    assert (
+        events_after.get("PrometheusRemoteWriteDroppedHistograms", 0)
+        == events_before.get("PrometheusRemoteWriteDroppedHistograms", 0) + 1
     )
 
 
@@ -286,7 +315,7 @@ def test_invalid_histograms_rejected():
         "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
     )
 
-    def assert_rejected(histogram):
+    def assert_rejected(histogram, message=None):
         response = get_response_to_remote_write(
             node.ip_address,
             9093,
@@ -294,7 +323,11 @@ def test_invalid_histograms_rejected():
             make_write_request({"__name__": "test_bad"}, [histogram]),
         )
         assert response.status_code == requests.codes.bad_request
-        assert node.query("SELECT count() FROM timeSeriesHistograms(prometheus)") == "0\n"
+        if message is not None:
+            assert message in response.text
+        assert (
+            node.query("SELECT count() FROM timeSeriesHistograms(prometheus)") == "0\n"
+        )
 
     # Spans cover 3 buckets but only 2 delta values are given.
     assert_rejected(
@@ -382,7 +415,8 @@ def test_invalid_histograms_rejected():
             sum=0.0,
             zero_count_float=0.0,
             timestamp=1704067217000,
-        )
+        ),
+        "Native histogram has a negative count: -1",
     )
     # A negative zero count.
     assert_rejected(
@@ -391,7 +425,8 @@ def test_invalid_histograms_rejected():
             sum=0.0,
             zero_count_float=-1.0,
             timestamp=1704067218000,
-        )
+        ),
+        "Native histogram has a negative zero count: -1",
     )
     # A negative float bucket count.
     assert_rejected(
@@ -402,26 +437,251 @@ def test_invalid_histograms_rejected():
             positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
             positive_counts=[-1.0],
             timestamp=1704067219000,
-        )
+        ),
+        "Native histogram has a negative positive bucket count: -1",
     )
-    # An integer count above 2^53, which the Float64 carrier cannot hold exactly: rejected rather
-    # than rounded, so a stored integer histogram always reads back the count it arrived with.
+    # A negative float bucket count in the negative direction.
     assert_rejected(
         types_pb2.Histogram(
-            count_int=(1 << 53) + 1,
+            count_float=1.0,
             sum=0.0,
-            timestamp=1704067220000,
+            zero_count_float=0.0,
+            negative_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            negative_counts=[-1.0],
+            timestamp=1704067221000,
+        ),
+        "Native histogram has a negative negative bucket count: -1",
+    )
+    # NaN counts are allowed only in a stale marker (whose sum carries the stale NaN).
+    assert_rejected(
+        types_pb2.Histogram(
+            count_float=float("nan"),
+            sum=0.0,
+            zero_count_float=0.0,
+            timestamp=1704067222000,
+        ),
+        "Native histogram has a NaN count but is not a stale marker",
+    )
+    # A NaN zero count.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_float=1.0,
+            sum=0.0,
+            zero_count_float=float("nan"),
+            timestamp=1704067223000,
+        ),
+        "Native histogram has a NaN zero count but is not a stale marker",
+    )
+    # A NaN positive bucket count.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_float=1.0,
+            sum=0.0,
+            zero_count_float=0.0,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_counts=[float("nan")],
+            timestamp=1704067224000,
+        ),
+        "Native histogram has a NaN positive bucket count but is not a stale marker",
+    )
+    # A NaN negative bucket count.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_float=1.0,
+            sum=0.0,
+            zero_count_float=0.0,
+            negative_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            negative_counts=[float("nan")],
+            timestamp=1704067225000,
+        ),
+        "Native histogram has a NaN negative bucket count but is not a stale marker",
+    )
+    # A custom-bucket histogram whose spans reach past the bounds they declare: storing it would
+    # fail only later, when writeHistogram renders it and finds no bound for its buckets.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=2,
+            sum=0.0,
+            schema=-53,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=2)],
+            positive_deltas=[1, 1],
+            timestamp=1704067226000,
         )
     )
-    # The same bound applies to a decoded bucket count.
+    # A custom-bucket histogram with a negative bucket index (no -Inf lower bound exists there).
     assert_rejected(
         types_pb2.Histogram(
             count_int=1,
             sum=0.0,
-            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
-            positive_deltas=[(1 << 53) + 1],
-            timestamp=1704067221000,
+            schema=-53,
+            positive_spans=[types_pb2.BucketSpan(offset=-1, length=1)],
+            positive_deltas=[1],
+            timestamp=1704067227000,
         )
+    )
+    # A custom-bucket histogram carrying negative buckets: custom buckets are positive-side only.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=-53,
+            negative_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            negative_deltas=[1],
+            timestamp=1704067228000,
+        )
+    )
+    # Custom bucket bounds on an exponential schema, where no reader knows what to do with them.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=0,
+            custom_values=[1.0, 2.0],
+            timestamp=1704067229000,
+        )
+    )
+    # An undefined bucket schema in the gap between the exponential range and custom buckets.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=-20,
+            timestamp=1704067230000,
+        )
+    )
+
+
+# The positive control for the NaN rejections above: in a stale marker NaN counts are legal.
+def test_stale_marker_with_nan_counts_accepted():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
+    )
+    nan = float("nan")
+    stale = types_pb2.Histogram(
+        count_float=nan,
+        sum=STALE_NAN,
+        zero_count_float=nan,
+        positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+        positive_counts=[nan],
+        timestamp=1704067226000,
+    )
+    send(make_write_request({"__name__": "test_hist_stale_nan"}, [stale]))
+
+    # flags: is_float (0x1) | stale marker (0x10); the NaN counts are stored as NaNs.
+    assert node.query(
+        "SELECT flags, isNaN(count), isNaN(zero_count), arrayMap(isNaN, positive_values)"
+        " FROM timeSeriesHistograms(prometheus)"
+    ) == TSV([["17", "1", "1", "[1]"]])
+
+
+# Counts ride in Float64 columns, which represent integers exactly only up to 2^53; an
+# integer-flavor histogram also stores them in the exact UInt64 carriers, so one above that
+# bound round-trips losslessly instead of being rejected or rounded.
+def test_int_histogram_lossless_round_trip():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
+    )
+    big = (1 << 53) + 1  # the first integer Float64 cannot represent: rounds to 2^53
+    histogram = types_pb2.Histogram(
+        count_int=(big << 7),  # still far below 2^64, but way above 2^53
+        sum=float(big),
+        schema=3,
+        zero_count_int=(1 << 53) - 1,  # the largest exact one
+        positive_spans=[types_pb2.BucketSpan(offset=0, length=2)],
+        # Decoded to absolute values [2^59, 2^59 + (2^53 + 1)], both inexact in Float64.
+        positive_deltas=[(big << 6), big],
+        negative_spans=[types_pb2.BucketSpan(offset=-1, length=1)],
+        negative_deltas=[(big << 6) + 5],
+        timestamp=1704067220000,
+    )
+    send(make_write_request({"__name__": "test_hist_big_int"}, [histogram]))
+
+    assert node.query(
+        "SELECT count_int, zero_count_int, positive_values_int, negative_values_int"
+        " FROM timeSeriesHistograms(prometheus)"
+    ) == TSV(
+        [
+            [
+                str(big << 7),
+                str((1 << 53) - 1),
+                f"[{big << 6},{(big << 6) + big}]",
+                f"[{(big << 6) + 5}]",
+            ]
+        ]
+    )
+
+
+# The sharpest boundary case: 2^53 + 1 is the first integer Float64 rounds (down to 2^53), so
+# exact equality of every count read back proves none of them took a Float64 hop.
+def test_int_histogram_exact_round_trip_at_float64_boundary():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
+    )
+    big = (1 << 53) + 1  # 9007199254740993
+    histogram = types_pb2.Histogram(
+        count_int=big,
+        sum=1.5,
+        schema=0,
+        zero_count_int=1,
+        positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+        positive_deltas=[big - 1],  # zero_count + buckets = count
+        timestamp=1704067227000,
+    )
+    # A second histogram carrying 2^53 + 1 in the fields the first one could not: zero count and bucket.
+    histogram2 = types_pb2.Histogram(
+        count_int=2 * big,
+        sum=2.5,
+        schema=0,
+        zero_count_int=big,
+        positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+        positive_deltas=[big],
+        timestamp=1704067228000,
+    )
+    send(
+        make_write_request(
+            {"__name__": "test_hist_2_53_plus_1"}, [histogram, histogram2]
+        )
+    )
+
+    assert node.query(
+        "SELECT count_int, zero_count_int, positive_values_int"
+        " FROM timeSeriesHistograms(prometheus) ORDER BY timestamp"
+    ) == TSV(
+        [
+            [str(big), "1", f"[{big - 1}]"],
+            [str(2 * big), str(big), f"[{big}]"],
+        ]
+    )
+
+
+# Valid custom-bucket payloads are accepted: their spans stay within the declared bounds
+# (one past the last bound is allowed, its upper limit is +Inf).
+def test_nhcb_accepted():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
+    )
+    send(
+        make_write_request(
+            {"__name__": "test_hist_nhcb_bounds"},
+            [
+                types_pb2.Histogram(
+                    count_int=4,
+                    sum=2.0,
+                    schema=-53,
+                    positive_spans=[types_pb2.BucketSpan(offset=0, length=3)],
+                    positive_deltas=[2, 1, 0],  # decoded to absolute values [2, 3, 3]
+                    custom_values=[
+                        0.5,
+                        1.0,
+                    ],  # buckets 0..1 bounded, bucket 2 unbounded (+Inf)
+                    timestamp=1704067227000,
+                )
+            ],
+        )
+    )
+
+    assert node.query("SELECT count FROM timeSeriesHistograms(prometheus)") == TSV(
+        [["4"]]
     )
 
 
@@ -444,7 +704,9 @@ def test_http_json_coarse_schema():
         negative_deltas=[1, 1],  # bucket indexes 1, 2: [-4, -1) and [-16, -4)
         timestamp=1704067201000,
     )
-    send(make_write_request({"__name__": "test_hist_coarse", "job": "test"}, [histogram]))
+    send(
+        make_write_request({"__name__": "test_hist_coarse", "job": "test"}, [histogram])
+    )
 
     data = execute_query_via_http_api(
         node.ip_address, 9093, "/api/v1/query", "test_hist_coarse", timestamp=1704067201
@@ -471,8 +733,8 @@ def test_http_json_coarse_schema():
     }
 
 
-# The HTTP JSON rendering of an NHCB (schema -53) histogram: the first bucket's lower bound is
-# -Inf, so it uses boundary rule 3; the rest use rule 0.
+# The HTTP JSON rendering of an NHCB (schema -53) histogram: every custom bucket uses boundary
+# rule 0, including the first one, whose lower bound is -Inf.
 def test_http_json_nhcb():
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
@@ -504,7 +766,7 @@ def test_http_json_nhcb():
                         "count": "3",
                         "sum": "4.5",
                         "buckets": [
-                            [3, "-Inf", "1", "2"],
+                            [0, "-Inf", "1", "2"],
                             [0, "1", "2.5", "1"],
                         ],
                     },
@@ -522,7 +784,11 @@ def test_http_query_range_stale_only_series():
         "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
     )
     stale = types_pb2.Histogram(sum=STALE_NAN, timestamp=1704067203000)
-    send(make_write_request({"__name__": "test_hist_stale_range", "job": "test"}, [stale]))
+    send(
+        make_write_request(
+            {"__name__": "test_hist_stale_range", "job": "test"}, [stale]
+        )
+    )
 
     data = execute_range_query_via_http_api(
         node.ip_address,

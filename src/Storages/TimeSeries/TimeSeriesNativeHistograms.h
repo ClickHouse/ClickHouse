@@ -12,13 +12,13 @@ namespace DB
 {
 
 class IColumn;
+class ColumnTuple;
 
 /// Bit layout of the `flags` column of the "histograms" target table.
 namespace TimeSeriesHistogramFlags
 {
     constexpr UInt8 IsFloat = 0x01;
     constexpr UInt8 CounterResetHintShift = 1;
-    constexpr UInt8 CounterResetHintMask = 0x06;  /// prometheus::Histogram::ResetHint (UNKNOWN/YES/NO/GAUGE) << 1
     /// 0x08 is reserved (was a gauge bit, dropped as redundant with reset hint == GAUGE).
     constexpr UInt8 StaleMarker = 0x10;
 }
@@ -39,7 +39,18 @@ namespace TimeSeriesHistogramsTupleIndex
     constexpr size_t NegativeSpans = 9;
     constexpr size_t NegativeValues = 10;
     constexpr size_t CustomValues = 11;
-    constexpr size_t Size = 12;
+
+    /// Exact carriers of the counts of an integer-flavor histogram (see TimeSeriesColumnNames):
+    /// `Float64` represents integers only up to 2^53 exactly, so when the `flags` bit 0 is clear
+    /// (an integer histogram) its count, zero count and decoded bucket counts are also stored here,
+    /// verbatim, which makes such a histogram round-trip losslessly. The corresponding Float64
+    /// columns stay populated with rounded copies, so readers unaware of these elements keep working.
+    /// Always zero/empty for float-flavor histograms.
+    constexpr size_t CountInt = 12;
+    constexpr size_t ZeroCountInt = 13;
+    constexpr size_t PositiveValuesInt = 14;
+    constexpr size_t NegativeValuesInt = 15;
+    constexpr size_t Size = 16;
 }
 
 /// Indexes of the elements of the histogram payload tuple, see `getTimeSeriesHistogramPayloadTupleType`.
@@ -57,7 +68,12 @@ namespace TimeSeriesHistogramPayloadTupleIndex
     constexpr size_t NegativeSpans = 8;
     constexpr size_t NegativeValues = 9;
     constexpr size_t CustomValues = 10;
-    constexpr size_t Size = 11;
+    /// The exact integer carriers, see the same names in TimeSeriesHistogramsTupleIndex.
+    constexpr size_t CountInt = 11;
+    constexpr size_t ZeroCountInt = 12;
+    constexpr size_t PositiveValuesInt = 13;
+    constexpr size_t NegativeValuesInt = 14;
+    constexpr size_t Size = 15;
 }
 
 /// Type of the `positive_spans` and `negative_spans` columns: Array(Tuple(offset Int32, length UInt32)).
@@ -67,11 +83,11 @@ DataTypePtr getTimeSeriesHistogramSpansType();
 /// in the order they appear both in the table and in the outer column's tuple.
 NamesAndTypes getTimeSeriesHistogramPayloadColumns();
 
-/// The payload of one histogram sample as a tuple: Tuple(<the 11 payload columns>). Single source of truth for the payload layout:
+/// The payload of one histogram sample as a tuple: Tuple(<the 15 payload columns>). Single source of truth for the payload layout:
 /// `getTimeSeriesHistogramsOuterColumnType` builds on it, and the `timeSeriesHistogram*` aggregates take and return this exact tuple type.
 DataTypePtr getTimeSeriesHistogramPayloadTupleType();
 
-/// One histogram sample with its timestamp as a tuple: Tuple(timestamp, <the 11 payload columns>).
+/// One histogram sample with its timestamp as a tuple: Tuple(timestamp, <the 15 payload columns>).
 /// The element type of the array returned by `getTimeSeriesHistogramsOuterColumnType`.
 DataTypePtr getTimeSeriesHistogramTupleType(const DataTypePtr & timestamp_type);
 
@@ -79,11 +95,11 @@ DataTypePtr getTimeSeriesHistogramTupleType(const DataTypePtr & timestamp_type);
 /// Array(Tuple(timestamp, <payload columns>)), one tuple per histogram sample.
 DataTypePtr getTimeSeriesHistogramsOuterColumnType(const DataTypePtr & timestamp_type);
 
-/// True if `type` (after removing Nullable) is a Tuple with explicit element names containing all 11 payload elements
+/// True if `type` (after removing Nullable) is a Tuple with explicit element names containing all 15 payload elements
 /// of `getTimeSeriesHistogramPayloadTupleType`, at any positions, with equal types; tolerant of extra appended elements.
 bool isTimeSeriesHistogramTupleType(const DataTypePtr & type);
 
-/// True if `type` (after removing Nullable) is a Tuple whose 11 elements have exactly the types of `getTimeSeriesHistogramPayloadTupleType`, position by position, regardless of names.
+/// True if `type` (after removing Nullable) is a Tuple whose 15 elements have exactly the types of `getTimeSeriesHistogramPayloadTupleType`, position by position, regardless of names.
 /// Used to validate the aggregate argument: `tuple(...)` yields unnamed elements, but the payload is decoded positionally, so name-blind equality is the right check.
 bool isTimeSeriesHistogramPayloadTupleType(const DataTypePtr & type);
 
@@ -240,29 +256,29 @@ inline Float64 getHistogramBoundExponential(Int64 idx, Int32 schema)
         0.9892280131939752, 0.9919100824251095, 0.9945994234836328, 0.9972960560854698,
     };
 
-        /// Ported from `getBoundExponential` in Prometheus: the last bucket before the overflow bucket (+-Inf observations) has bound MaxFloat64,
-        /// since the plain formula would produce the non-representable 2^1024 there, while the overflow bucket's own bound comes out as +Inf.
-        if (schema < 0)
-        {
-            /// Go computes the exponent in 64-bit; mirror that — a 32-bit shift would be UB for absurd bucket indexes from corrupt spans.
-            /// `std::ldexp` takes an int exponent, so saturate out-of-int-range exponents like Go's `math.Ldexp`.
-            const Int64 exp = idx << (-schema);
-            if (exp == 1024)
-                return std::numeric_limits<Float64>::max();
-            if (exp > 1100)
-                return std::numeric_limits<Float64>::infinity();
-            if (exp < -1100)
-                return 0.0;
-            return std::ldexp(1.0, static_cast<int>(exp));
-        }
-
-        const Int64 frac_idx = idx & ((Int64{1} << schema) - 1);
-        const Float64 frac = EXPONENTIAL_BOUNDS[(Int64{1} << schema) - 1 + frac_idx];
-        const Int64 exp = (idx >> schema) + 1;
-        if (frac == 0.5 && exp == 1025)
+    /// Ported from `getBoundExponential` in Prometheus: the last bucket before the overflow bucket (+-Inf observations) has bound MaxFloat64,
+    /// since the plain formula would produce the non-representable 2^1024 there, while the overflow bucket's own bound comes out as +Inf.
+    if (schema < 0)
+    {
+        /// Go computes the exponent in 64-bit; mirror that — a 32-bit shift would be UB for absurd bucket indexes from corrupt spans.
+        /// `std::ldexp` takes an int exponent, so saturate out-of-int-range exponents like Go's `math.Ldexp`.
+        const Int64 exp = idx << (-schema);
+        if (exp == 1024)
             return std::numeric_limits<Float64>::max();
-        return std::ldexp(frac, static_cast<int>(exp));
- }
+        if (exp > 1100)
+            return std::numeric_limits<Float64>::infinity();
+        if (exp < -1100)
+            return 0.0;
+        return std::ldexp(1.0, static_cast<int>(exp));
+    }
+
+    const Int64 frac_idx = idx & ((Int64{1} << schema) - 1);
+    const Float64 frac = EXPONENTIAL_BOUNDS[(Int64{1} << schema) - 1 + frac_idx];
+    const Int64 exp = (idx >> schema) + 1;
+    if (frac == 0.5 && exp == 1025)
+        return std::numeric_limits<Float64>::max();
+    return std::ldexp(frac, static_cast<int>(exp));
+}
 
 /// One span of a native histogram, matching the `positive_spans`/`negative_spans` payload columns (Array(Tuple(offset Int32, length UInt32)), see `getTimeSeriesHistogramSpansType`):
 /// the first span's offset is its first bucket's index; a later span's offset is the gap to the previous span (its first bucket follows after `offset` + 1 indices).
@@ -284,5 +300,11 @@ struct HistogramBucket
 /// Expands one direction (positive or negative) of one histogram sample into (index, count) pairs in ascending index order,
 /// porting the span walk of `floatBucketIterator` in Prometheus model/histogram/float_histogram.go; `idx` is Int64 because offsets can be negative.
 std::vector<HistogramBucket> expandHistogramSpans(const IColumn & spans_column, const IColumn & values_column, size_t row);
+
+/// Checks the invariants later readers rely on for one sample of the outer `histograms` column:
+/// a known schema and flags, non-negative counts, spans that cover exactly the bucket values, and
+/// custom bucket bounds covering the bucket indexes the spans reach. Throws INCORRECT_DATA
+/// otherwise. `tuple` is indexed by TimeSeriesHistogramsTupleIndex.
+void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row);
 
 }
