@@ -25,6 +25,7 @@
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -113,11 +114,19 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
-    format_settings.avro.schema_registry_timeouts.connection_timeout = settings[Setting::format_avro_schema_registry_connection_timeout];
-    format_settings.avro.schema_registry_timeouts.send_timeout = settings[Setting::format_avro_schema_registry_send_timeout];
-    format_settings.avro.schema_registry_timeouts.receive_timeout = settings[Setting::format_avro_schema_registry_receive_timeout];
-    format_settings.avro.schema_registry_retry.max_retries = settings[Setting::format_avro_schema_registry_max_retries];
-    format_settings.avro.schema_registry_retry.initial_backoff_ms = settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms];
+    /// `doSettingsSanityCheckClamp` bounds these at apply time, but it does not run for
+    /// `ApplicationType::CLIENT`, which builds format settings of its own for every statement and
+    /// reaches the registry when it parses `INSERT ... FROM INFILE`. Clamp here to cover it too.
+    format_settings.avro.schema_registry_timeouts.connection_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_connection_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_timeouts.send_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_send_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_timeouts.receive_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_receive_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_retry.max_retries
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_max_retries], MAX_SCHEMA_REGISTRY_RETRIES);
+    format_settings.avro.schema_registry_retry.initial_backoff_ms
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms], MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS);
     format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
     format_settings.avro.output_confluent_subject = settings[Setting::output_format_avro_confluent_subject].toString();
@@ -149,6 +158,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.hive_text.collection_items_delimiter = settings[Setting::input_format_hive_text_collection_items_delimiter];
     format_settings.hive_text.map_keys_delimiter = settings[Setting::input_format_hive_text_map_keys_delimiter];
     format_settings.hive_text.allow_variable_number_of_columns = settings[Setting::input_format_hive_text_allow_variable_number_of_columns];
+    format_settings.hive_text.rows_delimiter = settings[Setting::format_hive_text_rows_delimiter];
     format_settings.custom.escaping_rule = settings[Setting::format_custom_escaping_rule];
     format_settings.custom.field_delimiter = settings[Setting::format_custom_field_delimiter];
     format_settings.custom.result_after_delimiter = settings[Setting::format_custom_result_after_delimiter];
@@ -172,6 +182,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
     format_settings.input_allow_errors_num = settings[Setting::input_format_allow_errors_num];
     format_settings.input_allow_errors_ratio = settings[Setting::input_format_allow_errors_ratio];
+    format_settings.json_max_string_column_growth_step = settings[Setting::input_format_json_max_string_column_growth_step];
     format_settings.json.max_depth = settings[Setting::input_format_json_max_depth];
     format_settings.json.array_of_rows = settings[Setting::output_format_json_array_of_rows];
     format_settings.json.escape_forward_slashes = settings[Setting::output_format_json_escape_forward_slashes];
@@ -202,6 +213,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
@@ -210,6 +222,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
     format_settings.json.read_map_as_array_of_tuples = settings[Setting::input_format_json_map_as_array_of_tuples];
     format_settings.json.json_type_escape_dots_in_keys = settings[Setting::json_type_escape_dots_in_keys];
+    format_settings.json.max_row_size_for_json_each_row = settings[Setting::input_format_json_max_object_size];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -225,6 +238,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
     format_settings.parquet.dictionary_filter_push_down = settings[Setting::input_format_parquet_dictionary_filter_push_down];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
+    format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
@@ -234,6 +248,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
+    format_settings.parquet.output_wide_integer_as_decimal = settings[Setting::output_format_parquet_wide_integer_as_decimal];
     format_settings.parquet.output_datetime_as_uint32 = settings[Setting::output_format_parquet_datetime_as_uint32];
     format_settings.parquet.output_date_as_uint16 = settings[Setting::output_format_parquet_date_as_uint16];
     format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];
@@ -343,8 +358,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
     format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
-    format_settings.arrow.input_use_native_reader = settings[Setting::input_format_arrow_use_native_reader];
-    format_settings.arrow.output_use_native_writer = settings[Setting::output_format_arrow_use_native_writer];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -410,6 +423,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.image.width = settings[Setting::output_format_image_width];
     format_settings.image.height = settings[Setting::output_format_image_height];
     format_settings.image.terminal_mode = settings[Setting::output_format_image_terminal_mode];
+    format_settings.image.time_multiplier_seconds = settings[Setting::output_format_image_time_multiplier_seconds];
+    format_settings.image.time_divisor_seconds = settings[Setting::output_format_image_time_divisor_seconds];
+    format_settings.image.streaming_animation = settings[Setting::output_format_image_streaming_animation];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
@@ -425,40 +441,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         const Poco::URI & avro_schema_registry_url = settings[Setting::format_avro_schema_registry_url];
         if (!avro_schema_registry_url.empty())
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
-    }
-
-    /// Schema Registry timeouts must be greater than 0 and less than 10 minutes (600 seconds).
-    {
-        static constexpr UInt64 max_seconds = 600;
-        auto check_timeout = [](UInt64 value, const char * name)
-        {
-            if (value == 0 || value >= max_seconds)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting '{}' must be greater than 0 and less than {} seconds (10 minutes), got {}",
-                    name, max_seconds, value);
-        };
-        const auto & timeouts = format_settings.avro.schema_registry_timeouts;
-        check_timeout(timeouts.connection_timeout, "format_avro_schema_registry_connection_timeout");
-        check_timeout(timeouts.send_timeout, "format_avro_schema_registry_send_timeout");
-        check_timeout(timeouts.receive_timeout, "format_avro_schema_registry_receive_timeout");
-    }
-
-    /// Schema Registry retry policy: bound retries and backoff.
-    {
-        static constexpr UInt64 max_retries_limit = 20;
-        static constexpr UInt64 max_initial_backoff_ms = 60000;
-        const auto & retry = format_settings.avro.schema_registry_retry;
-        if (retry.max_retries > max_retries_limit)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_max_retries' must be between 0 and {}, got {}",
-                max_retries_limit, retry.max_retries);
-        if (retry.initial_backoff_ms == 0 || retry.initial_backoff_ms > max_initial_backoff_ms)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_retry_initial_backoff_ms' must be greater than 0 and less than or equal to {}, got {}",
-                max_initial_backoff_ms, retry.initial_backoff_ms);
     }
 
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
@@ -1118,6 +1100,22 @@ void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
     target = false;
 }
 
+void FormatFactory::markOutputFormatMayProduceRawBytes(const String & name)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as producing raw bytes", name);
+    target = true;
+}
+
+void FormatFactory::registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Raw bytes checker for format {} is already registered", name);
+    target = std::move(checker);
+}
+
 void FormatFactory::setContentType(const String & name, const String & content_type)
 {
     getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
@@ -1208,6 +1206,14 @@ bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
 {
     const auto & target = getCreators(name);
     return target.is_tty_friendly;
+}
+
+bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const
+{
+    const auto & target = getCreators(name);
+    if (target.may_produce_raw_bytes)
+        return true;
+    return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings, header);
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const

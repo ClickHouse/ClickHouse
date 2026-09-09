@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
@@ -15,6 +16,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
 
 #include <Parsers/IAST.h>
@@ -53,6 +55,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int ILLEGAL_COLUMN;
 }
 
 DataTypeObject::DataTypeObject(
@@ -106,11 +109,37 @@ DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_f
 void DataTypeObject::insertDefaultInto(IColumn & column) const
 {
     auto & column_object = assert_cast<ColumnObject &>(column);
-    for (auto & [path, typed_column] : column_object.getTypedPaths())
-        typed_paths.at(path)->insertDefaultInto(*typed_column);
-    for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
-        dynamic_column->insertDefault();
-    column_object.getSharedDataColumn().insertDefault();
+    /// Exception-safe: if some sub-column's insert throws (e.g. on a memory limit),
+    /// roll back the sub-columns that were already advanced, otherwise the object is
+    /// left with sub-columns of different sizes and popBack would over-pop the shorter ones.
+    size_t prev_size = column_object.size();
+    try
+    {
+        for (auto & [path, typed_column] : column_object.getTypedPaths())
+            typed_paths.at(path)->insertDefaultInto(*typed_column);
+        for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+            dynamic_column->insertDefault();
+        column_object.getSharedDataColumn().insertDefault();
+    }
+    catch (...)
+    {
+        for (auto & [_, typed_column] : column_object.getTypedPaths())
+            if (typed_column->size() > prev_size)
+                typed_column->popBack(typed_column->size() - prev_size);
+        for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+            if (dynamic_column->size() > prev_size)
+                dynamic_column->popBack(dynamic_column->size() - prev_size);
+        auto & shared_data = column_object.getSharedDataColumn();
+        if (shared_data.size() > prev_size)
+            shared_data.popBack(shared_data.size() - prev_size);
+        throw;
+    }
+}
+
+bool DataTypeObject::isDefaultInsertTrivial() const
+{
+    return std::all_of(typed_paths.begin(), typed_paths.end(),
+        [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
 }
 
 bool DataTypeObject::equals(const IDataType & rhs) const
@@ -494,20 +523,23 @@ ColumnPtr extractSubObjectColumn(const ColumnObject & object_column, const Strin
 
 /// Merges literal and sub-object columns into a single Dynamic column.
 /// Prefers the literal value if present; falls back to the sub-object cast to Dynamic; otherwise NULL.
+/// When skip_null_typed_paths is true, typed paths with NULL values are not considered present,
+/// so a sub-object whose only typed descendants are all NULL is treated as empty.
 ColumnPtr extractCombinedColumn(
     const ColumnObject & object_column,
     const String & path,
     const String & prefix,
     const DataTypePtr & sub_object_type,
     const DataTypePtr & dynamic_result_type,
-    size_t max_dynamic_types)
+    size_t max_dynamic_types,
+    bool skip_null_typed_paths = false)
 {
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
     /// If sub-object contains only empty objects, just use literal.
     const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
-    if (!sub_object_typed_column->hasNonEmptyRows())
+    if (!sub_object_typed_column->hasNonEmptyRows(skip_null_typed_paths))
         return literal_column;
 
     /// Cast sub-object to Dynamic.
@@ -520,7 +552,7 @@ ColumnPtr extractCombinedColumn(
     {
         if (!literal_column->isDefaultAt(i))
             merged->insertFrom(*literal_column, i);
-        else if (!sub_object_typed_column->isEmptyAt(i))
+        else if (!sub_object_typed_column->isEmptyAt(i, skip_null_typed_paths))
             merged->insertFrom(*casted_sub_object, i);
         else
             merged->insertDefault();
@@ -675,9 +707,15 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// as a static subcolumn, then tried to resolve the remaining ":`Array(JSON)`.x" via the typed path's
     /// type chain, which eventually called this method. We return nullptr here so that the resolution falls
     /// through to the outer DataTypeObject::getDynamicSubcolumnData with the full subcolumn name, where
-    /// the type hint can be properly detected and stripped.
+    /// the type hint can be properly detected and stripped. That prefix-match probe always passes
+    /// throw_if_null=false; in throw_if_null mode there is no outer attempt to fall through to, so the
+    /// name is unresolvable.
     if (subcolumn_name.starts_with(":`"))
+    {
+        if (throw_if_null)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
         return nullptr;
+    }
 
     /// Split requested subcolumn to the JSON path, type hint, and remaining subcolumn.
     auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
@@ -854,6 +892,39 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 DataTypePtr DataTypeObject::getDynamicType() const
 {
     return std::make_shared<DataTypeDynamic>(max_dynamic_types);
+}
+
+ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const ColumnPtr & column, bool skip_null_typed_paths) const
+{
+    const auto & object_column = assert_cast<const ColumnObject &>(*column);
+    const String prefix = path + ".";
+
+    /// Build sub-object type: collect typed paths that start with prefix.
+    std::unordered_map<String, DataTypePtr> typed_sub_paths;
+    for (const auto & [p, type] : typed_paths)
+    {
+        if (p.starts_with(prefix))
+            typed_sub_paths[p.substr(prefix.size())] = type;
+    }
+
+    auto sub_object_type = std::make_shared<DataTypeObject>(
+        schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip,
+        max_dynamic_paths, max_dynamic_types);
+    auto dynamic_result_type = getDynamicType();
+
+    return extractCombinedColumn(
+        object_column, path, prefix, sub_object_type,
+        dynamic_result_type, max_dynamic_types,
+        skip_null_typed_paths);
+}
+
+UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getTypedPathSerializations() const
+{
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> result;
+    result.reserve(typed_paths.size());
+    for (const auto & [path, type] : typed_paths)
+        result.emplace(path, type->getDefaultSerialization());
+    return result;
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
@@ -1766,7 +1837,7 @@ Let's investigate the content of the [GH Archive](https://www.gharchive.org/) da
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPaths(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 ```
 
 ```text title="Response"
@@ -1826,7 +1897,7 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPathsAndTypes(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
 
@@ -1962,6 +2033,8 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 With lazy type hints enabled, this query returns no rows, confirming the operation was metadata-only.
 
+This holds for the type-hint changes described above; see [Limitations](#lazy-type-hints-limitations) for the cases that are instead rejected.
+
 ### Materializing Type Hints {#materializing-type-hints}
 
 To materialize type hints in existing data, you can either:
@@ -1975,6 +2048,12 @@ To materialize type hints in existing data, you can either:
 - This feature is experimental and may change in future versions
 - Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
 - The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
+- Modifying a type hint (or removing a typed path) is **not** metadata-only, and is rejected, when the affected subcolumn is used in a positionally-persisted structure:
+  - the **primary/sorting key** or **partition key** — the change is forbidden, because the on-disk primary index / partition values cannot be rebuilt by a metadata-only `ALTER` (as with any other key column);
+  - an explicit **data skipping index** — drop the index first, or disable `allow_experimental_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
+  - a **projection whose sort key (`ORDER BY`) reads the subcolumn** — drop the projection first, because a metadata-only `ALTER` cannot rebuild the projection's primary index.
+
+  Adding hints for paths not used in any such structure, or changes that leave the on-disk type of the used subcolumns unchanged (e.g. adding an unrelated typed path), remain metadata-only.
 
 ## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
 
@@ -2164,6 +2243,9 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 The `JSONAllPaths(json_column)` expression produces an `Array(String)` containing all paths present in a JSON value.
 The skip index stores these path strings in its data structure (bloom filter or inverted index).
 When a query filters on `json.some.path`, the index checks whether the string `"some.path"` is present in the index for each granule and skips granules where it is absent.
+
+Only plain path access is matched against the index, optionally with a type hint or a cast (`json.a.b`, `json.a.b.:Int64`, `json.a.b::String`).
+Filters on the sub-object subcolumn (`json.^a`) and on the combined literal+sub-object subcolumn (``json.@`a``) do not use the index: these subcolumns are not `NULL` whenever any sub-path of `a` exists, so the presence of the path `a` itself in `JSONAllPaths` is not an equivalent condition.
 
 #### Safety with missing paths {#json-indexes-jsonallpaths-safety-with-missing-paths}
 

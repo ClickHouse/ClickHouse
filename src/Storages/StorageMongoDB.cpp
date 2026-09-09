@@ -49,6 +49,12 @@ using bsoncxx::to_json;
 namespace DB
 {
 
+MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
+{
+    static MongoDBInstanceHolder instance;
+    return instance;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -537,7 +543,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     const ConstantNode * limit = nullptr;
     const ConstantNode * offset = nullptr;
 
-    if (query_tree.hasLimit())
+    if (query_tree.hasLimit() && !query_tree.hasLimitAfter() && !query_tree.hasLimitUntil())
     {
         limit = query_tree.getLimit()->as<ConstantNode>();
         if (!limit)

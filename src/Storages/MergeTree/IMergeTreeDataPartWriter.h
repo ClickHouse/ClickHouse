@@ -88,10 +88,6 @@ protected:
     /// True if `column_name` uses the default codec (no `CODEC` clause, or an explicit lone `CODEC(Default)`).
     bool columnUsesDefaultCodec(const String & column_name) const;
 
-    /// Codec for a default-coded substream: adaptive when enabled and the type has a non-default codec, else `resolved_codec`.
-    CompressionCodecPtr
-    maybeAdaptiveDefaultCodec(bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const;
-
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
     const String data_part_name;
@@ -114,7 +110,9 @@ protected:
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
-using ColumnPositions = std::unordered_map<std::string, size_t>;
+/// The same map as `SharedPartColumns::NameToNumber`: the keys view into the column names of the
+/// data part's shared metadata bundle, which outlives the writer.
+using ColumnPositions = std::unordered_map<std::string_view, size_t>;
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,

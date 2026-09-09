@@ -229,7 +229,10 @@ class HtmlRunnerHooks:
 
             def add_dependees(job_name):
                 for dependee_job in workflow_config_parsed.workflow_yaml_config.jobs:
-                    if dependee_job.run_unless_cancelled:
+                    # GitHub still starts this job after a failed dependency, so
+                    # marking it DROPPED would overwrite a result it is about to
+                    # produce.
+                    if dependee_job.always_run:
                         continue
                     if job_name in dependee_job.needs and dependee_job.name not in dependees:
                         dependees.add(dependee_job.name)

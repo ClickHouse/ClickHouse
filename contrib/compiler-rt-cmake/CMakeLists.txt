@@ -11,6 +11,7 @@
 #   * clang_rt_tsan / tsan_cxx               — if SANITIZE = thread
 #   * clang_rt_ubsan_standalone / ubsan_standalone_cxx — if SANITIZE = undefined
 #   * clang_rt_xray                          — if ENABLE_XRAY
+#   * clang_rt_profile                       — if WITH_COVERAGE
 
 set(COMPILER_RT_DIR     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt")
 set(BUILTINS_SOURCE_DIR "${COMPILER_RT_DIR}/lib/builtins")
@@ -265,7 +266,9 @@ target_link_libraries(global-libs INTERFACE clang_rt_builtins)
 # common-helper sources, matching the upstream layout (libclang_rt.asan.a,
 # libclang_rt.msan.a, ...).
 
-if (NOT (SANITIZE OR ENABLE_XRAY))
+# $CACHE{}: contrib/CMakeLists.txt shadows WITH_COVERAGE to OFF in this scope,
+# so read the cache-level option instead.
+if (NOT (SANITIZE OR ENABLE_XRAY OR $CACHE{WITH_COVERAGE}))
     return()
 endif()
 
@@ -688,4 +691,44 @@ if (ENABLE_XRAY)
     set_target_properties(clang_rt_xray PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     _register_compiler_rt_target(clang_rt_xray)
+endif()
+
+#
+# ============================================================
+# 8. Profile (coverage instrumentation runtime)
+# ============================================================
+#
+# Source list mirrors PROFILE_SOURCES in
+# contrib/llvm-project/compiler-rt/lib/profile/CMakeLists.txt (the
+# non-baremetal, non-Windows branch). The COMPILER_RT_HAS_* defines replace
+# upstream's configure-time probes - all four hold on Linux.
+if ($CACHE{WITH_COVERAGE})
+    add_compiler_rt_runtime(profile
+        SOURCE_DIR "${COMPILER_RT_DIR}/lib/profile"
+        SOURCES
+            GCDAProfiling.c
+            InstrProfiling.c
+            InstrProfilingInternal.c
+            InstrProfilingBuffer.c
+            InstrProfilingFile.c
+            InstrProfilingMerge.c
+            InstrProfilingMergeFile.c
+            InstrProfilingNameVar.c
+            InstrProfilingVersionVar.c
+            InstrProfilingWriter.c
+            InstrProfilingPlatformAIX.c
+            InstrProfilingPlatformDarwin.c
+            InstrProfilingPlatformFuchsia.c
+            InstrProfilingPlatformLinux.c
+            InstrProfilingPlatformOther.c
+            InstrProfilingPlatformWindows.c
+            InstrProfilingRuntime.cpp
+            InstrProfilingUtil.c
+            InstrProfilingValue.c
+        DEFS
+            COMPILER_RT_HAS_ATOMICS=1
+            COMPILER_RT_HAS_FCNTL_LCK=1
+            COMPILER_RT_HAS_FLOCK=1
+            COMPILER_RT_HAS_UNAME=1
+    )
 endif()
