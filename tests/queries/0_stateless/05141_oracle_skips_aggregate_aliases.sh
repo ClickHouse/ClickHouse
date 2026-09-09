@@ -148,6 +148,16 @@ probe "anova" "anova(v, (v % 3)::UInt8), anova(v + 1, (v % 3)::UInt8), anova(v *
 # roughly half the time; `*OrNull` takes no extra argument and caught it in 7 of 8 runs.
 probe "min_byOrNull" "min_byOrNull(v, v), min_byOrNull(v + 1, v), min_byOrNull(v * 2, v)"
 
+# And one spelling that is neither the registered one nor all-lowercase. `STDDEV_POP` is
+# registered as a case-insensitive alias of `stddevPop`, which puts it in the case-sensitive
+# alias map under exactly `STDDEV_POP` and in the case-insensitive one under `stddev_pop`, so
+# only the second map can resolve `StdDev_Pop`. The backstop set does not contain
+# `stddev_pop` either (it names `stddevPop`, and `StdDev_Pop` lowercases to `stddev_pop`,
+# not to `stddevpop`), so nothing but the case-insensitive alias lookup can reject this
+# query. All the alias probes above use a spelling that resolves through the case-sensitive
+# map alone and would stay green if that lookup were dropped.
+probe "StdDev_Pop" "StdDev_Pop(v), StdDev_Pop(v + 1), StdDev_Pop(v * 2)"
+
 # Positive controls: an alias whose canonical name is safe must still be checked. Without
 # them every probe above would be satisfied just as well by a checker that rejected all
 # aliases outright. Retried until the counter moves, because a single mutation can
@@ -184,11 +194,13 @@ positive_control()
 
 # `BIT_AND` / `BIT_OR` / `BIT_XOR` are aliases of `groupBitAnd` / `groupBitOr` / `groupBitXor`,
 # which are associative and commutative over integers, are therefore absent from the backstop
-# set, and must stay checkable through their alias spelling too. One of them carries the same
-# `OrNull` combinator as the probe above so that probe cannot pass vacuously: it proves a query
-# whose aggregate is a combinator-suffixed alias spelling is checkable in principle, i.e. that
-# the zero delta there is the gate rejecting `argMin` and not the oracle declining the shape.
-positive_control "safe aliases" "BIT_AND(v), BIT_OROrNull(v), BIT_XOR(v)"
+# set, and must stay checkable through their alias spelling too. The spellings here carry the
+# two peculiarities of the last two probes - an `OrNull` combinator on top of the alias, and a
+# mixed-case spelling of a case-insensitive alias - so that neither probe can pass vacuously:
+# this proves both shapes are checkable in principle, i.e. that the zero delta on
+# `min_byOrNull` is the gate rejecting `argMin` and the one on `StdDev_Pop` is it rejecting
+# `stddevPop`, not the oracle declining those shapes.
+positive_control "safe aliases" "Bit_And(v), BIT_OROrNull(v), BIT_XOR(v)"
 
 # And one alias whose canonical name is a `quantile*`: `medianDeterministic` resolves to
 # `quantileDeterministic`, which is NOT on the backstop list because
