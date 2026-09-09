@@ -281,4 +281,71 @@ WHERE hasAnyTokens(t.j.k::String, ['alpha beta']) OR b.category = 'nonexistent' 
 SELECT id FROM t_115999_json WHERE hasAnyTokens(j.k::String, ['alpha beta']) ORDER BY id;
 
 DROP TABLE t_115999_json;
+
+-- An ALIAS column stands for the expression the index is defined on.
+SELECT 'an ALIAS column carrying the indexed expression';
+CREATE TABLE t_115999_alias
+(
+    id UInt64,
+    group_id UInt64,
+    s String,
+    lowered String ALIAS lower(s),
+    INDEX idx_lower_s (lower(s)) TYPE text(tokenizer = ngrams(3))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_alias VALUES (1, 1, 'HELLO world'), (2, 2, 'other text');
+
+SELECT a.id FROM t_115999_alias AS a INNER JOIN t_115999_side AS b ON a.group_id = b.group_id
+WHERE hasAnyTokens(a.lowered, ['ell']) OR b.category = 'nonexistent' ORDER BY a.id;
+SELECT id FROM t_115999_alias WHERE hasAnyTokens(lowered, ['ell']) ORDER BY id;
+
+DROP TABLE t_115999_alias;
+
+-- A lambda parameter is bound inside the haystack, so it does not stop the expression from resolving.
+SELECT 'a higher-order indexed expression above the JOIN';
+CREATE TABLE t_115999_lambda
+(
+    id UInt64,
+    group_id UInt64,
+    arr Array(String),
+    INDEX idx_arr (arrayFilter(x -> x != '', arr)) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_lambda VALUES (1, 1, ['alpha beta', '']), (2, 2, ['gamma delta']);
+
+SELECT l.id FROM t_115999_lambda AS l INNER JOIN t_115999_side AS b ON l.group_id = b.group_id
+WHERE hasAnyTokens(arrayFilter(x -> x != '', l.arr), ['alpha beta']) OR b.category = 'nonexistent'
+ORDER BY l.id;
+SELECT id FROM t_115999_lambda WHERE hasAnyTokens(arrayFilter(x -> x != '', arr), ['alpha beta']) ORDER BY id;
+
+DROP TABLE t_115999_lambda;
+
+-- Every branch of a UNION exposes the same indexed expression of the same table, so the tokenizer does
+-- not depend on which branch produced the row.
+SELECT 'a UNION ALL between the scan and the predicate';
+CREATE TABLE t_115999_union
+(
+    id UInt64,
+    tags Array(String),
+    INDEX idx_tags tags TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_union VALUES (1, ['alpha beta']), (2, ['gamma delta']);
+
+SELECT count() FROM
+(
+    SELECT tags FROM t_115999_union ORDER BY id LIMIT 10
+    UNION ALL
+    SELECT tags FROM t_115999_union ORDER BY id LIMIT 10
+)
+WHERE hasAnyTokens(tags, ['alpha beta']);
+SELECT count() FROM t_115999_union WHERE hasAnyTokens(tags, ['alpha beta']);
+
+DROP TABLE t_115999_union;
 DROP TABLE t_115999_side;

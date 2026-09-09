@@ -62,3 +62,12 @@ a Map element above the JOIN
 a JSON subcolumn above the JOIN
 1
 1
+an ALIAS column carrying the indexed expression
+1
+1
+a higher-order indexed expression above the JOIN
+1
+1
+a UNION ALL between the scan and the predicate
+2
+1
