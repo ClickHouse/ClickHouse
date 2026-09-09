@@ -25,6 +25,16 @@ struct AlterSettingsProfileElements;
 class SettingsProfileElements;
 
 
+/// Whether `allow_feature_tier` restricts anything at all. It usually does not, so this is checked before
+/// looking up which tier a setting belongs to.
+bool isAnyFeatureTierRestricted(const AccessControl & access_control);
+
+/// The one place that decides `allow_feature_tier`, for every kind of setting and every kind of statement.
+/// Returns the reason to refuse a change of `setting_name`, or nothing if its tier is allowed.
+std::optional<PreformattedMessage> getFeatureTierRestriction(
+    const AccessControl & access_control, std::string_view setting_name, SettingsTierType tier);
+
+
 /** Checks if specified changes of settings are allowed or not.
   * If the changes are not allowed (i.e. violates some constraints) this class throws an exception.
   * The constraints are set by editing the `users.xml` file.
@@ -172,13 +182,12 @@ private:
         SettingChange & change,
         ReactionOnViolation reaction,
         SettingSource source,
-        bool ignore_unchanged_settings = false) const;
+        bool ignore_unchanged_settings = false,
+        bool check_feature_tier = true) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
-    Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
-
-    bool isAnyTierRestricted() const;
+    Checker getChecker(const Settings & current_settings, std::string_view setting_name, bool check_feature_tier = true) const;
 
     /// A checker refusing the change if `allow_feature_tier` disables `tier`, nothing if it allows it.
     std::optional<Checker> getTierChecker(std::string_view setting_name, SettingsTierType tier) const;

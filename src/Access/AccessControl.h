@@ -137,6 +137,9 @@ public:
     /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
 
+    /// The profile every user gets, named by `default_profile` in the server configuration.
+    std::optional<UUID> getDefaultProfileId() const;
+
     /// Sets prefixes which should be used for custom settings.
     /// This function also enables custom prefixes to be used.
     void setCustomSettingsPrefixes(const Strings & prefixes);

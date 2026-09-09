@@ -13,6 +13,8 @@
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/SettingsProfilesCache.h>
+#include <Access/SettingsConstraints.h>
+#include <Access/resolveEffectiveSettings.h>
 #include <Access/User.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
@@ -566,6 +568,19 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
 
 bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
+    if (isAnyFeatureTierRestricted(*this))
+    {
+        PendingAccessEntities pending;
+        pending[id] = entity;
+        /// A replacement drops the entity that holds the name, which need not be `id`.
+        if (replace_if_exists)
+        {
+            if (auto existing_id = find(entity->getType(), entity->getName()); existing_id && *existing_id != id)
+                pending[*existing_id] = nullptr;
+        }
+        checkFeatureTierForPendingAccessEntities(*this, pending);
+    }
+
     if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
     {
         changes_notifier->sendNotifications();
@@ -576,6 +591,9 @@ bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, 
 
 bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
+    if (isAnyFeatureTierRestricted(*this))
+        checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, nullptr}});
+
     bool removed = MultipleAccessStorage::removeImpl(id, throw_if_not_exists);
     if (removed)
         changes_notifier->sendNotifications();
@@ -584,6 +602,14 @@ bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
 
 bool AccessControl::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
+    if (isAnyFeatureTierRestricted(*this))
+    {
+        /// The same update is applied here and by the storage below: it is a function of the stored
+        /// entity, so both get the same result.
+        if (auto old_entity = tryRead(id))
+            checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, update_func(old_entity, id)}});
+    }
+
     bool updated = MultipleAccessStorage::updateImpl(id, update_func, throw_if_not_exists);
     if (updated)
         changes_notifier->sendNotifications();
@@ -681,6 +707,11 @@ void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractCo
 void AccessControl::setDefaultProfileName(const String & default_profile_name)
 {
     settings_profiles_cache->setDefaultProfileName(default_profile_name);
+}
+
+std::optional<UUID> AccessControl::getDefaultProfileId() const
+{
+    return settings_profiles_cache->getDefaultProfileId();
 }
 
 

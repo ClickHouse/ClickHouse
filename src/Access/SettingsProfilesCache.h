@@ -31,6 +31,9 @@ public:
 
     std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
 
+    /// The profile every user gets, named by `default_profile` in the server configuration.
+    std::optional<UUID> getDefaultProfileId() const;
+
 private:
     void ensureAllProfilesRead();
     void profileAddedOrChanged(const UUID & profile_id, const SettingsProfilePtr & new_profile) TSA_REQUIRES(mutex);

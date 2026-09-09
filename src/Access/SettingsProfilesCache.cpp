@@ -2,6 +2,7 @@
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Access/resolveEffectiveSettings.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -197,43 +198,21 @@ void SettingsProfilesCache::substituteProfiles(
     std::vector<UUID> & substituted_profiles,
     std::unordered_map<UUID, String> & names_of_substituted_profiles) const
 {
-    profiles = elements.toProfileIDs();
-
-    /// We should substitute profiles in reversive order because the same profile can occur
-    /// in `elements` multiple times (with some other settings in between) and in this case
-    /// the last occurrence should override all the previous ones.
-    boost::container::flat_set<UUID> substituted_profiles_set;
-    size_t i = elements.size();
-    while (i != 0)
+    auto get_profile = [this](const UUID & profile_id) -> SettingsProfilePtr
     {
-        auto & element = elements[--i];
-        if (!element.parent_profile)
-            continue;
-
-        auto profile_id = *element.parent_profile;
-        element.parent_profile.reset();
-        if (substituted_profiles_set.count(profile_id))
-            continue;
-
-        auto profile_it = all_profiles.find(profile_id);
-        if (profile_it == all_profiles.end())
-            continue;
-
-        const auto & profile = profile_it->second;
-        const auto & profile_elements = profile->elements;
-        elements.insert(elements.begin() + i, profile_elements.begin(), profile_elements.end());
-        i += profile_elements.size();
-        substituted_profiles.push_back(profile_id);
-        substituted_profiles_set.insert(profile_id);
-        names_of_substituted_profiles.emplace(profile_id, profile->getName());
-    }
-    std::reverse(substituted_profiles.begin(), substituted_profiles.end());
-
-    std::erase_if(profiles, [&substituted_profiles_set](const UUID & profile_id)
-    {
-        return !substituted_profiles_set.contains(profile_id);
-    });
+        auto it = all_profiles.find(profile_id);
+        return it == all_profiles.end() ? nullptr : it->second;
+    };
+    DB::substituteProfiles(elements, get_profile, profiles, substituted_profiles, names_of_substituted_profiles);
 }
+
+
+std::optional<UUID> SettingsProfilesCache::getDefaultProfileId() const
+{
+    std::lock_guard lock{mutex};
+    return default_profile_id;
+}
+
 
 std::shared_ptr<const EnabledSettings> SettingsProfilesCache::getEnabledSettings(
     const UUID & user_id,
