@@ -9,7 +9,7 @@ too many result addresses: 20, while at most 10 are allowed
 Table engine 'PostgreSQL'
 too many result addresses: 20, while at most 10 are allowed
 Table engine 'MaterializedPostgreSQL'
-too many result addresses: 20, while at most 10 are allowed
+too many result addresses: 2000, while at most 1000 are allowed
 Database engine 'MySQL'
 too many result addresses: 20, while at most 10 are allowed
 Database engine 'PostgreSQL'

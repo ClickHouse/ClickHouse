@@ -27,8 +27,12 @@ $CLICKHOUSE_CLIENT --glob_expansion_max_elements 10 --query "CREATE TABLE ${CLIC
     | grep -oF -e "Table engine 'PostgreSQL'" -e "too many result addresses: 20, while at most 10 are allowed" \
     | head -n 2
 
-$CLICKHOUSE_CLIENT --glob_expansion_max_elements 10 --allow_experimental_materialized_postgresql_table 1 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.materialized_postgres_glob (x UInt8) ENGINE = MaterializedPostgreSQL('127.0.0.{1..20}:5432', 'db', 'tbl', 'u', 'p') ORDER BY x" 2>&1 \
-    | grep -oF -e "Table engine 'MaterializedPostgreSQL'" -e "too many result addresses: 20, while at most 10 are allowed" \
+# `registerStorageMaterializedPostgreSQL` builds the configuration from the global context, so the
+# session value of `glob_expansion_max_elements` does not reach it: overflow the default limit
+# instead. Below 1000 addresses this engine reports that it needs a single `host:port` and the
+# expansion never reaches the limit.
+$CLICKHOUSE_CLIENT --allow_experimental_materialized_postgresql_table 1 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.materialized_postgres_glob (x UInt8) ENGINE = MaterializedPostgreSQL('127.0.0.{1..2000}:5432', 'db', 'tbl', 'u', 'p') ORDER BY x" 2>&1 \
+    | grep -oF -e "Table engine 'MaterializedPostgreSQL'" -e "too many result addresses: 2000, while at most 1000 are allowed" \
     | head -n 2
 
 # The database engines share the same configuration helpers, and they too expand the address
