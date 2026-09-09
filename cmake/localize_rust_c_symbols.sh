@@ -23,7 +23,13 @@
 # archives, so they resolve from our implementations at link time anyway and
 # need no localization here.
 #
-# Usage: localize_rust_c_symbols.sh <library.a> <ar> <objcopy> <nm> <ref>...
+# Usage: localize_rust_c_symbols.sh <input.a> <output.a> <ar> <objcopy> <nm> <ref>...
+#
+# The input archive is never modified: the localized archive is written to
+# <output.a>, so the step is an ordinary input -> output build rule that the
+# build system re-runs only when an input changed.  The output is written to a
+# temporary file and renamed into place, so a failed run never leaves a
+# half-written <output.a> that looks up to date.
 #
 # <ref>... are the reference libraries whose defined symbols determine what to
 # localize: libllvmlibc and clang_rt_builtins (ClickHouse-built static archives)
@@ -40,16 +46,17 @@ set -eu
 # Keep sort and comm on the same portable bytewise ordering.
 export LC_ALL=C
 
-LIB_PATH="${1:-}"
-AR="${2:-}"
-OBJCOPY="${3:-}"
-NM="${4:-}"
+IN_PATH="${1:-}"
+OUT_PATH="${2:-}"
+AR="${3:-}"
+OBJCOPY="${4:-}"
+NM="${5:-}"
 
-if [ -z "$LIB_PATH" ] || [ -z "$AR" ] || [ -z "$OBJCOPY" ] || [ -z "$NM" ]; then
-    echo "Usage: $0 <library.a> <ar> <objcopy> <nm> <ref>..." >&2
+if [ -z "$IN_PATH" ] || [ -z "$OUT_PATH" ] || [ -z "$AR" ] || [ -z "$OBJCOPY" ] || [ -z "$NM" ]; then
+    echo "Usage: $0 <input.a> <output.a> <ar> <objcopy> <nm> <ref>..." >&2
     exit 1
 fi
-shift 4
+shift 5
 
 if [ "$#" -eq 0 ]; then
     echo "Error: no reference libraries given; cannot decide which symbols to localize" >&2
@@ -57,18 +64,22 @@ if [ "$#" -eq 0 ]; then
 fi
 REF_LIBS=("$@")
 
-if [ ! -f "$LIB_PATH" ]; then
-    echo "Error: Rust library not found: $LIB_PATH" >&2
-    echo "If this is a workspace subcrate, set IMPORTED_LOCATION on the target" >&2
-    echo "before calling clickhouse_config_crate_flags()." >&2
+if [ ! -f "$IN_PATH" ]; then
+    echo "Error: Rust library not found: $IN_PATH" >&2
     exit 1
 fi
 
+if [ "$IN_PATH" -ef "$OUT_PATH" ]; then
+    echo "Error: input and output must be different files: $IN_PATH" >&2
+    exit 1
+fi
+
+TMP_OUT="$OUT_PATH.tmp"
 TMPFILE=$(mktemp)
 REF_SYMS=$(mktemp)
 LOCALIZE_FILE=$(mktemp)
 WORK_DIR=""
-cleanup() { rm -f "$TMPFILE" "$REF_SYMS" "$LOCALIZE_FILE"; [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"; true; }
+cleanup() { rm -f "$TMPFILE" "$REF_SYMS" "$LOCALIZE_FILE" "$TMP_OUT"; [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"; true; }
 trap cleanup EXIT
 
 # Print the names of all globally-defined symbols in a library.  Handles both
@@ -106,28 +117,34 @@ fi
 
 # Defined globals from the Rust archive.  A truly broken/missing archive
 # produces empty output and is caught below.
-defined_globals "$LIB_PATH" | sort -u > "$TMPFILE" || true
+defined_globals "$IN_PATH" | sort -u > "$TMPFILE" || true
 
 if [ ! -s "$TMPFILE" ]; then
-    echo "Error: $NM produced no symbols for $LIB_PATH; cannot localize Rust C symbols" >&2
+    echo "Error: $NM produced no symbols for $IN_PATH; cannot localize Rust C symbols" >&2
     exit 1
 fi
 
 # Localize the intersection: symbols the Rust archive defines that we also define.
 comm -12 "$TMPFILE" "$REF_SYMS" > "$LOCALIZE_FILE"
 
-if [ -s "$LOCALIZE_FILE" ]; then
-    # Try direct objcopy on the archive first (fast path).
-    # Some Rust archives contain non-ELF members (e.g. debug metadata objects)
-    # that cause llvm-objcopy to fail.  In that case, fall back to extracting
-    # individual members, processing only valid ELF objects, and repacking.
-    if ! "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$LIB_PATH" 2>/dev/null; then
-        WORK_DIR=$(mktemp -d)
+rm -f "$TMP_OUT"
+if [ ! -s "$LOCALIZE_FILE" ]; then
+    # Nothing to localize: the output is the input, unchanged.
+    cp "$IN_PATH" "$TMP_OUT"
+# Try direct objcopy on the archive first (fast path).
+# Some Rust archives contain non-ELF members (e.g. debug metadata objects)
+# that cause llvm-objcopy to fail.  In that case, fall back to extracting
+# individual members, processing only valid ELF objects, and repacking.
+elif ! "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$IN_PATH" "$TMP_OUT" 2>/dev/null; then
+    WORK_DIR=$(mktemp -d)
 
-        (cd "$WORK_DIR" && "$AR" x "$LIB_PATH")
-        for obj in "$WORK_DIR"/*.o; do
-            "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$obj" 2>/dev/null || true
-        done
-        "$AR" rcs "$LIB_PATH" "$WORK_DIR"/*.o
-    fi
+    (cd "$WORK_DIR" && "$AR" x "$IN_PATH")
+    for obj in "$WORK_DIR"/*.o; do
+        "$OBJCOPY" --localize-symbols="$LOCALIZE_FILE" "$obj" 2>/dev/null || true
+    done
+    # `ar r` adds to an existing archive, so make sure to start from scratch.
+    rm -f "$TMP_OUT"
+    "$AR" rcs "$TMP_OUT" "$WORK_DIR"/*.o
 fi
+
+mv -f "$TMP_OUT" "$OUT_PATH"
