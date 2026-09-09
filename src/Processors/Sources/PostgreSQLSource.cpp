@@ -19,6 +19,7 @@
 #include <base/range.h>
 #include <Common/logger_useful.h>
 
+#include <cerrno>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -329,7 +330,10 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     tx.reset();
 
     if (interrupt_fd >= 0)
-        ::close(interrupt_fd);
+    {
+        [[maybe_unused]] int err = ::close(interrupt_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 template
