@@ -21,14 +21,18 @@ namespace
 {
 
 /// Translated in both directions; a name added here is renamed going out and recognised coming back.
+/// These are the names Google's own migration guide maps.
 ///
-/// Only headers whose *values* also carry over belong here: a copy source is a path, a metadata
-/// directive is COPY or REPLACE, and custom metadata is the user's own bytes. A header the two
-/// clouds spell alike but populate differently needs a value mapping instead, and renaming it does
-/// harm -- see the storage class and server-side encryption below.
+/// The rename carries the value through untouched, which is right for a copy source, for COPY or
+/// REPLACE, and for the user's own metadata. It is only half the story for the storage class: the two
+/// clouds share no class name but STANDARD, so an S3 one renamed onto GCS answers 400
+/// InvalidStorageClass. Nothing can send a GCS class today either, because `GetStorageClassForName`
+/// knows only S3 names and maps the rest to NOT_SET. Making the setting work on GCS means passing the
+/// user's string through instead of the enum, which is a change of its own.
 constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
     {"x-amz-copy-source", "x-goog-copy-source"},
     {"x-amz-metadata-directive", "x-goog-metadata-directive"},
+    {"x-amz-storage-class", "x-goog-storage-class"},
 };
 
 /// Object metadata is a family rather than one name, so it is matched by prefix.

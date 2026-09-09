@@ -65,14 +65,8 @@ inline void setChecksumAlgorithm(R & request)
 };
 
 /// GCS spells these headers with an `x-goog-` prefix and silently ignores the `x-amz-` one, so a
-/// header left untranslated loses its meaning without any error. The list is closed, and holds only
-/// headers whose values carry over too. Two that deliberately stay out:
-///
-/// - storage class: the value sets share only STANDARD. `GetStorageClassForName` knows no GCS class,
-///   so a GCS one cannot reach the wire anyway, while renaming an S3 one turns a write GCS quietly
-///   ignores today into a hard 400 InvalidStorageClass.
-/// - server-side encryption: S3 uses `x-amz-server-side-encryption` plus a key id, GCS a single
-///   `x-goog-encryption-kms-key-name` with a different value.
+/// header left untranslated loses its meaning without any error. The list is closed: everything
+/// outside it has no GCS counterpart, or one of a different shape that a rename cannot produce.
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
 
 /// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
