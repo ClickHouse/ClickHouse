@@ -191,7 +191,7 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
 void WorkloadEntityDiskStorage::createDirectory(bool fsync)
 {
     std::error_code create_dir_error_code;
-    createDirectoriesAndSync(dir_path, fsync, create_dir_error_code);
+    createDirectoriesAndSync(dir_path, fsync, create_dir_error_code, global_context->getPath());
     if (!fs::exists(dir_path) || !fs::is_directory(dir_path) || create_dir_error_code)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
                         dir_path, create_dir_error_code.message());

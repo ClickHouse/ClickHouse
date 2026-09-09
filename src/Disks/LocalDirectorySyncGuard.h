@@ -55,10 +55,14 @@ private:
 /// persisted in its parent, and failure to persist one throws.
 /// A file's own fsync does not persist its directory entry, which is why the directory holding
 /// it is synced separately after any create, rename or remove inside it.
-void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec);
+/// `existing_root` is a directory `dir` lives under that no create reaching here makes (the
+/// server's data path). For a `dir` that was already there, its ancestors' entries are persisted
+/// down from `existing_root`; nothing above it is opened, and a root not containing `dir`
+/// persists `dir`'s own entry alone.
+void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec, const String & existing_root = {});
 
 /// Same, but reports a failure to create the directory by throwing instead of through `ec`.
-void createDirectoriesAndSync(const String & dir, bool fsync);
+void createDirectoriesAndSync(const String & dir, bool fsync, const String & existing_root = {});
 
 }
 

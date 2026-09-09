@@ -183,7 +183,7 @@ void UserDefinedSQLObjectsDiskStorage::reloadObject(UserDefinedSQLObjectType obj
 void UserDefinedSQLObjectsDiskStorage::createDirectory(bool fsync)
 {
     std::error_code create_dir_error_code;
-    createDirectoriesAndSync(dir_path, fsync, create_dir_error_code);
+    createDirectoriesAndSync(dir_path, fsync, create_dir_error_code, getContext()->getPath());
     if (!fs::exists(dir_path) || !fs::is_directory(dir_path) || create_dir_error_code)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
                         dir_path, create_dir_error_code.message());

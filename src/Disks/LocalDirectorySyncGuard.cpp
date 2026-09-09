@@ -157,14 +157,32 @@ void removeDirectories(const std::vector<fs::path> & dirs)
     }
 }
 
+/// `dir` and its ancestors down from `root`, deepest first. Just `dir` when `root` does not
+/// contain it: with no directory known to predate the store there is nothing to stop the walk.
+std::vector<fs::path> pathDownFrom(const fs::path & dir, const fs::path & root)
+{
+    std::vector<fs::path> result;
+    for (fs::path p = dir; p != p.parent_path(); p = p.parent_path())
+    {
+        result.push_back(p);
+        if (p.parent_path() == root)
+            return result;
+    }
+    return {dir};
 }
 
-void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec)
+}
+
+void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec, const String & existing_root)
 {
     /// Strip a trailing separator so parent_path() walks real components.
     fs::path normalized = dir;
     if (!normalized.has_filename())
         normalized = normalized.parent_path();
+
+    fs::path root = existing_root;
+    if (!root.empty() && !root.has_filename())
+        root = root.parent_path();
 
     if (!fsync)
     {
@@ -212,9 +230,13 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
 
         /// A directory that was already there may come from a write that ran with fsync_metadata
         /// disabled, so its entry was never persisted. Persist it here: an object committed inside
-        /// it is only as durable as the directory holding it.
+        /// it is only as durable as the directory holding it, and as the ones holding that.
         if (!created_leaf)
-            syncParentOf(normalized);
+        {
+            const auto chain = pathDownFrom(normalized, root);
+            for (auto it = chain.rbegin(); it != chain.rend(); ++it)
+                syncParentOf(*it);
+        }
     }
     catch (...)
     {
@@ -223,10 +245,10 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
     }
 }
 
-void createDirectoriesAndSync(const String & dir, bool fsync)
+void createDirectoriesAndSync(const String & dir, bool fsync, const String & existing_root)
 {
     std::error_code ec;
-    createDirectoriesAndSync(dir, fsync, ec);
+    createDirectoriesAndSync(dir, fsync, ec, existing_root);
     if (ec)
         throw fs::filesystem_error("Cannot create directory", dir, ec);
 }

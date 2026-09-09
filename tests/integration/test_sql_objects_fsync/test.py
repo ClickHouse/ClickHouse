@@ -309,10 +309,13 @@ def test_failed_store_directory_creation_is_rolled_back():
 def test_store_directory_of_an_unsynced_write_is_persisted_later():
     """
     A store directory created while fsync_metadata was disabled has an entry that was never
-    persisted. A later enabled write finds the directory present, so it used to sync only the
-    file it renames into it, and the object it acknowledged could still be lost together with
-    the directory holding it. An enabled write now persists the store directory's own entry as
-    well, whoever created it.
+    persisted, and so has every directory that write created above it. A later enabled write
+    finds them all present, so it used to sync only the file it renames into the store, and the
+    object it acknowledged could still be lost together with any of the directories holding it.
+    An enabled write now persists each of their entries, whoever created them.
+
+    The store is configured two levels down, so the count is what distinguishes persisting the
+    whole path from persisting only the store directory itself.
     """
     node.query("DROP RESOURCE IF EXISTS pd_disabled")
     node.query("DROP RESOURCE IF EXISTS pd_enabled")
@@ -322,12 +325,13 @@ def test_store_directory_of_an_unsynced_write_is_persisted_later():
     _, dir_sync = _run("CREATE RESOURCE pd_disabled (WRITE DISK pd_disabled_disk)", 0)
     assert dir_sync == 0, f"fsync_metadata=0 synced {dir_sync} directories"
 
-    # Nothing left to create, so the two syncs are the store directory's own entry and the
-    # rename committed inside it. Only the rename was synced before.
+    # Nothing left to create, so the four syncs are the entries of the three directories the
+    # disabled write made and the rename committed inside the deepest one. Two of them (only the
+    # store directory's entry and the rename) leave the directories above it unpersisted.
     _, dir_sync = _run("CREATE RESOURCE pd_enabled (WRITE DISK pd_enabled_disk)", 1)
-    assert dir_sync >= 2, (
-        f"only {dir_sync} directory syncs, so the store directory left unpersisted by the "
-        "disabled write was not persisted here either"
+    assert dir_sync >= 4, (
+        f"only {dir_sync} directory syncs, so the path left unpersisted by the disabled write "
+        "was not persisted here either"
     )
 
     node.query("DROP RESOURCE pd_enabled")

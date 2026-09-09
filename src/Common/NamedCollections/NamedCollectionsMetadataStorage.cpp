@@ -158,7 +158,7 @@ public:
 
         const bool fsync = getContext()->getSettingsRef()[Setting::fsync_metadata];
 
-        createDirectoriesAndSync(root_path, fsync);
+        createDirectoriesAndSync(root_path, fsync, getContext()->getPath());
 
         auto tmp_path = getPath(file_name + ".tmp");
         auto write_data = writeHook(data);
