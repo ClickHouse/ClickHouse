@@ -17,6 +17,8 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -29,6 +31,7 @@
 #include <Common/Exception.h>
 #include <Common/LoggingHelpers.h>
 #include <Common/QueryScope.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/SettingsChanges.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -63,9 +66,13 @@ namespace Setting
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsString log_comment;
     extern const SettingsBool log_queries;
+    extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
     extern const SettingsBool log_query_settings;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
 }
 
 namespace QueryRunnerSetting
@@ -500,7 +507,7 @@ private:
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `QueryRunner` engine does not support this query: {}", job.query);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `QueryRunner` engine does not support this query");
                 }
             }
             io.onFinish();
@@ -632,6 +639,27 @@ private:
 
         const auto event_time = std::chrono::system_clock::now();
 
+        const char * pos = job.query.data();
+        const char * end = pos + job.query.size();
+        ParserQuery parser(end, /*allow_settings_after_format_in_insert_*/ true, /*implicit_select_*/ true);
+        String parse_error;
+        const ASTPtr ast = tryParseQuery(
+            parser,
+            pos,
+            end,
+            parse_error,
+            /*hilite*/ false,
+            "",
+            /*allow_multi_statements*/ false,
+            settings[Setting::max_query_size],
+            settings[Setting::max_parser_depth],
+            settings[Setting::max_parser_backtracks],
+            /*skip_insignificant*/ true);
+        const UInt64 cut_to_length = settings[Setting::log_queries_cut_to_length];
+        const String query_for_logging = ast && ast->hasSecretParts()
+            ? ast->formatForLogging(cut_to_length)
+            : wipeSensitiveDataAndCutToLength(job.query, cut_to_length, true);
+
         query_log->add([&](QueryLogElement & element)
         {
             element.type = type;
@@ -640,7 +668,7 @@ private:
             element.query_start_time = timeInSeconds(query_start_time);
             element.query_start_time_microseconds = timeInMicroseconds(query_start_time);
             element.query_duration_ms = duration_ms;
-            element.query = job.query;
+            element.query = query_for_logging;
             element.current_database = job.database;
             element.log_comment = settings[Setting::log_comment];
             element.client_info = job_context->getClientInfo();
