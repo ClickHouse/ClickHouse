@@ -52,7 +52,8 @@
         "products/bring-your-own-cloud/reference/security-shared-responsibility",
         "products/bring-your-own-cloud/reference/faq",
         {
-          "group": "Connector Mode (Private Preview)",
+          "group": "Connector Mode",
+          "tag": "Preview",
           "pages": [
             "products/bring-your-own-cloud/connector/overview",
             "products/bring-your-own-cloud/connector/onboarding",
