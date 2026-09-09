@@ -163,8 +163,9 @@ String getLocationSchemeForTableCreation(const std::shared_ptr<DataLake::ICatalo
     if (auto storage_type = catalog->getStorageType(); storage_type.has_value())
         return DataLake::storageTypeToScheme(*storage_type);
 
-    /// Fall back only for catalogs whose backing storage is fixed.
-    /// REST/Hive/Glue/Paimon/Unity can be backed by anything, so we refuse to guess.
+    /// Fall back only for catalogs whose backing storage is fixed and which take a location from us.
+    /// REST/Hive/Glue/Paimon/Unity can be backed by anything, and S3 Tables assigns the location itself,
+    /// so we refuse to guess and ask for an explicit location instead.
     switch (catalog->getCatalogType())
     {
         case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
@@ -191,9 +192,10 @@ String getLocationSchemeForTableCreation(const std::shared_ptr<DataLake::ICatalo
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected catalog type in CREATE TABLE location scheme resolution");
 }
 
-/// The storage backend a catalog is pinned to when creating a table: what the catalog reports, or the
-/// backend `getLocationSchemeForTableCreation` falls back to for services whose storage is fixed.
-/// A `OneLake` catalog that does not expose `default-base-location` is still Azure-only.
+/// The storage backend a catalog is pinned to when creating a table: what the catalog reports, or, for
+/// services whose backing storage is fixed, the backend that service always uses - a `OneLake` catalog
+/// that does not expose `default-base-location` is still Azure-only. `nullopt` means the catalog reopens
+/// the table from a location of its own, so any backend fits.
 std::optional<DatabaseDataLakeStorageType> getFixedStorageTypeForTableCreation(const std::shared_ptr<DataLake::ICatalog> & catalog)
 {
     if (auto storage_type = catalog->getStorageType(); storage_type.has_value())
@@ -205,6 +207,8 @@ std::optional<DatabaseDataLakeStorageType> getFixedStorageTypeForTableCreation(c
             return DatabaseDataLakeStorageType::Azure;
         case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             return DatabaseDataLakeStorageType::S3; /// GCS via the S3 API
+        case DatabaseDataLakeCatalogType::S3_TABLES:
+            return DatabaseDataLakeStorageType::S3; /// S3 table buckets
         default:
             return {};
     }
