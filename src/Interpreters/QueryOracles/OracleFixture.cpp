@@ -1,6 +1,8 @@
 #include <Interpreters/QueryOracles/OracleFixture.h>
 
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Poco/String.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 
@@ -9,6 +11,12 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 readonly;
+    extern const SettingsBool allow_ddl;
+}
+
 namespace
 {
 /// Process-global sequence for collision-free fixture names (no Date/rand available here).
@@ -16,6 +24,13 @@ std::atomic<UInt64> fixture_sequence{0};
 
 bool environmentAllowsFixtures(const ContextMutablePtr & context)
 {
+    /// Read-only sessions (CLI `--readonly`, idempotent HTTP methods, a leaked `SET readonly`) and
+    /// sessions with `allow_ddl = 0` must never be used to create or drop scratch objects: these are
+    /// caller-owned access gates, so fail closed and let the fixture oracles skip.
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::readonly] != 0 || !settings[Setting::allow_ddl])
+        return false;
+
     const String db = context->getCurrentDatabase();
     if (db.empty() || db == "system" || db == "INFORMATION_SCHEMA" || db == "information_schema")
         return false;
@@ -62,13 +77,35 @@ std::string OracleFixture::allocName(std::string_view suffix)
         name += "_";
         name += suffix;
     }
-    created.push_back(name);
+    /// Only remembered here; `execute` moves it to `created` once a CREATE naming it succeeds.
+    allocated.push_back(name);
     return name;
 }
 
 bool OracleFixture::execute(const std::string & sql, const SettingsOverlay & overlay)
 {
-    return OracleExec::executeStatement(sql, base_context, overlay);
+    if (!OracleExec::executeStatement(sql, base_context, overlay))
+        return false;
+    armDropsForCreate(sql);
+    return true;
+}
+
+void OracleFixture::armDropsForCreate(const std::string & sql)
+{
+    /// Only a successful CREATE that names an allocated table makes this instance the owner of that
+    /// table. A bare allocation must not arm a DROP: after a server restart `fixture_sequence` starts
+    /// over, so a name can collide with a table `preserve()` intentionally left behind for triage,
+    /// and CREATE then fails with TABLE_ALREADY_EXISTS — the preserved table must survive that.
+    const size_t start = sql.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos || Poco::toUpper(sql.substr(start, 6)) != "CREATE")
+        return;
+    for (const auto & name : allocated)
+    {
+        if (armed.contains(name) || sql.find(name) == std::string::npos)
+            continue;
+        armed.insert(name);
+        created.push_back(name);
+    }
 }
 
 }

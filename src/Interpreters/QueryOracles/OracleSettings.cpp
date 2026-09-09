@@ -81,12 +81,13 @@ std::span<const PinnedSetting> oraclePinnedSettings()
         p.push_back({"max_final_threads", Field(UInt64(1)), "single-thread pin (see max_threads)"});
         p.push_back({"output_format_parallel_formatting", Field(false), "single-thread pin (see max_threads)"});
 
-        /// DDL enablement for OracleFixture: a seed's `SET readonly=1` denies fixture DDL from
-        /// the setting path (ContextAccess enforces readonly from the setting, not from the
-        /// internal query flag), and `SET implicit_transaction=1` wraps oracle statements in a
-        /// transaction under which DDL/unsupported kinds throw NOT_IMPLEMENTED. Either would
-        /// silently disable every fixture oracle fleet-wide, so both are pinned off.
-        p.push_back({"readonly", Field(UInt64(0)), "fixture DDL must not be denied by a leaked SET readonly"});
+        /// `SET implicit_transaction=1` would wrap oracle statements in a transaction under which
+        /// DDL / unsupported statement kinds throw NOT_IMPLEMENTED, silently disabling every fixture
+        /// oracle, so it is pinned off. `readonly` and `allow_ddl` are deliberately NOT pinned: they
+        /// are caller-owned access gates (CLI `--readonly`, idempotent HTTP methods, user profiles),
+        /// not leaked tuning knobs, and overriding them would let a read-only request create and drop
+        /// scratch objects. `OracleFixture` fails closed instead: it reports `valid() == false` when
+        /// the base context is read-only or DDL is disallowed, and the fixture oracles skip.
         p.push_back({"implicit_transaction", Field(false), "oracle statements must not run inside an implicit transaction (DDL throws)"});
 
         return p;

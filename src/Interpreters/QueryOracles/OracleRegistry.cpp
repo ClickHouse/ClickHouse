@@ -1,6 +1,7 @@
 #include <Interpreters/QueryOracles/OracleRegistry.h>
 
 #include <Interpreters/QueryOracleChecker.h>
+#include <Common/Exception.h>
 
 namespace ProfileEvents
 {
@@ -24,6 +25,11 @@ extern const Event ASTFuzzerOracleCodecRoundtripChecks;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int AST_FUZZER_ORACLE_MISMATCH;
+}
+
 namespace
 {
 
@@ -44,7 +50,19 @@ public:
 
     bool run(QueryOracleChecker & checker, const ASTSelectQuery & select, const ContextMutablePtr & context) const override
     {
-        const bool performed = (checker.*method)(select, context);
+        bool performed = false;
+        try
+        {
+            performed = (checker.*method)(select, context);
+        }
+        catch (const Exception & e)
+        {
+            /// A mismatch is raised only after a comparison was performed, so the per-oracle
+            /// counter must include it — otherwise exactly the interesting runs go uncounted.
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                ProfileEvents::increment(oracle_traits.event);
+            throw;
+        }
         if (performed)
             ProfileEvents::increment(oracle_traits.event);
         return performed;

@@ -21,6 +21,9 @@
 #include <Common/FieldVisitorToString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/IndicesDescription.h>
+#include <functional>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
@@ -2501,6 +2504,68 @@ bool QueryOracleChecker::checkPrewhereEquivalence(const ASTSelectQuery & select,
     return true;
 }
 
+namespace
+{
+
+/// True if `where` references a column that some secondary (skip) index of the table is built on;
+/// only then can `use_skip_indexes` change the read path.
+bool whereTouchesSkipIndexColumn(const ASTPtr & where, const IndicesDescription & indices)
+{
+    if (!where || indices.empty())
+        return false;
+    std::unordered_set<String> indexed;
+    for (const auto & index : indices)
+        for (const auto & column : index.column_names)
+            indexed.insert(column);
+    std::function<bool(const ASTPtr &)> walk = [&](const ASTPtr & node) -> bool
+    {
+        if (!node)
+            return false;
+        if (const auto * ident = node->as<ASTIdentifier>())
+            if (indexed.contains(ident->shortName()))
+                return true;
+        for (const auto & child : node->children)
+            if (walk(child))
+                return true;
+        return false;
+    };
+    return walk(where);
+}
+
+/// True if the subtree contains at least one function call (anything the expression JIT could compile).
+bool containsFunctionCall(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (ast->as<ASTFunction>())
+        return true;
+    for (const auto & child : ast->children)
+        if (containsFunctionCall(child))
+            return true;
+    return false;
+}
+
+/// True if the FROM clause has a JOIN or a subquery — the shapes where unused columns can arise.
+bool hasJoinOrSubquerySource(const ASTSelectQuery & select)
+{
+    if (!select.tables())
+        return false;
+    for (const auto & child : select.tables()->children)
+    {
+        const auto * elem = child->as<ASTTablesInSelectQueryElement>();
+        if (!elem)
+            continue;
+        if (elem->table_join)
+            return true;
+        if (const auto * te = elem->table_expression ? elem->table_expression->as<ASTTableExpression>() : nullptr)
+            if (te->subquery)
+                return true;
+    }
+    return false;
+}
+
+}
+
 bool QueryOracleChecker::checkSkipIndexEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context)
 {
     /// Skip (data-skipping) indexes only prune granules that cannot match; they must never change
@@ -2513,6 +2578,13 @@ bool QueryOracleChecker::checkSkipIndexEquivalence(const ASTSelectQuery & select
 
     auto storage = resolveSingleTableStorage(select, context);
     if (!storage || !storage->getName().ends_with("MergeTree"))
+        return false;
+
+    /// `use_skip_indexes` is only consulted when the table has a secondary index AND the predicate
+    /// touches an indexed column; otherwise both runs take the identical read path and the
+    /// comparison would be a no-op counted as a check.
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    if (!whereTouchesSkipIndexColumn(select.where(), metadata_snapshot->getSecondaryIndices()))
         return false;
 
     if (hasNonDeterministicFunctions(select.clone(), context))
@@ -2561,25 +2633,45 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
     /// never change the result, so a divergence is a real bug. Both sides run the same text, so the
     /// structural gates that protect AST rewrites do not apply — only determinism + read stability.
     /// Settings already covered by checkDQP are intentionally NOT repeated here.
-    static constexpr std::array<std::string_view, 10> flips = {
-        /// Caches / read-time optimizations.
-        "use_query_condition_cache",
-        "query_plan_optimize_lazy_materialization",
-        "query_plan_optimize_prewhere",
-        "read_in_order_use_virtual_row",
-        "optimize_distinct_in_order",
-        /// Expression / aggregate / sort JIT compilation — must be value-identical to interpretation.
-        "compile_expressions",
-        "compile_aggregate_expressions",
-        "compile_sort_description",
-        /// Plan-shape optimizations that keep the result set.
-        "query_plan_merge_filters",
-        "query_plan_remove_unused_columns",
-    };
-
+    /// Each flip is only consulted on a specific query shape; comparing 0 vs 1 on a query that never
+    /// reaches the toggled code path is a no-op that must not be counted as a check. Settings whose
+    /// code path needs an ORDER BY or LIMIT (`read_in_order_use_virtual_row`,
+    /// `query_plan_optimize_lazy_materialization`, `compile_sort_description`,
+    /// `optimize_sorting_by_input_stream_properties`) are excluded outright: `stripOrderAndLimit`
+    /// removes exactly the clauses they act on, so they could never be exercised here.
     if (!select.tables())
         return false;
     if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    const auto storage = resolveSingleTableStorage(select, context);
+    const bool merge_tree_scan = storage && storage->getName().ends_with("MergeTree");
+    const bool has_filter = select.where() || select.prewhere();
+    const bool has_aggregation = hasAggregates(select) || select.groupBy() || select.group_by_all;
+    const bool has_functions = containsFunctionCall(select.select()) || containsFunctionCall(select.where())
+        || containsFunctionCall(select.prewhere()) || containsFunctionCall(select.having());
+
+    std::vector<std::string_view> flips;
+    /// Caches / read-time optimizations: need a condition over a MergeTree read.
+    if (has_filter && merge_tree_scan)
+        flips.push_back("use_query_condition_cache");
+    /// PREWHERE optimization: needs a WHERE that could be moved, over a MergeTree read.
+    if (select.where() && merge_tree_scan)
+        flips.push_back("query_plan_optimize_prewhere");
+    /// DISTINCT-in-order: needs a DistinctStep over an ordered MergeTree read.
+    if (select.distinct && merge_tree_scan)
+        flips.push_back("optimize_distinct_in_order");
+    /// Expression / aggregate JIT: need something to compile.
+    if (has_functions)
+        flips.push_back("compile_expressions");
+    if (has_aggregation)
+        flips.push_back("compile_aggregate_expressions");
+    /// Plan-shape optimizations: need filters / unused-column producers respectively.
+    if (has_filter)
+        flips.push_back("query_plan_merge_filters");
+    if (hasJoinOrSubquerySource(select))
+        flips.push_back("query_plan_remove_unused_columns");
+    if (flips.empty())
         return false;
 
     const std::string_view flip = flips[thread_local_rng() % flips.size()];
