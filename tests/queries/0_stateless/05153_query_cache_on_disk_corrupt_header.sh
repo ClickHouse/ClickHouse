@@ -30,7 +30,7 @@ corrupt_header_field() # $1 = offset of the UInt64 field, $2 = the 8 replacement
 {
     find "${CACHE_DIR}" -type f -name '0_*' | while read -r file
     do
-        printf "$2" | dd of="${file}" bs=1 seek="$1" conv=notrunc status=none
+        printf '%b' "$2" | dd of="${file}" bs=1 seek="$1" conv=notrunc status=none
     done
 }
 
