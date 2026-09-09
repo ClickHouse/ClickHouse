@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <enable_materialized_cte>1</enable_materialized_cte>
+            <force_materialized_cte>0</force_materialized_cte>
+            <enable_lightweight_update>1</enable_lightweight_update>
+        </default>
+    </profiles>
+</clickhouse>

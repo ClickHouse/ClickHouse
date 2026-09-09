@@ -22,6 +22,7 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/RejectMaterializedCTEVisitor.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -450,6 +451,15 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
+    /// Before the query is enqueued for a Replicated database; the stored definition would inline the CTE.
+    if (modify_query && shouldRejectMaterializedCTE(getContext()))
+    {
+        RejectMaterializedCTEVisitor::Data data;
+        data.reason = "are not supported in a view definition";
+        ASTPtr select = modify_query->ptr();
+        RejectMaterializedCTEVisitor(data).visit(select);
+    }
 
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());

@@ -618,6 +618,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (settings[Setting::force_materialized_cte])
         {
             RejectMaterializedCTEVisitor::Data data;
+            data.reason = "require the analyzer, which is not used for this query";
             RejectMaterializedCTEVisitor(data).visit(query_ptr);
         }
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
