@@ -42,7 +42,9 @@ public:
         /// the opaque payload is the one the caller's settings ask for - `output_format_binary_write_json_as_string`
         /// changes the binary encoding of `JSON`, for one - and matches what the native Arrow IPC writer
         /// produces for the same query. Unused unless `output_unsupported_types` writes an opaque column.
-        FormatSettings format_settings;
+        /// Carries an initializer like every other member, so that a caller listing only the leading fields
+        /// positionally does not trip `-Wmissing-field-initializers`.
+        FormatSettings format_settings{};
     };
 
     static std::shared_ptr<arrow::Schema> calculateArrowSchema(
