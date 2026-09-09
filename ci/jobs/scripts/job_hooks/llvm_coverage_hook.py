@@ -4,7 +4,7 @@ import traceback
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.praktika.gh import GH, parse_paginated_json_arrays
+from ci.praktika.gh import GH
 from ci.praktika.info import Info
 
 _COVERAGE_TAG_START = "<!-- CI automatic comment start :coverage: -->"
@@ -37,7 +37,7 @@ def current_coverage_section(repo: str, pr: int) -> str:
     )
     output = GH.get_output_with_retries(cmd, verbose=False)
     try:
-        bodies = parse_paginated_json_arrays(output)
+        bodies = GH._json_loads_paginated(output)
     except (json.JSONDecodeError, TypeError):
         return ""
     for body in bodies:
