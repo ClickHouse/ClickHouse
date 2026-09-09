@@ -14,6 +14,10 @@ node = cluster.add_instance(
     main_configs=["configs/config.d/storage_policy.xml"],
     stay_alive=True,
     with_minio=True,
+    # The tests operate on local part/metadata files directly; with the remote
+    # database disk ("db disk" CI flavor) the table metadata .sql lives in S3
+    # and the metadata edit below would have nothing to sed.
+    with_remote_database_disk=False,
 )
 
 UK_SETTINGS = {"allow_experimental_unique_key": "1"}
@@ -26,9 +30,15 @@ def bash(node, command):
 
 
 def get_active_part_path(node, table):
-    path = node.query(
+    # Only meaningful for local disks: `system.parts.path` is relative for
+    # object storage. The tests that edit files on disk all use local tables.
+    # Requiring exactly one active part also guards against a stray background
+    # merge silently turning this into a two-line result.
+    rows = node.query(
         f"SELECT path FROM system.parts WHERE database = 'default' AND table = '{table}' AND active"
-    ).strip()
+    ).splitlines()
+    assert len(rows) == 1, f"Expected exactly one active part, got {rows}"
+    path = rows[0].strip()
     assert path.startswith("/"), f"Path is relative: {path}"
     return path
 
@@ -54,10 +64,10 @@ def test_unique_key_sst_roundtrip_on_s3(started_cluster):
     # UNIQUE KEY on S3: SST sidecar read/write through IDataPartStorage.
     # The SST reader/writer goes through IDataPartStorage::readFile/writeFile,
     # so it works on any disk type. This test verifies the round-trip on S3.
-    node.query("DROP TABLE IF EXISTS uk_s3")
+    node.query("DROP TABLE IF EXISTS uk_s3_roundtrip")
     node.query(
         """
-        CREATE TABLE uk_s3 (id UInt64, v String)
+        CREATE TABLE uk_s3_roundtrip (id UInt64, v String)
         ENGINE = MergeTree
         UNIQUE KEY (id)
         ORDER BY (id)
@@ -66,36 +76,36 @@ def test_unique_key_sst_roundtrip_on_s3(started_cluster):
         settings=UK_SETTINGS,
     )
     node.query(
-        "INSERT INTO uk_s3 VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        "INSERT INTO uk_s3_roundtrip VALUES (10, 'a'), (20, 'b'), (30, 'c')",
         settings=UK_SETTINGS,
     )
-    assert node.query("SELECT id, v FROM uk_s3 ORDER BY id") == EXPECTED_ROWS
+    assert node.query("SELECT id, v FROM uk_s3_roundtrip ORDER BY id") == EXPECTED_ROWS
 
     # DETACH + ATTACH: load-time validation reads the SST sidecar back from
     # S3 through IDataPartStorage.
-    node.query("DETACH TABLE uk_s3 SYNC")
-    node.query("ATTACH TABLE uk_s3", settings=UK_SETTINGS)
+    node.query("DETACH TABLE uk_s3_roundtrip SYNC")
+    node.query("ATTACH TABLE uk_s3_roundtrip", settings=UK_SETTINGS)
     assert (
         node.query(
             """
             SELECT count() FROM system.parts
-            WHERE database = currentDatabase() AND table = 'uk_s3' AND active
+            WHERE database = currentDatabase() AND table = 'uk_s3_roundtrip' AND active
             """
         )
         == "1\n"
     )
-    assert node.query("SELECT id, v FROM uk_s3 ORDER BY id") == EXPECTED_ROWS
+    assert node.query("SELECT id, v FROM uk_s3_roundtrip ORDER BY id") == EXPECTED_ROWS
 
-    node.query("DROP TABLE uk_s3")
+    node.query("DROP TABLE uk_s3_roundtrip")
 
 
 def test_unique_key_on_s3_survives_restart(started_cluster):
     # Restart the whole node: parts are re-loaded from S3 and the SST sidecar
     # is re-read on startup.
-    node.query("DROP TABLE IF EXISTS uk_s3")
+    node.query("DROP TABLE IF EXISTS uk_s3_restart")
     node.query(
         """
-        CREATE TABLE uk_s3 (id UInt64, v String)
+        CREATE TABLE uk_s3_restart (id UInt64, v String)
         ENGINE = MergeTree
         UNIQUE KEY (id)
         ORDER BY (id)
@@ -104,14 +114,14 @@ def test_unique_key_on_s3_survives_restart(started_cluster):
         settings=UK_SETTINGS,
     )
     node.query(
-        "INSERT INTO uk_s3 VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        "INSERT INTO uk_s3_restart VALUES (10, 'a'), (20, 'b'), (30, 'c')",
         settings=UK_SETTINGS,
     )
 
     node.restart_clickhouse()
-    assert node.query("SELECT id, v FROM uk_s3 ORDER BY id") == EXPECTED_ROWS
+    assert node.query("SELECT id, v FROM uk_s3_restart ORDER BY id") == EXPECTED_ROWS
 
-    node.query("DROP TABLE uk_s3")
+    node.query("DROP TABLE uk_s3_restart")
 
 
 def test_unique_key_switch_policy_to_s3(started_cluster):
@@ -129,7 +139,8 @@ def test_unique_key_switch_policy_to_s3(started_cluster):
         ENGINE = MergeTree
         UNIQUE KEY (id)
         ORDER BY (id)
-        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1
+        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+                 max_bytes_to_merge_at_max_space_in_pool = 1
         """,
         settings=UK_SETTINGS,
     )
@@ -149,10 +160,8 @@ def test_unique_key_switch_policy_to_s3(started_cluster):
     # A new insert writes its part (and `unique_key_index.sst`) onto the S3 disk.
     node.query("INSERT INTO uk_local VALUES (40, 'd')", settings=UK_SETTINGS)
 
-    # Locate the new part by the row it holds (`_part`) rather than counting S3
-    # parts: a background merge could fold both parts into one at any time, and
-    # that merged part is reserved from volume 0 (S3) too - so this assertion
-    # holds whether or not a merge has happened.
+    # Locate the new part by the row it holds (`_part`). Merges are disabled for
+    # this table, so the part named by the subquery is still the active one.
     assert node.query(
         "SELECT disk_name FROM system.parts WHERE database = 'default' AND table = 'uk_local'"
         " AND active AND name = (SELECT _part FROM uk_local WHERE id = 40)"
@@ -189,13 +198,17 @@ def test_unique_key_sst_checksums(started_cluster):
     # Wide part + sparse serialization forcing: compact parts have no per-column
     # serialization kinds, so only a wide part stores the all-default column `a`
     # sparsely; `id` keeps the compound key unique.
+    # Merges are disabled: the test locates the single active part by path and
+    # then edits its files, so a background merge replacing that part mid-test
+    # would make the path stale.
     node.query(
         """
         CREATE TABLE uk_sst_checksums (a UInt64, id UInt64, v String)
         ENGINE = MergeTree
         UNIQUE KEY (a, id)
         ORDER BY (a, id)
-        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, ratio_of_defaults_for_sparse_serialization = 0.9
+        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, ratio_of_defaults_for_sparse_serialization = 0.9,
+                 max_bytes_to_merge_at_max_space_in_pool = 1
         """,
         settings=UK_SETTINGS,
     )
@@ -269,6 +282,7 @@ def test_unique_key_sst_checksums(started_cluster):
         CREATE TABLE uk_noentry (id UInt64, v String)
         ENGINE = MergeTree
         ORDER BY (id)
+        SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1
         """
     )
     node.query("INSERT INTO uk_noentry VALUES (10, 'a'), (20, 'b'), (30, 'c')")
@@ -302,6 +316,7 @@ def test_unique_key_sst_checksums(started_cluster):
         """
         CREATE TABLE uk_sst_ro (id UInt64, v String)
         ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)
+        SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1
         """,
         settings=UK_SETTINGS,
     )
