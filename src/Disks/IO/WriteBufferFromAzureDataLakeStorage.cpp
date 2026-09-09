@@ -11,6 +11,7 @@
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Common/HTTPConnectionInfo.h>
 
 #include <azure/core/io/body_stream.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
@@ -165,6 +166,7 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
                 error_message);
     };
 
+    HTTPConnectionInfoScope connection_info_scope;
     Stopwatch watch;
     size_t backoff_ms = 100;
     for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)

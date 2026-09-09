@@ -9,8 +9,10 @@
 
 SET enable_blob_storage_log_for_read_operations = 1;
 
+-- s3_check_objects_after_upload issues a HeadObject right after the Upload row has been written.
+-- No row describes that request, so nothing it does may show up on the rows that follow.
 INSERT INTO FUNCTION s3(s3_conn, url = 'http://localhost:11111/test/04106_data/file_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV)
-    SETTINGS s3_truncate_on_insert = 1
+    SETTINGS s3_truncate_on_insert = 1, s3_check_objects_after_upload = 1
     SELECT number FROM numbers(100);
 
 SELECT sum(number) FROM s3(s3_conn, url = 'http://localhost:11111/test/04106_data/file_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV);

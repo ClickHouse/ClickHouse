@@ -12,6 +12,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/getRandomASCIIString.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
@@ -351,6 +352,7 @@ void AzureObjectStorage::removeObjectImpl(
     const auto & path = object.remote_path;
     LOG_TEST(log, "Removing single object: {}", path);
 
+    HTTPConnectionInfoScope connection_info_scope;
     Stopwatch watch;
     Int32 error_code = 0;
     String error_message;
@@ -466,6 +468,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         auto object_batch = rest_objects.first(std::min(rest_objects.size(), AZURE_BATCH_MAX_SUBREQUESTS));
         SCOPE_EXIT({ rest_objects = rest_objects.last(rest_objects.size() - object_batch.size()); });
 
+        HTTPConnectionInfoScope connection_info_scope;
         Stopwatch watch;
         AzureBlobStorage::BlobContainerBatch requests = client_ptr->CreateBatch();
         std::vector<AzureBlobStorage::DeleteBlobResultDeferredResponse> responses;

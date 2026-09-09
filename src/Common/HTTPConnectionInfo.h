@@ -8,7 +8,8 @@ namespace DB
 /// Identity and age of the HTTP connection that carried one request.
 ///
 /// Written by the pooled session just before the request goes out, then taken — once — by
-/// whoever logs that request (currently `system.blob_storage_log`). The handoff is a
+/// whoever logs that request (currently `system.blob_storage_log`), inside an
+/// `HTTPConnectionInfoScope` that the logging code opens around both. The handoff is a
 /// thread-local because Poco's HTTP client is synchronous: the request and the log entry
 /// describing it always run on the same thread, one right after the other.
 ///
@@ -45,28 +46,31 @@ struct HTTPConnectionInfo
     UInt64 idle_microseconds = 0;
 
     /// False when no blob storage request has been made on this thread since the last one was
-    /// accounted for: an operation on local object storage, or the tail events of a batch that
-    /// shared a single request (a batched delete attributes the connection to its first event).
+    /// accounted for: an operation on local object storage, a request that failed before reaching
+    /// the wire, or the tail events of a batch that shared a single request (a batched delete
+    /// attributes the connection to its first event).
     bool has_value = false;
 };
 
 /// Hand out the next connection id. Called once per established socket.
 UInt64 nextHTTPConnectionId();
 
-/// Arms the current thread for recording the connection behind a blob storage request.
+/// Marks the current thread as issuing a blob storage request that is about to be logged.
 ///
-/// Publishing is opt-in rather than automatic, because the pool is shared: `StorageURL`, the
-/// dictionary sources, the proxy resolver and the various REST catalogs all borrow connections
-/// from it and none of them logs anything. Were every borrow to publish, a request made by one of
-/// them would sit in the slot until the next blob storage event on that thread took it - and a row
-/// for local or HDFS object storage, which uses no HTTP connection at all, would report the socket
-/// of an unrelated `StorageURL` read. So only the object storage clients (S3, Azure) open this
-/// scope, and only requests issued inside it are recorded.
+/// The pool is shared: `StorageURL`, the dictionary sources, the proxy resolver, the REST catalogs,
+/// the SDKs' own credential refreshes and the post-upload existence checks all send requests through
+/// it, and none of them produces a `system.blob_storage_log` row. So publishing is opt-in, and the
+/// opt-in belongs to the code that writes the row - not to the HTTP client, which cannot tell a
+/// logged request from a helper one. The scope is opened right before the request is issued and
+/// stays open until the log entry has been written, and it clears the slot both on entry and on
+/// exit. A request issued outside of a scope publishes nothing; a request issued inside one whose
+/// entry is, for whatever reason, never written leaves nothing behind. Either way, the slot is empty
+/// whenever no scope is open, which is what lets a row for local or HDFS object storage - which uses
+/// no HTTP connection at all - report zeroes.
 ///
-/// The scope covers issuing the request, not logging it: the log entry is written after the client
-/// returns, so the value deliberately outlives the scope, and is cleared when it is taken. Entering
-/// the scope also drops whatever was left in the slot, so a request that fails before reaching the
-/// wire reports no connection instead of the previous one.
+/// When several requests go out inside one scope, the last one wins: an SDK retry supersedes the
+/// failed attempt it replaces, and a credential refresh made on the way is superseded by the request
+/// it was made for.
 class HTTPConnectionInfoScope
 {
 public:
@@ -80,13 +84,13 @@ private:
     bool previously_enabled;
 };
 
-/// Publish the connection that is about to serve a request on this thread. Does nothing outside of
-/// an `HTTPConnectionInfoScope`.
+/// Publish the connection that is about to serve a request on this thread. Called by the pooled
+/// session; does nothing outside of an `HTTPConnectionInfoScope`.
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info);
 
 /// Return the info for the most recent recorded request on this thread, and clear it. Clearing is
-/// deliberate: without it a later log entry that made no request of its own would silently
-/// inherit some earlier connection's numbers.
+/// deliberate: a batched delete writes one entry per object for a single request, and only the
+/// first of them should carry the connection. Must be called inside the scope that made the request.
 HTTPConnectionInfo takeCurrentHTTPConnectionInfo();
 
 }

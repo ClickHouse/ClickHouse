@@ -7,8 +7,8 @@ namespace DB
 
 static thread_local HTTPConnectionInfo current_connection_info;
 
-/// Whether requests issued on this thread belong to a blob storage operation, and are therefore
-/// worth recording. See `HTTPConnectionInfoScope`.
+/// Whether the current thread is inside an `HTTPConnectionInfoScope`, i.e. issuing a blob storage
+/// request whose log entry will take the published connection.
 static thread_local bool capture_connection_info = false;
 
 UInt64 nextHTTPConnectionId()
@@ -26,9 +26,11 @@ HTTPConnectionInfoScope::HTTPConnectionInfoScope()
 
 HTTPConnectionInfoScope::~HTTPConnectionInfoScope()
 {
-    /// Note that what was published inside the scope stays in the slot on purpose - the log entry
-    /// describing the request is written after the scope ends.
+    /// Whatever was published inside the scope and not taken is dropped here, so that the slot is
+    /// never populated outside of a scope. Restoring the flag rather than clearing it keeps nested
+    /// scopes correct, although nothing nests them today.
     capture_connection_info = previously_enabled;
+    current_connection_info = {};
 }
 
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info)

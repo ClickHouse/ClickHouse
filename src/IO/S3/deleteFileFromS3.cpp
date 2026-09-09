@@ -7,6 +7,7 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3/getObjectInfo.h>
 
@@ -38,6 +39,7 @@ void deleteFileFromS3(
     if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
         ProfileEvents::increment(*profile_event);
 
+    HTTPConnectionInfoScope connection_info_scope;
     Stopwatch watch;
     auto outcome = s3_client->DeleteObject(request);
     auto elapsed = watch.elapsedMicroseconds();
@@ -143,6 +145,7 @@ void deleteFilesFromS3(
             if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
                 ProfileEvents::increment(*profile_event);
 
+            HTTPConnectionInfoScope connection_info_scope;
             Stopwatch watch;
             auto outcome = s3_client->DeleteObjects(request);
             auto elapsed = watch.elapsedMicroseconds();

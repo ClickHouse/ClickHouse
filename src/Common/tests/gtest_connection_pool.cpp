@@ -571,15 +571,13 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
     ASSERT_EQ(count-2, CurrentMetrics::get(metrics.stored_count));
 }
 
-/// Blob storage clients (S3, Azure) wrap every request they issue in an `HTTPConnectionInfoScope`;
-/// nothing is published outside of one. The row describing the request is written after the request
-/// returns, so taking the info after the scope has ended is exactly what production does.
+/// The code that logs a blob storage request (S3, Azure) opens an `HTTPConnectionInfoScope` around
+/// issuing the request and writing the row that describes it; nothing is published outside of one.
+/// This is that pattern in miniature: request, then take, inside one scope.
 static DB::HTTPConnectionInfo echoRequestAndTakeConnectionInfo(String data, HTTPSession & session)
 {
-    {
-        DB::HTTPConnectionInfoScope scope;
-        echoRequest(std::move(data), session);
-    }
+    DB::HTTPConnectionInfoScope scope;
+    echoRequest(std::move(data), session);
     return DB::takeCurrentHTTPConnectionInfo();
 }
 
@@ -647,10 +645,10 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
 }
 
 /// The pool is shared with everything that speaks HTTP - `StorageURL`, dictionary sources, the
-/// proxy resolver, the REST catalogs - and none of that logs to `system.blob_storage_log`. A
-/// request they make must not be left in the slot for the next blob storage row on this thread,
-/// which would otherwise report a socket it never used - including rows for local or HDFS object
-/// storage, which use no HTTP connection at all.
+/// proxy resolver, the REST catalogs, the SDKs' credential refreshes - and none of that logs to
+/// `system.blob_storage_log`. A request they make must not be left in the slot for the next blob
+/// storage row on this thread, which would otherwise report a socket it never used - including rows
+/// for local or HDFS object storage, which use no HTTP connection at all.
 TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedOutsideScope)
 {
     auto pool = getPool();
@@ -667,6 +665,42 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedOutsideScope)
 
     /// And an unrelated request after it does not resurrect the slot.
     echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+}
+
+/// Not every request made inside a scope ends up taken: the SDK may retry, refresh credentials on
+/// the way, or the code that opened the scope may skip writing its row. Whatever is left when the
+/// scope ends must go with it - otherwise a later row on this thread, possibly for a request that
+/// never reached the wire, would inherit it. This is the stale-slot case that a post-upload
+/// `HeadObject` existence check, which no row describes, used to produce when the scope was owned
+/// by the HTTP client rather than by the logging code.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsClearedWhenScopeEnds)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope;
+        echoRequest("Hello", *connection);
+        /// Published, but deliberately not taken.
+    }
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+
+    /// The next scoped request starts from a clean slot and sees only itself.
+    {
+        DB::HTTPConnectionInfoScope scope;
+        auto before = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_FALSE(before.has_value);
+
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(1, info.requests_served);
+
+        /// Taking is one-shot: the tail entries of a batch that shared one request see nothing.
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
     ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
 }
 
