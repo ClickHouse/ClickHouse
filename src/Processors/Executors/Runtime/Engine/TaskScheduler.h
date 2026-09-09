@@ -35,10 +35,9 @@ class TaskScheduler
 
     void pushToLocalQueue(LocalState & own, Task task);
     void pushToGlobalQueue(Task task);
-    void offloadToGlobalQueue(LocalState & own);
     std::optional<Task> takeFromLocal(LocalState & own);
-    std::optional<Task> takeFromGlobal();
-    std::optional<Task> steal(size_t worker_id);
+    std::optional<Task> takeFromGlobal(LocalState & own, size_t max_to_take);
+    std::optional<Task> steal(LocalState & own);
 
 public:
     TaskScheduler(Poller & poller_, size_t max_workers);

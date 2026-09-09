@@ -12,6 +12,7 @@ namespace DB
 namespace
 {
 
+constexpr size_t max_to_steal = 7;
 constexpr size_t max_local_queue_size = 128;
 constexpr size_t max_sequential_full_rounds = 61;
 constexpr size_t max_sequential_lifo_usages = 79;
@@ -32,37 +33,24 @@ TaskScheduler::TaskScheduler(Poller & poller_, size_t max_workers)
 
 void TaskScheduler::pushToLocalQueue(LocalState & own, Task task)
 {
-    size_t local_queue_size = 0;
+    std::lock_guard lock(own.mutex);
+    own.queue.pushBack(task);
+    own.pushed_since_last_pop = true;
+
+    if (own.queue.size() > max_local_queue_size)
     {
-        std::lock_guard lock(own.mutex);
-        own.queue.pushBack(task);
-        own.queue_size.store(local_queue_size);
-        own.pushed_since_last_pop = true;
-        local_queue_size = own.queue.size();
+        std::lock_guard global_lock(global.mutex);
+        global.queue.takeFirst(own.queue, own.queue.size() / 2);
+        global.queue_size.store(global.queue.size());
     }
 
-    if (local_queue_size > max_local_queue_size)
-        offloadToGlobalQueue(own);
+    own.queue_size.store(own.queue.size());
 }
 
 void TaskScheduler::pushToGlobalQueue(Task task)
 {
     std::lock_guard lock(global.mutex);
     global.queue.pushBack(task);
-    global.queue_size.store(global.queue.size());
-}
-
-void TaskScheduler::offloadToGlobalQueue(LocalState & own)
-{
-    WorkStealingQueue oldest;
-    {
-        std::lock_guard lock(own.mutex);
-        oldest.takeFirst(own.queue, own.queue.size() / 2);
-        own.queue_size.store(own.queue.size());
-    }
-
-    std::lock_guard lock(global.mutex);
-    global.queue.takeAll(oldest);
     global.queue_size.store(global.queue.size());
 }
 
@@ -89,35 +77,42 @@ std::optional<Task> TaskScheduler::takeFromLocal(LocalState & own)
     return task;
 }
 
-std::optional<Task> TaskScheduler::takeFromGlobal()
+std::optional<Task> TaskScheduler::takeFromGlobal(LocalState & own, size_t max_to_take)
 {
     if (global.queue_size.load() == 0)
         return std::nullopt;
 
-    std::lock_guard lock(global.mutex);
+    std::lock_guard own_lock(own.mutex);
+    std::lock_guard global_lock(global.mutex);
     if (global.queue.empty())
         return std::nullopt;
 
-    Task task = global.queue.popFront();
+    own.queue.takeFirst(global.queue, max_to_take);
     global.queue_size.store(global.queue.size());
+
+    Task task = own.queue.popBack();
+    own.queue_size.store(own.queue.size());
     return task;
 }
 
-std::optional<Task> TaskScheduler::steal(size_t worker_id)
+std::optional<Task> TaskScheduler::steal(LocalState & own)
 {
     const size_t start = randomWorker(local.size());
     for (size_t i = 0; i < local.size(); ++i)
     {
-        const size_t victim = (start + i) % local.size();
-        if (victim == worker_id || local[victim].queue_size.load() == 0)
+        LocalState & victim = local[(start + i) % local.size()];
+        if (&victim == &own || victim.queue_size.load() == 0)
             continue;
 
-        std::lock_guard lock(local[victim].mutex);
-        if (local[victim].queue.empty())
+        std::scoped_lock lock(own.mutex, victim.mutex);
+        if (victim.queue.empty())
             continue;
 
-        Task task = local[victim].queue.popFront();
-        local[victim].queue_size.store(local[victim].queue.size());
+        own.queue.takeFirst(victim.queue, max_to_steal);
+        victim.queue_size.store(victim.queue.size());
+
+        Task task = own.queue.popBack();
+        own.queue_size.store(own.queue.size());
         return task;
     }
 
@@ -148,17 +143,17 @@ std::optional<Task> TaskScheduler::tryPop(size_t worker_id)
         if (poller.pending() > 0)
             poll(worker_id, 0);
 
-        if (auto task = takeFromGlobal())
+        if (auto task = takeFromGlobal(own, /*max_to_take=*/1))
             return task;
     }
 
     if (auto task = takeFromLocal(own))
         return task;
 
-    if (auto task = takeFromGlobal())
+    if (auto task = takeFromGlobal(own, max_to_steal))
         return task;
 
-    if (auto task = steal(worker_id))
+    if (auto task = steal(own))
         return task;
 
     if (poller.pending() > 0)
