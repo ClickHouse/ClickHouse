@@ -229,6 +229,11 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
         new_filter = &new_actions_dag.addFunction(func_and, std::move(new_conjuncts), {});
     }
 
+    /// collectFilterConjuncts unwraps aliases, so the surviving conjunct can be a column of the output header.
+    /// The step removes its filter column by name, which would erase that column and break the parent step.
+    if (filter->getOutputHeader()->has(new_filter->result_name))
+        new_filter = &new_actions_dag.addAlias(*new_filter, "__filter" + new_filter->result_name);
+
     new_actions_dag.addOrReplaceInOutputs(*new_filter);
     new_actions_dag.removeUnusedActions(/*allow_remove_inputs=*/false);
 
