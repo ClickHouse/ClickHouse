@@ -151,6 +151,19 @@ for mode in throw break; do
     " 2>&1 | grep -E '^\s+(status|source|empirical_status|empirical_reason):|Code:' | awk '{$1=$1; print}'
 done
 
+# a real projection lets the base analysis exceed the limit without throwing, the scan still degrades
+echo "--- the base read exceeding the limit does not produce a verdict either ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_lim;
+    CREATE TABLE t_lim (a UInt64, b UInt64, v UInt64, PROJECTION p_real (SELECT a, b, v ORDER BY b))
+        ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    INSERT INTO t_lim SELECT number, number % 100, number FROM numbers(1000);
+    CREATE HYPOTHETICAL PROJECTION p_h ON t_lim (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT b, v FROM t_lim WHERE a < 500 AND b >= 15 SETTINGS ${PIN}, max_rows_to_read = 300;
+" 2>&1 | grep -E '^\s+(marks|rows|verdict|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_lim;"
+
 # the scan reads the projection columns, so SELECT is checked at estimate time
 echo "--- estimating needs SELECT on the projection columns ---"
 user="u_estimate_${CLICKHOUSE_DATABASE}"
