@@ -392,7 +392,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
-            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), body_stream->Length(), azure_context);
+            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), n, azure_context);
+            chassert(bytes_copied <= n);
 
             LOG_TEST(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
 
