@@ -27,7 +27,7 @@ SELECT read_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
-    AND query LIKE '%FROM t_memory_read_rows %'
+    AND query LIKE '%FROM t_memory_read_rows%'
     AND query NOT LIKE '%system.query_log%'
 ORDER BY event_time_microseconds;
 
