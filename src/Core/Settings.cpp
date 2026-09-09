@@ -6381,9 +6381,9 @@ For how many elements it is allowed to preallocate space in all hash tables in t
     DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
 )", 0) \
-    DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
-Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, allow_kafka_offsets_storage_in_keeper, false, R"(
+Allow storing Kafka related offsets in ClickHouse Keeper. When enabled, a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
+)", EXPERIMENTAL, allow_experimental_kafka_offsets_storage_in_keeper) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
 Enable use of software prefetch in aggregation
 )", 0) \
