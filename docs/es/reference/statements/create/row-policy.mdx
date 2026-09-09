@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -104,6 +104,8 @@ En la sección `TO` puedes indicar una lista de usuarios y roles a los que se ap
 
 La palabra clave `ALL` significa todos los usuarios de ClickHouse, incluido el usuario actual. La palabra clave `ALL EXCEPT` permite excluir algunos usuarios de la lista de todos los usuarios; por ejemplo, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
+Los roles indicados en la sección `TO`, incluidos los que aparecen después de `ALL EXCEPT`, se comparan con los roles habilitados del usuario actual ([`system.enabled_roles`](/es/reference/system-tables/enabled_roles)), y no con todos los roles concedidos al usuario, por lo que [`SET ROLE`](/es/reference/statements/set-role) puede cambiar qué políticas se aplican.
+
 ## Cláusula AS {#as-clause}
 
 Se permite que haya más de una política habilitada en la misma tabla para el mismo usuario al mismo tiempo. Por lo tanto, necesitamos una forma de combinar las condiciones de varias políticas.
@@ -124,9 +126,11 @@ Como alternativa, una política puede definirse como restrictiva. Las políticas
 Esta es la fórmula general:
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+Si no se aplica ninguna condición permisiva, la primera condición no tiene efecto y solo deciden las políticas restrictivas, porque `access_control_improvements.users_without_row_policies_can_read_rows` está habilitado de forma predeterminada. Por lo tanto, un usuario al que no se le aplique ninguna condición ve todas las filas, y `access_control_improvements.throw_on_unmatched_row_policies`, deshabilitado de forma predeterminada, lanza en su lugar una excepción cuando la tabla sí tiene condiciones y ninguna de ellas se aplica.
 
 Por ejemplo, las siguientes políticas:
 

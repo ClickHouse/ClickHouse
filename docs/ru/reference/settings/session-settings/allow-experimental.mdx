@@ -300,31 +300,6 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает PRQL — альтернативный язык запросов по сравнению с SQL.
 
-## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
-
-<ExperimentalBadge />
-
-**Псевдонимы**: `allow_experimental_ts_to_grid_aggregate_function`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Новая настройка для включения экспериментальных агрегатных функций timeSeries*."}]}]} />
-
-Экспериментальные агрегатные функции timeSeries* для ресэмплирования временных рядов в стиле Prometheus, а также для вычисления rate и delta.
-
-## allow_experimental_time_series_table {#allow_experimental_time_series_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Добавлена новая настройка, разрешающая использование движка таблицы TimeSeries"}]}]} />
-
-Разрешает создание таблиц с движком [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series). Возможные значения:
-
-* 0 — движок таблицы [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series) отключен.
-* 1 — движок таблицы [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series) включен.
-
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

@@ -236,7 +236,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## Detalhes de implementação {#implementation-details}
 
-Usa-se menos RAM se um [LIMIT](/pt-BR/reference/statements/select/limit) suficientemente pequeno for especificado junto com `ORDER BY`. Caso contrário, a quantidade de memória consumida é proporcional ao volume de dados a ser ordenado. No processamento de consultas distribuídas, se [GROUP BY](/pt-BR/reference/statements/select/group-by) for omitido, a ordenação é feita parcialmente nos servidores remotos, e os resultados são mesclados no servidor solicitante. Isso significa que, na ordenação distribuída, o volume de dados a ser ordenado pode ser maior do que a quantidade de memória disponível em um único servidor.
+Usa-se menos RAM se um [LIMIT](/pt-BR/reference/statements/select/limit) suficientemente pequeno for especificado junto com `ORDER BY`. Caso contrário, a quantidade de memória consumida é proporcional ao volume de dados a ser ordenado. Um intervalo [`LIMIT ... AFTER ... UNTIL`](/pt-BR/reference/statements/select/limit#limit-after-until) não o reduz, pois o tamanho do intervalo é desconhecido até que os dados sejam ordenados. No processamento de consultas distribuídas, se [GROUP BY](/pt-BR/reference/statements/select/group-by) for omitido, a ordenação é feita parcialmente nos servidores remotos, e os resultados são mesclados no servidor solicitante. Isso significa que, na ordenação distribuída, o volume de dados a ser ordenado pode ser maior do que a quantidade de memória disponível em um único servidor.
 
 Se não houver RAM suficiente, é possível realizar a ordenação em memória externa (criando arquivos temporários em disco). Use a configuração `max_bytes_before_external_sort` para isso. Se ela estiver definida como 0 (o padrão), a ordenação externa ficará desabilitada. Se estiver habilitada, quando o volume de dados a ser ordenado atingir o número de bytes especificado, os dados coletados serão ordenados e gravados em um arquivo temporário. Depois que todos os dados forem lidos, todos os arquivos ordenados serão mesclados, e os resultados serão gerados. Os arquivos são gravados no diretório `/var/lib/clickhouse/tmp/` configurado (por padrão, mas você pode usar o parâmetro `tmp_path` para alterar essa configuração). Você também pode usar spilling para disco apenas se a consulta exceder os limites de memória; ou seja, `max_bytes_ratio_before_external_sort=0.6` habilita spilling para disco somente quando a consulta atingir `60%` do limite de memória (usuário/servidor).
 
@@ -248,7 +248,7 @@ A ordenação externa é bem menos eficiente do que a ordenação em RAM.
 
 Se a expressão `ORDER BY` tiver um prefixo que coincida com a chave de ordenação da tabela, você poderá otimizar a consulta usando a configuração [optimize&#95;read&#95;in&#95;order](/pt-BR/reference/settings/session-settings/optimize#optimize_read_in_order).
 
-Quando a configuração `optimize_read_in_order` está habilitada, o servidor do ClickHouse usa o índice da tabela e lê os dados na ordem da chave `ORDER BY`. Isso evita a leitura de todos os dados quando há um [LIMIT](/pt-BR/reference/statements/select/limit) especificado. Assim, consultas sobre grandes volumes de dados com `LIMIT` pequeno são processadas mais rapidamente.
+Quando a configuração `optimize_read_in_order` está habilitada, o servidor do ClickHouse usa o índice da tabela e lê os dados na ordem da chave `ORDER BY`. Isso evita a leitura de todos os dados quando há um [LIMIT](/pt-BR/reference/statements/select/limit) especificado. O mesmo vale para um intervalo [`LIMIT ... AFTER ... UNTIL`](/pt-BR/reference/statements/select/limit#limit-after-until) sem `ALL`, que interrompe a leitura assim que seu intervalo termina. Assim, consultas sobre grandes volumes de dados com `LIMIT` pequeno são processadas mais rapidamente.
 
 A otimização funciona com `ASC` e `DESC` e não funciona em conjunto com a cláusula [GROUP BY](/pt-BR/reference/statements/select/group-by). Com o modificador [FINAL](/pt-BR/reference/statements/select/from#final-modifier), a otimização funciona na ordem direta da chave de ordenação e, para tabelas [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree), também na ordem inversa, controlada pela configuração `optimize_read_in_reverse_order_final`.
 
@@ -266,7 +266,7 @@ Em tabelas com mecanismo `MaterializedView`, a otimização funciona com visões
 
 ## Modificador ORDER BY Expr WITH FILL {#order-by-expr-with-fill-modifier}
 
-Este modificador também pode ser combinado com o [modificador LIMIT ... WITH TIES](/pt-BR/reference/statements/select/limit#limit--with-ties-modifier).
+Este modificador também pode ser combinado com o [modificador LIMIT ... WITH TIES](/pt-BR/reference/statements/select/limit#limit--with-ties-modifier) e com a forma de intervalo [LIMIT ... AFTER ... UNTIL](/pt-BR/reference/statements/select/limit#limit-after-until).
 
 O modificador `WITH FILL` pode ser usado após `ORDER BY expr`, com os parâmetros opcionais `FROM expr`, `TO expr` e `STEP expr`.
 Todos os valores ausentes da coluna `expr` serão preenchidos sequencialmente, e as demais colunas receberão os valores padrão.

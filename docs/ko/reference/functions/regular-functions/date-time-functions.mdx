@@ -5632,8 +5632,6 @@ SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 toYear(datetime)
 ```
 
-**별칭**: `YEAR`
-
 **인수**
 
 * `datetime` — 연도를 추출할 날짜 또는 날짜/시간입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
@@ -5783,6 +5781,58 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
 │ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
+```
+
+## year {#year}
+
+도입 버전: v26.9.0
+
+`Date` 또는 `DateTime` 값의 연도 구성 요소를 반환합니다.
+
+인수 없이 호출하면 쿼리 분석 시점의 현재 연도를 반환합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해 다른 결과를 반환할 수 있습니다.
+</Note>
+
+**구문**
+
+```sql
+year([datetime])
+```
+
+**인수**
+
+* `datetime` — 선택 사항. 연도를 추출할 날짜 또는 날짜/시간입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+
+**반환 값**
+
+주어진(또는 현재) Date 또는 DateTime의 연도를 반환합니다. [`UInt16`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**값의 연도**
+
+```sql title=Query
+SELECT year(toDateTime('2023-04-21 10:20:30'))
+```
+
+```response title=Response
+┌─year(toDateTime('2023-04-21 10:20:30'))─┐
+│                                    2023 │
+└─────────────────────────────────────────┘
+```
+
+**현재 연도**
+
+```sql title=Query
+SELECT year()
+```
+
+```response title=Response
+┌─year()─┐
+│   2026 │
+└────────┘
 ```
 
 ## yesterday {#yesterday}

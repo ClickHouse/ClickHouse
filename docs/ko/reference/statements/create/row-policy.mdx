@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,20 +40,20 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
 
 `ParserRowPolicyNames`는 **3가지** 패킹 형식을 허용합니다(완전한 카테시안 곱은 아님).
 
-1. **여러 호스트 이름, 하나의 대상** — `pol1, pol2 ON table1`은 나열된 각 호스트 이름을 해당 단일 테이블(또는 `db.*`)에 생성합니다.
-2. **하나의 호스트 이름, 여러 대상** — `pol1 ON table1, table2`는 나열된 각 대상에 동일한 짧은 호스트 이름을 생성합니다.
-3. **혼합 쌍** — `p1 ON t1, p2 ON t2`는 각 호스트 이름을 짝이 되는 대상에만 생성합니다.
+1. **여러 이름, 하나의 대상** — `pol1, pol2 ON table1`은 나열된 각 이름을 해당 단일 테이블(또는 `db.*`)에 생성합니다.
+2. **하나의 이름, 여러 대상** — `pol1 ON table1, table2`는 나열된 각 대상에 동일한 짧은 이름을 생성합니다.
+3. **혼합 쌍** — `p1 ON t1, p2 ON t2`는 각 이름을 짝이 되는 대상에만 생성합니다.
 
-여러 호스트 이름 목록은 한 그룹 내에서 여러 테이블의 `ON` 목록과 결합할 수 없습니다. `p1, p2 ON t1, t2`는 거부됩니다. 여러 호스트 이름 그룹 뒤에는 같은 SQL 문에서 쉼표로 구분된 다른 `name ON target` 그룹을 추가할 수도 없습니다.
+여러 이름 목록은 한 그룹 내에서 여러 테이블의 `ON` 목록과 결합할 수 **없습니다**. `p1, p2 ON t1, t2`는 거부됩니다. 여러 이름 그룹 뒤에는 같은 SQL 문에서 쉼표로 구분된 다른 `name ON target` 그룹을 추가할 수도 없습니다.
 
-선택적 `ON CLUSTER`는 전체 SQL 문에 적용됩니다(클러스터 이름 1개). ClickHouse는 하나의 생성 문에 패킹된 정책 호스트 이름별로 서로 다른 `ON CLUSTER`를 허용하지 않습니다. 정책을 서로 다른 클러스터에 생성해야 하는 경우 별도의 `CREATE ROW POLICY` SQL 문을 실행하십시오.
+선택적 `ON CLUSTER`는 전체 SQL 문에 적용됩니다(클러스터 이름 1개). ClickHouse는 하나의 생성 문에 패킹된 정책 이름별로 서로 다른 `ON CLUSTER`를 허용하지 **않습니다**. 정책을 서로 다른 클러스터에 생성해야 하는 경우 별도의 `CREATE ROW POLICY` SQL 문을 실행하십시오.
 
 `CREATE ROW POLICY`에는 정책이 생성되는 테이블에 대한 [CREATE ROW POLICY](/ko/reference/statements/grant#access-management) 권한이 필요합니다. `OR REPLACE`는 동일한 이름의 기존 정책을 적용 대상 역할까지 포함하여 폐기하므로, 해당 테이블에 대한 [DROP ROW POLICY](/ko/reference/statements/grant#access-management) 권한도 추가로 필요합니다. `DROP ROW POLICY` 권한은 정책의 존재 여부와 관계없이 필요하므로, 이 SQL 문을 사용하여 어떤 정책이 존재하는지 알아낼 수는 없습니다.
 
@@ -104,6 +104,8 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 키워드 `ALL`은 현재 사용자를 포함한 모든 ClickHouse 사용자를 의미합니다. 키워드 `ALL EXCEPT`는 전체 사용자 목록에서 일부 사용자를 제외할 수 있도록 하며, 예를 들어 `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`와 같습니다.
 
+`ALL EXCEPT` 뒤에 지정된 역할을 포함하여 `TO` 섹션에 명시된 역할은 사용자에게 부여된 모든 역할이 아니라 현재 사용자의 활성화된 역할([`system.enabled_roles`](/ko/reference/system-tables/enabled_roles))과 비교되므로, [`SET ROLE`](/ko/reference/statements/set-role)로 적용되는 정책을 바꿀 수 있습니다.
+
 ## AS 절 {#as-clause}
 
 동일한 사용자에게 동일한 테이블에 대해 한 번에 둘 이상의 정책을 활성화할 수 있습니다. 따라서 여러 정책의 조건을 결합할 방법이 필요합니다.
@@ -124,9 +126,11 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 다음은 일반식입니다:
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+허용형 조건이 하나도 적용되지 않으면 첫 번째 조건은 아무런 영향을 주지 않고 제한형 정책만으로 결정되는데, 이는 `access_control_improvements.users_without_row_policies_can_read_rows`가 기본적으로 활성화되어 있기 때문입니다. 따라서 어떤 조건도 적용되지 않는 사용자는 모든 행을 볼 수 있으며, 기본적으로 비활성화되어 있는 `access_control_improvements.throw_on_unmatched_row_policies`를 활성화하면 테이블에 조건이 존재하지만 그중 어느 것도 적용되지 않는 경우 대신 예외가 발생합니다.
 
 예를 들어, 다음과 같은 정책이 있습니다:
 

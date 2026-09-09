@@ -23,7 +23,7 @@ doc_type: 'reference'
 إذا كانت عدة عينات تحمل الطابع الزمني نفسه، فلا تُستخدم إلا واحدة منها: العينة ذات القيمة الأكبر. تخسر قيمة NaN أمام أي قيمة أخرى، لذا لا تُستخدم قيمة NaN إلا إذا كانت جميع العينات عند هذا الطابع الزمني NaN.
 
 <Warning>
-  هذه الدالة تجريبية. فعِّلها عبر ضبط `allow_experimental_time_series_aggregate_functions=true`.
+  هذه الدالة في معاينة خاصة. فعِّلها عبر ضبط `enable_time_series_aggregate_functions=true`.
 </Warning>
 
 **الصياغة**
@@ -55,7 +55,7 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samp
 **الاستخدام الأساسي مع أزواج فردية من الطابع الزمني والقيمة**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -84,7 +84,7 @@ FROM
 **استخدام وسيطات من نوع مصفوفة**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

@@ -12,6 +12,7 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -901,11 +902,11 @@ Esta configuración afecta a las consultas `SELECT` / `UNION` que generan result
 
 ## load_marks_asynchronously {#load_marks_asynchronously}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-Carga las marcas de MergeTree de forma asíncrona
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Cargar las marks de todos los flujos en paralelo de forma predeterminada. En discos remotos, la carga síncrona de las marks de columnas con muchos substreams (como `JSON`) suponía una ida y vuelta de red por cada flujo."}]}]} />
 
-Valor predeterminado en Cloud: `1`.
+Carga las marks de MergeTree de forma asíncrona en un thread pool en segundo plano (véase el server setting `load_marks_threadpool_pool_size`), de modo que las marks de todos los flujos se cargan en paralelo. En caso contrario, las marks se cargan de forma síncrona, un flujo tras otro, lo que resulta lento en discos remotos para columnas con muchos substreams, como `JSON`.
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -932,7 +933,7 @@ Cuando se utiliza el mecanismo de priorización de consultas (consulte la config
 
 ## make_distributed_plan {#make_distributed_plan}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1246,7 +1247,9 @@ Cantidad mínima de bytes necesaria para que una lectura remota (url, s3) haga `
 
 * **Valor predeterminado:** Cadena vacía
 
-Esta configuración permite especificar un patrón de cambio de nombre para los archivos procesados por la función de tabla `file`. Cuando esta opción está establecida, todos los archivos leídos por la función de tabla `file` se renombrarán según el patrón especificado con placeholders, siempre que el procesamiento de los archivos haya finalizado correctamente.
+Esta configuración permite especificar un patrón de cambio de nombre para los archivos procesados por la función de tabla `file`. Cuando esta opción está establecida, todos los archivos leídos por la función de tabla `file` se renombrarán según el patrón especificado con marcadores de posición, siempre que el procesamiento de los archivos haya finalizado correctamente.
+
+El cambio de nombre es una escritura en el source, por lo que una consulta que lea los archivos con esta opción establecida requiere el grant `WRITE ON FILE` además de `READ ON FILE`. `DESCRIBE` no construye el pipeline de lectura de datos que realiza el cambio de nombre, por lo que solo requiere `READ ON FILE`.
 
 <div id="placeholders">
   ### Marcadores de posición
@@ -1683,7 +1686,7 @@ Permite o prohíbe los INSERT vacíos; está habilitada de forma predeterminada 
 
 ## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

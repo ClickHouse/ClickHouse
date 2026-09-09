@@ -15,6 +15,26 @@ doc_type: 'reference'
 
 딕셔너리를 조회할 때는 먼저 캐시를 확인합니다. 각 데이터 블록에 대해 캐시에서 찾지 못했거나 오래된 키는 모두 `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`를 사용해 소스에 요청합니다. 받은 데이터는 이후 캐시에 기록됩니다.
 
+이는 키를 **조회**하는 경우, 즉 `dictGet` 및 기타 딕셔너리 함수에 해당합니다. `SELECT ... FROM <dictionary>`로 딕셔너리를 **테이블처럼** 읽는 것은 다릅니다. 이 경우 그 시점에 캐시에 상주하고 있는 셀만 반환하며 소스에는 아무것도 요청하지 않는데, 캐시는 어떤 키가 존재하는지에 대한 기록을 보관하지 않기 때문입니다. 키에 대한 `WHERE` 조건은 가져올 키의 목록이 아니라, 상주 중인 셀에 대한 일반 필터로 동작합니다:
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+따라서 cache 딕셔너리는 딕셔너리 함수를 통해 사용하도록 설계되었습니다. `SELECT ... FROM <dictionary> WHERE key IN (...)`로 소스에서 데이터를 가져와야 한다면, 요청마다 소스를 쿼리하고 아무것도 캐시하지 않는 [direct](/ko/reference/statements/create/dictionary/layouts/direct) 레이아웃을 사용하십시오. 딕셔너리 전체를 테이블처럼 읽으려면 [flat](/ko/reference/statements/create/dictionary/layouts/flat)이나 [hashed](/ko/reference/statements/create/dictionary/layouts/hashed)처럼 전체를 보관하는 레이아웃을 사용하십시오.
+
 딕셔너리에서 키를 찾지 못하면 캐시 업데이트 작업이 생성되어 업데이트 큐에 추가됩니다. 업데이트 큐 속성은 `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates` 설정으로 제어할 수 있습니다.
 
 cache 딕셔너리에서는 캐시에 있는 데이터의 만료 [lifetime](/ko/reference/statements/create/dictionary/lifetime)을 설정할 수 있습니다. 셀에 데이터가 로드된 뒤 `lifetime`보다 더 많은 시간이 지나면 해당 셀의 값은 사용되지 않으며 키는 만료된 상태가 됩니다. 이 키는 다음에 필요할 때 다시 요청됩니다. 이 동작은 `allow_read_expired_keys` 설정으로 구성할 수 있습니다.

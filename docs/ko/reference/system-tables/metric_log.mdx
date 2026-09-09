@@ -830,8 +830,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — SLRU 캐시 정책에서 protected 큐에서 probationary 큐로 강등(이동)된 파일 세그먼트 수입니다. 이는 캐시 내부 이동이며, 축출이 아닙니다.
 * `ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시에서 백그라운드 다운로드 대상으로 전송된 파일 세그먼트 수
 * `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 해제할 수 없는 상태여서 제거를 건너뛴 파일 세그먼트 수
-* `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 제거 중 상태여서 제거를 건너뛬 파일 세그먼트 수
-* `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 이동 중 상태여서 제거를 건너뛬 파일 세그먼트 수
+* `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 제거 중 상태여서 제거를 건너뛴 파일 세그먼트 수
+* `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 이동 중 상태여서 제거를 건너뛴 파일 세그먼트 수
 * `ProfileEvent_FilesystemCacheEvictionTries` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시 제거 시도 횟수
 * `ProfileEvent_FilesystemCacheEvictionReusedIterator` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시 반복자 재사용 횟수
 * `ProfileEvent_FilesystemCacheOvercommitCandidatesIterationSteps` ([UInt64](/ko/reference/data-types/int-uint)) — 예약 부족분을 충족하기 위해 오버커밋 축출 루프가 첫 번째 패스 이후 수행한 외부 반복 횟수
@@ -865,7 +865,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_FileSegmentHolderCompleteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 파일 세그먼트 holder complete()에 소요된 시간
 * `ProfileEvent_FileSegmentFailToIncreasePriority` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 잠금 경합이 심해 우선순위를 높이지 못한 횟수
 * `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 잠금 경합이 심해 공간 예약을 건너뛴 횟수
-* `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfCacheResize` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 크기 조정 중이어서 공간 예약을 건너뛬 횟수
+* `ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfCacheResize` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 크기 조정 중이어서 공간 예약을 건너뛴 횟수
 * `ProfileEvent_FilesystemCacheHoldFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 유지 중인 파일 시스템 캐시 파일 세그먼트 수
 * `ProfileEvent_FilesystemCacheUnusedHoldFileSegments` ([UInt64](/ko/reference/data-types/int-uint)) — 유지 중이지만 사용되지 않은 파일 시스템 캐시 파일 세그먼트 수(seek 또는 LIMIT n 등으로 인해)
 * `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadRun` ([UInt64](/ko/reference/data-types/int-uint)) — 백그라운드 스레드가 여유 공간 유지 작업을 실행한 횟수
@@ -927,6 +927,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/ko/reference/data-types/int-uint)) — adaptive aggregation이 머지 시점에 공유 테이블로 드레인한 지연 레코드 수입니다.
 * `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 압박으로 인해 adaptive aggregation이 스테이징 레코드를 조기에 드레인한 횟수입니다.
 * `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 압박 상황에서 adaptive aggregation이 조기에 드레인한 스테이징 레코드 수입니다.
+* `ProfileEvent_AdaptiveAggregationSpillBacklogSheds` ([UInt64](/ko/reference/data-types/int-uint)) — 스테이징 레코드가 아직 남아 있는 상태에서 기준 알고리즘을 사용하는 스레드(동결 해제로 되돌아간 스레드 또는 스스로 물러난 스레드)가 스필하려던 상황에서 adaptive aggregation이 스테이징 백로그를 해제한 횟수입니다.
 * `ProfileEvent_AdaptiveAggregationResidueReleases` ([UInt64](/ko/reference/data-types/int-uint)) — 기준 알고리즘으로 되돌아간 스레드가 이 테이블 때문에 스필하려던 상황에서 adaptive aggregation이 공유 드레인 테이블을 기록한 횟수입니다.
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 압박 상황에서 파트 경계에 도달해 adaptive aggregation이 공유 드레인 테이블을 기록한 횟수입니다.
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/ko/reference/data-types/int-uint)) — 전체 머지가 완료되기 전에 머지 및 변환이 완료된 직후 작업 메모리(arena 슬롯, 스테이징 청크 참조)가 해제된 2단계 버킷 수입니다.
@@ -1717,7 +1718,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `CurrentMetric_ThreadPoolRemoteFSReaderThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — remote&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀에서 대기 중이거나 실행 중인 작업 수입니다.
 * `CurrentMetric_ThreadPoolFSReaderThreads` ([Int64](/ko/reference/data-types/int-uint)) — local&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_ThreadPoolFSReaderThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 local&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀의 스레드 수입니다.
-* `CurrentMetric_ThreadPoolFSReaderThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — local&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀에서 대기 중이거나 실행 중인 작업 수입니다.
+* `CurrentMetric_ThreadPoolFSReaderThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — local&#95;filesystem&#95;read&#95;method=threadpool용 스레드 풀에서 대기 중이거나 활성 상태인 job 수입니다.
 * `CurrentMetric_ObjectStorageQueueShutdownThreads` ([Int64](/ko/reference/data-types/int-uint)) — 객체 스토리지 큐 종료 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_ObjectStorageQueueShutdownThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 객체 스토리지 큐 종료 스레드 풀에서 작업을 실행 중인 스레드 수입니다.
 * `CurrentMetric_ObjectStorageQueueShutdownThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — 객체 스토리지 큐 종료 스레드 풀에서 큐에 대기 중이거나 활성 상태인 job 수입니다.

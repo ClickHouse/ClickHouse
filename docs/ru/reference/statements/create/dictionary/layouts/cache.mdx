@@ -15,6 +15,26 @@ doc_type: 'reference'
 
 При обращении к словарю сначала выполняется поиск в кэше. Для каждого блока данных все ключи, которые не найдены в кэше или являются устаревшими, запрашиваются из источника с помощью `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Полученные данные затем записываются в кэш.
 
+Это относится к **поиску** ключа — `dictGet` и другим функциям работы со словарями. Чтение словаря **как таблицы** через `SELECT ... FROM <dictionary>` работает иначе: возвращаются те ячейки, которые в этот момент находятся в кэше, и ничего не запрашивается из источника, поскольку кэш не хранит сведений о том, какие ключи существуют. Условие `WHERE` по ключу — это обычный фильтр по находящимся в кэше ячейкам, а не список ключей для загрузки:
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+Итак, словарь cache предназначен для использования через функции словаря. Если требуется, чтобы `SELECT ... FROM <dictionary> WHERE key IN (...)` получал данные из источника, используйте структуру [direct](/ru/reference/statements/create/dictionary/layouts/direct), которая обращается к источнику при каждом запросе и ничего не кэширует; чтобы читать весь словарь как таблицу, используйте структуру, хранящую его целиком, например [flat](/ru/reference/statements/create/dictionary/layouts/flat) или [hashed](/ru/reference/statements/create/dictionary/layouts/hashed).
+
 Если ключи не найдены в словаре, создается задача обновления кэша и добавляется в очередь обновлений. Параметрами очереди обновлений можно управлять с помощью настроек `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
 Для словарей cache можно задать срок действия данных в кэше — [lifetime](/ru/reference/statements/create/dictionary/lifetime). Если с момента загрузки данных в ячейку прошло больше времени, чем `lifetime`, значение ячейки не используется, и ключ считается устаревшим. При следующем обращении этот ключ будет запрошен повторно. Это поведение можно настроить с помощью параметра `allow_read_expired_keys`.

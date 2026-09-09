@@ -12,12 +12,11 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_adaptive_aggregator">
-  ## enable_adaptive_aggregator
-</div>
+## enable_adaptive_aggregator {#enable_adaptive_aggregator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,9 +26,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Настройки внешней агрегации (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) учитываются: после превышения порога очереди заранее переносятся в общую таблицу, а если этого недостаточно для возврата ниже порога, общая таблица выгружается на диск с помощью обычной внешней агрегации.
 
-<div id="enable_adaptive_memory_spill_scheduler">
-  ## enable_adaptive_memory_spill_scheduler
-</div>
+## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
 <ExperimentalBadge />
 
@@ -39,9 +36,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает адаптивную выгрузку данных из памяти во внешнее хранилище. На данный момент поддерживается только Grace JOIN.
 
-<div id="enable_add_distinct_to_in_subqueries">
-  ## enable_add_distinct_to_in_subqueries
-</div>
+## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,9 +45,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Включает `DISTINCT` в подзапросах `IN`. Это компромиссная настройка: при включении она может значительно уменьшить размер временных таблиц, передаваемых для распределённых подзапросов `IN`, и существенно ускорить передачу данных между сегментами, поскольку отправляются только уникальные значения.
 Однако включение этой настройки требует дополнительных затрат на слияние на каждом узле, так как необходимо выполнять дедупликацию (`DISTINCT`). Используйте эту настройку, если передача данных по сети является узким местом, а дополнительные затраты на слияние допустимы.
 
-<div id="enable_alp_codec">
-  ## enable_alp_codec
-</div>
+## enable_alp_codec {#enable_alp_codec}
 
 <BetaBadge />
 
@@ -62,9 +55,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает кодек сжатия `ALP`.
 
-<div id="enable_automatic_decision_for_merging_across_partitions_for_final">
-  ## enable_automatic_decision_for_merging_across_partitions_for_final
-</div>
+## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,9 +64,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Если параметр включен, ClickHouse автоматически активирует эту оптимизацию, когда выражение ключа партиционирования детерминировано, а все столбцы, используемые в выражении ключа партиционирования, входят в первичный ключ.
 Это гарантирует, что строки с одинаковыми значениями первичного ключа всегда будут относиться к одной и той же партиции, поэтому можно безопасно избегать слияний между партициями.
 
-<div id="enable_cascades_optimizer">
-  ## enable_cascades_optimizer
-</div>
+## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />
 
@@ -86,17 +75,13 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Включает оптимизатор Cascades, основанный на оценке стоимости, для распределённых планов запросов.
 Настройка действует только вместе с `make_distributed_plan = 1`; сама по себе она не влияет на планирование запросов на одном узле.
 
-<div id="enable_early_constant_folding">
-  ## enable_early_constant_folding
-</div>
+## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Включает оптимизацию запроса: анализируются результаты функций и подзапросов, и при наличии в них констант запрос переписывается
 
-<div id="enable_extended_results_for_datetime_functions">
-  ## enable_extended_results_for_datetime_functions
-</div>
+## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -128,9 +113,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | `toStartOfMinute`         | Возвращает `DateTime`<br />*Note: Некорректные результаты для значений вне диапазона 1970–2149*            | Возвращает `DateTime` для входных значений `Date`/`DateTime`<br />Возвращает `DateTime64` для входных значений `Date32`/`DateTime64`                 |
 | `timeSlot`                | Возвращает `DateTime`<br />*Примечание: неверные результаты для значений за пределами диапазона 1970–2149* | Возвращает `DateTime` для входных значений `Date`/`DateTime`<br />Возвращает `DateTime64` для входных значений `Date32`/`DateTime64`                 |
 
-<div id="enable_full_text_index">
-  ## enable_full_text_index
-</div>
+## enable_full_text_index {#enable_full_text_index}
 
 **Псевдонимы**: `allow_experimental_full_text_index`
 
@@ -140,9 +123,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если установлено значение true, разрешает использование текстового индекса.
 
-<div id="enable_function_early_short_circuit">
-  ## enable_function_early_short_circuit
-</div>
+## enable_function_early_short_circuit {#enable_function_early_short_circuit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -151,9 +132,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Включает раннюю свёртку констант с коротким замыканием для `and` и `or` на этапе анализа запроса.
 Если параметр включен, подходящие недостижимые ветви со скалярными подзапросами анализируются для сохранения их типов и проверки семантики запроса, но не выполняются. Если требуются скалярная мощность или значения времени выполнения, оптимизация переключается на обычный анализ.
 
-<div id="enable_global_with_statement">
-  ## enable_global_with_statement
-</div>
+## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -161,9 +140,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Распространяет операторы WITH на запросы UNION и все подзапросы
 
-<div id="enable_group_by_top_k_optimization">
-  ## enable_group_by_top_k_optimization
-</div>
+## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -182,9 +159,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="enable_hash_join_row_store">
-  ## enable_hash_join_row_store
-</div>
+## enable_hash_join_row_store {#enable_hash_join_row_store}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -192,9 +167,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает преобразование полезной нагрузки hash JOIN в построчный формат.
 
-<div id="enable_hdfs_pread">
-  ## enable_hdfs_pread
-</div>
+## enable_hdfs_pread {#enable_hdfs_pread}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -202,9 +175,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает или отключает использование `pread` для файлов HDFS. По умолчанию используется `hdfsPread`. Если параметр отключен, для чтения файлов HDFS используются `hdfsRead` и `hdfsSeek`.
 
-<div id="enable_http_compression">
-  ## enable_http_compression
-</div>
+## enable_http_compression {#enable_http_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -219,9 +190,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="enable_identifier_resolve_cache">
-  ## enable_identifier_resolve_cache
-</div>
+## enable_identifier_resolve_cache {#enable_identifier_resolve_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -229,9 +198,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает кэш разрешения идентификаторов в анализаторе запросов. Кэш повторно использует уже разрешённые узлы псевдонимов, чтобы предотвратить разрастание AST, когда на один и тот же псевдоним ссылаются несколько раз. Установите `false`, чтобы отключить кэширование, если есть подозрение на некорректные результаты.
 
-<div id="enable_job_stack_trace">
-  ## enable_job_stack_trace
-</div>
+## enable_job_stack_trace {#enable_job_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -239,9 +206,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Выводит трассировку стека создателя задачи, если при выполнении задачи возникает исключение. По умолчанию отключён, чтобы избежать снижения производительности.
 
-<div id="enable_json_ast_dialect">
-  ## enable_json_ast_dialect
-</div>
+## enable_json_ast_dialect {#enable_json_ast_dialect}
 
 <ExperimentalBadge />
 
@@ -265,9 +230,7 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
-<div id="enable_lazy_columns_replication">
-  ## enable_lazy_columns_replication
-</div>
+## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -275,9 +238,7 @@ SET dialect = 'clickhouse_json';
 
 Включает отложенную репликацию столбцов в `JOIN`, `ARRAY JOIN` и захватах лямбда-выражений функций высшего порядка (например, `arrayMap`), что позволяет избежать многократного ненужного копирования одних и тех же строк в памяти.
 
-<div id="enable_materialized_cte">
-  ## enable_materialized_cte
-</div>
+## enable_materialized_cte {#enable_materialized_cte}
 
 <ExperimentalBadge />
 
@@ -285,27 +246,23 @@ SET dialect = 'clickhouse_json';
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
-Включает материализованные CTE; эта настройка имеет приоритет над enable&#95;global&#95;with&#95;statement
+Включает материализованные общие табличные выражения (CTE) (`WITH <name> AS MATERIALIZED (<subquery>)`).
+Если настройка включена, CTE, объявленное как `MATERIALIZED` и используемое более одного раза, выполняется однократно и сохраняется во временной таблице, а все обращения читают данные из этой таблицы. CTE, к которому обращаются лишь один раз, встраивается как обычное CTE, чтобы избежать накладных расходов.
+Если настройка отключена, ключевое слово `MATERIALIZED` игнорируется: CTE встраивается при каждом обращении как обычное CTE, а в лог записывается предупреждение.
 
-<div id="enable_memory_bound_merging_of_aggregation_results">
-  ## enable_memory_bound_merging_of_aggregation_results
-</div>
+## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Включает стратегию слияния результатов агрегации с ограничением по памяти.
 
-<div id="enable_multiple_prewhere_read_steps">
-  ## enable_multiple_prewhere_read_steps
-</div>
+## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Перемещает больше условий из WHERE в PREWHERE и выполняет чтение с диска и фильтрацию в несколько этапов, если есть несколько условий, объединённых оператором побитового И
 
-<div id="enable_named_columns_in_function_tuple">
-  ## enable_named_columns_in_function_tuple
-</div>
+## enable_named_columns_in_function_tuple {#enable_named_columns_in_function_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -313,9 +270,7 @@ SET dialect = 'clickhouse_json';
 
 Генерировать именованные Tuple в функции tuple(), если все имена уникальны и могут использоваться как идентификаторы без кавычек.
 
-<div id="enable_order_by_all">
-  ## enable_order_by_all
-</div>
+## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -350,9 +305,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 └────┴────┴─────┘
 ```
 
-<div id="enable_packed_string_keys_in_aggregation">
-  ## enable_packed_string_keys_in_aggregation
-</div>
+## enable_packed_string_keys_in_aggregation {#enable_packed_string_keys_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -364,9 +317,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 Все серверы, участвующие в распределённом запросе, должны использовать одинаковое значение: при `distributed_aggregation_memory_efficient` номера двухуровневых бакетов зависят от хеша ключа, который различается для этих двух методов. Поэтому серверы с разными значениями этой настройки могут распределить один и тот же ключ по разным бакетам и сформировать некорректно слитый результат. Чтобы гарантировать согласованность, инициатор всегда отправляет своё фактическое значение вместе со вторичными запросами (даже если оно задано только значениями по умолчанию сервера или профиля), переопределяя собственные значения по умолчанию удалённых серверов.
 
-<div id="enable_parsing_to_custom_serialization">
-  ## enable_parsing_to_custom_serialization
-</div>
+## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -374,9 +325,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 Если значение равно true, данные можно напрямую разбирать в столбцы с пользовательской сериализацией (например, Sparse) в соответствии с подсказками по сериализации, полученными из таблицы.
 
-<div id="enable_producing_buckets_out_of_order_in_aggregation">
-  ## enable_producing_buckets_out_of_order_in_aggregation
-</div>
+## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -386,9 +335,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 Это может повысить производительность при неравномерном распределении размеров бакетов, так как реплика может отправлять инициатору бакеты с более высокими идентификаторами, пока ещё обрабатывает тяжёлые бакеты с более низкими идентификаторами.
 Недостаток — потенциально более высокое использование памяти.
 
-<div id="enable_quantized_codec">
-  ## enable_quantized_codec
-</div>
+## enable_quantized_codec {#enable_quantized_codec}
 
 <ExperimentalBadge />
 
@@ -398,9 +345,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 Включает кодек сжатия `Quantized`.
 
-<div id="enable_reads_from_query_cache">
-  ## enable_reads_from_query_cache
-</div>
+## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -411,17 +356,13 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 * 0 - Отключено
 * 1 - Включено
 
-<div id="enable_s3_requests_logging">
-  ## enable_s3_requests_logging
-</div>
+## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает максимально подробное логирование запросов к S3. Имеет смысл только для отладки.
 
-<div id="enable_scalar_subquery_optimization">
-  ## enable_scalar_subquery_optimization
-</div>
+## enable_scalar_subquery_optimization {#enable_scalar_subquery_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -429,9 +370,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 Если параметр имеет значение true, предотвращается (де)сериализация больших скалярных значений в скалярных подзапросах, а в некоторых случаях удаётся избежать повторного выполнения одного и того же подзапроса.
 
-<div id="enable_scopes_for_with_statement">
-  ## enable_scopes_for_with_statement
-</div>
+## enable_scopes_for_with_statement {#enable_scopes_for_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -441,9 +380,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 Обратите внимание, что это настройка совместимости для анализатора, позволяющая выполнять некоторые некорректные запросы, которые мог выполнять старый анализатор.
 
-<div id="enable_shared_storage_snapshot_in_query">
-  ## enable_shared_storage_snapshot_in_query
-</div>
+## enable_shared_storage_snapshot_in_query {#enable_shared_storage_snapshot_in_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -472,17 +409,13 @@ WHERE (_part, _part_offset) IN (
 * 0 - Отключено
 * 1 - Включено
 
-<div id="enable_sharing_sets_for_mutations">
-  ## enable_sharing_sets_for_mutations
-</div>
+## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает совместно использовать объекты Set, созданные для подзапросов IN, в разных задачах одной мутации. Это снижает использование памяти и потребление CPU
 
-<div id="enable_streaming_queries">
-  ## enable_streaming_queries
-</div>
+## enable_streaming_queries {#enable_streaming_queries}
 
 <ExperimentalBadge />
 
@@ -496,9 +429,7 @@ WHERE (_part, _part_offset) IN (
 возможности стриминг-запросов; дополнительные возможности могут управляться
 собственными настройками.
 
-<div id="enable_sz3_codec">
-  ## enable_sz3_codec
-</div>
+## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
 
@@ -508,9 +439,34 @@ WHERE (_part, _part_offset) IN (
 
 Включает кодек сжатия `SZ3`.
 
-<div id="enable_time_time64_type">
-  ## enable_time_time64_type
-</div>
+## enable_time_series_aggregate_functions {#enable_time_series_aggregate_functions}
+
+<PrivatePreviewBadge />
+
+**Псевдонимы**: `allow_experimental_ts_to_grid_aggregate_function`, `allow_experimental_time_series_aggregate_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Агрегатные функции `timeSeries*` переведены на уровень закрытой предварительной версии. Добавлен псевдоним для настройки `allow_experimental_time_series_aggregate_functions`."}]}]} />
+
+Включает агрегатные функции `timeSeries*` для передискретизации временных рядов в стиле Prometheus, а также для вычисления rate и delta.
+
+## enable_time_series_table {#enable_time_series_table}
+
+<PrivatePreviewBadge />
+
+**Псевдонимы**: `allow_experimental_time_series_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Движок таблицы `TimeSeries` и диалект `promql` переведены на уровень закрытой предварительной версии. Добавлен псевдоним для настройки `allow_experimental_time_series_table`."}]}]} />
+
+Разрешает создание таблиц с движком таблицы [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series). Возможные значения:
+
+* 0 — движок таблицы [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series) отключён.
+* 1 — движок таблицы [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series) включён.
+
+## enable_time_time64_type {#enable_time_time64_type}
 
 **Псевдонимы**: `allow_experimental_time_time64_type`
 
@@ -520,17 +476,13 @@ WHERE (_part, _part_offset) IN (
 
 Позволяет создавать типы данных [Time](/ru/reference/data-types/time) и [Time64](/ru/reference/data-types/time64).
 
-<div id="enable_unaligned_array_join">
-  ## enable_unaligned_array_join
-</div>
+## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает ARRAY JOIN с несколькими массивами разной длины. Когда этот параметр включен, массивы будут приведены к длине самого длинного.
 
-<div id="enable_url_encoding">
-  ## enable_url_encoding
-</div>
+## enable_url_encoding {#enable_url_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -540,9 +492,7 @@ WHERE (_part, _part_offset) IN (
 
 По умолчанию отключено.
 
-<div id="enable_vertical_final">
-  ## enable_vertical_final
-</div>
+## enable_vertical_final {#enable_vertical_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -550,9 +500,7 @@ WHERE (_part, _part_offset) IN (
 
 Если включено, во время FINAL дублирующиеся строки удаляются путём пометки строк как удалённых и их последующей фильтрации вместо слияния строк
 
-<div id="enable_writes_to_query_cache">
-  ## enable_writes_to_query_cache
-</div>
+## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -563,9 +511,7 @@ WHERE (_part, _part_offset) IN (
 * 0 - Отключено
 * 1 - Включено
 
-<div id="enable_zxc_codec">
-  ## enable_zxc_codec
-</div>
+## enable_zxc_codec {#enable_zxc_codec}
 
 <ExperimentalBadge />
 

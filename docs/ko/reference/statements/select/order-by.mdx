@@ -236,7 +236,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## 구현 세부 사항 {#implementation-details}
 
-`ORDER BY`와 함께 충분히 작은 [LIMIT](/ko/reference/statements/select/limit)를 지정하면 RAM 사용량을 줄일 수 있습니다. 그렇지 않으면 정렬에 사용되는 메모리 양은 정렬할 데이터의 양에 비례합니다. 분산 쿼리 처리에서는 [GROUP BY](/ko/reference/statements/select/group-by)를 생략할 경우 정렬의 일부가 원격 서버에서 수행되고, 결과는 요청을 보낸 서버에서 머지됩니다. 즉, 분산 정렬에서는 정렬해야 하는 데이터 양이 단일 서버의 메모리 용량보다 클 수 있습니다.
+`ORDER BY`와 함께 충분히 작은 [LIMIT](/ko/reference/statements/select/limit)를 지정하면 RAM 사용량을 줄일 수 있습니다. 그렇지 않으면 정렬에 사용되는 메모리 양은 정렬할 데이터의 양에 비례합니다. [`LIMIT ... AFTER ... UNTIL`](/ko/reference/statements/select/limit#limit-after-until) 범위는 데이터가 정렬되기 전까지 범위의 크기를 알 수 없기 때문에 메모리 사용량을 줄이지 못합니다. 분산 쿼리 처리에서는 [GROUP BY](/ko/reference/statements/select/group-by)를 생략할 경우 정렬의 일부가 원격 서버에서 수행되고, 결과는 요청을 보낸 서버에서 머지됩니다. 즉, 분산 정렬에서는 정렬해야 하는 데이터 양이 단일 서버의 메모리 용량보다 클 수 있습니다.
 
 RAM이 충분하지 않으면 외부 메모리(external memory)에서 정렬을 수행할 수 있습니다(디스크에 임시 파일 생성). 이를 위해 `max_bytes_before_external_sort` 설정을 사용하십시오. 이 값이 0(기본값)으로 설정되어 있으면 외부 정렬은 비활성화됩니다. 이 기능을 활성화하면 정렬할 데이터 양이 지정된 바이트 수에 도달할 때 수집된 데이터를 정렬한 뒤 임시 파일에 덤프합니다. 모든 데이터를 읽고 나면 정렬된 모든 파일을 머지하여 결과를 출력합니다. 파일은 설정의 `/var/lib/clickhouse/tmp/` 디렉터리에 기록됩니다(기본값이며, `tmp_path` 매개변수를 사용해 이 설정을 변경할 수 있습니다). 또한 쿼리가 메모리 제한을 초과하는 경우에만 디스크로 스필을 사용하도록 설정할 수도 있습니다. 즉, `max_bytes_ratio_before_external_sort=0.6`으로 설정하면 쿼리가 메모리 제한(사용자/서버)의 `60%`에 도달했을 때만 디스크로 스필이 활성화됩니다.
 
@@ -248,7 +248,7 @@ RAM이 충분하지 않으면 외부 메모리(external memory)에서 정렬을 
 
 `ORDER BY` 표현식에 테이블 정렬 키와 일치하는 접두사가 있으면 [optimize&#95;read&#95;in&#95;order](/ko/reference/settings/session-settings/optimize#optimize_read_in_order) 설정을 사용해 쿼리를 최적화할 수 있습니다.
 
-`optimize_read_in_order` 설정이 활성화되면 ClickHouse 서버는 테이블 인덱스를 사용해 `ORDER BY` 키 순서대로 데이터를 읽습니다. 이렇게 하면 [LIMIT](/ko/reference/statements/select/limit)가 지정된 경우 모든 데이터를 읽지 않아도 됩니다. 따라서 LIMIT가 작은 대용량 데이터 쿼리를 더 빠르게 처리할 수 있습니다.
+`optimize_read_in_order` 설정이 활성화되면 ClickHouse 서버는 테이블 인덱스를 사용해 `ORDER BY` 키 순서대로 데이터를 읽습니다. 이렇게 하면 [LIMIT](/ko/reference/statements/select/limit)가 지정된 경우 모든 데이터를 읽지 않아도 됩니다. `ALL` 없이 [`LIMIT ... AFTER ... UNTIL`](/ko/reference/statements/select/limit#limit-after-until) 범위를 사용하는 경우에도 마찬가지이며, 해당 범위가 끝나면 읽기가 중지됩니다. 따라서 LIMIT가 작은 대용량 데이터 쿼리를 더 빠르게 처리할 수 있습니다.
 
 이 최적화는 `ASC`와 `DESC` 모두에서 동작하며, [GROUP BY](/ko/reference/statements/select/group-by) 절과는 함께 사용할 수 없습니다. [FINAL](/ko/reference/statements/select/from#final-modifier) 수정자를 사용하는 경우, 이 최적화는 정렬 키의 정방향 순서로 동작하며, [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 테이블에서는 `optimize_read_in_reverse_order_final` 설정으로 제어되는 역방향 순서로도 동작합니다.
 
@@ -266,7 +266,7 @@ RAM이 충분하지 않으면 외부 메모리(external memory)에서 정렬을 
 
 ## ORDER BY Expr WITH FILL 수정자 {#order-by-expr-with-fill-modifier}
 
-이 수정자는 [LIMIT ... WITH TIES modifier](/ko/reference/statements/select/limit#limit--with-ties-modifier)와 함께 사용할 수도 있습니다.
+이 수정자는 [LIMIT ... WITH TIES 수정자](/ko/reference/statements/select/limit#limit--with-ties-modifier) 및 [LIMIT ... AFTER ... UNTIL](/ko/reference/statements/select/limit#limit-after-until) 범위 형식과 함께 사용할 수도 있습니다.
 
 `WITH FILL` 수정자는 `ORDER BY expr` 뒤에 지정할 수 있으며, 필요에 따라 `FROM expr`, `TO expr`, `STEP expr` 매개변수를 함께 사용할 수 있습니다.
 `expr` 컬럼에서 누락된 모든 값은 순차적으로 채워지며, 다른 컬럼은 기본값으로 채워집니다.

@@ -22,7 +22,7 @@ doc_type: 'reference'
 Если несколько образцов имеют одинаковую временную метку, используется только один из них — образец с наибольшим значением. Значение NaN уступает любому другому значению, поэтому используется только в том случае, если все образцы с этой временной меткой имеют значение NaN.
 
 <Note>
-  Эта функция является экспериментальной. Чтобы включить её, установите `allow_experimental_time_series_aggregate_functions=true`.
+  Эта функция находится в закрытой предварительной версии. Чтобы включить её, установите `enable_time_series_aggregate_functions=true`.
 </Note>
 
 **Синтаксис**
@@ -47,7 +47,7 @@ timeSeriesGroupArray(samples)
 **Базовое использование с отдельными значениями**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -70,7 +70,7 @@ FROM
 **Передача нескольких наборов временных меток и значений в виде массивов одинаковой длины**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

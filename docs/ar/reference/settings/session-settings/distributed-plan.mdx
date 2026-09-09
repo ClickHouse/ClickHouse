@@ -2,7 +2,7 @@
 title: 'إعدادات الجلسة لـ distributed_plan_*'
 sidebarTitle: 'distributed_plan_*'
 toc_max_heading_level: 2
-description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة distributed_plan_*.'
+description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة distributed_plan_*.'
 doc_type: 'reference'
 ---
 
@@ -11,8 +11,9 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
+هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
 ## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
 
@@ -91,7 +92,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -116,17 +117,17 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد تجريبي جديد لتحديد عدد العمّال عديمي الحالة الذين سيُخصَّصون لاستعلام موزّع. تؤدي القيمة صفر إلى تعطيل هذا التخصيص."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد تجريبي جديد لتحديد عدد العمّال عديمي الحالة الذين سيُخصَّصون لاستعلام موزّع. تؤدي القيمة صفر إلى تعطيل هذا التخصيص."}]}]} />
 
 عدد العمّال عديمي الحالة الذين سيُستخدمون لتنفيذ هذا الاستعلام. تؤدي القيمة صفر إلى تعطيل تخصيص العمّال عديمي الحالة لخطط التنفيذ الموزعة.
 
 ## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 

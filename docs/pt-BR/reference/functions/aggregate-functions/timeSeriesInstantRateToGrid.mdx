@@ -22,7 +22,7 @@ As amostras podem ser fornecidas em uma de três formas:
 Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto um valor NaN será usado apenas se todas as amostras nesse timestamp forem NaN.
 
 <Warning>
-  Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
+  Esta função está em private preview; habilite-a definindo `enable_time_series_aggregate_functions=true`.
 </Warning>
 
 **Sintaxe**
@@ -35,7 +35,7 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
 **Parâmetros**
 
 * `start_timestamp` — Especifica o início da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
-* `end_timestamp` — Especifica o fim da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `end_timestamp` — Especifica o fim da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
 * `grid_step` — Especifica o passo da grade em segundos. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
 * `staleness` — Especifica a defasagem máxima, em segundos, das amostras consideradas. A janela de defasagem é um intervalo aberto à esquerda e fechado à direita. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string contendo um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
 
@@ -54,7 +54,7 @@ Retorna valores de irate na grade especificada. O array retornado contém um val
 **Uso básico com pares individuais de timestamp e valor**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -83,7 +83,7 @@ FROM
 **Usando argumentos do tipo Array**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

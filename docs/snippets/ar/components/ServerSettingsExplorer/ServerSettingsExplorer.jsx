@@ -1008,6 +1008,16 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "reader_executor_*",
+      count: 3,
+      settings: [
+        { name: "reader_executor_memory_pressure_critical_level_pct", path: "/reader-executor#reader_executor_memory_pressure_critical_level_pct", default: "95" },
+        { name: "reader_executor_memory_pressure_elevated_level_pct", path: "/reader-executor#reader_executor_memory_pressure_elevated_level_pct", default: "75" },
+        { name: "reader_executor_memory_pressure_high_level_pct", path: "/reader-executor#reader_executor_memory_pressure_high_level_pct", default: "90" }
+      ],
+      children: []
+    },
+    {
       label: "remote_*",
       count: 2,
       settings: [

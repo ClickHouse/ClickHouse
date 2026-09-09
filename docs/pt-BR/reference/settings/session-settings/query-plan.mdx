@@ -380,26 +380,26 @@ Quando diferente de zero, o otimizador da ordem de join usa cardinalidades e NDV
 Quando definido como 1, uma semente aleatória é gerada; quando definido com um valor &gt; 1, esse valor é usado diretamente como semente.
 Isso se destina a testes para identificar erros causados por diferentes ordenações de join.
 
-## query_plan_optimize_join_order_use_cd_a_conflict_detector {#query_plan_optimize_join_order_use_cd_a_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para usar o detector de conflitos CD-A na validação da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para usar o detector de conflitos A na validação da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub."}]}]} />
 
 Afeta apenas o algoritmo de ordem de join `dpsub`. Quando habilitada, o DPsub determina quais
-reordenações de junções são válidas por meio do detector de conflitos CD-A).
+reordenações de junções baseada em custo são válidas por meio do detector de conflitos CD-A).
 
-## query_plan_optimize_join_order_use_cd_c_conflict_detector {#query_plan_optimize_join_order_use_cd_c_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para usar o detector de conflitos CD-C (correto e completo) para validar a reordenação de junções baseada em custo no algoritmo de ordem de join DPsub."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para usar o detector de conflitos C (correto e completo) para validar a reordenação de junções baseada em custo no algoritmo de ordem de join DPsub."}]}]} />
 
-Afeta apenas o algoritmo de ordem de join `dpsub`. Quando ativado, o DPsub determina quais reordenações de junções baseada em custo são válidas usando o detector de conflitos CD-C. Tem precedência sobre `query_plan_optimize_join_order_use_cd_a_conflict_detector` quando ambos estão ativados.
+Afeta apenas o algoritmo de ordem de join `dpsub`. Quando ativado, o DPsub determina quais reordenações de junções baseada em custo são válidas usando o detector de conflitos CD-C. Tem precedência sobre `query_plan_optimize_join_order_use_conflict_detector_a` quando ambos estão ativados.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

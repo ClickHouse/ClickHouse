@@ -5635,8 +5635,6 @@ SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 toYear(datetime)
 ```
 
-**الأسماء البديلة**: `YEAR`
-
 **الوسيطات**
 
 * `datetime` — تاريخ أو تاريخ مع وقت لاستخراج السنة منه. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
@@ -5786,6 +5784,58 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
 │ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
+```
+
+## year {#year}
+
+أُضيفت في: v26.9.0
+
+تُرجع مكوّن السنة من قيمة `Date` أو `DateTime`.
+
+عند استدعائها دون وسيطات، تُرجع السنة الحالية في لحظة تحليل الاستعلام.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة لنفس الوسيطات.
+</Note>
+
+**البنية**
+
+```sql
+year([datetime])
+```
+
+**الوسيطات**
+
+* `datetime` — اختياري. تاريخ أو تاريخ مع وقت لاستخراج السنة منه. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+
+**القيمة المُعادة**
+
+تعيد سنة قيمة `Date` أو `DateTime` المُعطاة (أو الحالية) [`UInt16`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**سنة قيمة ما**
+
+```sql title=Query
+SELECT year(toDateTime('2023-04-21 10:20:30'))
+```
+
+```response title=Response
+┌─year(toDateTime('2023-04-21 10:20:30'))─┐
+│                                    2023 │
+└─────────────────────────────────────────┘
+```
+
+**السنة الحالية**
+
+```sql title=Query
+SELECT year()
+```
+
+```response title=Response
+┌─year()─┐
+│   2026 │
+└────────┘
 ```
 
 ## yesterday {#yesterday}

@@ -302,6 +302,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 CREATE USER john GRANTEES jack;
 ```
 
+기본 데이터베이스를 지정하여 사용자 계정 `john`을 생성합니다:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE`은 기본 데이터베이스를 설정하지 않은 상태로 둡니다. `NONE`이라는 이름의 데이터베이스를 사용하려면 그 이름을 backtick으로 감싸십시오:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 쿼리 매개변수를 사용해 사용자 계정 `john`을 생성하세요:
 
 ```sql

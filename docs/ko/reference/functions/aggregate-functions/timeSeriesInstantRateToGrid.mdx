@@ -22,7 +22,7 @@ doc_type: 'reference'
 여러 샘플의 타임스탬프가 같으면 값이 가장 큰 샘플 하나만 사용됩니다. NaN 값은 다른 모든 값보다 우선순위가 낮으므로, 해당 타임스탬프의 모든 샘플이 NaN인 경우에만 NaN 값이 사용됩니다.
 
 <Warning>
-  이 함수는 실험적 기능이므로, `allow_experimental_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
+  이 함수는 비공개 프리뷰 기능이므로, `enable_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
 </Warning>
 
 **구문**
@@ -54,7 +54,7 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
 **개별 타임스탬프-값 쌍을 사용한 기본 사용법**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -83,7 +83,7 @@ FROM
 **배열 인수 사용하기**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

@@ -11,6 +11,7 @@ doc_type: '참고'
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 이 설정들은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)로부터 자동 생성됩니다.
 
@@ -91,7 +92,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -115,7 +116,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -125,7 +126,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 ## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 

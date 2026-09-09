@@ -41,19 +41,19 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-<div id="lightweight-update-does-not-update-data-immediately">
-  ## Les mises à jour légères ne mettent pas les données à jour immédiatement {#lightweight-update-does-not-update-data-immediately}
-</div>
+## Les mises à jour légères sont immédiatement visibles dans les requêtes {#lightweight-update-does-not-update-data-immediately}
 
-L’`UPDATE` léger repose sur des **patch parts** — un type spécial de partie de données qui contient uniquement les colonnes et les lignes mises à jour.
-Un `UPDATE` léger crée des patch parts, mais ne modifie pas immédiatement et physiquement les données d’origine en stockage.
-Le processus de mise à jour est similaire à une requête `INSERT ... SELECT ...`, mais la requête `UPDATE` attend que la création de la patch part soit terminée avant de renvoyer la réponse.
+La mise à jour légère `UPDATE` rend les valeurs mises à jour immédiatement visibles dans les requêtes `SELECT` grâce à l&#39;application de **patch parts**. Les requêtes n&#39;ont pas besoin d&#39;attendre une fusion pour lire les valeurs mises à jour.
+Les patch parts sont un type particulier de partie de données qui ne contient que les colonnes et les lignes mises à jour. Leur création ne modifie pas immédiatement, physiquement, les données d&#39;origine dans le stockage.
+Le processus de mise à jour s&#39;apparente à une requête `INSERT ... SELECT ...` : la requête `UPDATE` attend que la création du patch part soit terminée avant de rendre la main.
 
-Les valeurs mises à jour sont :
+La visibilité dans les requêtes et la matérialisation physique sont deux choses distinctes :
 
-* **Immédiatement visibles** dans les requêtes `SELECT` grâce à l’application des patchs
-* **Physiquement matérialisées** uniquement lors des fusions et mutations ultérieures
-* **Supprimées automatiquement** une fois les patchs matérialisés dans toutes les parties actives
+* **Visibilité dans les requêtes :** les requêtes `SELECT` appliquent les patches afin de lire les valeurs mises à jour avant même que ces patches ne soient matérialisés dans les parties de données d&#39;origine.
+* **Matérialisation physique :** les fusions et mutations ultérieurs intègrent les valeurs mises à jour dans les parties de données.
+* **Nettoyage :** les patch parts sont automatiquement supprimés dès que tous les active parts ont matérialisé les patches.
+
+Pour la cohérence des mises à jour concurrentes, voir [Opérations concurrentes](#concurrent-operations).
 
 ## Exigences pour les mises à jour légères {#lightweight-update-requirements}
 

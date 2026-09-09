@@ -20,9 +20,7 @@ doc_type: 'reference'
   テーブルに対して集約を実行する方法は、もう 1 つあります。クエリ内でテーブルのカラムが集約関数の内部でしか使用されていない場合は、`GROUP BY` 句を省略でき、キーの空集合に対する集約が行われるものと見なされます。このようなクエリは、常に 1 行だけを返します。
 </Note>
 
-<div id="null-processing">
-  ## NULL の扱い
-</div>
+## NULL の扱い {#null-processing}
 
 グループ化では、ClickHouse は [NULL](/ja/reference/syntax#null) を 1 つの値として解釈し、`NULL==NULL` とみなします。これは、他のほとんどの文脈における `NULL` の扱いとは異なります。
 
@@ -54,9 +52,7 @@ doc_type: 'reference'
 
 `GROUP BY` に複数のキーを渡すと、`NULL` を特定の値であるかのように扱って、選択した値のすべての組み合わせが結果として返されます。
 
-<div id="rollup-modifier">
-  ## ロールアップ修飾子
-</div>
+## ロールアップ修飾子 {#rollup-modifier}
 
 `ROLLUP` 修飾子は、`GROUP BY` リスト内の順序に基づいてキー式の小計を計算するために使用されます。小計の行は、結果テーブルの後に追加されます。
 
@@ -127,9 +123,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 * SQL標準との互換性については、[group&#95;by&#95;use&#95;nulls](/ja/reference/settings/session-settings/group-by#group_by_use_nulls) 設定を参照してください。
 
-<div id="cube-modifier">
-  ## CUBE 修飾子
-</div>
+## CUBE 修飾子 {#cube-modifier}
 
 `CUBE` 修飾子は、`GROUP BY` リスト内のキー式のあらゆる組み合わせに対する小計を計算するために使用されます。小計の行は、結果テーブルの後に追加されます。
 
@@ -224,9 +218,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 * SQL 標準との互換性については、[group&#95;by&#95;use&#95;nulls](/ja/reference/settings/session-settings/group-by#group_by_use_nulls) 設定を参照してください。
 
-<div id="with-totals-modifier">
-  ## WITH TOTALS 修飾子
-</div>
+## WITH TOTALS 修飾子 {#with-totals-modifier}
 
 `WITH TOTALS` 修飾子を指定すると、追加でもう 1 行が計算されます。この行では、キーカラムにはデフォルト値 (ゼロまたは空文字列) が入り、集約関数のカラムにはすべての行を対象に計算された値 (「total」値) が入ります。
 
@@ -244,9 +236,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 [HAVING](/ja/reference/statements/select/having) がある場合、`WITH TOTALS` の処理方法は複数あります。動作は `totals_mode` 設定に依存します。
 
-<div id="configuring-totals-processing">
-  ### totals の処理設定
-</div>
+### totals の処理設定 {#configuring-totals-processing}
 
 デフォルトでは、`totals_mode = 'before_having'` です。この場合、`HAVING` と `max_rows_to_group_by` を通過しないものも含め、すべての行に対して &#39;totals&#39; が計算されます。
 
@@ -264,9 +254,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 `WITH TOTALS` は、[JOIN](/ja/reference/statements/select/join) 句内のサブクエリを含むサブクエリでも使用できます (この場合、対応する totals の値が結合されます) 。
 
-<div id="group-by-all">
-  ## GROUP BY ALL
-</div>
+## GROUP BY ALL {#group-by-all}
 
 `GROUP BY ALL` は、集約関数ではない SELECT 対象のすべての式を列挙するのと同じです。
 
@@ -314,9 +302,7 @@ FROM t
 GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 ```
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 例:
 
@@ -343,9 +329,7 @@ GROUP BY domain
 
 異なるキー値ごとに、`GROUP BY` は一連の集約関数の値を計算します。
 
-<div id="grouping-sets-modifier">
-  ## GROUPING SETS 修飾子
-</div>
+## GROUPING SETS 修飾子 {#grouping-sets-modifier}
 
 これは最も一般的な修飾子です。
 この修飾子では、複数の集約キーのセット (grouping sets) を手動で指定できます。
@@ -382,21 +366,15 @@ GROUPING SETS
 
 * SQL 標準との互換性を確保するための [group&#95;by&#95;use&#95;nulls](/ja/reference/settings/session-settings/group-by#group_by_use_nulls) 設定。
 
-<div id="implementation-details">
-  ## 実装の詳細
-</div>
+## 実装の詳細 {#implementation-details}
 
 集約は列指向DBMSの最も重要な機能の1つであり、その実装は ClickHouse の中でも特に重点的に最適化されている部分の1つです。デフォルトでは、集約はハッシュテーブルを用いてメモリ内で実行されます。これには40種類以上の特殊化があり、「グループ化キー」のデータ型に応じて自動的に選択されます。
 
-<div id="group-by-optimization-depending-on-table-sorting-key">
-  ### テーブルのソートキーに応じた GROUP BY の最適化
-</div>
+### テーブルのソートキーに応じた GROUP BY の最適化 {#group-by-optimization-depending-on-table-sorting-key}
 
 テーブルが何らかのキーでソートされており、`GROUP BY` 式にソートキーの少なくともプレフィックス、または単射関数が含まれている場合、集約をより効率的に実行できます。この場合、テーブルから新しいキーを読み込むと、集約の中間結果を確定してクライアントに送信できます。この動作は [optimize&#95;aggregation&#95;in&#95;order](/ja/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order) 設定で有効になります。この最適化により、集約中のメモリ使用量は削減されますが、場合によってはクエリの実行が遅くなることがあります。
 
-<div id="group-by-in-external-memory">
-  ### 外部メモリでの GROUP BY
-</div>
+### 外部メモリでの GROUP BY {#group-by-in-external-memory}
 
 `GROUP BY` 実行時のメモリ使用量を抑えるために、一時データをディスクにダンプするよう有効化できます。
 [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) 設定は、`GROUP BY` の一時データをファイルシステムにダンプする RAM 使用量のしきい値を決定します。0 (デフォルト) に設定すると無効になります。
@@ -412,6 +390,6 @@ GROUPING SETS
 
 外部集約が有効でも、データ量が `max_bytes_before_external_group_by` 未満であれば (つまりデータがディスクに書き出されなければ) 、クエリは外部集約を使わない場合と同じ速度で実行されます。一時データが書き出された場合、実行時間は数倍長くなります (およそ 3 倍) 。
 
-`GROUP BY` の後に [LIMIT](/ja/reference/statements/select/limit) 付きの [ORDER BY](/ja/reference/statements/select/order-by) がある場合、使用される RAM 量はテーブル全体ではなく `LIMIT` のデータ量に依存します。ただし、`ORDER BY` に `LIMIT` がない場合は、外部ソート (`max_bytes_before_external_sort`) を有効にすることを忘れないでください。
+`GROUP BY` の後に [LIMIT](/ja/reference/statements/select/limit) 付きの [ORDER BY](/ja/reference/statements/select/order-by) がある場合、使用される RAM 量はテーブル全体ではなく `LIMIT` のデータ量に依存します。[`LIMIT ... AFTER ... UNTIL`](/ja/reference/statements/select/limit#limit-after-until) の範囲ではこのような節約は得られません。ソートがその範囲で何行必要になるかを知ることができないためです。ただし、`ORDER BY` に `LIMIT` がない場合は、外部ソート (`max_bytes_before_external_sort`) を有効にすることを忘れないでください。
 
 {/*AUTOGENERATED_END*/}

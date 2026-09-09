@@ -12,12 +12,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="enable_adaptive_aggregator">
-  ## enable_adaptive_aggregator
-</div>
+## enable_adaptive_aggregator {#enable_adaptive_aggregator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,9 +26,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 遵循外部聚合设置 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) ：超过阈值后，会将积压队列提前排空至共享表；如果仍无法降至阈值以下，则通过常规外部聚合将共享表落盘。
 
-<div id="enable_adaptive_memory_spill_scheduler">
-  ## enable_adaptive_memory_spill_scheduler
-</div>
+## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
 <ExperimentalBadge />
 
@@ -39,9 +36,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 触发处理器将数据自适应落盘到外部存储。目前仅支持 grace join。
 
-<div id="enable_add_distinct_to_in_subqueries">
-  ## enable_add_distinct_to_in_subqueries
-</div>
+## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,9 +45,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 在 `IN` 子查询中启用 `DISTINCT`。这是一个需要权衡的设置：启用后可确保仅发送唯一值，从而大幅减小分布式 `IN` 子查询传输的临时表大小，并显著加快分片之间的数据传输。
 不过，启用此设置会增加每个节点上的额外合并开销，因为必须执行去重 (`DISTINCT`) 。当网络传输成为性能瓶颈，且可以接受额外的合并成本时，请使用此设置。
 
-<div id="enable_alp_codec">
-  ## enable_alp_codec
-</div>
+## enable_alp_codec {#enable_alp_codec}
 
 <BetaBadge />
 
@@ -62,9 +55,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 启用 `ALP` 压缩编解码器。
 
-<div id="enable_automatic_decision_for_merging_across_partitions_for_final">
-  ## enable_automatic_decision_for_merging_across_partitions_for_final
-</div>
+## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,9 +64,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 如果启用此设置，当分区键表达式是确定性的，且分区键表达式中使用的所有列都包含在主键中时，ClickHouse 会自动启用此优化。
 这种自动推导可确保具有相同主键值的行始终属于同一分区，因此可以安全地避免跨分区合并。
 
-<div id="enable_cascades_optimizer">
-  ## enable_cascades_optimizer
-</div>
+## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />
 
@@ -86,17 +75,13 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 为分布式查询计划启用 Cascades 成本优化器。
 仅当同时设置 `make_distributed_plan = 1` 时才生效：仅启用此设置不会改变单节点查询的规划方式。
 
-<div id="enable_early_constant_folding">
-  ## enable_early_constant_folding
-</div>
+## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 启用查询优化：分析函数和子查询的结果，并在其中包含常量时重写查询
 
-<div id="enable_extended_results_for_datetime_functions">
-  ## enable_extended_results_for_datetime_functions
-</div>
+## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -128,9 +113,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 | `toStartOfMinute`         | 返回 `DateTime`<br />*注：对于超出 1970-2149 范围的值，结果会出错*     | 输入为 `Date`/`DateTime` 时，返回 `DateTime`<br />输入为 `Date32`/`DateTime64` 时，返回 `DateTime64`                       |
 | `timeSlot`                | 返回 `DateTime`<br />*注意：对于超出 1970-2149 范围的值，结果会不正确。*  | 对于 `Date`/`DateTime` 类型的输入，返回 `DateTime`<br />对于 `Date32`/`DateTime64` 类型的输入，返回 `DateTime64`                 |
 
-<div id="enable_full_text_index">
-  ## enable_full_text_index
-</div>
+## enable_full_text_index {#enable_full_text_index}
 
 **别名**: `allow_experimental_full_text_index`
 
@@ -140,9 +123,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 如果设置为 true，则允许使用文本索引。
 
-<div id="enable_function_early_short_circuit">
-  ## enable_function_early_short_circuit
-</div>
+## enable_function_early_short_circuit {#enable_function_early_short_circuit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -151,9 +132,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 在查询分析阶段，为 `and` 和 `or` 启用提前短路常量折叠。
 启用后，会分析符合条件的不可达标量子查询分支，以保留其类型并验证查询语义，但不会执行这些分支。当需要确定标量基数或运行时值时，该优化会回退到常规分析。
 
-<div id="enable_global_with_statement">
-  ## enable_global_with_statement
-</div>
+## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -161,9 +140,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 将 WITH 语句应用于 UNION 查询和所有子查询
 
-<div id="enable_group_by_top_k_optimization">
-  ## enable_group_by_top_k_optimization
-</div>
+## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -182,9 +159,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 * 0 — 已禁用。
 * 1 — 已启用。
 
-<div id="enable_hash_join_row_store">
-  ## enable_hash_join_row_store
-</div>
+## enable_hash_join_row_store {#enable_hash_join_row_store}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -192,9 +167,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 启用将哈希连接的载荷转换为行主序布局。
 
-<div id="enable_hdfs_pread">
-  ## enable_hdfs_pread
-</div>
+## enable_hdfs_pread {#enable_hdfs_pread}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -202,9 +175,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 控制是否对 HDFS 文件启用 pread。默认使用 `hdfsPread`。如果禁用，则会使用 `hdfsRead` 和 `hdfsSeek` 来读取 HDFS 文件。
 
-<div id="enable_http_compression">
-  ## enable_http_compression
-</div>
+## enable_http_compression {#enable_http_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -219,9 +190,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 * 0 — 禁用。
 * 1 — 启用。
 
-<div id="enable_identifier_resolve_cache">
-  ## enable_identifier_resolve_cache
-</div>
+## enable_identifier_resolve_cache {#enable_identifier_resolve_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -229,9 +198,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 在查询分析器中启用标识符解析缓存。该缓存会共享已解析的别名节点，以防止同一别名被多次引用时 AST 膨胀。若怀疑结果不正确，可将其设为 false 以禁用缓存。
 
-<div id="enable_job_stack_trace">
-  ## enable_job_stack_trace
-</div>
+## enable_job_stack_trace {#enable_job_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -239,9 +206,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 当 job 导致异常时，输出 job 创建者的堆栈跟踪。默认禁用，以避免性能开销。
 
-<div id="enable_json_ast_dialect">
-  ## enable_json_ast_dialect
-</div>
+## enable_json_ast_dialect {#enable_json_ast_dialect}
 
 <ExperimentalBadge />
 
@@ -265,9 +230,7 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
-<div id="enable_lazy_columns_replication">
-  ## enable_lazy_columns_replication
-</div>
+## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -275,9 +238,7 @@ SET dialect = 'clickhouse_json';
 
 启用 `JOIN`、`ARRAY JOIN` 和高阶函数 (如 `arrayMap`) 的 lambda 捕获中的惰性列复制，可避免在内存中多次不必要地复制相同的行。
 
-<div id="enable_materialized_cte">
-  ## enable_materialized_cte
-</div>
+## enable_materialized_cte {#enable_materialized_cte}
 
 <ExperimentalBadge />
 
@@ -285,27 +246,23 @@ SET dialect = 'clickhouse_json';
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新设置"}]}]} />
 
-启用物化公共表表达式；该设置的优先级高于 enable&#95;global&#95;with&#95;statement
+启用物化公共表表达式 (`WITH <name> AS MATERIALIZED (<subquery>)`) 。
+启用时，被声明为 `MATERIALIZED` 且被多次引用的 CTE 只执行一次，其结果存储在临时表中，所有引用都从该表读取。仅被引用一次的 CTE 会作为普通 CTE 内联展开，以避免额外开销。
+禁用时，`MATERIALIZED` 关键字会被忽略：该 CTE 会像普通 CTE 一样在每处引用中内联展开，并记录一条警告日志。
 
-<div id="enable_memory_bound_merging_of_aggregation_results">
-  ## enable_memory_bound_merging_of_aggregation_results
-</div>
+## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 启用用于聚合的内存受限合并策略。
 
-<div id="enable_multiple_prewhere_read_steps">
-  ## enable_multiple_prewhere_read_steps
-</div>
+## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 如果有多个通过 AND 组合的条件，则会将更多条件从 WHERE 移到 PREWHERE，并分多个步骤从磁盘读取数据并进行过滤
 
-<div id="enable_named_columns_in_function_tuple">
-  ## enable_named_columns_in_function_tuple
-</div>
+## enable_named_columns_in_function_tuple {#enable_named_columns_in_function_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -313,9 +270,7 @@ SET dialect = 'clickhouse_json';
 
 当所有名称都是唯一的，且可视为未加引号的标识符时，在函数 tuple() 中生成命名元组。
 
-<div id="enable_order_by_all">
-  ## enable_order_by_all
-</div>
+## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -350,9 +305,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 └────┴────┴─────┘
 ```
 
-<div id="enable_packed_string_keys_in_aggregation">
-  ## enable_packed_string_keys_in_aggregation
-</div>
+## enable_packed_string_keys_in_aggregation {#enable_packed_string_keys_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -364,9 +317,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 参与分布式查询的所有服务器必须使用相同的值：使用 `distributed_aggregation_memory_efficient` 时，两级桶编号取决于键的哈希值，而两种方法的键哈希不同，因此设置值不一致的服务器可能会将同一个键分到不同桶中，导致合并结果不正确。为确保一致性，发起者始终会随次级查询发送其生效值 (即使该值仅来自服务器/profile 默认值) ，从而覆盖远程服务器自身的默认值。
 
-<div id="enable_parsing_to_custom_serialization">
-  ## enable_parsing_to_custom_serialization
-</div>
+## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -374,9 +325,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 如果为 true，则可根据从表中获得的序列化提示，直接将数据解析到使用自定义序列化 (例如 Sparse) 的列中。
 
-<div id="enable_producing_buckets_out_of_order_in_aggregation">
-  ## enable_producing_buckets_out_of_order_in_aggregation
-</div>
+## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -386,9 +335,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 当聚合桶的大小分布不均时，这可能会提升性能：副本在仍处理某些 id 较低的大桶时，可以先向发起节点发送 id 较高的桶。
 缺点是内存使用量可能会增加。
 
-<div id="enable_quantized_codec">
-  ## enable_quantized_codec
-</div>
+## enable_quantized_codec {#enable_quantized_codec}
 
 <ExperimentalBadge />
 
@@ -398,9 +345,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 启用 `Quantized` 压缩编解码器。
 
-<div id="enable_reads_from_query_cache">
-  ## enable_reads_from_query_cache
-</div>
+## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -411,17 +356,13 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 * 0 - 禁用
 * 1 - 启用
 
-<div id="enable_s3_requests_logging">
-  ## enable_s3_requests_logging
-</div>
+## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 启用极其详细的 S3 请求日志。仅建议在调试时使用。
 
-<div id="enable_scalar_subquery_optimization">
-  ## enable_scalar_subquery_optimization
-</div>
+## enable_scalar_subquery_optimization {#enable_scalar_subquery_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -429,9 +370,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 如果将其设置为 true，则可防止标量子查询对大型标量值进行 (反) 序列化，并尽可能避免同一子查询被执行多次。
 
-<div id="enable_scopes_for_with_statement">
-  ## enable_scopes_for_with_statement
-</div>
+## enable_scopes_for_with_statement {#enable_scopes_for_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -441,9 +380,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 请注意，这是 analyzer 的一个兼容性设置，用于允许运行一些旧 analyzer 能够执行的无效查询。
 
-<div id="enable_shared_storage_snapshot_in_query">
-  ## enable_shared_storage_snapshot_in_query
-</div>
+## enable_shared_storage_snapshot_in_query {#enable_shared_storage_snapshot_in_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -472,17 +409,13 @@ WHERE (_part, _part_offset) IN (
 * 0 - 已禁用
 * 1 - 已启用
 
-<div id="enable_sharing_sets_for_mutations">
-  ## enable_sharing_sets_for_mutations
-</div>
+## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许在同一变更的不同任务之间共享为 IN 子查询构建的 Set 对象。这可以减少内存占用和 CPU 消耗
 
-<div id="enable_streaming_queries">
-  ## enable_streaming_queries
-</div>
+## enable_streaming_queries {#enable_streaming_queries}
 
 <ExperimentalBadge />
 
@@ -495,9 +428,7 @@ WHERE (_part, _part_offset) IN (
 被拒绝。这是流式查询功能的总开关；
 其他能力也可能受其各自设置的控制。
 
-<div id="enable_sz3_codec">
-  ## enable_sz3_codec
-</div>
+## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
 
@@ -507,9 +438,34 @@ WHERE (_part, _part_offset) IN (
 
 启用 `SZ3` 压缩编解码器。
 
-<div id="enable_time_time64_type">
-  ## enable_time_time64_type
-</div>
+## enable_time_series_aggregate_functions {#enable_time_series_aggregate_functions}
+
+<PrivatePreviewBadge />
+
+**别名**：`allow_experimental_ts_to_grid_aggregate_function`、`allow_experimental_time_series_aggregate_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`timeSeries*` 聚合函数已移至私有预览层级。为该设置新增别名 `allow_experimental_time_series_aggregate_functions`。"}]}]} />
+
+启用 `timeSeries*` 聚合函数，用于类 Prometheus 的时间序列重采样、rate 和 delta 计算。
+
+## enable_time_series_table {#enable_time_series_table}
+
+<PrivatePreviewBadge />
+
+**别名**: `allow_experimental_time_series_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`TimeSeries` 表引擎与 `promql` 方言已移至私有预览层级。为 `allow_experimental_time_series_table` 设置添加了别名。"}]}]} />
+
+允许创建使用 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表引擎的表。可能的取值：
+
+* 0 — 禁用 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表引擎。
+* 1 — 启用 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表引擎。
+
+## enable_time_time64_type {#enable_time_time64_type}
 
 **别名**: `allow_experimental_time_time64_type`
 
@@ -519,17 +475,13 @@ WHERE (_part, _part_offset) IN (
 
 允许创建 [Time](/zh/reference/data-types/time) 和 [Time64](/zh/reference/data-types/time64) 数据类型。
 
-<div id="enable_unaligned_array_join">
-  ## enable_unaligned_array_join
-</div>
+## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许对多个长度不同的数组使用 ARRAY JOIN。启用此设置后，数组会被调整到与最长数组相同的长度。
 
-<div id="enable_url_encoding">
-  ## enable_url_encoding
-</div>
+## enable_url_encoding {#enable_url_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -539,9 +491,7 @@ WHERE (_part, _part_offset) IN (
 
 默认禁用。
 
-<div id="enable_vertical_final">
-  ## enable_vertical_final
-</div>
+## enable_vertical_final {#enable_vertical_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -549,9 +499,7 @@ WHERE (_part, _part_offset) IN (
 
 如果启用，则在 FINAL 期间会通过将行标记为已删除并在后续进行过滤来移除重复行，而不是通过合并行来实现
 
-<div id="enable_writes_to_query_cache">
-  ## enable_writes_to_query_cache
-</div>
+## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -562,9 +510,7 @@ WHERE (_part, _part_offset) IN (
 * 0 - 禁用
 * 1 - 启用
 
-<div id="enable_zxc_codec">
-  ## enable_zxc_codec
-</div>
+## enable_zxc_codec {#enable_zxc_codec}
 
 <ExperimentalBadge />
 

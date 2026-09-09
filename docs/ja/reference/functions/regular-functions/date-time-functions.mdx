@@ -5633,8 +5633,6 @@ SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 toYear(datetime)
 ```
 
-**別名**: `YEAR`
-
 **引数**
 
 * `datetime` — 年を取得する対象の日付または日時。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
@@ -5784,6 +5782,58 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
 │ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
+```
+
+## year {#year}
+
+導入バージョン: v26.9.0
+
+`Date` または `DateTime` 型の値の年の部分を返します。
+
+引数なしで呼び出すと、クエリ解析時点の現在の年を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
+
+**構文**
+
+```sql
+year([datetime])
+```
+
+**引数**
+
+* `datetime` — 任意。年を取得する対象の日付または日時。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
+
+**戻り値**
+
+指定された (または現在の) Date または DateTime の年を表す [`UInt16`](/ja/reference/data-types/int-uint) を返します
+
+**例**
+
+**値の年**
+
+```sql title=Query
+SELECT year(toDateTime('2023-04-21 10:20:30'))
+```
+
+```response title=Response
+┌─year(toDateTime('2023-04-21 10:20:30'))─┐
+│                                    2023 │
+└─────────────────────────────────────────┘
+```
+
+**現在の年**
+
+```sql title=Query
+SELECT year()
+```
+
+```response title=Response
+┌─year()─┐
+│   2026 │
+└────────┘
 ```
 
 ## yesterday {#yesterday}

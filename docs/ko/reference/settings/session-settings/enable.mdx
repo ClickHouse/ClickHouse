@@ -12,12 +12,11 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-<div id="enable_adaptive_aggregator">
-  ## enable_adaptive_aggregator
-</div>
+## enable_adaptive_aggregator {#enable_adaptive_aggregator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,9 +26,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 외부 집계 설정(`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`)도 적용됩니다. 임계값을 초과하면 백로그를 공유 테이블로 조기에 비우며, 그래도 임계값 아래로 내려가지 않으면 일반 외부 집계를 통해 공유 테이블을 디스크에 spill합니다.
 
-<div id="enable_adaptive_memory_spill_scheduler">
-  ## enable_adaptive_memory_spill_scheduler
-</div>
+## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
 <ExperimentalBadge />
 
@@ -39,9 +36,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 프로세서가 데이터를 외부 스토리지로 적응적으로 spill하도록 트리거합니다. 현재는 grace join만 지원합니다.
 
-<div id="enable_add_distinct_to_in_subqueries">
-  ## enable_add_distinct_to_in_subqueries
-</div>
+## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,9 +45,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 `IN` 서브쿼리에서 `DISTINCT`를 활성화합니다. 이 설정은 절충이 필요한 설정입니다. 활성화하면 고유한 값만 전송되므로, 분산 `IN` 서브쿼리에 대해 전송되는 임시 테이블의 크기를 크게 줄이고 세그먼트 간 데이터 전송 속도도 크게 높일 수 있습니다.
 다만 이 설정을 활성화하면 중복 제거(`DISTINCT`)를 수행해야 하므로 각 노드에서 추가 병합 작업이 발생합니다. 네트워크 전송이 병목이고 추가 병합 비용을 감수할 수 있다면 이 설정을 사용하십시오.
 
-<div id="enable_alp_codec">
-  ## enable_alp_codec
-</div>
+## enable_alp_codec {#enable_alp_codec}
 
 <BetaBadge />
 
@@ -62,9 +55,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 `ALP` 압축 코덱을 활성화합니다.
 
-<div id="enable_automatic_decision_for_merging_across_partitions_for_final">
-  ## enable_automatic_decision_for_merging_across_partitions_for_final
-</div>
+## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,9 +64,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 설정된 경우, 파티션 키 표현식이 deterministic이고 파티션 키 표현식에 사용된 모든 컬럼이 프라이머리 키에 포함되면 ClickHouse가 이 최적화를 자동으로 활성화합니다.
 이 자동 판별을 통해 동일한 기본 키 값을 가진 행은 항상 동일한 파티션에 속하게 되므로, 파티션 간 머지를 피해도 안전합니다.
 
-<div id="enable_cascades_optimizer">
-  ## enable_cascades_optimizer
-</div>
+## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />
 
@@ -86,17 +75,13 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 분산 쿼리 계획에 Cascades 비용 기반 최적화기를 활성화합니다.
 `make_distributed_plan = 1`과 함께 설정한 경우에만 적용됩니다. 이 설정만으로는 단일 노드 쿼리 계획이 변경되지 않습니다.
 
-<div id="enable_early_constant_folding">
-  ## enable_early_constant_folding
-</div>
+## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 함수와 서브쿼리의 결과를 분석하고, 여기에 상수가 있으면 쿼리를 재작성하는 쿼리 최적화를 활성화합니다
 
-<div id="enable_extended_results_for_datetime_functions">
-  ## enable_extended_results_for_datetime_functions
-</div>
+## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -127,9 +112,7 @@ Possible values:
 | `toStartOfMinute`         | `DateTime`을 반환<br />*참고: 1970-2149 범위를 벗어나는 값에는 잘못된 결과를 반환합니다*        | `Date`/`DateTime` 입력에는 `DateTime`을 반환합니다<br />`Date32`/`DateTime64` 입력에는 `DateTime64`를 반환합니다                     |
 | `timeSlot`                | `DateTime`을 반환합니다<br />*참고: 1970-2149 범위를 벗어나는 값에는 잘못된 결과가 반환됩니다*     | `Date`/`DateTime` 입력의 경우 `DateTime`을 반환<br />`Date32`/`DateTime64` 입력의 경우 `DateTime64`를 반환                       |
 
-<div id="enable_full_text_index">
-  ## enable_full_text_index
-</div>
+## enable_full_text_index {#enable_full_text_index}
 
 **별칭**: `allow_experimental_full_text_index`
 
@@ -139,9 +122,7 @@ Possible values:
 
 true로 설정하면 텍스트 인덱스 사용이 허용됩니다.
 
-<div id="enable_function_early_short_circuit">
-  ## enable_function_early_short_circuit
-</div>
+## enable_function_early_short_circuit {#enable_function_early_short_circuit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -150,9 +131,7 @@ true로 설정하면 텍스트 인덱스 사용이 허용됩니다.
 쿼리 분석 중 `and` 및 `or`에 대한 조기 단락 상수 폴딩을 활성화합니다.
 활성화하면 조건을 충족하는 실행 불가 스칼라 하위 쿼리 분기는 타입을 보존하고 쿼리 의미를 검증하기 위해 분석되지만 실행되지는 않습니다. 스칼라 카디널리티 또는 런타임 값이 필요한 경우에는 일반 분석으로 되돌아갑니다.
 
-<div id="enable_global_with_statement">
-  ## enable_global_with_statement
-</div>
+## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -160,9 +139,7 @@ true로 설정하면 텍스트 인덱스 사용이 허용됩니다.
 
 WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다
 
-<div id="enable_group_by_top_k_optimization">
-  ## enable_group_by_top_k_optimization
-</div>
+## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -181,9 +158,7 @@ WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-<div id="enable_hash_join_row_store">
-  ## enable_hash_join_row_store
-</div>
+## enable_hash_join_row_store {#enable_hash_join_row_store}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -191,9 +166,7 @@ WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다
 
 해시 조인의 페이로드를 행 중심 레이아웃으로 변환할 수 있도록 합니다.
 
-<div id="enable_hdfs_pread">
-  ## enable_hdfs_pread
-</div>
+## enable_hdfs_pread {#enable_hdfs_pread}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -201,9 +174,7 @@ WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다
 
 HDFS 파일에 `pread`를 사용할지 설정합니다. 기본적으로 `hdfsPread`를 사용합니다. 비활성화하면 HDFS 파일을 읽을 때 `hdfsRead`와 `hdfsSeek`를 사용합니다.
 
-<div id="enable_http_compression">
-  ## enable_http_compression
-</div>
+## enable_http_compression {#enable_http_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -218,9 +189,7 @@ HTTP 요청 응답에서 데이터 압축을 활성화하거나 비활성화합�
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-<div id="enable_identifier_resolve_cache">
-  ## enable_identifier_resolve_cache
-</div>
+## enable_identifier_resolve_cache {#enable_identifier_resolve_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -228,9 +197,7 @@ HTTP 요청 응답에서 데이터 압축을 활성화하거나 비활성화합�
 
 쿼리 분석기에서 식별자 해석 캐시를 활성화합니다. 이 캐시는 해석된 별칭(alias) 노드를 공유하여 동일한 별칭이 여러 번 참조될 때 AST가 과도하게 증가하는 것을 방지합니다. 잘못된 결과가 의심되면 캐싱을 비활성화하려면 `false`로 설정하십시오.
 
-<div id="enable_job_stack_trace">
-  ## enable_job_stack_trace
-</div>
+## enable_job_stack_trace {#enable_job_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -238,9 +205,7 @@ HTTP 요청 응답에서 데이터 압축을 활성화하거나 비활성화합�
 
 작업 실행 결과 예외가 발생하면 작업 생성자의 스택 트레이스를 출력합니다. 성능 오버헤드를 방지하기 위해 기본적으로 비활성화됩니다.
 
-<div id="enable_json_ast_dialect">
-  ## enable_json_ast_dialect
-</div>
+## enable_json_ast_dialect {#enable_json_ast_dialect}
 
 <ExperimentalBadge />
 
@@ -264,9 +229,7 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
-<div id="enable_lazy_columns_replication">
-  ## enable_lazy_columns_replication
-</div>
+## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -274,9 +237,7 @@ SET dialect = 'clickhouse_json';
 
 `JOIN`, `ARRAY JOIN` 및 고차 함수(예: `arrayMap`)의 lambda 캡처에서 컬럼 지연 복제를 활성화합니다. 이를 통해 메모리에서 동일한 행을 여러 번 불필요하게 복사하지 않아도 됩니다.
 
-<div id="enable_materialized_cte">
-  ## enable_materialized_cte
-</div>
+## enable_materialized_cte {#enable_materialized_cte}
 
 <ExperimentalBadge />
 
@@ -284,27 +245,23 @@ SET dialect = 'clickhouse_json';
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-구체화된 공통 테이블 표현식을 활성화합니다. 이 설정은 enable&#95;global&#95;with&#95;statement보다 우선 적용됩니다.
+구체화된 공통 테이블 표현식(`WITH <name> AS MATERIALIZED (<subquery>)`)을 활성화합니다.
+활성화하면 `MATERIALIZED`로 선언된 CTE가 두 번 이상 참조될 경우 한 번만 실행되어 임시 테이블에 저장되고, 모든 참조는 해당 테이블에서 읽습니다. 한 번만 참조되는 CTE는 오버헤드를 피하기 위해 일반 CTE처럼 인라인 처리됩니다.
+비활성화하면 `MATERIALIZED` 키워드는 무시됩니다. 즉, CTE는 일반 CTE와 같이 각 참조 지점에 인라인 처리되며 경고가 로그에 기록됩니다.
 
-<div id="enable_memory_bound_merging_of_aggregation_results">
-  ## enable_memory_bound_merging_of_aggregation_results
-</div>
+## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 집계에 메모리 제한 기반 병합 전략을 사용합니다.
 
-<div id="enable_multiple_prewhere_read_steps">
-  ## enable_multiple_prewhere_read_steps
-</div>
+## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 WHERE의 더 많은 조건을 PREWHERE로 이동하고, AND로 결합된 여러 조건이 있으면 디스크 읽기와 필터링을 여러 단계에 걸쳐 수행합니다
 
-<div id="enable_named_columns_in_function_tuple">
-  ## enable_named_columns_in_function_tuple
-</div>
+## enable_named_columns_in_function_tuple {#enable_named_columns_in_function_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -312,9 +269,7 @@ WHERE의 더 많은 조건을 PREWHERE로 이동하고, AND로 결합된 여러 
 
 모든 이름이 고유하고 따옴표 없이 식별자로 취급할 수 있는 경우 tuple() 함수에서 이름이 지정된 Tuple을 생성합니다.
 
-<div id="enable_order_by_all">
-  ## enable_order_by_all
-</div>
+## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -349,9 +304,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 └────┴────┴─────┘
 ```
 
-<div id="enable_packed_string_keys_in_aggregation">
-  ## enable_packed_string_keys_in_aggregation
-</div>
+## enable_packed_string_keys_in_aggregation {#enable_packed_string_keys_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -363,9 +316,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 분산 쿼리에 참여하는 모든 서버는 이 값이 일치해야 합니다. `distributed_aggregation_memory_efficient`를 사용하면 2단계 버킷 번호는 키 해시에 따라 달라지며, 이 해시는 두 메서드에서 서로 다릅니다. 따라서 이 설정이 서로 다른 서버는 동일한 키를 서로 다른 버킷으로 분할해 잘못 머지된 결과를 생성할 수 있습니다. 값의 일치를 보장하기 위해 시작 노드는 서버 또는 프로필 기본값에서만 가져온 경우에도 보조 쿼리와 함께 유효 값을 항상 전송하여 원격 서버의 기본값을 재정의합니다.
 
-<div id="enable_parsing_to_custom_serialization">
-  ## enable_parsing_to_custom_serialization
-</div>
+## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -373,9 +324,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터를 사용자 지정 직렬화(예: Sparse)가 적용된 컬럼으로 직접 파싱할 수 있습니다.
 
-<div id="enable_producing_buckets_out_of_order_in_aggregation">
-  ## enable_producing_buckets_out_of_order_in_aggregation
-</div>
+## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -385,9 +334,7 @@ true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터�
 이 설정은 집계 버킷 크기가 치우쳐 있을 때, 레플리카가 id가 낮은 무거운 버킷 일부를 아직 처리하는 동안 id가 더 높은 버킷을 initiator로 전송할 수 있게 하여 성능을 향상시킬 수 있습니다.
 단점은 메모리 사용량이 더 늘어날 수 있다는 점입니다.
 
-<div id="enable_quantized_codec">
-  ## enable_quantized_codec
-</div>
+## enable_quantized_codec {#enable_quantized_codec}
 
 <ExperimentalBadge />
 
@@ -397,9 +344,7 @@ true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터�
 
 `Quantized` 압축 코덱을 활성화합니다.
 
-<div id="enable_reads_from_query_cache">
-  ## enable_reads_from_query_cache
-</div>
+## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -410,17 +355,13 @@ true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터�
 * 0 - 비활성화
 * 1 - 활성화
 
-<div id="enable_s3_requests_logging">
-  ## enable_s3_requests_logging
-</div>
+## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 S3 request에 대한 매우 상세한 로깅을 활성화합니다. Debug 용도로만 사용하는 것이 좋습니다.
 
-<div id="enable_scalar_subquery_optimization">
-  ## enable_scalar_subquery_optimization
-</div>
+## enable_scalar_subquery_optimization {#enable_scalar_subquery_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -428,9 +369,7 @@ S3 request에 대한 매우 상세한 로깅을 활성화합니다. Debug 용도
 
 true로 설정하면 스칼라 서브쿼리에서 큰 스칼라 값의 직렬화/역직렬화를 방지하고, 가능하면 동일한 서브쿼리를 두 번 이상 실행하지 않도록 합니다.
 
-<div id="enable_scopes_for_with_statement">
-  ## enable_scopes_for_with_statement
-</div>
+## enable_scopes_for_with_statement {#enable_scopes_for_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -440,9 +379,7 @@ true로 설정하면 스칼라 서브쿼리에서 큰 스칼라 값의 직렬화
 
 이는 이전 분석기가 실행할 수 있었던 일부 유효하지 않은 쿼리를 실행할 수 있도록 하기 위한 분석기의 compatibility 설정이라는 점에 유의하십시오.
 
-<div id="enable_shared_storage_snapshot_in_query">
-  ## enable_shared_storage_snapshot_in_query
-</div>
+## enable_shared_storage_snapshot_in_query {#enable_shared_storage_snapshot_in_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -471,17 +408,13 @@ WHERE (_part, _part_offset) IN (
 * 0 - 비활성화됨
 * 1 - 활성화됨
 
-<div id="enable_sharing_sets_for_mutations">
-  ## enable_sharing_sets_for_mutations
-</div>
+## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여러 작업 간에 공유할 수 있도록 합니다. 이렇게 하면 메모리 사용량과 CPU 사용량을 줄일 수 있습니다.
 
-<div id="enable_streaming_queries">
-  ## enable_streaming_queries
-</div>
+## enable_streaming_queries {#enable_streaming_queries}
 
 <ExperimentalBadge />
 
@@ -495,9 +428,7 @@ IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여�
 기능을 위한 상위 제어 설정이며, 추가 기능은 각자의 설정으로
 별도로 제어될 수 있습니다.
 
-<div id="enable_sz3_codec">
-  ## enable_sz3_codec
-</div>
+## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
 
@@ -507,9 +438,34 @@ IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여�
 
 `SZ3` 압축 코덱을 활성화합니다.
 
-<div id="enable_time_time64_type">
-  ## enable_time_time64_type
-</div>
+## enable_time_series_aggregate_functions {#enable_time_series_aggregate_functions}
+
+<PrivatePreviewBadge />
+
+**Aliases**: `allow_experimental_ts_to_grid_aggregate_function`, `allow_experimental_time_series_aggregate_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`timeSeries*` 집계 함수가 비공개 프리뷰 tier로 이동되었습니다. `allow_experimental_time_series_aggregate_functions` 설정의 alias가 추가되었습니다."}]}]} />
+
+Prometheus 스타일의 time series 리샘플링, rate 및 delta 계산에 사용하는 `timeSeries*` 집계 함수를 활성화합니다.
+
+## enable_time_series_table {#enable_time_series_table}
+
+<PrivatePreviewBadge />
+
+**Aliases**: `allow_experimental_time_series_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`TimeSeries` 테이블 엔진과 `promql` 방언이 비공개 프리뷰 tier로 이동되었습니다. `allow_experimental_time_series_table` 설정에 대한 alias가 추가되었습니다."}]}]} />
+
+[TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 엔진을 사용하는 테이블 생성을 허용합니다. 가능한 값:
+
+* 0 — [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 엔진이 비활성화됩니다.
+* 1 — [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 엔진이 활성화됩니다.
+
+## enable_time_time64_type {#enable_time_time64_type}
 
 **별칭**: `allow_experimental_time_time64_type`
 
@@ -519,17 +475,13 @@ IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여�
 
 [Time](/ko/reference/data-types/time) 및 [Time64](/ko/reference/data-types/time64) 데이터 타입을 생성할 수 있습니다.
 
-<div id="enable_unaligned_array_join">
-  ## enable_unaligned_array_join
-</div>
+## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 크기가 서로 다른 여러 배열에 대해 ARRAY JOIN을 허용합니다. 이 설정을 활성화하면 배열 크기가 가장 긴 배열에 맞춰 조정됩니다.
 
-<div id="enable_url_encoding">
-  ## enable_url_encoding
-</div>
+## enable_url_encoding {#enable_url_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -539,9 +491,7 @@ IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여�
 
 기본적으로 비활성화되어 있습니다.
 
-<div id="enable_vertical_final">
-  ## enable_vertical_final
-</div>
+## enable_vertical_final {#enable_vertical_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -549,9 +499,7 @@ IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여�
 
 활성화하면 FINAL 중에 행을 병합하는 대신 행을 삭제된 것으로 표시한 뒤 나중에 필터링하여 중복 행을 제거합니다
 
-<div id="enable_writes_to_query_cache">
-  ## enable_writes_to_query_cache
-</div>
+## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -562,9 +510,7 @@ Possible values:
 * 0 - 비활성화됨
 * 1 - 활성화됨
 
-<div id="enable_zxc_codec">
-  ## enable_zxc_codec
-</div>
+## enable_zxc_codec {#enable_zxc_codec}
 
 <ExperimentalBadge />
 

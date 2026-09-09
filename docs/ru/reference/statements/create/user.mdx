@@ -301,6 +301,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 CREATE USER john GRANTEES jack;
 ```
 
+Создайте учётную запись пользователя `john` с базой данных по умолчанию:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` оставляет базу данных по умолчанию неустановленной. Чтобы использовать базу данных с именем `NONE`, заключите её имя в обратные кавычки:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 Используйте параметр запроса, чтобы создать учётную запись пользователя `john`:
 
 ```sql

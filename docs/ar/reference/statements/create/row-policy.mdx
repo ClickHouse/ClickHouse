@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -104,6 +104,8 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 تعني الكلمة المفتاحية `ALL` جميع مستخدمي ClickHouse، بما في ذلك المستخدم الحالي. وتتيح الكلمة المفتاحية `ALL EXCEPT` استبعاد بعض المستخدمين من قائمة جميع المستخدمين، على سبيل المثال، `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
+تتم مطابقة الأدوار المذكورة في قسم `TO`، بما في ذلك تلك الواردة بعد `ALL EXCEPT`، مع الأدوار المفعّلة للمستخدم الحالي ([`system.enabled_roles`](/ar/reference/system-tables/enabled_roles))، وليس مع كل دور مُمنَح للمستخدم، لذا يمكن أن يغيّر [`SET ROLE`](/ar/reference/statements/set-role) السياسات التي تنطبق.
+
 ## عبارة AS {#as-clause}
 
 يُسمح بتفعيل أكثر من سياسة واحدة على الجدول نفسه للمستخدم نفسه في الوقت ذاته. لذلك نحتاج إلى طريقة لدمج الشروط الواردة من سياسات متعددة.
@@ -115,18 +117,20 @@ CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
 CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 ```
 
-يُمكِّن المستخدم `peter` من رؤية الصفوف التي يكون فيها إما `b=1` أو `c=2`.
+يُمكِّن المستخدم `peter` من رؤية الصفوف التي يكون فيها إما `b=1` أو `c=2`.
 
-تحدِّد عبارة `AS` كيفية دمج السياسات مع السياسات الأخرى. ويمكن أن تكون السياسات إما متساهلة أو مقيِّدة. وبشكل افتراضي، تكون السياسات متساهلة، ما يعني أنها تُدمج باستخدام المعامل المنطقي `OR`.
+تحدِّد عبارة `AS` كيفية دمج السياسات مع السياسات الأخرى. ويمكن أن تكون السياسات إما متساهلة أو مقيِّدة. وبشكل افتراضي، تكون السياسات متساهلة، ما يعني أنها تُدمج باستخدام العامل المنطقي `OR`.
 
-ويمكن بدلاً من ذلك تعريف السياسة على أنها مقيِّدة. وتُدمج السياسات المقيِّدة باستخدام المعامل المنطقي `AND`.
+ويمكن بدلاً من ذلك تعريف السياسة على أنها مقيِّدة. وتُدمج السياسات المقيِّدة باستخدام العامل المنطقي `AND`.
 
 إليك الصيغة العامة:
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+إذا لم ينطبق أي شرط متساهل، فلن يكون للشرط الأول أي تأثير وتتولى السياسات المقيِّدة وحدها تحديد النتيجة، لأن `access_control_improvements.users_without_row_policies_can_read_rows` مفعَّل افتراضيًا. وبالتالي فإن المستخدم الذي لا ينطبق عليه أي شرط يرى كل صف، أما `access_control_improvements.throw_on_unmatched_row_policies`، المعطَّل افتراضيًا، فيثير استثناءً بدلاً من ذلك عندما تكون للجدول شروط ولا ينطبق أي منها.
 
 على سبيل المثال، السياسات التالية:
 
@@ -146,7 +150,7 @@ CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
 CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 ```
 
-يتيح للمستخدم `peter` رؤية صفوف table1 فقط إذا تحقّق الشرطان `b=1` AND `c=2` معًا، رغم أن أي جدول آخر في mydb لن تُطبَّق عليه للمستخدم سوى سياسة `b=1`.
+يتيح للمستخدم `peter` رؤية صفوف table1 فقط إذا تحقّق الشرطان `b=1` AND `c=2` معًا، رغم أن أي جدول آخر في mydb لن تُطبَّق عليه للمستخدم سوى سياسة `b=1`.
 
 ## جداول Distributed والجداول المعتمدة على خوادم بعيدة {#distributed-and-remote-backed-tables}
 

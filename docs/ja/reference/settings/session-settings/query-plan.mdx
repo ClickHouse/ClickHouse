@@ -380,25 +380,25 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 1 に設定するとランダムシードが生成され、1 より大きい値に設定すると、その値がシードとして直接使用されます。
 これは、異なる JOIN 順序によって発生するエラーを見つけるためのテストを目的としています。
 
-## query_plan_optimize_join_order_use_cd_a_conflict_detector {#query_plan_optimize_join_order_use_cd_a_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub JOIN 順序アルゴリズムで JOIN の並べ替えの妥当性を確認するために CD-A 競合検出器を使用する新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub JOIN 順序アルゴリズムで JOIN の並べ替えの妥当性を確認するために競合検出器 A を使用する新しい設定。"}]}]} />
 
 `dpsub` JOIN 順序アルゴリズムにのみ影響します。有効にすると、DPsub は CD-A 競合検出器を使用して、有効な JOIN の並べ替えを判定します。
 
-## query_plan_optimize_join_order_use_cd_c_conflict_detector {#query_plan_optimize_join_order_use_cd_c_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub JOIN 順序アルゴリズムにおける JOIN の並べ替えの妥当性判定に CD-C（correct and complete）競合検出器を使用する新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub JOIN 順序アルゴリズムにおける JOIN の並べ替えの妥当性判定に（correct and complete な）競合検出器 C を使用する新しい設定。"}]}]} />
 
-`dpsub` の JOIN 順序アルゴリズムにのみ影響します。有効にすると、DPsub は CD-C 競合検出器を用いて、どの JOIN の並べ替えが妥当であるかを判定します。`query_plan_optimize_join_order_use_cd_a_conflict_detector` と同時に有効になっている場合は、この設定が優先されます。
+`dpsub` の JOIN 順序アルゴリズムにのみ影響します。有効にすると、DPsub は CD-C 競合検出器を用いて、どの JOIN の並べ替えが妥当であるかを判定します。`query_plan_optimize_join_order_use_conflict_detector_a` と同時に有効になっている場合は、この設定が優先されます。
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

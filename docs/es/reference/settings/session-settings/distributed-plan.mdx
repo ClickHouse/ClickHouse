@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -91,7 +92,7 @@ Elimina intercambios innecesarios del plan de consulta distribuida. Desactívelo
 
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -116,7 +117,7 @@ el orden. Por ahora, solo son seguras las formas en las que no queda ningún int
 
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -126,7 +127,7 @@ Cuántos workers sin estado se usarán para ejecutar esta consulta. Cero desacti
 
 ## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 

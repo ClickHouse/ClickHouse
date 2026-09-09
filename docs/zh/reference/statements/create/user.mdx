@@ -301,6 +301,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 CREATE USER john GRANTEES jack;
 ```
 
+创建用户账户 `john`，并指定默认数据库：
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` 表示不设置默认数据库。若要使用名为 `NONE` 的数据库，请用反引号将其名称引起来：
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 使用查询参数来创建用户账户 `john`：
 
 ```sql

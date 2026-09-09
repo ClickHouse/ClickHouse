@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 أُضيف في: v25.6.0
 
-دالة تجميع تأخذ بيانات السلاسل الزمنية على شكل أزواج من الطوابع الزمنية والقيم، وتحسب [تنبؤًا خطيًا على غرار PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) بإزاحة زمنية محددة عن طابع التنبؤ، وذلك على شبكة زمنية منتظمة تُحدَّد بطابع البداية وطابع النهاية والخطوة. ولكل نقطة على الشبكة، تُؤخذ في الاعتبار العينات الواقعة ضمن النافذة الزمنية المحددة لحساب `predict_linear`.
+دالة تجميع تأخذ بيانات السلاسل الزمنية على شكل أزواج من الطوابع الزمنية والقيم، وتحسب [تنبؤًا خطيًا على غرار PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) بإزاحة زمنية محددة عن طابع التنبؤ، وذلك على شبكة زمنية منتظمة تُحدَّد بطابع البداية وطابع النهاية والخطوة. ولكل نقطة على الشبكة، تُؤخذ في الاعتبار العينات الواقعة ضمن النافذة الزمنية المحددة لحساب `predict_linear`.
 
 يمكن تمرير العينات بأحد الأشكال الثلاثة التالية:
 
@@ -22,7 +22,7 @@ doc_type: 'reference'
 إذا كانت عدة عينات تحمل الطابع الزمني نفسه، فلا تُستخدم سوى عينة واحدة منها: العينة ذات القيمة الأكبر. وتُستبعد قيمة NaN لصالح أي قيمة أخرى، لذا لا تُستخدم إلا إذا كانت جميع العينات عند هذا الطابع الزمني NaN.
 
 <Note>
-  هذه الدالة تجريبية؛ فعّلها بضبط `allow_experimental_time_series_aggregate_functions=true`.
+  هذه الدالة في مرحلة المعاينة الخاصة؛ فعّلها بضبط `enable_time_series_aggregate_functions=true`.
 </Note>
 
 **البنية**
@@ -44,7 +44,7 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
 
 * `timestamp` — الطابع الزمني للعينة. يمكن أن يكون قيمة منفردة أو مصفوفة. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Array(UInt32)`](/ar/reference/data-types/array) أو [`Array(DateTime)`](/ar/reference/data-types/array) أو [`Array(DateTime64)`](/ar/reference/data-types/array)
 * `value` — قيمة السلسلة الزمنية المقابلة للطابع الزمني. يمكن أن تكون قيمة منفردة أو مصفوفة. [`Float*`](/ar/reference/data-types/float) أو [`Array(Float*)`](/ar/reference/data-types/array)
-* `samples` — عينات السلسلة الزمنية المُمرَّرة كمصفوفة من الصفوف `(timestamp, value)`، حيث تكون عناصر الصف من أنواع الطابع الزمني والقيمة المذكورة أعلاه. بديل عن تمرير الطوابع الزمنية والقيم كوسيطين منفصلين. [`Array(Tuple(T1, T2))`](/ar/reference/data-types/array)
+* `samples` — عينات السلسلة الزمنية المُمرَّرة كمصفوفة من الصفوف `(timestamp, value)`، حيث تكون عناصر الصف المرتب من أنواع الطابع الزمني والقيمة المذكورة أعلاه. بديل عن تمرير الطوابع الزمنية والقيم كوسيطين منفصلين. [`Array(Tuple(T1, T2))`](/ar/reference/data-types/array)
 
 **القيمة المُعادة**
 
@@ -55,7 +55,7 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
 **احسب قيم predict&#95;linear على الشبكة [90, 105, 120, 135, 150, 165, 180, 195, 210] بإزاحة قدرها 60 ثانية**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -85,7 +85,7 @@ FROM
 **نفس الاستعلام مع وسيطات المصفوفة**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,

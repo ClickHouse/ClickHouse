@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -104,6 +104,8 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 Ключевое слово `ALL` означает всех пользователей ClickHouse, включая текущего пользователя. Ключевое слово `ALL EXCEPT` позволяет исключить отдельных пользователей из списка всех пользователей, например: `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
+Роли, указанные в секции `TO`, в том числе после `ALL EXCEPT`, сопоставляются с включенными ролями текущего пользователя ([`system.enabled_roles`](/ru/reference/system-tables/enabled_roles)), а не со всеми ролями, выданными пользователю, поэтому [`SET ROLE`](/ru/reference/statements/set-role) может изменить набор применяемых политик.
+
 ## Предложение AS {#as-clause}
 
 Допускается, чтобы для одной и той же таблицы и одного и того же пользователя одновременно было включено несколько политик. Поэтому нужен способ объединять условия из нескольких политик.
@@ -124,9 +126,11 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 Вот общая формула:
 
 ```text
-row_is_visible = (одно или несколько состояний разрешающих политик не равны нулю) AND
-                 (все состояния ограничивающих политик не равны нулю)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+Если ни одно разрешающее условие не применимо, первое условие не действует и решение принимается только на основании ограничивающих политик, поскольку `access_control_improvements.users_without_row_policies_can_read_rows` включен по умолчанию. Поэтому пользователь, к которому не применимо ни одно условие, видит все строки, а параметр `access_control_improvements.throw_on_unmatched_row_policies`, отключенный по умолчанию, вместо этого генерирует исключение, если для таблицы условия заданы, но ни одно из них не применимо.
 
 Например, следующие политики:
 

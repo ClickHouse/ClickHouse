@@ -22,7 +22,7 @@ Las muestras pueden pasarse de una de estas tres formas:
 Si varias muestras tienen la misma marca de tiempo, solo se usa una de ellas: la muestra con el valor más alto. Un valor NaN pierde frente a cualquier otro valor, por lo que solo se usa un valor NaN si todas las muestras de esta marca de tiempo son NaN.
 
 <Warning>
-  Esta función es experimental; habilítela configurando `allow_experimental_time_series_aggregate_functions=true`.
+  Esta función está en vista previa privada; habilítela configurando `enable_time_series_aggregate_functions=true`.
 </Warning>
 
 **Sintaxis**
@@ -54,7 +54,7 @@ Devuelve valores de `irate` en la cuadrícula especificada. El array devuelto co
 **Uso básico con pares individuales de marca de tiempo y valor**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -83,7 +83,7 @@ FROM
 **Uso de argumentos de tipo Array**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

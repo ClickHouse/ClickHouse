@@ -12,12 +12,11 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_adaptive_aggregator">
-  ## enable_adaptive_aggregator
-</div>
+## enable_adaptive_aggregator {#enable_adaptive_aggregator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,9 +26,7 @@ Ativa o algoritmo adaptativo de `GROUP BY`: cada thread agrega em sua tabela has
 
 As configurações de agregação externa (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) são respeitadas: depois de ultrapassar o limite, as filas são descarregadas antecipadamente na tabela compartilhada e, se isso não for suficiente para voltar a ficar abaixo do limite, a tabela compartilhada é gravada em disco por meio da agregação externa comum.
 
-<div id="enable_adaptive_memory_spill_scheduler">
-  ## enable_adaptive_memory_spill_scheduler
-</div>
+## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
 <ExperimentalBadge />
 
@@ -39,9 +36,7 @@ As configurações de agregação externa (`max_bytes_before_external_group_by`,
 
 Faz o processador descarregar dados para o armazenamento externo de forma adaptativa. Atualmente, há suporte para `grace join`.
 
-<div id="enable_add_distinct_to_in_subqueries">
-  ## enable_add_distinct_to_in_subqueries
-</div>
+## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,9 +45,7 @@ Faz o processador descarregar dados para o armazenamento externo de forma adapta
 Habilita `DISTINCT` em subconsultas `IN`. Esta configuração envolve um trade-off: ao habilitá-la, é possível reduzir bastante o tamanho das tabelas temporárias transferidas em subconsultas distribuídas com `IN` e acelerar significativamente a transferência de dados entre shards, garantindo que apenas valores únicos sejam enviados.
 No entanto, habilitar essa configuração acrescenta esforço extra de mesclagem em cada nó, já que a desduplicação (`DISTINCT`) precisa ser executada. Use esta configuração quando a transferência pela rede for um gargalo e o custo adicional de mesclagem for aceitável.
 
-<div id="enable_alp_codec">
-  ## enable_alp_codec
-</div>
+## enable_alp_codec {#enable_alp_codec}
 
 <BetaBadge />
 
@@ -62,9 +55,7 @@ No entanto, habilitar essa configuração acrescenta esforço extra de mesclagem
 
 Habilita o codec de compressão `ALP`.
 
-<div id="enable_automatic_decision_for_merging_across_partitions_for_final">
-  ## enable_automatic_decision_for_merging_across_partitions_for_final
-</div>
+## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,9 +64,7 @@ Habilita o codec de compressão `ALP`.
 Se definido, o ClickHouse habilitará automaticamente essa otimização quando a expressão da chave de partição for determinística e todas as colunas usadas nela estiverem incluídas na chave primária.
 Essa derivação automática garante que linhas com os mesmos valores de chave primária sempre pertençam à mesma partição, tornando seguro evitar mesclagens entre partições.
 
-<div id="enable_cascades_optimizer">
-  ## enable_cascades_optimizer
-</div>
+## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />
 
@@ -86,17 +75,13 @@ Essa derivação automática garante que linhas com os mesmos valores de chave p
 Habilita o otimizador de custo Cascades para planos de consultas distribuídas.
 Só tem efeito junto com `make_distributed_plan = 1`: isoladamente, a configuração não altera o planejamento de consultas em um único nó.
 
-<div id="enable_early_constant_folding">
-  ## enable_early_constant_folding
-</div>
+## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Habilita a otimização de consultas em que analisamos os resultados de funções e subconsultas e reescrevemos a consulta se houver constantes nelas.
 
-<div id="enable_extended_results_for_datetime_functions">
-  ## enable_extended_results_for_datetime_functions
-</div>
+## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -128,9 +113,7 @@ A tabela abaixo mostra o comportamento dessa configuração em várias funções
 | `toStartOfMinute`         | Retorna `DateTime`<br />*Observação: resultados incorretos para valores fora do intervalo de 1970 a 2149* | Retorna `DateTime` para entradas `Date`/`DateTime`<br />Retorna `DateTime64` para entradas `Date32`/`DateTime64`                                     |
 | `timeSlot`                | Retorna `DateTime`<br />*Nota: resultados incorretos para valores fora do intervalo de 1970 a 2149*       | Retorna `DateTime` para valores de entrada `Date`/`DateTime`<br />Retorna `DateTime64` para valores de entrada `Date32`/`DateTime64`                 |
 
-<div id="enable_full_text_index">
-  ## enable_full_text_index
-</div>
+## enable_full_text_index {#enable_full_text_index}
 
 **Aliases**: `allow_experimental_full_text_index`
 
@@ -140,9 +123,7 @@ A tabela abaixo mostra o comportamento dessa configuração em várias funções
 
 Se definido como true, permite o uso do índice de texto.
 
-<div id="enable_function_early_short_circuit">
-  ## enable_function_early_short_circuit
-</div>
+## enable_function_early_short_circuit {#enable_function_early_short_circuit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -151,9 +132,7 @@ Se definido como true, permite o uso do índice de texto.
 Ativa a simplificação antecipada de constantes por curto-circuito para `and` e `or` durante a análise de consultas.
 Quando ativados, os ramos inativos qualificados de subconsultas escalares são analisados para preservar seus tipos e validar a semântica da consulta, mas não são executados. A otimização recorre à análise normal quando são necessários a cardinalidade escalar ou valores de tempo de execução.
 
-<div id="enable_global_with_statement">
-  ## enable_global_with_statement
-</div>
+## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -161,9 +140,7 @@ Quando ativados, os ramos inativos qualificados de subconsultas escalares são a
 
 Propagar instruções WITH para consultas UNION e todas as subconsultas
 
-<div id="enable_group_by_top_k_optimization">
-  ## enable_group_by_top_k_optimization
-</div>
+## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -182,9 +159,7 @@ Valores possíveis:
 * 0 — Desabilitado.
 * 1 — Habilitado.
 
-<div id="enable_hash_join_row_store">
-  ## enable_hash_join_row_store
-</div>
+## enable_hash_join_row_store {#enable_hash_join_row_store}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -192,9 +167,7 @@ Valores possíveis:
 
 Habilita a transformação do payload de um hash join em um layout orientado a linhas.
 
-<div id="enable_hdfs_pread">
-  ## enable_hdfs_pread
-</div>
+## enable_hdfs_pread {#enable_hdfs_pread}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -202,9 +175,7 @@ Habilita a transformação do payload de um hash join em um layout orientado a l
 
 Ativa ou desativa `pread` para arquivos HDFS. Por padrão, `hdfsPread` é usado. Se estiver desativado, `hdfsRead` e `hdfsSeek` serão usados para ler arquivos HDFS.
 
-<div id="enable_http_compression">
-  ## enable_http_compression
-</div>
+## enable_http_compression {#enable_http_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -219,9 +190,7 @@ Valores possíveis:
 * 0 — Desativado.
 * 1 — Ativado.
 
-<div id="enable_identifier_resolve_cache">
-  ## enable_identifier_resolve_cache
-</div>
+## enable_identifier_resolve_cache {#enable_identifier_resolve_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -229,9 +198,7 @@ Valores possíveis:
 
 Ativa o cache de resolução de identificadores no analisador de consultas. O cache compartilha nós de alias já resolvidos para evitar a explosão da AST quando o mesmo alias é referenciado várias vezes. Defina como false para desativar o cache se houver suspeita de resultados incorretos.
 
-<div id="enable_job_stack_trace">
-  ## enable_job_stack_trace
-</div>
+## enable_job_stack_trace {#enable_job_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -239,9 +206,7 @@ Ativa o cache de resolução de identificadores no analisador de consultas. O ca
 
 Exibe o stack trace do criador de um job quando o job resulta em uma exceção. Desativado por padrão para evitar sobrecarga de desempenho.
 
-<div id="enable_json_ast_dialect">
-  ## enable_json_ast_dialect
-</div>
+## enable_json_ast_dialect {#enable_json_ast_dialect}
 
 <ExperimentalBadge />
 
@@ -265,9 +230,7 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
-<div id="enable_lazy_columns_replication">
-  ## enable_lazy_columns_replication
-</div>
+## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -275,9 +238,7 @@ SET dialect = 'clickhouse_json';
 
 Habilita a replicação lazy de colunas em `JOIN`, `ARRAY JOIN` e capturas lambda de funções de ordem superior (por exemplo, `arrayMap`), evitando cópias desnecessárias das mesmas linhas várias vezes na memória.
 
-<div id="enable_materialized_cte">
-  ## enable_materialized_cte
-</div>
+## enable_materialized_cte {#enable_materialized_cte}
 
 <ExperimentalBadge />
 
@@ -285,27 +246,23 @@ Habilita a replicação lazy de colunas em `JOIN`, `ARRAY JOIN` e capturas lambd
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Ativa expressões de tabela comuns materializadas; elas terão prioridade sobre `enable_global_with_statement`
+Ativa expressões de tabela comuns materializadas (`WITH <name> AS MATERIALIZED (<subquery>)`).
+Quando ativada, uma CTE declarada como `MATERIALIZED` e referenciada mais de uma vez é executada uma única vez, armazenada em uma tabela temporária, e todas as referências leem dessa tabela. Uma CTE referenciada apenas uma vez é incorporada como uma CTE comum para evitar a sobrecarga.
+Quando desabilitada, a palavra-chave `MATERIALIZED` é ignorada: a CTE é incorporada em cada referência como uma CTE comum, e um aviso é registrado.
 
-<div id="enable_memory_bound_merging_of_aggregation_results">
-  ## enable_memory_bound_merging_of_aggregation_results
-</div>
+## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Habilita a estratégia de mesclagem com limite de memória para agregação.
 
-<div id="enable_multiple_prewhere_read_steps">
-  ## enable_multiple_prewhere_read_steps
-</div>
+## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Move mais condições de WHERE para PREWHERE e execute leituras em disco e a filtragem em várias etapas se houver várias condições combinadas com AND
 
-<div id="enable_named_columns_in_function_tuple">
-  ## enable_named_columns_in_function_tuple
-</div>
+## enable_named_columns_in_function_tuple {#enable_named_columns_in_function_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -313,9 +270,7 @@ Move mais condições de WHERE para PREWHERE e execute leituras em disco e a fil
 
 Gerar tuplas nomeadas na função tuple() quando todos os nomes forem únicos e puderem ser tratados como identificadores sem aspas.
 
-<div id="enable_order_by_all">
-  ## enable_order_by_all
-</div>
+## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -350,9 +305,7 @@ Resultado:
 └────┴────┴─────┘
 ```
 
-<div id="enable_packed_string_keys_in_aggregation">
-  ## enable_packed_string_keys_in_aggregation
-</div>
+## enable_packed_string_keys_in_aggregation {#enable_packed_string_keys_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -364,9 +317,7 @@ Quando desativado, é usado o método legado baseado em `StringHashTable` (o pad
 
 Todos os servidores que participam de uma consulta distribuída devem usar o mesmo valor: com `distributed_aggregation_memory_efficient`, os números dos buckets de dois níveis dependem do hash da chave, que difere entre os dois métodos. Portanto, servidores com configurações divergentes podem dividir a mesma chave em buckets diferentes e produzir um resultado mesclado incorretamente. Para garantir essa consistência, o iniciador sempre envia seu valor efetivo com as consultas secundárias (mesmo quando ele é proveniente apenas dos valores padrão do servidor/perfil), substituindo os próprios valores padrão dos servidores remotos.
 
-<div id="enable_parsing_to_custom_serialization">
-  ## enable_parsing_to_custom_serialization
-</div>
+## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -374,9 +325,7 @@ Todos os servidores que participam de uma consulta distribuída devem usar o mes
 
 Se true, os dados podem ser convertidos diretamente para colunas com serialização personalizada (por exemplo, Sparse), de acordo com as indicações de serialização obtidas da tabela.
 
-<div id="enable_producing_buckets_out_of_order_in_aggregation">
-  ## enable_producing_buckets_out_of_order_in_aggregation
-</div>
+## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -386,9 +335,7 @@ Permite que a agregação com uso eficiente de memória (consulte `distributed_a
 Isso pode melhorar o desempenho quando os tamanhos dos buckets de agregação são desiguais, permitindo que uma réplica envie buckets com IDs mais altos ao nó iniciador enquanto ainda processa alguns buckets pesados com IDs mais baixos.
 A desvantagem é um uso de memória potencialmente maior.
 
-<div id="enable_quantized_codec">
-  ## enable_quantized_codec
-</div>
+## enable_quantized_codec {#enable_quantized_codec}
 
 <ExperimentalBadge />
 
@@ -398,9 +345,7 @@ A desvantagem é um uso de memória potencialmente maior.
 
 Habilita o codec de compressão `Quantized`.
 
-<div id="enable_reads_from_query_cache">
-  ## enable_reads_from_query_cache
-</div>
+## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -411,17 +356,13 @@ Valores possíveis:
 * 0 - Desabilitado
 * 1 - Habilitado
 
-<div id="enable_s3_requests_logging">
-  ## enable_s3_requests_logging
-</div>
+## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ativa um logging bem detalhado das requisições ao S3. Recomendado apenas para depuração.
 
-<div id="enable_scalar_subquery_optimization">
-  ## enable_scalar_subquery_optimization
-</div>
+## enable_scalar_subquery_optimization {#enable_scalar_subquery_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -429,9 +370,7 @@ Ativa um logging bem detalhado das requisições ao S3. Recomendado apenas para 
 
 Se definido como true, evita que subconsultas escalares (de)serializem valores escalares grandes e pode evitar executar a mesma subconsulta mais de uma vez.
 
-<div id="enable_scopes_for_with_statement">
-  ## enable_scopes_for_with_statement
-</div>
+## enable_scopes_for_with_statement {#enable_scopes_for_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -441,9 +380,7 @@ Se desabilitada, as declarações em cláusulas WITH pai terão o mesmo escopo d
 
 Observe que esta é uma configuração de compatibilidade para o analyzer, para permitir a execução de algumas consultas inválidas que o analyzer antigo conseguia executar.
 
-<div id="enable_shared_storage_snapshot_in_query">
-  ## enable_shared_storage_snapshot_in_query
-</div>
+## enable_shared_storage_snapshot_in_query {#enable_shared_storage_snapshot_in_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -472,17 +409,13 @@ Valores possíveis:
 * 0 - Desativado
 * 1 - Ativado
 
-<div id="enable_sharing_sets_for_mutations">
-  ## enable_sharing_sets_for_mutations
-</div>
+## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite o compartilhamento de objetos Set criados para subconsultas `IN` entre diferentes tarefas da mesma mutação. Isso reduz o uso de memória e o consumo de CPU
 
-<div id="enable_streaming_queries">
-  ## enable_streaming_queries
-</div>
+## enable_streaming_queries {#enable_streaming_queries}
 
 <ExperimentalBadge />
 
@@ -495,9 +428,7 @@ Quando desativado, qualquer expressão de tabela que use o modificador `STREAM` 
 na compilação do plano. Esta é a configuração principal para o recurso de
 consultas de streaming; capacidades adicionais podem ser controladas por suas próprias configurações.
 
-<div id="enable_sz3_codec">
-  ## enable_sz3_codec
-</div>
+## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
 
@@ -507,9 +438,34 @@ consultas de streaming; capacidades adicionais podem ser controladas por suas pr
 
 Habilita o codec de compressão `SZ3`.
 
-<div id="enable_time_time64_type">
-  ## enable_time_time64_type
-</div>
+## enable_time_series_aggregate_functions {#enable_time_series_aggregate_functions}
+
+<PrivatePreviewBadge />
+
+**Aliases**: `allow_experimental_ts_to_grid_aggregate_function`, `allow_experimental_time_series_aggregate_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "As funções agregadas `timeSeries*` foram movidas para o nível de prévia privada. Foi adicionado um alias para a configuração `allow_experimental_time_series_aggregate_functions`."}]}]} />
+
+Habilita as funções agregadas `timeSeries*` para reamostragem de séries temporais no estilo Prometheus, cálculo de taxa e delta.
+
+## enable_time_series_table {#enable_time_series_table}
+
+<PrivatePreviewBadge />
+
+**Aliases**: `allow_experimental_time_series_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "O mecanismo de tabela `TimeSeries` e o dialeto `promql` foram movidos para o nível de prévia privada. Foi adicionado um alias para a configuração `allow_experimental_time_series_table`."}]}]} />
+
+Permite criar tabelas com o mecanismo de tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series). Valores possíveis:
+
+* 0 — o mecanismo de tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series) está desabilitado.
+* 1 — o mecanismo de tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series) está habilitado.
+
+## enable_time_time64_type {#enable_time_time64_type}
 
 **Aliases**: `allow_experimental_time_time64_type`
 
@@ -519,17 +475,13 @@ Habilita o codec de compressão `SZ3`.
 
 Permite a criação dos tipos de dados [Time](/pt-BR/reference/data-types/time) e [Time64](/pt-BR/reference/data-types/time64).
 
-<div id="enable_unaligned_array_join">
-  ## enable_unaligned_array_join
-</div>
+## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite ARRAY JOIN com vários arrays de tamanhos diferentes. Quando essa configuração está habilitada, os arrays serão redimensionados para o mais longo.
 
-<div id="enable_url_encoding">
-  ## enable_url_encoding
-</div>
+## enable_url_encoding {#enable_url_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -539,9 +491,7 @@ Permite ativar/desativar a decodificação/codificação do caminho no URI em ta
 
 Desativado por padrão.
 
-<div id="enable_vertical_final">
-  ## enable_vertical_final
-</div>
+## enable_vertical_final {#enable_vertical_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -549,9 +499,7 @@ Desativado por padrão.
 
 Se ativado, remove linhas duplicadas durante o FINAL marcando as linhas como excluídas e filtrando-as posteriormente, em vez de mesclar as linhas
 
-<div id="enable_writes_to_query_cache">
-  ## enable_writes_to_query_cache
-</div>
+## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -562,9 +510,7 @@ Valores possíveis:
 * 0 - Desabilitado
 * 1 - Ativado
 
-<div id="enable_zxc_codec">
-  ## enable_zxc_codec
-</div>
+## enable_zxc_codec {#enable_zxc_codec}
 
 <ExperimentalBadge />
 

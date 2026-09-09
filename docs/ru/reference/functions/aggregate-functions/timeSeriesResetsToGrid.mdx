@@ -22,7 +22,7 @@ doc_type: 'reference'
 Если несколько выборок имеют одинаковую временную метку, используется только одна из них: выборка с наибольшим значением. Значение NaN уступает любому другому значению, поэтому оно используется только в том случае, если все выборки с этой временной меткой имеют значение NaN.
 
 <Note>
-  Эта функция экспериментальная; чтобы включить её, задайте `allow_experimental_time_series_aggregate_functions=true`.
+  Эта функция находится в статусе закрытой предварительной версии; чтобы включить её, задайте `enable_time_series_aggregate_functions=true`.
 </Note>
 
 **Синтаксис**
@@ -54,7 +54,7 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sam
 **Вычисление значений сброса на сетке [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -83,7 +83,7 @@ FROM
 **Тот же запрос с аргументами в виде массивов**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 3, 2, 6, 6, 4, 2, 0]::Array(Float32) AS values,

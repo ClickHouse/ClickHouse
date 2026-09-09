@@ -380,26 +380,26 @@ Lorsqu’il est différent de zéro, l’optimiseur de l’ordre des jointures u
 Lorsqu’il est défini sur 1, une graine aléatoire est générée ; lorsqu’il est défini sur une valeur &gt; 1, cette valeur est utilisée directement comme graine.
 Ce paramètre est destiné aux tests afin de détecter les erreurs causées par différents ordres de jointure.
 
-## query_plan_optimize_join_order_use_cd_a_conflict_detector {#query_plan_optimize_join_order_use_cd_a_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre utilisant le détecteur de conflits CD-A pour valider le réordonnancement des jointures dans l'algorithme d'ordre des jointures DPsub."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre utilisant le détecteur de conflits A pour valider le réordonnancement des JOIN dans l'algorithme d'ordre des jointures DPsub."}]}]} />
 
 N&#39;affecte que l&#39;algorithme d&#39;ordre des jointures `dpsub`. Lorsqu&#39;il est activé, DPsub détermine quels
-réordonnancements de jointures sont valides à l&#39;aide du détecteur de conflits CD-A.
+réordonnancements des JOIN sont valides à l&#39;aide du détecteur de conflits CD-A.
 
-## query_plan_optimize_join_order_use_cd_c_conflict_detector {#query_plan_optimize_join_order_use_cd_c_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre utilisant le détecteur de conflits CD-C (correct et complet) pour déterminer la validité du réordonnancement de jointure dans l’algorithme d’ordre des jointures DPsub."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre utilisant le détecteur de conflits C (correct et complet) pour déterminer la validité du réordonnancement des JOIN dans l’algorithme d’ordre des jointures DPsub."}]}]} />
 
-N’affecte que l’algorithme d’ordre des jointures `dpsub`. Lorsqu’il est activé, DPsub détermine les réordonnancements de jointure valides à l’aide du détecteur de conflits CD-C. Ce paramètre a préséance sur `query_plan_optimize_join_order_use_cd_a_conflict_detector` lorsque les deux sont activés.
+N’affecte que l’algorithme d’ordre des jointures `dpsub`. Lorsqu’il est activé, DPsub détermine les réordonnancements des JOIN valides à l’aide du détecteur de conflits CD-C. Ce paramètre a préséance sur `query_plan_optimize_join_order_use_conflict_detector_a` lorsque les deux sont activés.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

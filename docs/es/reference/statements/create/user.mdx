@@ -301,6 +301,18 @@ Cree la cuenta de usuario `john` y permítale conceder sus privilegios al usuari
 CREATE USER john GRANTEES jack;
 ```
 
+Cree la cuenta de usuario `john` con una base de datos predeterminada:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` deja sin establecer la base de datos predeterminada. Para usar una base de datos llamada `NONE`, escriba su nombre entre backticks:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 Utilice un parámetro de consulta para crear la cuenta de usuario `john`:
 
 ```sql

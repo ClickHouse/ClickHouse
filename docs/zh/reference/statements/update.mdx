@@ -41,19 +41,19 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-<div id="lightweight-update-does-not-update-data-immediately">
-  ## 轻量级更新不会立即更新数据 {#lightweight-update-does-not-update-data-immediately}
-</div>
+## 轻量级更新可立即在查询中看到 {#lightweight-update-does-not-update-data-immediately}
 
-轻量级 `UPDATE` 通过 **patch parts** 实现——这是一种特殊的数据分区片段，只包含已更新的列和行。
-轻量级 `UPDATE` 会创建补丁分区片段，但不会立即在存储中对原始数据进行物理修改。
-更新过程类似于 `INSERT ... SELECT ...` 查询，但 `UPDATE` 查询会等到补丁分区片段创建完成后才返回。
+轻量级 `UPDATE` 通过应用**补丁分区片段**，使更新后的值能立即在 `SELECT` 查询中看到。查询无需等待合并即可读取更新后的值。
+补丁分区片段是一种特殊的数据分区片段，仅包含已更新的列和行。创建补丁分区片段不会立即在存储中对原始数据进行物理修改。
+更新过程类似于 `INSERT ... SELECT ...` 查询，且 `UPDATE` 查询会等待补丁分区片段创建完成后才返回。
 
-更新后的值将会：
+查询可见性和物理物化是两个独立的概念：
 
-* 通过应用补丁在 `SELECT` 查询中**立即可见**
-* 仅会在后续的合并和变更过程中被**物理物化**
-* 一旦所有活跃 parts 都已完成补丁物化，便会被**自动清理**
+* **查询可见性：** 在补丁被物化到原始数据分区片段之前，`SELECT` 查询会应用补丁来读取更新后的值。
+* **物理物化：** 后续的合并和变更会将更新后的值写入数据分区片段。
+* **清理：** 当所有活跃 parts 都已物化补丁后，补丁分区片段会被自动移除。
+
+有关并发更新的一致性，请参阅[并发操作](#concurrent-operations)。
 
 <div id="lightweight-update-requirements">
   ## 轻量级更新要求 {#lightweight-update-requirements}

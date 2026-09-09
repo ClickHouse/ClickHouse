@@ -300,31 +300,6 @@ polyglot SQL 트랜스파일러를 활성화합니다. 이 기능은 30개 이�
 
 SQL의 대안인 PRQL을 활성화합니다.
 
-## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
-
-<ExperimentalBadge />
-
-**별칭**: `allow_experimental_ts_to_grid_aggregate_function`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "실험적 timeSeries* 집계 함수를 활성화하는 새로운 설정입니다."}]}]} />
-
-Prometheus 스타일의 시계열 리샘플링, rate, delta 계산을 위한 실험적 timeSeries* 집계 함수입니다.
-
-## allow_experimental_time_series_table {#allow_experimental_time_series_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "TimeSeries 테이블 엔진을 허용하는 새로운 설정이 추가되었습니다"}]}]} />
-
-[TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 엔진으로 테이블을 생성할 수 있도록 합니다. 가능한 값은 다음과 같습니다.
-
-* 0 — [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 엔진이 비활성화되어 있습니다.
-* 1 — [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 엔진이 활성화되어 있습니다.
-
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

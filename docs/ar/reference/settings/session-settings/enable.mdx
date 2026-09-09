@@ -2,7 +2,7 @@
 title: 'إعدادات الجلسة enable_*'
 sidebarTitle: 'enable_*'
 toc_max_heading_level: 2
-description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة enable_*.'
+description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة enable_*.'
 doc_type: 'reference'
 ---
 
@@ -12,12 +12,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
+هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_adaptive_aggregator">
-  ## enable_adaptive_aggregator
-</div>
+## enable_adaptive_aggregator {#enable_adaptive_aggregator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,9 +26,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تُراعى إعدادات التجميع الخارجي (`max_bytes_before_external_group_by`، `max_bytes_ratio_before_external_group_by`): عند تجاوز العتبة، تُفرَّغ قوائم الانتظار مبكرًا في الجدول المشترك، وإذا لم يكن ذلك كافيًا للعودة إلى ما دون العتبة، يُرحَّل الجدول المشترك إلى القرص باستخدام التجميع الخارجي العادي.
 
-<div id="enable_adaptive_memory_spill_scheduler">
-  ## enable_adaptive_memory_spill_scheduler
-</div>
+## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
 <ExperimentalBadge />
 
@@ -39,9 +36,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يحفّز المعالج على تفريغ البيانات إلى التخزين الخارجي بشكل تكيّفي. يتوفر دعم grace join حاليًا.
 
-<div id="enable_add_distinct_to_in_subqueries">
-  ## enable_add_distinct_to_in_subqueries
-</div>
+## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,9 +45,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 فعِّل `DISTINCT` في الاستعلامات الفرعية `IN`. هذا إعداد للموازنة بين الفوائد والتكلفة: إذ يمكن أن يؤدي تفعيله إلى تقليل حجم الجداول المؤقتة المنقولة للاستعلامات الفرعية `IN` الموزعة بشكل كبير، وتسريع نقل البيانات بين المقاطع بشكل ملحوظ، من خلال ضمان إرسال القيم الفريدة فقط.
 ومع ذلك، فإن تفعيل هذا الإعداد يضيف عبئًا إضافيًا على عمليات الدمج في كل عقدة، إذ يجب تنفيذ إزالة التكرار (`DISTINCT`). استخدم هذا الإعداد عندما يكون نقل البيانات عبر الشبكة هو عنق الزجاجة وتكون الكلفة الإضافية للدمج مقبولة.
 
-<div id="enable_alp_codec">
-  ## enable_alp_codec
-</div>
+## enable_alp_codec {#enable_alp_codec}
 
 <BetaBadge />
 
@@ -62,9 +55,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُمكّن برنامج الترميز لضغط `ALP`.
 
-<div id="enable_automatic_decision_for_merging_across_partitions_for_final">
-  ## enable_automatic_decision_for_merging_across_partitions_for_final
-</div>
+## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,9 +64,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 إذا تم تعيينه، فسيُفعِّل ClickHouse هذا التحسين تلقائيًا عندما يكون تعبير مفتاح التقسيم حتميًا، وعندما تكون جميع الأعمدة المستخدمة في تعبير مفتاح التقسيم مُضمَّنة في المفتاح الأساسي.
 ويضمن هذا الاستنتاج التلقائي أن الصفوف ذات قيم المفتاح الأساسي نفسها ستنتمي دائمًا إلى القسم نفسه، مما يجعل تجنّب عمليات الدمج عبر الأقسام آمنًا.
 
-<div id="enable_cascades_optimizer">
-  ## enable_cascades_optimizer
-</div>
+## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />
 
@@ -86,17 +75,13 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 فعّل مُحسِّن Cascades المعتمد على التكلفة لخطط الاستعلامات الموزعة.
 لا يسري مفعوله إلا عند استخدام `make_distributed_plan = 1`: فهذا الإعداد وحده لا يغيّر تخطيط الاستعلامات على عقدة واحدة.
 
-<div id="enable_early_constant_folding">
-  ## enable_early_constant_folding
-</div>
+## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 تمكين تحسين الاستعلام، حيث نحلل نتائج الدوال والاستعلامات الفرعية ونعيد كتابة الاستعلام إذا كانت تتضمن ثوابت
 
-<div id="enable_extended_results_for_datetime_functions">
-  ## enable_extended_results_for_datetime_functions
-</div>
+## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -128,9 +113,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 | `toStartOfMinute`         | يُرجع `DateTime`<br />*ملاحظة: تكون النتائج غير صحيحة للقيم خارج النطاق 1970-2149*                 | يعيد `DateTime` عند استخدام الإدخال `Date`/`DateTime`<br />يعيد `DateTime64` عند استخدام الإدخال `Date32`/`DateTime64`                   |
 | `timeSlot`                | يعيد `DateTime`<br />*ملاحظة: تكون النتائج غير صحيحة للقيم الواقعة خارج النطاق 1970-2149*          | يعيد `DateTime` عند إدخال `Date`/`DateTime`<br />يعيد `DateTime64` عند إدخال `Date32`/`DateTime64`                                       |
 
-<div id="enable_full_text_index">
-  ## enable_full_text_index
-</div>
+## enable_full_text_index {#enable_full_text_index}
 
 **الأسماء البديلة**: `allow_experimental_full_text_index`
 
@@ -140,9 +123,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 إذا ضُبط هذا الإعداد على true، فسيُسمح باستخدام فهرس النص الكامل.
 
-<div id="enable_function_early_short_circuit">
-  ## enable_function_early_short_circuit
-</div>
+## enable_function_early_short_circuit {#enable_function_early_short_circuit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -151,9 +132,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 فعّل طيّ الثوابت مبكرًا باستخدام التقييم قصير الدائرة لـ `and` و`or` أثناء تحليل الاستعلام.
 عند تفعيله، تُحلَّل الفروع غير القابلة للوصول والمؤهلة في الاستعلامات الفرعية القياسية للحفاظ على أنواعها والتحقق من دلالات الاستعلام، لكنها لا تُنفَّذ. ويعود التحسين إلى التحليل العادي عندما تكون قيمة العددية القياسية أو قيم وقت التشغيل مطلوبة.
 
-<div id="enable_global_with_statement">
-  ## enable_global_with_statement
-</div>
+## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -161,9 +140,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تمرير عبارات WITH إلى استعلامات UNION وجميع الاستعلامات الفرعية
 
-<div id="enable_group_by_top_k_optimization">
-  ## enable_group_by_top_k_optimization
-</div>
+## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -182,9 +159,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 * 0 — معطّل.
 * 1 — مفعّل.
 
-<div id="enable_hash_join_row_store">
-  ## enable_hash_join_row_store
-</div>
+## enable_hash_join_row_store {#enable_hash_join_row_store}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -192,9 +167,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تمكين تحويل حمولة hash join إلى تخطيط صفّي.
 
-<div id="enable_hdfs_pread">
-  ## enable_hdfs_pread
-</div>
+## enable_hdfs_pread {#enable_hdfs_pread}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -202,9 +175,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُفعِّل أو يُعطِّل `pread` لملفات HDFS. افتراضيًا، يُستخدَم `hdfsPread`. وإذا تم تعطيله، فسيُستخدَم `hdfsRead` و`hdfsSeek` لقراءة ملفات HDFS.
 
-<div id="enable_http_compression">
-  ## enable_http_compression
-</div>
+## enable_http_compression {#enable_http_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -219,9 +190,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 * 0 — معطّل.
 * 1 — مفعّل.
 
-<div id="enable_identifier_resolve_cache">
-  ## enable_identifier_resolve_cache
-</div>
+## enable_identifier_resolve_cache {#enable_identifier_resolve_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -229,9 +198,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُمكّن ذاكرة التخزين المؤقت لحلّ المعرّفات في محلل الاستعلامات. تعيد ذاكرة التخزين المؤقت استخدام عُقد الأسماء المستعارة التي جرى حلّها لمنع تضخّم AST عند الرجوع إلى الاسم المستعار نفسه عدة مرات. اضبط القيمة على false لتعطيل التخزين المؤقت إذا كان هناك اشتباه في نتائج غير صحيحة.
 
-<div id="enable_job_stack_trace">
-  ## enable_job_stack_trace
-</div>
+## enable_job_stack_trace {#enable_job_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -239,9 +206,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُخرج تتبّع المكدس لمنشئ المهمة عندما تؤدي المهمة إلى استثناء. وهو معطّل افتراضيًا لتجنّب الكلفة الإضافية على الأداء.
 
-<div id="enable_json_ast_dialect">
-  ## enable_json_ast_dialect
-</div>
+## enable_json_ast_dialect {#enable_json_ast_dialect}
 
 <ExperimentalBadge />
 
@@ -265,9 +230,7 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
-<div id="enable_lazy_columns_replication">
-  ## enable_lazy_columns_replication
-</div>
+## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -275,9 +238,7 @@ SET dialect = 'clickhouse_json';
 
 يُمكّن النسخ الكسول للأعمدة في `JOIN` و`ARRAY JOIN` والتقاطات لامبدا للدوال عالية الرتبة (مثل `arrayMap`)، مما يجنّب نسخ الصفوف نفسها في الذاكرة عدة مرات دون داعٍ.
 
-<div id="enable_materialized_cte">
-  ## enable_materialized_cte
-</div>
+## enable_materialized_cte {#enable_materialized_cte}
 
 <ExperimentalBadge />
 
@@ -285,27 +246,23 @@ SET dialect = 'clickhouse_json';
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-تمكين تعبيرات الجدول الشائعة المُجسَّدة؛ وسيُفضَّل هذا الإعداد على enable&#95;global&#95;with&#95;statement
+تمكين تعبيرات الجدول الشائعة المُجسَّدة (`WITH <name> AS MATERIALIZED (<subquery>)`).
+عند التمكين، يُنفَّذ تعبير الجدول الشائع المُعلَن بوصفه `MATERIALIZED` والمُشار إليه أكثر من مرة تنفيذًا واحدًا فقط، ويُخزَّن في جدول مؤقت، وتقرأ جميع الإشارات من ذلك الجدول. أما تعبير الجدول الشائع المُشار إليه مرة واحدة فقط، فيُدمَج مباشرةً كتعبير جدول شائع عادي لتجنّب الكلفة الإضافية.
+وعند التعطيل، تُتجاهل الكلمة المفتاحية `MATERIALIZED`: فيُدمَج تعبير الجدول الشائع مباشرةً عند كل إشارة إليه كتعبير جدول شائع عادي، ويُسجَّل تحذير.
 
-<div id="enable_memory_bound_merging_of_aggregation_results">
-  ## enable_memory_bound_merging_of_aggregation_results
-</div>
+## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 فعّل استراتيجية الدمج المقيّدة بالذاكرة لنتائج التجميع.
 
-<div id="enable_multiple_prewhere_read_steps">
-  ## enable_multiple_prewhere_read_steps
-</div>
+## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 انقل مزيدًا من الشروط من WHERE إلى PREWHERE، ونفّذ القراءة من القرص والتصفية على مراحل متعددة إذا كانت هناك شروط متعددة مدمجة باستخدام AND
 
-<div id="enable_named_columns_in_function_tuple">
-  ## enable_named_columns_in_function_tuple
-</div>
+## enable_named_columns_in_function_tuple {#enable_named_columns_in_function_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -313,9 +270,7 @@ SET dialect = 'clickhouse_json';
 
 إنشاء tuples مسماة في الدالة tuple() عندما تكون جميع الأسماء فريدة ويمكن التعامل معها كمُعرِّفات غير مقتبسة.
 
-<div id="enable_order_by_all">
-  ## enable_order_by_all
-</div>
+## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -350,9 +305,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 └────┴────┴─────┘
 ```
 
-<div id="enable_packed_string_keys_in_aggregation">
-  ## enable_packed_string_keys_in_aggregation
-</div>
+## enable_packed_string_keys_in_aggregation {#enable_packed_string_keys_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -364,9 +317,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 يجب أن تتفق جميع الخوادم المشاركة في استعلام موزّع على هذه القيمة. فعند استخدام `distributed_aggregation_memory_efficient`، تعتمد أرقام buckets ثنائية المستوى على تجزئة المفتاح، وهي تختلف بين الطريقتين؛ لذلك قد تقسم الخوادم التي تختلف في هذا الإعداد المفتاح نفسه إلى buckets مختلفة وتنتج نتيجة مدمجة بصورة غير صحيحة. ولضمان هذا الاتفاق، ترسل initiator دائمًا قيمتها الفعلية مع الاستعلامات الثانوية، حتى عندما تكون مستمدة فقط من الإعدادات الافتراضية للخادم/الملف الشخصي، متجاوزةً الإعدادات الافتراضية للخوادم البعيدة.
 
-<div id="enable_parsing_to_custom_serialization">
-  ## enable_parsing_to_custom_serialization
-</div>
+## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -374,9 +325,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 إذا كانت القيمة true، فيمكن تحليل البيانات مباشرةً إلى الأعمدة ذات التسلسل المخصّص (مثل Sparse) وفقًا لتلميحات التسلسل المستمدة من الجدول.
 
-<div id="enable_producing_buckets_out_of_order_in_aggregation">
-  ## enable_producing_buckets_out_of_order_in_aggregation
-</div>
+## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -386,9 +335,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 قد يحسّن ذلك الأداء عندما تكون أحجام buckets التجميع غير متوازنة، إذ يتيح للنسخة المتماثلة إرسال buckets ذات المعرّفات الأعلى إلى initiator بينما تواصل معالجة بعض buckets الكبيرة ذات المعرّفات الأقل.
 والجانب السلبي هو احتمال زيادة استخدام الذاكرة.
 
-<div id="enable_quantized_codec">
-  ## enable_quantized_codec
-</div>
+## enable_quantized_codec {#enable_quantized_codec}
 
 <ExperimentalBadge />
 
@@ -398,9 +345,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 يُمكّن برنامج الترميز للضغط `Quantized`.
 
-<div id="enable_reads_from_query_cache">
-  ## enable_reads_from_query_cache
-</div>
+## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -411,17 +356,13 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 * 0 - معطّل
 * 1 - مفعّل
 
-<div id="enable_s3_requests_logging">
-  ## enable_s3_requests_logging
-</div>
+## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يُفعّل تسجيلًا مفصلًا جدًا لطلبات S3. وهذا مناسب لأغراض التصحيح فقط.
 
-<div id="enable_scalar_subquery_optimization">
-  ## enable_scalar_subquery_optimization
-</div>
+## enable_scalar_subquery_optimization {#enable_scalar_subquery_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -429,9 +370,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 إذا تم ضبطه على true، فإنه يمنع الاستعلامات الفرعية ذات القيمة المفردة من تسلسل/إلغاء تسلسل القيم المفردة الكبيرة، وقد يجنّب تنفيذ الاستعلام الفرعي نفسه أكثر من مرة.
 
-<div id="enable_scopes_for_with_statement">
-  ## enable_scopes_for_with_statement
-</div>
+## enable_scopes_for_with_statement {#enable_scopes_for_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -441,9 +380,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 لاحظ أن هذا إعداد توافق للمحلل يتيح تشغيل بعض الاستعلامات غير الصالحة التي كان المحلل القديم يستطيع تنفيذها.
 
-<div id="enable_shared_storage_snapshot_in_query">
-  ## enable_shared_storage_snapshot_in_query
-</div>
+## enable_shared_storage_snapshot_in_query {#enable_shared_storage_snapshot_in_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -472,17 +409,13 @@ WHERE (_part, _part_offset) IN (
 * 0 - معطّل
 * 1 - مفعّل
 
-<div id="enable_sharing_sets_for_mutations">
-  ## enable_sharing_sets_for_mutations
-</div>
+## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 السماح بمشاركة كائنات set المُنشأة من أجل الاستعلامات الفرعية IN بين المهام المختلفة ضمن عملية mutation نفسها. يقلل ذلك من استخدام الذاكرة واستهلاك CPU
 
-<div id="enable_streaming_queries">
-  ## enable_streaming_queries
-</div>
+## enable_streaming_queries {#enable_streaming_queries}
 
 <ExperimentalBadge />
 
@@ -495,9 +428,7 @@ WHERE (_part, _part_offset) IN (
 أثناء بناء الخطة. هذا هو مفتاح التحكم الرئيسي لميزة
 الاستعلامات المتدفقة؛ وقد تُقيَّد إمكانات إضافية بإعداداتها الخاصة.
 
-<div id="enable_sz3_codec">
-  ## enable_sz3_codec
-</div>
+## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
 
@@ -507,9 +438,34 @@ WHERE (_part, _part_offset) IN (
 
 يُمكّن برنامج الترميز للضغط `SZ3`.
 
-<div id="enable_time_time64_type">
-  ## enable_time_time64_type
-</div>
+## enable_time_series_aggregate_functions {#enable_time_series_aggregate_functions}
+
+<PrivatePreviewBadge />
+
+**الأسماء البديلة**: `allow_experimental_ts_to_grid_aggregate_function`, `allow_experimental_time_series_aggregate_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تم نقل دوال التجميع `timeSeries*` إلى مستوى المعاينة الخاصة. وأُضيف اسم بديل للإعداد `allow_experimental_time_series_aggregate_functions`."}]}]} />
+
+يُفعّل دوال التجميع `timeSeries*` الخاصة بإعادة أخذ عينات السلاسل الزمنية على غرار Prometheus، وحساب rate ودلتا.
+
+## enable_time_series_table {#enable_time_series_table}
+
+<PrivatePreviewBadge />
+
+**الأسماء البديلة**: `allow_experimental_time_series_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تم نقل محرك الجداول `TimeSeries` ولهجة الاستعلام `promql` إلى مستوى المعاينة الخاصة. وتمت إضافة اسم بديل للإعداد `allow_experimental_time_series_table`."}]}]} />
+
+يسمح بإنشاء جداول بمحرك الجداول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series). القيم الممكنة:
+
+* 0 — محرك الجداول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series) معطّل.
+* 1 — محرك الجداول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series) مُفعّل.
+
+## enable_time_time64_type {#enable_time_time64_type}
 
 **الأسماء البديلة**: `allow_experimental_time_time64_type`
 
@@ -519,17 +475,13 @@ WHERE (_part, _part_offset) IN (
 
 يسمح بإنشاء نوعَي البيانات [Time](/ar/reference/data-types/time) و[Time64](/ar/reference/data-types/time64).
 
-<div id="enable_unaligned_array_join">
-  ## enable_unaligned_array_join
-</div>
+## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يسمح باستخدام ARRAY JOIN مع عدة مصفوفات ذات أحجام مختلفة. عند تمكين هذا الإعداد، سيُعاد ضبط حجم المصفوفات وفقًا لأطولها.
 
-<div id="enable_url_encoding">
-  ## enable_url_encoding
-</div>
+## enable_url_encoding {#enable_url_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -539,9 +491,7 @@ WHERE (_part, _part_offset) IN (
 
 يكون معطّلًا افتراضيًا.
 
-<div id="enable_vertical_final">
-  ## enable_vertical_final
-</div>
+## enable_vertical_final {#enable_vertical_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -549,9 +499,7 @@ WHERE (_part, _part_offset) IN (
 
 عند التمكين، تُزال الصفوف المكررة أثناء FINAL عبر تمييز الصفوف على أنها محذوفة ثم ترشيحها لاحقًا بدلًا من دمج الصفوف
 
-<div id="enable_writes_to_query_cache">
-  ## enable_writes_to_query_cache
-</div>
+## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -562,9 +510,7 @@ WHERE (_part, _part_offset) IN (
 * 0 - معطّل
 * 1 - مفعّل
 
-<div id="enable_zxc_codec">
-  ## enable_zxc_codec
-</div>
+## enable_zxc_codec {#enable_zxc_codec}
 
 <ExperimentalBadge />
 

@@ -236,7 +236,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## تفاصيل التنفيذ {#implementation-details}
 
-يُستخدم قدر أقل من ذاكرة RAM إذا جرى تحديد [LIMIT](/ar/reference/statements/select/limit) صغير بما يكفي إلى جانب `ORDER BY`. بخلاف ذلك، تكون كمية الذاكرة المستخدمة متناسبة مع حجم البيانات المطلوب فرزها. في المعالجة الموزعة للاستعلامات، إذا تم حذف [GROUP BY](/ar/reference/statements/select/group-by)، يُنفَّذ جزء من الفرز على الخوادم البعيدة، ثم تُدمَج النتائج على الخادم الذي أرسل الطلب. وهذا يعني أنه في الفرز الموزع قد يكون حجم البيانات المطلوب فرزها أكبر من مقدار الذاكرة المتاح على خادم واحد.
+يُستخدم قدر أقل من ذاكرة RAM إذا جرى تحديد [LIMIT](/ar/reference/statements/select/limit) صغير بما يكفي إلى جانب `ORDER BY`. بخلاف ذلك، تكون كمية الذاكرة المستخدمة متناسبة مع حجم البيانات المطلوب فرزها. لا يقلل نطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until) ذلك، لأن حجم النطاق غير معروف حتى تُفرَز البيانات. في المعالجة الموزعة للاستعلامات، إذا تم حذف [GROUP BY](/ar/reference/statements/select/group-by)، يُنفَّذ جزء من الفرز على الخوادم البعيدة، ثم تُدمَج النتائج على الخادم الذي أرسل الطلب. وهذا يعني أنه في الفرز الموزع قد يكون حجم البيانات المطلوب فرزها أكبر من مقدار الذاكرة المتاح على خادم واحد.
 
 إذا لم تكن ذاكرة RAM كافية، فمن الممكن إجراء الفرز باستخدام الذاكرة الخارجية (بإنشاء ملفات مؤقتة على قرص). استخدم الإعداد `max_bytes_before_external_sort` لهذا الغرض. إذا كانت قيمته 0 (وهي القيمة الافتراضية)، فسيتم تعطيل الفرز الخارجي. وإذا كان مفعّلًا، فعندما يصل حجم البيانات المطلوب فرزها إلى عدد البايتات المحدد، تُفرَز البيانات المجمَّعة وتُحفَظ في ملف مؤقت. وبعد قراءة جميع البيانات، تُدمَج جميع الملفات المفروزة وتُخرَج النتائج. تُكتَب الملفات في الدليل `/var/lib/clickhouse/tmp/` ضمن config (افتراضيًا، ولكن يمكنك استخدام المعلمة `tmp_path` لتغيير هذا الإعداد). يمكنك أيضًا استخدام الكتابة إلى القرص فقط إذا تجاوز الاستعلام حدود الذاكرة؛ أي إن `max_bytes_ratio_before_external_sort=0.6` سيؤدي إلى تفعيل الكتابة إلى القرص فقط عندما يبلغ الاستعلام `60%` من حد الذاكرة (user/sever).
 
@@ -248,7 +248,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 إذا كان لتعبير `ORDER BY` بادئة تتطابق مع مفتاح فرز الجدول، يمكنك تحسين الاستعلام باستخدام إعداد [optimize&#95;read&#95;in&#95;order](/ar/reference/settings/session-settings/optimize#optimize_read_in_order).
 
-عند تمكين إعداد `optimize_read_in_order`، يستخدم خادم ClickHouse فهرس الجدول ويقرأ البيانات وفق ترتيب مفتاح `ORDER BY`. يتيح ذلك تجنب قراءة جميع البيانات عند تحديد [LIMIT](/ar/reference/statements/select/limit). لذلك، تُعالَج الاستعلامات على البيانات الكبيرة ذات `LIMIT` صغير بشكل أسرع.
+عند تمكين إعداد `optimize_read_in_order`، يستخدم خادم ClickHouse فهرس الجدول ويقرأ البيانات وفق ترتيب مفتاح `ORDER BY`. يتيح ذلك تجنب قراءة جميع البيانات عند تحديد [LIMIT](/ar/reference/statements/select/limit). وينطبق الأمر نفسه على نطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until) بدون `ALL`، حيث تتوقف القراءة بمجرد انتهاء نطاقه. لذلك، تُعالَج الاستعلامات على البيانات الكبيرة ذات `LIMIT` صغير بشكل أسرع.
 
 يعمل هذا التحسين مع كلٍّ من `ASC` و`DESC`، ولا يعمل مع بند [GROUP BY](/ar/reference/statements/select/group-by). ومع مُعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier)، يعمل التحسين وفق الترتيب المباشر لمفتاح الفرز، وكذلك وفق الترتيب العكسي لجداول [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree)، وهو ما يتحكم فيه إعداد `optimize_read_in_reverse_order_final`.
 
@@ -264,14 +264,14 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 في الجداول التي تستخدم المحرك `MaterializedView`، يعمل هذا التحسين مع العروض مثل `SELECT ... FROM merge_tree_table ORDER BY pk`. لكنه غير مدعوم في استعلامات مثل `SELECT ... FROM view ORDER BY pk` إذا كان استعلام العرض لا يحتوي على عبارة `ORDER BY`.
 
-## مُعدِّل ORDER BY Expr WITH FILL {#order-by-expr-with-fill-modifier}
+## مُعدِّل ORDER BY Expr WITH FILL {#order-by-expr-with-fill-modifier}
 
-يمكن أيضًا دمج هذا المُعدِّل مع [مُعدِّل LIMIT ... WITH TIES](/ar/reference/statements/select/limit#limit--with-ties-modifier).
+يمكن أيضًا دمج هذا المُعدِّل مع [مُعدِّل LIMIT ... WITH TIES](/ar/reference/statements/select/limit#limit--with-ties-modifier) ومع صيغة النطاق [LIMIT ... AFTER ... UNTIL](/ar/reference/statements/select/limit#limit-after-until).
 
-يمكن استخدام مُعدِّل `WITH FILL` بعد `ORDER BY expr` مع مَعلمات اختيارية هي `FROM expr` و`TO expr` و`STEP expr`.
+يمكن استخدام مُعدِّل `WITH FILL` بعد `ORDER BY expr` مع مَعلمات اختيارية هي `FROM expr` و`TO expr` و`STEP expr`.
 ستُملأ جميع القيم الناقصة في العمود `expr` بالتسلسل، وستُملأ الأعمدة الأخرى بالقيم الافتراضية.
 
-لملء أعمدة متعددة، أضِف مُعدِّل `WITH FILL` مع مَعلمات اختيارية بعد اسم كل عمود في قسم `ORDER BY`.
+لملء أعمدة متعددة، أضِف مُعدِّل `WITH FILL` مع مَعلمات اختيارية بعد اسم كل عمود في قسم `ORDER BY`.
 
 ```sql title="Query"
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr] [STALENESS const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr] [STALENESS numeric_expr]
@@ -281,10 +281,10 @@ ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_
 يمكن تطبيق `WITH FILL` على الحقول ذات الأنواع Numeric ‏(بجميع أنواع float وdecimal وint) أو الأنواع Date/DateTime. وعند تطبيقه على حقول `String`، تُملأ القيم المفقودة بسلاسل فارغة.
 عندما لا يكون `FROM const_expr` محددًا، يستخدم تسلسل الملء الحد الأدنى لقيمة الحقل `expr` من `ORDER BY`.
 عندما لا يكون `TO const_expr` محددًا، يستخدم تسلسل الملء الحد الأقصى لقيمة الحقل `expr` من `ORDER BY`.
-عندما يكون `STEP const_numeric_expr` محددًا، يُفسَّر `const_numeric_expr` `as is` للأنواع الرقمية، و`days` لنوع Date، و`seconds` لنوع DateTime. كما يدعم أيضًا نوع البيانات [INTERVAL](/ar/reference/data-types/special-data-types/interval) الذي يمثل فواصل زمنية للتاريخ والوقت.
+عندما يكون `STEP const_numeric_expr` محددًا، يُفسَّر `const_numeric_expr` `as is` للأنواع الرقمية، و`days` لنوع Date، و`seconds` لنوع DateTime. كما يدعم أيضًا نوع البيانات [INTERVAL](/ar/reference/data-types/special-data-types/interval) الذي يمثل فواصل زمنية للتاريخ والوقت.
 عندما يتم إغفال `STEP const_numeric_expr`، يستخدم تسلسل الملء `1.0` للنوع الرقمي، و`1 day` لنوع Date، و`1 second` لنوع DateTime.
 عندما يكون `STALENESS const_numeric_expr` محددًا، سينشئ الاستعلام صفوفًا إلى أن يتجاوز الفرق عن الصف السابق في البيانات الأصلية `const_numeric_expr`.
-يمكن تطبيق `INTERPOLATE` على الأعمدة التي لا تشارك في `ORDER BY WITH FILL`. وتُملأ هذه الأعمدة استنادًا إلى قيم الحقول السابقة عبر تطبيق `expr`. وإذا لم يكن `expr` موجودًا، فستُكرَّر القيمة السابقة. ويؤدي إغفال القائمة إلى تضمين جميع الأعمدة المسموح بها.
+يمكن تطبيق `INTERPOLATE` على الأعمدة التي لا تشارك في `ORDER BY WITH FILL`. وتُملأ هذه الأعمدة استنادًا إلى قيم الحقول السابقة عبر تطبيق `expr`. وإذا لم يكن `expr` موجودًا، فستُكرَّر القيمة السابقة. ويؤدي إغفال القائمة إلى تضمين جميع الأعمدة المسموح بها.
 
 مثال على استعلام بدون `WITH FILL`:
 
@@ -303,7 +303,7 @@ SELECT n, source FROM (
 └───┴──────────┘
 ```
 
-الاستعلام نفسه بعد تطبيق المُعدِّل `WITH FILL`:
+الاستعلام نفسه بعد تطبيق المُعدِّل `WITH FILL`:
 
 ```sql title="Query"
 SELECT n, source FROM (

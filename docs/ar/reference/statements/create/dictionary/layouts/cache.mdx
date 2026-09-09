@@ -15,6 +15,26 @@ doc_type: 'reference'
 
 عند البحث عن قيمة في القاموس، يُبحث أولًا في cache. ولكل block من البيانات، تُطلب جميع المفاتيح التي لا توجد في cache أو التي انتهت صلاحيتها من المصدر باستخدام `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. ثم تُكتب البيانات المستلمة إلى cache.
 
+ينطبق ذلك عند البحث عن مفتاح — باستخدام `dictGet` ودوال القاموس الأخرى. أما قراءة القاموس **كجدول** باستخدام `SELECT ... FROM <dictionary>` فتختلف: إذ تُرجع الخلايا الموجودة حاليًا في cache في تلك اللحظة ولا تطلب شيئًا من المصدر، لأن cache لا يحتفظ بسجل بالمفاتيح الموجودة. ويكون `WHERE` على المفتاح عامل تصفية عاديًا لهذه الخلايا الموجودة، وليس قائمة مفاتيح لجلبها:
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+لذا فإن قاموس cache مُصمَّم ليُستخدم عبر دوال القاموس. إذا كنت بحاجة إلى أن يجلب `SELECT ... FROM <dictionary> WHERE key IN (...)` البيانات من المصدر، فاستخدم تخطيط [direct](/ar/reference/statements/create/dictionary/layouts/direct)، الذي يستعلم من المصدر عند كل طلب ولا يخزّن شيئًا في cache؛ ولقراءة القاموس بأكمله كجدول، استخدم تخطيطًا يحتفظ به كاملًا، مثل [flat](/ar/reference/statements/create/dictionary/layouts/flat) أو [hashed](/ar/reference/statements/create/dictionary/layouts/hashed).
+
 إذا لم يُعثر على المفاتيح في القاموس، فستُنشأ مهمة لتحديث cache وتُضاف إلى قائمة انتظار التحديث. ويمكن التحكم في خصائص قائمة انتظار التحديث باستخدام الإعدادات `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
 بالنسبة إلى قواميس cache، يمكن ضبط [lifetime](/ar/reference/statements/create/dictionary/lifetime) لانتهاء صلاحية البيانات في cache. وإذا مرّ وقت أطول من `lifetime` منذ تحميل البيانات في خلية معيّنة، فلن تُستخدم قيمة الخلية ويصبح المفتاح منتهي الصلاحية. ويُعاد طلب المفتاح في المرة التالية التي يلزم فيها استخدامه. ويمكن تهيئة هذا السلوك باستخدام الإعداد `allow_read_expired_keys`.

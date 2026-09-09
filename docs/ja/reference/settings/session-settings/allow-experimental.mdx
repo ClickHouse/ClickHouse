@@ -300,31 +300,6 @@ polyglot SQL トランスパイラを有効にします。これにより、30�
 
 SQLの代替となるPRQLを有効にします。
 
-## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
-
-<ExperimentalBadge />
-
-**別名**: `allow_experimental_ts_to_grid_aggregate_function`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "実験的な timeSeries* 集約関数を有効にするための新しい設定。"}]}]} />
-
-Prometheusライクな時系列のリサンプリング、rate、delta の計算に対応する実験的な timeSeries* 集約関数。
-
-## allow_experimental_time_series_table {#allow_experimental_time_series_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "TimeSeries テーブルエンジンを許可する新しい設定を追加"}]}]} />
-
-[TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルエンジンを使用するテーブルの作成を許可します。設定可能な値:
-
-* 0 — [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルエンジンは無効です。
-* 1 — [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルエンジンは有効です。
-
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

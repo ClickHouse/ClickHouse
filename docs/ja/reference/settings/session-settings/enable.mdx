@@ -12,12 +12,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="enable_adaptive_aggregator">
-  ## enable_adaptive_aggregator
-</div>
+## enable_adaptive_aggregator {#enable_adaptive_aggregator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,9 +26,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 外部集約の設定 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) も考慮されます。しきい値を超えると、バックログは早期に共有テーブルへ排出されます。それでも使用量をしきい値未満に戻せない場合は、通常の外部集約により共有テーブルがディスクにスピルされます。
 
-<div id="enable_adaptive_memory_spill_scheduler">
-  ## enable_adaptive_memory_spill_scheduler
-</div>
+## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
 <ExperimentalBadge />
 
@@ -39,9 +36,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 トリガープロセッサが、データを外部ストレージへ適応的にスピルします。現時点でサポートされているのは grace join のみです。
 
-<div id="enable_add_distinct_to_in_subqueries">
-  ## enable_add_distinct_to_in_subqueries
-</div>
+## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,9 +45,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 `IN` サブクエリで `DISTINCT` を有効にします。これはトレードオフのある設定です。有効にすると、一意の値だけが送信されるようになるため、分散 `IN` サブクエリで転送される一時テーブルのサイズを大幅に削減でき、分片間のデータ転送を大きく高速化できます。
 ただし、この設定を有効にすると、重複排除 (DISTINCT) を実行する必要があるため、各ノードで追加のマージ処理負荷が発生します。ネットワーク転送がボトルネックになっており、追加のマージコストを許容できる場合にこの設定を使用してください。
 
-<div id="enable_alp_codec">
-  ## enable_alp_codec
-</div>
+## enable_alp_codec {#enable_alp_codec}
 
 <BetaBadge />
 
@@ -62,9 +55,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 `ALP` 圧縮コーデックを有効にします。
 
-<div id="enable_automatic_decision_for_merging_across_partitions_for_final">
-  ## enable_automatic_decision_for_merging_across_partitions_for_final
-</div>
+## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,9 +64,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 有効にすると、パーティションキー式が決定論的であり、かつその式で使用されるすべてのカラムが主キーに含まれている場合、ClickHouse はこの最適化を自動的に有効にします。
 この自動判定により、同じ主キー値を持つ行は常に同じパーティションに属することが保証されるため、パーティションをまたぐマージを回避しても安全です。
 
-<div id="enable_cascades_optimizer">
-  ## enable_cascades_optimizer
-</div>
+## enable_cascades_optimizer {#enable_cascades_optimizer}
 
 <ExperimentalBadge />
 
@@ -86,17 +75,13 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 分散クエリプランに対して、Cascades のコストベースオプティマイザを有効にします。
 `make_distributed_plan = 1` と併用した場合にのみ有効になります。この設定だけでは、単一ノードのクエリプランニングは変更されません。
 
-<div id="enable_early_constant_folding">
-  ## enable_early_constant_folding
-</div>
+## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 関数やサブクエリの結果を解析し、定数が含まれている場合にクエリを書き換えるクエリ最適化を有効にします
 
-<div id="enable_extended_results_for_datetime_functions">
-  ## enable_extended_results_for_datetime_functions
-</div>
+## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -127,9 +112,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 | `toStartOfMinute`         | `DateTime` を返します<br />*注: 1970～2149 の範囲外の値では正しい結果が得られません*      | `Date`/`DateTime` 型の入力では `DateTime` を返します<br />`Date32`/`DateTime64` 型の入力では `DateTime64` を返します                       |
 | `timeSlot`                | 戻り値は `DateTime`<br />*注: 1970〜2149 の範囲外の値では正しい結果が得られません*       | `Date`/`DateTime` 型の入力に対しては `DateTime` を返します<br />`Date32`/`DateTime64` 型の入力に対しては `DateTime64` を返します                 |
 
-<div id="enable_full_text_index">
-  ## enable_full_text_index
-</div>
+## enable_full_text_index {#enable_full_text_index}
 
 **別名**: `allow_experimental_full_text_index`
 
@@ -139,9 +122,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 true に設定すると、テキスト索引を使用できます。
 
-<div id="enable_function_early_short_circuit">
-  ## enable_function_early_short_circuit
-</div>
+## enable_function_early_short_circuit {#enable_function_early_short_circuit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -150,9 +131,7 @@ true に設定すると、テキスト索引を使用できます。
 クエリ分析時に、`and` および `or` の早期短絡定数畳み込みを有効にします。
 有効にすると、対象となる到達不能なスカラーサブクエリの分岐は、型を維持しクエリの意味を検証するために分析されますが、実行されません。スカラーのカーディナリティまたは実行時の値が必要な場合、この最適化は通常の分析にフォールバックします。
 
-<div id="enable_global_with_statement">
-  ## enable_global_with_statement
-</div>
+## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -160,9 +139,7 @@ true に設定すると、テキスト索引を使用できます。
 
 WITH ステートメントを UNION クエリおよびすべてのサブクエリに伝播します
 
-<div id="enable_group_by_top_k_optimization">
-  ## enable_group_by_top_k_optimization
-</div>
+## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -181,9 +158,7 @@ WITH ステートメントを UNION クエリおよびすべてのサブクエ�
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="enable_hash_join_row_store">
-  ## enable_hash_join_row_store
-</div>
+## enable_hash_join_row_store {#enable_hash_join_row_store}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -191,9 +166,7 @@ WITH ステートメントを UNION クエリおよびすべてのサブクエ�
 
 ハッシュ結合のペイロードを行優先レイアウトに変換できるようにします。
 
-<div id="enable_hdfs_pread">
-  ## enable_hdfs_pread
-</div>
+## enable_hdfs_pread {#enable_hdfs_pread}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -201,9 +174,7 @@ WITH ステートメントを UNION クエリおよびすべてのサブクエ�
 
 HDFS ファイルでの `pread` の使用を有効または無効にします。デフォルトでは `hdfsPread` が使用されます。無効にすると、HDFS ファイルの読み取りには `hdfsRead` と `hdfsSeek` が使用されます。
 
-<div id="enable_http_compression">
-  ## enable_http_compression
-</div>
+## enable_http_compression {#enable_http_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -218,9 +189,7 @@ HTTPリクエストに対するレスポンスでのデータ圧縮を有効ま�
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="enable_identifier_resolve_cache">
-  ## enable_identifier_resolve_cache
-</div>
+## enable_identifier_resolve_cache {#enable_identifier_resolve_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -228,9 +197,7 @@ HTTPリクエストに対するレスポンスでのデータ圧縮を有効ま�
 
 クエリ アナライザで識別子解決 cache を有効にします。この cache は、同じエイリアスが複数回参照されたときに AST が肥大化するのを防ぐため、解決済みのエイリアスノードを共有します。誤った結果が疑われる場合は、false に設定して cache を無効にします。
 
-<div id="enable_job_stack_trace">
-  ## enable_job_stack_trace
-</div>
+## enable_job_stack_trace {#enable_job_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -238,9 +205,7 @@ HTTPリクエストに対するレスポンスでのデータ圧縮を有効ま�
 
 ジョブの実行結果が例外になった場合に、ジョブ作成元のスタックトレースを出力します。パフォーマンスのオーバーヘッドを避けるため、デフォルトでは無効です。
 
-<div id="enable_json_ast_dialect">
-  ## enable_json_ast_dialect
-</div>
+## enable_json_ast_dialect {#enable_json_ast_dialect}
 
 <ExperimentalBadge />
 
@@ -264,9 +229,7 @@ SET dialect = 'clickhouse_json';
 {"type":"SelectWithUnionQuery", ...}
 ```
 
-<div id="enable_lazy_columns_replication">
-  ## enable_lazy_columns_replication
-</div>
+## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -274,9 +237,7 @@ SET dialect = 'clickhouse_json';
 
 `JOIN`、`ARRAY JOIN`、および高階関数 (例: `arrayMap`) のラムダキャプチャでのカラムの遅延複製を有効にします。これにより、同じ行をメモリ上で何度も不必要にコピーするのを防げます。
 
-<div id="enable_materialized_cte">
-  ## enable_materialized_cte
-</div>
+## enable_materialized_cte {#enable_materialized_cte}
 
 <ExperimentalBadge />
 
@@ -284,27 +245,23 @@ SET dialect = 'clickhouse_json';
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-マテリアライズド共通テーブル式を有効にします。enable&#95;global&#95;with&#95;statement よりも優先されます。
+マテリアライズド共通テーブル式 (`WITH <name> AS MATERIALIZED (<subquery>)`) を有効にします。
+有効な場合、`MATERIALIZED` として宣言され、2 回以上参照される CTE は一度だけ実行されて一時テーブルに格納され、すべての参照はそのテーブルから読み取られます。1 回しか参照されない CTE は、オーバーヘッドを避けるために通常の CTE としてインライン展開されます。
+無効な場合、`MATERIALIZED` キーワードは無視され、CTE は通常の CTE と同様に各参照箇所でインライン展開され、警告がログに記録されます。
 
-<div id="enable_memory_bound_merging_of_aggregation_results">
-  ## enable_memory_bound_merging_of_aggregation_results
-</div>
+## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 集約に対するメモリ制約付きのマージ戦略を有効にします。
 
-<div id="enable_multiple_prewhere_read_steps">
-  ## enable_multiple_prewhere_read_steps
-</div>
+## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 AND で結合された複数の条件がある場合、より多くの条件を WHERE から PREWHERE に移し、ディスクからの読み取りとフィルタリングを複数段階で実行します
 
-<div id="enable_named_columns_in_function_tuple">
-  ## enable_named_columns_in_function_tuple
-</div>
+## enable_named_columns_in_function_tuple {#enable_named_columns_in_function_tuple}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -312,9 +269,7 @@ AND で結合された複数の条件がある場合、より多くの条件を 
 
 すべての名前が一意で、クォートなしの識別子として扱える場合、tuple() 関数で名前付きタプルを生成します。
 
-<div id="enable_order_by_all">
-  ## enable_order_by_all
-</div>
+## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -349,9 +304,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 └────┴────┴─────┘
 ```
 
-<div id="enable_packed_string_keys_in_aggregation">
-  ## enable_packed_string_keys_in_aggregation
-</div>
+## enable_packed_string_keys_in_aggregation {#enable_packed_string_keys_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -363,9 +316,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 分散クエリに参加するすべてのサーバーで、この値が一致している必要があります。`distributed_aggregation_memory_efficient`では、二段階バケット番号がキーのハッシュに依存し、そのハッシュは2つの方式で異なるため、この設定が一致しないサーバーでは同じキーが異なるバケットに分割され、不正にマージされた結果が生成される可能性があります。一致を保証するため、イニシエーターは有効な値を常にセカンダリクエリとともに送信します (サーバーまたはプロファイルのデフォルトから取得された値のみの場合も含む) 。これにより、リモートサーバー側のデフォルトは上書きされます。
 
-<div id="enable_parsing_to_custom_serialization">
-  ## enable_parsing_to_custom_serialization
-</div>
+## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -373,9 +324,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 true の場合、テーブルから取得したシリアライゼーションのヒントに基づいて、カスタムシリアライゼーション (例: スパース) を使用するカラムにデータを直接パースできます。
 
-<div id="enable_producing_buckets_out_of_order_in_aggregation">
-  ## enable_producing_buckets_out_of_order_in_aggregation
-</div>
+## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -385,9 +334,7 @@ true の場合、テーブルから取得したシリアライゼーションの
 これにより、集約バケットのサイズに偏りがある場合でも、レプリカは id の小さい重いバケットをまだ処理している間に、id の大きいバケットをイニシエーターへ送信できるため、パフォーマンスが向上することがあります。
 欠点として、メモリ使用量が増える可能性があります。
 
-<div id="enable_quantized_codec">
-  ## enable_quantized_codec
-</div>
+## enable_quantized_codec {#enable_quantized_codec}
 
 <ExperimentalBadge />
 
@@ -397,9 +344,7 @@ true の場合、テーブルから取得したシリアライゼーションの
 
 `Quantized`圧縮コーデックを有効にします。
 
-<div id="enable_reads_from_query_cache">
-  ## enable_reads_from_query_cache
-</div>
+## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -410,17 +355,13 @@ true の場合、テーブルから取得したシリアライゼーションの
 * 0 - 無効
 * 1 - 有効
 
-<div id="enable_s3_requests_logging">
-  ## enable_s3_requests_logging
-</div>
+## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 S3 リクエストの非常に詳細なログを有効にします。デバッグ時にのみ使用するのが適切です。
 
-<div id="enable_scalar_subquery_optimization">
-  ## enable_scalar_subquery_optimization
-</div>
+## enable_scalar_subquery_optimization {#enable_scalar_subquery_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -428,9 +369,7 @@ S3 リクエストの非常に詳細なログを有効にします。デバッ�
 
 true に設定すると、スカラーサブクエリで大きなスカラー値のシリアライズ／デシリアライズを防ぎ、同じサブクエリが複数回実行されるのを回避できる可能性があります。
 
-<div id="enable_scopes_for_with_statement">
-  ## enable_scopes_for_with_statement
-</div>
+## enable_scopes_for_with_statement {#enable_scopes_for_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -440,9 +379,7 @@ true に設定すると、スカラーサブクエリで大きなスカラー値
 
 これはアナライザの互換性設定であり、旧アナライザでは実行できた一部の無効なクエリも実行できるようにするものです。
 
-<div id="enable_shared_storage_snapshot_in_query">
-  ## enable_shared_storage_snapshot_in_query
-</div>
+## enable_shared_storage_snapshot_in_query {#enable_shared_storage_snapshot_in_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -471,17 +408,13 @@ WHERE (_part, _part_offset) IN (
 * 0 - 無効
 * 1 - 有効
 
-<div id="enable_sharing_sets_for_mutations">
-  ## enable_sharing_sets_for_mutations
-</div>
+## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 同じ mutation 内の異なるタスク間で、IN サブクエリ用に構築された set オブジェクトの共有を許可します。これにより、メモリ使用量と CPU 使用量を削減できます
 
-<div id="enable_streaming_queries">
-  ## enable_streaming_queries
-</div>
+## enable_streaming_queries {#enable_streaming_queries}
 
 <ExperimentalBadge />
 
@@ -495,9 +428,7 @@ WHERE (_part, _part_offset) IN (
 機能全体を制御するゲートであり、追加の機能は
 それぞれ独自の設定で制御される場合があります。
 
-<div id="enable_sz3_codec">
-  ## enable_sz3_codec
-</div>
+## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
 
@@ -507,9 +438,34 @@ WHERE (_part, _part_offset) IN (
 
 `SZ3` 圧縮コーデックを有効にします。
 
-<div id="enable_time_time64_type">
-  ## enable_time_time64_type
-</div>
+## enable_time_series_aggregate_functions {#enable_time_series_aggregate_functions}
+
+<PrivatePreviewBadge />
+
+**別名**: `allow_experimental_ts_to_grid_aggregate_function`, `allow_experimental_time_series_aggregate_functions`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`timeSeries*` 集約関数はプライベートプレビュー段階に移行しました。設定 `allow_experimental_time_series_aggregate_functions` の別名を追加しました。"}]}]} />
+
+Prometheus 風の時系列のリサンプリング、rate、delta の計算を行う `timeSeries*` 集約関数を有効にします。
+
+## enable_time_series_table {#enable_time_series_table}
+
+<PrivatePreviewBadge />
+
+**別名**: `allow_experimental_time_series_table`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`TimeSeries` テーブルエンジンと `promql` dialect が プライベートプレビュー tier に移行しました。設定 `allow_experimental_time_series_table` の別名が追加されました。"}]}]} />
+
+[TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルエンジンを使用したテーブルの作成を許可します。設定可能な値:
+
+* 0 — [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルエンジンは無効。
+* 1 — [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルエンジンは有効。
+
+## enable_time_time64_type {#enable_time_time64_type}
 
 **別名**: `allow_experimental_time_time64_type`
 
@@ -519,17 +475,13 @@ WHERE (_part, _part_offset) IN (
 
 [Time](/ja/reference/data-types/time) および [Time64](/ja/reference/data-types/time64) データ型を作成できるようにします。
 
-<div id="enable_unaligned_array_join">
-  ## enable_unaligned_array_join
-</div>
+## enable_unaligned_array_join {#enable_unaligned_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 サイズの異なる複数の配列に対する ARRAY JOIN を許可します。この設定を有効にすると、配列は最も長いものに合わせてリサイズされます。
 
-<div id="enable_url_encoding">
-  ## enable_url_encoding
-</div>
+## enable_url_encoding {#enable_url_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -539,9 +491,7 @@ WHERE (_part, _part_offset) IN (
 
 デフォルトでは無効です。
 
-<div id="enable_vertical_final">
-  ## enable_vertical_final
-</div>
+## enable_vertical_final {#enable_vertical_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -549,9 +499,7 @@ WHERE (_part, _part_offset) IN (
 
 有効にすると、FINAL 時の重複した行は、行をマージする代わりに削除済みとしてマークし、後でフィルタリングして除外します
 
-<div id="enable_writes_to_query_cache">
-  ## enable_writes_to_query_cache
-</div>
+## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -562,9 +510,7 @@ WHERE (_part, _part_offset) IN (
 * 0 - 無効
 * 1 - 有効
 
-<div id="enable_zxc_codec">
-  ## enable_zxc_codec
-</div>
+## enable_zxc_codec {#enable_zxc_codec}
 
 <ExperimentalBadge />
 

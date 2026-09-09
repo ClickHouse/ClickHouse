@@ -380,26 +380,26 @@ JOIN에서 lazy indexing 최적화를 활성화하는 데 필요한 왼쪽 입�
 1로 설정하면 랜덤 시드가 생성되며, 1보다 큰 값으로 설정하면 해당 값을 시드로 직접 사용합니다.
 이 설정은 서로 다른 조인 순서로 인해 발생하는 오류를 찾기 위한 테스트 용도로 사용됩니다.
 
-## query_plan_optimize_join_order_use_cd_a_conflict_detector {#query_plan_optimize_join_order_use_cd_a_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub 조인 순서 알고리즘에서 JOIN 재정렬의 유효성 판단에 CD-A 충돌 감지기를 사용하도록 하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub 조인 순서 알고리즘에서 JOIN 재정렬의 유효성 판단에 충돌 감지기 A를 사용하도록 하는 새로운 설정입니다."}]}]} />
 
 `dpsub` 조인 순서 알고리즘에만 영향을 미칩니다. 이 설정을 활성화하면 DPsub는 CD-A 충돌 감지기를 사용해 어떤 JOIN 재정렬이 유효한지 판단합니다.
 
-## query_plan_optimize_join_order_use_cd_c_conflict_detector {#query_plan_optimize_join_order_use_cd_c_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub 조인 순서 알고리즘에서 JOIN 재정렬의 유효성을 판정할 때 CD-C(correct and complete) 충돌 감지기를 사용하도록 하는 새로운 설정."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "DPsub 조인 순서 알고리즘에서 JOIN 재정렬의 유효성을 판정할 때 (correct and complete) 충돌 감지기 C를 사용하도록 하는 새로운 설정."}]}]} />
 
 `dpsub` 조인 순서 알고리즘에만 영향을 줍니다. 활성화하면 DPsub이 CD-C 충돌 감지기를 사용하여 어떤
-JOIN 재정렬이 유효한지 판정합니다. 두 설정이 모두 활성화된 경우 `query_plan_optimize_join_order_use_cd_a_conflict_detector`보다 우선 적용됩니다.
+JOIN 재정렬이 유효한지 판정합니다. 두 설정이 모두 활성화된 경우 `query_plan_optimize_join_order_use_conflict_detector_a`보다 우선 적용됩니다.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

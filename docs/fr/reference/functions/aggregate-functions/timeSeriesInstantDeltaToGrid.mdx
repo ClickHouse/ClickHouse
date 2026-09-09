@@ -23,7 +23,7 @@ Les échantillons peuvent être transmis sous l&#39;une des trois formes suivant
 Si plusieurs échantillons ont le même horodatage, un seul est utilisé : celui dont la valeur est la plus élevée. Une valeur NaN est écartée au profit de toute autre valeur. Ainsi, une valeur NaN n&#39;est utilisée que si tous les échantillons associés à cet horodatage sont NaN.
 
 <Warning>
-  Cette fonction est expérimentale. Activez-la en définissant `allow_experimental_time_series_aggregate_functions=true`.
+  Cette fonction est en private preview. Activez-la en définissant `enable_time_series_aggregate_functions=true`.
 </Warning>
 
 **Syntaxe**
@@ -55,7 +55,7 @@ Renvoie les valeurs idelta sur la grille spécifiée. Le tableau renvoyé contie
 **Utilisation de base avec des paires horodatage-valeur individuelles**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -84,7 +84,7 @@ FROM
 **Utilisation d&#39;arguments de type Array**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

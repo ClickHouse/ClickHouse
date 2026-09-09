@@ -12,6 +12,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
@@ -889,11 +890,11 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
 
 ## load_marks_asynchronously {#load_marks_asynchronously}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-MergeTree のマークを非同期に読み込む
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "デフォルトで、すべての ストリーム の marks を並列に読み込みます。リモートディスクでは、多数の substreams を持つカラム（`JSON` など）の marks を同期的に読み込む場合、ストリーム ごとに 1 回のネットワークラウンドトリップが発生していました。"}]}]} />
 
-Cloud でのデフォルト値: `1`.
+MergeTree の marks をバックグラウンドの thread pool (server setting `load_marks_threadpool_pool_size` を参照) で非同期に読み込み、すべての ストリーム の marks を並列に読み込みます。無効な場合は、marks は ストリーム ごとに順番に同期的に読み込まれるため、`JSON` のように多数の substreams を持つカラムではリモートディスク上で処理が遅くなります。
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -920,7 +921,7 @@ Cloud でのデフォルト値: `1`.
 
 ## make_distributed_plan {#make_distributed_plan}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1234,6 +1235,8 @@ ignore を伴う読み取りではなく seek を行うために、リモート�
 * **デフォルト値:** 空文字列
 
 この設定では、`file` テーブル関数で処理したファイルのリネームパターンを指定できます。このオプションを設定すると、`file` テーブル関数で読み取られたすべてのファイルは、処理が正常に完了した場合に限り、プレースホルダーを含む指定のパターンに従ってリネームされます。
+
+リネームはソースへの書き込みであるため、このオプションを設定してファイルを読み取るクエリには、`READ ON FILE` に加えて `WRITE ON FILE` 権限が必要です。`DESCRIBE` はリネームを行うデータ読み取りパイプラインを構築しないため、`READ ON FILE` のみが必要です。
 
 <div id="placeholders">
   ### プレースホルダー
@@ -1669,7 +1672,7 @@ TCP が keepalive プローブの送信を開始するまでに、接続がア�
 
 ## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -20,9 +20,7 @@ Si vous souhaitez regrouper les données de la table par numéros de colonnes pl
   Il existe une autre manière d’effectuer une agrégation sur une table. Si une requête contient des colonnes de table uniquement à l’intérieur de fonctions d’agrégation, la clause `GROUP BY` peut être omise, et une agrégation sur un ensemble vide de clés est alors supposée. De telles requêtes renvoient toujours exactement une ligne.
 </Note>
 
-<div id="null-processing">
-  ## Traitement de NULL
-</div>
+## Traitement de NULL {#null-processing}
 
 Lors du regroupement, ClickHouse interprète [NULL](/fr/reference/syntax#null) comme une valeur et considère que `NULL==NULL`. Cela diffère du traitement de `NULL` dans la plupart des autres contextes.
 
@@ -54,9 +52,7 @@ Vous pouvez voir que `GROUP BY` pour `y = NULL` a additionné `x`, comme si `NUL
 
 Si vous passez plusieurs expressions à `GROUP BY`, le résultat vous donnera toutes les combinaisons de la sélection, comme si `NULL` était une valeur spécifique.
 
-<div id="rollup-modifier">
-  ## Modificateur ROLLUP
-</div>
+## Modificateur ROLLUP {#rollup-modifier}
 
 Le modificateur `ROLLUP` est utilisé pour calculer des sous-totaux pour les expressions de clé, en fonction de leur ordre dans la liste `GROUP BY`. Les lignes de sous-totaux sont ajoutées après la table de résultats.
 
@@ -127,9 +123,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 * Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings/group-by#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
 
-<div id="cube-modifier">
-  ## Modificateur CUBE
-</div>
+## Modificateur CUBE {#cube-modifier}
 
 Le modificateur `CUBE` est utilisé pour calculer des sous-totaux pour chaque combinaison des expressions de clé de la liste `GROUP BY`. Les lignes de sous-totaux sont ajoutées après la table de résultats.
 
@@ -224,9 +218,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 * Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings/group-by#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
 
-<div id="with-totals-modifier">
-  ## Modificateur WITH TOTALS
-</div>
+## Modificateur WITH TOTALS {#with-totals-modifier}
 
 Si le modificateur `WITH TOTALS` est spécifié, une ligne supplémentaire est calculée. Cette ligne contient des colonnes clés avec des valeurs par défaut (des zéros ou des chaînes vides), ainsi que des colonnes de fonctions d’agrégation dont les valeurs sont calculées sur l’ensemble des lignes (les valeurs « totales »).
 
@@ -244,9 +236,7 @@ Cette ligne supplémentaire n’est produite que dans les formats `JSON*`, `TabS
 
 `WITH TOTALS` peut se comporter de différentes manières lorsque [HAVING](/fr/reference/statements/select/having) est présent. Le comportement dépend du paramètre `totals_mode`.
 
-<div id="configuring-totals-processing">
-  ### Configuration du traitement des totaux
-</div>
+### Configuration du traitement des totaux {#configuring-totals-processing}
 
 Par défaut, `totals_mode = 'before_having'`. Dans ce cas, &#39;totals&#39; est calculé sur l’ensemble des lignes, y compris celles qui ne satisfont pas la clause HAVING ni `max_rows_to_group_by`.
 
@@ -264,9 +254,7 @@ Si `max_rows_to_group_by` et `group_by_overflow_mode = 'any'` ne sont pas utilis
 
 Vous pouvez utiliser `WITH TOTALS` dans les sous-requêtes, y compris les sous-requêtes de la clause [JOIN](/fr/reference/statements/select/join) (dans ce cas, les valeurs totales correspondantes sont combinées).
 
-<div id="group-by-all">
-  ## GROUP BY ALL
-</div>
+## GROUP BY ALL {#group-by-all}
 
 `GROUP BY ALL` revient à lister toutes les expressions du SELECT qui ne sont pas des fonctions d’agrégation.
 
@@ -314,9 +302,7 @@ FROM t
 GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 ```
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Exemple :
 
@@ -343,9 +329,7 @@ GROUP BY domain
 
 Pour chaque valeur de clé distincte rencontrée, `GROUP BY` calcule un ensemble de valeurs de fonctions d’agrégation.
 
-<div id="grouping-sets-modifier">
-  ## Modificateur `GROUPING SETS`
-</div>
+## Modificateur `GROUPING SETS` {#grouping-sets-modifier}
 
 Il s’agit du modificateur le plus générique.
 Ce modificateur permet de spécifier manuellement plusieurs ensembles de clés d’agrégation (ensembles de regroupement).
@@ -382,21 +366,15 @@ GROUPING SETS
 
 * Le paramètre [group&#95;by&#95;use&#95;nulls](/fr/reference/settings/session-settings/group-by#group_by_use_nulls) pour assurer la compatibilité avec la norme SQL.
 
-<div id="implementation-details">
-  ## Détails d’implémentation
-</div>
+## Détails d’implémentation {#implementation-details}
 
 L’agrégation est l’une des fonctionnalités les plus importantes d’un SGBD orienté colonnes ; son implémentation est donc l’une des parties les plus optimisées de ClickHouse. Par défaut, l’agrégation s’effectue en mémoire à l’aide d’une table de hachage. Cette implémentation comporte plus de 40 spécialisations, choisies automatiquement en fonction des types de données de la « clé de regroupement ».
 
-<div id="group-by-optimization-depending-on-table-sorting-key">
-  ### Optimisation de GROUP BY en fonction de la clé de tri de la table
-</div>
+### Optimisation de GROUP BY en fonction de la clé de tri de la table {#group-by-optimization-depending-on-table-sorting-key}
 
 L’agrégation peut être effectuée plus efficacement si une table est triée selon une certaine clé et que l’expression `GROUP BY` contient au moins le préfixe de la clé de tri ou des fonctions injectives. Dans ce cas, lorsqu’une nouvelle clé est lue dans la table, le résultat intermédiaire de l’agrégation peut être finalisé et envoyé au client. Ce comportement est activé par le paramètre [optimize&#95;aggregation&#95;in&#95;order](/fr/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order). Cette optimisation réduit l’utilisation de la mémoire pendant l’agrégation, mais peut, dans certains cas, ralentir l’exécution de la requête.
 
-<div id="group-by-in-external-memory">
-  ### GROUP BY en mémoire externe
-</div>
+### GROUP BY en mémoire externe {#group-by-in-external-memory}
 
 Vous pouvez activer l’écriture des données temporaires sur le disque afin de limiter l’utilisation de la mémoire pendant `GROUP BY`.
 Le paramètre [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) détermine le seuil de consommation de RAM à partir duquel les données temporaires de `GROUP BY` sont écrites dans le système de fichiers. S’il est défini sur 0 (valeur par défaut), il est désactivé.
@@ -412,6 +390,6 @@ La fusion des données écrites sur le disque, ainsi que la fusion des résultat
 
 Lorsque l’agrégation externe est activée, s’il y avait moins de `max_bytes_before_external_group_by` de données (c.-à-d. que les données n’ont pas été écrites sur disque), la requête s’exécute aussi vite que sans agrégation externe. Si des données temporaires ont été écrites sur disque, le temps d’exécution sera plusieurs fois plus long (environ trois fois).
 
-Si vous avez un [ORDER BY](/fr/reference/statements/select/order-by) avec un [LIMIT](/fr/reference/statements/select/limit) après `GROUP BY`, alors la quantité de RAM utilisée dépend de la quantité de données dans `LIMIT`, et non dans la table entière. Mais si `ORDER BY` n’a pas de `LIMIT`, n’oubliez pas d’activer le tri externe (`max_bytes_before_external_sort`).
+Si vous avez un [ORDER BY](/fr/reference/statements/select/order-by) avec un [LIMIT](/fr/reference/statements/select/limit) après `GROUP BY`, alors la quantité de RAM utilisée dépend de la quantité de données dans `LIMIT`, et non dans la table entière. Une plage [`LIMIT ... AFTER ... UNTIL`](/fr/reference/statements/select/limit#limit-after-until) ne procure pas une telle économie, car le tri ne peut pas savoir combien de lignes la plage nécessitera. Mais si `ORDER BY` n’a pas de `LIMIT`, n’oubliez pas d’activer le tri externe (`max_bytes_before_external_sort`).
 
 {/*AUTOGENERATED_END*/}

@@ -772,8 +772,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableLocalDirectoryCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 由 LocalObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储创建的目录数量。
 * `ProfileEvent_DiskPlainRewritableLocalDirectoryRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — 由 LocalObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储删除的目录数量。
 * `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 由 S3ObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储创建的目录数量。
-* `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — 由用于 S3ObjectStorage 的 `plain_rewritable` 元数据存储删除的目录数量。
-* `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/zh/reference/data-types/int-uint)) — 使用旧版布局的 `plain_rewritable` disk 数量。
+* `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — 由 S3ObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储删除的目录数量。
+* `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/zh/reference/data-types/int-uint)) — 使用旧版布局的 &#39;plain&#95;rewritable&#39; disk 数量。
 * `ProfileEvent_S3Clients` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的 S3 客户端数量。
 * `ProfileEvent_TinyS3Clients` ([UInt64](/zh/reference/data-types/int-uint)) — 复用其他客户端现有认证提供程序的 S3 客户端副本数量。
 * `ProfileEvent_EngineFileLikeReadFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在使用文件的表引擎 (如 File/S3/URL/HDFS) 中读取的文件数量。
@@ -784,7 +784,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_WriteBufferFromS3Microseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 向 S3 写入所耗费的时间。
 * `ProfileEvent_WriteBufferFromS3Bytes` ([UInt64](/zh/reference/data-types/int-uint)) — 向 S3 写入的字节数。
 * `ProfileEvent_WriteBufferFromS3RequestsErrors` ([UInt64](/zh/reference/data-types/int-uint)) — 向 S3 写入时发生异常的次数。
-* `ProfileEvent_WriteBufferFromS3WaitInflightLimitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 当当前请求数达到 `s3_max_inflight_parts_for_one_file` 定义的限制时，等待其中部分请求完成所耗费的时间。
+* `ProfileEvent_WriteBufferFromS3WaitInflightLimitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 当当前请求数达到 s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file 定义的限制时，等待其中部分请求完成所耗费的时间。
 * `ProfileEvent_QueryMemoryLimitExceeded` ([UInt64](/zh/reference/data-types/int-uint)) — 查询超出内存限制的次数。
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/zh/reference/data-types/int-uint)) — 超出全局内存限制的次数。
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/zh/reference/data-types/int-uint)) — 未检查内存约束即分配内存的次数。
@@ -934,6 +934,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在合并时排入共享表的延迟记录数。
 * `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/zh/reference/data-types/int-uint)) — 因内存压力而提前排空暂存记录的次数。
 * `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在内存压力下提前排空的暂存记录数。
+* `ProfileEvent_AdaptiveAggregationSpillBacklogSheds` ([UInt64](/zh/reference/data-types/int-uint)) — 当基线算法上的线程——由解冻操作放回该算法的线程，或自行退出的线程——在暂存记录仍驻留时即将落盘，自适应聚合丢弃暂存积压的次数。
 * `ProfileEvent_AdaptiveAggregationResidueReleases` ([UInt64](/zh/reference/data-types/int-uint)) — 采用基线算法的线程即将因共享排空表而落盘时，自适应聚合将该共享排空表写出的次数。
 * `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合因共享排空表在内存压力下达到分片边界而将其写出的次数。
 * `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/zh/reference/data-types/int-uint)) — 在合并和转换完成后、整个合并结束前立即释放其工作内存 (Arena 插槽、暂存块引用) 的两级桶数量。
@@ -1013,7 +1014,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperPacketsSent` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper server 发送的数据包数
 * `ProfileEvent_KeeperPacketsReceived` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper server 接收的数据包数量
 * `ProfileEvent_KeeperRequestTotal` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper server 上的请求总数
-* `ProfileEvent_KeeperRequestTotalWithSubrequests` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper server 上的请求总数，在多请求中每个子请求均单独计数
+* `ProfileEvent_KeeperRequestTotalWithSubrequests` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper server 上的请求总数，在多重请求中每个子请求均单独计数
 * `ProfileEvent_KeeperLatency` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 延迟
 * `ProfileEvent_KeeperTotalElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 单个请求的 Keeper 总延迟
 * `ProfileEvent_KeeperProcessElapsedMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 单个请求的 Keeper commit 延迟

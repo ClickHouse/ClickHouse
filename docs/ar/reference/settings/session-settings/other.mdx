@@ -2,7 +2,7 @@
 title: 'إعدادات الجلسة الأخرى'
 sidebarTitle: 'أخرى'
 toc_max_heading_level: 2
-description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة «أخرى».'
+description: 'إعدادات جلسة ClickHouse ضمن المجموعة المُولَّدة «أخرى».'
 doc_type: 'reference'
 ---
 
@@ -12,9 +12,10 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
-تتوفّر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
+تتوفّر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
 ## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
@@ -900,11 +901,11 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 ## load_marks_asynchronously {#load_marks_asynchronously}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-تحميل علامات MergeTree بصورة غير متزامنة
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "تحميل marks لجميع streams بالتوازي افتراضيًا. على الأقراص البعيدة، كان التحميل المتزامن لـ marks الخاصة بالأعمدة التي تحتوي على العديد من substreams (مثل `JSON`) يستغرق رحلة شبكة ذهابًا وإيابًا لكل stream."}]}]} />
 
-القيمة الافتراضية في Cloud: `1`.
+تحميل marks الخاصة بـ MergeTree بشكل غير متزامن في thread pool خلفي (راجع إعداد الخادم `load_marks_threadpool_pool_size`)، بحيث تُحمَّل marks لجميع streams بالتوازي. أما إذا لم يكن كذلك، فتُحمَّل marks بشكل متزامن، stream تلو الآخر، وهو ما يكون بطيئًا على الأقراص البعيدة للأعمدة التي تحتوي على العديد من substreams، مثل `JSON`.
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -931,7 +932,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 ## make_distributed_plan {#make_distributed_plan}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1246,6 +1247,8 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 * **القيمة الافتراضية:** سلسلة فارغة
 
 يتيح هذا الإعداد تحديد نمط لإعادة تسمية الملفات التي تعالجها دالة الجدول `file`. عند تعيين هذا الخيار، ستُعاد تسمية جميع الملفات التي تقرؤها دالة الجدول `file` وفقًا للنمط المحدد باستخدام العناصر النائبة، وذلك فقط إذا تمت معالجة الملفات بنجاح.
+
+تُعد إعادة التسمية عملية كتابة إلى المصدر، لذا فإن أي استعلام يقرأ الملفات مع تعيين هذا الخيار يتطلب الصلاحية `WRITE ON FILE` بالإضافة إلى `READ ON FILE`. أما `DESCRIBE` فلا يبني خط معالجة قراءة البيانات الذي يقوم بإعادة التسمية، ولذلك يتطلب `READ ON FILE` فقط.
 
 <div id="placeholders">
   ### العناصر النائبة
@@ -1682,7 +1685,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 ## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

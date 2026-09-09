@@ -301,6 +301,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 CREATE USER john GRANTEES jack;
 ```
 
+デフォルトデータベースを指定してユーザーアカウント `john` を作成します:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` は、デフォルトデータベースを未設定のままにします。`NONE` という名前のデータベースを使用するには、その名前をバッククォートで囲みます:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 `john` のユーザーアカウントを作成するには、クエリパラメータを使用します:
 
 ```sql

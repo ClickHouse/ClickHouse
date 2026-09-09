@@ -12,6 +12,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -901,11 +902,11 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 ## load_marks_asynchronously {#load_marks_asynchronously}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-Асинхронно загружать метки MergeTree
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "По умолчанию marks всех streams загружаются параллельно. На удалённых дисках синхронная загрузка marks для столбцов с большим количеством substreams (например, `JSON`) требовала одного сетевого обращения на каждый stream."}]}]} />
 
-Значение по умолчанию в Cloud: `1`.
+Загружать marks MergeTree асинхронно в фоновом пуле потоков (см. настройку сервера `load_marks_threadpool_pool_size`), чтобы marks всех streams загружались параллельно. Иначе marks загружаются синхронно, один stream за другим, что работает медленно на удалённых дисках для столбцов с большим количеством substreams, таких как `JSON`.
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -932,7 +933,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 ## make_distributed_plan {#make_distributed_plan}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1247,6 +1248,8 @@ a   Tuple(
 * **Значение по умолчанию:** Пустая строка
 
 Эта настройка позволяет задать шаблон переименования файлов, обработанных табличной функцией `file`. Если параметр задан, все файлы, прочитанные табличной функцией `file`, будут переименованы по указанному шаблону с плейсхолдерами, но только если их обработка завершилась успешно.
+
+Переименование записывает данные в источник, поэтому запрос, читающий файлы с этим параметром, помимо `READ ON FILE` требует grant `WRITE ON FILE`. `DESCRIBE` не создаёт конвейер чтения данных, выполняющий переименование, поэтому для него требуется только `READ ON FILE`.
 
 <div id="placeholders">
   ### Плейсхолдеры
@@ -1683,7 +1686,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 ## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -41,19 +41,19 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-<div id="lightweight-update-does-not-update-data-immediately">
-  ## Las actualizaciones ligeras no actualizan los datos inmediatamente {#lightweight-update-does-not-update-data-immediately}
-</div>
+## Las actualizaciones ligeras son visibles de inmediato en las consultas {#lightweight-update-does-not-update-data-immediately}
 
-La actualización ligera `UPDATE` se implementa mediante **partes de parche**, un tipo especial de parte de datos que contiene solo las columnas y filas actualizadas.
-Una actualización ligera `UPDATE` crea partes de parche, pero no modifica físicamente de inmediato los datos originales en el almacenamiento.
-El proceso de actualización es similar al de una consulta `INSERT ... SELECT ...`, pero la consulta `UPDATE` espera a que se complete la creación de la parte de parche antes de devolver el control.
+La actualización ligera (`UPDATE`) hace que los valores actualizados sean visibles de inmediato en las consultas `SELECT` mediante la aplicación de **partes de parche**. Las consultas no necesitan esperar a una fusión para leer los valores actualizados.
+Los partes de parche son un tipo especial de parte de datos que contiene únicamente las columnas y filas actualizadas. Su creación no modifica físicamente de inmediato los datos originales en el almacenamiento.
+El proceso de actualización es similar a una consulta `INSERT ... SELECT ...`, y la consulta `UPDATE` espera a que finalice la creación de la parte de parche antes de devolver el control.
 
-Los valores actualizados quedan:
+La visibilidad en las consultas y la materialización física son procesos independientes:
 
-* **Inmediatamente visibles** en las consultas `SELECT` mediante la aplicación de parches
-* **Materializados físicamente** solo durante fusiones y mutaciones posteriores
-* **Eliminados automáticamente** una vez que todas las partes activas tienen los parches materializados
+* **Visibilidad en las consultas:** las consultas `SELECT` aplican los parches para leer los valores actualizados antes de que dichos parches se materialicen en las partes de datos originales.
+* **Materialización física:** las fusiones y mutaciones posteriores incorporan los valores actualizados a las partes de datos.
+* **Limpieza:** las partes de parche se eliminan automáticamente en cuanto todas las partes activas tienen los parches materializados.
+
+Para más información sobre la consistencia de las actualizaciones concurrentes, consulte [Operaciones concurrentes](#concurrent-operations).
 
 ## Requisitos de las actualizaciones ligeras {#lightweight-update-requirements}
 

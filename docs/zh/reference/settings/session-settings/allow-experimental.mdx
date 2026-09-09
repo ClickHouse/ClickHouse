@@ -300,31 +300,6 @@ Cloud 默认值：`1`。
 
 启用 PRQL——作为 SQL 的一种替代方案。
 
-## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
-
-<ExperimentalBadge />
-
-**别名**: `allow_experimental_ts_to_grid_aggregate_function`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "用于启用Experimental timeSeries* 聚合函数的新设置。"}]}]} />
-
-用于进行类似 Prometheus 的时间序列重采样、rate 和 delta 计算的Experimental timeSeries* 聚合函数。
-
-## allow_experimental_time_series_table {#allow_experimental_time_series_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "新增设置，允许使用 TimeSeries 表引擎"}]}]} />
-
-允许创建使用 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表引擎的表。可选值：
-
-* 0 — [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表引擎已禁用。
-* 1 — [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表引擎已启用。
-
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

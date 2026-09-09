@@ -22,7 +22,7 @@ doc_type: 'reference'
 إذا كانت عدة عينات تحمل الطابع الزمني نفسه، فلا يُستخدم سوى واحدة منها: العينة ذات القيمة الأكبر. تخسر قيمة `NaN` أمام أي قيمة أخرى، لذا لا تُستخدم قيمة `NaN` إلا إذا كانت جميع العينات عند هذا الطابع الزمني هي `NaN`.
 
 <Note>
-  هذه الدالة تجريبية. فعِّلها بتعيين `allow_experimental_time_series_aggregate_functions=true`.
+  هذه الدالة في مرحلة private preview. فعِّلها بتعيين `enable_time_series_aggregate_functions=true`.
 </Note>
 
 **البنية**
@@ -47,7 +47,7 @@ timeSeriesGroupArray(samples)
 **الاستخدام الأساسي مع القيم الفردية**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -70,7 +70,7 @@ FROM
 **تمرير عينات متعددة من الطوابع الزمنية والقيم في صورة مصفوفات متساوية الحجم**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

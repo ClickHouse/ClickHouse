@@ -380,26 +380,26 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Если задано значение 1, генерируется начальное значение генератора случайных чисел; если задано значение &gt; 1, это значение используется напрямую как начальное значение генератора случайных чисел.
 Это предназначено для тестирования и помогает выявлять ошибки, вызванные различным порядком JOIN.
 
-## query_plan_optimize_join_order_use_cd_a_conflict_detector {#query_plan_optimize_join_order_use_cd_a_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для использования детектора конфликтов CD-A при проверке корректности переупорядочивания JOIN в алгоритме порядка JOIN DPsub."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для использования детектора конфликтов A при проверке корректности переупорядочивания JOIN в алгоритме порядка JOIN DPsub."}]}]} />
 
 Влияет только на алгоритм порядка JOIN `dpsub`. Если включено, DPsub с помощью детектора конфликтов CD-A определяет, какие переупорядочивания JOIN допустимы.
 
-## query_plan_optimize_join_order_use_cd_c_conflict_detector {#query_plan_optimize_join_order_use_cd_c_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для использования детектора конфликтов CD-C (correct and complete) для проверки корректности переупорядочивания JOIN в алгоритме порядка JOIN DPsub."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для использования (correct and complete) детектора конфликтов C для проверки корректности переупорядочивания JOIN в алгоритме порядка JOIN DPsub."}]}]} />
 
 Влияет только на алгоритм порядка JOIN `dpsub`. При включении DPsub с помощью детектора конфликтов CD-C определяет, какие переупорядочивания JOIN допустимы.
-Имеет приоритет над `query_plan_optimize_join_order_use_cd_a_conflict_detector`, если включены оба параметра.
+Имеет приоритет над `query_plan_optimize_join_order_use_conflict_detector_a`, если включены оба параметра.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

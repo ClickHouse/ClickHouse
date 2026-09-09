@@ -23,7 +23,7 @@ doc_type: 'reference'
 如果多个样本具有相同的时间戳，则仅使用其中值最大的一个样本。非数字值 (NaN) 的优先级低于任何其他值，因此仅当该时间戳上的所有样本均为 NaN 时，才会使用 NaN 值。
 
 <Warning>
-  此函数为 Experimental 功能，请通过设置 `allow_experimental_time_series_aggregate_functions=true` 启用。
+  此函数处于私有预览阶段，请通过设置 `enable_time_series_aggregate_functions=true` 启用。
 </Warning>
 
 **语法**
@@ -55,7 +55,7 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
 **使用单个时间戳-值对的基本用法**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -84,7 +84,7 @@ FROM
 **使用数组参数**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

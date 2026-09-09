@@ -22,7 +22,7 @@ doc_type: 'reference'
 如果多个样本具有相同的时间戳，则只使用其中一个：值最大的样本。非数字值会输给任何其他值，因此仅当该时间戳的所有样本均为非数字值时，才会使用非数字值。
 
 <Note>
-  此函数为实验性功能，请通过设置 `allow_experimental_time_series_aggregate_functions=true` 启用。
+  此函数处于私有预览阶段，请通过设置 `enable_time_series_aggregate_functions=true` 启用。
 </Note>
 
 **语法**
@@ -47,7 +47,7 @@ timeSeriesGroupArray(samples)
 **单个值的基本用法**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -70,7 +70,7 @@ FROM
 **将多个时间戳样本和值以等长数组的形式传递**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

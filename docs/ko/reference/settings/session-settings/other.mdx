@@ -12,6 +12,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 다음 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
@@ -890,11 +891,11 @@ INTERSECT 쿼리의 기본 모드를 설정합니다. 가능한 값: 빈 문자�
 
 ## load_marks_asynchronously {#load_marks_asynchronously}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-MergeTree 마크를 비동기식으로 로드합니다
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "기본적으로 모든 스트림의 마크를 병렬로 로드합니다. 원격 디스크에서는 `JSON`처럼 서브스트림이 많은 컬럼의 마크를 동기식으로 로드하면 스트림마다 네트워크 왕복이 한 번씩 발생했습니다."}]}]} />
 
-Cloud 기본값: `1`.
+백그라운드 스레드 풀에서 MergeTree 마크를 비동기로 로드하여(서버 설정 `load_marks_threadpool_pool_size` 참조) 모든 스트림의 마크를 병렬로 로드합니다. 그렇지 않으면 마크를 한 스트림씩 동기식으로 로드하므로, `JSON`처럼 서브스트림이 많은 컬럼에서는 원격 디스크에서 속도가 느립니다.
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -921,7 +922,7 @@ Cloud 기본값: `1`.
 
 ## make_distributed_plan {#make_distributed_plan}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1236,6 +1237,8 @@ remerge 후 메모리 사용량이 이 비율만큼 감소하지 않으면 remer
 * **기본값:** 빈 문자열
 
 이 설정을 사용하면 `file` 테이블 함수로 처리한 파일의 이름 변경 패턴을 지정할 수 있습니다. 이 옵션을 설정하면 파일 처리가 성공한 경우에만 `file` 테이블 함수가 읽은 모든 파일의 이름이 플레이스홀더를 포함한 지정된 패턴에 따라 변경됩니다.
+
+이름 변경은 소스에 대한 쓰기 작업이므로, 이 옵션을 설정하여 파일을 읽는 쿼리에는 `READ ON FILE` 외에 `WRITE ON FILE` 권한도 필요합니다. `DESCRIBE`는 이름을 변경하는 데이터 읽기 파이프라인을 빌드하지 않으므로 `READ ON FILE`만 필요합니다.
 
 <div id="placeholders">
   ### 플레이스홀더
@@ -1671,7 +1674,7 @@ TCP가 keepalive probe 전송을 시작하기 전에 연결이 유휴 상태로 
 
 ## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

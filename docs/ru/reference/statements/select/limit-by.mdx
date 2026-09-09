@@ -18,14 +18,12 @@ ClickHouse поддерживает следующие варианты синт
 Во время обработки запроса ClickHouse выбирает данные, упорядоченные по ключу сортировки. Ключ сортировки задается явно с помощью предложения [ORDER BY](/ru/reference/statements/select/order-by) или неявно как свойство движка таблицы (порядок строк гарантируется только при использовании [ORDER BY](/ru/reference/statements/select/order-by); в противном случае из-за многопоточности блоки строк не будут упорядочены). Затем ClickHouse применяет `LIMIT n BY expressions` и возвращает первые `n` строк для каждой уникальной комбинации `expressions`. Если указан `OFFSET`, то для каждого блока данных, относящегося к отдельной комбинации `expressions`, ClickHouse пропускает `offset_value` строк с начала блока и возвращает в результате не более `n` строк. Если `offset_value` превышает число строк в блоке данных, ClickHouse не возвращает из этого блока ни одной строки.
 
 <Note>
-  `LIMIT BY` не связана с [LIMIT](/ru/reference/statements/select/limit). Обе можно использовать в одном и том же запросе.
+  `LIMIT BY` не связана с [LIMIT](/ru/reference/statements/select/limit). Обе можно использовать в одном и том же запросе. Это относится и к форме диапазона [`LIMIT ... AFTER ... UNTIL`](/ru/reference/statements/select/limit#limit-after-until), которая в таком случае применяется к строкам, оставленным `LIMIT BY`.
 </Note>
 
 Если вы хотите использовать номера столбцов вместо имен столбцов в секции LIMIT BY, включите настройку [enable&#95;positional&#95;arguments](/ru/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments).
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Пример таблицы:
 
@@ -124,9 +122,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
 
 Для `id = 1` первая строка (`10`) пропускается; возвращаются обе последние строки — `11` и `12`. Для `id = 2` первая строка (`20`) пропускается, остаётся только `21`.
 
-<div id="limit-by-all">
-  ## LIMIT BY ALL
-</div>
+## LIMIT BY ALL {#limit-by-all}
 
 `LIMIT BY ALL` эквивалентен перечислению всех выражений в `SELECT`, которые не являются агрегатными функциями.
 
@@ -156,9 +152,7 @@ SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIM
 SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
 ```
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples-limit-by-all}
 
 Пример таблицы:
 

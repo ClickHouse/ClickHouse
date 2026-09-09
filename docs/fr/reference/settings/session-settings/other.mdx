@@ -12,6 +12,7 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { CloudOnlyBadge } from "/snippets/fr/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -901,11 +902,11 @@ Ce paramètre détermine la forme des requêtes `SELECT` / `UNION` produisant un
 
 ## load_marks_asynchronously {#load_marks_asynchronously}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-Charger les marks MergeTree de façon asynchrone
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Charge par défaut les marks de tous les flux en parallèle. Sur les disques distants, le chargement synchrone des marks de colonnes comportant de nombreux substreams (comme `JSON`) nécessitait un aller-retour réseau par flux."}]}]} />
 
-Valeur par défaut dans Cloud : `1`.
+Charge les marks MergeTree de façon asynchrone dans un thread pool d&#39;arrière-plan (voir le paramètre serveur `load_marks_threadpool_pool_size`), afin que les marks de tous les flux soient chargées en parallèle. Sinon, les marks sont chargées de façon synchrone, un flux après l&#39;autre, ce qui est lent sur les disques distants pour les colonnes comportant de nombreux substreams, comme `JSON`.
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
@@ -932,7 +933,7 @@ Lorsque le mécanisme de priorisation des requêtes est utilisé (voir le param�
 
 ## make_distributed_plan {#make_distributed_plan}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -940,12 +941,12 @@ Lorsque le mécanisme de priorisation des requêtes est utilisé (voir le param�
 
 Créer un plan de requête distribuée.
 
-Son activation ajuste automatiquement les paramètres qui contrôlent les fonctionnalités pas encore prises en charge par les plans de requêtes distribuées :
+Son activation ajuste automatiquement les paramètres qui contrôlent les fonctionnalités pas encore prises en charge par les plans de requêtes distribuées :
 
-* `enable_parallel_replicas = 0` et `automatic_parallel_replicas_mode = 0` — le plan distribué assure sa propre répartition du travail ;
-* `correlated_subqueries_use_in_memory_buffer = 0` ;
-* `use_skip_indexes_on_data_read = 0` ;
-* `compile_expressions = 0` ;
+* `enable_parallel_replicas = 0` et `automatic_parallel_replicas_mode = 0` — le plan distribué assure sa propre répartition du travail ;
+* `correlated_subqueries_use_in_memory_buffer = 0` ;
+* `use_skip_indexes_on_data_read = 0` ;
+* `compile_expressions = 0` ;
 * `query_plan_direct_read_from_text_index = 0`.
 
 ## merge_table_max_tables_to_look_for_schema_inference {#merge_table_max_tables_to_look_for_schema_inference}
@@ -1244,9 +1245,11 @@ Nombre minimal d’octets requis pour qu’une lecture distante (URL, S3) effect
 
 * **Type:** String
 
-* **Valeur par défaut :** Chaîne vide
+* **Valeur par défaut :** Chaîne vide
 
-Ce paramètre permet de spécifier un modèle de renommage pour les fichiers traités par la fonction de table `file`. Lorsque cette option est définie, tous les fichiers lus par la fonction de table `file` sont renommés selon le modèle spécifié et ses espaces réservés, uniquement si leur traitement a réussi.
+Ce paramètre permet de spécifier un modèle de renommage pour les fichiers traités par la fonction de table `file`. Lorsque cette option est définie, tous les fichiers lus par la fonction de table `file` sont renommés selon le modèle spécifié et ses marqueurs de substitution, uniquement si leur traitement a réussi.
+
+Le renommage constitue une écriture sur la source : une requête qui lit les fichiers avec cette option définie nécessite donc le privilège `WRITE ON FILE` en plus de `READ ON FILE`. `DESCRIBE` ne construit pas le pipeline de lecture des données qui effectue le renommage, et ne nécessite donc que `READ ON FILE`.
 
 <div id="placeholders">
   ### Marqueurs de substitution
@@ -1683,7 +1686,7 @@ Autorise ou interdit les `INSERT` vides. Ce paramètre est activé par défaut (
 
 ## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

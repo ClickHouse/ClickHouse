@@ -23,7 +23,7 @@ doc_type: 'reference'
 Если несколько образцов имеют одинаковую временную метку, используется только один из них: образец с наибольшим значением. Значение NaN уступает любому другому значению, поэтому NaN используется, только если все образцы с этой временной меткой имеют значение NaN.
 
 <Warning>
-  Эта функция экспериментальная; чтобы включить её, задайте `allow_experimental_time_series_aggregate_functions=true`.
+  Эта функция находится в статусе закрытой предварительной версии; чтобы включить её, задайте `enable_time_series_aggregate_functions=true`.
 </Warning>
 
 **Синтаксис**
@@ -55,7 +55,7 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
 **Базовое использование с отдельными парами «временная метка — значение»**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -84,7 +84,7 @@ FROM
 **Использование массивов в качестве аргументов**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

@@ -301,7 +301,19 @@ Créez le compte utilisateur `john` et autorisez-le à accorder ses privilèges 
 CREATE USER john GRANTEES jack;
 ```
 
-Utilisez un paramètre de requête pour créer le compte utilisateur `john` :
+Créez le compte utilisateur `john` avec une base de données par défaut :
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` laisse la base de données par défaut indéfinie. Pour utiliser une base de données nommée `NONE`, placez son nom entre accents graves :
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
+Utilisez un paramètre de requête pour créer le compte utilisateur `john` :
 
 ```sql
 SET param_user=john;

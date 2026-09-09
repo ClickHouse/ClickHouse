@@ -22,7 +22,7 @@ doc_type: 'reference'
 複数のサンプルが同じタイムスタンプを持つ場合、使用されるのはそのうち 1 つだけです。最も大きい値を持つサンプルが使用されます。NaN 値は他のすべての値より優先順位が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ NaN 値が使用されます。
 
 <Warning>
-  この関数は実験的です。有効にするには、`allow_experimental_time_series_aggregate_functions=true` を設定してください。
+  この関数はプライベートプレビューです。有効にするには、`enable_time_series_aggregate_functions=true` を設定してください。
 </Warning>
 
 **構文**
@@ -54,7 +54,7 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
 **個別のタイムスタンプと値のペアを使用する基本的な使い方**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -83,7 +83,7 @@ FROM
 **Array 型の引数を使用する**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

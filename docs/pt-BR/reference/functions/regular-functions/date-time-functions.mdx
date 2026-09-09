@@ -5635,8 +5635,6 @@ Retorna o ano (d.C.) de um valor `Date` ou `DateTime`.
 toYear(datetime)
 ```
 
-**Aliases**: `YEAR`
-
 **Argumentos**
 
 * `datetime` — Data ou data com hora da qual extrair o ano. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
@@ -5786,6 +5784,58 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
 │ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
+```
+
+## year {#year}
+
+Introduzido em: v26.9.0
+
+Retorna o ano de um valor `Date` ou `DateTime`.
+
+Quando chamada sem argumentos, retorna o ano atual no momento da análise da consulta.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
+**Sintaxe**
+
+```sql
+year([datetime])
+```
+
+**Argumentos**
+
+* `datetime` — Opcional. Data ou data com hora da qual extrair o ano. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+
+**Valor retornado**
+
+Retorna o ano do valor [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime) fornecido (ou atual), como [`UInt16`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Ano de um valor**
+
+```sql title=Query
+SELECT year(toDateTime('2023-04-21 10:20:30'))
+```
+
+```response title=Response
+┌─year(toDateTime('2023-04-21 10:20:30'))─┐
+│                                    2023 │
+└─────────────────────────────────────────┘
+```
+
+**Ano atual**
+
+```sql title=Query
+SELECT year()
+```
+
+```response title=Response
+┌─year()─┐
+│   2026 │
+└────────┘
 ```
 
 ## yesterday {#yesterday}

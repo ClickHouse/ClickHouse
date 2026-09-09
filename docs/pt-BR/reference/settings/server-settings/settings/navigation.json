@@ -101,6 +101,7 @@
     "pt-BR/reference/settings/server-settings/settings/query",
     "pt-BR/reference/settings/server-settings/settings/query-cache-max",
     "pt-BR/reference/settings/server-settings/settings/query-condition",
+    "pt-BR/reference/settings/server-settings/settings/reader-executor",
     "pt-BR/reference/settings/server-settings/settings/remote",
     "pt-BR/reference/settings/server-settings/settings/replicated-fetches",
     "pt-BR/reference/settings/server-settings/settings/s3",

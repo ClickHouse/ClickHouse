@@ -236,11 +236,11 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## Détails d’implémentation {#implementation-details}
 
-Moins de RAM est utilisée si un [LIMIT](/fr/reference/statements/select/limit) suffisamment faible est spécifié en plus de `ORDER BY`. Sinon, la quantité de mémoire consommée est proportionnelle au volume de données à trier. Dans le cadre du traitement distribué des requêtes, si [GROUP BY](/fr/reference/statements/select/group-by) est omis, le tri est effectué en partie sur les serveurs distants, puis les résultats sont fusionnés sur le serveur demandeur. Cela signifie que, pour un tri distribué, le volume de données à trier peut être supérieur à la quantité de mémoire disponible sur un seul serveur.
+Moins de RAM est utilisée si un [LIMIT](/fr/reference/statements/select/limit) suffisamment faible est spécifié en plus de `ORDER BY`. Sinon, la quantité de mémoire consommée est proportionnelle au volume de données à trier. Une plage [`LIMIT ... AFTER ... UNTIL`](/fr/reference/statements/select/limit#limit-after-until) ne la réduit pas, car la taille de la plage est inconnue tant que les données ne sont pas triées. Dans le cadre du traitement distribué des requêtes, si [GROUP BY](/fr/reference/statements/select/group-by) est omis, le tri est effectué en partie sur les serveurs distants, puis les résultats sont fusionnés sur le serveur demandeur. Cela signifie que, pour un tri distribué, le volume de données à trier peut être supérieur à la quantité de mémoire disponible sur un seul serveur.
 
 S’il n’y a pas assez de RAM, il est possible d’effectuer le tri en mémoire externe (en créant des fichiers temporaires sur un disque). Utilisez le paramètre `max_bytes_before_external_sort` à cette fin. S’il est défini sur 0 (valeur par défaut), le tri externe est désactivé. S’il est activé, lorsque le volume de données à trier atteint le nombre d’octets spécifié, les données collectées sont triées puis écrites dans un fichier temporaire. Une fois toutes les données lues, tous les fichiers triés sont fusionnés et les résultats sont renvoyés. Les fichiers sont écrits dans le répertoire `/var/lib/clickhouse/tmp/` défini dans la config (par défaut, mais vous pouvez utiliser le paramètre `tmp_path` pour modifier ce réglage). Vous pouvez également n’utiliser l’écriture sur disque que si la requête dépasse les limites de mémoire. Par exemple, `max_bytes_ratio_before_external_sort=0.6` n’activera l’écriture sur disque que lorsque la requête atteindra `60%` de la limite de mémoire (utilisateur/serveur).
 
-L’exécution d’une requête peut utiliser plus de mémoire que `max_bytes_before_external_sort`. C’est pourquoi ce paramètre doit avoir une valeur nettement inférieure à `max_memory_usage`. Par exemple, si votre serveur dispose de 128 Go de RAM et que vous devez exécuter une seule requête, définissez `max_memory_usage` sur 100 Go et `max_bytes_before_external_sort` sur 80 Go.
+L’exécution d’une requête peut utiliser plus de mémoire que `max_bytes_before_external_sort`. C’est pourquoi ce paramètre doit avoir une valeur nettement inférieure à `max_memory_usage`. Par exemple, si votre serveur dispose de 128 Go de RAM et que vous devez exécuter une seule requête, définissez `max_memory_usage` sur 100 Go et `max_bytes_before_external_sort` sur 80 Go.
 
 Le tri externe est beaucoup moins efficace que le tri en RAM.
 
@@ -248,7 +248,7 @@ Le tri externe est beaucoup moins efficace que le tri en RAM.
 
 Si l&#39;expression `ORDER BY` a un préfixe qui correspond à la clé de tri de la table, vous pouvez optimiser la requête à l&#39;aide du paramètre [optimize&#95;read&#95;in&#95;order](/fr/reference/settings/session-settings/optimize#optimize_read_in_order).
 
-Lorsque le paramètre `optimize_read_in_order` est activé, le serveur ClickHouse utilise l&#39;index de la table et lit les données dans l&#39;ordre de la clé `ORDER BY`. Cela permet d&#39;éviter de lire toutes les données lorsqu&#39;une clause [LIMIT](/fr/reference/statements/select/limit) est spécifiée. Les requêtes sur de gros volumes de données avec une petite limite sont donc traitées plus rapidement.
+Lorsque le paramètre `optimize_read_in_order` est activé, le serveur ClickHouse utilise l&#39;index de la table et lit les données dans l&#39;ordre de la clé `ORDER BY`. Cela permet d&#39;éviter de lire toutes les données lorsqu&#39;une clause [LIMIT](/fr/reference/statements/select/limit) est spécifiée. Il en va de même pour une plage [`LIMIT ... AFTER ... UNTIL`](/fr/reference/statements/select/limit#limit-after-until) sans `ALL`, qui interrompt la lecture dès que sa plage est terminée. Les requêtes sur de gros volumes de données avec une petite limite sont donc traitées plus rapidement.
 
 L&#39;optimisation fonctionne avec `ASC` comme avec `DESC`, mais elle ne fonctionne pas avec la clause [GROUP BY](/fr/reference/statements/select/group-by). Avec le modificateur [FINAL](/fr/reference/statements/select/from#final-modifier), l&#39;optimisation fonctionne dans l&#39;ordre direct de la clé de tri et, pour les tables [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree), également dans l&#39;ordre inverse, contrôlé par le paramètre `optimize_read_in_reverse_order_final`.
 
@@ -256,7 +256,7 @@ Lorsque le paramètre `optimize_read_in_order` est désactivé, le serveur Click
 
 Envisagez de désactiver manuellement `optimize_read_in_order` lorsque vous exécutez des requêtes comportant une clause `ORDER BY`, un `LIMIT` élevé et une condition [WHERE](/fr/reference/statements/select/where) qui oblige à lire un très grand nombre d&#39;enregistrements avant de trouver les données recherchées.
 
-L&#39;optimisation est prise en charge par les moteurs de table suivants :
+L&#39;optimisation est prise en charge par les moteurs de table suivants :
 
 * [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les [materialized views](/fr/reference/statements/create/view#materialized-view)),
 * [Merge](/fr/reference/engines/table-engines/special/merge),
@@ -266,7 +266,7 @@ Dans les tables utilisant le moteur `MaterializedView`, l&#39;optimisation fonct
 
 ## Modificateur ORDER BY Expr WITH FILL {#order-by-expr-with-fill-modifier}
 
-Ce modificateur peut également être combiné avec le [modificateur LIMIT ... WITH TIES](/fr/reference/statements/select/limit#limit--with-ties-modifier).
+Ce modificateur peut également être combiné avec le [modificateur LIMIT ... WITH TIES](/fr/reference/statements/select/limit#limit--with-ties-modifier) et avec la forme de plage [LIMIT ... AFTER ... UNTIL](/fr/reference/statements/select/limit#limit-after-until).
 
 Le modificateur `WITH FILL` peut être utilisé après `ORDER BY expr`, avec les paramètres facultatifs `FROM expr`, `TO expr` et `STEP expr`.
 Toutes les valeurs manquantes de la colonne `expr` seront générées séquentiellement, et les autres colonnes prendront leurs valeurs par défaut.
@@ -286,7 +286,7 @@ Lorsque `STEP const_numeric_expr` est omis, la séquence de remplissage utilise 
 Lorsque `STALENESS const_numeric_expr` est défini, la requête génère des lignes jusqu’à ce que la différence par rapport à la ligne précédente dans les données d’origine dépasse `const_numeric_expr`.
 `INTERPOLATE` peut être appliqué aux colonnes qui ne participent pas à `ORDER BY WITH FILL`. Ces colonnes sont remplies en fonction des valeurs des champs précédents en appliquant `expr`. Si `expr` n’est pas présent, la valeur précédente est répétée. Si la liste est omise, toutes les colonnes autorisées sont incluses.
 
-Exemple de requête sans `WITH FILL` :
+Exemple de requête sans `WITH FILL` :
 
 ```sql title="Query"
 SELECT n, source FROM (
@@ -303,7 +303,7 @@ SELECT n, source FROM (
 └───┴──────────┘
 ```
 
-Même requête après avoir appliqué le modificateur `WITH FILL` :
+Même requête après avoir appliqué le modificateur `WITH FILL` :
 
 ```sql title="Query"
 SELECT n, source FROM (
@@ -332,7 +332,7 @@ SELECT n, source FROM (
 
 Dans le cas de plusieurs champs `ORDER BY field2 WITH FILL, field1 WITH FILL`, l’ordre du remplissage suit celui des champs dans la clause `ORDER BY`.
 
-Exemple :
+Exemple :
 
 ```sql title="Query"
 SELECT

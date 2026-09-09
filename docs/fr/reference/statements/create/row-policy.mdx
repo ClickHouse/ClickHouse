@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -102,7 +102,9 @@ Permet de spécifier une condition pour filtrer les lignes. Un utilisateur voit 
 
 Dans la section `TO`, vous pouvez indiquer une liste d’utilisateurs et de rôles auxquels cette politique doit s’appliquer. Par exemple, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
-Le mot-clé `ALL` désigne tous les utilisateurs ClickHouse, y compris l’utilisateur actuel. Le mot-clé `ALL EXCEPT` permet d’exclure certains utilisateurs de la liste de tous les utilisateurs, par exemple, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+Le mot-clé `ALL` désigne tous les utilisateurs ClickHouse, y compris l’utilisateur courant. Le mot-clé `ALL EXCEPT` permet d’exclure certains utilisateurs de la liste de tous les utilisateurs, par exemple, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+Les rôles indiqués dans la section `TO`, y compris ceux après `ALL EXCEPT`, sont comparés aux rôles activés de l’utilisateur courant ([`system.enabled_roles`](/fr/reference/system-tables/enabled_roles)), et non à tous les rôles accordés à l’utilisateur. Par conséquent, [`SET ROLE`](/fr/reference/statements/set-role) peut modifier les politiques qui s’appliquent.
 
 ## Clause AS {#as-clause}
 
@@ -121,14 +123,16 @@ La clause `AS` indique comment les politiques doivent être combinées avec d’
 
 Une politique peut aussi être définie comme restrictive. Les politiques restrictives sont combinées à l’aide de l’opérateur booléen `AND`.
 
-Voici la formule générale :
+Voici la formule générale :
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
 
-Par exemple, les politiques suivantes :
+Si aucune condition permissive ne s’applique, la première condition n’a aucun effet et seules les politiques restrictives décident, car `access_control_improvements.users_without_row_policies_can_read_rows` est activé par défaut. Un utilisateur auquel aucune condition ne s’applique voit donc toutes les lignes, et `access_control_improvements.throw_on_unmatched_row_policies`, désactivé par défaut, lève à la place une exception lorsque la table comporte des conditions et qu’aucune d’entre elles ne s’applique.
+
+Par exemple, les politiques suivantes :
 
 ```sql
 CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter

@@ -236,7 +236,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## 実装の詳細 {#implementation-details}
 
-`ORDER BY` に加えて十分に小さい [LIMIT](/ja/reference/statements/select/limit) を指定すると、使用する RAM を抑えられます。そうでない場合、ソートに必要なメモリ量は、ソート対象のデータ量に比例します。分散クエリ処理では、[GROUP BY](/ja/reference/statements/select/group-by) を省略すると、ソートはリモートサーバー上で部分的に実行され、その結果はリクエスト元のサーバーでマージされます。つまり、分散ソートでは、ソート対象のデータ量が単一サーバーのメモリ量を上回ることがあります。
+`ORDER BY` に加えて十分に小さい [LIMIT](/ja/reference/statements/select/limit) を指定すると、使用する RAM を抑えられます。そうでない場合、ソートに必要なメモリ量は、ソート対象のデータ量に比例します。[`LIMIT ... AFTER ... UNTIL`](/ja/reference/statements/select/limit#limit-after-until) による範囲指定ではメモリ量は減りません。データがソートされるまで範囲のサイズが不明なためです。分散クエリ処理では、[GROUP BY](/ja/reference/statements/select/group-by) を省略すると、ソートはリモートサーバー上で部分的に実行され、その結果はリクエスト元のサーバーでマージされます。つまり、分散ソートでは、ソート対象のデータ量が単一サーバーのメモリ量を上回ることがあります。
 
 RAM が不足している場合は、外部メモリを使ってソートを実行できます (ディスク上に一時ファイルを作成します) 。この目的には `max_bytes_before_external_sort` 設定を使用します。これが 0 (デフォルト) に設定されている場合、外部ソートは無効です。有効にすると、ソート対象のデータ量が指定したバイト数に達した時点で、収集済みのデータがソートされ、一時ファイルにダンプされます。すべてのデータを読み取った後、ソート済みのすべてのファイルがマージされ、結果が出力されます。ファイルは設定内の `/var/lib/clickhouse/tmp/` ディレクトリに書き込まれます (デフォルトではこの場所ですが、`tmp_path` パラメータを使って変更できます) 。また、クエリがメモリ制限を超えた場合にのみディスクへのスピルを使用することもできます。たとえば、`max_bytes_ratio_before_external_sort=0.6` とすると、クエリがメモリ制限 (ユーザー/サーバー) の `60%` に達した時点でのみディスクへのスピルが有効になります。
 
@@ -248,7 +248,7 @@ RAM が不足している場合は、外部メモリを使ってソートを実�
 
 `ORDER BY` 式にテーブルの sorting key と一致するプレフィックスがある場合は、[optimize&#95;read&#95;in&#95;order](/ja/reference/settings/session-settings/optimize#optimize_read_in_order) 設定を使用してクエリを最適化できます。
 
-`optimize_read_in_order` 設定が有効な場合、ClickHouse server はテーブルの索引を使用し、`ORDER BY` キーの順序でデータを読み取ります。これにより、[LIMIT](/ja/reference/statements/select/limit) が指定されている場合に、すべてのデータを読み取らずに済みます。そのため、少ない limit で大規模なデータを対象とするクエリは、より高速に処理されます。
+`optimize_read_in_order` 設定が有効な場合、ClickHouse server はテーブルの索引を使用し、`ORDER BY` キーの順序でデータを読み取ります。これにより、[LIMIT](/ja/reference/statements/select/limit) が指定されている場合に、すべてのデータを読み取らずに済みます。同じことは、`ALL` を伴わない [`LIMIT ... AFTER ... UNTIL`](/ja/reference/statements/select/limit#limit-after-until) の range にも当てはまり、その range が終了した時点で読み取りが停止します。そのため、少ない limit で大規模なデータを対象とするクエリは、より高速に処理されます。
 
 この最適化は `ASC` と `DESC` の両方で機能しますが、[GROUP BY](/ja/reference/statements/select/group-by) 句とは併用できません。[FINAL](/ja/reference/statements/select/from#final-modifier) 修飾子を使用する場合、この最適化は sorting key の昇順で機能し、[ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルでは逆順でも機能します。これは `optimize_read_in_reverse_order_final` 設定によって制御されます。
 
@@ -266,7 +266,7 @@ RAM が不足している場合は、外部メモリを使ってソートを実�
 
 ## ORDER BY Expr WITH FILL 修飾子 {#order-by-expr-with-fill-modifier}
 
-この修飾子は、[LIMIT ... WITH TIES 修飾子](/ja/reference/statements/select/limit#limit--with-ties-modifier) と組み合わせることもできます。
+この修飾子は、[LIMIT ... WITH TIES 修飾子](/ja/reference/statements/select/limit#limit--with-ties-modifier) や [LIMIT ... AFTER ... UNTIL](/ja/reference/statements/select/limit#limit-after-until) の range 形式と組み合わせることもできます。
 
 `WITH FILL` 修飾子は、必要に応じて `FROM expr`、`TO expr`、`STEP expr` パラメータを指定して、`ORDER BY expr` の後に記述できます。
 `expr` カラムの欠落している値はすべて順次補完され、他のカラムにはデフォルト値が設定されます。

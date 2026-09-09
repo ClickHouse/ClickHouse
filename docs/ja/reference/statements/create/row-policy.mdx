@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -104,6 +104,8 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 キーワード `ALL` は、現在のユーザーを含むすべての ClickHouse ユーザーを意味します。キーワード `ALL EXCEPT` を使うと、全ユーザーの一覧から一部のユーザーを除外できます。たとえば、`CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost` のように指定します。
 
+`ALL EXCEPT` の後に指定したものも含め、`TO` 句に指定されたロールは、そのユーザーに付与されたすべてのロールではなく、現在のユーザーの有効なロール ([`system.enabled_roles`](/ja/reference/system-tables/enabled_roles)) と照合されます。そのため、[`SET ROLE`](/ja/reference/statements/set-role) によって適用されるポリシーが変わる可能性があります。
+
 ## AS 句 {#as-clause}
 
 同じユーザーに対して、同じテーブルに複数のポリシーを同時に有効化できます。そのため、複数のポリシーの条件を組み合わせる方法が必要です。
@@ -124,11 +126,13 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 一般的な式は次のとおりです。
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
 
-たとえば、次のようなポリシーがあります。
+permissive な条件がひとつも適用されない場合、`access_control_improvements.users_without_row_policies_can_read_rows` がデフォルトで有効になっているため、最初の条件は効果を持たず、restrictive ポリシーのみが可否を決定します。したがって、どの条件も適用されないユーザーはすべての行を参照できます。また、デフォルトで無効になっている `access_control_improvements.throw_on_unmatched_row_policies` を有効にすると、テーブルに条件が存在するもののいずれも適用されない場合に、代わりに例外が送出されます。
+
+たとえば、次のポリシーです。
 
 ```sql
 CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter

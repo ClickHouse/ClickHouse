@@ -300,31 +300,6 @@ Active le transpileur SQL polyglotte : il convertit le SQL de plus de 30 dialect
 
 Active PRQL, une alternative à SQL.
 
-## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
-
-<ExperimentalBadge />
-
-**Alias** : `allow_experimental_ts_to_grid_aggregate_function`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer les fonctions d’agrégation expérimentales timeSeries*."}]}]} />
-
-Fonctions d’agrégation expérimentales timeSeries* pour le rééchantillonnage de séries temporelles de type Prometheus, ainsi que pour le calcul de taux et de delta.
-
-## allow_experimental_time_series_table {#allow_experimental_time_series_table}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Ajout d’un nouveau paramètre pour autoriser le moteur de table TimeSeries"}]}]} />
-
-Autorise la création de tables avec le moteur de table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series). Valeurs possibles :
-
-* 0 — le moteur de table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) est désactivé.
-* 1 — le moteur de table [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) est activé.
-
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

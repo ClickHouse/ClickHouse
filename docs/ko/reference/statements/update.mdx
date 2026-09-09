@@ -41,19 +41,19 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-<div id="lightweight-update-does-not-update-data-immediately">
-  ## 경량 업데이트는 데이터를 즉시 업데이트하지 않습니다 {#lightweight-update-does-not-update-data-immediately}
-</div>
+## 경량 업데이트는 쿼리에서 즉시 조회됩니다 {#lightweight-update-does-not-update-data-immediately}
 
-경량 `UPDATE`는 **패치 파트(patch parts)**를 사용해 구현됩니다. 패치 파트는 업데이트된 컬럼과 행만 포함하는 특별한 유형의 데이터 파트(data part)입니다.
-경량 `UPDATE`는 패치 파트를 생성하지만, 저장소에 있는 원본 데이터를 물리적으로 즉시 수정하지는 않습니다.
-업데이트 과정은 `INSERT ... SELECT ...` 쿼리와 비슷하지만, `UPDATE` 쿼리는 패치 파트 생성이 완료될 때까지 기다린 뒤에 반환됩니다.
+경량 `UPDATE`는 **패치 파트**를 적용하여 업데이트된 값이 `SELECT` 쿼리에서 즉시 보이도록 합니다. 쿼리는 업데이트된 값을 읽기 위해 머지를 기다릴 필요가 없습니다.
+패치 파트는 업데이트된 컬럼과 행만 담고 있는 특수한 형태의 데이터 파트입니다. 패치 파트를 생성해도 스토리지에 있는 원본 데이터가 물리적으로 즉시 변경되지는 않습니다.
+업데이트 과정은 `INSERT ... SELECT ...` 쿼리와 유사하며, `UPDATE` 쿼리는 패치 파트 생성이 완료될 때까지 대기한 후 반환됩니다.
 
-업데이트된 값의 특징은 다음과 같습니다.
+쿼리 가시성과 물리적 머티리얼라이즈는 서로 별개입니다:
 
-* 패치가 적용되므로 `SELECT` 쿼리에서 **즉시 확인할 수 있습니다**
-* 이후 머지 및 뮤테이션 과정에서만 **물리적으로 구체화됩니다**
-* 모든 활성 파트에 패치가 구체화되면 **자동으로 정리됩니다**
+* **쿼리 가시성:** `SELECT` 쿼리는 패치가 원본 데이터 파트에 머티리얼라이즈되기 전이라도 패치를 적용해 업데이트된 값을 읽습니다.
+* **물리적 머티리얼라이즈:** 이후 수행되는 머지와 뮤테이션이 업데이트된 값을 데이터 파트에 반영합니다.
+* **정리:** 모든 active parts에 패치가 머티리얼라이즈되고 나면 패치 파트는 자동으로 제거됩니다.
+
+동시 업데이트의 일관성에 대해서는 [동시 작업](#concurrent-operations)을 참조하십시오.
 
 ## 경량 업데이트 요구 사항 {#lightweight-update-requirements}
 

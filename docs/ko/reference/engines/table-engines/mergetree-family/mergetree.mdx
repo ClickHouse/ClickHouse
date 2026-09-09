@@ -30,9 +30,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
   이름이 비슷하더라도 [Merge](/ko/reference/engines/table-engines/special/merge) 엔진은 `*MergeTree` 엔진과는 다릅니다.
 </Note>
 
-<div id="table_engine-mergetree-creating-a-table">
-  ## 테이블 생성하기
-</div>
+## 테이블 생성하기 {#table_engine-mergetree-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -59,21 +57,15 @@ ORDER BY expr
 
 매개변수에 대한 자세한 내용은 [CREATE TABLE](/ko/reference/statements/create/table) SQL 문을 참조하십시오.
 
-<div id="mergetree-query-clauses">
-  ### 쿼리 절
-</div>
+### 쿼리 절 {#mergetree-query-clauses}
 
-<div id="engine">
-  #### ENGINE
-</div>
+#### ENGINE {#engine}
 
 `ENGINE` — 엔진 이름과 매개변수입니다. `ENGINE = MergeTree()`. `MergeTree` 엔진에는 매개변수가 없습니다.
 
 <a id="order_by" />
 
-<div id="order-by">
-  #### ORDER BY
-</div>
+#### ORDER BY {#order-by}
 
 `ORDER BY` — 정렬 키입니다.
 
@@ -84,26 +76,20 @@ ORDER BY expr
 정렬이 필요하지 않으면 `ORDER BY tuple()` 구문을 사용할 수 있습니다.
 또는 설정 `create_table_empty_primary_key_by_default`가 활성화되어 있으면 `CREATE TABLE` SQL 문에 `ORDER BY ()`가 암묵적으로 추가됩니다. [프라이머리 키 선택](#selecting-a-primary-key)을 참조하십시오.
 
-<div id="partition-by">
-  #### PARTITION BY
-</div>
+#### PARTITION BY {#partition-by}
 
 `PARTITION BY` — [파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)입니다. 선택 사항입니다. 대부분의 경우 파티션 키는 필요하지 않으며, 파티셔닝이 필요하더라도 일반적으로 월 단위보다 더 세분화된 파티션 키는 필요하지 않습니다. 파티셔닝은 쿼리 속도를 높여 주지 않습니다(`ORDER BY` 표현식과는 다릅니다). 지나치게 세분화된 파티셔닝은 절대 사용하지 마십시오. 데이터를 클라이언트 식별자나 이름을 기준으로 파티셔닝하지 마십시오(대신 클라이언트 식별자 또는 이름을 `ORDER BY` 표현식의 첫 번째 컬럼으로 지정하십시오).
 
 월 단위로 파티셔닝하려면 `toYYYYMM(date_column)` 표현식을 사용하십시오. 여기서 `date_column`은 [Date](/ko/reference/data-types/date) 타입의 날짜 컬럼입니다. 이 경우 파티션 이름은 `"YYYYMM"` 포맷을 사용합니다.
 
-<div id="primary-key">
-  #### PRIMARY KEY
-</div>
+#### PRIMARY KEY {#primary-key}
 
 `PRIMARY KEY` — [정렬 키와 다른](#choosing-a-primary-key-that-differs-from-the-sorting-key) 프라이머리 키입니다. 선택 사항입니다.
 
 정렬 키를 `ORDER BY` 절로 지정하면 프라이머리 키도 암시적으로 지정됩니다.
 일반적으로는 정렬 키와 별도로 프라이머리 키를 지정할 필요가 없습니다.
 
-<div id="sample-by">
-  #### SAMPLE BY
-</div>
+#### SAMPLE BY {#sample-by}
 
 `SAMPLE BY` — 샘플링 표현식입니다. 선택 사항입니다.
 
@@ -112,9 +98,7 @@ ORDER BY expr
 
 예시: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-<div id="ttl">
-  #### TTL
-</div>
+#### TTL {#ttl}
 
 `TTL` — 행의 저장 기간과 파트의 자동 이동 로직을 지정하는 규칙 목록입니다. [디스크와 볼륨 간](#table_engine-mergetree-multiple-volumes) 이동도 포함할 수 있습니다. 선택 사항입니다.
 
@@ -124,9 +108,7 @@ ORDER BY expr
 
 자세한 내용은 [컬럼 및 테이블용 TTL](#table_engine-mergetree-ttl)을 참조하십시오.
 
-<div id="settings">
-  #### 설정
-</div>
+#### 설정 {#settings}
 
 [MergeTree 설정](/ko/reference/settings/merge-tree-settings)을 참조하십시오.
 
@@ -174,9 +156,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
   `MergeTree` 엔진은 기본 엔진 구성 메서드에서 위 예시와 동일한 방식으로 구성됩니다.
 </details>
 
-<div id="mergetree-data-storage">
-  ## 데이터 저장
-</div>
+## 데이터 저장 {#mergetree-data-storage}
 
 테이블은 프라이머리 키(primary key)로 정렬된 데이터 파트로 구성됩니다.
 
@@ -192,9 +172,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 그래뉼 크기는 테이블 엔진의 `index_granularity` 및 `index_granularity_bytes` 설정에 의해 제한됩니다. 그래뉼의 행 수는 행 크기에 따라 `[1, index_granularity]` 범위에 있습니다. 단일 행의 크기가 설정값보다 크면 그래뉼의 크기는 `index_granularity_bytes`를 초과할 수 있습니다. 이 경우 그래뉼의 크기는 해당 행의 크기와 같습니다.
 
-<div id="primary-keys-and-indexes-in-queries">
-  ## 쿼리의 프라이머리 키와 인덱스
-</div>
+## 쿼리의 프라이머리 키와 인덱스 {#primary-keys-and-indexes-in-queries}
 
 `(CounterID, Date)` 프라이머리 키를 예시로 들어 보겠습니다. 이 경우 정렬과 인덱스는 다음과 같이 나타낼 수 있습니다.
 
@@ -223,9 +201,7 @@ ClickHouse는 고유한 프라이머리 키를 요구하지 않습니다. 동일
 
 `PRIMARY KEY` 및 `ORDER BY` 절에서 `Nullable` 형식의 표현식을 사용할 수는 있지만, 이는 강력히 권장되지 않습니다. 이 기능을 허용하려면 [allow&#95;nullable&#95;key](/ko/reference/settings/merge-tree-settings/allow#allow_nullable_key) 설정을 켜십시오. `ORDER BY` 절의 `NULL` 값에는 [NULLS&#95;LAST](/ko/reference/statements/select/order-by#sorting-of-special-values) 원칙이 적용됩니다.
 
-<div id="selecting-a-primary-key">
-  ### 프라이머리 키 선택하기
-</div>
+### 프라이머리 키 선택하기 {#selecting-a-primary-key}
 
 프라이머리 키(primary key)의 컬럼 수에는 명시적인 제한이 없습니다. 데이터 구조에 따라 프라이머리 키에 더 많은 컬럼을 포함할 수도 있고, 더 적은 컬럼을 포함할 수도 있습니다. 이렇게 하면 다음과 같은 효과를 얻을 수 있습니다.
 
@@ -250,9 +226,7 @@ ClickHouse는 고유한 프라이머리 키를 요구하지 않습니다. 동일
 
 초기 순서대로 데이터를 선택하려면 [single-threaded](/ko/reference/settings/session-settings/max-threads#max_threads) `SELECT` 쿼리를 사용하십시오.
 
-<div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
-  ### 정렬 키와 다른 프라이머리 키 선택하기
-</div>
+### 정렬 키와 다른 프라이머리 키 선택하기 {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
 정렬 키(데이터 파트에서 행을 정렬하는 표현식)와 다른 프라이머리 키(각 마크에 대해 인덱스 파일에 기록되는 값을 지정하는 표현식)를 지정할 수 있습니다. 이 경우 프라이머리 키 표현식 튜플은 정렬 키 표현식 튜플의 접두사여야 합니다.
 
@@ -263,9 +237,7 @@ ClickHouse는 고유한 프라이머리 키를 요구하지 않습니다. 동일
 
 정렬 키에 대한 [ALTER](/ko/reference/statements/alter/skipping-index)는 가벼운 작업입니다. 새 컬럼을 테이블과 정렬 키에 동시에 추가하더라도 기존 데이터 파트는 변경할 필요가 없기 때문입니다. 이전 정렬 키는 새 정렬 키의 접두사이고, 새로 추가된 컬럼에는 데이터가 없으므로, 테이블 수정 시점의 데이터는 이전 정렬 키와 새 정렬 키를 모두 기준으로 정렬된 상태가 됩니다.
 
-<div id="use-of-indexes-and-partitions-in-queries">
-  ### 쿼리에서 인덱스와 파티션 활용
-</div>
+### 쿼리에서 인덱스와 파티션 활용 {#use-of-indexes-and-partitions-in-queries}
 
 `SELECT` 쿼리의 경우 ClickHouse는 인덱스를 사용할 수 있는지 분석합니다. `WHERE/PREWHERE` 절에 등호 또는 부등호 비교 연산을 나타내는 표현식이 있거나(결합 조건의 일부이거나 전체인 경우), 프라이머리 키 또는 파티셔닝 키에 포함된 컬럼이나 표현식, 이러한 컬럼의 일부 반복 함수, 또는 이러한 표현식의 논리적 관계에 대해 고정 접두사가 있는 `IN` 또는 `LIKE` 조건이 있으면 인덱스를 사용할 수 있습니다.
 
@@ -312,9 +284,7 @@ SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 
 월 단위 파티셔닝 키를 사용하면 해당 날짜 범위를 포함하는 데이터 블록만 읽을 수 있습니다. 이 경우 데이터 블록에는 여러 날짜의 데이터가 포함될 수 있으며, 최대 한 달 치 전체가 들어갈 수도 있습니다. 블록 내부의 데이터는 프라이머리 키를 기준으로 정렬되지만, 프라이머리 키의 첫 번째 컬럼이 날짜가 아닐 수 있습니다. 따라서 프라이머리 키의 접두사를 지정하지 않고 날짜 조건만 사용하는 쿼리는 단일 날짜를 조회하는 경우보다 더 많은 데이터를 읽게 됩니다.
 
-<div id="use-of-index-for-deterministic-expressions-in-primary-keys">
-  ### 프라이머리 키의 결정적 표현식에 대한 인덱스 사용
-</div>
+### 프라이머리 키의 결정적 표현식에 대한 인덱스 사용 {#use-of-index-for-deterministic-expressions-in-primary-keys}
 
 프라이머리 키에는 컬럼 이름뿐 아니라 표현식도 포함될 수 있습니다. 이러한 표현식은 단순한 함수 체인으로만 제한되지 않으며, 결정적이기만 하면 임의의 표현식 트리(예: 중첩 함수와 복합 표현식)도 사용할 수 있습니다.
 
@@ -363,9 +333,7 @@ SELECT * FROM table WHERE p NOT IN ('abc', '12345');
 SELECT * FROM table WHERE NOT has(['abc', '12345'], p);
 ```
 
-<div id="use-of-index-for-partially-monotonic-primary-keys">
-  ### 부분적으로 단조인 프라이머리 키에 대한 인덱스 사용
-</div>
+### 부분적으로 단조인 프라이머리 키에 대한 인덱스 사용 {#use-of-index-for-partially-monotonic-primary-keys}
 
 예를 들어, 한 달의 날짜를 생각해 보겠습니다. 날짜는 한 달 내에서는 [단조 시퀀스](https://en.wikipedia.org/wiki/Monotonic_function)를 이루지만, 더 긴 기간에 걸쳐서는 단조가 아닙니다. 이것이 부분적으로 단조인 시퀀스입니다. 사용자가 부분적으로 단조인 프라이머리 키(primary key)로 테이블을 생성하면 ClickHouse는 평소와 같이 희소 인덱스(sparse index)를 생성합니다. 사용자가 이런 종류의 테이블에서 데이터를 조회하면 ClickHouse는 쿼리 조건을 분석합니다. 사용자가 인덱스의 두 마크 사이에 있는 데이터를 가져오려 하고, 그 두 마크가 모두 같은 달 안에 있으면 ClickHouse는 이 경우 인덱스를 사용할 수 있습니다. 쿼리 매개변수와 인덱스 마크 사이의 거리를 계산할 수 있기 때문입니다.
 
@@ -373,9 +341,7 @@ SELECT * FROM table WHERE NOT has(['abc', '12345'], p);
 
 ClickHouse는 이 로직을 월별 날짜 시퀀스뿐 아니라 부분적으로 단조인 시퀀스를 나타내는 모든 프라이머리 키에 적용합니다.
 
-<div id="table_engine-mergetree-data_skipping-indexes">
-  ### 데이터 스키핑 인덱스
-</div>
+### 데이터 스키핑 인덱스 {#table_engine-mergetree-data_skipping-indexes}
 
 인덱스 선언은 `CREATE` 쿼리의 컬럼 섹션에서 지정합니다.
 
@@ -432,9 +398,7 @@ INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
 
-<div id="skip-index-types">
-  ### 스킵 인덱스 유형
-</div>
+### 스킵 인덱스 유형 {#skip-index-types}
 
 `MergeTree` 테이블 엔진은 다음과 같은 스킵 인덱스 유형을 지원합니다.
 스킵 인덱스를 성능 최적화에 활용하는 방법에 대한 자세한 내용은
@@ -448,9 +412,7 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 * [`text`](#text) 인덱스
 * [`vector_similarity`](#vector-similarity) 인덱스
 
-<div id="minmax">
-  #### MinMax 스킵 인덱스
-</div>
+#### MinMax 스킵 인덱스 {#minmax}
 
 각 인덱스 그래뉼에는 표현식의 최솟값과 최댓값이 저장됩니다.
 (표현식의 유형이 `tuple`이면 tuple의 각 요소에 대한 최솟값과 최댓값이 저장됩니다.)
@@ -459,9 +421,7 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 minmax
 ```
 
-<div id="set">
-  #### Set
-</div>
+#### Set {#set}
 
 각 인덱스 그래뉼(index granule)마다 지정한 표현식의 고유 값을 최대 `max_rows`개까지 저장합니다.
 `max_rows = 0`은 &quot;모든 고유 값을 저장&quot;함을 의미합니다.
@@ -470,9 +430,7 @@ minmax
 set(max_rows)
 ```
 
-<div id="bloom-filter">
-  #### 블룸 필터
-</div>
+#### 블룸 필터 {#bloom-filter}
 
 각 인덱스 그래뉼마다 지정된 컬럼에 대한 [블룸 필터](https://en.wikipedia.org/wiki/Bloom_filter)를 저장합니다.
 
@@ -509,9 +467,7 @@ bloom_filter([false_positive_rate])
   [`JSON`](/ko/reference/data-types/newjson) 데이터 타입의 경우, [`JSONAllPaths`](/ko/reference/functions/regular-functions/json-functions#JSONAllPaths) 함수를 사용해 경로 집합에 블룸 필터 인덱스를 생성할 수 있습니다. 이를 통해 쿼리한 JSON 경로가 없는 그래뉼은 스키핑할 수 있습니다. 자세한 내용은 [JSON용 데이터 스키핑 인덱스](/ko/reference/data-types/newjson#data-skipping-indexes-for-json)를 참조하십시오.
 </Info>
 
-<div id="n-gram-bloom-filter">
-  #### N-그램 블룸 필터 *(사용 중단 예정)*
-</div>
+#### N-그램 블룸 필터 *(사용 중단 예정)* {#n-gram-bloom-filter}
 
 <Note>
   ClickHouse 버전 26.2부터 `text` 인덱스가 일반 제공(GA)됨에 따라 `ngrambf_v1` 인덱스는 더 이상 전문 검색에 권장되지 않습니다.
@@ -585,9 +541,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 물론 이러한 함수를 사용해 다른 조건에 대한 매개변수도 추정할 수 있습니다.
 위 함수는 [여기](https://hur.st/bloomfilter)의 블룸 필터 계산기를 참조합니다.
 
-<div id="token-bloom-filter">
-  #### 토큰 블룸 필터
-</div>
+#### 토큰 블룸 필터 {#token-bloom-filter}
 
 <Note>
   ClickHouse 버전 26.2부터 `text` 인덱스가 일반 제공(GA)되므로, `tokenbf_v1` 인덱스는 전문 검색에는 더 이상 권장되지 않습니다.
@@ -599,9 +553,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-<div id="sparse-grams-bloom-filter">
-  #### 희소 grams 블룸 필터
-</div>
+#### 희소 grams 블룸 필터 {#sparse-grams-bloom-filter}
 
 희소 grams 블룸 필터는 `ngrambf_v1`와 비슷하지만, ngrams 대신 [희소 grams 토큰](/ko/reference/functions/regular-functions/string-functions#sparseGrams)을 사용합니다.
 
@@ -609,21 +561,15 @@ tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-<div id="text">
-  ### 텍스트 인덱스
-</div>
+### 텍스트 인덱스 {#text}
 
 토큰화된 문자열 데이터에 대한 역인덱스를 구축하여 효율적이고 결정적인 전문 검색을 가능하게 합니다. 자세한 내용은 [여기](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 참조하십시오.
 
-<div id="vector-similarity">
-  #### 벡터 유사도
-</div>
+#### 벡터 유사도 {#vector-similarity}
 
 근사 최근접 이웃 검색을 지원하며, 자세한 내용은 [여기](/ko/reference/engines/table-engines/mergetree-family/annindexes)를 참조하십시오.
 
-<div id="functions-support">
-  ### 함수 지원
-</div>
+### 함수 지원 {#functions-support}
 
 `WHERE` 절의 조건에는 컬럼에 대해 동작하는 함수 호출이 포함됩니다. 해당 컬럼이 인덱스에 포함되어 있으면, ClickHouse는 그 함수를 처리할 때 이 인덱스를 사용하려고 시도합니다. ClickHouse는 인덱스 사용을 위해 서로 다른 함수 부분 집합을 지원합니다.
 
@@ -632,7 +578,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 | 함수(연산자) / 인덱스                                                                                                                       | 기본 키 | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
 | ----------------------------------------------------------------------------------------------------------------------------------- | ---- | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
 | [equals (=, ==)](/ko/reference/functions/regular-functions/comparison-functions#equals)                                                | ✔    | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notEquals(!=, &lt;&gt;)](/ko/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔    | ✔      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [notEquals(!=, &lt;&gt;)](/ko/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔    | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [like](/ko/reference/functions/regular-functions/string-search-functions#like)                                                         | ✔    | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
 | [notLike](/ko/reference/functions/regular-functions/string-search-functions#notLike)                                                   | ✔    | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [match](/ko/reference/functions/regular-functions/string-search-functions#match)                                                       | ✗    | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
@@ -642,7 +588,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 | [multiSearchAnyUTF8](/ko/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                             | ✗    | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 | [multiMatchAny](/ko/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                       | ✗    | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 | [in](/ko/reference/functions/regular-functions/in-functions)                                                                           | ✔    | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notIn](/ko/reference/functions/regular-functions/in-functions)                                                                        | ✔    | ✔      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [notIn](/ko/reference/functions/regular-functions/in-functions)                                                                        | ✔    | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [less (`<`)](/ko/reference/functions/regular-functions/comparison-functions#less)                                                      | ✔    | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
 | [greater (`>`)](/ko/reference/functions/regular-functions/comparison-functions#greater)                                                | ✔    | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
 | [lessOrEquals (`<=`)](/ko/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                     | ✔    | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
@@ -687,9 +633,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
     * `NOT startsWith(s, 'test')`
 </Note>
 
-<div id="projections">
-  ## PROJECTION
-</div>
+## PROJECTION {#projections}
 
 PROJECTION은 [materialized views](/ko/reference/statements/create/view)와 유사하지만 part 수준에서 정의됩니다. 일관성이 보장되며, 쿼리에서 자동으로 사용됩니다.
 
@@ -699,9 +643,7 @@ PROJECTION은 [materialized views](/ko/reference/statements/create/view)와 유�
 
 PROJECTION은 [FINAL](/ko/reference/statements/select/from#final-modifier) 수정자를 사용하는 `SELECT` 문에서는 지원되지 않습니다.
 
-<div id="projection-query">
-  ### PROJECTION 쿼리
-</div>
+### PROJECTION 쿼리 {#projection-query}
 
 PROJECTION 쿼리는 PROJECTION을 정의합니다. 상위 테이블의 데이터를 암묵적으로 선택합니다.
 **구문**
@@ -712,18 +654,14 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 
 PROJECTION은 [ALTER](/ko/reference/statements/alter/projection) SQL 문을 사용해 수정하거나 삭제할 수 있습니다.
 
-<div id="projection-index">
-  ### PROJECTION 인덱스
-</div>
+### PROJECTION 인덱스 {#projection-index}
 
 PROJECTION 인덱스는 가볍고 명시적인 방식으로 PROJECTION 수준의 인덱스를 정의할 수 있도록 PROJECTION 서브시스템을 확장합니다.
 외부적으로 PROJECTION 인덱스는 여전히 PROJECTION이지만, 구문은 더 단순하고 의도는 더 분명합니다. 즉, 구체화된 데이터를 제공하는 대신 필터링에 특화된 표현식을 정의합니다.
 내부적으로 PROJECTION 인덱스는 일반 PROJECTION처럼 원본 테이블을 순서가 재배열된 행 순서로 구체화하지 않습니다.
 대신 순열은 숫자 순열 컬럼 `_part_offset`의 형태로 저장됩니다. 즉, `SELECT _part_offset ORDER BY <index_expr>`와 같습니다.
 
-<div id="projection-index-syntax">
-  #### 구문
-</div>
+#### 구문 {#projection-index-syntax}
 
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
@@ -744,9 +682,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-<div id="projection-index-types">
-  #### 인덱스 유형
-</div>
+#### 인덱스 유형 {#projection-index-types}
 
 현재 다음 유형을 지원합니다.
 
@@ -754,31 +690,23 @@ ORDER BY id;
 
 향후 더 많은 인덱스 유형을 추가할 수 있도록 프레임워크가 설계되어 있습니다.
 
-<div id="projection-storage">
-  ### 프로젝션 저장소
-</div>
+### 프로젝션 저장소 {#projection-storage}
 
 프로젝션은 파트 디렉터리 내부에 저장됩니다. 인덱스와 비슷하지만, 익명 `MergeTree` 테이블의 파트를 저장하는 하위 디렉터리를 포함한다는 점이 다릅니다. 이 테이블은 프로젝션 정의 쿼리로부터 생성됩니다. `GROUP BY` 절이 있으면 하위 저장 엔진은 [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree)가 되며, 모든 집계 함수는 `AggregateFunction`으로 변환됩니다. `ORDER BY` 절이 있으면 `MergeTree` 테이블은 이를 프라이머리 키 표현식으로 사용합니다. 머지 과정에서는 프로젝션 파트도 해당 저장소의 머지 루틴을 통해 머지됩니다. 부모 테이블 파트의 체크섬은 프로젝션 파트의 체크섬과 결합됩니다. 그 밖의 유지 관리 작업은 스킵 인덱스와 비슷합니다.
 
-<div id="projection-query-analysis">
-  ### 쿼리 분석
-</div>
+### 쿼리 분석 {#projection-query-analysis}
 
 1. 프로젝션을 사용해 주어진 쿼리를 처리할 수 있는지, 즉 기반 테이블(base table)에 쿼리했을 때와 동일한 결과를 생성하는지 확인합니다.
 2. 읽어야 하는 그래뉼 수가 가장 적은, 사용 가능한 최적의 대상을 선택합니다.
 3. 프로젝션을 사용하는 쿼리 파이프라인은 원본 파트를 사용하는 파이프라인과 다릅니다. 일부 파트에 프로젝션이 없으면, 즉석에서 이를 &quot;프로젝션&quot;하기 위한 파이프라인을 추가할 수 있습니다.
 
-<div id="concurrent-data-access">
-  ## 동시 데이터 액세스
-</div>
+## 동시 데이터 액세스 {#concurrent-data-access}
 
 테이블에 동시 접근할 때는 다중 버전 관리를 사용합니다. 즉, 테이블이 동시에 읽히고 업데이트되더라도 데이터는 쿼리 시점의 최신 파트 집합에서 읽습니다. 장시간 유지되는 잠금은 없습니다. 삽입 작업은 읽기 작업을 방해하지 않습니다.
 
 테이블 읽기는 자동으로 병렬화됩니다.
 
-<div id="table_engine-mergetree-ttl">
-  ## 컬럼 및 테이블의 TTL
-</div>
+## 컬럼 및 테이블의 TTL {#table_engine-mergetree-ttl}
 
 값의 수명을 결정합니다.
 
@@ -810,9 +738,7 @@ TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
 
-<div id="mergetree-column-ttl">
-  ### 컬럼 TTL
-</div>
+### 컬럼 TTL {#mergetree-column-ttl}
 
 컬럼의 값이 만료되면 ClickHouse는 이를 해당 컬럼 데이터 타입의 기본값으로 대체합니다. 데이터 파트에서 해당 컬럼의 값이 모두 만료되면 ClickHouse는 파일 시스템에 있는 그 데이터 파트에서 이 컬럼을 삭제합니다.
 
@@ -820,9 +746,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 **예시**
 
-<div id="creating-a-table-with-ttl">
-  #### `TTL`이 적용된 테이블 생성:
-</div>
+#### `TTL`이 적용된 테이블 생성: {#creating-a-table-with-ttl}
 
 ```sql
 CREATE TABLE tab
@@ -837,9 +761,7 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d;
 ```
 
-<div id="adding-ttl-to-a-column-of-an-existing-table">
-  #### 기존 테이블 컬럼에 TTL 추가하기
-</div>
+#### 기존 테이블 컬럼에 TTL 추가하기 {#adding-ttl-to-a-column-of-an-existing-table}
 
 ```sql
 ALTER TABLE tab
@@ -847,9 +769,7 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 DAY;
 ```
 
-<div id="altering-ttl-of-the-column">
-  #### 컬럼 TTL 변경
-</div>
+#### 컬럼 TTL 변경 {#altering-ttl-of-the-column}
 
 ```sql
 ALTER TABLE tab
@@ -857,9 +777,7 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 MONTH;
 ```
 
-<div id="mergetree-table-ttl">
-  ### 테이블 TTL
-</div>
+### 테이블 TTL {#mergetree-table-ttl}
 
 테이블에는 만료된 행을 삭제하기 위한 표현식과 [디스크 또는 볼륨](#table_engine-mergetree-multiple-volumes) 간에 파트를 자동으로 이동하기 위한 여러 표현식을 지정할 수 있습니다. 테이블의 행이 만료되면 ClickHouse는 해당 행을 모두 삭제합니다. 파트 이동 또는 재압축의 경우, 파트의 모든 행이 `TTL` 표현식 조건을 충족해야 합니다.
 
@@ -890,9 +808,7 @@ TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
 
 **예시**
 
-<div id="creating-a-table-with-ttl-1">
-  #### `TTL`이 있는 테이블 생성하기:
-</div>
+#### `TTL`이 있는 테이블 생성하기: {#creating-a-table-with-ttl-1}
 
 ```sql
 CREATE TABLE tab
@@ -908,9 +824,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-<div id="altering-ttl-of-the-table">
-  #### 테이블의 `TTL` 변경:
-</div>
+#### 테이블의 `TTL` 변경: {#altering-ttl-of-the-table}
 
 ```sql
 ALTER TABLE tab
@@ -931,9 +845,7 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
 
-<div id="creating-a-table-where-expired-rows-are-recompressed">
-  #### 만료된 행이 재압축되도록 테이블 생성:
-</div>
+#### 만료된 행이 재압축되도록 테이블 생성: {#creating-a-table-where-expired-rows-are-recompressed}
 
 ```sql
 CREATE TABLE table_for_recompression
@@ -964,9 +876,7 @@ ORDER BY (k1, k2)
 TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
-<div id="mergetree-removing-expired-data">
-  ### 만료된 데이터 삭제
-</div>
+### 만료된 데이터 삭제 {#mergetree-removing-expired-data}
 
 `TTL`이 만료된 데이터는 ClickHouse가 데이터 파트를 머지할 때 삭제됩니다.
 
@@ -978,9 +888,7 @@ ClickHouse가 데이터 만료를 감지하면 예정되지 않은 머지를 수
 
 * [ttl&#95;only&#95;drop&#95;parts](/ko/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) 설정
 
-<div id="disk-types">
-  ## 디스크 유형
-</div>
+## 디스크 유형 {#disk-types}
 
 로컬 블록 디바이스 외에도 ClickHouse는 다음과 같은 저장소 유형을 지원합니다:
 
@@ -993,13 +901,9 @@ ClickHouse가 데이터 만료를 감지하면 예정되지 않은 머지를 수
 * [`s3_plain` for S3 백업용](/ko/concepts/features/backup-restore/local-disk)
 * [`s3_plain_rewritable` for S3의 변경 불가능한 비복제 테이블용](/ko/concepts/features/configuration/server-config/storing-data#s3-plain-rewritable-storage)
 
-<div id="table_engine-mergetree-multiple-volumes">
-  ## 데이터 저장에 여러 블록 디바이스 사용
-</div>
+## 데이터 저장에 여러 블록 디바이스 사용 {#table_engine-mergetree-multiple-volumes}
 
-<div id="introduction">
-  ### 소개
-</div>
+### 소개 {#introduction}
 
 `MergeTree` 계열 테이블 엔진은 여러 블록 디바이스에 데이터를 저장할 수 있습니다. 예를 들어, 특정 테이블의 데이터가 자연스럽게 &quot;hot&quot; 데이터와 &quot;cold&quot; 데이터로 나뉘는 경우에 유용합니다. 최신 데이터는 자주 조회되지만 필요한 공간은 적습니다. 반대로 장기간 누적된 과거 데이터는 드물게 조회됩니다. 여러 디스크를 사용할 수 있다면 &quot;hot&quot; 데이터는 빠른 디스크(예: NVMe SSD 또는 메모리)에 두고, &quot;cold&quot; 데이터는 상대적으로 느린 디스크(예: HDD)에 둘 수 있습니다.
 
@@ -1007,9 +911,7 @@ ClickHouse가 데이터 만료를 감지하면 예정되지 않은 머지를 수
 
 데이터 파트는 `MergeTree` 엔진 테이블에서 이동할 수 있는 최소 단위입니다. 하나의 파트에 속한 데이터는 하나의 디스크에 저장됩니다. 데이터 파트는 백그라운드에서(사용자 설정에 따라) 디스크 간에 이동할 수 있으며, [ALTER](/ko/reference/statements/alter/partition) 쿼리를 통해서도 이동할 수 있습니다.
 
-<div id="terms">
-  ### 용어
-</div>
+### 용어 {#terms}
 
 * 디스크 — 파일 시스템에 마운트된 블록 디바이스입니다.
 * 기본 디스크 — [path](/ko/reference/settings/server-settings/settings/other#path) 서버 설정에 지정된 경로를 저장하는 디스크입니다.
@@ -1018,9 +920,7 @@ ClickHouse가 데이터 만료를 감지하면 예정되지 않은 머지를 수
 
 위에서 설명한 엔터티의 이름은 시스템 테이블 [system.storage&#95;policies](/ko/reference/system-tables/storage_policies) 및 [system.disks](/ko/reference/system-tables/disks)에서 확인할 수 있습니다. 테이블에 구성된 스토리지 정책 중 하나를 적용하려면 `MergeTree` 엔진 계열 테이블의 `storage_policy` 설정을 사용하십시오.
 
-<div id="table_engine-mergetree-multiple-volumes_configure">
-  ### 구성
-</div>
+### 구성 {#table_engine-mergetree-multiple-volumes_configure}
 
 디스크, 볼륨 및 스토리지 정책은 `<storage_configuration>` 태그 안이나 `config.d` 디렉터리의 파일에서 선언해야 합니다.
 
@@ -1179,9 +1079,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 데이터 파트의 백그라운드 이동 작업을 수행하는 스레드 수는 [background&#95;move&#95;pool&#95;size](/ko/reference/settings/server-settings/settings/background#background_move_pool_size) 설정에서 변경할 수 있습니다.
 
-<div id="details">
-  ### 세부 사항
-</div>
+### 세부 사항 {#details}
 
 `MergeTree` 테이블에서는 데이터가 여러 방식으로 디스크에 기록됩니다.
 
@@ -1209,9 +1107,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 사용자는 [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/ko/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod) 설정을 사용해 [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) 볼륨의 서로 다른 디스크에 새 대형 파트를 균형 있게 할당할 수 있습니다.
 
-<div id="table_engine-mergetree-s3">
-  ## 데이터 저장에 외부 스토리지 사용하기
-</div>
+## 데이터 저장에 외부 스토리지 사용하기 {#table_engine-mergetree-s3}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열 테이블 엔진은 각각 `s3`, `azure_blob_storage`, `hdfs` 타입의 디스크를 사용해 데이터를 `S3`, `AzureBlobStorage`, `HDFS`에 저장할 수 있습니다. 자세한 내용은 [외부 스토리지 옵션 구성](/ko/concepts/features/configuration/server-config/storing-data#configuring-external-storage)을 참조하십시오.
 
@@ -1260,9 +1156,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 관련 내용은 [외부 스토리지 옵션 구성](/ko/concepts/features/configuration/server-config/storing-data#configuring-external-storage)을 참조하십시오.
 
-<div id="s3-multiple-volumes">
-  ### 여러 볼륨에서 S3 디스크 사용하기
-</div>
+### 여러 볼륨에서 S3 디스크 사용하기 {#s3-multiple-volumes}
 
 S3(및 기타 객체 스토리지) 디스크는 로컬 디스크와 동일하게 다중 디스크 및 다중 볼륨 스토리지 정책에 사용할 수 있습니다. 이를 통해 단일 볼륨 내 여러 S3 버킷에 데이터를 분산(JBOD 방식)하거나, S3 볼륨을 사용한 계층형 스토리지 정책을 구성할 수 있습니다.
 
@@ -1341,9 +1235,7 @@ S3(및 기타 객체 스토리지) 디스크는 로컬 디스크와 동일하게
   ClickHouse 22.3~22.7 버전은 다른 cache 구성을 사용합니다. 해당 버전 중 하나를 사용 중이라면 [using local cache](/ko/concepts/features/configuration/server-config/storing-data#using-local-cache)를 참조하십시오.
 </Info>
 
-<div id="virtual-columns">
-  ## 가상 컬럼
-</div>
+## 가상 컬럼 {#virtual-columns}
 
 * `_part` — 파트 이름입니다.
 * `_part_index` — 쿼리 결과에서 파트의 순차 인덱스입니다.
@@ -1359,9 +1251,7 @@ S3(및 기타 객체 스토리지) 디스크는 로컬 디스크와 동일하게
 * `_block_offset` — 삽입 시 할당된 block 내 원래 행 번호이며, 설정 `enable_block_offset_column`이 활성화된 경우 머지 후에도 유지됩니다.
 * `_disk_name` — 저장소에 사용된 디스크 이름입니다.
 
-<div id="column-statistics">
-  ## 컬럼 통계
-</div>
+## 컬럼 통계 {#column-statistics}
 
 통계 선언은 `*MergeTree*` 엔진 계열 테이블의 `CREATE` 쿼리에서 컬럼 섹션에 위치합니다:
 
@@ -1385,9 +1275,7 @@ ALTER TABLE tab DROP STATISTICS a;
 이러한 경량 통계는 컬럼의 값 분포에 관한 정보를 집계합니다. 통계는 모든 파트에 저장되며, 각 삽입이 이루어질 때마다 갱신됩니다.
 `set use_statistics = 1`을 활성화한 경우에만 PREWHERE 최적화에 사용할 수 있습니다.
 
-<div id="part-pruning-with-statistics">
-  #### 통계를 활용한 파트 프루닝
-</div>
+#### 통계를 활용한 파트 프루닝 {#part-pruning-with-statistics}
 
 `use_statistics_for_part_pruning`이 활성화되면 통계를 파트 프루닝에 사용할 수 있습니다.
 현재 `basic` 통계(및 지원 중단된 `minmax` 통계)만 파트 프루닝을 지원합니다. 이러한 통계가 컬럼에 정의되면 ClickHouse는 각 파트에서 해당 컬럼의 최솟값과 최댓값을 추적합니다.
@@ -1421,9 +1309,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 -- The output will show "Parts: 1/2" indicating one part was pruned
 ```
 
-<div id="available-types-of-column-statistics">
-  ### 사용 가능한 컬럼 통계 유형
-</div>
+### 사용 가능한 컬럼 통계 유형 {#available-types-of-column-statistics}
 
 * `basic`
 
@@ -1465,9 +1351,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 컬럼의 각 값이 나타나는 빈도를 근사적으로 계산해 주는 [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) 스케치입니다.
 
-<div id="supported-data-types">
-  ### 지원되는 데이터 타입
-</div>
+### 지원되는 데이터 타입 {#supported-data-types}
 
 |             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String 또는 FixedString | 기타 모든 타입    |
 | ----------- | -------------------------------------------------- | ---- | --------------------- | ----------- |
@@ -1480,9 +1364,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 위의 모든 항목은 나열된 타입을 `Nullable` 또는 `LowCardinality(Nullable)`로 래핑한 타입도 허용합니다. `basic`은 `Array`, `Tuple`, `Map`과 같은 복합 타입을 포함한 기타 모든 타입에도 추가로 선언할 수 있으며, 이 경우 기본값 개수만 기록합니다.
 
-<div id="supported-operations">
-  ### 지원되는 작업
-</div>
+### 지원되는 작업 {#supported-operations}
 
 |             | 동등 필터 (==) | 범위 필터 (`>, >=, <, <=`) |
 | ----------- | ---------- | ---------------------- |
@@ -1500,9 +1382,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 `String` / `FixedString` 컬럼에서 `basic` 통계는 NULL이 아닌 값의 총 바이트 길이
 (평균 문자열 길이 추정에 사용됨)와 기본값/`NULL` 개수를 기록합니다. 범위 필터와 파트 프루닝에는 이 통계가 사용되지 않습니다.
 
-<div id="column-level-settings">
-  ## 컬럼 수준 설정
-</div>
+## 컬럼 수준 설정 {#column-level-settings}
 
 일부 MergeTree 설정은 컬럼 수준에서 재정의할 수 있습니다:
 

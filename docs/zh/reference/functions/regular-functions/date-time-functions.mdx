@@ -5632,8 +5632,6 @@ SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 toYear(datetime)
 ```
 
-**别名**: `YEAR`
-
 **参数**
 
 * `datetime` — 用于提取年份的日期或日期时间。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
@@ -5783,6 +5781,58 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
 │ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
+```
+
+## year {#year}
+
+引入版本：v26.9.0
+
+返回 `Date` 或 `DateTime` 值的年份部分。
+
+不带参数调用时，返回查询分析时刻的当前年份。
+
+<Note>
+  此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+</Note>
+
+**语法**
+
+```sql
+year([datetime])
+```
+
+**参数**
+
+* `datetime` — 可选。用于提取年份的日期或日期时间。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+
+**返回值**
+
+返回给定 (或当前) Date 或 DateTime 的年份，类型为 [`UInt16`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**取值的年份**
+
+```sql title=Query
+SELECT year(toDateTime('2023-04-21 10:20:30'))
+```
+
+```response title=Response
+┌─year(toDateTime('2023-04-21 10:20:30'))─┐
+│                                    2023 │
+└─────────────────────────────────────────┘
+```
+
+**当前年份**
+
+```sql title=Query
+SELECT year()
+```
+
+```response title=Response
+┌─year()─┐
+│   2026 │
+└────────┘
 ```
 
 ## yesterday {#yesterday}

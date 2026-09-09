@@ -5634,8 +5634,6 @@ SELECT toYYYYMMDDhhmmss(toDateTime('2023-03-02 16:22:09', 'UTC'), 'US/Eastern')
 toYear(datetime)
 ```
 
-**Псевдонимы**: `YEAR`
-
 **Аргументы**
 
 * `datetime` — дата или дата и время, из которых нужно получить год. [`Date`](/ru/reference/data-types/date) или [`Date32`](/ru/reference/data-types/date32) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
@@ -5785,6 +5783,58 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
 │ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
+```
+
+## year {#year}
+
+Добавленный в: v26.9.0
+
+Возвращает компонент года из значения `Date` или `DateTime`.
+
+При вызове без аргументов возвращает текущий год на момент анализа запроса.
+
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
+**Синтаксис**
+
+```sql
+year([datetime])
+```
+
+**Аргументы**
+
+* `datetime` — Необязательный. дата или дата и время, из которых нужно получить год. [`Date`](/ru/reference/data-types/date) или [`Date32`](/ru/reference/data-types/date32) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+
+**Возвращаемое значение**
+
+Возвращает год из указанного (или текущего) значения [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) [`UInt16`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Год значения**
+
+```sql title=Query
+SELECT year(toDateTime('2023-04-21 10:20:30'))
+```
+
+```response title=Response
+┌─year(toDateTime('2023-04-21 10:20:30'))─┐
+│                                    2023 │
+└─────────────────────────────────────────┘
+```
+
+**Текущий год**
+
+```sql title=Query
+SELECT year()
+```
+
+```response title=Response
+┌─year()─┐
+│   2026 │
+└────────┘
 ```
 
 ## yesterday {#yesterday}

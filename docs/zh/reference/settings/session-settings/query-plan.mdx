@@ -380,26 +380,26 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 当设置为 1 时，会生成一个随机种子；当设置为大于 1 的值时，则直接使用该值作为种子。
 此设置用于测试，以发现由不同 JOIN 顺序引起的错误。
 
-## query_plan_optimize_join_order_use_cd_a_conflict_detector {#query_plan_optimize_join_order_use_cd_a_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置：在 DPsub JOIN 顺序算法中使用 CD-A 冲突检测器验证 JOIN 重排序的有效性。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置：在 DPsub JOIN 顺序算法中使用冲突检测器 A 验证 JOIN 重排序的有效性。"}]}]} />
 
 仅影响 `dpsub` JOIN 顺序算法。启用后，DPsub 使用 CD-A 冲突检测器确定哪些 JOIN
 重排序有效。
 
-## query_plan_optimize_join_order_use_cd_c_conflict_detector {#query_plan_optimize_join_order_use_cd_c_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置：在 DPsub JOIN 顺序算法中，使用 CD-C（正确且完整）冲突检测器验证 JOIN 重排序的有效性。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置：在 DPsub JOIN 顺序算法中，使用（正确且完整的）冲突检测器 C 验证 JOIN 重排序的有效性。"}]}]} />
 
-仅影响 `dpsub` JOIN 顺序算法。启用后，DPsub 使用 CD-C 冲突检测器确定哪些 JOIN 重排序有效。当两者均启用时，其优先级高于 `query_plan_optimize_join_order_use_cd_a_conflict_detector`。
+仅影响 `dpsub` JOIN 顺序算法。启用后，DPsub 使用 CD-C 冲突检测器确定哪些 JOIN 重排序有效。当两者均启用时，其优先级高于 `query_plan_optimize_join_order_use_conflict_detector_a`。
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

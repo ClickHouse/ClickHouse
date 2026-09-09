@@ -41,19 +41,19 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-<div id="lightweight-update-does-not-update-data-immediately">
-  ## As atualizações leves não atualizam os dados imediatamente {#lightweight-update-does-not-update-data-immediately}
-</div>
+## Atualizações leves são imediatamente visíveis nas consultas {#lightweight-update-does-not-update-data-immediately}
 
-O `UPDATE` leve é implementado usando **patch parts** — um tipo especial de parte de dados que contém apenas as colunas e linhas atualizadas.
-Um `UPDATE` leve cria patch parts, mas não modifica fisicamente os dados originais no armazenamento de imediato.
-O processo de atualização é semelhante ao de uma consulta `INSERT ... SELECT ...`, mas a consulta `UPDATE` aguarda a conclusão da criação da patch part antes de retornar.
+O `UPDATE` leve torna os valores atualizados imediatamente visíveis em consultas `SELECT` por meio da aplicação de **patch parts**. As consultas não precisam esperar por uma mesclagem para ler os valores atualizados.
+Patch parts são um tipo especial de parte de dados que contém apenas as colunas e linhas atualizadas. Sua criação não altera imediatamente os dados originais fisicamente no armazenamento.
+O processo de atualização é semelhante a uma consulta `INSERT ... SELECT ...`, e a consulta `UPDATE` aguarda a conclusão da criação da patch part antes de retornar.
 
-Os valores atualizados são:
+A visibilidade nas consultas e a materialização física são coisas distintas:
 
-* **Imediatamente visíveis** em consultas `SELECT` por meio da aplicação de patches
-* **Materializados fisicamente** apenas durante mesclagens e mutações subsequentes
-* **Removidos automaticamente** assim que todas as partes ativas tiverem os patches materializados
+* **Visibilidade nas consultas:** consultas `SELECT` aplicam os patches para ler os valores atualizados antes que esses patches sejam materializados nas partes de dados originais.
+* **Materialização física:** mesclagens e mutações subsequentes incorporam os valores atualizados às partes de dados.
+* **Limpeza:** as patch parts são removidas automaticamente assim que todas as active parts tiverem os patches materializados.
+
+Sobre a consistência de atualizações concorrentes, consulte [Operações concorrentes](#concurrent-operations).
 
 ## Requisitos para atualizações leves {#lightweight-update-requirements}
 

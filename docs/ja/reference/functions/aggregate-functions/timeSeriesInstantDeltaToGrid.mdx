@@ -23,7 +23,7 @@ doc_type: 'reference'
 複数のサンプルが同じタイムスタンプを持つ場合、そのうち使用されるのは 1 つだけです。最も大きい値を持つサンプルが使用されます。NaN 値は他のどの値よりも優先度が低いため、このタイムスタンプのすべてのサンプルが NaN の場合にのみ使用されます。
 
 <Warning>
-  この関数は実験的です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効にしてください。
+  この関数はプライベートプレビューです。`enable_time_series_aggregate_functions=true` を設定して有効にしてください。
 </Warning>
 
 **構文**
@@ -38,7 +38,7 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
 * `start_timestamp` — グリッドの開始を指定します。`DateTime64` の timestamp 引数では、小数、数値または日付時刻テキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
 * `end_timestamp` — グリッドの終了を指定します。`DateTime64` の timestamp 引数では、小数、数値または日付時刻テキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
 * `grid_step` — グリッドの刻み幅を秒単位で指定します。`DateTime64` の timestamp 引数では、小数、数値、または &#39;15s&#39; や &#39;1m&#39; のような期間を含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
-* `staleness` — 対象とするサンプルの最大の古さを秒単位で指定します。staleness window は左開右閉区間です。`DateTime64` の timestamp 引数では、小数、数値、または &#39;15s&#39; や &#39;1m&#39; のような期間を含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `staleness` — 対象とするサンプルの最大の古さを秒単位で指定します。staleness ウィンドウは左開右閉区間です。`DateTime64` の timestamp 引数では、小数、数値、または &#39;15s&#39; や &#39;1m&#39; のような期間を含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
 
 **引数**
 
@@ -48,14 +48,14 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
 
 **戻り値**
 
-指定したグリッド上の idelta 値を返します。返される配列には、各グリッドポイントに対して 1 つの値が含まれます。特定のグリッドポイントについて instant delta 値を計算するのに window 内のサンプル数が不足している場合、その値は NULL になります。[`Array(Nullable(Float64))`](/ja/reference/data-types/array)
+指定したグリッド上の idelta 値を返します。返される配列には、各グリッドポイントに対して 1 つの値が含まれます。特定のグリッドポイントについて instant delta 値を計算するのにウィンドウ内のサンプル数が不足している場合、その値は NULL になります。[`Array(Nullable(Float64))`](/ja/reference/data-types/array)
 
 **例**
 
 **個別のタイムスタンプと値のペアを使用する基本的な使い方**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -84,7 +84,7 @@ FROM
 **Array 引数の使用**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

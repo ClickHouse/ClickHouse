@@ -1,7 +1,7 @@
 const ServerSettingsExplorer = ({ href: baseRoute }) => {
   // El renderizador de producción de Mintlify evalúa el componente exportado sin
-  // preservar las vinculaciones a nivel de módulo. El estado perezoso mantiene los
-  // datos generados en ese ámbito de evaluación y los construye solo una vez por montaje.
+  // preservar las vinculaciones a nivel de módulo. El estado perezoso mantiene
+  // los datos generados en ese ámbito de evaluación y los construye solo una vez por montaje.
   const [entries] = useState(() => [
     {
       label: "access_control_*",
@@ -1004,6 +1004,16 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_condition_cache_policy", path: "/query-condition#query_condition_cache_policy", default: "SLRU" },
         { name: "query_condition_cache_size", path: "/query-condition#query_condition_cache_size", default: "104857600" },
         { name: "query_condition_cache_size_ratio", path: "/query-condition#query_condition_cache_size_ratio", default: "0.5" }
+      ],
+      children: []
+    },
+    {
+      label: "reader_executor_*",
+      count: 3,
+      settings: [
+        { name: "reader_executor_memory_pressure_critical_level_pct", path: "/reader-executor#reader_executor_memory_pressure_critical_level_pct", default: "95" },
+        { name: "reader_executor_memory_pressure_elevated_level_pct", path: "/reader-executor#reader_executor_memory_pressure_elevated_level_pct", default: "75" },
+        { name: "reader_executor_memory_pressure_high_level_pct", path: "/reader-executor#reader_executor_memory_pressure_high_level_pct", default: "90" }
       ],
       children: []
     },

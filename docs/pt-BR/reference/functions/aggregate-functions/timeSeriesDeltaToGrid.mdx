@@ -23,7 +23,7 @@ As amostras podem ser fornecidas em uma de três formas:
 Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto, um valor NaN é usado somente se todas as amostras nesse timestamp forem NaN.
 
 <Warning>
-  Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
+  Esta função está em private preview; habilite-a definindo `enable_time_series_aggregate_functions=true`.
 </Warning>
 
 **Sintaxe**
@@ -55,7 +55,7 @@ Retorna os valores delta na grade especificada. O array retornado contém um val
 **Uso básico com pares individuais de timestamp e valor**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -84,7 +84,7 @@ FROM
 **Usando argumentos do tipo Array**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

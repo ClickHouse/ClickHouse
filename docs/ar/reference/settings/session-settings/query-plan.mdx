@@ -380,25 +380,25 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 عند تعيينها إلى 1، يُولَّد random seed، وعند تعيينها إلى قيمة &gt; 1، تُستخدم تلك القيمة مباشرةً كبذرة.
 هذا مخصّص للاختبار بهدف اكتشاف الأخطاء الناتجة عن اختلاف ترتيبات JOIN.
 
-## query_plan_optimize_join_order_use_cd_a_conflict_detector {#query_plan_optimize_join_order_use_cd_a_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_a {#query_plan_optimize_join_order_use_conflict_detector_a}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لاستخدام كاشف التعارض CD-A للتحقق من صلاحية إعادة ترتيب JOIN في خوارزمية ترتيب JOIN‏ DPsub."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لاستخدام كاشف التعارض A للتحقق من صلاحية إعادة ترتيب JOIN في خوارزمية ترتيب JOIN‏ DPsub."}]}]} />
 
 يؤثر هذا الإعداد على خوارزمية ترتيب JOIN‏ `dpsub` فقط. عند تمكينه، تحدد DPsub عمليات إعادة ترتيب JOIN الصالحة باستخدام كاشف التعارض CD-A).
 
-## query_plan_optimize_join_order_use_cd_c_conflict_detector {#query_plan_optimize_join_order_use_cd_c_conflict_detector}
+## query_plan_optimize_join_order_use_conflict_detector_c {#query_plan_optimize_join_order_use_conflict_detector_c}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لاستخدام كاشف التعارض CD-C (الصحيح والكامل) للتحقق من صلاحية إعادة ترتيب JOIN في خوارزمية ترتيب JOIN في DPsub."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لاستخدام كاشف التعارض C (الصحيح والكامل) للتحقق من صلاحية إعادة ترتيب JOIN في خوارزمية ترتيب JOIN في DPsub."}]}]} />
 
-يؤثر هذا الإعداد على خوارزمية `dpsub` الخاصة بـ ترتيب JOIN فقط. وعند تمكينه، تعتمد DPsub على كاشف التعارض CD-C لتحديد عمليات إعادة ترتيب JOIN الصالحة. وتكون له الأسبقية على `query_plan_optimize_join_order_use_cd_a_conflict_detector` عند تمكين كليهما.
+يؤثر هذا الإعداد على خوارزمية `dpsub` الخاصة بـ ترتيب JOIN فقط. وعند تمكينه، تعتمد DPsub على كاشف التعارض CD-C لتحديد عمليات إعادة ترتيب JOIN الصالحة. وتكون له الأسبقية على `query_plan_optimize_join_order_use_conflict_detector_a` عند تمكين كليهما.
 
 ## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 

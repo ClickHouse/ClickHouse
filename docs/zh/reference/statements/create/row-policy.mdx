@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -100,9 +100,11 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 ## TO 子句 {#to-clause}
 
-在 `TO` 部分中，您可以指定此策略适用的用户和 roles 列表。例如，`CREATE ROW POLICY ... TO accountant, john@localhost`。
+在 `TO` 部分中，您可以指定此策略适用的用户和 角色 列表。例如，`CREATE ROW POLICY ... TO accountant, john@localhost`。
 
 关键字 `ALL` 表示所有 ClickHouse 用户，包括当前用户。关键字 `ALL EXCEPT` 允许从所有用户列表中排除某些用户，例如 `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+`TO` 部分中列出的 角色 (包括 `ALL EXCEPT` 之后的那些) 会与当前用户已启用的 角色 ([`system.enabled_roles`](/zh/reference/system-tables/enabled_roles)) 进行匹配，而非与授予该用户的所有 角色 匹配，因此 [`SET ROLE`](/zh/reference/statements/set-role) 会改变哪些 策略 生效。
 
 ## AS 子句 {#as-clause}
 
@@ -124,9 +126,11 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 以下是通用公式：
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+如果没有任何宽松型条件适用，则第一个条件不产生任何作用，仅由限制型策略决定结果，因为 `access_control_improvements.users_without_row_policies_can_read_rows` 默认处于启用状态。因此，没有任何条件适用的用户可以看到所有行；而 `access_control_improvements.throw_on_unmatched_row_policies` 默认处于禁用状态，启用后，当表确实存在条件但没有任何条件适用时，会改为引发异常。
 
 例如，以下策略：
 

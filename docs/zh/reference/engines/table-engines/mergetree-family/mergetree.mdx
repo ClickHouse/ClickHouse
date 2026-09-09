@@ -30,9 +30,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
   尽管名称相似，[Merge](/zh/reference/engines/table-engines/special/merge) 引擎与 `*MergeTree` 引擎并不相同。
 </Note>
 
-<div id="table_engine-mergetree-creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#table_engine-mergetree-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -59,21 +57,15 @@ ORDER BY expr
 
 有关参数的详细说明，请参见 [CREATE TABLE](/zh/reference/statements/create/table) 语句
 
-<div id="mergetree-query-clauses">
-  ### 查询子句
-</div>
+### 查询子句 {#mergetree-query-clauses}
 
-<div id="engine">
-  #### ENGINE
-</div>
+#### ENGINE {#engine}
 
 `ENGINE` — 引擎名称及其参数。`ENGINE = MergeTree()`。`MergeTree` 引擎没有参数。
 
 <a id="order_by" />
 
-<div id="order-by">
-  #### ORDER BY
-</div>
+#### ORDER BY {#order-by}
 
 `ORDER BY` — 排序键。
 
@@ -84,26 +76,20 @@ ORDER BY expr
 如果不需要排序，可以使用语法 `ORDER BY tuple()`。
 另外，如果启用了设置 `create_table_empty_primary_key_by_default`，则会在 `CREATE TABLE` 语句中隐式添加 `ORDER BY ()`。另请参见[选择主键](#selecting-a-primary-key)。
 
-<div id="partition-by">
-  #### PARTITION BY
-</div>
+#### PARTITION BY {#partition-by}
 
 `PARTITION BY` — [分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)。可选。在大多数情况下，不需要分区键；即使需要分区，分区键通常也无需细于按月分区。分区不会加速查询 (这与 ORDER BY 表达式不同) 。切勿使用粒度过细的分区方式。不要按客户端标识符或名称对数据进行分区 (应改为将客户端标识符或名称作为 ORDER BY 表达式中的第一列) 。
 
 对于按月分区，请使用 `toYYYYMM(date_column)` 表达式，其中 `date_column` 是一个类型为 [Date](/zh/reference/data-types/date) 的日期列。此处的分区名称采用 `"YYYYMM"` 格式。
 
-<div id="primary-key">
-  #### PRIMARY KEY
-</div>
+#### PRIMARY KEY {#primary-key}
 
 `PRIMARY KEY` —— 如果主键[不同于排序键](#choosing-a-primary-key-that-differs-from-the-sorting-key)，则在此处指定。可选。
 
 指定排序键 (使用 `ORDER BY` 子句) 时，也会隐式指定主键。
 通常不需要在排序键之外再单独指定主键。
 
-<div id="sample-by">
-  #### SAMPLE BY
-</div>
+#### SAMPLE BY {#sample-by}
 
 `SAMPLE BY` — 采样表达式。可选。
 
@@ -112,9 +98,7 @@ ORDER BY expr
 
 示例：`SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`。
 
-<div id="ttl">
-  #### TTL
-</div>
+#### TTL {#ttl}
 
 `TTL` — 一组规则，用于指定行的存储时长，以及 [在磁盘和卷之间](#table_engine-mergetree-multiple-volumes)自动移动 parts 的逻辑。可选。
 
@@ -124,9 +108,7 @@ ORDER BY expr
 
 更多详情，请参见 [列和表的 TTL](#table_engine-mergetree-ttl)
 
-<div id="settings">
-  #### 设置
-</div>
+#### 设置 {#settings}
 
 请参阅 [MergeTree 设置](/zh/reference/settings/merge-tree-settings)。
 
@@ -174,9 +156,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
   `MergeTree` 引擎的配置方式与上文主引擎配置方法中的示例相同。
 </details>
 
-<div id="mergetree-data-storage">
-  ## 数据存储
-</div>
+## 数据存储 {#mergetree-data-storage}
 
 一个表由按主键排序的数据 parts 组成。
 
@@ -192,9 +172,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 粒度大小受表引擎的 `index_granularity` 和 `index_granularity_bytes` 设置限制。粒度中的行数位于 `[1, index_granularity]` 范围内，具体取决于行的大小。如果单行大小大于该设置的值，则粒度大小可以超过 `index_granularity_bytes`。在这种情况下，粒度大小等于该行的大小。
 
-<div id="primary-keys-and-indexes-in-queries">
-  ## 查询中的主键和索引
-</div>
+## 查询中的主键和索引 {#primary-keys-and-indexes-in-queries}
 
 以 `(CounterID, Date)` 主键为例。在这种情况下，排序方式和索引如下所示：
 
@@ -223,9 +201,7 @@ ClickHouse 不要求主键是唯一的。你可以插入多行具有相同主键
 
 你可以在 `PRIMARY KEY` 和 `ORDER BY` 子句中使用 `Nullable` 类型的表达式，但强烈不建议这样做。要启用此功能，请打开 [allow&#95;nullable&#95;key](/zh/reference/settings/merge-tree-settings/allow#allow_nullable_key) 设置。对于 `ORDER BY` 子句中的 `NULL` 值，适用 [NULLS&#95;LAST](/zh/reference/statements/select/order-by#sorting-of-special-values) 原则。
 
-<div id="selecting-a-primary-key">
-  ### 选择主键
-</div>
+### 选择主键 {#selecting-a-primary-key}
 
 主键包含的列数没有明确限制。你可以根据数据结构，在主键中包含更多或更少的列。这可能会：
 
@@ -250,9 +226,7 @@ ClickHouse 不要求主键是唯一的。你可以插入多行具有相同主键
 
 如果要按初始顺序读取数据，请使用[单线程](/zh/reference/settings/session-settings/max-threads#max_threads) `SELECT` 查询。
 
-<div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
-  ### 选择与排序键不同的主键
-</div>
+### 选择与排序键不同的主键 {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
 可以指定一个不同于排序键的主键 (即一个表达式，其值会针对每个标记写入索引文件) 。排序键则是用于对数据 parts 中的行进行排序的表达式。在这种情况下，主键表达式 Tuple 必须是排序键表达式 Tuple 的前缀。
 
@@ -263,9 +237,7 @@ ClickHouse 不要求主键是唯一的。你可以插入多行具有相同主键
 
 对排序键执行 [ALTER](/zh/reference/statements/alter/skipping-index) 是一种轻量级操作，因为当新列同时添加到表和排序键中时，现有的数据 parts 不需要修改。由于旧排序键是新排序键的前缀，并且新添加的列中还没有数据，因此在修改表的那一刻，数据同时满足按旧排序键和新排序键排序。
 
-<div id="use-of-indexes-and-partitions-in-queries">
-  ### 在查询中使用索引和分区
-</div>
+### 在查询中使用索引和分区 {#use-of-indexes-and-partitions-in-queries}
 
 对于 `SELECT` 查询，ClickHouse 会分析是否能够使用索引。如果 `WHERE/PREWHERE` 子句中包含某个表达式 (无论是作为合取条件之一，还是整个子句本身) ，且该表达式表示等值或不等值比较，或者包含带固定前缀的 `IN` 或 `LIKE`，并且作用于主键或分区键中的列或表达式、这些列的某些部分重复函数，或这些表达式之间的逻辑关系，那么就可以使用索引。
 
@@ -312,9 +284,7 @@ SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 
 按月分区的键可以只读取包含相应日期范围的数据块。在这种情况下，一个数据块可能包含多个日期的数据 (最多可覆盖整整一个月) 。在一个块内，数据按主键排序，而主键的第一列不一定是日期。因此，如果查询仅包含日期条件，且未指定主键前缀，那么读取的数据会比只查询单个日期时更多。
 
-<div id="use-of-index-for-deterministic-expressions-in-primary-keys">
-  ### 在主键中为确定性表达式使用索引
-</div>
+### 在主键中为确定性表达式使用索引 {#use-of-index-for-deterministic-expressions-in-primary-keys}
 
 主键不仅可以包含列名，也可以包含表达式。这些表达式并不限于简单的函数链；只要是确定性的，它们就可以是任意的表达式树 (例如嵌套函数和复合表达式) 。
 
@@ -363,9 +333,7 @@ SELECT * FROM table WHERE p NOT IN ('abc', '12345');
 SELECT * FROM table WHERE NOT has(['abc', '12345'], p);
 ```
 
-<div id="use-of-index-for-partially-monotonic-primary-keys">
-  ### 部分单调主键的索引使用
-</div>
+### 部分单调主键的索引使用 {#use-of-index-for-partially-monotonic-primary-keys}
 
 例如，一个月中的日期在当月内构成[单调序列](https://en.wikipedia.org/wiki/Monotonic_function)，但如果时间跨度更长，就不再具有单调性。这就是部分单调序列。如果用户使用部分单调主键创建表，ClickHouse 仍会像往常一样创建稀疏索引。当用户从这类表中查询数据时，ClickHouse 会分析查询条件。如果用户要获取索引中两个索引标记之间的数据，并且这两个索引标记都位于同一个月内，那么在这种特定情况下，ClickHouse 可以使用索引，因为它能够计算查询参数与索引标记之间的距离。
 
@@ -373,9 +341,7 @@ SELECT * FROM table WHERE NOT has(['abc', '12345'], p);
 
 ClickHouse 不仅将这一逻辑用于“月中日期”这类序列，也适用于任何表示部分单调序列的主键。
 
-<div id="table_engine-mergetree-data_skipping-indexes">
-  ### 数据跳过索引
-</div>
+### 数据跳过索引 {#table_engine-mergetree-data_skipping-indexes}
 
 索引声明位于 `CREATE` 语句的 columns 部分。
 
@@ -432,9 +398,7 @@ INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
 
-<div id="skip-index-types">
-  ### 跳过索引类型
-</div>
+### 跳过索引类型 {#skip-index-types}
 
 `MergeTree` 表引擎支持以下类型的跳过索引。
 有关如何使用跳过索引来优化性能的更多信息，
@@ -448,9 +412,7 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 * [`text`](#text) 索引
 * [`vector_similarity`](#vector-similarity) 索引
 
-<div id="minmax">
-  #### MinMax 跳过索引
-</div>
+#### MinMax 跳过索引 {#minmax}
 
 对于每个索引粒度，都会存储表达式的最小值和最大值。
 (如果该表达式的类型为 `tuple`，则会分别存储元组中每个元素的最小值和最大值。)
@@ -459,9 +421,7 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 minmax
 ```
 
-<div id="set">
-  #### Set
-</div>
+#### Set {#set}
 
 对于每个索引粒度，最多存储指定表达式的 `max_rows` 个唯一值。
 `max_rows = 0` 表示“存储所有唯一值”。
@@ -470,9 +430,7 @@ minmax
 set(max_rows)
 ```
 
-<div id="bloom-filter">
-  #### 布隆过滤器
-</div>
+#### 布隆过滤器 {#bloom-filter}
 
 对于每个索引粒度，都会为指定列存储一个 [布隆过滤器](https://en.wikipedia.org/wiki/Bloom_filter)。
 
@@ -509,9 +467,7 @@ bloom_filter([false_positive_rate])
   对于 [`JSON`](/zh/reference/data-types/newjson) 数据类型，可以使用 [`JSONAllPaths`](/zh/reference/functions/regular-functions/json-functions#JSONAllPaths) 函数在路径集合上创建 bloom filter 索引。这样可以跳过不存在所查询 JSON 路径的粒度。详见 [JSON 的数据跳过索引](/zh/reference/data-types/newjson#data-skipping-indexes-for-json)。
 </Info>
 
-<div id="n-gram-bloom-filter">
-  #### N-gram 布隆过滤器 *(已弃用)*
-</div>
+#### N-gram 布隆过滤器 *(已弃用)* {#n-gram-bloom-filter}
 
 <Note>
   自 ClickHouse 26.2 版本起，随着 `text` 索引正式进入 GA，`ngrambf_v1` 索引已不再建议用于全文检索。
@@ -585,9 +541,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 当然，你也可以使用这些函数来为其他场景估算参数。
 上述函数参考了[这里](https://hur.st/bloomfilter)的布隆过滤器计算器。
 
-<div id="token-bloom-filter">
-  #### 标记布隆过滤器
-</div>
+#### 标记布隆过滤器 {#token-bloom-filter}
 
 <Note>
   自 ClickHouse 26.2 版本起，随着 `text` 索引进入正式可用 (GA) 阶段，`tokenbf_v1` 索引已不再推荐用于全文检索。
@@ -599,9 +553,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-<div id="sparse-grams-bloom-filter">
-  #### 稀疏 grams 布隆过滤器
-</div>
+#### 稀疏 grams 布隆过滤器 {#sparse-grams-bloom-filter}
 
 稀疏 grams 布隆过滤器与 `ngrambf_v1` 类似，但它使用的是[稀疏 grams 标记](/zh/reference/functions/regular-functions/string-functions#sparseGrams)，而非 ngrams。
 
@@ -609,21 +561,15 @@ tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-<div id="text">
-  ### 文本索引
-</div>
+### 文本索引 {#text}
 
 在分词后的字符串数据上构建倒排索引，以支持高效且具确定性的全文搜索。详见[此处](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
 
-<div id="vector-similarity">
-  #### 向量相似性
-</div>
+#### 向量相似性 {#vector-similarity}
 
 支持近似最近邻搜索，详见[此处](/zh/reference/engines/table-engines/mergetree-family/annindexes)。
 
-<div id="functions-support">
-  ### 函数支持
-</div>
+### 函数支持 {#functions-support}
 
 `WHERE` 子句中的条件包含对作用于列的函数调用。如果该列属于某个索引的一部分，ClickHouse 会在执行这些函数时尝试使用该索引。ClickHouse 对可使用索引的函数支持不同的子集。
 
@@ -632,7 +578,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 | 函数 (运算符) / 索引                                                                                                                       | 主键 | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
 | ----------------------------------------------------------------------------------------------------------------------------------- | -- | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
 | [等于 (=, ==)](/zh/reference/functions/regular-functions/comparison-functions#equals)                                                    | ✔  | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notEquals(!=, &lt;&gt;)](/zh/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔  | ✔      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [notEquals(!=, &lt;&gt;)](/zh/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔  | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [like](/zh/reference/functions/regular-functions/string-search-functions#like)                                                         | ✔  | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
 | [notLike](/zh/reference/functions/regular-functions/string-search-functions#notLike)                                                   | ✔  | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [match](/zh/reference/functions/regular-functions/string-search-functions#match)                                                       | ✗  | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
@@ -642,7 +588,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 | [multiSearchAnyUTF8](/zh/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                             | ✗  | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 | [multiMatchAny](/zh/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                       | ✗  | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 | [in](/zh/reference/functions/regular-functions/in-functions)                                                                           | ✔  | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notIn](/zh/reference/functions/regular-functions/in-functions)                                                                        | ✔  | ✔      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [notIn](/zh/reference/functions/regular-functions/in-functions)                                                                        | ✔  | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [less (`<`)](/zh/reference/functions/regular-functions/comparison-functions#less)                                                      | ✔  | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
 | [greater (`>`)](/zh/reference/functions/regular-functions/comparison-functions#greater)                                                | ✔  | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
 | [lessOrEquals (`<=`)](/zh/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                     | ✔  | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
@@ -687,9 +633,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
     * `NOT startsWith(s, 'test')`
 </Note>
 
-<div id="projections">
-  ## 投影
-</div>
+## 投影 {#projections}
 
 投影类似于 [materialized views](/zh/reference/statements/create/view)，但定义在分片级别。它们既提供一致性保证，也会在查询中自动使用。
 
@@ -699,9 +643,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 带有 [FINAL](/zh/reference/statements/select/from#final-modifier) 修饰符的 `SELECT` 语句不支持投影。
 
-<div id="projection-query">
-  ### 投影查询
-</div>
+### 投影查询 {#projection-query}
 
 投影查询用于定义投影。它会隐式地从父表中选择数据。
 **语法**
@@ -712,18 +654,14 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 
 可以使用 [ALTER](/zh/reference/statements/alter/projection) 语句修改或删除投影。
 
-<div id="projection-index">
-  ### 投影索引
-</div>
+### 投影索引 {#projection-index}
 
 投影索引通过提供一种轻量且显式的方式来定义投影级索引，扩展了投影子系统。
 从外部看，投影索引仍然属于投影，但语法更简洁、意图更明确：它定义的是专用于过滤的表达式，而不是用于提供 materialized 数据。
 在内部，投影索引不像常规投影那样按置换后的行顺序物化原始表。
 相反，这种置换会以数值置换列 `_part_offset` 的形式存储，即 `SELECT _part_offset ORDER BY <index_expr>`。
 
-<div id="projection-index-syntax">
-  #### 语法
-</div>
+#### 语法 {#projection-index-syntax}
 
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
@@ -744,9 +682,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-<div id="projection-index-types">
-  #### 索引类型
-</div>
+#### 索引类型 {#projection-index-types}
 
 当前支持：
 
@@ -754,31 +690,23 @@ ORDER BY id;
 
 该框架今后还可支持更多索引类型。
 
-<div id="projection-storage">
-  ### 投影存储
-</div>
+### 投影存储 {#projection-storage}
 
 投影存储在分片目录中。它类似于索引，但会包含一个子目录，用于存储匿名 `MergeTree` 表的分片。该表由投影的定义查询推导而来。如果存在 `GROUP BY` 子句，底层存储引擎就会变为 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree)，并且所有聚合函数都会转换为 `AggregateFunction`。如果存在 `ORDER BY` 子句，`MergeTree` 表会将其用作主键表达式。在合并过程中，投影分片会通过其存储引擎的合并例程进行合并。父表分片的校验和会与投影分片的校验和组合在一起。其他维护作业与跳过索引类似。
 
-<div id="projection-query-analysis">
-  ### 查询分析
-</div>
+### 查询分析 {#projection-query-analysis}
 
 1. 检查投影是否可用于回答给定的查询，也就是说，它产生的结果应与查询基表得到的结果相同。
 2. 选择最佳的可行匹配，即需要读取的粒度最少的匹配。
 3. 使用投影的查询管道会不同于使用原始 parts 的查询管道。如果某些 parts 中缺少投影，我们可以在运行时添加一个管道来即时对其进行“投影”。
 
-<div id="concurrent-data-access">
-  ## 并发数据访问
-</div>
+## 并发数据访问 {#concurrent-data-access}
 
 对于表的并发访问，我们采用多版本机制。换句话说，当表同时发生读取和更新时，读取的数据来自查询发起时当前的一组 parts。整个过程无需长时间加锁。插入操作不会影响读取操作。
 
 从表中读取数据会自动并行执行。
 
-<div id="table_engine-mergetree-ttl">
-  ## 列和表的 生存时间 (TTL)
-</div>
+## 列和表的 生存时间 (TTL) {#table_engine-mergetree-ttl}
 
 用于确定值的生存时间。
 
@@ -810,9 +738,7 @@ TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
 
-<div id="mergetree-column-ttl">
-  ### 列 生存时间 (TTL)
-</div>
+### 列 生存时间 (TTL) {#mergetree-column-ttl}
 
 当列中的值过期时，ClickHouse 会将其替换为该列数据类型的默认值。如果数据分区片段中该列的所有值都已过期，ClickHouse 会从文件系统中的该数据分区片段删除该列。
 
@@ -820,9 +746,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 **示例**
 
-<div id="creating-a-table-with-ttl">
-  #### 创建带 `TTL` 的表：
-</div>
+#### 创建带 `TTL` 的表： {#creating-a-table-with-ttl}
 
 ```sql
 CREATE TABLE tab
@@ -837,9 +761,7 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d;
 ```
 
-<div id="adding-ttl-to-a-column-of-an-existing-table">
-  #### 为现有表的列添加生存时间 (TTL)
-</div>
+#### 为现有表的列添加生存时间 (TTL) {#adding-ttl-to-a-column-of-an-existing-table}
 
 ```sql
 ALTER TABLE tab
@@ -847,9 +769,7 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 DAY;
 ```
 
-<div id="altering-ttl-of-the-column">
-  #### 修改列的生存时间 (TTL)
-</div>
+#### 修改列的生存时间 (TTL) {#altering-ttl-of-the-column}
 
 ```sql
 ALTER TABLE tab
@@ -857,9 +777,7 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 MONTH;
 ```
 
-<div id="mergetree-table-ttl">
-  ### 表生存时间 (TTL)
-</div>
+### 表生存时间 (TTL) {#mergetree-table-ttl}
 
 表可以包含一个用于删除过期行的表达式，以及多个用于在[磁盘或卷](#table_engine-mergetree-multiple-volumes)之间自动移动 分片 的表达式。当表中的行过期时，ClickHouse 会删除所有对应的行。对于 分片 的移动或重新压缩，某个 分片 中的所有行都必须满足 `TTL` 表达式的条件。
 
@@ -890,9 +808,7 @@ TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
 
 **示例**
 
-<div id="creating-a-table-with-ttl-1">
-  #### 创建带有 `TTL` 的表：
-</div>
+#### 创建带有 `TTL` 的表： {#creating-a-table-with-ttl-1}
 
 ```sql
 CREATE TABLE tab
@@ -908,9 +824,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-<div id="altering-ttl-of-the-table">
-  #### 修改表的 `TTL`：
-</div>
+#### 修改表的 `TTL`： {#altering-ttl-of-the-table}
 
 ```sql
 ALTER TABLE tab
@@ -931,9 +845,7 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
 
-<div id="creating-a-table-where-expired-rows-are-recompressed">
-  #### 创建表，并对过期行重新压缩：
-</div>
+#### 创建表，并对过期行重新压缩： {#creating-a-table-where-expired-rows-are-recompressed}
 
 ```sql
 CREATE TABLE table_for_recompression
@@ -964,9 +876,7 @@ ORDER BY (k1, k2)
 TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
-<div id="mergetree-removing-expired-data">
-  ### 删除过期数据
-</div>
+### 删除过期数据 {#mergetree-removing-expired-data}
 
 带有已过期 `TTL` (生存时间 (TTL)) 的数据会在 ClickHouse 合并数据 parts 时被删除。
 
@@ -978,9 +888,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 * [ttl&#95;only&#95;drop&#95;parts](/zh/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) 设置
 
-<div id="disk-types">
-  ## 磁盘类型
-</div>
+## 磁盘类型 {#disk-types}
 
 除了本地块设备外，ClickHouse 还支持以下存储类型：
 
@@ -993,13 +901,9 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 * [`s3_plain` 用于备份到 S3](/zh/concepts/features/backup-restore/local-disk)
 * [`s3_plain_rewritable` 用于存储在 S3 中的不可变非复制表](/zh/concepts/features/configuration/server-config/storing-data#s3-plain-rewritable-storage)
 
-<div id="table_engine-mergetree-multiple-volumes">
-  ## 使用多个块设备存储数据
-</div>
+## 使用多个块设备存储数据 {#table_engine-mergetree-multiple-volumes}
 
-<div id="introduction">
-  ### 简介
-</div>
+### 简介 {#introduction}
 
 `MergeTree` 家族表引擎可以将数据存储在多个块设备上。例如，当某个表的数据天然分为“热”数据和“冷”数据时，这会很有用。较新的数据会被频繁查询，但只占用少量空间。相反，呈长尾分布的历史数据很少被查询。如果有多个磁盘可用，“热”数据可以放在高速磁盘上 (例如 NVMe SSD 或内存中) ，而“冷”数据则放在相对较慢的磁盘上 (例如 HDD) 。
 
@@ -1007,9 +911,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 数据分区片段是 `MergeTree` 引擎表中最小的可移动单元。一个数据分区片段中的数据存储在同一个磁盘上。parts 既可以在后台于磁盘之间移动 (根据用户设置) ，也可以通过 [ALTER](/zh/reference/statements/alter/partition) 查询移动。
 
-<div id="terms">
-  ### 术语
-</div>
+### 术语 {#terms}
 
 * 磁盘 — 挂载到文件系统上的块设备。
 * 默认磁盘 — 用于存储 [path](/zh/reference/settings/server-settings/settings/other#path) 服务器设置中指定路径的磁盘。
@@ -1018,9 +920,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 上述实体的名称可在系统表 [system.storage&#95;policies](/zh/reference/system-tables/storage_policies) 和 [system.disks](/zh/reference/system-tables/disks) 中找到。要为某个表应用已配置的存储策略，请使用 `MergeTree` 引擎家族表的 `storage_policy` 设置。
 
-<div id="table_engine-mergetree-multiple-volumes_configure">
-  ### 配置
-</div>
+### 配置 {#table_engine-mergetree-multiple-volumes_configure}
 
 磁盘、卷和存储策略应在 `<storage_configuration>` 标签内声明，并放在 `config.d` 目录中的某个文件中。
 
@@ -1179,9 +1079,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 执行数据 parts 后台移动的线程数可以通过 [background&#95;move&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_move_pool_size) 设置进行调整。
 
-<div id="details">
-  ### 详细说明
-</div>
+### 详细说明 {#details}
 
 对于 `MergeTree` 表，数据会通过不同方式写入磁盘：
 
@@ -1209,9 +1107,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 用户可以使用 [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod) setting，将新的大 parts 以均衡方式分配到某个 [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) 卷的不同磁盘上。
 
-<div id="table_engine-mergetree-s3">
-  ## 使用外部存储来存储数据
-</div>
+## 使用外部存储来存储数据 {#table_engine-mergetree-s3}
 
 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族表引擎可以通过类型分别为 `s3`、`azure_blob_storage`、`hdfs` 的磁盘，将数据存储到 `S3`、`AzureBlobStorage` 和 `HDFS` 中。更多详情请参见[配置外部存储选项](/zh/concepts/features/configuration/server-config/storing-data#configuring-external-storage)。
 
@@ -1260,9 +1156,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 另见[配置外部存储选项](/zh/concepts/features/configuration/server-config/storing-data#configuring-external-storage)。
 
-<div id="s3-multiple-volumes">
-  ### 在多个卷中使用 S3 磁盘
-</div>
+### 在多个卷中使用 S3 磁盘 {#s3-multiple-volumes}
 
 S3 (以及其他对象存储) 磁盘可像本地磁盘一样用于多磁盘和多卷存储策略。这样，你就可以在单个卷内将数据分布到多个 S3 存储桶中 (类似 JBOD) ，或者使用 S3 卷来设置分层存储策略。
 
@@ -1341,9 +1235,7 @@ S3 (以及其他对象存储) 磁盘可像本地磁盘一样用于多磁盘和�
   ClickHouse 22.3 到 22.7 版本使用不同的缓存配置；如果您使用的是其中一个版本，请参阅 [using local cache](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)。
 </Info>
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_part` — 分片 的名称。
 * `_part_index` — 该 分片 在查询结果中的顺序索引。
@@ -1359,9 +1251,7 @@ S3 (以及其他对象存储) 磁盘可像本地磁盘一样用于多磁盘和�
 * `_block_offset` — 在插入时分配给该行的原始块内行号；启用设置 `enable_block_offset_column` 后，在合并时会保留。
 * `_disk_name` — 用于存储的磁盘名称。
 
-<div id="column-statistics">
-  ## 列统计信息
-</div>
+## 列统计信息 {#column-statistics}
 
 对于 `*MergeTree*` 家族的表，统计信息是在 `CREATE` 查询的 columns 部分中声明的：
 
@@ -1386,9 +1276,7 @@ ALTER TABLE tab DROP STATISTICS a;
 
 只有启用 `set use_statistics = 1` 后，才能将其用于 prewhere 优化。
 
-<div id="part-pruning-with-statistics">
-  #### 利用统计信息进行分片裁剪
-</div>
+#### 利用统计信息进行分片裁剪 {#part-pruning-with-statistics}
 
 启用 `use_statistics_for_part_pruning` 后，即可使用统计信息进行分片裁剪。
 目前，只有 `basic` 统计信息 (以及已弃用的 `minmax` 统计信息) 支持分片裁剪。为某一列定义此类统计信息后，ClickHouse 会跟踪该列在每个数据分片中的最小值和最大值。
@@ -1422,9 +1310,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 -- The output will show "Parts: 1/2" indicating one part was pruned
 ```
 
-<div id="available-types-of-column-statistics">
-  ### 可用的列统计信息类型
-</div>
+### 可用的列统计信息类型 {#available-types-of-column-statistics}
 
 * `basic`
 
@@ -1466,9 +1352,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) 草图，可提供列中各个值出现频率的近似计数。
 
-<div id="supported-data-types">
-  ### 支持的数据类型
-</div>
+### 支持的数据类型 {#supported-data-types}
 
 |             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String 或 FixedString | 其他任意类型        |
 | ----------- | -------------------------------------------------- | ---- | -------------------- | ------------- |
@@ -1481,9 +1365,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 上述所有类型还支持所列类型的 `Nullable` 和 `LowCardinality(Nullable)` 包装器。`basic` 还可用于任何其他类型 (包括 `Array`、`Tuple` 和 `Map` 等复合类型) ；对于这些类型，它仅统计默认值计数。
 
-<div id="supported-operations">
-  ### 支持的操作
-</div>
+### 支持的操作 {#supported-operations}
 
 |             | 等值过滤器 (==) | 范围过滤器 (`>, >=, <, <=`) |
 | ----------- | ---------- | ---------------------- |
@@ -1504,9 +1386,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 (用于估算平均字符串长度) 以及默认值/`NULL` 的数量；它不用于范围过滤器或
 分片裁剪。
 
-<div id="column-level-settings">
-  ## 列级设置
-</div>
+## 列级设置 {#column-level-settings}
 
 某些 MergeTree 设置可以在列级别进行覆盖：
 

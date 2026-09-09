@@ -301,6 +301,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 CREATE USER john GRANTEES jack;
 ```
 
+أنشئ حساب المستخدم `john` مع قاعدة بيانات افتراضية:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` يترك قاعدة البيانات الافتراضية غير محددة. لاستخدام قاعدة بيانات باسم `NONE`، ضع اسمها بين علامتَي backtick:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
 استخدم معلمة استعلام لإنشاء حساب المستخدم `john`:
 
 ```sql

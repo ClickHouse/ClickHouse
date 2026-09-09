@@ -22,7 +22,7 @@ doc_type: 'reference'
 여러 샘플의 타임스탬프가 같으면 가장 큰 값을 가진 샘플 하나만 사용됩니다. NaN 값은 다른 모든 값보다 우선순위가 낮으므로, 해당 타임스탬프의 모든 샘플이 NaN인 경우에만 NaN 값이 사용됩니다.
 
 <Note>
-  이 함수는 실험적 기능이므로 `allow_experimental_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
+  이 함수는 비공개 프리뷰 기능이므로 `enable_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
 </Note>
 
 **구문**
@@ -47,7 +47,7 @@ timeSeriesGroupArray(samples)
 **개별 값을 사용한 기본 사용법**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -70,7 +70,7 @@ FROM
 **동일한 크기의 배열로 여러 개의 타임스탬프와 값을 전달하기**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

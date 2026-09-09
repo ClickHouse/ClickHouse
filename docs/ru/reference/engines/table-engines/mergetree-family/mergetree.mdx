@@ -31,9 +31,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
   Несмотря на похожее название, движок [Merge](/ru/reference/engines/table-engines/special/merge) отличается от таблиц семейства `*MergeTree`.
 </Note>
 
-<div id="table_engine-mergetree-creating-a-table">
-  ## Создание таблиц
-</div>
+## Создание таблиц {#table_engine-mergetree-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -60,21 +58,15 @@ ORDER BY expr
 
 Подробное описание параметров см. в описании оператора [CREATE TABLE](/ru/reference/statements/create/table)
 
-<div id="mergetree-query-clauses">
-  ### Секции запроса
-</div>
+### Секции запроса {#mergetree-query-clauses}
 
-<div id="engine">
-  #### ENGINE
-</div>
+#### ENGINE {#engine}
 
 `ENGINE` — имя и параметры движка. `ENGINE = MergeTree()`. У движка `MergeTree` нет параметров.
 
 <a id="order_by" />
 
-<div id="order-by">
-  #### ORDER BY
-</div>
+#### ORDER BY {#order-by}
 
 `ORDER BY` — ключ сортировки.
 
@@ -85,26 +77,20 @@ ORDER BY expr
 Если сортировка не нужна, можно использовать синтаксис `ORDER BY tuple()`.
 Либо, если настройка `create_table_empty_primary_key_by_default` включена, в операторы `CREATE TABLE` неявно добавляется `ORDER BY ()`. См. [Выбор первичного ключа](#selecting-a-primary-key).
 
-<div id="partition-by">
-  #### PARTITION BY
-</div>
+#### PARTITION BY {#partition-by}
 
 `PARTITION BY` — [ключ партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Необязателен. В большинстве случаев ключ партиционирования не нужен, а если партиционирование всё же требуется, то, как правило, ключ партиционирования с детализацией мельче месяца тоже не нужен. Партиционирование не ускоряет запросы (в отличие от выражения ORDER BY). Никогда не используйте слишком мелкое партиционирование. Не разбивайте данные на партиции по идентификаторам или именам клиентов (вместо этого сделайте идентификатор или имя клиента первым столбцом в выражении ORDER BY).
 
 Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](/ru/reference/data-types/date). Имена партиций здесь имеют формат `"YYYYMM"`.
 
-<div id="primary-key">
-  #### PRIMARY KEY
-</div>
+#### PRIMARY KEY {#primary-key}
 
 `PRIMARY KEY` — первичный ключ, если он [отличается от ключа сортировки](#choosing-a-primary-key-that-differs-from-the-sorting-key). Необязателен.
 
 При указании ключа сортировки (с помощью предложения `ORDER BY`) первичный ключ задаётся неявно.
 Обычно отдельно указывать первичный ключ помимо ключа сортировки не требуется.
 
-<div id="sample-by">
-  #### SAMPLE BY
-</div>
+#### SAMPLE BY {#sample-by}
 
 `SAMPLE BY` — выражение для семплирования. Необязательный параметр.
 
@@ -113,9 +99,7 @@ ORDER BY expr
 
 Пример: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-<div id="ttl">
-  #### TTL
-</div>
+#### TTL {#ttl}
 
 `TTL` — список правил, задающих срок хранения строк и логику автоматического перемещения частей [между дисками и томами](#table_engine-mergetree-multiple-volumes). Необязательный параметр.
 
@@ -125,9 +109,7 @@ ORDER BY expr
 
 Подробнее см. в разделе [TTL для столбцов и таблиц](#table_engine-mergetree-ttl)
 
-<div id="settings">
-  #### НАСТРОЙКИ
-</div>
+#### НАСТРОЙКИ {#settings}
 
 См. [настройки MergeTree](/ru/reference/settings/merge-tree-settings).
 
@@ -175,9 +157,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
   Движок `MergeTree` настраивается так же, как и в приведённом выше примере для основного способа настройки движка.
 </details>
 
-<div id="mergetree-data-storage">
-  ## Хранение данных
-</div>
+## Хранение данных {#mergetree-data-storage}
 
 Таблица состоит из частей данных, отсортированных по первичному ключу.
 
@@ -193,9 +173,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 Размер гранулы ограничивается настройками `index_granularity` и `index_granularity_bytes` движка таблицы. Число строк в грануле находится в диапазоне `[1, index_granularity]` и зависит от размера строк. Размер гранулы может превышать `index_granularity_bytes`, если размер одной строки больше значения этой настройки. В этом случае размер гранулы равен размеру строки.
 
-<div id="primary-keys-and-indexes-in-queries">
-  ## Первичные ключи и индексы в запросах
-</div>
+## Первичные ключи и индексы в запросах {#primary-keys-and-indexes-in-queries}
 
 Рассмотрим в качестве примера первичный ключ `(CounterID, Date)`. В этом случае сортировку и индекс можно представить следующим образом:
 
@@ -224,9 +202,7 @@ ClickHouse не требует уникального первичного кл�
 
 Вы можете использовать выражения типа `Nullable` в предложениях `PRIMARY KEY` и `ORDER BY`, но делать это настоятельно не рекомендуется. Чтобы включить эту возможность, включите настройку [allow&#95;nullable&#95;key](/ru/reference/settings/merge-tree-settings/allow#allow_nullable_key). Для значений `NULL` в предложении `ORDER BY` применяется принцип [NULLS&#95;LAST](/ru/reference/statements/select/order-by#sorting-of-special-values).
 
-<div id="selecting-a-primary-key">
-  ### Выбор первичного ключа
-</div>
+### Выбор первичного ключа {#selecting-a-primary-key}
 
 Количество столбцов в первичном ключе явно не ограничено. В зависимости от структуры данных вы можете включить в первичный ключ больше или меньше столбцов. Это может:
 
@@ -251,9 +227,7 @@ ClickHouse не требует уникального первичного кл�
 
 Чтобы выбирать данные в исходном порядке, используйте [однопоточные](/ru/reference/settings/session-settings/max-threads#max_threads) запросы `SELECT`.
 
-<div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
-  ### Выбор первичного ключа, отличающегося от ключа сортировки
-</div>
+### Выбор первичного ключа, отличающегося от ключа сортировки {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
 Можно указать первичный ключ (выражение со значениями, которые записываются в индексный файл для каждой метки), отличный от ключа сортировки (выражения для сортировки строк в частях данных). В этом случае кортеж выражения первичного ключа должен быть префиксом кортежа выражения ключа сортировки.
 
@@ -264,9 +238,7 @@ ClickHouse не требует уникального первичного кл�
 
 [ALTER](/ru/reference/statements/alter/skipping-index) ключа сортировки — лёгкая операция, потому что, когда новый столбец одновременно добавляется в таблицу и в ключ сортировки, существующие части данных не нужно изменять. Поскольку старый ключ сортировки является префиксом нового ключа сортировки и в только что добавленном столбце ещё нет данных, в момент изменения таблицы данные уже отсортированы и по старому, и по новому ключу сортировки.
 
-<div id="use-of-indexes-and-partitions-in-queries">
-  ### Использование индексов и партиций в запросах
-</div>
+### Использование индексов и партиций в запросах {#use-of-indexes-and-partitions-in-queries}
 
 Для запросов `SELECT` ClickHouse анализирует, можно ли использовать индекс. Индекс может быть использован, если в условии `WHERE/PREWHERE` есть выражение (либо как один из элементов конъюнкции, либо целиком), представляющее собой операцию сравнения на равенство или неравенство, либо если в нём есть `IN` или `LIKE` с фиксированным префиксом для столбцов или выражений, входящих в первичный ключ или ключ партиционирования, а также для некоторых частично повторяющихся функций от этих столбцов или логических связей этих выражений.
 
@@ -313,9 +285,7 @@ SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 
 Ключ партиционирования по месяцам позволяет считывать только те блоки данных, которые содержат даты из нужного диапазона. В этом случае блок данных может содержать данные для множества дат (вплоть до целого месяца). Внутри блока данные сортируются по первичному ключу, и дата может не быть в нём первым столбцом. Поэтому запрос только с условием по дате, без указания префикса первичного ключа, приведёт к чтению большего объёма данных, чем в случае с одной датой.
 
-<div id="use-of-index-for-deterministic-expressions-in-primary-keys">
-  ### Использование индекса для детерминированных выражений в первичных ключах
-</div>
+### Использование индекса для детерминированных выражений в первичных ключах {#use-of-index-for-deterministic-expressions-in-primary-keys}
 
 Первичный ключ может содержать не только имена столбцов, но и выражения. Эти выражения не ограничиваются простыми цепочками функций: это могут быть произвольные деревья выражений (например, вложенные функции и составные выражения), если они детерминированы.
 
@@ -364,9 +334,7 @@ SELECT * FROM table WHERE p NOT IN ('abc', '12345');
 SELECT * FROM table WHERE NOT has(['abc', '12345'], p);
 ```
 
-<div id="use-of-index-for-partially-monotonic-primary-keys">
-  ### Использование индекса для частично-монотонных первичных ключей
-</div>
+### Использование индекса для частично-монотонных первичных ключей {#use-of-index-for-partially-monotonic-primary-keys}
 
 Рассмотрим, например, дни месяца. В пределах одного месяца они образуют [монотонную последовательность](https://en.wikipedia.org/wiki/Monotonic_function), но на более длительных промежутках уже не являются монотонными. Это частично-монотонная последовательность. Если пользователь создает таблицу с частично-монотонным первичным ключом, ClickHouse, как обычно, создает разреженный индекс. При выборке данных из такой таблицы ClickHouse анализирует условия запроса. Если нужно получить данные между двумя метками индекса и обе эти метки находятся в пределах одного месяца, ClickHouse может использовать индекс в этом конкретном случае, поскольку может вычислить расстояние между параметрами запроса и метками индекса.
 
@@ -374,9 +342,7 @@ ClickHouse не может использовать индекс, если зн�
 
 ClickHouse применяет эту логику не только к последовательностям дней месяца, но и к любому первичному ключу, представляющему собой частично-монотонную последовательность.
 
-<div id="table_engine-mergetree-data_skipping-indexes">
-  ### Индексы пропуска данных
-</div>
+### Индексы пропуска данных {#table_engine-mergetree-data_skipping-indexes}
 
 Объявление индекса находится в разделе столбцов запроса `CREATE`.
 
@@ -433,9 +399,7 @@ INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
 
-<div id="skip-index-types">
-  ### Типы индексов пропуска данных
-</div>
+### Типы индексов пропуска данных {#skip-index-types}
 
 Движок таблицы `MergeTree` поддерживает следующие типы индексов пропуска данных.
 Дополнительные сведения об использовании индексов пропуска данных для оптимизации производительности
@@ -449,9 +413,7 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 * индекс [`text`](#text)
 * индекс [`vector_similarity`](#vector-similarity)
 
-<div id="minmax">
-  #### Индекс пропуска данных MinMax
-</div>
+#### Индекс пропуска данных MinMax {#minmax}
 
 Для каждой гранулы индекса хранятся минимальное и максимальное значения выражения.
 (Если выражение имеет тип `tuple`, для каждого элемента кортежа хранятся минимальное и максимальное значения.)
@@ -460,9 +422,7 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 minmax
 ```
 
-<div id="set">
-  #### Set
-</div>
+#### Set {#set}
 
 Для каждой гранулы индекса хранится не более `max_rows` уникальных значений указанного выражения.
 `max_rows = 0` означает &quot;хранить все уникальные значения&quot;.
@@ -471,9 +431,7 @@ minmax
 set(max_rows)
 ```
 
-<div id="bloom-filter">
-  #### Bloom-фильтр
-</div>
+#### Bloom-фильтр {#bloom-filter}
 
 Для каждой гранулы индекса хранится [bloom-фильтр](https://en.wikipedia.org/wiki/Bloom_filter) для указанных столбцов.
 
@@ -510,9 +468,7 @@ bloom_filter([false_positive_rate])
   Для типа данных [`JSON`](/ru/reference/data-types/newjson) можно создать bloom-фильтр индекс по набору путей с помощью функции [`JSONAllPaths`](/ru/reference/functions/regular-functions/json-functions#JSONAllPaths). Это позволяет пропускать гранулы, в которых отсутствует запрашиваемый JSON-путь. Подробности см. в разделе [Индексы пропуска данных для JSON](/ru/reference/data-types/newjson#data-skipping-indexes-for-json).
 </Info>
 
-<div id="n-gram-bloom-filter">
-  #### N-граммный bloom-фильтр *(Устарело)*
-</div>
+#### N-граммный bloom-фильтр *(Устарело)* {#n-gram-bloom-filter}
 
 <Note>
   Начиная с ClickHouse 26.2, когда индекс `text` получил статус General Availability (GA), индекс `ngrambf_v1` больше не рекомендуется использовать для полнотекстового поиска.
@@ -586,9 +542,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 Конечно, вы также можете использовать эти функции, чтобы оценить параметры для других случаев.
 Приведённые выше функции отсылают к калькулятору bloom-фильтра [здесь](https://hur.st/bloomfilter).
 
-<div id="token-bloom-filter">
-  #### Токенный bloom-фильтр
-</div>
+#### Токенный bloom-фильтр {#token-bloom-filter}
 
 <Note>
   Начиная с версии ClickHouse 26.2, в которой индекс `text` стал общедоступным (GA), индекс `tokenbf_v1` больше не рекомендуется для полнотекстового поиска.
@@ -600,9 +554,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-<div id="sparse-grams-bloom-filter">
-  #### Bloom-фильтр для sparse grams
-</div>
+#### Bloom-фильтр для sparse grams {#sparse-grams-bloom-filter}
 
 Bloom-фильтр для sparse grams похож на `ngrambf_v1`, но использует [токены sparse grams](/ru/reference/functions/regular-functions/string-functions#sparseGrams) вместо n-грамм.
 
@@ -610,21 +562,15 @@ Bloom-фильтр для sparse grams похож на `ngrambf_v1`, но исп
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-<div id="text">
-  ### Текстовый индекс
-</div>
+### Текстовый индекс {#text}
 
 Создаёт инвертированный индекс по токенизированным строковым данным, обеспечивая эффективный и детерминированный полнотекстовый поиск. Подробности см. [здесь](/ru/reference/engines/table-engines/mergetree-family/textindexes).
 
-<div id="vector-similarity">
-  #### Векторное сходство
-</div>
+#### Векторное сходство {#vector-similarity}
 
 Поддерживается приближенный поиск ближайших соседей; подробности см. [здесь](/ru/reference/engines/table-engines/mergetree-family/annindexes).
 
-<div id="functions-support">
-  ### Поддержка функций
-</div>
+### Поддержка функций {#functions-support}
 
 Условия в предложении `WHERE` содержат вызовы функций, работающих со столбцами. Если столбец входит в индекс, ClickHouse пытается использовать этот индекс при выполнении этих функций. ClickHouse поддерживает разные подмножества функций для использования индексов.
 
@@ -633,7 +579,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 | Функция (оператор) / индекс                                                                                                         | первичный ключ | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
 | ----------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
 | [равно (=, ==)](/ru/reference/functions/regular-functions/comparison-functions#equals)                                                 | ✔              | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notEquals(!=, &lt;&gt;)](/ru/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔              | ✔      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [notEquals(!=, &lt;&gt;)](/ru/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔              | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [like](/ru/reference/functions/regular-functions/string-search-functions#like)                                                         | ✔              | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
 | [notLike](/ru/reference/functions/regular-functions/string-search-functions#notLike)                                                   | ✔              | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [match](/ru/reference/functions/regular-functions/string-search-functions#match)                                                       | ✗              | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
@@ -643,7 +589,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 | [multiSearchAnyUTF8](/ru/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                             | ✗              | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 | [multiMatchAny](/ru/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                       | ✗              | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 | [in](/ru/reference/functions/regular-functions/in-functions)                                                                           | ✔              | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notIn](/ru/reference/functions/regular-functions/in-functions)                                                                        | ✔              | ✔      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [notIn](/ru/reference/functions/regular-functions/in-functions)                                                                        | ✔              | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [less (`<`)](/ru/reference/functions/regular-functions/comparison-functions#less)                                                      | ✔              | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
 | [greater (`>`)](/ru/reference/functions/regular-functions/comparison-functions#greater)                                                | ✔              | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
 | [lessOrEquals (`<=`)](/ru/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                     | ✔              | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
@@ -688,9 +634,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
     * `NOT startsWith(s, 'test')`
 </Note>
 
-<div id="projections">
-  ## Проекции
-</div>
+## Проекции {#projections}
 
 Проекции похожи на [materialized views](/ru/reference/statements/create/view), но определяются на уровне частей данных. Они обеспечивают гарантии согласованности и автоматически используются в запросах.
 
@@ -700,9 +644,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 Проекции не поддерживаются в запросах `SELECT` с модификатором [FINAL](/ru/reference/statements/select/from#final-modifier).
 
-<div id="projection-query">
-  ### Запрос проекции
-</div>
+### Запрос проекции {#projection-query}
 
 Запрос проекции определяет проекцию. Он неявно выбирает данные из родительской таблицы.
 **Синтаксис**
@@ -713,18 +655,14 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 
 Проекции можно изменять или удалять с помощью оператора [ALTER](/ru/reference/statements/alter/projection).
 
-<div id="projection-index">
-  ### Индексы проекций
-</div>
+### Индексы проекций {#projection-index}
 
 Индексы проекций расширяют подсистему проекций, предоставляя лёгкий и явный способ определять индексы на уровне проекций.
 Внешне индекс проекции по-прежнему остаётся проекцией, но с упрощённым синтаксисом и более ясным назначением: он определяет выражение, предназначенное для фильтрации, а не для хранения материализованных данных.
 Внутри индекс проекции не материализует исходную таблицу в переставленном порядке строк, как обычная проекция.
 Вместо этого перестановка хранится в виде числового столбца `_part_offset`, то есть `SELECT _part_offset ORDER BY <index_expr>`.
 
-<div id="projection-index-syntax">
-  #### Синтаксис
-</div>
+#### Синтаксис {#projection-index-syntax}
 
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
@@ -745,9 +683,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-<div id="projection-index-types">
-  #### Типы индексов
-</div>
+#### Типы индексов {#projection-index-types}
 
 В настоящее время поддерживаются:
 
@@ -755,31 +691,23 @@ ORDER BY id;
 
 В будущем этот механизм позволит добавлять новые типы индексов.
 
-<div id="projection-storage">
-  ### Хранение проекций
-</div>
+### Хранение проекций {#projection-storage}
 
 Проекции хранятся внутри каталога части. Это похоже на индекс, но здесь есть подкаталог, в котором хранится часть анонимной таблицы `MergeTree`. Эта таблица создается на основе запроса, задающего определение проекции. Если есть секция `GROUP BY`, нижележащий движок хранения становится [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree), а все агрегатные функции преобразуются в `AggregateFunction`. Если есть секция `ORDER BY`, таблица `MergeTree` использует ее как выражение первичного ключа. При слиянии часть проекции объединяется с помощью процедуры слияния соответствующего хранилища. Контрольная сумма части родительской таблицы объединяется с контрольной суммой части проекции. Остальные задачи обслуживания аналогичны индексам пропуска.
 
-<div id="projection-query-analysis">
-  ### Анализ запроса
-</div>
+### Анализ запроса {#projection-query-analysis}
 
 1. Проверьте, можно ли использовать проекцию для выполнения данного запроса, то есть даст ли она тот же результат, что и запрос к базовой таблице.
 2. Выберите наилучший подходящий вариант, для которого требуется прочитать наименьшее число гранул.
 3. Конвейер запроса, использующий проекции, будет отличаться от того, который использует исходные части. Если в некоторых частях проекция отсутствует, можно добавить конвейер, который построит её на лету.
 
-<div id="concurrent-data-access">
-  ## Одновременный доступ к данным
-</div>
+## Одновременный доступ к данным {#concurrent-data-access}
 
 Для одновременного доступа к таблице используется многоверсионность. Иными словами, когда таблицу одновременно читают и обновляют, данные читаются из набора частей, актуального на момент выполнения запроса. Длительные блокировки отсутствуют. Операции вставки не мешают чтению.
 
 Чтение из таблицы автоматически распараллеливается.
 
-<div id="table_engine-mergetree-ttl">
-  ## TTL для столбцов и таблиц
-</div>
+## TTL для столбцов и таблиц {#table_engine-mergetree-ttl}
 
 Определяет срок хранения значений.
 
@@ -811,9 +739,7 @@ TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
 
-<div id="mergetree-column-ttl">
-  ### TTL для столбца
-</div>
+### TTL для столбца {#mergetree-column-ttl}
 
 Когда срок хранения значений в столбце истекает, ClickHouse заменяет их значениями по умолчанию для типа данных этого столбца. Если в части данных истекает срок хранения всех значений столбца, ClickHouse удаляет этот столбец из части данных в файловой системе.
 
@@ -821,9 +747,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 **Примеры**
 
-<div id="creating-a-table-with-ttl">
-  #### Создание таблицы с `TTL`:
-</div>
+#### Создание таблицы с `TTL`: {#creating-a-table-with-ttl}
 
 ```sql
 CREATE TABLE tab
@@ -838,9 +762,7 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d;
 ```
 
-<div id="adding-ttl-to-a-column-of-an-existing-table">
-  #### Добавление TTL к столбцу существующей таблицы
-</div>
+#### Добавление TTL к столбцу существующей таблицы {#adding-ttl-to-a-column-of-an-existing-table}
 
 ```sql
 ALTER TABLE tab
@@ -848,9 +770,7 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 DAY;
 ```
 
-<div id="altering-ttl-of-the-column">
-  #### Изменение TTL для столбца
-</div>
+#### Изменение TTL для столбца {#altering-ttl-of-the-column}
 
 ```sql
 ALTER TABLE tab
@@ -858,9 +778,7 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 MONTH;
 ```
 
-<div id="mergetree-table-ttl">
-  ### TTL таблицы
-</div>
+### TTL таблицы {#mergetree-table-ttl}
 
 Таблица может иметь выражение для удаления строк с истёкшим TTL и несколько выражений для автоматического перемещения частей между [дисками или томами](#table_engine-mergetree-multiple-volumes). Когда у строк в таблице истекает TTL, ClickHouse удаляет все соответствующие строки. Для перемещения или повторного сжатия части необходимо, чтобы все её строки удовлетворяли условиям выражения `TTL`.
 
@@ -891,9 +809,7 @@ TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
 
 **Примеры**
 
-<div id="creating-a-table-with-ttl">
-  #### Создание таблицы с `TTL`:
-</div>
+#### Создание таблицы с `TTL`: {#creating-a-table-with-ttl-1}
 
 ```sql
 CREATE TABLE tab
@@ -909,9 +825,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-<div id="altering-ttl-of-the-table">
-  #### Изменение `TTL` у таблицы:
-</div>
+#### Изменение `TTL` у таблицы: {#altering-ttl-of-the-table}
 
 ```sql
 ALTER TABLE tab
@@ -932,9 +846,7 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
 
-<div id="creating-a-table-where-expired-rows-are-recompressed">
-  #### Создание таблицы, в которой для истёкших строк выполняется повторное сжатие:
-</div>
+#### Создание таблицы, в которой для истёкших строк выполняется повторное сжатие: {#creating-a-table-where-expired-rows-are-recompressed}
 
 ```sql
 CREATE TABLE table_for_recompression
@@ -965,9 +877,7 @@ ORDER BY (k1, k2)
 TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
-<div id="mergetree-removing-expired-data">
-  ### Удаление устаревших данных
-</div>
+### Удаление устаревших данных {#mergetree-removing-expired-data}
 
 Данные с истёкшим `TTL` удаляются, когда ClickHouse выполняет слияние частей данных.
 
@@ -979,9 +889,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 * настройка [ttl&#95;only&#95;drop&#95;parts](/ru/reference/settings/merge-tree-settings/other#ttl_only_drop_parts)
 
-<div id="disk-types">
-  ## Типы дисков
-</div>
+## Типы дисков {#disk-types}
 
 Помимо локальных блочных устройств, ClickHouse поддерживает следующие типы хранилищ:
 
@@ -994,13 +902,9 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 * [`s3_plain` для резервных копий в S3](/ru/concepts/features/backup-restore/local-disk)
 * [`s3_plain_rewritable` для неизменяемых нереплицируемых таблиц в S3](/ru/concepts/features/configuration/server-config/storing-data#s3-plain-rewritable-storage)
 
-<div id="table_engine-mergetree-multiple-volumes">
-  ## Использование нескольких блочных устройств для хранения данных
-</div>
+## Использование нескольких блочных устройств для хранения данных {#table_engine-mergetree-multiple-volumes}
 
-<div id="introduction">
-  ### Введение
-</div>
+### Введение {#introduction}
 
 Движки таблиц семейства `MergeTree` могут хранить данные на нескольких блочных устройствах. Например, это может быть полезно, когда данные определённой таблицы естественным образом делятся на «горячие» и «холодные». Самые свежие данные запрашиваются регулярно, но занимают сравнительно немного места. Напротив, исторические данные с длинным хвостом запрашиваются редко. Если доступно несколько дисков, «горячие» данные можно размещать на быстрых дисках (например, NVMe SSD или в памяти), а «холодные» — на относительно медленных (например, HDD).
 
@@ -1008,9 +912,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 Часть — это минимальная перемещаемая единица для таблиц с движком `MergeTree`. Данные, относящиеся к одной части, хранятся на одном диске. Части могут перемещаться между дисками в фоновом режиме (в соответствии с пользовательскими настройками), а также с помощью запросов [ALTER](/ru/reference/statements/alter/partition).
 
-<div id="terms">
-  ### Термины
-</div>
+### Термины {#terms}
 
 * Диск — блочное устройство, смонтированное в файловую систему.
 * Диск по умолчанию — диск, соответствующий пути, указанному в настройке сервера [path](/ru/reference/settings/server-settings/settings/other#path).
@@ -1019,9 +921,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 Имена, присвоенные описанным объектам, можно найти в системных таблицах [system.storage&#95;policies](/ru/reference/system-tables/storage_policies) и [system.disks](/ru/reference/system-tables/disks). Чтобы назначить таблице одну из настроенных политик хранения, используйте настройку `storage_policy` таблиц семейства движков `MergeTree`.
 
-<div id="table_engine-mergetree-multiple-volumes_configure">
-  ### Конфигурация
-</div>
+### Конфигурация {#table_engine-mergetree-multiple-volumes_configure}
 
 Диски, тома и политики хранения должны быть объявлены внутри тега `<storage_configuration>` в одном из файлов каталога `config.d`.
 
@@ -1180,9 +1080,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 Количество потоков, выполняющих фоновое перемещение частей, можно изменить с помощью настройки [background&#95;move&#95;pool&#95;size](/ru/reference/settings/server-settings/settings/background#background_move_pool_size).
 
-<div id="details">
-  ### Подробности
-</div>
+### Подробности {#details}
 
 В случае таблиц `MergeTree` данные записываются на диск разными способами:
 
@@ -1210,9 +1108,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 Пользователь может равномерно распределять новые крупные части по разным дискам тома [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) с помощью настройки [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod).
 
-<div id="table_engine-mergetree-s3">
-  ## Использование внешнего хранилища для хранения данных
-</div>
+## Использование внешнего хранилища для хранения данных {#table_engine-mergetree-s3}
 
 Движки таблиц семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) могут хранить данные в `S3`, `AzureBlobStorage` и `HDFS`, используя диски типов `s3`, `azure_blob_storage` и `hdfs` соответственно. Подробнее см. в разделе [настройка параметров внешнего хранилища](/ru/concepts/features/configuration/server-config/storing-data#configuring-external-storage).
 
@@ -1261,9 +1157,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 См. также [настройку параметров внешнего хранилища](/ru/concepts/features/configuration/server-config/storing-data#configuring-external-storage).
 
-<div id="s3-multiple-volumes">
-  ### Использование S3-дисков с несколькими томами
-</div>
+### Использование S3-дисков с несколькими томами {#s3-multiple-volumes}
 
 S3-диски (и другие диски объектного хранилища) можно использовать в политиках хранения с несколькими дисками и томами так же, как и локальные диски. Это позволяет распределять данные по нескольким S3 бакетам в рамках одного тома (по принципу JBOD) или настраивать политики многоуровневого хранения с S3-томами.
 
@@ -1342,9 +1236,7 @@ S3-диски (и другие диски объектного хранилищ�
   В версиях ClickHouse с 22.3 по 22.7 используется другая конфигурация кэша; если вы используете одну из этих версий, см. раздел [использование локального кэша](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache).
 </Info>
 
-<div id="virtual-columns">
-  ## Виртуальные столбцы
-</div>
+## Виртуальные столбцы {#virtual-columns}
 
 * `_part` — Имя части.
 * `_part_index` — Последовательный индекс части в результате запроса.
@@ -1360,9 +1252,7 @@ S3-диски (и другие диски объектного хранилищ�
 * `_block_offset` — Исходный номер строки в блоке, назначенный при вставке; сохраняется при слияниях, когда включена настройка `enable_block_offset_column`.
 * `_disk_name` — Имя диска, используемого для хранения.
 
-<div id="column-statistics">
-  ## Статистика столбцов
-</div>
+## Статистика столбцов {#column-statistics}
 
 Статистика объявляется в разделе столбцов запроса `CREATE` для таблиц семейства `*MergeTree*`:
 
@@ -1386,9 +1276,7 @@ ALTER TABLE tab DROP STATISTICS a;
 Эти легковесные статистики содержат агрегированную информацию о распределении значений в столбцах. Статистики хранятся в каждой части и обновляются при каждой вставке.
 Их можно использовать для оптимизации PREWHERE только при включении `set use_statistics = 1`.
 
-<div id="part-pruning-with-statistics">
-  #### Отсечение частей на основе статистики
-</div>
+#### Отсечение частей на основе статистики {#part-pruning-with-statistics}
 
 Если включен параметр `use_statistics_for_part_pruning`, для отсечения частей можно использовать статистику.
 В настоящее время отсечение частей поддерживается только статистикой `basic` (и устаревшей статистикой `minmax`). Когда такая статистика определена для столбца, ClickHouse отслеживает минимальное и максимальное значения этого столбца в каждой части.
@@ -1422,9 +1310,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 -- The output will show "Parts: 1/2" indicating one part was pruned
 ```
 
-<div id="available-types-of-column-statistics">
-  ### Доступные типы статистики столбцов
-</div>
+### Доступные типы статистики столбцов {#available-types-of-column-statistics}
 
 * `basic`
 
@@ -1466,9 +1352,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 Скетчи [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch), которые позволяют приблизительно оценить частоту каждого значения в столбце.
 
-<div id="supported-data-types">
-  ### Поддерживаемые типы данных
-</div>
+### Поддерживаемые типы данных {#supported-data-types}
 
 |             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String или FixedString | Любой другой тип                         |
 | ----------- | -------------------------------------------------- | ---- | ---------------------- | ---------------------------------------- |
@@ -1481,9 +1365,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 Все перечисленные выше варианты также поддерживают обёртки `Nullable` и `LowCardinality(Nullable)` для указанных типов. `basic` также можно объявить для любого другого типа, включая составные типы, такие как `Array`, `Tuple` и `Map`; в этом случае он учитывает только количество значений по умолчанию.
 
-<div id="supported-operations">
-  ### Поддерживаемые операции
-</div>
+### Поддерживаемые операции {#supported-operations}
 
 |             | Фильтры равенства (==)               | Фильтры диапазона (`>, >=, <, <=`) |
 | ----------- | ------------------------------------ | ---------------------------------- |
@@ -1503,9 +1385,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 Для `basic` в столбцах `String` / `FixedString` статистика хранит суммарную длину в байтах значений, не равных `NULL`
 (используется для оценки средней длины строки), а также количество значений по умолчанию и `NULL`; фильтры диапазона и отсечение частей на её основе не выполняются.
 
-<div id="column-level-settings">
-  ## Настройки на уровне столбцов
-</div>
+## Настройки на уровне столбцов {#column-level-settings}
 
 Некоторые настройки MergeTree можно переопределять на уровне столбцов:
 

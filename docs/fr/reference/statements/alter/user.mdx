@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Modifie les comptes d’utilisateur ClickHouse.
 
-Syntaxe :
+Syntaxe :
 
 ```sql
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
@@ -21,6 +21,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -33,11 +34,9 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 
 Pour utiliser `ALTER USER`, vous devez disposer du privilège [ALTER USER](/fr/reference/statements/grant#access-management).
 
-`SET variable = value` est un alias de `MODIFY SETTING variable = value` : il modifie un seul paramètre sans toucher aux autres. Préférez-le (ou `MODIFY SETTING`) à la clause `SETTINGS` seule, qui remplace l’intégralité de la liste des paramètres et supprime également tous les profils hérités (parents).
+`SET variable = value` est un alias de `MODIFY SETTING variable = value` : il modifie un seul paramètre sans toucher aux autres. Préférez-le (ou `MODIFY SETTING`) à la clause `SETTINGS` seule, qui remplace l’intégralité de la liste des paramètres et supprime également tous les profils hérités (parents).
 
-<div id="grantees-clause">
-  ## Clause GRANTEES
-</div>
+## Clause GRANTEES {#grantees-clause}
 
 Spécifie les utilisateurs ou les rôles autorisés à recevoir des [privilèges](/fr/reference/statements/grant#privileges) de cet utilisateur, à condition que celui-ci dispose également de tous les droits d’accès requis accordés avec [GRANT OPTION](/fr/reference/statements/grant#granting-privilege-syntax). Options de la clause `GRANTEES` :
 
@@ -48,11 +47,9 @@ Spécifie les utilisateurs ou les rôles autorisés à recevoir des [privilèges
 
 Vous pouvez exclure n’importe quel utilisateur ou rôle à l’aide de l’expression `EXCEPT`. Par exemple, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. Cela signifie que si `user1` dispose de privilèges accordés avec `GRANT OPTION`, il pourra les accorder à n’importe qui, sauf à `user2`.
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
-Définissez les rôles attribués comme rôles par défaut :
+Définissez les rôles attribués comme rôles par défaut :
 
 ```sql
 ALTER USER user DEFAULT ROLE role1, role2
@@ -60,7 +57,7 @@ ALTER USER user DEFAULT ROLE role1, role2
 
 Si aucun rôle n’a été attribué au préalable à un utilisateur, ClickHouse lève une exception.
 
-Définissez tous les rôles attribués comme rôles par défaut :
+Définissez tous les rôles attribués comme rôles par défaut :
 
 ```sql
 ALTER USER user DEFAULT ROLE ALL
@@ -68,29 +65,29 @@ ALTER USER user DEFAULT ROLE ALL
 
 Si un rôle est attribué à un utilisateur ultérieurement, il deviendra automatiquement le rôle par défaut.
 
-Définissez tous les rôles attribués par défaut, à l’exception de `role1` et `role2` :
+Définissez tous les rôles attribués par défaut, à l’exception de `role1` et `role2` :
 
 ```sql
 ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-Permet à l’utilisateur du compte `john` d’accorder ses privilèges à l’utilisateur du compte `jack` :
+Permet à l’utilisateur du compte `john` d’accorder ses privilèges à l’utilisateur du compte `jack` :
 
 ```sql
 ALTER USER john GRANTEES jack;
 ```
 
-Ajoute de nouvelles méthodes d’authentification à l’utilisateur tout en conservant celles existantes :
+Ajoute de nouvelles méthodes d’authentification à l’utilisateur tout en conservant celles existantes :
 
 ```sql
 ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
 ```
 
-Remarques :
+Remarques :
 
 1. Les anciennes versions de ClickHouse peuvent ne pas prendre en charge la syntaxe associée à plusieurs méthodes d’authentification. Par conséquent, si le serveur ClickHouse contient de tels utilisateurs et qu’il est rétrogradé vers une version qui ne prend pas cette syntaxe en charge, ces utilisateurs deviendront inutilisables et certaines opérations liées aux utilisateurs ne fonctionneront plus. Pour effectuer la rétrogradation correctement, il faut configurer tous les utilisateurs de sorte qu’ils n’aient qu’une seule méthode d’authentification avant la rétrogradation. Sinon, si le serveur a été rétrogradé sans suivre la procédure appropriée, les utilisateurs défectueux doivent être supprimés.
 2. `no_password` ne peut pas coexister avec d’autres méthodes d’authentification pour des raisons de sécurité.
-   Pour cette raison, il n’est pas possible d’`ADD` une méthode d’authentification `no_password`. La requête ci-dessous générera une erreur :
+   Pour cette raison, il n’est pas possible d’`ADD` une méthode d’authentification `no_password`. La requête ci-dessous générera une erreur :
 
 ```sql
 ALTER USER user1 ADD IDENTIFIED WITH no_password
@@ -98,21 +95,31 @@ ALTER USER user1 ADD IDENTIFIED WITH no_password
 
 Si vous souhaitez supprimer les méthodes d’authentification d’un utilisateur et utiliser `no_password`, vous devez le préciser dans le formulaire de remplacement ci-dessous.
 
-Réinitialise les méthodes d’authentification et ajoute celles spécifiées dans la requête (effet de IDENTIFIED en tête sans le mot-clé ADD) :
+Réinitialise les méthodes d’authentification et ajoute celles spécifiées dans la requête (effet de IDENTIFIED en tête sans le mot-clé ADD) :
 
 ```sql
 ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
 ```
 
-Réinitialisez les méthodes d’authentification et ne conservez que la dernière ajoutée :
+Réinitialisez les méthodes d’authentification et ne conservez que la dernière ajoutée :
 
 ```sql
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
-<div id="valid-until-clause">
-  ## Clause VALID UNTIL
-</div>
+Modifiez la base de données par défaut d’un utilisateur :
+
+```sql
+ALTER USER user1 DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` efface la base de données par défaut de l’utilisateur. Pour utiliser une base de données nommée `NONE`, encadrez son nom de backticks :
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
+## Clause VALID UNTIL {#valid-until-clause}
 
 Permet de spécifier la date d&#39;expiration et, éventuellement, l&#39;heure d&#39;une méthode d&#39;authentification. Elle accepte une chaîne de caractères comme paramètre. Il est recommandé d&#39;utiliser le format `YYYY-MM-DD [hh:mm:ss] [timezone]` pour les valeurs de date et d&#39;heure. Par défaut, ce paramètre est égal à `'infinity'`. La plage d&#39;échéances acceptées va de `1900-01-01 00:00:00 UTC` à `9999-12-31 09:59:59 UTC` — le dernier instant qui reste dans l&#39;année 9999 dans tous les fuseaux horaires, afin que l&#39;instant stocké ne soit jamais borné lors de son affichage. Une échéance passée signifie que les identifiants ont déjà expiré. Les échéances antérieures à `1970-01-01 00:00:01 UTC` ne sont acceptées que comme marqueur « déjà expiré » : elles sont normalisées vers le plus ancien instant expiré, soit une seconde après l&#39;époque Unix (`1970-01-01 00:00:01 UTC`), de sorte que `SHOW CREATE USER` affiche cet instant au lieu de l&#39;échéance indiquée. Les échéances à partir de cet instant sont stockées telles quelles.
 
@@ -131,9 +138,7 @@ Exemples :
 * `ALTER USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — l&#39;échéance définie au niveau de l&#39;utilisateur s&#39;applique aux deux méthodes.
 * `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — l&#39;échéance s&#39;applique uniquement à la méthode `bcrypt_password` ; `plaintext_password` n&#39;expire jamais.
 
-<div id="valid-for-clause">
-  ## Clause VALID FOR
-</div>
+## Clause VALID FOR {#valid-for-clause}
 
 La clause `VALID FOR` est un raccourci pratique pour `VALID UNTIL`. Au lieu d&#39;une date et d&#39;une heure absolues, elle accepte un [intervalle](/fr/reference/data-types/special-data-types/interval), et l&#39;échéance est calculée en ajoutant cet intervalle à l&#39;heure actuelle au moment de l&#39;exécution de la requête. Le résultat est stocké sous la forme `VALID UNTIL`, de sorte que `SHOW CREATE USER` affiche toujours l&#39;échéance absolue résolue. Elle suit les mêmes règles de positionnement que `VALID UNTIL` : avant `IDENTIFIED` (ou sans méthode d&#39;authentification), elle définit une échéance au niveau de l&#39;utilisateur qui s&#39;applique à toutes les méthodes, tandis qu&#39;après une méthode d&#39;authentification, elle ne s&#39;applique qu&#39;à cette méthode. L&#39;échéance est stockée et appliquée avec une précision à la seconde ; les intervalles inférieurs à la seconde (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`) sont donc rejetés, et la plus petite unité acceptée est `SECOND`. Un intervalle négatif permet de marquer les identifiants comme déjà expirés ; si l&#39;échéance obtenue est antérieure à `1970-01-01 00:00:01 UTC`, elle est normalisée à cet instant expiré minimal, que `SHOW CREATE USER` affiche ensuite dans le fuseau horaire du serveur ou de la session, comme décrit pour [`VALID UNTIL`](#valid-until-clause).
 
@@ -144,9 +149,7 @@ Exemples :
 * `ALTER USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — l&#39;échéance au niveau de l&#39;utilisateur s&#39;applique aux deux méthodes.
 * `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — l&#39;échéance s&#39;applique uniquement à la méthode `bcrypt_password` ; `plaintext_password` n&#39;expire jamais.
 
-<div id="grants-clause">
-  ## Clause GRANTS
-</div>
+## Clause GRANTS {#grants-clause}
 
 Permet de limiter les droits d&#39;accès disponibles pour une session authentifiée à l&#39;aide d&#39;une méthode d&#39;authentification donnée. Consultez la [clause GRANTS de CREATE USER](/fr/reference/statements/create/user#grants-clause) pour plus de détails.
 

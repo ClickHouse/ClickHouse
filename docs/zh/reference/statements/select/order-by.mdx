@@ -236,7 +236,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## 实现细节 {#implementation-details}
 
-如果在 `ORDER BY` 之外还指定了足够小的 [LIMIT](/zh/reference/statements/select/limit)，内存占用就会更少。否则，排序消耗的内存量与待排序数据量成正比。对于分布式查询处理，如果省略了 [GROUP BY](/zh/reference/statements/select/group-by)，排序会在远程服务器上部分完成，并在发起请求的服务器上合并结果。这意味着在分布式排序中，待排序的数据量可能会超过单台服务器的内存容量。
+如果在 `ORDER BY` 之外还指定了足够小的 [LIMIT](/zh/reference/statements/select/limit)，内存占用就会更少。否则，排序消耗的内存量与待排序数据量成正比。[`LIMIT ... AFTER ... UNTIL`](/zh/reference/statements/select/limit#limit-after-until) 范围不会减少内存占用，因为在数据完成排序之前，范围大小未知。对于分布式查询处理，如果省略了 [GROUP BY](/zh/reference/statements/select/group-by)，排序会在远程服务器上部分完成，并在发起请求的服务器上合并结果。这意味着在分布式排序中，待排序的数据量可能会超过单台服务器的内存容量。
 
 如果 RAM 不足，可以在外部内存中执行排序 (即在磁盘上创建临时 File) 。为此，请使用设置 `max_bytes_before_external_sort`。如果将其设为 0 (默认值) ，则外部排序会被禁用。如果启用该功能，当待排序数据量达到指定字节数时，已收集的数据会先排序并转储到临时文件中。读取完所有数据后，再将所有已排序的文件合并并输出结果。文件会写入配置中的 `/var/lib/clickhouse/tmp/` 目录 (默认如此，但你也可以使用 `tmp_path` 参数更改此设置) 。你还可以仅在查询超出内存限制时启用落盘，也就是说，`max_bytes_ratio_before_external_sort=0.6` 会仅在查询达到内存限制 (用户/服务器) 的 `60%` 后启用落盘。
 
@@ -248,7 +248,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 如果 `ORDER BY` 表达式的前缀与表的 sorting key 一致，可以通过使用 [optimize&#95;read&#95;in&#95;order](/zh/reference/settings/session-settings/optimize#optimize_read_in_order) 设置来优化查询。
 
-启用 `optimize_read_in_order` 设置后，ClickHouse server 会使用表索引，并按 `ORDER BY` 键的顺序读取数据。这样，在指定了 [LIMIT](/zh/reference/statements/select/limit) 的情况下，就可以避免读取全部数据。因此，对于 `LIMIT` 较小的大数据查询，处理速度会更快。
+启用 `optimize_read_in_order` 设置后，ClickHouse server 会使用表索引，并按 `ORDER BY` 键的顺序读取数据。这样，在指定了 [LIMIT](/zh/reference/statements/select/limit) 的情况下，就可以避免读取全部数据。对于不含 `ALL` 的 [`LIMIT ... AFTER ... UNTIL`](/zh/reference/statements/select/limit#limit-after-until) 范围也是如此：该范围结束后便会停止读取。因此，对于 `LIMIT` 较小的大数据查询，处理速度会更快。
 
 该优化同时适用于 `ASC` 和 `DESC`，但不能与 [GROUP BY](/zh/reference/statements/select/group-by) 子句一起使用。在使用 [FINAL](/zh/reference/statements/select/from#final-modifier) 修饰符时，该优化按 sorting key 的正序生效；对于 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表，也可以按逆序生效，由 `optimize_read_in_reverse_order_final` 设置控制。
 
@@ -266,7 +266,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## ORDER BY Expr WITH FILL 修饰符 {#order-by-expr-with-fill-modifier}
 
-此修饰符也可与 [LIMIT ... WITH TIES 修饰符](/zh/reference/statements/select/limit#limit--with-ties-modifier) 结合使用。
+此修饰符也可与 [LIMIT ... WITH TIES 修饰符](/zh/reference/statements/select/limit#limit--with-ties-modifier) 以及 [LIMIT ... AFTER ... UNTIL](/zh/reference/statements/select/limit#limit-after-until) 范围形式结合使用。
 
 `WITH FILL` 修饰符可以放在 `ORDER BY expr` 之后，并可选择指定 `FROM expr`、`TO expr` 和 `STEP expr` 参数。
 `expr` 列中所有缺失的值都会按顺序补齐，其他列则会填充为默认值。
