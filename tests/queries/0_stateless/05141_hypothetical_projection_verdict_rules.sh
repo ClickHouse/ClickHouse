@@ -28,6 +28,13 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT sum(v) FROM t_est WHERE a = 500 SETTINGS ${PIN};
 " | grep -E '^With|^\s+reason:' | awk '{$1=$1; print}'
 
+# a key over `_part_offset` cannot be rebuilt from the stored columns, and 0 marks is not an estimate
+echo "--- a key the scan cannot build is not reported as measured ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_po ON t_est (SELECT _part_offset ORDER BY _part_offset);
+    EXPLAIN WHATIF SELECT _part_offset FROM t_est WHERE _part_offset = 7 SETTINGS ${PIN};
+" | grep -E '^\s+(status|marks|verdict|source|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
+
 echo "--- projections disabled by the query ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);

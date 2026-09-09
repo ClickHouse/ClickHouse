@@ -372,6 +372,13 @@ bool tryEstimateProjection(
         scanned_marks += part_marks;
         if (part->index_granularity_info.mark_type.adaptive)
             ++adaptive_parts;
+        /// no key rows out of a part that has rows means the key needs something the scan cannot
+        /// provide, `_part_offset` for one, so do not pass a zero-mark estimate off as measured
+        if (part_data.rows == 0 && part->rows_count > 0)
+        {
+            result.empirical_unsupported_reason = "The projection key could not be built from the columns the projection stores";
+            return false;
+        }
         if (part_data.rows == 0)
             continue;
 

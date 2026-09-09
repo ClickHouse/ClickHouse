@@ -9,6 +9,12 @@ With p_nocol (normal projection, hypothetical):
 reason: Projection does not contain column v required by the query, so it could only filter the base table\'s parts, which EXPLAIN WHATIF does not estimate yet
 With p_skipidx (normal projection, hypothetical):
 reason: EXPLAIN WHATIF does not estimate projections with their own skip indexes yet
+--- a key the scan cannot build is not reported as measured ---
+marks: 1
+status: applicable
+source: applicability_only
+empirical_status: unsupported
+empirical_reason: The projection key could not be built from the columns the projection stores
 --- projections disabled by the query ---
 reason: Projections are disabled by `optimize_use_projections = 0`
 --- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
