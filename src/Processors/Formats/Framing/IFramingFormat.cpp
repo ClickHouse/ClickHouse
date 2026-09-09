@@ -90,12 +90,13 @@ void IFramingFormat::onPayload(FramedPacketKind kind)
     extractAndWritePayload(kind);
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
+    /// Ordinary result delivery remains part of the query profile; only trace delivery is suppressed.
+    flushOut();
     if (profile_traces_queue)
     {
         ProfileTracesBlocker blocker;
         pumpProfileTraces(/*force=*/ false);
     }
-    flushOut();
 }
 
 void IFramingFormat::onProgress(const Progress & progress)
@@ -106,12 +107,12 @@ void IFramingFormat::onProgress(const Progress & progress)
     emitToOut([&] { writeProgressPacket(progress); });
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
+    flushOut();
     if (profile_traces_queue)
     {
         ProfileTracesBlocker blocker;
         pumpProfileTraces(/*force=*/ false);
     }
-    flushOut();
 }
 
 void IFramingFormat::setFinalProgress(const Progress & progress)
@@ -325,16 +326,20 @@ void IFramingFormat::pumpProfileTraces(bool force)
 
     /// Normal pumping is bounded to one block so a busy sampler cannot delay query output.
     /// After `finish` no new samples are accepted, so the terminal drain is finite.
+    bool emitted_traces = false;
     do
     {
         Block block = profile_traces_queue->getBlock();
         if (block.rows() == 0)
             break;
         emitToOut([&] { writeProfileTracesPacket(block); });
+        emitted_traces = true;
     }
     while (force);
 
     profile_traces_watch.restart();
+    if (emitted_traces)
+        flushOut();
 }
 
 static void writeDateTimeWithMicrosecondsJSON(UInt32 datetime, UInt32 microseconds, WriteBuffer & buf)
