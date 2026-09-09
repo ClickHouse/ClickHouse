@@ -13,6 +13,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد جرى توليدها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="default_format">
+  ## default_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد للتنسيق الافتراضي عندما لا يتضمن الاستعلام عبارة FORMAT."}]}]} />
+
+يحدد تنسيق نتيجة الاستعلام عندما لا يتضمن الاستعلام عبارة `FORMAT` ولا يُطبَّق أي تجاوز آخر للتنسيق.
+
 <div id="default_materialized_view_sql_security">
   ## default_materialized_view_sql_security
 </div>
