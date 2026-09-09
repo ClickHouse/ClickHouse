@@ -1,0 +1,25 @@
+wrapped	\N
+wrapped	\N
+wrapped	\N
+wrapped	\N
+direct	\N	\N	\N	\N
+direct	\N	\N	\N	\N
+direct	\N	\N	\N	\N
+direct	\N	\N	\N	\N
+family	4	4	4	4	4
+divisor types	4	4	4	4
+lowcardinality	4	4
+lowcardinality nullable	4	4
+always null divisor	4	4
+stored	4	4
+view	4	4
+ctas	4	4
+non-const dividend	4	4	4
+non-const divisor	4	4
+or zero	4	0	0
+nonzero divisor	4	0	4
+row values	1	1
+row values	2	2
+row values	3	0
+row values	4	1
+type	Nullable(UInt8)
