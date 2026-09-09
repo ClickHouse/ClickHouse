@@ -149,7 +149,16 @@ probe "min_by" "min_by(v, v), min_by(v + 1, v), min_by(v * 2, v)"
 probe "array_agg" "array_agg(v), array_agg(v + 1), array_agg(v * 2)"
 probe "array_concat_agg" "array_concat_agg([v]), array_concat_agg([v + 1]), array_concat_agg([v * 2])"
 probe "medianTDigest" "medianTDigest(v), medianTDigest(v + 1), medianTDigest(v * 2)"
-probe "anova" "anova(v, (v % 3)::UInt8), anova(v + 1, (v % 3)::UInt8), anova(v * 2, (v % 3)::UInt8)"
+# `anova`'s group argument is written `toUInt8(v % 3)` rather than `(v % 3)::UInt8` on purpose.
+# A `CAST` node is itself a fuzzer target - `QueryFuzzer` rewrites the target type of a
+# `CAST` / `_CAST` / `accurateCast*` call to a random type once in 30 nodes (`cast_functions`) -
+# and a randomly retyped group argument makes `anova` fail to resolve, so the round errors out
+# before it ever reaches the oracle gate and the probe passes without having tested anything.
+# With three occurrences that happens often enough to matter: measured against a binary with no
+# alias resolution, the probe detects the regression in 8 of 12 runs spelled `toUInt8` and in
+# only 2 of 12 spelled with the cast. The rewrite can only ever turn a round into an error,
+# never into a checked query, so it was never a false-failure risk - just a blind spot.
+probe "anova" "anova(v, toUInt8(v % 3)), anova(v + 1, toUInt8(v % 3)), anova(v * 2, toUInt8(v % 3))"
 
 # One spelling that carries a combinator on top of the alias, which is what forces the alias
 # lookup to run at every combinator-stripping stage rather than once on the original name:
