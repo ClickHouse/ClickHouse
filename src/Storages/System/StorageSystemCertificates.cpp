@@ -4,6 +4,7 @@
 #include "config.h"
 
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/re2.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -91,8 +92,22 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
         if (!dir_entry.is_regular_file() || !RE2::FullMatch(dir_entry.path().filename().string(), cert_name))
             continue;
 
-        X509Certificate cert(dir_entry.path());
-        populateTable(cert, res_columns, dir_entry.path(), def, protocol);
+        /// A hash-named entry that cannot be parsed - a stale symlink, a zero-byte placeholder -
+        /// must not make the whole table unreadable: this table exists to show what the trust store
+        /// contains, and a single unreadable file would otherwise hide all of it.
+        try
+        {
+            X509Certificate cert(dir_entry.path());
+            populateTable(cert, res_columns, dir_entry.path(), def, protocol);
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                getLogger("StorageSystemCertificates"),
+                "Cannot read the certificate {}: {}",
+                dir_entry.path().string(),
+                getCurrentExceptionMessage(false));
+        }
     }
 }
 
