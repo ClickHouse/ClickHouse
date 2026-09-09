@@ -1,4 +1,6 @@
+import concurrent.futures
 import logging
+import threading
 import time
 import uuid
 
@@ -25,6 +27,21 @@ def started_cluster():
             main_configs=[
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        # Second replica, required by the `cluster` entry in remote_servers.xml
+        # for the ON CLUSTER tests. Shares Keeper and MinIO with `instance`.
+        cluster.add_instance(
+            "instance2",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
             ],
             stay_alive=True,
         )
@@ -606,3 +623,217 @@ def test_failed_files_ttl_does_not_reset_retry_counter(started_cluster):
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
     node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_drop_failed_files_privilege(started_cluster):
+    """`SYSTEM DROP S3QUEUE FAILED FILES` must be gated on the table-scoped
+    `SYSTEM_DROP_S3QUEUE_FAILED_FILES` privilege.
+
+    Covers both entry points that check it:
+      - `InterpreterSystemQuery::dropObjectStorageQueueFailedFiles` -> `context->checkAccess(...)`
+      - `getRequiredAccessForDDLOnCluster()` for the `ON CLUSTER` form
+
+    The `ON CLUSTER` case is asserted for the denial only. `executeDDLQueryOnCluster`
+    resolves the cluster before checking access, so the cluster has to exist for the
+    denial to be attributable to the privilege rather than to an unknown cluster.
+    Proving the `ON CLUSTER` success path additionally needs a second running replica
+    holding the same table, which this single-node module does not provide.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_drop_priv_{uuid.uuid4().hex[:8]}"
+    user_name = f"user_drop_priv_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+
+    node.query(f"CREATE USER {user_name} IDENTIFIED WITH no_password")
+    # The command resolves the table, so the user must be able to see it at all;
+    # otherwise a failure could be UNKNOWN_TABLE rather than a privilege denial.
+    node.query(f"GRANT SHOW TABLES ON default.{table_name} TO {user_name}")
+
+    direct_query = f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}"
+    on_cluster_query = (
+        f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name} ON CLUSTER cluster"
+    )
+
+    # 1. Denied without the privilege, direct form.
+    assert "ACCESS_DENIED" in node.query_and_get_error(direct_query, user=user_name)
+
+    # 2. Denied without the privilege, ON CLUSTER form. This exercises
+    #    getRequiredAccessForDDLOnCluster(), a separate path from the
+    #    checkAccess() call inside the interpreter.
+    assert "ACCESS_DENIED" in node.query_and_get_error(on_cluster_query, user=user_name)
+
+    # 3. Grant exactly the new privilege, table-scoped.
+    node.query(
+        f"GRANT SYSTEM DROP S3QUEUE FAILED FILES ON default.{table_name} TO {user_name}"
+    )
+
+    # 4. The direct form now succeeds. query() raises on any error, so reaching the
+    #    next statement is itself the assertion.
+    node.query(direct_query, user=user_name)
+
+    # 5. The privilege is table-scoped and must not leak to a different table.
+    other_table_name = f"test_drop_priv_other_{uuid.uuid4().hex[:8]}"
+    create_table(
+        started_cluster,
+        node,
+        other_table_name,
+        "unordered",
+        f"{other_table_name}_data",
+        additional_settings={"keeper_path": f"/clickhouse/test_{other_table_name}"},
+    )
+    node.query(f"GRANT SHOW TABLES ON default.{other_table_name} TO {user_name}")
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        f"SYSTEM DROP S3QUEUE FAILED FILES default.{other_table_name}", user=user_name
+    )
+
+    # Cleanup
+    node.query(f"DROP USER {user_name}")
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {other_table_name}")
+
+
+def test_drop_failed_files_on_cluster_concurrent(started_cluster):
+    """`SYSTEM DROP S3QUEUE FAILED FILES ... ON CLUSTER` must be idempotent when
+    several replicas execute it at the same time, and must leave no stale state
+    behind on the replica that loses the `cleanup_lock` race.
+
+    Guards the ON CLUSTER concurrent-drop path raised in review on #113784: only
+    one replica wins `cleanup_lock` and performs the Keeper deletes, while every
+    other replica takes the loser path in `waitForConcurrentDropToComplete`,
+    waits for the winner, verifies `/failed` is empty and must then also
+    reconcile its own in-memory `local_file_statuses`. A regression shows up
+    either as a spurious exception on the loser, or as `Failed` cache entries
+    surviving on a replica that did not do the deleting.
+
+    On the contract being asserted: the loser is expected to *succeed*, not to
+    raise. The command was made idempotent for ON CLUSTER execution precisely so
+    that a concurrent invocation is not an error, so an exception from either
+    call is a failure of this test rather than an accepted outcome.
+    """
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+
+    table_name = f"test_drop_on_cluster_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    num_failing_files = 5
+
+    # The same keeper_path on both replicas is how S3Queue replicates.
+    for node in (node1, node2):
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "s3queue_loading_retries": 0,  # fail terminally on the first attempt
+                # Keep the periodic sweep out of the way, so the only thing that
+                # removes /failed nodes is the explicit ON CLUSTER command.
+                "failed_files_ttl_sec": 0,
+                "tracked_files_limit": 0,
+            },
+        )
+
+    # Files that cannot be parsed against the table's schema -> terminal failures.
+    invalid_csv = b"not,valid,numbers\n"
+    for i in range(num_failing_files):
+        put_s3_file_content(started_cluster, f"{files_path}/failed_{i}.csv", invalid_csv)
+
+    # Only one replica needs to consume, so each file fails once.
+    create_mv(node1, table_name, dst_table_name)
+
+    def failed_znodes():
+        result = node1.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    def cached_failed(node):
+        return int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_metadata_cache "
+                f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
+            ).strip()
+        )
+
+    def wait_for(predicate, timeout_sec=120):
+        """Poll for a state instead of sleeping on a fixed schedule."""
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.5)
+        return False
+
+    # All files must have failed, and their /failed znodes must exist, before dropping.
+    assert wait_for(
+        lambda: failed_znodes() >= num_failing_files
+    ), f"expected {num_failing_files} failed znodes, got {failed_znodes()}"
+
+    # Both replicas must have observed the failures in their own cache first,
+    # otherwise "cache is empty afterwards" would prove nothing on the replica
+    # that never populated it.
+    assert wait_for(
+        lambda: cached_failed(node1) >= num_failing_files
+    ), f"instance cache not populated: {cached_failed(node1)}"
+    assert wait_for(
+        lambda: cached_failed(node2) >= num_failing_files
+    ), f"instance2 cache not populated: {cached_failed(node2)}"
+
+    # Both replicas issue the ON CLUSTER drop at the same time. The barrier makes
+    # the overlap deterministic without depending on sleep timing.
+    query = f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name} ON CLUSTER cluster"
+    barrier = threading.Barrier(2)
+
+    def run(node):
+        barrier.wait()
+        return node.query(query)
+
+    errors = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = {
+            pool.submit(run, node1): "instance",
+            pool.submit(run, node2): "instance2",
+        }
+        for future, origin in futures.items():
+            try:
+                future.result(timeout=180)
+            except Exception as e:
+                errors.append(f"{origin}: {e}")
+
+    # Neither invocation may raise: concurrent ON CLUSTER drops are idempotent.
+    assert not errors, f"concurrent ON CLUSTER drop raised: {errors}"
+
+    # No failed znodes left in Keeper.
+    assert wait_for(
+        lambda: failed_znodes() == 0
+    ), f"failed znodes remain after drop: {failed_znodes()}"
+
+    # And no stale Failed entries in either replica's in-memory cache, including
+    # on whichever replica lost the cleanup_lock race.
+    assert wait_for(
+        lambda: cached_failed(node1) == 0
+    ), f"instance still caches Failed entries: {cached_failed(node1)}"
+    assert wait_for(
+        lambda: cached_failed(node2) == 0
+    ), f"instance2 still caches Failed entries: {cached_failed(node2)}"
+
+    # Cleanup
+    for node in (node1, node2):
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node1.query(f"DROP TABLE IF EXISTS {dst_table_name}")
