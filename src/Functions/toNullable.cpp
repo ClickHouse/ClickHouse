@@ -33,7 +33,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isNullPropagating(const DataTypePtr & /*result_type*/) const override { return true; }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -53,7 +52,6 @@ public:
     {
         return makeNullableOrLowCardinalityNullable(arguments[0].column);
     }
-
     bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
