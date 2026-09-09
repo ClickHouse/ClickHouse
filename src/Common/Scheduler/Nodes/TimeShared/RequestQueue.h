@@ -602,8 +602,10 @@ public:
         std::vector<ResourceRequest *> requests_to_fail;
         {
             std::lock_guard lock(mutex);
-            if (value <= 0)
-                throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Queue limit must be a positive value, got: {}", value);
+            // `0` means "reject every waiting request" — a valid limit, as at construction and in
+            // AllocationQueue; only a negative value is invalid.
+            if (value < 0)
+                throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Queue limit must not be negative, got: {}", value);
             max_queued = value;
             while (total_requests > static_cast<size_t>(max_queued))
             {

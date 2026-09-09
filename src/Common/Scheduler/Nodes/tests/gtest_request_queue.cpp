@@ -468,6 +468,20 @@ TEST(RequestQueue, MaxWaitingQueries)
     }
 }
 
+/// updateQueueLimit(0) is valid: 0 means "reject every waiting request", the same limit applied at
+/// construction, so CREATE OR REPLACE WORKLOAD does not diverge from CREATE for max_waiting_queries=0.
+/// Only a negative limit is rejected.
+TEST(RequestQueue, UpdateQueueLimitAllowsZero)
+{
+    Fixture f(SchedulerAlgorithm::Fifo);
+    auto * a = f.makeQuery();
+    f.queue->updateQueueLimit(0); // must not throw
+    TestRequest r(1);
+    r.scheduling.context = a;
+    EXPECT_THROW(f.queue->enqueueRequest(&r), DB::Exception);  // zero-length queue rejects any waiter
+    EXPECT_THROW(f.queue->updateQueueLimit(-1), DB::Exception); // a negative limit is still invalid
+}
+
 /// purge fails all pending requests and rejects new ones.
 TEST(RequestQueue, Purge)
 {
