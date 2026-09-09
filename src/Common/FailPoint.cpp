@@ -369,8 +369,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
     ONCE(aggregating_in_order_transform_cancel_mid_loop) \
-    PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
-    PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
+    ONCE(mysql_output_format_cancel_mid_loop) \
+    ONCE(postgresql_output_format_cancel_mid_loop) \
     ONCE(hash_join_throw_after_data_release) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
