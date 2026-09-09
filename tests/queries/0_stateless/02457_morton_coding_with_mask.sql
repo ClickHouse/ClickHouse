@@ -140,4 +140,12 @@ except
 drop table if exists morton_numbers_mask_02457;
 drop table if exists morton_numbers_mask_3_02457;
 
+SELECT '----- oversized mask tuple -----';
+-- A nine-element mask tuple satisfies `getReturnTypeImpl` (which caps neither the tuple size nor the
+-- argument count) and is only rejected at the bottom of `executeImpl`, after the per-invocation
+-- mask-ratio fill has run. A non-constant value argument keeps the mask a real `ColumnConst`, which
+-- is what makes the fill run at all.
+SELECT mortonEncode((1,1,1,1,1,1,1,1,1), number, 2, 3, 4, 5, 6, 7, 8, 9) FROM numbers(2); -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
+SELECT mortonDecode((1,1,1,1,1,1,1,1,1), number) FROM numbers(2); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
 SELECT '----- END -----';
