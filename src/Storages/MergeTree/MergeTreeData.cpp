@@ -3363,6 +3363,8 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
             {
                 tryLogCurrentException(log,
                     fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
+                if (res.part->getState() == DataPartState::PreActive)
+                    removePartsFromWorkingSetImmediatelyAndSetTemporaryState({res.part});
                 continue;
             }
 

@@ -173,10 +173,13 @@ def test_unique_key_sst_checksums(started_cluster):
     # 1. Normal round-trip: a valid SST survives DETACH + ATTACH.
     # 2. Size-preserving corruption: passes the load-time size check (hashes are not
     #    verified at load), caught by the SST validation, rebuilt.
-    # 3. Missing SST: rejected by the size check, part detached as broken (fail closed;
-    #    no rebuild - the checksum entry makes it a plain consistency failure, unlike
-    #    the no-entry repair covered by test_corrupted_part_files).
-    # 4. Readonly startup: rebuild is impossible, so a corrupt SST fails the ATTACH
+    # 3. Missing SST with a checksum entry: rejected by the size check, part
+    #    detached as broken (fail closed; no rebuild - the entry makes it a plain
+    #    consistency failure).
+    # 4. Missing SST with NO checksum entry (old-version part, or a sidecar lost
+    #    on restore): nothing for the consistency check to reject, so load-time
+    #    validation rebuilds the index and the part stays active.
+    # 5. Readonly startup: rebuild is impossible, so a corrupt SST fails the ATTACH
     #    with UNIQUE_KEY_DENSE_INDEX_UNREADABLE and leaves the file untouched.
     #
     # The table carries a sparsely-serialized all-default UK column, so the Section 2
@@ -252,6 +255,43 @@ def test_unique_key_sst_checksums(started_cluster):
     assert node.query("SELECT count() > 0 FROM system.detached_parts WHERE database = 'default' AND table = 'uk_sst_checksums'") == "1\n"
 
     node.query("DROP TABLE uk_sst_checksums SYNC")
+
+    # --- Missing SST with no checksum entry: an old-version part or a restore
+    # that lost the sidecar has neither the file nor the `checksums.txt` entry,
+    # so the consistency check has nothing to reject and the load-time validation
+    # rebuilds the index instead of detaching the part. Simulated by giving an
+    # existing plain-MergeTree part (written without UK, so its `checksums.txt`
+    # legitimately has no SST entry) a UNIQUE KEY via a metadata edit between
+    # DETACH and ATTACH - the "UNIQUE KEY added by ALTER" case.
+    node.query("DROP TABLE IF EXISTS uk_noentry SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_noentry (id UInt64, v String)
+        ENGINE = MergeTree
+        ORDER BY (id)
+        """
+    )
+    node.query("INSERT INTO uk_noentry VALUES (10, 'a'), (20, 'b'), (30, 'c')")
+
+    # no_sst_before_uk
+    assert not file_exists(node, get_active_part_path(node, "uk_noentry") + "unique_key_index.sst")
+
+    # `metadata_path` is relative to the server root (`/var/lib/clickhouse`).
+    metadata_sql = "/var/lib/clickhouse/" + node.query(
+        "SELECT metadata_path FROM system.tables WHERE database = 'default' AND name = 'uk_noentry'"
+    ).strip()
+    node.query("DETACH TABLE uk_noentry")
+    bash(node, f"sed -i 's/^ORDER BY/UNIQUE KEY (id)\\nORDER BY/' {shlex.quote(metadata_sql)}")
+    node.query("ATTACH TABLE uk_noentry", settings=UK_SETTINGS)
+
+    # active_part_after_rebuild / rows_after_rebuild
+    assert node.query("SELECT count() FROM system.parts WHERE database = 'default' AND table = 'uk_noentry' AND active") == "1\n"
+    assert node.query("SELECT id, v FROM uk_noentry ORDER BY id") == "10\ta\n20\tb\n30\tc\n"
+
+    # sst_rebuilt_on_attach
+    assert file_exists(node, get_active_part_path(node, "uk_noentry") + "unique_key_index.sst")
+
+    node.query("DROP TABLE uk_noentry SYNC")
 
     # --- Readonly startup. Default part format (compact for this small insert) to
     # cover that path too. Validation still runs (read-only I/O) but rebuild is
