@@ -2889,12 +2889,9 @@ static bool areTypesCompatibleForHasSetIndex(
     return false;
 }
 
-static bool areSetAndKeyTypesCompatibleForHas(
-    DataTypes set_types,
-    size_t key_args_count,
-    const DataTypes & key_types,
-    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
+/// Flattens packed `Tuple` set elements until the set holds one type per key argument. Returns false
+/// when the arity cannot be reached because no `Tuple` is left to unpack.
+static bool unpackSetTypesToKeyArity(DataTypes & set_types, size_t key_args_count)
 {
     while (set_types.size() < key_args_count)
     {
@@ -2916,10 +2913,23 @@ static bool areSetAndKeyTypesCompatibleForHas(
         }
 
         if (!has_tuple)
-            return true;
+            return false;
 
         set_types = std::move(unpacked_set_types);
     }
+
+    return true;
+}
+
+static bool areSetAndKeyTypesCompatibleForHas(
+    DataTypes set_types,
+    size_t key_args_count,
+    const DataTypes & key_types,
+    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
+{
+    if (!unpackSetTypesToKeyArity(set_types, key_args_count))
+        return true;
 
     for (size_t index = 0; index < indexes_mapping.size(); ++index)
     {
@@ -2938,6 +2948,101 @@ static bool areSetAndKeyTypesCompatibleForHas(
         /// `Field::operator==`, not the accurate one.
         if (!areTypesCompatibleForHasSetIndex(
                 set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1))
+            return false;
+    }
+
+    return true;
+}
+
+/// `equals` ignores custom names, but a custom name installs its own cast wrapper, so `equals`-equal
+/// types are interchangeable only when they also agree on custom names. Recurses, because a difference
+/// can be nested: `Tuple(Bool)` vs `Tuple(UInt8)`.
+static bool setIndexTypesAgreeOnCustomNames(const IDataType & left, const IDataType & right)
+{
+    auto custom_name_signature = [](const IDataType & type)
+    {
+        Strings out;
+        auto note = [&](const IDataType & nested)
+        {
+            if (nested.hasCustomName())
+                out.push_back(nested.getName());
+            /// An empty entry for "no custom name", so a custom name can never alias a plain type's
+            /// name. A plain `Nullable` node is skipped because a one-sided wrapper is stripped by the
+            /// caller and would otherwise make the two signatures differ in length.
+            else if (!WhichDataType(nested).isNullable())
+                out.emplace_back();
+        };
+        note(type);
+        type.forEachChild(note);
+        return out;
+    };
+
+    return custom_name_signature(left) == custom_name_signature(right);
+}
+
+/// `forEachChild` order corresponds between two `equals`-equal types for every container except
+/// `DataTypeObject`, which iterates an `unordered_map`. Fail closed on it, so the child-order
+/// assumption the signature comparison above relies on always holds.
+static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
+{
+    if (isObject(type))
+        return false;
+
+    bool stable = true;
+    type.forEachChild([&](const IDataType & nested)
+    {
+        if (isObject(nested))
+            stable = false;
+    });
+    return stable;
+}
+
+/// Index preparation casts the set values into the key type, while runtime `IN` membership casts the
+/// key into the set type, so a set atom is an exact image of the predicate only when both directions
+/// preserve equality. Everything not admitted below fails closed, floats included.
+static bool areTypesCompatibleForInSetIndex(const DataTypePtr & set_element_type, const DataTypePtr & key_column_type)
+{
+    /// `LowCardinality` has to be stripped from nested types too, otherwise identical composites differ.
+    const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
+    const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
+
+    if (key_type->equals(*set_type) && setIndexTypeTreeHasStableChildOrder(*key_type)
+        && setIndexTypesAgreeOnCustomNames(*key_type, *set_type))
+        return true;
+
+    const WhichDataType key_which(key_type);
+    const WhichDataType set_which(set_type);
+
+    const bool both_integers = (key_which.isInt() || key_which.isUInt()) && (set_which.isInt() || set_which.isUInt());
+
+    /// Across widths and signs an accurate cast yields NULL rather than truncating, and the preparer
+    /// already drops the set rows that cast to NULL. A custom name over an integer (`Bool`) instead
+    /// installs a cast wrapper that clamps every nonzero value to 1, which is not injective.
+    return both_integers && !key_type->hasCustomName() && !set_type->hasCustomName();
+}
+
+static bool areSetAndKeyTypesCompatibleForIn(
+    DataTypes set_types,
+    size_t key_args_count,
+    const DataTypes & key_types,
+    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
+{
+    if (!unpackSetTypesToKeyArity(set_types, key_args_count))
+        return true;
+
+    for (size_t index = 0; index < indexes_mapping.size(); ++index)
+    {
+        const auto set_element_index = indexes_mapping[index].tuple_index;
+        if (set_element_index >= set_types.size())
+            return true;
+
+        /// A transform pushes the set element through the key expression, so the element is compared in
+        /// the domain that expression consumes, not in its result domain.
+        const auto & compared_type
+            = set_transforming_dags[index].has_value() ? set_transforming_dags[index]->input_type : key_types[index];
+
+        if (!areTypesCompatibleForInSetIndex(set_types[set_element_index], compared_type))
             return false;
     }
 
@@ -3014,6 +3119,12 @@ bool KeyCondition::tryPrepareSetIndexForIn(
             }
         }
     }
+
+    /// Not gated on `!out.relaxed` like the `has` sibling: `relaxed` only forbids trusting
+    /// `can_be_false`, while an inexactly converted set also prunes through `can_be_true`.
+    if (!areSetAndKeyTypesCompatibleForIn(
+            set_types, left_args_count, data_types, set_transforming_dags, indexes_mapping))
+        return false;
 
     if (!tryPrepareSetColumnsForIndex(
             set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
