@@ -72,6 +72,12 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     }
     else
     {
+        /// Serialize on every stream ahead of the merge into the single sink; otherwise the sink
+        /// would serialize everything alone.
+        pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
+        {
+            return settings.exchange_lookup->createSerializer(header, exchange_id);
+        });
         pipeline.resize(1);
     }
 

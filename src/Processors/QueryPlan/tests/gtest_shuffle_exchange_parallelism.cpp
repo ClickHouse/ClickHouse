@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
+#include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -146,6 +147,78 @@ std::unique_ptr<AggregatingStep> makeAggregatingStep(const SharedHeader & header
         /*explicit_sorting_required_for_aggregation_in_order=*/ false);
 }
 
+/// Statistics of a sending pipeline, collected by `runSendingStep`.
+struct SendingStats
+{
+    /// Data rows received by the busiest processor behind the sources, and its name. Processors
+    /// that receive serialized packets have another header and are not counted.
+    size_t max_rows_into_one_processor = 0;
+    String max_rows_processor;
+    size_t rows_in_sinks = 0;
+    size_t sinks = 0;
+    size_t serializers = 0;
+};
+
+/// Feeds `num_streams` sources with `makeChunks` into the sending step, runs the pipeline on
+/// `num_streams` threads and collects the statistics.
+SendingStats runSendingStep(IQueryPlanStep & step, size_t num_streams, const SharedHeader & header, const BuildQueryPipelineSettings & settings)
+{
+    Pipes pipes;
+    for (size_t stream = 0; stream < num_streams; ++stream)
+        pipes.emplace_back(std::make_shared<SourceFromChunks>(header, makeChunks(stream)));
+
+    auto builder = std::make_unique<QueryPipelineBuilder>();
+    builder->init(Pipe::unitePipes(std::move(pipes)));
+    EXPECT_EQ(builder->getNumStreams(), num_streams);
+
+    QueryPipelineBuilders builders;
+    builders.emplace_back(std::move(builder));
+    auto sending = step.updatePipeline(std::move(builders), settings);
+
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*sending));
+    pipeline.setNumThreads(num_streams);
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+
+    SendingStats stats;
+    for (const auto & processor : pipeline.getProcessors())
+    {
+        if (processor->getInputs().empty())
+            continue;
+
+        const size_t input_rows = processor->getProcessorDataStats().input_rows;
+        if (processor->getName() == "CountingSink")
+        {
+            ++stats.sinks;
+            stats.rows_in_sinks += input_rows;
+        }
+        if (processor->getName() == "StreamingExchangeSerializingTransform")
+            ++stats.serializers;
+
+        if (!blocksHaveEqualStructure(processor->getInputs().front().getHeader(), *header))
+            continue;
+        if (input_rows > stats.max_rows_into_one_processor)
+        {
+            stats.max_rows_into_one_processor = input_rows;
+            stats.max_rows_processor = processor->getName();
+        }
+    }
+    return stats;
+}
+
+constexpr size_t streams = 8;
+constexpr size_t total_rows = streams * chunks_per_stream * rows_per_chunk;
+constexpr size_t rows_per_stream = total_rows / streams;
+
+/// The work after the sources must stay spread over the streams: no processor may receive more than
+/// one stream's worth of rows, plus a margin for uneven hashing.
+void expectSpreadOverStreams(const SendingStats & stats)
+{
+    EXPECT_LE(stats.max_rows_into_one_processor, rows_per_stream * 3 / 2)
+        << stats.max_rows_processor << " received " << stats.max_rows_into_one_processor << " of " << total_rows
+        << " rows, one stream carries " << rows_per_stream;
+}
+
 }
 
 /// A receiving task gets one exchange source per sending task. The aggregation after it must
@@ -180,67 +253,61 @@ TEST(ShuffleExchangeParallelism, ReceiverSpreadsInputOverMaxThreads)
 }
 
 /// A sending task scatters its read streams into the destination buckets. The work after the
-/// scatter (serialization, compression, sending) must stay spread over the streams: with 8
-/// streams and 3 buckets no processor may receive more than one stream's worth of rows, plus a
-/// margin for uneven hashing. Otherwise a third of all rows is handled by one processor on one
-/// thread while 8 threads are available, and the bucket count caps the sender throughput.
+/// scatter must stay spread over the streams; otherwise a third of all rows would go through one
+/// processor on one thread while 8 threads are available.
 TEST(ShuffleExchangeParallelism, SenderKeepsBucketWorkSpreadOverStreams)
 {
     MainThreadStatus::getInstance();
 
-    constexpr size_t streams = 8;
     constexpr size_t buckets = 3;
+    auto context = Context::createCopy(getContext().context);
+    auto settings = makeSettings(context, streams);
+    auto header = makeHeader();
+
+    ShuffleSendStep send(header, "exchange_0", Names{"k"}, buckets);
+    auto stats = runSendingStep(send, streams, header, settings);
+
+    expectSpreadOverStreams(stats);
+    EXPECT_EQ(stats.sinks, buckets);
+    /// The packets keep the row count of the data they carry.
+    EXPECT_EQ(stats.rows_in_sinks, total_rows);
+}
+
+/// A gather sends everything to one destination. When no order has to be kept, the serialization
+/// must still run on every stream ahead of the merge into the single sink.
+TEST(ShuffleExchangeParallelism, UnsortedGatherKeepsSerializationSpreadOverStreams)
+{
+    MainThreadStatus::getInstance();
 
     auto context = Context::createCopy(getContext().context);
     auto settings = makeSettings(context, streams);
     auto header = makeHeader();
 
-    Pipes pipes;
-    for (size_t stream = 0; stream < streams; ++stream)
-        pipes.emplace_back(std::make_shared<SourceFromChunks>(header, makeChunks(stream)));
+    GatherSendStep gather(header, "exchange_0");
+    auto stats = runSendingStep(gather, streams, header, settings);
 
-    auto builder = std::make_unique<QueryPipelineBuilder>();
-    builder->init(Pipe::unitePipes(std::move(pipes)));
-    ASSERT_EQ(builder->getNumStreams(), streams);
+    expectSpreadOverStreams(stats);
+    EXPECT_EQ(stats.serializers, streams);
+    EXPECT_EQ(stats.sinks, 1u);
+    EXPECT_EQ(stats.rows_in_sinks, total_rows);
+}
 
-    ShuffleSendStep send(header, "exchange_0", Names{"k"}, buckets);
-    QueryPipelineBuilders builders;
-    builders.emplace_back(std::move(builder));
-    auto sending = send.updatePipeline(std::move(builders), settings);
+/// A sorted gather merges the streams first, so the serialization can only follow the merge:
+/// the single sink serializes itself and no serializer sits in front of the merge.
+TEST(ShuffleExchangeParallelism, SortedGatherSerializesAfterTheMerge)
+{
+    MainThreadStatus::getInstance();
 
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*sending));
-    pipeline.setNumThreads(streams);
-    CompletedPipelineExecutor executor(pipeline);
-    executor.execute();
+    auto context = Context::createCopy(getContext().context);
+    auto settings = makeSettings(context, streams);
+    auto header = makeHeader();
 
-    const size_t total_rows = streams * chunks_per_stream * rows_per_chunk;
-    const size_t rows_per_stream = total_rows / streams;
+    SortDescription by_key;
+    by_key.emplace_back("k", 1, 1);
+    GatherSendStep gather(header, "exchange_0", by_key);
+    auto stats = runSendingStep(gather, streams, header, settings);
 
-    /// Sources carry their own stream. Every other processor that receives rows of the data
-    /// header is checked; a processor that receives serialized packets has another header.
-    size_t max_rows = 0;
-    String max_rows_processor;
-    size_t rows_in_sinks = 0;
-    for (const auto & processor : pipeline.getProcessors())
-    {
-        if (processor->getInputs().empty())
-            continue;
-
-        const size_t input_rows = processor->getProcessorDataStats().input_rows;
-        if (processor->getName() == "CountingSink")
-            rows_in_sinks += input_rows;
-
-        if (!blocksHaveEqualStructure(processor->getInputs().front().getHeader(), *header))
-            continue;
-        if (input_rows > max_rows)
-        {
-            max_rows = input_rows;
-            max_rows_processor = processor->getName();
-        }
-    }
-
-    EXPECT_LE(max_rows, rows_per_stream * 3 / 2)
-        << max_rows_processor << " received " << max_rows << " of " << total_rows << " rows, one stream carries " << rows_per_stream;
-    /// The packets keep the row count of the data they carry.
-    EXPECT_EQ(rows_in_sinks, total_rows);
+    EXPECT_EQ(stats.serializers, 0u);
+    EXPECT_EQ(stats.sinks, 1u);
+    EXPECT_EQ(stats.rows_in_sinks, total_rows);
 }
