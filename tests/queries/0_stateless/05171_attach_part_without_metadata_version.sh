@@ -31,7 +31,7 @@ ${CLICKHOUSE_LOCAL} --path "${workdir}" -q "ALTER TABLE renamed ATTACH PARTITION
     grep -c -m1 'metadata_version.txt'
 
 ${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
-SELECT 'still detached', count() FROM system.detached_parts WHERE table = 'renamed';
+SELECT 'still detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'renamed';
 SELECT 'nothing attached', count() FROM renamed;
 "
 
