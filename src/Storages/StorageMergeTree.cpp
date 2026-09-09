@@ -560,6 +560,21 @@ void StorageMergeTree::alter(
             applyMetadataChangesToCreateQuery(create_ast, new_metadata, local_context);
         }
 
+        /// Waiting for a mutation takes as long as the mutation runs, so the guard is not held for
+        /// it. The table can be renamed meanwhile, so it is re-resolved before the commit below.
+        auto wait_for_mutation_unguarded = [&](Int64 version_to_wait)
+        {
+            const bool reacquire = ddl_guard != nullptr;
+            ddl_guard.reset();
+            waitForMutation(version_to_wait, /* from_another_mutation */ true);
+            if (reacquire)
+            {
+                ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+                    shared_from_this(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                table_id = getStorageID();
+            }
+        };
+
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
             int64_t prev_mutation = 0;
@@ -575,7 +590,7 @@ void StorageMergeTree::alter(
             if (prev_mutation != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
-                waitForMutation(prev_mutation, /* from_another_mutation */ true);
+                wait_for_mutation_unguarded(prev_mutation);
                 LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
             }
         }
@@ -597,7 +612,7 @@ void StorageMergeTree::alter(
             if (mutation_to_wait != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata while rename mutation {} is not finished, will wait for it", mutation_to_wait);
-                waitForMutation(mutation_to_wait, /* from_another_mutation */ true);
+                wait_for_mutation_unguarded(mutation_to_wait);
                 LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
             }
         }
