@@ -691,7 +691,9 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
             return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
-        if (num_sparse_columns == 1 && num_full_columns == 0)
+        /// The shortcut below evaluates the function once for the default value and reuses that result
+        /// for every default row, so it is only for a function that answers the same for the same input.
+        if (num_sparse_columns == 1 && num_full_columns == 0 && isDeterministicInScopeOfQuery())
         {
             auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
             ColumnPtr sparse_offsets;
@@ -814,7 +816,12 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
 
-        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality && num_full_low_cardinality_columns <= 1
+        /// A `LowCardinality` result means the function is executed once per dictionary entry and the
+        /// result is re-indexed, so every row holding the same key gets the same value. For a function
+        /// that is not deterministic within the query that is wrong - and pointless, since its values
+        /// are distinct per row anyway - so it keeps a full result and runs per row.
+        if (canBeExecutedOnLowCardinalityDictionary() && isDeterministicInScopeOfQuery() && has_low_cardinality
+            && num_full_low_cardinality_columns <= 1
             && num_full_ordinary_columns == 0 && type_without_low_cardinality->canBeInsideLowCardinality())
             return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);
         return type_without_low_cardinality;

@@ -26,6 +26,7 @@ protected:
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
     bool useDefaultImplementationForReplicatedColumns() const final { return function->useDefaultImplementationForReplicatedColumns(); }
+    bool isDeterministicInScopeOfQuery() const final { return function->isDeterministicInScopeOfQuery(); }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
