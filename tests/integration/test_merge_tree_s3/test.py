@@ -9,7 +9,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
 from helpers.network import PartitionManager
-from helpers.utility import generate_values, replace_config
+from helpers.utility import generate_values
 from helpers.blobs import wait_blobs_count_synchronization
 from helpers.test_tools import assert_eq_with_retry, wait_condition
 from helpers.wait_for_helpers import (
@@ -706,16 +706,20 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     )
     s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
 
-    # Force multi-part upload mode.
-    replace_config(
-        config_path,
-        "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
-        "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
-    )
-
-    node.query("SYSTEM RELOAD CONFIG")
+    with open(config_path, "r") as config_file:
+        original_config = config_file.read()
 
     try:
+        # Force multi-part upload mode.
+        modified_config = original_config.replace(
+            "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
+            "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
+        )
+        with open(config_path, "w") as config_file:
+            config_file.write(modified_config)
+
+        node.query("SYSTEM RELOAD CONFIG")
+
         s3_requests_before = get_s3_requests()
         node.query(
             "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096, -1))
@@ -727,12 +731,8 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
         check_no_objects_after_drop(cluster)
 
     finally:
-        # Restore
-        replace_config(
-            config_path,
-            "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
-            "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
-        )
+        with open(config_path, "w") as config_file:
+            config_file.write(original_config)
 
         node.query("SYSTEM RELOAD CONFIG")
 
