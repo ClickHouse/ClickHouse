@@ -281,12 +281,13 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
-    /// The dialect/gate are taken from the overlaid settings: `pinOutboundDialectForJSONDialect`
-    /// has pinned them in `query_settings` to match the form of the outbound text (JSON body vs
-    /// an AST->SQL rewrite), which is exactly what the `input()` initializer must reparse with,
-    /// rather than the (possibly mutated) live session ones. The parser limits and parser flags
-    /// come from the parse-time snapshot above: the overlaid values may already contain the
-    /// query's own `SETTINGS` clause, which must not affect the reparse of the query text itself.
+    /// The dialect/gate are taken from the overlaid settings: `pinOutboundDialect` has pinned them
+    /// in `query_settings` to the values the query text was accepted with, matching the form of the
+    /// outbound text (JSON body vs an AST->SQL rewrite vs the text as typed) and undoing a
+    /// query-local `SETTINGS dialect = ...`. That is exactly what the `input()` initializer must
+    /// reparse with, rather than the (possibly mutated) live session ones. The parser limits and
+    /// parser flags come from the parse-time snapshot above: the overlaid values may already contain
+    /// the query's own `SETTINGS` clause, which must not affect the reparse of the query text itself.
     state->parsed_dialect = query_context->getSettingsRef()[Setting::dialect];
     state->enable_json_ast_dialect = query_context->getSettingsRef()[Setting::enable_json_ast_dialect];
     state->max_query_size = parse_time_max_query_size;

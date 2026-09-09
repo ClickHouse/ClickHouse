@@ -30,7 +30,7 @@ struct LocalQueryState
     /// Query text.
     String query;
     /// The dialect/gate the query text was sent in: the `input()` initializer reparses `query` and must
-    /// use the dialect the outbound text was pinned to (see `ClientBase::pinOutboundDialectForJSONDialect`),
+    /// use the dialect the outbound text was pinned to (see `ClientBase::pinOutboundDialect`),
     /// not the live session ones - a JSON `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'`
     /// (or `... enable_json_ast_dialect = 0`) would otherwise be reparsed with the changed settings and fail.
     Dialect parsed_dialect = Dialect::clickhouse;

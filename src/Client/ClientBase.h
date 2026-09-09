@@ -13,6 +13,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
+#include <Core/Field.h>
 #include <Interpreters/Context.h>
 
 #if USE_CLIENT_AI
@@ -157,13 +158,13 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
-    /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
-    /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
-    /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
-    /// client-side AST rewrite — so the server parses it the same way the client did. A plain SQL `SET`
-    /// escape from another dialect is handled separately. The change is temporary (the caller restores
-    /// the saved settings after the query).
-    void pinOutboundDialectForJSONDialect(const String & outbound_query);
+    /// The other side re-parses the outbound query text using the `dialect` it receives, so that
+    /// dialect must be the one the client accepted the text with. Pin the outbound `dialect` (and the
+    /// experimental JSON gate) to match the form of `outbound_query` actually being sent — a JSON body,
+    /// SQL produced by a client-side AST rewrite, or the text as it was typed — undoing a query-local
+    /// `SETTINGS dialect = ...` that only applies to the statements that follow. The change is
+    /// temporary (the caller restores the saved settings after the query).
+    void pinOutboundDialect(const String & outbound_query);
 
     /// Settings to pass to `Connection::sendQuery`: a copy of the client settings with `compatibility`-derived
     /// values kept but marked unchanged. They still select the client-side network codec, but they are not
@@ -599,9 +600,16 @@ protected:
     bool allow_merge_tree_settings = false;
 
     /// True when the current query text was parsed via the `clickhouse_json` dialect JSON path. Captured
-    /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
+    /// before any in-query `SET` is applied, so `pinOutboundDialect` can keep the outbound
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
+
+    /// The `dialect` and `enable_json_ast_dialect` values the current query text was accepted with,
+    /// captured before any in-query `SET` is applied. `pinOutboundDialect` restores them for the
+    /// outbound settings, so a query-local `SETTINGS dialect = ...` cannot change how this very query
+    /// text is parsed on the other side.
+    Field current_query_parse_dialect;
+    Field current_query_parse_json_ast_gate;
 
     /// True when the current query is a SQL `SET` escape parsed with `ParserQuery` while a
     /// non-ClickHouse dialect was active. Its outbound transport dialect must be `clickhouse`.
