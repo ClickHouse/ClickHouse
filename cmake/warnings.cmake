@@ -59,15 +59,14 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # captured reference to the container variable itself, while in reality only
     # references to the container's elements would be invalidated.
     no_warning(lifetime-safety-invalidation)
-endif ()
-if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 24)
     # Too many false positives: it flags the pervasive idiom of taking a raw pointer out
     # of a `unique_ptr`, moving the owner into a container and returning the pointer -
     # the storage is on the heap and outlives the local, and the diagnostic text itself
     # concedes it "could be a false positive as the storage may have been moved".
-    # Nothing links clang 24 today except the Emscripten build (its clang is ahead of the
-    # default toolchain); re-evaluate when the default toolchain catches up.
     no_warning(lifetime-safety-return-stack-addr-moved)
+    # False positives: it does not understand a field that is deliberately cleared before the
+    # captured local dies (e.g. via SCOPE_EXIT), see `after_fuzz_reconnect` in `FuzzLoop.cpp`.
+    no_warning(lifetime-safety-dangling-field)
 endif ()
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning

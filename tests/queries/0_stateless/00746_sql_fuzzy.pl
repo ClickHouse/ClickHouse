@@ -41,7 +41,7 @@ sub rand_string {
 
 sub one ($$) {
     my ($state, $value) = @_;
-    return ref $value ~~ 'CODE' ? $value->() : $value;
+    return ref $value eq 'CODE' ? $value->() : $value;
 }
 
 sub one_of ($$) {
@@ -49,7 +49,7 @@ sub one_of ($$) {
     #state $last_selected;
     #my $last_n = $last_selected->{"$hash"};
     my $value;
-    if ('ARRAY' ~~ ref $hash) {
+    if (ref $hash eq 'ARRAY') {
         $value = rand_pick $hash;
     } else {
         my $keys_array = [sort keys %$hash];
@@ -102,7 +102,7 @@ $expression_cast = {
     'number' => sub { my ($state) = @_; return rand_pick(['', '-']) . rand_word(8, 0 .. 9) . rand_pick(['', '.' . rand_word(6, 0 .. 9)]) },
     'string' => sub {
         my ($state) = @_;
-        return q{'} . rand_word(8, map { $_ ~~ q{'} ? '\\' . $_ : $_ } map {chr} 32 .. 127) . q{'};
+        return q{'} . rand_word(8, map { $_ eq q{'} ? '\\' . $_ : $_ } map {chr} 32 .. 127) . q{'};
     },
     '[]'  => '[]',
     '[x]' => sub { my ($state) = @_; return '[' . one_of($state, $expression) . ']' },
@@ -141,7 +141,7 @@ sub main {
         $ENV{SQL_FUZZY_TABLE_FUNCTIONS}
           || file_read($ENV{SQL_FUZZY_FILE_TABLE_FUNCTIONS} || 'clickhouse-table-functions')
     ];
-    $table_functions = [grep { not $_ ~~ [qw(numbers)] } @$table_functions];    # too slow
+    $table_functions = [grep { $_ ne 'numbers' } @$table_functions];    # too slow
     say one_of({}, $query), ';' for 1 .. ($ENV{SQL_FUZZY_LINES} || 100);
 }
 

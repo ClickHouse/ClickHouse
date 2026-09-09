@@ -1,5 +1,5 @@
 # docker build -t clickhouse/test-base .
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # ARG for quick switch to a given ubuntu mirror. Defaults stay canonical so local
 # builds are unchanged; CI passes the in-region AWS mirror on the command line
@@ -17,9 +17,13 @@ RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xa
         -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
         -e "s|https://ports.ubuntu.com|$apt_ports_archive|g" \
     && printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99-clickhouse-ci
-ARG LLVM_APT_VERSION="1:22.1.8~"
+ARG LLVM_APT_VERSION="1:23.1.0~"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=22
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=23
+
+# ubuntu:24.04 ships a default "ubuntu" user with uid/gid 1000; remove it so
+# derived images can create their own users with these ids (e.g. "clickhouse")
+RUN userdel --remove ubuntu
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
@@ -60,7 +64,7 @@ RUN test -f /usr/bin/llvm-symbolizer-${LLVM_VERSION}
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
 # Install LLVM tools for code coverage (llvm-profdata, llvm-cov)
-# Must match LLVM_VERSION used for building (22)
+# Must match LLVM_VERSION used for building (23)
 RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -77,7 +81,7 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Install newer lcov from source
-# Ubuntu 22.04 has old 1.14 version, we need 2.x for --sort-tables and --hierarchical options
+# Ubuntu's bundled lcov is too old, we need 2.4+ for --sort-tables and --hierarchical options
 RUN cd /tmp \
     && wget -q https://github.com/linux-test-project/lcov/releases/download/v2.4/lcov-2.4.tar.gz \
     && tar xzf lcov-2.4.tar.gz \

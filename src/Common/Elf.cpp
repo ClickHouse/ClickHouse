@@ -72,7 +72,7 @@ void Elf::init(const char * data, size_t size, const std::string & path_)
     if (!rangeWithin(section_names_offset, section_names_table_size, elf_size))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (section names string table points after end of file)", path);
 
-    section_names = reinterpret_cast<const char *>(mapped + section_names_offset);
+    section_names = mapped + section_names_offset;
     section_names_size = section_names_table_size;
 
     /// Require the trailing NUL (guaranteed by the ELF spec) so name() can return C strings without re-scanning.

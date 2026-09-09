@@ -2824,9 +2824,16 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
     return result;
 }
 
-ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
+/// Lock ownership is transferred to the caller via the returned QueueLocks, which the
+/// thread-safety analysis cannot model.
+ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
+    QueueLocks locks{
+        std::unique_lock(state_mutex, std::defer_lock),
+        std::unique_lock(pull_logs_to_queue_mutex, std::defer_lock),
+        std::unique_lock(update_mutations_mutex, std::defer_lock)};
+    std::lock(locks.state_lock, locks.pull_logs_to_queue_lock, locks.update_mutations_lock);
+    return locks;
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler

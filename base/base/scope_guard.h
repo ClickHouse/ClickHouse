@@ -104,7 +104,7 @@ private:
     F function = F{};
 };
 
-using scope_guard = BasicScopeGuard<std::function<void(void)>>;
+using scope_guard = BasicScopeGuard<std::function<void()>>;
 
 
 template <class F>

@@ -241,6 +241,7 @@ target_include_directories(llvm-min-tblgen PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/include
     ${LLVM_SOURCE_DIR}/utils/TableGen
     ${LLVM_SOURCE_DIR}/../third-party/siphash/include
+    ${LLVM_SOURCE_DIR}/../libc
 )
 
 target_compile_definitions(llvm-min-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
@@ -292,8 +293,10 @@ add_executable(llvm-tblgen
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CodeExpander.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CombinerUtils.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/CXXPredicates.cpp
-    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/GlobalISelMatchTable.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/GlobalISelMatchTableExecutorEmitter.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/MatchTable.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/Matchers.cpp
+    ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/MatchTable/Types.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/PatternParser.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/GlobalISel/Patterns.cpp
     ${LLVM_SOURCE_DIR}/utils/TableGen/Common/AsmWriterInst.cpp
@@ -378,6 +381,7 @@ target_include_directories(llvm-tblgen PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/include
     ${LLVM_SOURCE_DIR}/utils/TableGen
     ${LLVM_SOURCE_DIR}/../third-party/siphash/include
+    ${LLVM_SOURCE_DIR}/../libc
 )
 
 target_compile_definitions(llvm-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})

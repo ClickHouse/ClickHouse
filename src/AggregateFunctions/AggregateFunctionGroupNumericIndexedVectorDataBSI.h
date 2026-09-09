@@ -455,32 +455,29 @@ public:
         return max_integer_bit_num + max_fraction_bit_num;
     }
 
+    /// The throw path is kept out of line: `getDataArrayAt` is inlined into thousands of call
+    /// sites across all template instantiations, and inlining the exception construction into
+    /// each of them bloats the object file and slows down compilation.
+    [[noreturn]] NO_INLINE void throwDataArrayIndexOutOfBounds(size_t index) const
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Array index out of bounds. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
+            index,
+            integer_bit_num,
+            fraction_bit_num,
+            data_array.size());
+    }
     std::shared_ptr<Roaring> & getDataArrayAt(size_t index)
     {
         if (index >= data_array.size())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Array index out of bounds. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
-                index,
-                integer_bit_num,
-                fraction_bit_num,
-                data_array.size());
-        }
+            throwDataArrayIndexOutOfBounds(index);
         return data_array[index];
     }
     const std::shared_ptr<Roaring> & getDataArrayAt(size_t index) const
     {
         if (index >= data_array.size())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Array index out of bounds in const. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
-                index,
-                integer_bit_num,
-                fraction_bit_num,
-                data_array.size());
-        }
+            throwDataArrayIndexOutOfBounds(index);
         return data_array[index];
     }
 

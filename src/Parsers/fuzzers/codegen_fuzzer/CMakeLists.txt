@@ -45,6 +45,12 @@ set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "
 # The DEFINE_BINARY_PROTO_FUZZER macro expands to functions (LLVMFuzzerCustomMutator, etc.) without prior declarations.
 target_compile_options (codegen_select_fuzzer PRIVATE -Wno-newline-eof -Wno-missing-prototypes)
 
+# The generated out.pb.h trips the `lifetime-safety-*` lifetimebound diagnostics introduced in clang 23:
+# it returns references to fields from accessors whose declarations lack the `lifetimebound` attribute.
+if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
+    target_compile_options (codegen_select_fuzzer PRIVATE -Wno-lifetime-safety-lifetimebound-violation -Wno-lifetime-safety-intra-tu-misplaced-lifetimebound)
+endif ()
+
 target_link_libraries(protoc ch_contrib::fuzzer)
 
 target_include_directories(codegen_select_fuzzer SYSTEM BEFORE PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")

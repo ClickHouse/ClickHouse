@@ -232,7 +232,7 @@ private:
         unsigned capture = regexp.getNumberOfSubpatterns();
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(capture + 1);
-        regexp.match(reinterpret_cast<const char *>(padded_str.data()), padded_str.size(), matches, static_cast<unsigned>(capture + 1));
+        regexp.match(reinterpret_cast<const char *>(padded_str.data()), padded_str.size(), matches, capture + 1);
 
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
