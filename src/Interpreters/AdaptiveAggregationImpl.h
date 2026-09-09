@@ -85,9 +85,11 @@ constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
 /// is enqueued as-is. Also bounds the coalescing buffer per thread.
 constexpr size_t adaptive_seal_target_bytes = 4 << 20;
 /// A batch with at least this many records is enqueued as-is regardless of its bytes: with
-/// 256 buckets it already gives the drain slices of 128 records on average, so coalescing
-/// would copy every record for a slice-size gain the drain no longer notices.
-constexpr size_t adaptive_seal_direct_records = 32 * 1024;
+/// 256 buckets it already gives the drain slices of 32 records on average, and coalescing
+/// would copy every record (keys, hashes, payload) for a slice-size gain the drain does not
+/// notice. On ClickBench Q19 the batches hold ~12K records, so at 32K every one of them was
+/// copied; the copy was 10% of the query's cycles.
+constexpr size_t adaptive_seal_direct_records = 8 * 1024;
 /// A drain table is detached and written only once it holds at least this many keys, so the
 /// spilled parts stay reasonably sized instead of one tiny file per chunk; the same floor
 /// sizes the batch a pressure sweep claims for a producer-local drain. A key count cannot
