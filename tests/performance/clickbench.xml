@@ -1,4 +1,4 @@
-<test>
+<test run_all_queries="1">
 <settings>
     <max_memory_usage>30000000000</max_memory_usage>
 </settings>
