@@ -37,6 +37,13 @@ SELECT 'PREWHERE and WHERE both keep row 1';
 SELECT id FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('-hello')) WHERE has(arr_prefixed, '-world') ORDER BY id;
 SELECT 'WHERE keeps nothing PREWHERE kept';
 SELECT count() FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('-hello')) WHERE has(arr_prefixed, '-bar');
+-- The derived name is also selected above the filter step, so the rebuilt filter must keep passing it through.
+SELECT 'Derived name selected above the filter';
+SELECT arr_prefixed FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('-hello')) WHERE has(arr_prefixed, '-world');
+SELECT 'Derived name selected next to a physical column';
+SELECT id, arr_prefixed, length(arr_prefixed) FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('-hello')) WHERE has(arr_prefixed, '-world') ORDER BY id;
+SELECT 'Derived name grouped above the filter';
+SELECT arr_prefixed, count() FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('-hello')) WHERE has(arr_prefixed, '-world') GROUP BY arr_prefixed;
 
 SELECT 'Direct read on';
 SELECT count() > 0 FROM
@@ -74,6 +81,8 @@ SELECT 'No matching token';
 SELECT count() FROM t_text_index_expression PREWHERE has(mapValues(attributes), toLowCardinality('zzz')) WHERE has(mapValues(attributes), '192.168.1.1');
 SELECT 'Matching token';
 SELECT id FROM t_text_index_expression PREWHERE has(mapValues(attributes), toLowCardinality('192.168.1.1')) WHERE has(mapValues(attributes), '192.168.1.1') ORDER BY id;
+SELECT 'Derived name selected above the filter';
+SELECT mapValues(attributes) FROM t_text_index_expression PREWHERE has(mapValues(attributes), toLowCardinality('192.168.1.1')) WHERE has(mapValues(attributes), '192.168.1.1');
 
 SELECT 'Index still usable';
 SELECT id FROM t_text_index_expression PREWHERE has(mapValues(attributes), toLowCardinality('192.168.1.1')) WHERE has(mapValues(attributes), '192.168.1.1')

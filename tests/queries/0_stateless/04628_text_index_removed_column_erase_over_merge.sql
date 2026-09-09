@@ -39,6 +39,12 @@ SELECT count() FROM logs_merge
 PREWHERE hasAnyTokens(mapValues(attributes), '192.168.1.1')
 WHERE has(mapValues(attributes), '192.168.1.1');
 
+-- The derived name is also selected above the filter step, so the rebuilt filter must keep passing it through.
+SELECT 'Derived name selected above the filter';
+SELECT mapValues(attributes) FROM logs_merge
+PREWHERE hasAnyTokens(mapValues(attributes), toLowCardinality('192.168.1.1'))
+WHERE has(mapValues(attributes), '192.168.1.1');
+
 -- The toLowCardinality needle is load-bearing: a plain String needle does not reach the WHERE filter
 -- step, so the oracles below would pass without covering the path the queries above take.
 SELECT 'Direct read on';
