@@ -6,7 +6,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -73,10 +72,9 @@ namespace
     }
 }
 
-void writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBufferFromOwnString & out)
+size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out)
 {
-    /// The body size is known only after the block is serialized; the header is filled in below.
-    const size_t packet_header_offset = out.count();
+    const size_t packet_offset = out.count();
     PacketHeader packet_header{.packet_type = PacketType::Data, .bytes_size = 0};
     out.write(reinterpret_cast<const char *>(&packet_header), sizeof(packet_header));
 
@@ -127,7 +125,12 @@ void writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuff
         }
     }
 
-    const size_t packet_data_size = out.count() - packet_header_offset - sizeof(PacketHeader);
+    return packet_offset;
+}
+
+void finishDataPacket(char * packet, size_t packet_bytes)
+{
+    const size_t packet_data_size = packet_bytes - sizeof(PacketHeader);
 
     /// The receiver rejects Data packets above this limit; fail here with a clear, local error
     /// instead of sending one the peer would reject. Splitting large chunks is not implemented yet.
@@ -136,10 +139,9 @@ void writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuff
             "Exchange data packet of {} bytes exceeds the maximum {}; splitting large chunks is not implemented",
             packet_data_size, MAX_DATA_PACKET_BODY_BYTES);
 
-    /// Fill in the body size with memcpy: the header may sit at an unaligned offset of the buffer.
-    char * packet_header_start = const_cast<char *>(out.stringView().data()) + packet_header_offset;
+    /// memcpy: the header may sit at an unaligned offset of the buffer.
     static_assert(sizeof(PacketHeader::bytes_size) == sizeof(packet_data_size));
-    memcpy(packet_header_start + offsetof(PacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
+    memcpy(packet + offsetof(PacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
 }
 
 String describePeer(const Poco::Net::StreamSocket & socket)

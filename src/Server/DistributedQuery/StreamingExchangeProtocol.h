@@ -13,7 +13,6 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
-class WriteBufferFromOwnString;
 class Chunk;
 
 namespace StreamingExchangeProtocol
@@ -86,7 +85,14 @@ namespace StreamingExchangeProtocol
     /// Appends one Data packet for `chunk` to `out`: the packet header, the flags, the row and column
     /// counts, the aggregation chunk number when the chunk carries one, and the compressed Native block
     /// with the columns of `header`. A chunk without rows and columns becomes the end-of-stream packet.
-    void writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBufferFromOwnString & out);
+    /// The body size in the packet header is known only after the block is serialized; the caller
+    /// fills it in with `finishDataPacket` once it can address the written bytes. Returns the offset
+    /// of the packet in `out`.
+    size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out);
+
+    /// Writes the body size into the header of the packet that starts at `packet` and is
+    /// `packet_bytes` long in total.
+    void finishDataPacket(char * packet, size_t packet_bytes);
 
     /// The peer address for messages; a socket whose peer is gone may not know it anymore.
     String describePeer(const Poco::Net::StreamSocket & socket);

@@ -37,7 +37,8 @@ public:
     {
         auto stream_name = exchange_stream_id.toString();
         auto future_connection = connections->getConnection(query_id, stream_name);
-        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name);
+        const bool input_is_serialized = StreamingExchangeSerializingTransform::isSerializedStream(*input_header);
+        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name, input_is_serialized);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String &) override

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstring>
+
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -18,11 +20,14 @@
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Processors/Sources/SourceFromChunks.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
 #include <Common/ThreadStatus.h>
+#include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
@@ -40,8 +45,10 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block{ColumnWithTypeAndName(type->createColumn(), type, "k")});
 }
 
-/// Distinct keys for every stream, so the hash spreads them over all buckets.
-Chunks makeChunks(size_t stream_index)
+/// Distinct keys for every stream, so the hash spreads them over all buckets. With
+/// `with_rowless_info_chunk` the stream ends with a chunk that has no rows but carries an
+/// aggregation info, as an aggregation may emit for an empty bucket.
+Chunks makeChunks(size_t stream_index, bool with_rowless_info_chunk = false)
 {
     Chunks chunks;
     for (size_t chunk_index = 0; chunk_index < chunks_per_stream; ++chunk_index)
@@ -53,6 +60,16 @@ Chunks makeChunks(size_t stream_index)
         Columns columns;
         columns.emplace_back(std::move(column));
         chunks.emplace_back(std::move(columns), rows_per_chunk);
+    }
+    if (with_rowless_info_chunk)
+    {
+        Columns columns;
+        columns.emplace_back(ColumnUInt64::create());
+        Chunk chunk(std::move(columns), 0);
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        info->bucket_num = static_cast<Int32>(stream_index);
+        chunk.getChunkInfos().add(std::move(info));
+        chunks.emplace_back(std::move(chunk));
     }
     return chunks;
 }
@@ -68,14 +85,44 @@ public:
     }
 };
 
+/// Counts the chunks it receives. Ready packets are checked to start with a packet header whose
+/// size field matches the packet.
 class CountingSink : public ISink
 {
 public:
-    explicit CountingSink(SharedHeader header) : ISink(std::move(header)) {}
+    explicit CountingSink(SharedHeader header)
+        : ISink(header)
+        , receives_packets(StreamingExchangeSerializingTransform::isSerializedStream(*header))
+    {
+    }
+
     String getName() const override { return "CountingSink"; }
 
+    size_t chunks = 0;
+    size_t malformed_packets = 0;
+
 protected:
-    void consume(Chunk) override {}
+    void consume(Chunk chunk) override
+    {
+        ++chunks;
+        if (!receives_packets)
+            return;
+
+        const std::string_view packet = chunk.getColumns().front()->getDataAt(0);
+        StreamingExchangeProtocol::PacketHeader packet_header{};
+        if (chunk.getNumRows() != 1 || packet.size() < sizeof(packet_header))
+        {
+            ++malformed_packets;
+            return;
+        }
+        memcpy(&packet_header, packet.data(), sizeof(packet_header));
+        if (packet_header.packet_type != StreamingExchangeProtocol::PacketType::Data
+            || packet_header.bytes_size != packet.size() - sizeof(packet_header))
+            ++malformed_packets;
+    }
+
+private:
+    const bool receives_packets;
 };
 
 /// The streaming exchange without sockets: the real serializer, sinks that discard the packets, and
@@ -155,18 +202,23 @@ struct SendingStats
     /// that receive serialized packets have another header and are not counted.
     size_t max_rows_into_one_processor = 0;
     String max_rows_processor;
-    size_t rows_in_sinks = 0;
+    /// Rows that went into the serializers; the sinks then receive one-row packets.
+    size_t rows_serialized = 0;
+    size_t rows_into_sinks = 0;
+    size_t chunks_in_sinks = 0;
+    size_t malformed_packets = 0;
     size_t sinks = 0;
     size_t serializers = 0;
 };
 
 /// Feeds `num_streams` sources with `makeChunks` into the sending step, runs the pipeline on
 /// `num_streams` threads and collects the statistics.
-SendingStats runSendingStep(IQueryPlanStep & step, size_t num_streams, const SharedHeader & header, const BuildQueryPipelineSettings & settings)
+SendingStats runSendingStep(
+    IQueryPlanStep & step, size_t num_streams, const SharedHeader & header, const BuildQueryPipelineSettings & settings, bool with_rowless_info_chunk = false)
 {
     Pipes pipes;
     for (size_t stream = 0; stream < num_streams; ++stream)
-        pipes.emplace_back(std::make_shared<SourceFromChunks>(header, makeChunks(stream)));
+        pipes.emplace_back(std::make_shared<SourceFromChunks>(header, makeChunks(stream, with_rowless_info_chunk)));
 
     auto builder = std::make_unique<QueryPipelineBuilder>();
     builder->init(Pipe::unitePipes(std::move(pipes)));
@@ -188,13 +240,18 @@ SendingStats runSendingStep(IQueryPlanStep & step, size_t num_streams, const Sha
             continue;
 
         const size_t input_rows = processor->getProcessorDataStats().input_rows;
-        if (processor->getName() == "CountingSink")
+        if (const auto * sink = typeid_cast<const CountingSink *>(processor.get()))
         {
             ++stats.sinks;
-            stats.rows_in_sinks += input_rows;
+            stats.rows_into_sinks += input_rows;
+            stats.chunks_in_sinks += sink->chunks;
+            stats.malformed_packets += sink->malformed_packets;
         }
         if (processor->getName() == "StreamingExchangeSerializingTransform")
+        {
             ++stats.serializers;
+            stats.rows_serialized += input_rows;
+        }
 
         if (!blocksHaveEqualStructure(processor->getInputs().front().getHeader(), *header))
             continue;
@@ -204,6 +261,7 @@ SendingStats runSendingStep(IQueryPlanStep & step, size_t num_streams, const Sha
             stats.max_rows_processor = processor->getName();
         }
     }
+    EXPECT_EQ(stats.malformed_packets, 0u);
     return stats;
 }
 
@@ -270,8 +328,9 @@ TEST(ShuffleExchangeParallelism, SenderKeepsBucketWorkSpreadOverStreams)
 
     expectSpreadOverStreams(stats);
     EXPECT_EQ(stats.sinks, buckets);
-    /// The packets keep the row count of the data they carry.
-    EXPECT_EQ(stats.rows_in_sinks, total_rows);
+    EXPECT_EQ(stats.rows_serialized, total_rows);
+    /// Every scattered piece of a chunk becomes one packet.
+    EXPECT_EQ(stats.chunks_in_sinks, streams * chunks_per_stream * buckets);
 }
 
 /// A gather sends everything to one destination. When no order has to be kept, the serialization
@@ -290,7 +349,8 @@ TEST(ShuffleExchangeParallelism, UnsortedGatherKeepsSerializationSpreadOverStrea
     expectSpreadOverStreams(stats);
     EXPECT_EQ(stats.serializers, streams);
     EXPECT_EQ(stats.sinks, 1u);
-    EXPECT_EQ(stats.rows_in_sinks, total_rows);
+    EXPECT_EQ(stats.rows_serialized, total_rows);
+    EXPECT_EQ(stats.chunks_in_sinks, streams * chunks_per_stream);
 }
 
 /// A sorted gather merges the streams first, so the serialization can only follow the merge:
@@ -310,7 +370,7 @@ TEST(ShuffleExchangeParallelism, SortedGatherSerializesAfterTheMerge)
 
     EXPECT_EQ(stats.serializers, 0u);
     EXPECT_EQ(stats.sinks, 1u);
-    EXPECT_EQ(stats.rows_in_sinks, total_rows);
+    EXPECT_EQ(stats.rows_into_sinks, total_rows);
 }
 
 /// A broadcast sends the same rows to every destination. The serialization must run once per
@@ -331,7 +391,8 @@ TEST(ShuffleExchangeParallelism, BroadcastSerializesOncePerStream)
     expectSpreadOverStreams(stats);
     EXPECT_EQ(stats.serializers, streams);
     EXPECT_EQ(stats.sinks, buckets);
-    EXPECT_EQ(stats.rows_in_sinks, total_rows * buckets);
+    EXPECT_EQ(stats.rows_serialized, total_rows);
+    EXPECT_EQ(stats.chunks_in_sinks, streams * chunks_per_stream * buckets);
 }
 
 /// A keyless scatter spreads whole chunks round-robin over the buckets. It must keep the streams
@@ -351,5 +412,24 @@ TEST(ShuffleExchangeParallelism, KeylessScatterKeepsBucketWorkSpreadOverStreams)
     expectSpreadOverStreams(stats);
     EXPECT_EQ(stats.serializers, streams * buckets);
     EXPECT_EQ(stats.sinks, buckets);
-    EXPECT_EQ(stats.rows_in_sinks, total_rows);
+    EXPECT_EQ(stats.rows_serialized, total_rows);
+    EXPECT_EQ(stats.chunks_in_sinks, streams * chunks_per_stream);
+}
+
+/// A chunk without rows may carry aggregation bucket information. Its packet must reach every
+/// destination of a broadcast like any other.
+TEST(ShuffleExchangeParallelism, BroadcastKeepsRowlessPackets)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr size_t buckets = 3;
+    auto context = Context::createCopy(getContext().context);
+    auto settings = makeSettings(context, streams);
+    auto header = makeHeader();
+
+    BroadcastSendStep broadcast(header, "exchange_0", buckets);
+    auto stats = runSendingStep(broadcast, streams, header, settings, /*with_rowless_info_chunk=*/ true);
+
+    EXPECT_EQ(stats.rows_serialized, total_rows);
+    EXPECT_EQ(stats.chunks_in_sinks, streams * (chunks_per_stream + 1) * buckets);
 }

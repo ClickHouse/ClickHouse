@@ -6,7 +6,7 @@
 
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
-#include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
+#include <Columns/IColumn.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Common/Epoll.h>
@@ -105,7 +105,7 @@ void StreamingExchangeSink::sendToSocket()
             /// `markNoMoreDataNeeded` clears `send_queue`, so we can't be in this loop.
             chassert(!no_more_data_needed);
 
-            const String & buffer = *send_queue.front();
+            const std::string_view buffer = send_queue.front().bytes();
             size_t bytes_to_send = buffer.size() - send_position;
             /// Saturate at INT_MAX: a plain cast would wrap negative for buffers > 2 GiB, after
             /// which Poco's wrapper short-circuits without ever calling ::send.
@@ -164,18 +164,26 @@ void StreamingExchangeSink::flushSerializedData()
     if (out->count() == 0)
         return;
 
-    auto data = std::make_shared<const String>(std::move(out->str()));
+    String data = std::move(out->str());
     out = std::make_shared<WriteBufferFromOwnString>();
-    enqueueBuffer(std::move(data));
+    enqueueBuffer(SendBuffer{std::move(data)});
 }
 
-void StreamingExchangeSink::enqueueBuffer(std::shared_ptr<const String> buffer)
+void StreamingExchangeSink::enqueueBuffer(SendBuffer buffer)
 {
-    if (!buffer || buffer->empty())
+    const size_t size = buffer.bytes().size();
+    if (size == 0)
         return;
 
-    send_queue_bytes += buffer->size();
+    send_queue_bytes += size;
     send_queue.push_back(std::move(buffer));
+}
+
+std::string_view StreamingExchangeSink::SendBuffer::bytes() const
+{
+    if (const auto * column = std::get_if<ColumnPtr>(&data))
+        return (*column)->getDataAt(0);
+    return std::get<String>(data);
 }
 
 ISink::Status StreamingExchangeSink::prepare()
@@ -267,11 +275,9 @@ void StreamingExchangeSink::work()
             final_chunk_added = true;
             consume(std::move(current_chunk));
         }
-        else if (current_chunk || current_chunk.getChunkInfos().has<SerializedExchangePacket>())
+        else if (current_chunk)
         {
-            /// A chunk without rows and columns would look like the end-of-stream packet, so it is
-            /// skipped. A ready packet has no columns either; it is sent even for zero rows, because
-            /// it may carry aggregation bucket information.
+            /// If the chunk is not the final one, send it only if it is not empty
             consume(std::move(current_chunk));
         }
 
@@ -334,7 +340,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
         return;
     }
 
-    rows_written += chunk.getNumRows();
+    ++chunks_written;
 
     if (chunk.getNumRows() == 0 && chunk.getNumColumns() != 0)
     {
@@ -343,16 +349,20 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     LOG_TEST(log, "Writing chunk with {} rows to exchange stream {}", chunk.getNumRows(), stream_name);
 
-    if (auto packet = chunk.getChunkInfos().extract<SerializedExchangePacket>())
+    /// The end-of-stream marker has no columns and is made by the sink itself, also for serialized input.
+    if (input_is_serialized && chunk.hasColumns())
     {
-        /// A packet from `StreamingExchangeSerializingTransform` is sent from its own buffer, which
-        /// the sinks of the other destinations of a broadcast may share. Data the sink serialized
-        /// itself came earlier and goes out first.
+        /// A packet is sent from its own column, which the sinks of the other destinations of a
+        /// broadcast share. Data the sink serialized itself came earlier and goes out first.
+        chassert(chunk.getNumRows() == 1);
         flushSerializedData();
-        enqueueBuffer(packet->bytes);
+        enqueueBuffer(SendBuffer{chunk.getColumns().front()});
     }
     else
-        StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out);
+    {
+        const size_t packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out);
+        StreamingExchangeProtocol::finishDataPacket(const_cast<char *>(out->stringView().data()) + packet_offset, out->count() - packet_offset);
+    }
 
     /// A packet without rows ends the stream or carries only bucket information: do not hold it back.
     if (chunk.getNumRows() == 0)
@@ -363,8 +373,8 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
 void StreamingExchangeSink::onFinish()
 {
-    LOG_TRACE(log, "Finished writing to exchange stream {}, total rows: {}, bytes: {}",
-        stream_name, rows_written, total_bytes_sent);
+    LOG_TRACE(log, "Finished writing to exchange stream {}, chunks: {}, bytes: {}",
+        stream_name, chunks_written, total_bytes_sent);
 }
 
 bool StreamingExchangeSink::tryReadFromSocketNonBlocking(char * buffer, size_t buffer_size, size_t & position)

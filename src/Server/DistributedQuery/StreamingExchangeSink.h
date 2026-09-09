@@ -3,6 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/DequeWithMemoryTracking.h>
+#include <variant>
 #include <Common/Epoll.h>
 #include <Common/Logger.h>
 #include <Common/WakeupFd.h>
@@ -19,10 +20,14 @@ namespace DB
 class StreamingExchangeSink final : public ISink
 {
 public:
-    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_)
+    /// With `input_is_serialized_` the input chunks are packets made by
+    /// `StreamingExchangeSerializingTransform` and are sent as they are; otherwise the sink
+    /// serializes the chunks itself.
+    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_, bool input_is_serialized_)
         : ISink(std::move(header_))
         , future_connection(std::move(future_connection_))
         , stream_name(std::move(stream_name_))
+        , input_is_serialized(input_is_serialized_)
     {
         wait_events_epoll.add(port_update_wakeup.fd());
     }
@@ -59,8 +64,17 @@ private:
     /// Move the data serialized into `out` to `send_queue` and reset `out`.
     void flushSerializedData();
 
+    /// A buffer waiting to be sent: a packet column, shared with the sinks of the other destinations
+    /// of a broadcast, or data the sink serialized itself.
+    struct SendBuffer
+    {
+        std::variant<ColumnPtr, String> data;
+
+        std::string_view bytes() const;
+    };
+
     /// Append a ready buffer to `send_queue`.
-    void enqueueBuffer(std::shared_ptr<const String> buffer);
+    void enqueueBuffer(SendBuffer buffer);
 
     /// Extract socket from future connection
     void extractSocket();
@@ -75,6 +89,7 @@ private:
     FutureConnectionPtr future_connection;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     const String stream_name;
+    const bool input_is_serialized;
 
     /// In-memory buffer to which the sink serializes chunks itself.
     /// Once it becomes big enough its contents move to `send_queue`.
@@ -82,12 +97,12 @@ private:
 
     /// Ready buffers in send order: packets that arrived serialized and the flushed contents of
     /// `out`. The front buffer is being written to the socket, `send_position` bytes of it are sent.
-    DequeWithMemoryTracking<std::shared_ptr<const String>> send_queue;
+    DequeWithMemoryTracking<SendBuffer> send_queue;
     size_t send_position = 0;
     /// Bytes in `send_queue` that are not sent yet.
     size_t send_queue_bytes = 0;
 
-    size_t rows_written = 0;
+    size_t chunks_written = 0;
     size_t total_bytes_sent = 0;
 
     const size_t FLUSH_BUFFER_TO_SOCKET_THRESHOLD = 128 * 1024;
