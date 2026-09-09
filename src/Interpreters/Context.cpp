@@ -3136,22 +3136,41 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
-    String table_name = function->name;
 
-    if (function->isCompoundName())
+    /// `isCompoundName` says whether the parser saw the dot outside backticks, and that bit does not
+    /// survive an AST round-trip: a compound name formats back as one quoted token (`db.view`) and
+    /// re-parses as a single part. Try both readings, preferring the one the parser saw.
+    std::vector<std::pair<String, String>> candidates;
+    candidates.reserve(2);
     {
+        if (!function->isCompoundName())
+            candidates.emplace_back(getCurrentDatabase(), function->name);
+
         std::vector<std::string> parts;
         splitInto<'.'>(parts, function->name);
-
         if (parts.size() == 2)
+            candidates.emplace_back(parts[0], parts[1]);
+
+        /// Compound but not two parts: not resolvable as `database.table`.
+        if (candidates.empty())
+            candidates.emplace_back(getCurrentDatabase(), function->name);
+    }
+
+    String database_name = candidates.front().first;
+    String table_name = candidates.front().second;
+
+    StoragePtr table;
+    for (const auto & [candidate_database, candidate_table] : candidates)
+    {
+        table = DatabaseCatalog::instance().tryGetTable({candidate_database, candidate_table}, getQueryContext());
+        if (table)
         {
-            database_name = std::move(parts[0]);
-            table_name = std::move(parts[1]);
+            database_name = candidate_database;
+            table_name = candidate_table;
+            break;
         }
     }
 
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
