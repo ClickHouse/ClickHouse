@@ -45,8 +45,6 @@ private:
 
     LoggerPtr log = getLogger("WriteBufferFromEncryptedFile");
 
-    bool use_adaptive_buffer_size;
-    size_t adaptive_buffer_max_size;
 };
 
 }

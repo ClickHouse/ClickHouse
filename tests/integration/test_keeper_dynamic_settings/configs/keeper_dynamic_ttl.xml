@@ -1,0 +1,7 @@
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <write_snapshot_version>8</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>

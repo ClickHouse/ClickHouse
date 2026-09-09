@@ -36,7 +36,8 @@ private:
     size_t variant_argument_index;
     /// When true (default), throw an exception if a variant type is incompatible with the function.
     /// When false, return NULL for incompatible rows instead.
-    /// Read from `variant_throw_on_type_mismatch` setting via CurrentThread at construction time.
+    /// Resolved at construction time from the `variant_throw_on_type_mismatch` setting or the strictness
+    /// override pinned by the caller, see `TypeMismatchStrictness.h`.
     bool throw_on_type_mismatch = true;
 };
 
