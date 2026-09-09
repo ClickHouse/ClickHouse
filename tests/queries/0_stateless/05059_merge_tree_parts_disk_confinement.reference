@@ -19,3 +19,7 @@ no directory
 0
 0
 0
+-- a compatibility alias whose backend is overridden by an explicit `object_storage_type`
+0
+BAD_ARGUMENTS
+no directory

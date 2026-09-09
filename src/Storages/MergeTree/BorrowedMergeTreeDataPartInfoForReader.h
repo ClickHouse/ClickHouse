@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -130,6 +131,10 @@ public:
     ColumnSize getSubcolumnSize(const String &) const override { return {}; }
 
     MergeTreeSettingsPtr getStorageSettings() const override { return storage_settings; }
+
+    /// A part read without its table carries no part-level default codec; the caller substitutes the
+    /// server default, the same way `CompressionCodecFactory::get` does for a null current default.
+    CompressionCodecPtr getDefaultCompressionCodec() const override { return nullptr; }
 
     /// A borrowed part is not backed by an `IMergeTreeDataPart`.
     std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return nullptr; }

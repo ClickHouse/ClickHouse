@@ -12,6 +12,8 @@
 namespace DB
 {
 
+struct MergeTreePartInfo;
+
 class IMergeTreeDataPart;
 class ASTAssignment;
 

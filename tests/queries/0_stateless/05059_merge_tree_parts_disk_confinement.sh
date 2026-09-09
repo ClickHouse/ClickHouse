@@ -23,7 +23,7 @@ function read_empty()
             structure('id Int64'),
             parts(),
             disk($1),
-            table_settings(index_granularity_bytes = ${INDEX_GRANULARITY_BYTES}))" 2>&1 | grep -o "BAD_ARGUMENTS\|^[0-9]\+$" | head -1
+            table_settings(index_granularity_bytes = ${INDEX_GRANULARITY_BYTES}))" 2>&1 | grep -o "BAD_ARGUMENTS\|ACCESS_DENIED\|^[0-9]\+$" | head -1
 }
 
 function check_outside()
@@ -57,3 +57,11 @@ read_empty "type = local_blob_storage, path = '${INSIDE_ROOT}blob/'"
 read_empty "type = object_storage, object_storage_type = local, metadata_type = local, path = '${INSIDE_ROOT}object/', metadata_path = '${INSIDE_ROOT}metadata/'"
 read_empty "type = object_storage, object_storage_type = local_plain, path = '${INSIDE_ROOT}plain/'"
 read_empty "type = object_storage, object_storage_type = local_plain_rewritable, path = '${INSIDE_ROOT}plain_rewritable/'"
+
+# `ObjectStorageFactory::create` lets an explicit `object_storage_type` decide the backend, also for a
+# compatibility alias, so this is a local disk and neither the S3 credential restriction nor the source
+# grant of `S3` applies to it - but the confinement to the base directory does.
+echo "-- a compatibility alias whose backend is overridden by an explicit \`object_storage_type\`"
+read_empty "type = s3, object_storage_type = local, metadata_type = plain, path = '${INSIDE_ROOT}alias/'"
+read_empty "type = s3, object_storage_type = local, metadata_type = plain, path = '${OUTSIDE_ROOT}'"
+check_outside
