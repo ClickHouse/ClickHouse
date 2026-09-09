@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -715,7 +716,7 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     };
     auto publication_exists = [&](const String & name)
     {
-        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = '{}'", name))};
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = {}", quoteStringPostgreSQL(name)))};
         return !result.empty();
     };
     /// The set of PostgreSQL tables this engine replicates, as `(schema, table)` pairs with the default
@@ -792,7 +793,7 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     auto legacy_publication_ownership_conflict = [&](const String & name) -> String
     {
         pqxx::result result{tx.exec(fmt::format(
-            "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", name))};
+            "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(name)))};
         if (result.empty())
             return fmt::format("the pre-salt publication {} publishes no tables", doubleQuoteString(name));
         std::set<std::pair<String, String>> published;
@@ -919,7 +920,8 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     else
     {
         pqxx::result result{tx.exec(fmt::format(
-            "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", legacy_publication_name))};
+            "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}",
+            quoteStringPostgreSQL(legacy_publication_name)))};
         if (result.empty())
             ownership_conflict = fmt::format(
                 "the legacy publication {} publishes no tables, so the schema-blind legacy replication slot "
@@ -1420,7 +1422,9 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 {
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
 
-    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
+    /// Not always PostgreSQL's own snapshot id from `CREATE_REPLICATION_SLOT`: with a user-managed
+    /// slot it is `materialized_postgresql_snapshot` verbatim, so it has to be sent as data.
+    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT {}", quoteStringPostgreSQL(snapshot_name));
     tx->exec(query_str);
 
     PostgreSQLTableStructurePtr table_structure;
@@ -1565,7 +1569,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
 
 bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
+    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = {})", quoteStringPostgreSQL(publication_name));
     pqxx::result result{tx.exec(query_str)};
     chassert(!result.empty());
     return result[0][0].as<std::string>() == "t";
@@ -2196,7 +2200,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 
 std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
-    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
+    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name));
     std::set<String> tables;
 
     for (const auto & [schema, table] : tx.stream<std::string, std::string>(query))
@@ -2210,7 +2214,7 @@ template <typename T>
 std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(T & tx) const
 {
     pqxx::result result{tx.exec(fmt::format(
-        "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name))};
+        "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name)))};
     std::set<std::pair<String, String>> tables;
     for (const auto & row : result)
     {
@@ -2231,7 +2235,7 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
 {
     pqxx::result flags{tx.exec(fmt::format(
         "SELECT pubinsert AND pubupdate AND pubdelete AND pubtruncate, puballtables "
-        "FROM pg_publication WHERE pubname = '{}'", name))};
+        "FROM pg_publication WHERE pubname = {}", quoteStringPostgreSQL(name)))};
     if (flags.empty())
         return fmt::format("the publication {} does not exist", doubleQuoteString(name));
     if (!flags[0][0].as<bool>())
@@ -2254,7 +2258,7 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
     {
         pqxx::result filtered{tx.exec(fmt::format(
             "SELECT count(*) FROM pg_publication_rel r JOIN pg_publication p ON r.prpubid = p.oid "
-            "WHERE p.pubname = '{}' AND (r.prqual IS NOT NULL OR r.prattrs IS NOT NULL)", name))};
+            "WHERE p.pubname = {} AND (r.prqual IS NOT NULL OR r.prattrs IS NOT NULL)", quoteStringPostgreSQL(name)))};
         if (filtered[0][0].as<Int64>() > 0)
             return fmt::format(
                 "the publication {} applies a row filter or a column list to at least one published table "
@@ -2263,7 +2267,7 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
 
         pqxx::result schema_membership{tx.exec(fmt::format(
             "SELECT count(*) FROM pg_publication_namespace n JOIN pg_publication p ON n.pnpubid = p.oid "
-            "WHERE p.pubname = '{}'", name))};
+            "WHERE p.pubname = {}", quoteStringPostgreSQL(name)))};
         if (schema_membership[0][0].as<Int64>() > 0)
             return fmt::format(
                 "the publication {} includes tables by schema (ClickHouse creates an explicit table list)",
