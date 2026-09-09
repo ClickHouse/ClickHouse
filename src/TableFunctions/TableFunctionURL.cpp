@@ -595,6 +595,20 @@ SELECT *
 FROM url('https://example.com/dataset.zip :: data/*.csv');
 ```
 
+Archive URLs support the same union and failover templates as other `url` sources. Comma and numeric alternatives create independent archive reads, while `|` keeps alternatives in one failover group and uses the first URL that succeeds:
+
+```sql
+-- Read both numbered archives.
+SELECT * FROM url('https://example.com/dataset{0,1}.zip :: data.csv');
+
+-- Try the primary archive, then its mirror.
+SELECT * FROM url('https://example.com/dataset{primary|mirror}.zip :: data.csv');
+```
+
+Brace and numeric templates are expanded locally and do not require `allow_experimental_url_wildcard_from_index_pages`. Archive URL patterns containing `*` or `**` use HTTP index-page listing and require that setting. Path-level `|` failover cannot be combined with `*` or `**` index-page expansion.
+
+The final combination of host/query shards, archive-path unions, and failover options is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements).
+
 The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. While it is enabled, a URL containing `::` that matches the archive-path syntax is interpreted as an archive and member path. To use `::` literally in a URL, disable `allow_archive_path_syntax` for the query.
 
 Archive access is read-only. The server must report the archive size so ClickHouse can issue range requests.
@@ -629,11 +643,11 @@ SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
-- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
-- `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
-- `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
+- `_path` — Path to the `URL`. For an archive member, the value is `<archive path>::<member path>`. Type: `LowCardinality(String)`.
+- `_file` — Resource name of the `URL`. For an archive member, the value is the member name. Type: `LowCardinality(String)`.
+- `_size` — Size of the resource in bytes. For an archive member, the value is its uncompressed size. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file or archive member. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_headers` - HTTP response headers. For an archive member, these are the headers returned while reading the outer archive. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
 ## use_hive_partitioning setting {#hive-style-partitioning}
 

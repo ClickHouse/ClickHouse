@@ -207,7 +207,19 @@ The archive is distributed using the same `StorageObjectStorageCluster` implemen
 
 The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. To use `::` literally in a URL instead of interpreting it as archive syntax, disable this setting for the query.
 
-Wildcards can be used both in the archive URL and in the path inside the archive. Expanding `*` or `**` in the URL requires [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages).
+Wildcards can be used both in the archive URL and in the path inside the archive. Brace and numeric templates in the archive URL are expanded locally. Comma alternatives are processed as independent archives, while `|` alternatives form a failover group:
+
+```sql
+SELECT *
+FROM urlCluster(
+    'cluster_simple',
+    'https://example.com/dataset{0,1}{primary|mirror}.zip :: data/*.csv'
+);
+```
+
+Expanding `*` or `**` in the archive URL requires [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages). Path-level `|` failover cannot be combined with this HTTP index-page expansion. The final combination of URL shards, archive paths, and failover options is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements).
+
+Archive reads support only `cluster_table_function_split_granularity = 'file'`. Bucket-level splitting operates on blocks of a plain object and cannot preserve an archive member identity, so `cluster_table_function_split_granularity = 'bucket'` is rejected for archives.
 
 ## Globs in URL {#globs-in-url}
 
