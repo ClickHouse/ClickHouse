@@ -42,6 +42,7 @@ def started_cluster():
             "pool_udf_echo.py",
             "pool_udf_sleep.py",
             "pool_udf_cpu.py",
+            "pool_udf_cpu_short.py",
             "pool_udf_mem.py",
             "pool_udf_syscall.py",
             "pool_udf_persistent_helper.py",
@@ -73,6 +74,19 @@ def _profile_event_value(query_id, event_name):
     raw = node.query(
         "SELECT ProfileEvents[{name}] FROM system.query_log "
         "WHERE query_id = '{qid}' AND type = 'QueryFinish' "
+        "ORDER BY event_time_microseconds DESC LIMIT 1".format(
+            name=repr(event_name), qid=query_id
+        )
+    ).strip()
+    return int(raw) if raw else 0
+
+
+def _failed_query_profile_event_value(query_id, event_name):
+    """Same, for a query that ended in an exception - its counters are on that row."""
+    node.query("SYSTEM FLUSH LOGS")
+    raw = node.query(
+        "SELECT ProfileEvents[{name}] FROM system.query_log "
+        "WHERE query_id = '{qid}' AND type = 'ExceptionWhileProcessing' "
         "ORDER BY event_time_microseconds DESC LIMIT 1".format(
             name=repr(event_name), qid=query_id
         )
@@ -154,6 +168,26 @@ def test_cpu_user_microseconds(started_cluster):
     )
     cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
     assert cpu > 0, f"Expected UserTimeMicroseconds > 0, got {cpu}"
+
+
+def test_cpu_user_microseconds_survives_a_discarded_worker(started_cluster):
+    _skip_msan()
+    qid = "cpu-short-1"
+
+    # The command does the same CPU work as `test_cpu_user_microseconds` but answers one row short
+    # and closes its stdout. The borrow then ends with a worker that cannot go back into the pool,
+    # so the teardown reaps it - and the CPU and peak resident set of that borrow live in
+    # `/proc/<pid>`, which the reap takes away. Sampled afterwards, the invocation reports as though
+    # the command had done nothing at all, which is the opposite of useful on a failing call.
+    with pytest.raises(Exception) as exc:
+        _run(
+            "SELECT sum(test_pool_udf_cpu_short(number)) FROM numbers(2000)",
+            qid,
+        )
+    assert "wrong result" in str(exc.value), str(exc.value)
+
+    cpu = _failed_query_profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTimeMicroseconds > 0 for a discarded worker, got {cpu}"
 
 
 def test_system_time_microseconds(started_cluster):

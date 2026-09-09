@@ -3,7 +3,6 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <future>
 #include <optional>
 #include <stdexcept>
 #include <thread>
@@ -16,6 +15,41 @@ namespace
 {
 /// A convenient thread name for tests; the group is null, so ThreadGroupSwitcher is a no-op.
 constexpr ThreadName kName = ThreadName::SEND_TO_SHELL_CMD;
+
+/// Long enough that a healthy coordinator - which reacts in microseconds - never approaches it,
+/// short enough that a regression is reported rather than waited out.
+constexpr auto WAIT_TIMEOUT = std::chrono::seconds(10);
+
+/// Spins until `condition` holds. Returns false on timeout instead of spinning forever, so that a
+/// broken coordinator fails a test rather than wedging the whole binary.
+template <typename Condition>
+[[nodiscard]] bool waitFor(Condition && condition)
+{
+    const auto deadline = std::chrono::steady_clock::now() + WAIT_TIMEOUT;
+    while (!condition())
+    {
+        if (std::chrono::steady_clock::now() > deadline)
+            return false;
+        std::this_thread::yield();
+    }
+    return true;
+}
+
+/// Everything the consumer thread of `StopWakesBlockedConsumer` touches, in one heap object.
+///
+/// That test is about a consumer blocked in `next` being woken by `stop`. `next` takes no timeout,
+/// so if the wake-up regresses there is nothing that can free that thread - joining it would wedge
+/// the whole test binary. The test therefore reports the failure and detaches, and the state the
+/// stuck thread is still parked in has to outlive the test function: hence the deliberate leak. On
+/// the passing path the fixture is deleted normally.
+struct DetachableFixture
+{
+    DoubleBufferedProducer producer;
+    std::atomic<size_t> produced{0};
+    std::atomic<bool> both_buffers_taken{false};
+    std::atomic<bool> thread_finished{false};
+    std::atomic<bool> next_returned_an_item{true};
+};
 }
 
 /// The producer fills a two-slot payload array and the consumer reads it back. Because the buffer a
@@ -158,28 +192,44 @@ TEST(DoubleBufferedProducer, StopsCleanlyWhenConsumerStopsEarly)
 /// `finished` still false. stop() must unblock it (return std::nullopt) instead of hanging forever.
 TEST(DoubleBufferedProducer, StopWakesBlockedConsumer)
 {
-    DoubleBufferedProducer producer;
-    std::atomic<size_t> produced{0};
-    producer.start(nullptr, kName, [&](size_t) -> std::optional<size_t>
+    auto * fixture = new DetachableFixture;  /// see DetachableFixture: leaked on the failure path
+    fixture->producer.start(nullptr, kName, [fixture](size_t) -> std::optional<size_t>
     {
-        return produced.fetch_add(1); /// never finishes on its own
+        return fixture->produced.fetch_add(1); /// never finishes on its own
     });
 
-    std::promise<void> entering_blocking_next;
-    auto consumer = std::async(std::launch::async, [&]
+    std::thread consumer([fixture]
     {
-        producer.next(); /// take one buffer, do NOT release it
-        producer.next(); /// take the other buffer -> both held, next() will now block
-        entering_blocking_next.set_value();
-        return producer.next(); /// must block, then be woken by stop() and return std::nullopt
+        fixture->producer.next(); /// take one buffer, do NOT release it
+        fixture->producer.next(); /// take the other buffer -> both held, next() will now block
+        fixture->both_buffers_taken = true;
+        auto item = fixture->producer.next(); /// must block, then be woken by stop()
+        fixture->next_returned_an_item = item.has_value();
+        fixture->thread_finished = true;
     });
 
-    entering_blocking_next.get_future().wait();
-    producer.stop(); /// must wake the (about-to-be) blocked consumer
+    /// The regression is a consumer that `stop` never wakes, so the consumer has to be *inside* the
+    /// wait before `stop` is called - otherwise the test goes through the trivial path, where the
+    /// third `next` finds `stop_requested` already set on its first predicate check, and proves
+    /// nothing. `waitingConsumers` is what makes that deterministic rather than a matter of
+    /// scheduling: it is read under the coordinator's mutex, which `next` only releases from inside
+    /// the wait. Paired with `both_buffers_taken` it can only be the third call: the first two have
+    /// returned by then, and nothing else waits on that condition variable.
+    ASSERT_TRUE(waitFor([&] { return fixture->both_buffers_taken.load() && fixture->producer.waitingConsumers() > 0; }))
+        << "the consumer never reached the blocking next()";
 
-    ASSERT_EQ(consumer.wait_for(std::chrono::seconds(5)), std::future_status::ready)
-        << "next() did not return after stop() — the blocked consumer deadlocked";
-    EXPECT_FALSE(consumer.get().has_value());
+    fixture->producer.stop(); /// must wake the blocked consumer
+
+    if (!waitFor([&] { return fixture->thread_finished.load(); }))
+    {
+        ADD_FAILURE() << "next() did not return after stop() - the blocked consumer deadlocked";
+        consumer.detach();
+        return;
+    }
+
+    consumer.join();
+    EXPECT_FALSE(fixture->next_returned_an_item.load());
+    delete fixture;
 }
 
 /// `stop` cannot interrupt a callback that has already started - it only ends the loop between
@@ -188,25 +238,33 @@ TEST(DoubleBufferedProducer, StopWakesBlockedConsumer)
 TEST(DoubleBufferedProducer, RunningCallbackSeesTheStopRequest)
 {
     DoubleBufferedProducer producer;
-    std::promise<void> inside_callback;
-    std::atomic<bool> entered{false};
+    std::atomic<bool> entered_callback{false};
+
+    /// The callback gives up on its own after this. A callback that never returns would hold a
+    /// thread of the global pool for the life of the process - which is not something this test
+    /// could detach or join its way around - so the regression has to cost a slow run instead of a
+    /// wedged test binary. It is `stop`'s duration that says whether the flag was seen.
+    const auto callback_deadline = std::chrono::steady_clock::now() + WAIT_TIMEOUT;
 
     producer.start(nullptr, kName, [&](size_t) -> std::optional<size_t>
     {
-        if (!entered.exchange(true))
-            inside_callback.set_value();
+        entered_callback = true;
 
-        while (!producer.isStopRequested()) /// stands for a callback that keeps pulling input blocks
+        /// Stands for a callback that keeps pulling input blocks.
+        while (!producer.isStopRequested() && std::chrono::steady_clock::now() < callback_deadline)
             std::this_thread::yield();
 
         return std::nullopt;
     });
 
-    inside_callback.get_future().wait();
+    ASSERT_TRUE(waitFor([&] { return entered_callback.load(); })) << "the producer callback never ran";
 
-    auto stopper = std::async(std::launch::async, [&] { producer.stop(); });
-    ASSERT_EQ(stopper.wait_for(std::chrono::seconds(5)), std::future_status::ready)
-        << "stop() did not return — the running producer callback never saw the stop request";
+    const auto started_at = std::chrono::steady_clock::now();
+    producer.stop();
+    const auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+    EXPECT_LT(elapsed, WAIT_TIMEOUT / 2)
+        << "stop() waited out the callback's own deadline - the running producer callback never saw the stop request";
 }
 
 /// A consumer that stops calling next() (it already got everything it needed) would never see a
@@ -215,13 +273,13 @@ TEST(DoubleBufferedProducer, RunningCallbackSeesTheStopRequest)
 TEST(DoubleBufferedProducer, RethrowIfFailedSurfacesErrorAfterConsumerStopsTaking)
 {
     DoubleBufferedProducer producer;
-    std::promise<void> producer_failed;
+    std::atomic<bool> producer_failed{false};
     size_t produced = 0; /// touched only by the producer thread
     producer.start(nullptr, kName, [&](size_t) -> std::optional<size_t>
     {
         if (produced == 2)
         {
-            producer_failed.set_value();
+            producer_failed = true;
             throw std::runtime_error("boom");
         }
         return produced++;
@@ -235,7 +293,7 @@ TEST(DoubleBufferedProducer, RethrowIfFailedSurfacesErrorAfterConsumerStopsTakin
         producer.release(item->index);
     }
 
-    producer_failed.get_future().wait();
+    ASSERT_TRUE(waitFor([&] { return producer_failed.load(); })) << "the producer callback never failed";
     producer.stop();
 
     EXPECT_THROW(producer.rethrowIfFailed(), std::runtime_error);

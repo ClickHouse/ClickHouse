@@ -75,7 +75,6 @@ namespace ErrorCodes
     extern const int CANNOT_POLL;
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
     extern const int UDF_EXECUTION_FAILED;
-    extern const int LOGICAL_ERROR;
 }
 
 /// How much a shared-memory region is enlarged at once while the query's memory limit cannot be
@@ -247,53 +246,27 @@ public:
     {
         size_t bytes_read = 0;
 
+        /// One budget for the whole call rather than one per wake-up. `command_read_timeout` says
+        /// how long this read may wait for the command to say something on its stdout, and this
+        /// loop is woken by things that are not that: stderr the command drips out, a stderr pipe
+        /// that has hung up, an interrupted read. Restarting the timeout at each of them would let
+        /// a command that never answers hold the query for as long as it keeps making noise on the
+        /// other pipe - which is the same unbounded wait, only reached the long way round.
+        const UInt64 deadline_ns = readDeadlineNs();
+
         while (!bytes_read)
         {
             pfds[0].revents = 0;
             pfds[1].revents = 0;
-            int num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
+            int num_events = pollWithTimeout(pfds, num_pfds, remainingMs(deadline_ns));
             if (num_events <= 0)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
+                throwReadTimeout();
 
             bool has_stdout = pfds[0].revents > 0;
             bool has_stderr = pfds[1].revents > 0;
 
             if (has_stderr)
-            {
-                if (stderr_read_buf == nullptr)
-                    stderr_read_buf.reset(new char[BUFFER_SIZE]);
-                ssize_t res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
-                if (res > 0)
-                {
-                    std::string_view str(stderr_read_buf.get(), res);
-                    if (stderr_reaction == ExternalCommandStderrReaction::THROW)
-                    {
-                        /// Accumulate stderr up to safety limit
-                        size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
-                        if (current_size < MAX_STDERR_SIZE)
-                        {
-                            if (!stderr_full_output)
-                                stderr_full_output.emplace();
-                            size_t bytes_to_append = std::min(static_cast<size_t>(res), MAX_STDERR_SIZE - current_size);
-                            stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
-                        }
-                    }
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
-                    {
-                        LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
-                    }
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
-                    {
-                        res = std::min(ssize_t(stderr_result_buf.reserve()), res);
-                        if (res > 0)
-                            stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + res);
-                    }
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
-                    {
-                        stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + res);
-                    }
-                }
-            }
+                readStderrOnce();
 
             if (has_stdout)
             {
@@ -304,51 +277,13 @@ public:
 
                 if (res == 0)
                 {
-                    /// EOF on stdout - drain remaining stderr before returning
-                    if (stderr_reaction != ExternalCommandStderrReaction::NONE
-                        && stderr_reaction != ExternalCommandStderrReaction::LOG)
-                    {
-                        static constexpr int STDERR_DRAIN_TIMEOUT_MS = 100;  /// Short timeout for remaining stderr after stdout EOF
-
-                        while (true)
-                        {
-                            pfds[1].revents = 0;
-                            int stderr_events = pollWithTimeout(&pfds[1], 1, STDERR_DRAIN_TIMEOUT_MS);
-                            if (stderr_events <= 0)
-                                break;
-
-                            if (pfds[1].revents <= 0)
-                                break;
-
-                            if (stderr_read_buf == nullptr)
-                                stderr_read_buf.reset(new char[BUFFER_SIZE]);
-                            ssize_t stderr_res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
-                            if (stderr_res <= 0)
-                                break;
-
-                            std::string_view str(stderr_read_buf.get(), stderr_res);
-                            if (stderr_reaction == ExternalCommandStderrReaction::THROW)
-                            {
-                                size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
-                                if (current_size >= MAX_STDERR_SIZE)
-                                    break;
-                                if (!stderr_full_output)
-                                    stderr_full_output.emplace();
-                                size_t bytes_to_append = std::min(static_cast<size_t>(stderr_res), MAX_STDERR_SIZE - current_size);
-                                stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
-                            }
-                            else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
-                            {
-                                ssize_t to_insert = std::min(ssize_t(stderr_result_buf.reserve()), stderr_res);
-                                if (to_insert > 0)
-                                    stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + to_insert);
-                            }
-                            else if (stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
-                            {
-                                stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + stderr_res);
-                            }
-                        }
-                    }
+                    /// EOF on stdout, so the command is done answering - but not necessarily done
+                    /// writing. Take the rest of its stderr off the pipe before returning, whatever
+                    /// the reaction is: a command that writes more than a pipeful after closing its
+                    /// stdout is otherwise left blocked in `write` for good, and the wait that reaps
+                    /// it never finishes. `NONE` drops what it reads, which is all "ignore this
+                    /// output" can mean for a pipe.
+                    drainRemainingStderr();
                     break;
                 }
 
@@ -365,6 +300,17 @@ public:
                     }
                 }
             }
+
+            /// Checked after the wake-up, not before it, so that a `command_read_timeout` of zero
+            /// keeps meaning "probe once" rather than "fail without looking".
+            ///
+            /// It has to be checked at all because an exhausted budget turns the poll above into a
+            /// readiness probe rather than a wait, and a probe is satisfied by anything pending -
+            /// including stderr the command is flooding out while never answering on stdout. Left
+            /// to the poll alone, that loop would spin at full speed for as long as the command
+            /// kept writing, and `command_read_timeout` would never be reached.
+            if (!bytes_read && remainingMs(deadline_ns) == 0)
+                throwReadTimeout();
         }
 
         if (bytes_read > 0)
@@ -490,10 +436,16 @@ public:
     /// mode and nothing here waits for more - and capped, because the amount a broken command can
     /// have left there is not bounded by anything else.
     ///
+    /// What it reads also goes through the configured reaction, which matters for
+    /// `ExternalCommandStderrReaction::THROW`: output the command produced after its response is
+    /// still output it produced, and `throw` promises the query fails for it. Reported only as a
+    /// log line, it would leave the query succeeding against the contract the setting states. The
+    /// other reactions are served by the discard report the caller writes from the returned string.
+    ///
     /// Deliberately not `noexcept`: it builds a string, and an allocation on this teardown path can
     /// be refused by the memory tracker. That has to reach the caller's handler, which gives up on
     /// the diagnostic, rather than terminate the server over it.
-    String consumePendingStderr() const
+    String consumePendingStderr()
     {
         String result;
 
@@ -510,10 +462,154 @@ public:
                 break;
         }
 
+        if (stderr_reaction == ExternalCommandStderrReaction::THROW)
+            accumulateStderrForThrow(result);
+
         return result;
     }
 
+    /// Whether anything is done with the command's stderr beyond taking it off the pipe. `NONE`
+    /// drops what it reads, so a caller that would only read in order to drop has nothing to do.
+    bool stderrIsObserved() const { return stderr_reaction != ExternalCommandStderrReaction::NONE; }
+
+    /// For a caller that reads the command's stderr itself and needs those bytes to go through the
+    /// configured reaction all the same - the bounded wait that reaps a command drains both pipes,
+    /// and that is the last stretch in which a command can still write.
+    void consumeStderrBytes(std::string_view str) { consumeStderrChunk(str); }
+
 private:
+    /// One chunk of the command's stderr, put through the configured reaction. `NONE` matches
+    /// nothing and the bytes are dropped - which is exactly what it is for: they still have to be
+    /// taken off the pipe, or the command blocks in `write` once the pipe fills up.
+    void consumeStderrChunk(std::string_view str)
+    {
+        switch (stderr_reaction)
+        {
+            case ExternalCommandStderrReaction::NONE:
+                break;
+            case ExternalCommandStderrReaction::THROW:
+                accumulateStderrForThrow(str);
+                break;
+            case ExternalCommandStderrReaction::LOG:
+                LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                break;
+            case ExternalCommandStderrReaction::LOG_FIRST:
+            {
+                const size_t to_insert = std::min(stderr_result_buf.reserve(), str.size());
+                if (to_insert > 0)
+                    stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + to_insert);
+                break;
+            }
+            case ExternalCommandStderrReaction::LOG_LAST:
+                stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.end());
+                break;
+        }
+    }
+
+    /// Accumulating stops at `MAX_STDERR_SIZE`, but reading never does: the point of reading is to
+    /// keep the command from blocking, and that is true whether or not the bytes are still wanted.
+    void accumulateStderrForThrow(std::string_view str)
+    {
+        const size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
+        if (current_size >= MAX_STDERR_SIZE)
+            return;
+
+        if (!stderr_full_output)
+            stderr_full_output.emplace();
+
+        stderr_full_output->append(str.substr(0, MAX_STDERR_SIZE - current_size));
+    }
+
+    /// Reads what is pending on stderr once and puts it through the reaction. A pipe that is done -
+    /// EOF, or an error that reading again will not fix - is dropped out of the poll set, because
+    /// `poll` reports a hung-up descriptor immediately and forever: left in, it would turn the wait
+    /// for the command's next answer into a busy loop that spins a core and never reaches
+    /// `command_read_timeout`. A command closing its own stderr is ordinary (see
+    /// `shm_udf_quiet_stderr.py`), so this is not an error path.
+    void readStderrOnce()
+    {
+        if (stderr_read_buf == nullptr)
+            stderr_read_buf.reset(new char[BUFFER_SIZE]);
+
+        const ssize_t res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
+        if (res > 0)
+        {
+            consumeStderrChunk(std::string_view(stderr_read_buf.get(), static_cast<size_t>(res)));
+            return;
+        }
+
+        if (res < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+            return;
+
+        stopPollingStderr();
+    }
+
+    void stopPollingStderr() noexcept
+    {
+        stderr_is_done = true;
+        /// `poll` ignores a negative descriptor and leaves its `revents` zero.
+        pfds[1].fd = -1;
+        pfds[1].revents = 0;
+    }
+
+    /// Takes the rest of the command's stderr off the pipe once its stdout has ended.
+    ///
+    /// Bounded twice over: it stops as soon as the pipe goes quiet for a moment, so an ordinary
+    /// command is not held up, and it stops altogether after `command_read_timeout`, so a command
+    /// that writes to stderr forever after closing its stdout cannot hold the query here for
+    /// longer than one that never answers at all. Whatever is left after that belongs to the
+    /// bounded wait that reaps the child.
+    void drainRemainingStderr()
+    {
+        static constexpr size_t STDERR_DRAIN_POLL_MS = 100;
+
+        /// A budget of its own rather than what is left of the read's: this runs after the command
+        /// has closed its stdout, so the read it belongs to is over, and taking the remainder would
+        /// mean that a read which used up its time leaves the command blocked in `write` - which is
+        /// the one thing this is here to prevent.
+        const UInt64 deadline_ns = readDeadlineNs();
+
+        while (!stderr_is_done)
+        {
+            const size_t remaining_ms = remainingMs(deadline_ns);
+            if (remaining_ms == 0)
+                break;
+
+            pfds[1].revents = 0;
+            const int stderr_events = pollWithTimeout(&pfds[1], 1, std::min(STDERR_DRAIN_POLL_MS, remaining_ms));
+            if (stderr_events <= 0 || pfds[1].revents == 0)
+                break;
+
+            readStderrOnce();
+        }
+    }
+
+    [[noreturn]] void throwReadTimeout() const
+    {
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
+    }
+
+    /// A monotonic deadline `timeout_milliseconds` from now. Clamped, because
+    /// `command_read_timeout` is not bounded anywhere: a huge value would wrap the multiplication
+    /// or the addition and put the deadline in the past, turning every wait into a probe.
+    UInt64 readDeadlineNs() const noexcept
+    {
+        const UInt64 now_ns = clock_gettime_ns();
+        const UInt64 max_ms = (std::numeric_limits<UInt64>::max() - now_ns) / 1000000ULL;
+        return now_ns + std::min<UInt64>(timeout_milliseconds, max_ms) * 1000000ULL;
+    }
+
+    /// Milliseconds left until `deadline_ns`, rounded up so that the last fraction of a millisecond
+    /// is still spent waiting instead of turning the poll into a non-blocking probe.
+    static size_t remainingMs(UInt64 deadline_ns) noexcept
+    {
+        const UInt64 now_ns = clock_gettime_ns();
+        if (now_ns >= deadline_ns)
+            return 0;
+
+        return static_cast<size_t>((deadline_ns - now_ns + 999999ULL) / 1000000ULL);
+    }
+
     /// What is pending on `fd` right now, as `poll` revents. A zero timeout makes this a plain
     /// readiness probe, so it never waits - and it never throws either. Polled directly rather than
     /// through `pollFd`, which reports a failed `poll` by throwing and takes a logger to do it: the
@@ -558,6 +654,8 @@ private:
     static constexpr size_t MAX_PENDING_STDERR_SIZE = 4_KiB;
     pollfd pfds[2]{};
     static constexpr size_t num_pfds = 2;
+    /// Set once stderr has reached EOF or failed for good; `pfds[1]` is then out of the poll set.
+    bool stderr_is_done = false;
     std::unique_ptr<char[]> stderr_read_buf;
     boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
     std::optional<String> stderr_full_output;  /// For THROW mode: accumulate stderr up to MAX_STDERR_SIZE
@@ -719,6 +817,15 @@ public:
     /// regions the holder actually still owns, which may be fewer than at the start of the borrow
     /// (a discarded worker drops them) or larger (they may have grown).
     ///
+    /// The number charged comes from the backing files rather than from what the regions believe
+    /// they asked for, and `reconcileBackingFileSize` puts a file that has outgrown its region back
+    /// first. The two can drift apart: the command holds its region open and can `ftruncate` it,
+    /// and a `grow` whose rollback failed leaves the file longer than the region. Pages past what
+    /// is charged are held by nobody and counted by nobody, and an idle worker can sit on them for
+    /// as long as nothing borrows it - so they are given back where possible and charged for where
+    /// not. What the command does to the file *after* this is bounded by the next borrow, which
+    /// checks the region before it uses it and discards a worker that damaged it.
+    ///
     /// Never throws: this runs on a cleanup path, and it is an accounting hand-back rather than an
     /// allocation — the memory is already mapped, refusing the charge would not free anything.
     void acquireChargeFromBorrower() noexcept
@@ -726,7 +833,7 @@ public:
         size_t bytes = 0;
         for (const auto & region : shared_memory)
             if (region)
-                bytes += region->size();
+                bytes += region->reconcileBackingFileSize();
 
         if (!bytes)
             return;
@@ -933,18 +1040,11 @@ namespace
                     /// Resource accounting must observe the borrow's resident set before
                     /// the worker is torn down or the slot is handed back to the pool —
                     /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
-                    /// would then read zero CPU and zero `VmHWM`.
-                    /// `recordReleased` reads procfs and may throw, but `cleanup` is
-                    /// called from the destructor — swallow any exception so the
-                    /// destructor stays noexcept.
-                    try
-                    {
-                        configuration.sampler->recordReleased();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("ShellCommandSource");
-                    }
+                    /// would then read zero CPU and zero `VmHWM`. For a worker that
+                    /// `prepare` already reaped this has happened there; the call is
+                    /// idempotent, so this one covers every path that does not go through
+                    /// `prepare` (cancellation, a failure downstream).
+                    recordPooledResourceUsageNoThrow();
                 }
                 else if (command)
                 {
@@ -1060,21 +1160,57 @@ namespace
                                   "Executable generates stderr: {}", timeout_command_out.getStderr());
                 }
 
-                if (check_exit_code)
+                bool wait_for_command = command != nullptr;
+                if (process_pool)
                 {
+                    bool valid_command
+                        = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+
+                    // We can only wait for pooled commands when they are invalid.
+                    wait_for_command = wait_for_command && !valid_command;
+                }
+
+                /// Two independent reasons to wait, and either one on its own is enough. One is
+                /// `check_exit_code`: the command's exit status has to be read. The other is
+                /// `stderr_reaction`: this wait is the last stretch in which the command can still
+                /// write, and what it writes there has to go through the reaction like anything it
+                /// wrote earlier. Tying the second to the first is what left a command with
+                /// `stderr_reaction = throw` and `check_exit_code = 0` able to complain on its way
+                /// out and still have the query succeed.
+                if (wait_for_command && (check_exit_code || timeout_command_out.stderrIsObserved()))
+                {
+                    /// The wait below reaps the worker, and `/proc/<pid>` goes with it. The
+                    /// borrow's CPU and peak resident set have to be read before that, or this - a
+                    /// discarded worker, which is the case the accounting is most wanted for -
+                    /// reports zeros. A no-op off the pool path, and idempotent, so `cleanup` can
+                    /// call the same thing for every path that does not come through here.
+                    recordPooledResourceUsageNoThrow();
+
                     try
                     {
-                        if (process_pool)
-                        {
-                            bool valid_command
-                                = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+                        /// `waitDrainingOutput` rather than `wait`: the command may still be
+                        /// writing. Reading its stdout stops at the row count this source asked
+                        /// for, and stderr is only drained until it goes quiet, so a command that
+                        /// carries on writing past either is blocked in `write` on a full pipe -
+                        /// and `wait` reaps before it closes anything, so it would never return.
+                        /// Draining lets the command reach its own exit, bounded by
+                        /// `command_termination_timeout`.
+                        ///
+                        /// A command that does not exit within that budget fails the query rather
+                        /// than being waved through: `check_exit_code` says the exit status is
+                        /// checked, and a status that cannot be read is not a passing one. The
+                        /// alternative - warn and succeed - would make the setting mean "checked,
+                        /// unless the command avoids being checked", which is the one command it
+                        /// most needs to hold for. `check_exit_code = 0` is how a command that is
+                        /// not expected to exit promptly is configured.
+                        const bool reaped = command->waitDrainingOutput(
+                            [this](std::string_view str) { timeout_command_out.consumeStderrBytes(str); }, check_exit_code);
 
-                            // We can only wait for pooled commands when they are invalid.
-                            if (!valid_command)
-                                command->wait();
-                        }
-                        else
-                            command->wait();
+                        if (!reaped && check_exit_code)
+                            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                                "The command did not exit within command_termination_timeout after its stdin "
+                                "was closed, so its exit code could not be checked; it will be signalled. Set "
+                                "check_exit_code to 0 for a command that is not expected to exit on its own");
                     }
                     catch (Exception & e)
                     {
@@ -1084,6 +1220,13 @@ namespace
                             e.addMessage("Stderr: {}", stderr_content);
                         throw;
                     }
+
+                    /// Asked again, because the wait above is the last stretch in which the command
+                    /// can still write and it put what it wrote through the reaction. Under `throw`
+                    /// that output fails the query just like output produced any earlier would.
+                    if (timeout_command_out.hasStderr())
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Executable generates stderr: {}", timeout_command_out.getStderr());
                 }
 
                 rethrowExceptionDuringSendDataIfNeeded();
@@ -1103,6 +1246,29 @@ namespace
             {
                 command_is_invalid = true;
                 std::rethrow_exception(exception_during_send_data);
+            }
+        }
+
+        /// Reads the borrow's CPU and peak resident set out of `/proc` while the worker is still
+        /// there to be read. Idempotent (see `UDFProcessSubtreeSampler::recordReleased`), so both
+        /// the teardown that discards a worker and the ordinary end of a borrow can call it.
+        ///
+        /// Never throws: it reads procfs and builds containers, so a memory limit can refuse it,
+        /// and it runs both from `cleanup` - which the destructor calls - and from `prepare`, where
+        /// failing a query that has already produced its rows over a profiling read would be worse
+        /// than losing the measurement.
+        void recordPooledResourceUsageNoThrow() noexcept
+        {
+            if (!configuration.sampler || !process_pool)
+                return;
+
+            try
+            {
+                configuration.sampler->recordReleased();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSource");
             }
         }
 
@@ -1174,81 +1340,70 @@ namespace
       * replaces its mapping, so `data()` is re-read after every growth; the bytes written so far
       * survive it, because the backing file keeps its contents.
       */
-    class WriteBufferToSharedMemoryRegion : public WriteBuffer
+    /** Serializes the input for one request into a shared-memory region.
+      *
+      * Deliberately NOT a buffer over the region's mapping. The command holds the same file open
+      * for writing and can shorten it at any moment - an `O_TRUNC` in a client implementation is
+      * enough - and a store into a page the file no longer backs raises `SIGBUS`, which cannot be
+      * caught: it takes the whole server down, along with every other query on it. No check can
+      * close that, because the command can shrink the file in the instant between the check and
+      * the store. So the serialization lands in this buffer's own memory and is handed to the
+      * region through its descriptor, where a shortened file is not a fault at all - `pwrite`
+      * extends it again, or fails with an ordinary `errno`. This is the same reason the response is
+      * copied out with `pread` rather than parsed where it lies; see
+      * `SharedMemoryRegion::writeBackingFile`.
+      *
+      * The cost is one copy of the serialized input on the server side. The command still reads it
+      * out of its own mapping without one, and the exchange still avoids both the copies and the
+      * per-pipeful syscalls of the pipe transport.
+      */
+    class WriteBufferToSharedMemoryRegion : public BufferWithOwnMemory<WriteBuffer>
     {
     public:
         using GrowFn = std::function<void(size_t required)>;
 
         WriteBufferToSharedMemoryRegion(SharedMemoryRegion & region_, GrowFn grow_)
-            : WriteBuffer(region_.data(), region_.size())
+            : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
             , region(region_)
             , grow(std::move(grow_))
         {
         }
 
     private:
-        /// Called once the working buffer is used up - which also happens on the flush that ends the
-        /// serialization, so a region filled to its last byte does not by itself mean that the region
-        /// is too small. One spare byte outside the region tells the two cases apart: a writer that
-        /// still has something to say lands in that byte and comes back here, and only then is the
-        /// region really enlarged. Without it, input that ends exactly at the end of the region would
-        /// demand one byte more than it needs - a needless growth, or a failed query when the region
-        /// is not allowed to grow at all (`shared_memory_max_size` defaults to `shared_memory_size`).
+        /// Places what has accumulated here into the region, growing it first when it does not fit.
+        /// Nothing is written before the room for it exists, so a failed growth leaves the region
+        /// holding exactly the bytes that were already in it.
         void nextImpl() override
         {
-            /// `bytes` is only updated after this returns, so this is exactly what has been written,
-            /// wherever it went.
-            size_t written = count();
-
-            if (written > region.size())
-                moveOverflowIntoRegion(written);
-
-            if (written == region.size())
-            {
-                set(overflow.data(), overflow.size());
+            const size_t to_write = offset();
+            if (to_write == 0)
                 return;
-            }
 
-            set(region.data() + written, region.size() - written);
+            if (written + to_write > region.size())
+                grow(written + to_write);
+
+            region.writeBackingFile(working_buffer.begin(), written, to_write);
+            written += to_write;
         }
 
-        /// The serialization is over and everything is already in the region, so there is nothing
-        /// to flush here. In particular the region must not grow from this method: `finalize`
-        /// blocks memory-limit exceptions for its whole body, so a growth started here would commit
-        /// its pages without `max_memory_usage` ever being enforced. Draining the spare byte is the
-        /// writer's job (any `next` does it, under the memory limit) - see serializeInto, which is
-        /// also why this buffer is never finalized implicitly from a destructor.
-        ///
-        /// This only covers growth this buffer starts itself. A format that wraps this one
-        /// (`WriteBufferValidUTF8`, `PeekableWriteBuffer`) flushes into it from inside its own
-        /// `finalize`, under the same blocked limit, and a growth from there cannot be checked
-        /// against `max_memory_usage` either - the bytes are still charged to the query, only the
-        /// limit is not enforced for them. `ensureRegionFits` keeps that bounded by growing in a
+        /// `finalize` blocks memory-limit exceptions for its whole body, so a region growth started
+        /// from here commits its pages without `max_memory_usage` being enforced for them. The
+        /// caller therefore flushes explicitly first (see `serializeInto`), which leaves this with
+        /// nothing to do in the ordinary case. It cannot be skipped altogether: a format that wraps
+        /// this buffer (`WriteBufferValidUTF8`, `PeekableWriteBuffer`) pushes what it still holds
+        /// into this one from inside its own `finalize`, and those bytes are part of the input.
+        /// `ensureRegionFits` keeps what can escape the limit that way bounded, by growing in a
         /// small step instead of doubling whenever it sees the limit blocked.
         void finalizeImpl() override
         {
-            if (offset() != 0 && working_buffer.begin() == overflow.data())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Shared-memory region buffer is finalized with a byte past the end of the region; "
-                    "it has to be flushed with `next` first");
-
-            bytes += offset();
-            set(nullptr, 0);
-        }
-
-        /// Enlarges the region to hold everything written so far (this throws when it cannot) and
-        /// copies the spare byte into the space that opened up.
-        void moveOverflowIntoRegion(size_t written)
-        {
-            size_t old_size = region.size();
-            grow(written);
-            memcpy(region.data() + old_size, overflow.data(), written - old_size);
+            next();
         }
 
         SharedMemoryRegion & region;
         GrowFn grow;
-        /// Catches a writer stepping past the end of the region; see nextImpl.
-        std::array<char, 1> overflow{};
+        /// How much of the region is already filled - this buffer writes the input from offset 0
+        /// upwards, one bufferful at a time.
+        size_t written = 0;
     };
 
     /** Exchanges data with the child process through a shared-memory region instead of the pipes.
@@ -1532,6 +1687,16 @@ namespace
                 /// so a discard is reported once.
                 reportDirtyChannelDiscard();
 
+                /// Everything below this line takes the worker's `/proc` entries away: closing its
+                /// stdin makes a discarded child exit, and a zombie has no `mm`, so its `VmHWM` is
+                /// gone the moment it does; the wait after that reaps the pid altogether. So the
+                /// borrow's CPU and peak resident set are read here, while there is still something
+                /// to read - otherwise a discarded worker, which is exactly the case this teardown
+                /// exists for, would report zeros. `cleanup` calls the same thing for the paths
+                /// that never reach `prepare`; it is idempotent.
+                if (!keep_command)
+                    recordPooledResourceUsageNoThrow();
+
                 /// The source can finish without generate() reaching the end of the input — most
                 /// notably on cancellation. A child that is not going back to the pool only exits
                 /// once it sees EOF on its stdin, so close it before the blocking wait below, which
@@ -1542,7 +1707,15 @@ namespace
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                         "Executable generates stderr: {}", timeout_command_out.getStderr());
 
-                if (check_exit_code)
+                /// Two independent reasons to wait, and either one on its own is enough. One is
+                /// `check_exit_code`: the worker's exit status has to be read. The other is
+                /// `stderr_reaction`: this wait is the last stretch in which the command can still
+                /// write, and what it writes there has to go through the reaction like anything it
+                /// wrote earlier. Tying the second to the first is what left a command with
+                /// `stderr_reaction = throw` and `check_exit_code = 0` able to complain on its way
+                /// out and still have the query succeed.
+                const bool wait_for_command = command != nullptr && !keep_command;
+                if (wait_for_command && (check_exit_code || timeout_command_out.stderrIsObserved()))
                 {
                     try
                     {
@@ -1555,15 +1728,28 @@ namespace
                         /// worker is discarded here can be that it wrote past its response frame:
                         /// once that output fills the pipe the child sits in `write`, and a plain
                         /// `wait` - which reaps before it closes anything - would never return.
-                        /// Nothing reads those pipes any more, so this wait throws the bytes away
-                        /// and lets the child reach its own exit, bounded by
-                        /// `command_termination_timeout`.
-                        if (command && !keep_command && !command->waitDrainingOutput())
-                            LOG_WARNING(
-                                getLogger("ShellCommandSharedMemorySource"),
+                        /// Nothing reads those pipes any more, so this wait takes the bytes off
+                        /// them and lets the child reach its own exit, bounded by
+                        /// `command_termination_timeout`. What it finds on stderr still goes
+                        /// through `stderr_reaction`: this is the last stretch in which a command
+                        /// can write, and under `throw` that output fails the query like any other.
+                        ///
+                        /// A worker that does not exit within that budget fails the query rather
+                        /// than being waved through: `check_exit_code` says the exit status is
+                        /// checked, and a status that cannot be read is not a passing one. The
+                        /// query's rows are already correct, but so are the rows of any command
+                        /// whose exit code turns out to be non-zero - which is exactly what the
+                        /// setting exists to reject. `check_exit_code = 0` is how a command that is
+                        /// not expected to exit promptly is configured.
+                        const bool reaped = command->waitDrainingOutput(
+                            [this](std::string_view str) { timeout_command_out.consumeStderrBytes(str); }, check_exit_code);
+
+                        if (!reaped && check_exit_code)
+                            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                                 "The process of an executable UDF did not exit within "
-                                "command_termination_timeout after its stdin was closed, so its exit "
-                                "code was not checked; it will be signalled instead.");
+                                "command_termination_timeout after its stdin was closed, so its exit code "
+                                "could not be checked; it will be signalled. Set check_exit_code to 0 for a "
+                                "command that is not expected to exit on its own");
                     }
                     catch (Exception & e)
                     {
@@ -1572,6 +1758,13 @@ namespace
                             e.addMessage("Stderr: {}", stderr_content);
                         throw;
                     }
+
+                    /// Asked again, because the wait above is the last stretch in which the command
+                    /// can still write and it put what it wrote through the reaction. Under `throw`
+                    /// that output fails the query just like output produced any earlier would.
+                    if (timeout_command_out.hasStderr())
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Executable generates stderr: {}", timeout_command_out.getStderr());
                 }
 
                 /// A producer error (a failing input pipeline, an exceeded memory limit) must not be
@@ -1618,7 +1811,11 @@ namespace
             if (!have_input)
                 return std::nullopt;
 
-            /// Writing into a region the command has shrunk would fault, so check before touching it.
+            /// The input no longer goes through the mapping, so this is not what keeps the server
+            /// alive any more (`WriteBufferToSharedMemoryRegion` says what does). It is still the
+            /// point at which a region the command has damaged is caught: a file it shortened is no
+            /// longer worth what this borrow is charged for, and a path it took over would be sent
+            /// to the command in the next request. Both mean this worker cannot be used further.
             checkRegionIsIntact(index);
 
             /// Serialize into the region itself, growing it on demand (up to shared_memory_max_size)
@@ -1629,7 +1826,7 @@ namespace
             /// region), and a `finalize` from a destructor could not report a problem anyway.
             WriteBufferToSharedMemoryRegion write_buffer(
                 *regions[index],
-                /// The input is serialized straight into the region, so its total size is known only
+                /// The input is serialized a bufferful at a time, so its total size is known only
                 /// once it is over: every request for room is a lower bound on what it needs.
                 [this, index](size_t required)
                 { ensureRegionFits(index, required, "The serialized input", /*required_is_lower_bound=*/ true); });
@@ -1637,9 +1834,9 @@ namespace
             auto output_format = context->getOutputFormat(format, write_buffer, input_header);
             formatBlock(output_format, input_block);
 
-            /// `formatBlock` flushes the format into the buffer, which also moves a byte that ended
-            /// up in its spare slot into the region. Do it explicitly all the same: it is what grows
-            /// the region under this query's memory limit, and `finalize` may not do it (see
+            /// `formatBlock` flushes the format into the buffer; this puts what it left there into
+            /// the region. Explicitly, and before `finalize`: this is the flush that runs under the
+            /// query's memory limit, and any growth `finalize` would drive instead escapes it (see
             /// WriteBufferToSharedMemoryRegion::finalizeImpl).
             write_buffer.next();
             write_buffer.finalize();
@@ -1968,23 +2165,29 @@ namespace
         /// described as one: it gets its own line and is not counted as a protocol violation.
         void reportDirtyChannelDiscard() noexcept
         {
-            if (!dirty_stdout && !dirty_stderr)
-            {
-                if (child_is_gone)
-                {
-                    LOG_DEBUG(
-                        getLogger("ShellCommandSharedMemorySource"),
-                        "The process of an executable UDF exited after answering, so it was not returned "
-                        "to the pool.");
-                    child_is_gone = false;
-                }
-                return;
-            }
-
-            ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryDirtyChannelDiscards);
+            /// Taken and cleared up front, so that nothing below can leave a discard to be reported
+            /// a second time - and so that everything that follows is inside the handler. Every
+            /// line here allocates, this runs on `prepare`'s path where the stack is not unwinding,
+            /// and the function is `noexcept`: a `MEMORY_LIMIT_EXCEEDED` from formatting a log
+            /// message would otherwise terminate the server over a diagnostic.
+            const bool had_dirty_stdout = std::exchange(dirty_stdout, false);
+            const bool had_dirty_stderr = std::exchange(dirty_stderr, false);
+            const bool had_child_gone = std::exchange(child_is_gone, false);
 
             try
             {
+                if (!had_dirty_stdout && !had_dirty_stderr)
+                {
+                    if (had_child_gone)
+                        LOG_DEBUG(
+                            getLogger("ShellCommandSharedMemorySource"),
+                            "The process of an executable UDF exited after answering, so it was not returned "
+                            "to the pool.");
+                    return;
+                }
+
+                ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryDirtyChannelDiscards);
+
                 const String leftover_stderr = timeout_command_out.consumePendingStderr();
                 LOG_WARNING(
                     getLogger("ShellCommandSharedMemorySource"),
@@ -1992,7 +2195,7 @@ namespace
                     "was discarded instead of reused. The command must not write anything past its "
                     "response frame, and must write diagnostics before the response rather than after "
                     "it.{}{}",
-                    dirty_stdout && dirty_stderr ? "stdout and stderr" : (dirty_stdout ? "stdout" : "stderr"),
+                    had_dirty_stdout && had_dirty_stderr ? "stdout and stderr" : (had_dirty_stdout ? "stdout" : "stderr"),
                     leftover_stderr.empty() ? "" : " Stderr: ",
                     leftover_stderr);
             }
@@ -2000,10 +2203,6 @@ namespace
             {
                 tryLogCurrentException("ShellCommandSharedMemorySource");
             }
-
-            dirty_stdout = false;
-            dirty_stderr = false;
-            child_is_gone = false;
         }
 
         bool commandIsReused() const
@@ -2126,6 +2325,29 @@ namespace
             command->in.close();
         }
 
+        /// Reads the borrow's CPU and peak resident set out of `/proc` while the worker is still
+        /// there to be read. Idempotent (see `UDFProcessSubtreeSampler::recordReleased`), so both
+        /// the teardown that discards a worker and the ordinary end of a borrow call it.
+        ///
+        /// Never throws: it reads procfs and builds containers, so a memory limit can refuse it,
+        /// and it runs both from `cleanup` - which the destructor calls - and from `prepare`, where
+        /// failing a query that has already produced its rows over a profiling read would be worse
+        /// than losing the measurement.
+        void recordPooledResourceUsageNoThrow() noexcept
+        {
+            if (!configuration.sampler || !process_pool)
+                return;
+
+            try
+            {
+                configuration.sampler->recordReleased();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSharedMemorySource");
+            }
+        }
+
         /// Same, for the teardown paths (cancellation, cleanup) where an exception must not escape.
         void closeStdinNoThrow(bool command_is_reused)
         {
@@ -2191,6 +2413,11 @@ namespace
                 }
             }
 
+            /// Before the stdin close below, for the same reason `prepare` samples before its own:
+            /// a discarded child exits on that EOF, and a zombie has no `/proc` mm fields left to
+            /// read. Idempotent, so a borrow that already went through `prepare` is unaffected.
+            recordPooledResourceUsageNoThrow();
+
             /// A child that is not going back to the pool exits on stdin EOF, so its stdin must be
             /// closed here as well: generate() closes it on the normal path, but not when the source
             /// is torn down before that (query cancellation, an exception downstream), and never for
@@ -2219,18 +2446,8 @@ namespace
             /// child is torn down, then hand the process back to the pool.
             if (configuration.sampler)
             {
-                if (process_pool)
-                {
-                    try
-                    {
-                        configuration.sampler->recordReleased();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("ShellCommandSharedMemorySource");
-                    }
-                }
-                else if (command)
+                /// The pool path was measured above, before the stdin close.
+                if (!process_pool && command)
                 {
                     if (!command->isWaitCalled())
                     {

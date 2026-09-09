@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_FSTAT;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int UNSUPPORTED_METHOD;
     extern const int CANNOT_STAT;
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -49,7 +50,22 @@ namespace
 /// Keep region files in a directory owned exclusively by this mechanism. In particular, the stale
 /// file sweep must never apply its filename/lock heuristic to arbitrary files placed directly in a
 /// shared directory such as `/dev/shm`.
-const std::string_view REGION_DIRECTORY_NAME = ".clickhouse-udf-shared-memory";
+///
+/// The name carries the effective uid, because the parent is normally shared: `/dev/shm` is
+/// world-writable, and the directory below it is required to be owned by this user with mode 0700.
+/// With one fixed name, whoever created it first owns it for everyone - so a second ClickHouse
+/// running as a different OS user could not use the same `shared_memory_path` at all (the layout
+/// the documentation describes), and any local user could keep this feature from starting simply by
+/// creating that name first. Per-uid names make those two the same case as any other user's
+/// directory: not ours, not looked at.
+///
+/// It is not a defence against a local user who guesses the name and creates it first - nothing
+/// placed in a sticky world-writable directory can be - but that fails closed and loudly, at
+/// configuration time, rather than silently.
+std::string regionDirectoryName()
+{
+    return fmt::format(".clickhouse-udf-shared-memory-{}", ::geteuid());
+}
 
 /// Every region file is named `clickhouse_udf_shm_<random>`, and its owner holds an exclusive
 /// `flock` on it for the whole lifetime of the region.
@@ -110,7 +126,7 @@ std::string getRegionDirectory(const std::string & parent_directory)
 {
     validateDirectory(parent_directory);
 
-    const std::string directory = (std::filesystem::path(parent_directory) / REGION_DIRECTORY_NAME).string();
+    const std::string directory = (std::filesystem::path(parent_directory) / regionDirectoryName()).string();
     bool created = false;
     if (0 == ::mkdir(directory.c_str(), 0700))
     {
@@ -206,6 +222,39 @@ void closeNoThrow(int fd, std::string_view operation) noexcept
     }
 }
 
+/** The three calls below are the ones here that a signal can interrupt, and the server sends itself
+  * signals continuously - the query profiler's timers fire on every thread by default. None of them
+  * is restartable, so an unretried `EINTR` fails a query for something that has nothing to do with
+  * it, and the larger the region the likelier it is: reserving one is exactly the kind of call that
+  * is long enough to be caught mid-flight.
+  *
+  * Retrying is safe for all three. `ftruncate` and `flock` are idempotent, and an interrupted
+  * `fallocate` keeps the pages it had already reserved, so every attempt starts closer to done and
+  * the loop converges instead of spinning against the signals.
+  *
+  * `posix_fallocate` is the odd one out in how it reports failure: it returns the error number and
+  * leaves `errno` alone.
+  */
+int ftruncateRetryOnEINTR(int fd, off_t length) noexcept
+{
+    int res = 0;
+    do
+        res = ::ftruncate(fd, length);
+    while (res != 0 && errno == EINTR);
+
+    return res;
+}
+
+int flockRetryOnEINTR(int fd, int operation) noexcept
+{
+    int res = 0;
+    do
+        res = ::flock(fd, operation);
+    while (res != 0 && errno == EINTR);
+
+    return res;
+}
+
 LinkedRegionFile createLinkedRegionFile(const std::string & directory)
 {
     validateDirectory(directory);
@@ -248,7 +297,7 @@ LinkedRegionFile createLinkedRegionFile(const std::string & directory)
             ErrorCodes::CANNOT_FCNTL, saved_errno, "SharedMemoryRegion: Cannot set the mode of a region file in {}", directory);
     }
 
-    if (0 != ::flock(fd, LOCK_EX | LOCK_NB))
+    if (0 != flockRetryOnEINTR(fd, LOCK_EX | LOCK_NB))
     {
         const int saved_errno = errno;
         closeNoThrow(fd, "failed lock setup");
@@ -285,7 +334,11 @@ LinkedRegionFile createLinkedRegionFile(const std::string & directory)
 void reserveBackingStorage([[maybe_unused]] int fd, size_t size, const std::string & operation)
 {
 #if defined(OS_LINUX)
-    int fallocate_error = ::posix_fallocate(fd, 0, static_cast<off_t>(size));
+    int fallocate_error = 0;
+    do
+        fallocate_error = ::posix_fallocate(fd, 0, static_cast<off_t>(size));
+    while (fallocate_error == EINTR);
+
     if (fallocate_error != 0)
     {
         ErrnoException::throwWithErrno(
@@ -383,7 +436,7 @@ void removeStaleRegions(const std::string & directory)
             continue;
         }
 
-        if (0 == ::flock(fd, LOCK_EX | LOCK_NB))
+        if (0 == flockRetryOnEINTR(fd, LOCK_EX | LOCK_NB))
         {
             /// Confirm that the name still denotes the inspected inode before deleting it. The
             /// configured directory is either non-writable by other users or sticky (validated by
@@ -529,7 +582,7 @@ SharedMemoryRegion::SharedMemoryRegion(const std::string & directory, size_t siz
         file_path.clear();
     };
 
-    if (0 != ::ftruncate(fd, static_cast<off_t>(size)))
+    if (0 != ftruncateRetryOnEINTR(fd, static_cast<off_t>(size)))
     {
         const int saved_errno = errno;
         unlink_on_failure();
@@ -590,7 +643,7 @@ void SharedMemoryRegion::grow(size_t new_size)
         throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY,
             "SharedMemoryRegion: new size {} exceeds the maximum {}", new_size, static_cast<size_t>(std::numeric_limits<off_t>::max()));
 
-    if (0 != ::ftruncate(region_fd, static_cast<off_t>(new_size)))
+    if (0 != ftruncateRetryOnEINTR(region_fd, static_cast<off_t>(new_size)))
     {
         const int saved_errno = errno;
         ErrnoException::throwWithErrno(
@@ -603,7 +656,7 @@ void SharedMemoryRegion::grow(size_t new_size)
     }
     catch (...)
     {
-        if (0 != ::ftruncate(region_fd, static_cast<off_t>(region_size)))
+        if (0 != ftruncateRetryOnEINTR(region_fd, static_cast<off_t>(region_size)))
         {
             /// Snapshot before formatting the message: getting the logger can overwrite errno.
             const int rollback_errno = errno;
@@ -628,7 +681,7 @@ void SharedMemoryRegion::grow(size_t new_size)
         /// exception below. If even this rollback fails, the file stays longer than `region_size`;
         /// that is unusable space rather than a hazard, and the next `grow` or `shrink` fixes it.
         const int mmap_errno = errno;
-        if (0 != ::ftruncate(region_fd, static_cast<off_t>(region_size)))
+        if (0 != ftruncateRetryOnEINTR(region_fd, static_cast<off_t>(region_size)))
         {
             const int rollback_errno = errno;
             LOG_WARNING(getLogger("SharedMemoryRegion"),
@@ -688,6 +741,55 @@ void SharedMemoryRegion::readBackingFile(char * destination, size_t offset, size
     }
 }
 
+void SharedMemoryRegion::writeBackingFile(const char * source, size_t offset, size_t size)
+{
+    /// Against what the region claims, not against what the file happens to be right now: the file
+    /// is the command's to change, and a length read from it would be a check against the very
+    /// thing that cannot be trusted. `pwrite` past the end of a shortened file is not a fault - it
+    /// extends the file - so this bound is about the region's own accounting, not about safety.
+    if (offset > region_size || size > region_size - offset)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "SharedMemoryRegion: refusing to write {} bytes at offset {} of a region of {} bytes",
+            size,
+            offset,
+            region_size);
+
+    size_t bytes_written = 0;
+    while (bytes_written < size)
+    {
+        const ssize_t res = ::pwrite(
+            region_fd, source + bytes_written, size - bytes_written, static_cast<off_t>(offset + bytes_written));
+
+        if (res < 0)
+        {
+            if (errno == EINTR)
+                continue;
+
+            const int saved_errno = errno;
+            ErrnoException::throwWithErrno(
+                ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
+                saved_errno,
+                "SharedMemoryRegion: Cannot write {} bytes at offset {} of {}",
+                size,
+                offset,
+                file_path);
+        }
+
+        /// `pwrite` returning zero for a non-zero request is not something a regular file does;
+        /// treat it as an error rather than spinning.
+        if (res == 0)
+            throw Exception(
+                ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
+                "SharedMemoryRegion: wrote nothing of the {} bytes remaining at offset {} of {}",
+                size - bytes_written,
+                offset + bytes_written,
+                file_path);
+
+        bytes_written += static_cast<size_t>(res);
+    }
+}
+
 SharedMemoryRegion::BackingFileState SharedMemoryRegion::backingFileState() const
 {
     struct stat file_stat{};
@@ -734,7 +836,7 @@ void SharedMemoryRegion::shrink(size_t new_size) noexcept
     /// the lifetime of the worker with nothing accounting for them. Truncating under the existing
     /// mapping is safe - it only takes away the tail, which the region no longer claims - and it
     /// keeps a failure atomic: the region is then completely unchanged.
-    if (0 != ::ftruncate(region_fd, static_cast<off_t>(new_size)))
+    if (0 != ftruncateRetryOnEINTR(region_fd, static_cast<off_t>(new_size)))
     {
         LOG_WARNING(log, "Cannot ftruncate a shared-memory region down to {}: {}", ReadableSize(new_size), errnoToString());
         return;
@@ -757,6 +859,51 @@ void SharedMemoryRegion::shrink(size_t new_size) noexcept
 
     region_data = static_cast<char *>(buf);
     mapped_size = new_size;
+}
+
+size_t SharedMemoryRegion::reconcileBackingFileSize() noexcept
+{
+    /// Runs while the borrow handing this region over is still charged for it, so an allocation in
+    /// the logging below could hit the memory limit - and that exception would escape a `noexcept`
+    /// function. Same reason as in `shrink`.
+    LockMemoryExceptionInThread block_exceptions(VariableContext::Global);
+
+    auto log = getLogger("SharedMemoryRegion");
+
+    struct stat file_stat{};
+    if (0 != ::fstat(region_fd, &file_stat))
+    {
+        LOG_WARNING(log, "Cannot inspect the region file {} while handing it over: {}", file_path, errnoToString());
+        return region_size;
+    }
+
+    const size_t file_size = static_cast<size_t>(file_stat.st_size);
+
+    /// A file that got shorter is the other direction entirely: it is a hazard rather than an
+    /// accounting error, it is what `backingFileState` reports and what the consumer's integrity
+    /// check acts on, and extending it again here would hide it. Nothing to do, and nothing extra
+    /// to charge - the region is charged for what it reserved.
+    if (file_size <= region_size)
+        return region_size;
+
+    LOG_WARNING(
+        log,
+        "The region file {} holds {} rather than the {} this region claims, so something resized it. "
+        "Putting it back, so the extra pages are released instead of staying charged to nobody.",
+        file_path,
+        ReadableSize(file_size),
+        ReadableSize(region_size));
+
+    if (0 == ftruncateRetryOnEINTR(region_fd, static_cast<off_t>(region_size)))
+        return region_size;
+
+    LOG_WARNING(
+        log, "Cannot put the region file {} back to {}: {}", file_path, ReadableSize(region_size), errnoToString());
+
+    /// The pages are there whether or not they can be given back, so they are charged for. Reporting
+    /// the smaller number would leave them counted by nobody, which is the one answer that is wrong
+    /// in a direction nothing else corrects.
+    return file_size;
 }
 
 SharedMemoryRegion::~SharedMemoryRegion()

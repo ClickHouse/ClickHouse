@@ -30,7 +30,12 @@ using namespace DB;
 
 namespace
 {
-constexpr std::string_view REGION_DIRECTORY_NAME = ".clickhouse-udf-shared-memory";
+/// Mirrors the name the implementation builds: the effective uid is part of it, so that a shared
+/// parent like `/dev/shm` can hold one of these per OS user.
+std::string regionDirectoryName()
+{
+    return ".clickhouse-udf-shared-memory-" + std::to_string(::geteuid());
+}
 
 /// A directory the regions can actually live in. They need `O_TMPFILE` and `posix_fallocate`, which
 /// not every filesystem provides: `/dev/shm` is tmpfs, always provides both, and is where the feature
@@ -101,7 +106,7 @@ TEST(SharedMemoryRegion, ReclaimsLeftoverRegionFiles)
     SCOPE_EXIT({ std::filesystem::remove_all(directory); });
     ASSERT_EQ(::chmod(directory.c_str(), 0700), 0);
 
-    const std::string private_directory = directory + "/" + std::string(REGION_DIRECTORY_NAME);
+    const std::string private_directory = directory + "/" + regionDirectoryName();
     std::filesystem::create_directories(private_directory);
     ASSERT_EQ(::chmod(private_directory.c_str(), 0700), 0);
 
@@ -221,6 +226,147 @@ TEST(SharedMemoryRegion, UnlinkOnDestroy)
         EXPECT_TRUE(std::filesystem::exists(path));
     }
     EXPECT_FALSE(std::filesystem::exists(path));
+}
+
+/// The transport puts the input into the region through the descriptor rather than through the
+/// mapping, and takes the output out the same way. Both directions have to be visible to a second,
+/// independently opened mapping of the same file - which is what the command has.
+TEST(SharedMemoryRegion, WriteAndReadBackingFileAreVisibleToAnotherMapping)
+{
+    SharedMemoryRegion region(regionDir(), 4096);
+
+    int fd = ::open(region.path().c_str(), O_RDWR);
+    ASSERT_NE(fd, -1);
+    void * other = ::mmap(nullptr, region.size(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    ASSERT_NE(other, MAP_FAILED);
+    ::close(fd);
+
+    auto * other_data = static_cast<char *>(other);
+
+    /// Server -> command, the way `WriteBufferToSharedMemoryRegion` does it.
+    const std::string in = "input-from-server";
+    region.writeBackingFile(in.data(), 0, in.size());
+    EXPECT_EQ(std::string(other_data, in.size()), in);
+
+    /// Command -> server: the command writes through its mapping, the server copies it out.
+    const std::string out = "output-from-child";
+    memcpy(other_data + 2048, out.data(), out.size());
+
+    std::string read_back(out.size(), '\0');
+    region.readBackingFile(read_back.data(), 2048, out.size());
+    EXPECT_EQ(read_back, out);
+
+    ::munmap(other, region.size());
+}
+
+/// The bound is the region's own size, and it is checked against what the region claims rather than
+/// against the file - the file is the command's to change, so asking it would be asking the very
+/// thing that cannot be trusted.
+TEST(SharedMemoryRegion, WriteBackingFileRejectsWritesPastTheRegion)
+{
+    SharedMemoryRegion region(regionDir(), 4096);
+
+    const std::string payload(64, 'x');
+    EXPECT_THROW(region.writeBackingFile(payload.data(), 4096 - 32, payload.size()), DB::Exception);
+    EXPECT_THROW(region.writeBackingFile(payload.data(), 8192, payload.size()), DB::Exception);
+
+    /// And the last byte that does fit is still allowed.
+    EXPECT_NO_THROW(region.writeBackingFile(payload.data(), 4096 - payload.size(), payload.size()));
+}
+
+/// Why the input goes through the descriptor at all. The command holds the region open for writing
+/// and can shorten it at any moment, including between the server's check that the file is whole
+/// and the server's own store. Through the mapping that store lands on a page the file no longer
+/// backs, and the resulting `SIGBUS` cannot be caught: it would take the whole server down, and
+/// this test process with it. A `pwrite` of the same range simply extends the file again.
+TEST(SharedMemoryRegion, WriteBackingFileSurvivesTheFileBeingTruncatedUnderIt)
+{
+    SharedMemoryRegion region(regionDir(), 4096);
+
+    /// What the command can do to the file it was handed - here at the worst possible moment.
+    int fd = ::open(region.path().c_str(), O_RDWR);
+    ASSERT_NE(fd, -1);
+    ASSERT_EQ(::ftruncate(fd, 0), 0);
+    ::close(fd);
+
+    const std::string payload = "written-after-the-file-was-truncated";
+    EXPECT_NO_THROW(region.writeBackingFile(payload.data(), 0, payload.size()));
+
+    std::string read_back(payload.size(), '\0');
+    EXPECT_NO_THROW(region.readBackingFile(read_back.data(), 0, payload.size()));
+    EXPECT_EQ(read_back, payload);
+
+    /// The region still knows what it is charged for; only the file changed under it, which is what
+    /// `backingFileState` is there to report.
+    EXPECT_EQ(region.size(), 4096u);
+    EXPECT_EQ(region.backingFileState().size, payload.size());
+}
+
+/// What a pooled region is charged for while it sits idle has to be what the `tmpfs` is really
+/// holding. The command holds its region open for writing, so the file can be longer than the
+/// region believes - by its own doing, or because a `grow` whose rollback failed left it that way -
+/// and those extra pages would otherwise be held by nobody and counted by nobody for as long as the
+/// worker stayed idle. Putting the file back is what gives them up.
+TEST(SharedMemoryRegion, ReconcileGivesBackPagesTheFileGrewBy)
+{
+    SharedMemoryRegion region(regionDir(), 4096);
+    const std::string path = region.path();
+
+    const std::string payload = "kept across the reconcile";
+    region.writeBackingFile(payload.data(), 0, payload.size());
+
+    /// What the command can do to the file it was handed.
+    int fd = ::open(path.c_str(), O_RDWR);
+    ASSERT_NE(fd, -1);
+    ASSERT_EQ(::ftruncate(fd, 65536), 0);
+    ::close(fd);
+
+    EXPECT_EQ(region.reconcileBackingFileSize(), 4096u);
+
+    struct stat st{};
+    ASSERT_EQ(::stat(path.c_str(), &st), 0);
+    EXPECT_EQ(static_cast<size_t>(st.st_size), 4096u) << "the pages the file grew by were not given back";
+
+    /// The region itself is untouched, contents included.
+    EXPECT_EQ(region.size(), 4096u);
+    std::string read_back(payload.size(), '\0');
+    region.readBackingFile(read_back.data(), 0, payload.size());
+    EXPECT_EQ(read_back, payload);
+}
+
+/// The other direction is not this method's business. A file that got *shorter* is a hazard rather
+/// than an accounting error - `backingFileState` reports it and the consumer discards the worker
+/// over it - and extending it again here would paper over exactly that.
+TEST(SharedMemoryRegion, ReconcileLeavesAShortenedFileAlone)
+{
+    SharedMemoryRegion region(regionDir(), 4096);
+    const std::string path = region.path();
+
+    int fd = ::open(path.c_str(), O_RDWR);
+    ASSERT_NE(fd, -1);
+    ASSERT_EQ(::ftruncate(fd, 1024), 0);
+    ::close(fd);
+
+    /// Charged for what it reserved, not for what is left of it.
+    EXPECT_EQ(region.reconcileBackingFileSize(), 4096u);
+
+    struct stat st{};
+    ASSERT_EQ(::stat(path.c_str(), &st), 0);
+    EXPECT_EQ(static_cast<size_t>(st.st_size), 1024u) << "a shortened file must be left for the integrity check to find";
+    EXPECT_EQ(region.backingFileState().size, 1024u);
+}
+
+/// The ordinary case: nothing has touched the file, so nothing happens to it.
+TEST(SharedMemoryRegion, ReconcileIsANoOpOnAnUntouchedRegion)
+{
+    SharedMemoryRegion region(regionDir(), 4096);
+
+    EXPECT_EQ(region.reconcileBackingFileSize(), 4096u);
+    EXPECT_EQ(region.backingFileState().size, 4096u);
+
+    region.grow(8192);
+    EXPECT_EQ(region.reconcileBackingFileSize(), 8192u);
+    EXPECT_EQ(region.backingFileState().size, 8192u);
 }
 
 /// The whole point of MAP_SHARED: a second, independent mapping of the same file (as the child
@@ -407,7 +553,7 @@ TEST(SharedMemoryRegion, ConfigurationCheckReclaimsLeftoverRegionFiles)
     SCOPE_EXIT({ std::filesystem::remove_all(directory); });
     ASSERT_EQ(::chmod(directory.c_str(), 0700), 0);
 
-    const std::string private_directory = directory + "/" + std::string(REGION_DIRECTORY_NAME);
+    const std::string private_directory = directory + "/" + regionDirectoryName();
     std::filesystem::create_directories(private_directory);
     ASSERT_EQ(::chmod(private_directory.c_str(), 0700), 0);
 

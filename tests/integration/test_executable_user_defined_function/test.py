@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import uuid
 
 import pytest
@@ -359,6 +360,55 @@ def test_executable_function_always_error_python(started_cluster):
     except Exception as ex:
         assert "DB::Exception: User defined function 'test_function_exit_error_fail_python' failed" in str(ex)
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
+
+
+def test_executable_function_stderr_written_on_the_way_out_still_throws(started_cluster):
+    """`stderr_reaction` applies to output produced on the way out, with or without the exit check."""
+    skip_test_msan(node)
+
+    # The command answers correctly, closes its stdout, waits out the drain that follows - which
+    # stops as soon as stderr goes quiet for a moment - and only then writes its line before
+    # exiting. Those bytes are found by the bounded wait that reaps the command, the last stretch in
+    # which a command can write at all.
+    #
+    # The second query is the point: `check_exit_code` and `stderr_reaction` are independent
+    # settings, so reaching that output only when the exit status is also being checked would make
+    # the reaction quietly conditional on something unrelated to it.
+    for name in (
+        "test_function_stderr_on_the_way_out_python",
+        "test_function_stderr_on_the_way_out_no_exit_check_python",
+    ):
+        with pytest.raises(Exception) as exc:
+            node.query(f"SELECT {name}(1)")
+
+        assert "Executable generates stderr" in str(exc.value), str(exc.value)
+        assert "complaining on the way out" in str(exc.value), str(exc.value)
+
+
+def test_executable_function_unreadable_exit_code_fails_the_query(started_cluster):
+    """A command whose exit status cannot be read must fail the query, not be waved through."""
+    skip_test_msan(node)
+
+    # This command answers correctly and then refuses to leave: instead of exiting when its stdin is
+    # closed it sleeps far past its `command_termination_timeout`, and only much later exits
+    # non-zero. The server will not wait for it indefinitely - the timeout is exactly how long it
+    # waits before signalling - so the status is never read.
+    #
+    # `check_exit_code` is at its default, and a status that could not be read is not a passing one:
+    # succeeding here would make the setting mean "checked, unless the command avoids being
+    # checked", which is the one command it is there for.
+    started = time.monotonic()
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_lingers_python(1)")
+    elapsed = time.monotonic() - started
+
+    assert "did not exit within command_termination_timeout" in str(exc.value), str(exc.value)
+    assert elapsed < 60, f"the query took {elapsed:.1f}s to give up on the command"
+
+    # And `check_exit_code = 0` is how such a command is configured - the setting the message above
+    # points at, so it has to work: nothing is checked, and the same command answers normally.
+    assert node.query("SELECT test_function_lingers_ignore_python(1)") == "Key 1\n"
+
 
 def test_executable_function_query_cache(started_cluster):
     '''Test for issues #77553 and #59988: Users should be able to specify if externally-defined are non-deterministic, and the query cache should treat them correspondingly.'''

@@ -94,7 +94,9 @@ public:
         /// stop_requested must be part of the predicate: stop() wakes this cv and expects the
         /// consumer to unblock even when the producer exited without setting `finished` (e.g. on a
         /// cancellation/teardown path). Otherwise a consumer already blocked here would wait forever.
+        ++waiting_consumers;
         consumer_cv.wait(lock, [this] { return ready.has_value() || finished || producer_exception || stop_requested; });
+        --waiting_consumers;
 
         if (producer_exception && !ready.has_value())
             std::rethrow_exception(producer_exception);
@@ -128,6 +130,19 @@ public:
             free_buffers[index] = true;
         }
         producer_cv.notify_one();
+    }
+
+    /// Whether the consumer is currently blocked inside `next` waiting for a buffer (0 or 1 - this
+    /// is a single-consumer coordinator). The counter is incremented under `mutex` before the wait,
+    /// which only releases the mutex once the thread is registered on the condition variable, so
+    /// another thread that takes the mutex and sees a non-zero count knows the consumer is asleep
+    /// and will observe a `notify`. That makes it a synchronization point and not merely a
+    /// statistic, which is what the "stop wakes a blocked consumer" test needs to be about the
+    /// wake-up rather than about scheduling.
+    size_t waitingConsumers() const
+    {
+        std::lock_guard lock(mutex);
+        return waiting_consumers;
     }
 
     /// Producer: whether the consumer has asked to stop. A callback that can keep working for a
@@ -190,7 +205,7 @@ private:
 
     bool anyFree() const { return free_buffers[0] || free_buffers[1]; }
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::condition_variable producer_cv;
     std::condition_variable consumer_cv;
 
@@ -199,6 +214,7 @@ private:
     bool started = false;
     std::array<bool, 2> free_buffers{{true, true}};
     std::optional<Item> ready;
+    size_t waiting_consumers = 0;
     bool finished = false;
     /// Written under the mutex (the condition variables' predicates read it there), but a producer
     /// callback polls it without the lock - see `isStopRequested`.

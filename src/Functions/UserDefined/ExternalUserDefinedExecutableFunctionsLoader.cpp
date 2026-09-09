@@ -239,6 +239,11 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     size_t shared_memory_size = config.getUInt64(key_in_config + ".shared_memory_size", 0);
     size_t shared_memory_max_size = config.getUInt64(key_in_config + ".shared_memory_max_size", 0);
     bool shared_memory_pipeline = config.getBool(key_in_config + ".shared_memory_pipeline", false);
+    /// The default is only a default *for the shared-memory transport*. A function that does not
+    /// use it has no shared-memory directory at all, and saying `/dev/shm` anyway would put a
+    /// path on every pipe-mode function in `system.user_defined_functions` - which reads as though
+    /// it had one. The `else` branch below, which is where "not using it" is established, empties
+    /// it again.
     std::string shared_memory_path = config.getString(key_in_config + ".shared_memory_path", "/dev/shm");
 
     if (use_shared_memory)
@@ -300,6 +305,11 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     }
     else
     {
+        /// Nothing here has a shared-memory directory, so it must not report one: the rest of the
+        /// server, and `system.user_defined_functions`, read a non-empty path as a function that
+        /// uses the transport.
+        shared_memory_path.clear();
+
         /// Every one of these knobs only means anything to the shared-memory transport, so a
         /// configuration that spells one out without enabling that transport is a mistake: the
         /// function silently runs over the pipes instead, which is the one outcome whoever wrote

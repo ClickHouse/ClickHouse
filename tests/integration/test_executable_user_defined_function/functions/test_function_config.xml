@@ -407,6 +407,56 @@
 
     <function>
         <type>executable</type>
+        <name>test_function_stderr_on_the_way_out_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_stderr_on_the_way_out.py</command>
+        <stderr_reaction>throw</stderr_reaction>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_stderr_on_the_way_out_no_exit_check_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_stderr_on_the_way_out.py</command>
+        <stderr_reaction>throw</stderr_reaction>
+        <check_exit_code>0</check_exit_code>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_lingers_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_lingers.py</command>
+        <command_termination_timeout>2</command_termination_timeout>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_lingers_ignore_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_lingers.py</command>
+        <command_termination_timeout>2</command_termination_timeout>
+        <check_exit_code>0</check_exit_code>
+    </function>
+
+    <function>
+        <type>executable</type>
         <name>test_function_exit_error_ignore_python</name>
         <return_type>String</return_type>
         <argument>

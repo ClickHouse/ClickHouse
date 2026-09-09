@@ -530,7 +530,7 @@ bool ShellCommand::tryWaitWithoutStatusCheck()
 }
 
 
-bool ShellCommand::waitDrainingOutput()
+bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check_exit_status)
 {
     /// A child that writes past what the protocol asked of it fills the pipe and blocks in `write`.
     /// Nothing reads that pipe any more by the time this is called, so the only way the child ever
@@ -538,14 +538,21 @@ bool ShellCommand::waitDrainingOutput()
     static constexpr UInt64 poll_step_ms = 5;
     char discard_buffer[4096];
 
+    /// The descriptors still worth draining, in the order they are polled. One that has hung up or
+    /// reached EOF is dropped out of the set (-1, which `poll` ignores): `poll` reports a hung-up
+    /// descriptor immediately and forever, so a child that closed its own output and then lingered
+    /// would otherwise spin a core here for the whole termination budget.
+    int drain_fds[2] = {out.getFD(), err.getFD()};
+
     while (true)
     {
         /// The reap comes first on every turn: once the child is gone there is nothing left to
         /// drain for, and whatever it left in the pipes is not worth waiting for.
-        auto proc_status = tryWaitImpl(/*blocking=*/ false);
+        auto proc_status = tryWaitImpl(/*blocking=*/ false, check_exit_status);
         if (proc_status.is_process_terminated)
         {
-            handleProcessRetcode(proc_status.retcode);
+            if (check_exit_status)
+                handleProcessRetcode(proc_status.retcode);
             return true;
         }
 
@@ -553,18 +560,27 @@ bool ShellCommand::waitDrainingOutput()
         if (remaining_ms == 0)
             return false;
 
-        pollfd pfds[2]{};
-        /// A descriptor that is already closed is -1, which `poll` ignores.
-        pfds[0].fd = out.getFD();
-        pfds[0].events = POLLIN;
-        pfds[1].fd = err.getFD();
-        pfds[1].events = POLLIN;
-
         /// Capped so that a child which simply stops writing is still reaped promptly: a pipe that
         /// goes quiet reports nothing until its write end is closed, so the loop must come back to
         /// the `waitpid` above on its own.
-        const int poll_timeout_ms = static_cast<int>(std::min(remaining_ms, poll_step_ms));
-        const int num_events = ::poll(pfds, 2, poll_timeout_ms);
+        const UInt64 step_ms = std::min(remaining_ms, poll_step_ms);
+
+        if (drain_fds[0] < 0 && drain_fds[1] < 0)
+        {
+            /// Nothing left to drain, only a child that has not exited yet. Wait out the rest of
+            /// the budget in the same steps rather than polling an empty set in a tight loop.
+            sleepForMilliseconds(step_ms);
+            continue;
+        }
+
+        pollfd pfds[2]{};
+        for (size_t i = 0; i < 2; ++i)
+        {
+            pfds[i].fd = drain_fds[i];
+            pfds[i].events = POLLIN;
+        }
+
+        const int num_events = ::poll(pfds, 2, static_cast<int>(step_ms));
         if (num_events < 0)
         {
             if (errno == EINTR)
@@ -576,16 +592,43 @@ bool ShellCommand::waitDrainingOutput()
             return false;
         }
 
-        for (const auto & pfd : pfds)
+        for (size_t i = 0; i < 2; ++i)
         {
-            if (pfd.fd < 0 || (pfd.revents & POLLIN) == 0)
+            if (drain_fds[i] < 0)
                 continue;
 
-            /// One read per readiness report: `poll` promises only that a single read will not
-            /// block, and these descriptors are not necessarily non-blocking.
-            ssize_t res = ::read(pfd.fd, discard_buffer, sizeof(discard_buffer));
-            if (res < 0 && errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK)
-                LOG_WARNING(getLogger(), "Cannot drain a pipe of shell command pid {}, error: '{}'", pid, errnoToString());
+            if ((pfds[i].revents & POLLIN) != 0)
+            {
+                /// One read per readiness report: `poll` promises only that a single read will not
+                /// block, and these descriptors are not necessarily non-blocking.
+                const ssize_t res = ::read(drain_fds[i], discard_buffer, sizeof(discard_buffer));
+                if (res > 0)
+                {
+                    /// `drain_fds[1]` is `stderr`, and it is the only one a caller can ask for: the
+                    /// child's `stdout` past this point is output the protocol did not ask for, and
+                    /// reading it is the whole reason this loop exists.
+                    if (i == 1 && stderr_sink)
+                        stderr_sink(std::string_view(discard_buffer, static_cast<size_t>(res)));
+                    continue;
+                }
+
+                if (res < 0)
+                {
+                    if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+                        continue;
+
+                    LOG_WARNING(
+                        getLogger(), "Cannot drain a pipe of shell command pid {}, error: '{}'", pid, errnoToString());
+                }
+
+                /// `res == 0` is EOF, and an error that is not one of the retryable ones will not
+                /// go away either: this descriptor has nothing more to give.
+                drain_fds[i] = -1;
+            }
+            else if ((pfds[i].revents & (POLLHUP | POLLERR | POLLNVAL)) != 0)
+            {
+                drain_fds[i] = -1;
+            }
         }
     }
 }

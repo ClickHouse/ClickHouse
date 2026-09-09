@@ -38,10 +38,16 @@ namespace DB
   * and a `memfd` cannot be linked into the shared-memory directory - it lives on its own
   * filesystem, so `linkat` reports `EXDEV`. This matters because the command opens the region for
   * writing and can therefore resize it, while the server maps it: a file that gets shorter makes
-  * the server fault (`SIGBUS`). The consumer compares the file against the mapping before it
-  * touches the region (see `backingFileSize`), which catches a command that damages the region and
-  * then answers, but not one that truncates it in the instant between that check and the access.
-  * Adopting `memfd` to close that too means, at least:
+  * the server fault (`SIGBUS`), which is fatal for the whole server and cannot be caught.
+  *
+  * The transport that uses this class does not rely on winning that race, and does not rely on the
+  * checks either: it never touches the mapping. Both directions go through the descriptor
+  * (`readBackingFile`, `writeBackingFile`), where a file the command shortened is an ordinary
+  * error - or, for a write, simply extended again - instead of a fatal signal. `backingFileState`
+  * remains, but for what it can actually answer: whether the region still costs what it is charged
+  * for, and whether its path still leads to it. What a sealed region would add is not safety any
+  * more but the copy: with sealing, the server could serialize straight into the mapping and parse
+  * straight out of it. Adopting `memfd` for that means, at least:
   *   - sealing with `F_SEAL_SHRINK | F_SEAL_SEAL`: shrinking is what has to be denied, and sealing
   *     the seal set keeps the command - which holds a writable descriptor - from adding
   *     `F_SEAL_GROW` itself and breaking the server's own growth;
@@ -55,9 +61,10 @@ namespace DB
   *     a replacement descriptor is delivered to the running worker - which needs a control channel
   *     that can carry descriptors (`SCM_RIGHTS` over a unix socket), that is, a different protocol.
   *
-  * Passing descriptors over a unix socket, or giving up the mapping for `pread`/`pwrite`, would
-  * close the same hole; the first needs that protocol change as well, and the second removes the
-  * copy-free exchange this transport exists for.
+  * Passing descriptors over a unix socket needs that protocol change as well. Giving up the
+  * mapping for `pread`/`pwrite` is what the transport does today: it costs one copy per direction
+  * on the server side - the command's side stays copy-free, and the exchange still avoids the two
+  * copies and the per-64-KiB syscalls of the pipe transport it replaces.
   *
   * This class only owns the mapping and the file; it does no memory accounting, because the
   * mapping can outlive a single query (it is reused across `executable_pool` borrows). The
@@ -115,6 +122,38 @@ public:
       */
     void shrink(size_t new_size) noexcept;
 
+    /** Puts the backing file back to `size()` if it has grown past it, and reports how many bytes
+      * it actually holds afterwards.
+      *
+      * For the moment a region stops being used and starts merely existing - a pooled worker going
+      * back into the pool. Its bytes are charged to the server-wide tracker for that time, and the
+      * number charged has to be the number of pages the `tmpfs` is really holding, not the number
+      * this object believes it asked for. The two can differ: a command can `ftruncate` the file it
+      * was given, and a `grow` whose rollback failed leaves the file longer than the region. Pages
+      * beyond what is charged are held by nobody and counted by nobody.
+      *
+      * Truncating back is what makes the charge true rather than merely accurate - it gives the
+      * pages back. Only growth is repaired: a file that got *shorter* is the dangerous direction
+      * and belongs to `backingFileState` and the caller's integrity check, not here, and extending
+      * it again would only paper over that.
+      *
+      * When the file cannot be read or cannot be put back, the size actually on disk is returned,
+      * so the caller charges for what exists. Undercounting is the one answer not available.
+      *
+      * This is a snapshot, not a guarantee: the command holds the file open and can resize it again
+      * the moment this returns. What that costs is bounded by the next borrow, which checks the
+      * region before it uses it and discards a worker that damaged it.
+      */
+    size_t reconcileBackingFileSize() noexcept;
+
+    /** The mapping. Only for a consumer that is the sole writer of the file behind it.
+      *
+      * The executable-UDF transport deliberately does not use this: the command holds the same file
+      * open for writing and can shorten it at any moment, and touching a page the file no longer
+      * backs raises `SIGBUS`, which cannot be caught and takes the whole server down. Both
+      * directions of that exchange go through `readBackingFile` / `writeBackingFile` instead, where
+      * a shortened file is an ordinary error. Do not reintroduce a mapped access there.
+      */
     char * data() { return region_data; }
     const char * data() const { return region_data; }
     size_t size() const { return region_size; }
@@ -152,14 +191,30 @@ public:
       * range answers a truncated file with a short read instead - an ordinary error, which fails the
       * one query whose command caused it.
       *
-      * This is why the result is copied out rather than parsed where it lies. It costs one copy of
-      * the output; the input is still placed into the region without one. Note that the input side
-      * keeps the corresponding hazard, because the server writes it through the mapping - see the
-      * design note above.
+      * This is why the result is copied out rather than parsed where it lies, and why the input is
+      * placed into the region the same way - see `writeBackingFile`.
       *
       * Throws if the file cannot be read, or if it no longer holds `size` bytes at `offset`.
       */
     void readBackingFile(char * destination, size_t offset, size_t size) const;
+
+    /** Copies `size` bytes from `source` into the backing file at `offset`, without touching the
+      * mapping. The counterpart of `readBackingFile`, and there for the same reason.
+      *
+      * Writing the input through the mapping would carry exactly the hazard `readBackingFile`
+      * avoids for the output, and one that no check can close: the command can shorten the file
+      * between the moment the server verifies it and the moment the server's store lands on a page
+      * the file no longer backs, and that `SIGBUS` is fatal for the whole server. `pwrite` has no
+      * such window - a file the command shortened is simply extended again by the write, or the
+      * write fails with an ordinary `errno` - so the transport does not depend on winning a race
+      * with the process on the other end.
+      *
+      * `offset + size` must fit into `size()`; the file is not consulted for that bound, because
+      * the file is what cannot be trusted here.
+      *
+      * Throws if the file cannot be written.
+      */
+    void writeBackingFile(const char * source, size_t offset, size_t size);
 
 private:
     std::string file_path;

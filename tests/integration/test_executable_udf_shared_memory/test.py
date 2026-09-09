@@ -10,7 +10,10 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-REGION_DIRECTORY_NAME = ".clickhouse-udf-shared-memory"
+# The server puts its region files in a per-uid subdirectory of the configured path, so that a
+# shared parent like `/dev/shm` can hold one of these per OS user. The tests do not care which uid
+# the server runs as, so they look for any of them.
+REGION_DIRECTORY_GLOB = "*/.clickhouse-udf-shared-memory-*"
 LATE_UNLINK_MARKER = "/tmp/clickhouse_shm_udf_late_unlink_once"
 node = cluster.add_instance(
     "node",
@@ -91,6 +94,19 @@ def wait_for_pooled_shared_memory_bytes(expected, description, timeout=30):
         time.sleep(0.2)
 
 
+def query_profile_event(query_id, event):
+    # Per-query rather than the server-wide counter: this one has to be attributed to a specific
+    # invocation. The row type is not pinned to QueryFinish because some of these queries are
+    # expected to fail, and their counters live on the exception row.
+    node.query("SYSTEM FLUSH LOGS")
+    raw = node.query(
+        f"SELECT ProfileEvents['{event}'] FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type != 'QueryStart' "
+        "ORDER BY event_time_microseconds DESC LIMIT 1"
+    ).strip()
+    return int(raw) if raw else 0
+
+
 def profile_event_value(event):
     return int(
         node.query(
@@ -105,7 +121,8 @@ def shm_file_count(path):
             [
                 "bash",
                 "-c",
-                f"find {path}/{REGION_DIRECTORY_NAME} -maxdepth 1 -name 'clickhouse_udf_shm_*' | wc -l",
+                f"find {path} -mindepth 2 -maxdepth 2 -path '{REGION_DIRECTORY_GLOB}' "
+                f"-name 'clickhouse_udf_shm_*' | wc -l",
             ]
         ).strip()
     )
@@ -124,14 +141,18 @@ def shm_file_names(path):
         [
             "bash",
             "-c",
-            f"find {path}/{REGION_DIRECTORY_NAME} -maxdepth 1 -name 'clickhouse_udf_shm_*' -printf '%f\\n'",
+            f"find {path} -mindepth 2 -maxdepth 2 -path '{REGION_DIRECTORY_GLOB}' "
+            f"-name 'clickhouse_udf_shm_*' -printf '%f\\n'",
         ]
     ).split()
     return sorted(listing)
 
 
 def shm_file_sizes(path):
-    find = f"find {path}/{REGION_DIRECTORY_NAME} -maxdepth 1 -name 'clickhouse_udf_shm_*' -printf '%s\\n'"
+    find = (
+        f"find {path} -mindepth 2 -maxdepth 2 -path '{REGION_DIRECTORY_GLOB}' "
+        f"-name 'clickhouse_udf_shm_*' -printf '%s\\n'"
+    )
     listing = node.exec_in_container(["bash", "-c", find]).split()
     return sorted(int(size) for size in listing)
 
@@ -909,6 +930,213 @@ def test_shared_memory_udf_pool_command_leaves_stdout_dirty(started_cluster):
     assert node.contains_in_log("left unread output on its stdout after answering")
 
     assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_stderr_written_on_the_way_out_still_throws(started_cluster):
+    skip_test_msan(node)
+
+    # `stderr_reaction` `throw` says anything the command writes to stderr fails the query. This one
+    # answers correctly, closes its stdout, waits out the drain that follows - which stops as soon
+    # as stderr goes quiet for a moment - and only then writes its line before exiting.
+    #
+    # Those bytes are found by the bounded wait that reaps the command, the last stretch in which a
+    # command can write at all. Read and dropped there, the query would succeed and the setting
+    # would quietly mean nothing on the way out.
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_stderr_on_the_way_out_python(1) FORMAT Null")
+
+    assert "Executable generates stderr" in str(exc.value), str(exc.value)
+    assert "complaining on the way out" in str(exc.value), str(exc.value)
+
+    # And with `check_exit_code` switched off. The two settings are independent: the reaction is
+    # about what the command writes, the exit check is about how it ends, and only the wait that
+    # reaps the command can observe output produced this late. Reaching that output only when the
+    # exit status is also being checked would make `stderr_reaction` quietly conditional on an
+    # unrelated setting.
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_stderr_on_the_way_out_no_exit_check_python(1) FORMAT Null")
+
+    assert "Executable generates stderr" in str(exc.value), str(exc.value)
+    assert "complaining on the way out" in str(exc.value), str(exc.value)
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_unreadable_exit_code_fails_the_query(started_cluster):
+    skip_test_msan(node)
+
+    # The command answers correctly and then refuses to leave: it sleeps far past its
+    # `command_termination_timeout` instead of exiting when its stdin is closed, and only much later
+    # exits non-zero.
+    #
+    # `check_exit_code` is at its default, so the query has to fail. A status that could not be read
+    # is not a passing status, and letting the query succeed on a log line would make the setting
+    # mean "checked, unless the command avoids being checked" - which is exactly the command it is
+    # there for. The query must also come back at the timeout rather than waiting for the command.
+    started = time.monotonic()
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_lingers_python(1) FORMAT Null")
+    elapsed = time.monotonic() - started
+
+    assert "did not exit within command_termination_timeout" in str(exc.value), str(exc.value)
+    assert elapsed < 60, f"the query took {elapsed:.1f}s to give up on the command"
+
+    # And `check_exit_code = 0` is how such a command is configured: nothing is checked, so the same
+    # command answers normally. This is the setting the message above points at, so it has to work.
+    assert node.query("SELECT test_function_shm_lingers_no_exit_check_python(1)") == "Key 1\n"
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_command_closes_stderr_and_stalls(started_cluster):
+    skip_test_msan(node)
+
+    # A command that closes its own stderr and then stops answering. Closing stderr is legal and
+    # ordinary, but from then on `poll` reports a hangup on that descriptor immediately and forever,
+    # and reading it yields nothing. A server that leaves it in the set it waits on stops waiting
+    # altogether: it spins, and `command_read_timeout` - which is measured by the poll it is no
+    # longer doing - never fires, so a command that has merely gone quiet hangs the query for good.
+    #
+    # The function is configured with a two-second `command_read_timeout`, so the query has to come
+    # back with that timeout rather than not at all.
+    started = time.monotonic()
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_quiet_stderr_stalls_python(1) FORMAT Null")
+    elapsed = time.monotonic() - started
+
+    assert "Pipe read timeout exceeded" in str(exc.value), str(exc.value)
+    # Generous, because the point is the difference between "times out" and "never returns", not the
+    # precision of the timeout.
+    assert elapsed < 60, f"the read timeout took {elapsed:.1f}s to fire"
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_command_writes_stderr_after_closing_stdout(started_cluster):
+    skip_test_msan(node)
+
+    # The command answers, closes its stdout, and only then writes megabytes to stderr - a summary
+    # dumped on the way out. It is configured with `stderr_reaction` `none`.
+    #
+    # "None" says what to do with those bytes, not that the pipe may be left unread. Nothing reads
+    # it once the answer has been taken, so the command blocks in `write` and never reaches its own
+    # exit - and the wait that reaps it, which `check_exit_code` requires, reaps before it closes
+    # anything. A blocking `waitpid` there waits for a process that is waiting for the server, and
+    # the query hangs with its result already computed. What this pins down is that the wait keeps
+    # draining while it waits and is bounded either way. (The other half of the same problem - the
+    # stderr left on the pipe when the command's stdout reaches EOF while the server is still
+    # reading it - is handled where that EOF is seen, and is not what this query exercises.)
+    assert node.query("SELECT test_function_shm_stderr_after_stdout_python(1)") == "Key 1\n"
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_late_stderr_still_throws(started_cluster):
+    skip_test_msan(node)
+
+    # `stderr_reaction` `throw` says that anything the command writes to stderr fails the query.
+    # This command writes its line after the response has been read, which is the one moment nothing
+    # is reading that pipe - the bytes are found only when the worker is handed back and the server
+    # notices it is not at a clean boundary. Reporting them as a log line and letting the query
+    # succeed would leave the setting saying one thing and the server doing another, so they go
+    # through the reaction like any other stderr output.
+    with pytest.raises(Exception) as exc:
+        node.query(
+            "SELECT DISTINCT test_function_shm_chatty_stderr_throw_pool_python(number) "
+            "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000 FORMAT Null"
+        )
+
+    assert "Executable generates stderr" in str(exc.value), str(exc.value)
+    assert "done" in str(exc.value), str(exc.value)
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_configuration_is_visible_in_system_table(started_cluster):
+    skip_test_msan(node)
+
+    # Whatever the transport is configured with has to be answerable from SQL: an operator looking
+    # at `system.user_defined_functions` should be able to tell a shared-memory function from a pipe
+    # one, and see how large its region may get, without reading the XML off the server.
+    row = node.query(
+        "SELECT use_shared_memory, shared_memory_size, shared_memory_max_size, shared_memory_pipeline, shared_memory_path "
+        "FROM system.user_defined_functions WHERE name = 'test_function_shm_pipeline_pool_python'"
+    ).strip()
+    assert row == "1\t1048576\t1048576\t1\t/dev/shm", row
+
+    # A region that is allowed to grow reports the bound it may grow to, not the raw `0` the
+    # configuration uses to mean "it may not".
+    row = node.query(
+        "SELECT use_shared_memory, shared_memory_size, shared_memory_max_size, shared_memory_pipeline, shared_memory_path "
+        "FROM system.user_defined_functions WHERE name = 'test_function_shm_grow_python'"
+    ).strip()
+    assert row == "1\t16\t1048576\t0\t/dev/shm", row
+
+    # A function the loader refused has no configuration at all, so the columns are at their
+    # defaults rather than showing something half-read out of a config that was never accepted.
+    row = node.query(
+        "SELECT load_status, use_shared_memory, shared_memory_size, shared_memory_max_size, "
+        "shared_memory_pipeline, shared_memory_path "
+        "FROM system.user_defined_functions WHERE name = 'test_function_shm_bad_size_no_shm'"
+    ).strip()
+    # The trailing empty `shared_memory_path` is what `strip` takes off the end.
+    assert row == "Failed\t0\t0\t0\t0", row
+
+
+def test_shared_memory_udf_command_talks_on_stderr_without_answering(started_cluster):
+    skip_test_msan(node)
+
+    # The command never writes to stdout and writes to stderr every 50 ms. Both descriptors are
+    # polled - `stderr_reaction` `none` still has to take those bytes off the pipe - so each of
+    # those writes wakes the read up. A read that restarts its `command_read_timeout` at every
+    # wake-up is no longer bounded by anything the command does not control: this one produces
+    # nothing the query can use and would hold it open for as long as it kept talking. The timeout
+    # is one budget for the whole read, so the query has to come back with it.
+    #
+    # `nextImpl` also checks that budget itself once it is spent, rather than leaving it to the
+    # poll: a zero-millisecond poll is a readiness probe, not a wait, and a probe is satisfied by
+    # anything pending. That guard has no test of its own - reaching it needs a command that keeps
+    # the pipe non-empty at every probe, and nothing written in a script can outrun a drain loop
+    # that reads 4 KiB per iteration with nothing in between.
+    started = time.monotonic()
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_chatty_stderr_stalls_python(1) FORMAT Null")
+    elapsed = time.monotonic() - started
+
+    assert "Pipe read timeout exceeded" in str(exc.value), str(exc.value)
+    # Generous: the point is the difference between "times out" and "never returns", not precision.
+    assert elapsed < 60, f"the read timeout took {elapsed:.1f}s to fire"
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_discarded_worker_still_reports_its_cpu(started_cluster):
+    skip_test_msan(node)
+
+    # The command burns CPU answering and then leaves a byte past its response frame, so the worker
+    # is discarded rather than returned to the pool. That discard is the whole point: the borrow's
+    # CPU and peak resident set are read out of `/proc/<pid>`, and everything the teardown does
+    # takes that away - closing the child's stdin makes it exit, and a zombie has no `VmHWM`, while
+    # the wait that follows reaps the pid outright. Sampling afterwards reports zeros for exactly
+    # the borrows whose accounting matters most, and reports them as if the command had done no
+    # work at all.
+    discards_before = profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards")
+
+    query_id = "shm-busy-chatty-1"
+    node.query("SELECT test_function_shm_busy_chatty_pool_python(1) FORMAT Null", query_id=query_id)
+
+    # The worker really was discarded - otherwise this measures the ordinary path instead.
+    assert (
+        profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before + 1
+    )
+
+    cpu = query_profile_event(query_id, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    # The command burns far more than this; the bound only has to be clear of the 10 ms tick that
+    # `/proc/<pid>/stat` counts in, and clear of zero, which is what a reaped worker reports.
+    assert cpu >= 20000, f"the discarded worker reported {cpu} us of user CPU"
+
+    peak = query_profile_event(query_id, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
+    assert peak > 0, "the discarded worker reported no peak memory"
 
 
 def test_shared_memory_udf_pool_command_floods_stdout(started_cluster):

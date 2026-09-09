@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -146,10 +148,22 @@ public:
     /// could also write to - has no user in the codebase; a command that acquires one and floods it
     /// would have to be drained here as well.
     ///
+    /// `stderr_sink`, when given, receives what the child writes to `stderr` while it is being
+    /// waited for. Without it those bytes are simply dropped, which is all a caller with no use for
+    /// them can do - but a caller that has one must be given them: an executable UDF with
+    /// `stderr_reaction` `throw` promises that anything the command writes to `stderr` fails the
+    /// query, and this is the last stretch in which a command can still write. It is called on this
+    /// thread, and an exception from it propagates: the child is then left to the destructor.
+    ///
     /// Returns whether the child was reaped. One that is still running when the budget runs out is
     /// left to the destructor, which closes the pipes and signals it. Throws on a non-zero or
     /// signalled exit, exactly like `wait`.
-    bool waitDrainingOutput();
+    ///
+    /// `check_exit_status` is how a caller with `check_exit_code` switched off waits without
+    /// turning the command's own exit code into a query failure: the child is still reaped, and
+    /// its output still reaches `stderr_sink`, but a non-zero or signalled exit is not raised.
+    using StderrSink = std::function<void(std::string_view)>;
+    bool waitDrainingOutput(const StderrSink & stderr_sink = {}, bool check_exit_status = true);
 
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
