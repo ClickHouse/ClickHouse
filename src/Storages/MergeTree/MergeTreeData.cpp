@@ -11810,11 +11810,25 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         params.hardlinked_files->source_part_name = src_part->name;
         params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
 
+        /// invalidated_system_columns.txt is not shared with the source part whenever the destination
+        /// receives a fresh copy of it: a non-empty set makes every freeze path remove the inherited
+        /// file and rewrite it, and packed storage never hardlinks the file at all (only data.packed is
+        /// hardlinked, and the file is written separately next to it). Recording it as hardlinked from
+        /// the source would put it into `files_not_to_remove` of `unlockSharedDataByID`, so the source
+        /// blob would be kept alive - leaked - for a child that does not reference it. Only the
+        /// full-storage clone that inherits the file (an empty set) keeps the hardlink, and only there
+        /// the file has to stay in the list.
+        const bool dst_part_owns_invalidated_system_columns_file
+            = !params_with_invalidated_columns.invalidated_columns_to_write.empty()
+            || isPackedPartStorage(src_part->getDataPartStorage());
+
         for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
             if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
                 && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
+                && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME
+                && !(dst_part_owns_invalidated_system_columns_file
+                     && it->name() == IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
             {
                 params.hardlinked_files->hardlinks_from_source_part.insert(it->name());
             }
