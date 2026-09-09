@@ -221,6 +221,30 @@ ReadFromRemote::ReadFromRemote(
 {
 }
 
+bool ReadFromRemote::hasBoundedRead() const
+{
+    return std::ranges::all_of(shards, [](const auto & shard)
+    {
+        return shard.query_tree && hasBoundedInput(shard.query_tree);
+    });
+}
+
+bool ReadFromRemote::hasTotals(const ClusterProxy::SelectStreamFactory::Shard & shard) const
+{
+    const auto * select = shard.query->as<ASTSelectQuery>();
+    return stage == QueryProcessingStage::Complete && select && select->group_by_with_totals;
+}
+
+bool ReadFromRemote::hasTotals() const
+{
+    return std::ranges::any_of(shards, [this](const auto & shard) { return hasTotals(shard); });
+}
+
+bool ReadFromRemote::hasExtremes() const
+{
+    return stage == QueryProcessingStage::Complete && context->getSettingsRef()[Setting::extremes];
+}
+
 void ReadFromRemote::enableMemoryBoundMerging()
 {
     DB::enableMemoryBoundMerging(stage, &shards, *context);
@@ -563,17 +587,10 @@ void ReadFromRemote::addLazyPipe(
     Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
-    bool add_totals = false;
-    bool add_extremes = false;
+    bool add_totals = hasTotals(shard);
+    bool add_extremes = hasExtremes();
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     const bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
-
-    if (stage == QueryProcessingStage::Complete)
-    {
-        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
-            add_totals = ast_select->group_by_with_totals;
-        add_extremes = context->getSettingsRef()[Setting::extremes];
-    }
 
     std::shared_ptr<const ActionsDAG> pushed_down_filters = filter_actions_dag;
 
@@ -751,17 +768,10 @@ void ReadFromRemote::addPipe(
     Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
-    bool add_totals = false;
-    bool add_extremes = false;
+    bool add_totals = hasTotals(shard);
+    bool add_extremes = hasExtremes();
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
-    if (stage == QueryProcessingStage::Complete)
-    {
-        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
-            add_totals = ast_select->group_by_with_totals;
-        add_extremes = context->getSettingsRef()[Setting::extremes];
-    }
-
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
@@ -1079,6 +1089,11 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
     auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast, enable_analyzer), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
+}
+
+bool ReadFromParallelRemoteReplicasStep::hasBoundedRead() const
+{
+    return query_tree && hasBoundedInput(query_tree);
 }
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()

@@ -633,6 +633,8 @@ void optimizeTreeSecondPass(
                     local_optimization_settings.enable_join_runtime_filters = false;
             }
 
+            /// Choose blocking deduplication after the fragment is attached to its consumers.
+            local_optimization_settings.convert_distinct_to_aggregation = false;
             auto local_plan = read_from_local->extractQueryPlan();
             local_plan->optimize(local_optimization_settings);
 

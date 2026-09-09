@@ -29,8 +29,8 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    /// Whether the source has a row limit from its arguments or limit pushdown.
-    bool hasExplicitRowLimit() const;
+    /// Returns true when arguments or limit pushdown bound the read.
+    bool hasBoundedRead() const;
 
 private:
     Pipe makePipe();

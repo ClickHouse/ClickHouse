@@ -38,6 +38,8 @@ protected:
     friend class ReadFromSystemOneBlock;
 
 public:
+    bool hasBoundedRead() const override { return true; }
+
     explicit IStorageSystemOneBlock(const StorageID & table_id_, ColumnsDescription columns_description) : StorageWithCommonVirtualColumns(table_id_)
     {
         StorageInMemoryMetadata storage_metadata;

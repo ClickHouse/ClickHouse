@@ -16,8 +16,8 @@
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
-#include <Processors/QueryPlan/ReadFromLoopStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
@@ -47,24 +47,34 @@ static bool requiresDistinctPreservation(const IQueryPlanStep & step)
 {
     if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(&step))
     {
-        if (source->getQueryInfo().isStream() || source->getStorageSnapshot()->storage.isStreamingStorage())
+        const auto & storage = source->getStorageSnapshot()->storage;
+        if (source->getQueryInfo().isStream() || storage.isStreamingStorage())
             return true;
-    }
-    if (const auto * numbers = typeid_cast<const ReadFromSystemNumbersStep *>(&step))
-        return !numbers->hasExplicitRowLimit();
 
-    if (const auto * primes = typeid_cast<const ReadFromSystemPrimesStep *>(&step))
-        return !primes->hasExplicitRowLimit();
+        if (const auto * numbers = typeid_cast<const ReadFromSystemNumbersStep *>(&step))
+            return !numbers->hasBoundedRead();
+
+        if (const auto * primes = typeid_cast<const ReadFromSystemPrimesStep *>(&step))
+            return !primes->hasBoundedRead();
+
+        return !storage.hasBoundedRead();
+    }
 
     /// `DISTINCT` forwards totals and extremes, whereas aggregation discards them.
     if (typeid_cast<const TotalsHavingStep *>(&step) || typeid_cast<const ExtremesStep *>(&step))
         return true;
 
-    /// These sources can produce unbounded input or carry auxiliary streams that are not visible
-    /// in the plan.
-    return typeid_cast<const ReadFromLoopStep *>(&step)
-        || typeid_cast<const ReadFromRemote *>(&step) || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step)
-        || dynamic_cast<const ReadFromPreparedSource *>(&step) || dynamic_cast<const ReadFromStreamLikeEngine *>(&step);
+    if (const auto * source = dynamic_cast<const ReadFromPreparedSource *>(&step))
+        return !source->hasBoundedRead() || source->hasTotals() || source->hasExtremes();
+
+    if (const auto * source = typeid_cast<const ReadFromRemote *>(&step))
+        return !source->hasBoundedRead() || source->hasTotals() || source->hasExtremes();
+
+    /// Parallel replica reads expose only the main stream.
+    if (const auto * source = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step))
+        return !source->hasBoundedRead();
+
+    return typeid_cast<const ReadFromRecursiveCTEStep *>(&step) || dynamic_cast<const ReadFromStreamLikeEngine *>(&step);
 }
 
 std::unordered_set<const QueryPlan::Node *> collectDistinctToAggregationCandidates(const QueryPlan::Node & root)

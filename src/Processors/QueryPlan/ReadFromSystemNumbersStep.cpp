@@ -458,9 +458,9 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
     return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
 }
 
-bool ReadFromSystemNumbersStep::hasExplicitRowLimit() const
+bool ReadFromSystemNumbersStep::hasBoundedRead() const
 {
-    return limit.has_value() || storage->as<StorageSystemNumbers &>().limit.has_value();
+    return limit.has_value() || storage->hasBoundedRead();
 }
 
 Pipe ReadFromSystemNumbersStep::makePipe()

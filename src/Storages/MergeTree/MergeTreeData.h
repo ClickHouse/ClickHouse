@@ -565,6 +565,7 @@ public:
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isMergeTree() const override { return true; }
+    bool hasBoundedRead() const override { return true; }
 
     bool supportsPrewhere() const override { return true; }
 
