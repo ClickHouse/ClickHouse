@@ -128,8 +128,39 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
-            /// TODO: predict_linear, avg_over_time, min_over_time, max_over_time, sum_over_time, count_over_time, quantile_over_time,
-            /// stddev_over_time, stdvar_over_time, present_over_time, absent_over_time, mad_over_time, first_over_time, ts_of_*_over_time
+            {"sum_over_time",
+             {
+                 "timeSeriesSumToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"avg_over_time",
+             {
+                 "timeSeriesAvgToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"count_over_time",
+             {
+                 "timeSeriesCountToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            /// TODO:
+            /// predict_linear
+            /// min_over_time
+            /// max_over_time
+            /// quantile_over_time
+            /// stddev_over_time"
+            /// stdvar_over_time
+            /// present_over_time
+            /// absent_over_time
+            /// mad_over_time
+            /// ts_of_min_over_time
+            /// ts_of_max_over_time
+            /// ts_of_last_over_time
+            /// first_over_time
+            /// ts_of_first_over_time
         };
 
         auto it = impl_map.find(function_name);

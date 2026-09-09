@@ -570,6 +570,12 @@ protected:
         appendSpansToResultColumn(state.negative_spans_blob, bucket.negative_spans, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeSpans)));
         appendFloatsToResultColumn(state.negative_values_blob, bucket.negative_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeValues)));
         appendFloatsToResultColumn(state.custom_values_blob, bucket.custom_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::CustomValues)));
+        /// The exact integer carriers are not tracked in the state (this layer reads the Float64 count/sum),
+        /// so they stay zero/empty here, as they are for a float-flavor histogram.
+        tuple_to.getColumn(Idx::CountInt).insertDefault();
+        tuple_to.getColumn(Idx::ZeroCountInt).insertDefault();
+        tuple_to.getColumn(Idx::PositiveValuesInt).insertDefault();
+        tuple_to.getColumn(Idx::NegativeValuesInt).insertDefault();
     }
 
     /// Compute the grid timestamp `start_timestamp + grid_index * step` in unsigned 64-bit arithmetic: avoids signed overflow/UBSAN

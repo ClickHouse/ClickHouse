@@ -30,7 +30,7 @@ public:
         /// ViewTarget::Histograms for timeSeriesHistogramSelector().
         ViewTarget::Kind data_target = ViewTarget::Samples;
 
-        /// Payload columns read and returned: `value` for Samples, the 11 histogram payload columns for Histograms (see `getTimeSeriesHistogramPayloadColumns`).
+        /// Payload columns read and returned: `value` for Samples, the 15 histogram payload columns for Histograms (see `getTimeSeriesHistogramPayloadColumns`).
         NamesAndTypes data_columns;
 
         PrometheusQueryTree selector;

@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -173,6 +174,11 @@ StorageTimeSeries::StorageTimeSeries(
     auto normalized_columns = InterpreterCreateQuery::getColumnsDescription(
         *normalized_create_query->columns_list->columns, local_context, mode);
     storage_metadata.setColumns(normalized_columns);
+
+    /// The metadata must carry the whole `SETTINGS` clause because a settings alter changes that clause
+    /// and the result replaces the one in the create query.
+    if (normalized_create_query->storage && normalized_create_query->storage->settings)
+        storage_metadata.setSettingsChanges(normalized_create_query->storage->settings->clone());
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -531,7 +537,7 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
     {
         chassert(new_metadata.settings_changes);
         /// Round-trip through `TimeSeriesSettings` to validate the names/values and
-        /// to drop entries that equal to the defaults.
+        /// to write them back in a canonical form.
         new_settings = std::make_unique<TimeSeriesSettings>();
         new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
         checkTimeSeriesSettings(*new_settings);
@@ -680,6 +686,13 @@ void StorageTimeSeries::readImpl(
     InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+
+    if (!query_plan.isInitialized())
+        return;
+
+    auto generated_plan = std::make_unique<QueryPlan>(std::move(query_plan));
+    query_plan = QueryPlan();
+    query_plan.addStep(std::make_unique<ReadFromTimeSeriesStep>(std::move(generated_plan), read_context));
 }
 
 
@@ -938,17 +951,21 @@ The _histograms_ table must have columns:
 | `positive_spans` | [x] | `Array(Tuple(offset Int32, length UInt32))` | same | Spans of the positive buckets |
 | `positive_values` | [x] | `Array(Float64)` | `Array(Float64)` | Absolute counts of the positive buckets (deltas are decoded on ingestion) |
 | `negative_spans` | [x] | `Array(Tuple(offset Int32, length UInt32))` | same | Spans of the negative buckets |
-| `negative_values` | [x] | `Array(Float64)` | `Array(Float64)` | Absolute counts of the negative buckets |
+| `negative_values` | [x] | `Array(Float64)` | `Array(Float64)` | Absolute counts of the negative buckets (deltas are decoded on ingestion) |
 | `custom_values` | [x] | `Array(Float64)` | `Array(Float64)` | Custom bucket boundaries (only used with `schema` = -53) |
+| `count_int` | [x] | `UInt64` | `UInt64` | Exact count of observations of an integer histogram, always 0 for a float one |
+| `zero_count_int` | [x] | `UInt64` | `UInt64` | Exact zero-bucket count of an integer histogram, always 0 for a float one |
+| `positive_values_int` | [x] | `Array(UInt64)` | `Array(UInt64)` | Exact absolute counts of the positive buckets of an integer histogram, empty for a float one |
+| `negative_values_int` | [x] | `Array(UInt64)` | `Array(UInt64)` | Exact absolute counts of the negative buckets of an integer histogram, empty for a float one |
 
 A table with this target gets an additional outer `histograms` column of type `Array(Tuple(...))` carrying
 one tuple per histogram sample with the same elements as the table columns after `id`, and the stored
 histograms can be read back with the [timeSeriesHistograms](#functions) table function.
 
-Counts are stored as `Float64`, which represents every integer up to 2^53 exactly. The `flags` bit records
-whether a sample arrived as an integer or a float histogram, so an integer histogram round-trips unchanged;
-one whose count, zero count, or a decoded bucket count would exceed 2^53 is rejected on ingestion rather
-than stored rounded.
+The `flags` bit records whether a sample arrived as an integer or a float histogram. Counts are stored as
+`Float64`, which represents every integer up to 2^53 exactly; the counts of an integer histogram are also
+stored verbatim in the `count_int`, `zero_count_int`, `positive_values_int`, and `negative_values_int`
+columns, so it round-trips without losing precision even above 2^53.
 
 ## Creation {#creation}
 
@@ -1221,6 +1238,7 @@ Two settings can be changed after `CREATE`:
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.

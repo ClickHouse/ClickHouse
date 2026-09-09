@@ -19,7 +19,6 @@ namespace TimeSeriesHistogramFlags
 {
     constexpr UInt8 IsFloat = 0x01;
     constexpr UInt8 CounterResetHintShift = 1;
-    constexpr UInt8 CounterResetHintMask = 0x06;  /// prometheus::Histogram::ResetHint (UNKNOWN/YES/NO/GAUGE) << 1
     /// 0x08 is reserved (was a gauge bit, dropped as redundant with reset hint == GAUGE).
     constexpr UInt8 StaleMarker = 0x10;
 }
@@ -40,7 +39,18 @@ namespace TimeSeriesHistogramsTupleIndex
     constexpr size_t NegativeSpans = 9;
     constexpr size_t NegativeValues = 10;
     constexpr size_t CustomValues = 11;
-    constexpr size_t Size = 12;
+
+    /// Exact carriers of the counts of an integer-flavor histogram (see TimeSeriesColumnNames):
+    /// `Float64` represents integers only up to 2^53 exactly, so when the `flags` bit 0 is clear
+    /// (an integer histogram) its count, zero count and decoded bucket counts are also stored here,
+    /// verbatim, which makes such a histogram round-trip losslessly. The corresponding Float64
+    /// columns stay populated with rounded copies, so readers unaware of these elements keep working.
+    /// Always zero/empty for float-flavor histograms.
+    constexpr size_t CountInt = 12;
+    constexpr size_t ZeroCountInt = 13;
+    constexpr size_t PositiveValuesInt = 14;
+    constexpr size_t NegativeValuesInt = 15;
+    constexpr size_t Size = 16;
 }
 
 /// Indexes of the elements of the histogram payload tuple, see `getTimeSeriesHistogramPayloadTupleType`.
@@ -58,7 +68,12 @@ namespace TimeSeriesHistogramPayloadTupleIndex
     constexpr size_t NegativeSpans = 8;
     constexpr size_t NegativeValues = 9;
     constexpr size_t CustomValues = 10;
-    constexpr size_t Size = 11;
+    /// The exact integer carriers, see the same names in TimeSeriesHistogramsTupleIndex.
+    constexpr size_t CountInt = 11;
+    constexpr size_t ZeroCountInt = 12;
+    constexpr size_t PositiveValuesInt = 13;
+    constexpr size_t NegativeValuesInt = 14;
+    constexpr size_t Size = 15;
 }
 
 /// Type of the `positive_spans` and `negative_spans` columns: Array(Tuple(offset Int32, length UInt32)).
@@ -68,11 +83,11 @@ DataTypePtr getTimeSeriesHistogramSpansType();
 /// in the order they appear both in the table and in the outer column's tuple.
 NamesAndTypes getTimeSeriesHistogramPayloadColumns();
 
-/// The payload of one histogram sample as a tuple: Tuple(<the 11 payload columns>). Single source of truth for the payload layout:
+/// The payload of one histogram sample as a tuple: Tuple(<the 15 payload columns>). Single source of truth for the payload layout:
 /// `getTimeSeriesHistogramsOuterColumnType` builds on it, and the `timeSeriesHistogram*` aggregates take and return this exact tuple type.
 DataTypePtr getTimeSeriesHistogramPayloadTupleType();
 
-/// One histogram sample with its timestamp as a tuple: Tuple(timestamp, <the 11 payload columns>).
+/// One histogram sample with its timestamp as a tuple: Tuple(timestamp, <the 15 payload columns>).
 /// The element type of the array returned by `getTimeSeriesHistogramsOuterColumnType`.
 DataTypePtr getTimeSeriesHistogramTupleType(const DataTypePtr & timestamp_type);
 
@@ -80,11 +95,11 @@ DataTypePtr getTimeSeriesHistogramTupleType(const DataTypePtr & timestamp_type);
 /// Array(Tuple(timestamp, <payload columns>)), one tuple per histogram sample.
 DataTypePtr getTimeSeriesHistogramsOuterColumnType(const DataTypePtr & timestamp_type);
 
-/// True if `type` (after removing Nullable) is a Tuple with explicit element names containing all 11 payload elements
+/// True if `type` (after removing Nullable) is a Tuple with explicit element names containing all 15 payload elements
 /// of `getTimeSeriesHistogramPayloadTupleType`, at any positions, with equal types; tolerant of extra appended elements.
 bool isTimeSeriesHistogramTupleType(const DataTypePtr & type);
 
-/// True if `type` (after removing Nullable) is a Tuple whose 11 elements have exactly the types of `getTimeSeriesHistogramPayloadTupleType`, position by position, regardless of names.
+/// True if `type` (after removing Nullable) is a Tuple whose 15 elements have exactly the types of `getTimeSeriesHistogramPayloadTupleType`, position by position, regardless of names.
 /// Used to validate the aggregate argument: `tuple(...)` yields unnamed elements, but the payload is decoded positionally, so name-blind equality is the right check.
 bool isTimeSeriesHistogramPayloadTupleType(const DataTypePtr & type);
 
