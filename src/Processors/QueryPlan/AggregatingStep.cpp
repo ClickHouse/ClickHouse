@@ -1047,6 +1047,7 @@ constexpr auto AGGREGATING_MANIFEST = StepManifest<AggregatingStep, AggregatingW
         field("final", WireFieldClass::Logical, &AggregatingWire::final),
         field("overflow_row", WireFieldClass::Logical, &AggregatingWire::overflow_row),
         field("group_by_use_nulls", WireFieldClass::Logical, &AggregatingWire::group_by_use_nulls),
+        field("only_merge", WireFieldClass::Logical, &AggregatingWire::only_merge),
         field("sort_description_for_merging", WireFieldClass::Logical, &AggregatingWire::sort_description_for_merging),
         field("group_by_sort_description", WireFieldClass::Logical, &AggregatingWire::group_by_sort_description),
         field("explicit_sorting_required_for_aggregation_in_order", WireFieldClass::Physical, &AggregatingWire::explicit_sorting_required_for_aggregation_in_order),
@@ -1106,6 +1107,7 @@ AggregatingWire AggregatingStep::toWire() const
     wire.final = final;
     wire.overflow_row = params.overflow_row;
     wire.group_by_use_nulls = group_by_use_nulls;
+    wire.only_merge = params.only_merge;
     wire.sort_description_for_merging = sort_description_for_merging;
     wire.group_by_sort_description = group_by_sort_description;
     wire.explicit_sorting_required_for_aggregation_in_order = explicit_sorting_required_for_aggregation_in_order;
@@ -1168,7 +1170,7 @@ QueryPlanStepPtr AggregatingStep::fromWire(AggregatingWire wire, Deserialization
         wire.min_count_to_compile_aggregate_expression,
         wire.max_block_size,
         wire.enable_software_prefetch_in_aggregation,
-        /*only_merge=*/false,
+        /*only_merge=*/wire.only_merge,
         wire.optimize_group_by_constant_keys,
         wire.min_hit_rate_to_use_consecutive_keys_optimization,
         stats_collecting_params,

@@ -245,6 +245,9 @@ struct AggregatingWire
     bool final = false;
     bool overflow_row = false;
     bool group_by_use_nulls = false;
+    /// Set on the merge step synthesized by the Cascades aggregation pushdown; changes how the input
+    /// columns are read, so it must round-trip and take part in the cache key.
+    bool only_merge = false;
     /// Both non-empty for aggregation in order.
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;

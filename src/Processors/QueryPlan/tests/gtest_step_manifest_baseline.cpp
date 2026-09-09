@@ -11,13 +11,14 @@ using namespace DB;
 /// the support window depend on it. On a release branch nothing here may change at all. Update the
 /// text below only after that review.
 static const char * expected_manifests = R"MANIFESTS(name Aggregating introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field keys Logical vector<String>
   field aggregates Logical AggregateDescriptions
   field grouping_sets Logical vector<vector<String>>
   field final Logical bool
   field overflow_row Logical bool
   field group_by_use_nulls Logical bool
+  field only_merge Logical bool
   field sort_description_for_merging Logical SortDescription
   field group_by_sort_description Logical SortDescription
   field explicit_sorting_required_for_aggregation_in_order Physical bool
@@ -48,9 +49,9 @@ format 1 introduced_in 12
   setting adaptive_aggregator_freeze_threshold_bytes Physical UInt64
   setting serialize_string_in_memory_with_zero_byte Physical bool
   setting enable_packed_string_keys_in_aggregation Physical bool
-  initializers 00000000000000000000
+  initializers 0000000000000000000000
 name ArrayJoin introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field columns Logical vector<String>
   field is_left Logical bool
   field is_unaligned Logical bool
@@ -61,17 +62,17 @@ format 1 introduced_in 12
   setting max_block_size Physical UInt64
   initializers 00000000000000
 name BroadcastReceive introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field exchange_id Logical String
   field source_shards Physical vector<String>
   initializers 0000
 name BroadcastSend introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field exchange_id Logical String
   field num_buckets Physical UInt64
   initializers 0000
 name BuildRuntimeFilter introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field filter_column_name Logical String
   field filter_column_type Logical String
   field filter_name Logical String
@@ -84,7 +85,7 @@ format 1 introduced_in 12
   setting join_runtime_bloom_filter_max_ratio_of_set_bits Physical Float64
   initializers 00000000
 name Cube introduced_in 9 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field keys Logical vector<String>
   field aggregates Logical AggregateDescriptionsWithoutArguments
   field final Logical bool
@@ -96,7 +97,7 @@ format 1 introduced_in 12
   setting enable_packed_string_keys_in_aggregation Physical bool
   initializers 0000000000
 name Distinct introduced_in 1 full_digest always logical_digest predicate
-format 1 introduced_in 12
+format 1 introduced_in 16
   field columns Logical vector<String>
   field limit_hint Logical UInt64
   field distinct_sort_desc Logical SortDescription
@@ -106,15 +107,15 @@ format 1 introduced_in 12
   setting distinct_overflow_mode Logical enum8
   initializers 00000000
 name Expression introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field actions_dag Logical ActionsDAG
   field prevent_input_removal Physical bool
   initializers 00000000
 name Extremes introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   initializers 
 name Filter introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field actions_dag Logical ActionsDAG
   field filter_column_name Logical String
   field remove_filter_column Logical bool
@@ -122,7 +123,7 @@ format 1 introduced_in 12
   field condition Physical optional<pair<UInt64,String>>
   initializers 00000000000000
 name FractionalLimit introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field limit_fraction Logical Float64
   field offset_fraction Logical Float64
   field offset Logical UInt64
@@ -130,22 +131,26 @@ format 1 introduced_in 12
   field description Logical SortDescription
   initializers 00000000000000000000000000000000000000
 name FractionalOffset introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field fractional_offset Logical Float64
   initializers 0000000000000000
 name GatherReceive introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field exchange_id Logical String
   field num_buckets Physical UInt64
   field maintain_sort_description Logical optional<SortDescription>
   initializers 000000
 name GatherSend introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field exchange_id Logical String
   field maintain_sort_description Logical optional<SortDescription>
   initializers 0000
+name IntersectOrExcept introduced_in 1 full_digest always logical_digest always
+format 1 introduced_in 16
+  field operator Logical enum8
+  initializers 00
 name Join introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field join Logical JoinExpressions
   setting join_algorithm Physical vector<enum8>
   setting max_block_size Physical UInt64
@@ -199,7 +204,7 @@ format 1 introduced_in 12
   setting prefer_external_sort_block_bytes Physical UInt64
   initializers 000000000004030000
 name Limit introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field limit Logical UInt64
   field offset Logical UInt64
   field always_read_till_end Logical bool
@@ -208,15 +213,24 @@ format 1 introduced_in 12
   field is_shard_limit Logical bool
   initializers 000000000000
 name LimitBy introduced_in 1 full_digest always logical_digest predicate
-format 1 introduced_in 12
+format 1 introduced_in 16
   field group_length Logical UInt64
   field group_offset Logical UInt64
   field columns Logical vector<String>
   field sorted_columns_descr Logical SortDescription
   field skip_stream_merging Physical bool
   initializers 0000000000
+name LimitRange introduced_in 1 full_digest always logical_digest always
+format 1 introduced_in 16
+  field conditions Logical ActionsDAG
+  field start_column_name Logical optional<String>
+  field end_column_name Logical optional<String>
+  field start_all Logical bool
+  field limit Logical optional<UInt64>
+  field always_read_till_end Logical bool
+  initializers 0000000000000000
 name MergingAggregated introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field keys Logical vector<String>
   field aggregates Logical AggregateDescriptions
   field grouping_sets Logical vector<vector<String>>
@@ -233,7 +247,7 @@ format 1 introduced_in 12
   setting enable_packed_string_keys_in_aggregation Physical bool
   initializers 0000000000000000
 name NegativeLimit introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field limit Logical UInt64
   field offset Logical UInt64
   field with_ties Logical bool
@@ -241,27 +255,27 @@ format 1 introduced_in 12
   field is_shard_limit Logical bool
   initializers 0000000000
 name NegativeLimitBy introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field group_length Logical UInt64
   field group_offset Logical UInt64
   field columns Logical vector<String>
   field sorted_columns_descr Logical SortDescription
   initializers 00000000
 name NegativeOffset introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field offset Logical UInt64
   initializers 00
 name ObjectFilter introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field actions_dag Logical ActionsDAG
   field filter_column_name Logical String
   initializers 00000000
 name Offset introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field offset Logical UInt64
   initializers 00
 name PreDistinct introduced_in 1 full_digest always logical_digest predicate
-format 1 introduced_in 12
+format 1 introduced_in 16
   field columns Logical vector<String>
   field limit_hint Logical UInt64
   field distinct_sort_desc Logical SortDescription
@@ -271,7 +285,7 @@ format 1 introduced_in 12
   setting distinct_overflow_mode Logical enum8
   initializers 00000000
 name ReadFromMergeTree introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field database Logical String
   field table Logical String
   field columns Logical vector<String>
@@ -288,11 +302,11 @@ format 1 introduced_in 12
   field read_in_order Logical optional<ReadInOrder>
   initializers 0000000000000000000000000000
 name ReadFromStorage introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field storage_name Logical String
   initializers 00
 name ReadFromTable introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field table Logical String
   field final Logical bool
   field sample_size_ratio Logical optional<Rational>
@@ -300,17 +314,17 @@ format 1 introduced_in 12
   field use_parallel_replicas Physical bool
   initializers 0000000000
 name ReadFromTableFunction introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field serialized_ast Logical String
   field final Logical bool
   field sample_size_ratio Logical optional<Rational>
   field sample_offset_ratio Logical optional<Rational>
   initializers 00000000
 name ReadNothing introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   initializers 
 name Rollup introduced_in 9 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field keys Logical vector<String>
   field aggregates Logical AggregateDescriptionsWithoutArguments
   field final Logical bool
@@ -322,19 +336,19 @@ format 1 introduced_in 12
   setting enable_packed_string_keys_in_aggregation Physical bool
   initializers 0000000000
 name ShuffleReceive introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field exchange_id Logical String
   field source_shards Physical vector<String>
   initializers 0000
 name ShuffleSend introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field exchange_id Logical String
   field key_names Logical vector<String>
   field num_buckets Physical UInt64
   field hash_cast_type_names Logical vector<String>
   initializers 00000000
 name Sorting introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field result_description Logical SortDescription
   field partition_by_description Logical SortDescription
   field finish_sorting Logical bool
@@ -364,7 +378,7 @@ format 1 introduced_in 12
   setting temporary_files_buffer_size Physical UInt64
   initializers 000000000000000000000000000000
 name TotalsHaving introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field aggregates Logical AggregateDescriptions
   field overflow_row Logical bool
   field actions_dag Logical optional<ActionsDAG>
@@ -375,11 +389,11 @@ format 1 introduced_in 12
   setting totals_auto_threshold Logical Float32
   initializers 000000000000
 name Union introduced_in 1 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field allow_narrowing Logical bool
   initializers 00
 name Window introduced_in 4 full_digest always logical_digest always
-format 1 introduced_in 12
+format 1 introduced_in 16
   field window_name Logical String
   field partition_by Logical SortDescription
   field order_by Logical SortDescription

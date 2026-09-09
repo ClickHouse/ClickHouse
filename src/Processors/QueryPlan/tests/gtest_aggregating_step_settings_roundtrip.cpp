@@ -237,10 +237,11 @@ TEST(AggregatingStepOnlyMergeVersionGates, Bit128InStreamBelowMinVersionThrows)
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
-    /// The exact bytes a current initiator emits, replayed as a stream one version older than
-    /// the flag: the bit is garbage there and must be rejected, mirroring the serialize gate.
+    /// A legacy stream that carries the only_merge flag (bit 128), written at the version that
+    /// introduced it and replayed one version older: the bit is garbage there and must be rejected,
+    /// mirroring the serialize gate. (In the framed format the flag is an ordinary manifest field.)
     auto step = makeAggregatingStep(false);
-    String bytes = serializeStep(*step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    String bytes = serializeStep(*step, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION);
 
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;

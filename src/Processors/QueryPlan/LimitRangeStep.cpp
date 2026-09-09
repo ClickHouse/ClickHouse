@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitRangeTransform.h>
 #include <Interpreters/ExpressionActions.h>
@@ -135,7 +136,88 @@ void LimitRangeStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Reads All Data", always_read_till_end);
 }
 
+/// The framed payload carries the boundary conditions and the two boundary column names (absent when
+/// the query has no such boundary), plus the flags. Presence travels as `std::optional`, so no flags
+/// byte. The single input stream is supplied on reconstruction.
+struct LimitRangeWire
+{
+    ActionsDAG conditions;
+    std::optional<String> start_column_name;
+    std::optional<String> end_column_name;
+    bool start_all = false;
+    std::optional<UInt64> limit;
+    bool always_read_till_end = false;
+};
+
+constexpr auto LIMIT_RANGE_MANIFEST = StepManifest<LimitRangeStep, LimitRangeWire>("LimitRange")
+    .nameIntroducedIn(1)
+    .inputs(1)
+    .baseFormat(
+        field("conditions", WireFieldClass::Logical, &LimitRangeWire::conditions),
+        field("start_column_name", WireFieldClass::Logical, &LimitRangeWire::start_column_name),
+        field("end_column_name", WireFieldClass::Logical, &LimitRangeWire::end_column_name),
+        field("start_all", WireFieldClass::Logical, &LimitRangeWire::start_all),
+        field("limit", WireFieldClass::Logical, &LimitRangeWire::limit),
+        field("always_read_till_end", WireFieldClass::Logical, &LimitRangeWire::always_read_till_end));
+
+LimitRangeWire LimitRangeStep::toWire() const
+{
+    return LimitRangeWire{conditions.clone(), start_column_name, end_column_name, start_all, limit, always_read_till_end};
+}
+
+QueryPlanStepPtr LimitRangeStep::fromWire(LimitRangeWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep must have one input stream");
+
+    if (wire.start_all && !wire.start_column_name)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: ALL requires a start condition");
+
+    /// The plan may come from a client (`process_query_plan_packet`), so the conditions are checked the
+    /// way the planner checks them for a query: boolean result columns, and no `ARRAY JOIN`, which would
+    /// misalign the condition rows with the rows of the chunk.
+    for (const auto & column_name : {wire.start_column_name, wire.end_column_name})
+    {
+        if (!column_name)
+            continue;
+
+        const auto * output = wire.conditions.tryFindInOutputs(*column_name);
+        if (!output)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: condition column {} is not an output of its expression", *column_name);
+        if (!output->result_type->canBeUsedInBooleanContext())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "LimitRangeStep: condition column {} must be boolean, got {}", *column_name, output->result_type->getName());
+    }
+
+    if (wire.conditions.hasArrayJoin())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: condition expression must not contain ARRAY JOIN");
+
+    return std::make_unique<LimitRangeStep>(
+        ctx.input_headers.front(),
+        std::move(wire.conditions),
+        std::move(wire.start_column_name),
+        std::move(wire.end_column_name),
+        wire.start_all,
+        wire.limit,
+        wire.always_read_till_end);
+}
+
 void LimitRangeStep::serialize(Serialization & ctx) const
+{
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
+        writeManifestPayload(LIMIT_RANGE_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
+        return fromWire(readManifestPayload(LIMIT_RANGE_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void LimitRangeStep::serializeLegacy(Serialization & ctx) const
 {
     /// A peer below this version does not know the `LimitRange` step and would fail on its name, so fail
     /// closed here rather than write bytes it cannot understand.
@@ -169,9 +251,9 @@ void LimitRangeStep::serialize(Serialization & ctx) const
     conditions.serialize(ctx.out, ctx.registry);
 }
 
-QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr LimitRangeStep::deserializeLegacy(Deserialization & ctx)
 {
-    /// Mirrors the guard in `serialize`: a peer that old cannot have written this step.
+    /// Mirrors the guard in `serializeLegacy`: a peer that old cannot have written this step.
     if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Deserializing a LimitRangeStep requires query plan serialization version >= {}; all nodes must run the same version",
@@ -253,7 +335,7 @@ QueryPlanStepPtr LimitRangeStep::clone() const
 void registerLimitRangeStep(QueryPlanStepRegistry & registry);
 void registerLimitRangeStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("LimitRange", LimitRangeStep::deserialize);
+    registerManifest<LIMIT_RANGE_MANIFEST>(registry, &LimitRangeStep::deserialize);
 }
 
 }
