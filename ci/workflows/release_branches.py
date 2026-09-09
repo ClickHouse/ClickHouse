@@ -2,6 +2,7 @@ from praktika import Workflow
 
 from ci.defs.defs import (
     DOCKERS,
+    LOOM_SECRETS,
     SECRETS,
     ArtifactConfigs,
     with_long_retention_tags,
@@ -64,7 +65,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
     ],
     dockers=DOCKERS,
-    secrets=SECRETS,
+    secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
@@ -75,6 +76,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/set_parent_pr_number.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/loom_code_refresh.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],
