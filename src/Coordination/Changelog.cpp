@@ -739,6 +739,15 @@ size_t cachedLogEntryFixedOverhead()
         = ::Memory::getActualAllocationSize(control_block_header + sizeof(nuraft::log_entry))
         + ::Memory::getActualAllocationSize(control_block_header + sizeof(nuraft::buffer *) + sizeof(BufferDeleter))
         + ::Memory::getActualAllocationSize(sizeof(void *) + sizeof(size_t) + sizeof(IndexToLogEntry::value_type))
+        /// One bucket slot per entry, at the default maximum load factor of one element per bucket.
+        /// Deliberately amortized rather than exact: `unordered_map` neither shrinks nor rehashes on
+        /// erase, and a rehash sizes the array for about twice the elements it holds, so a cache that
+        /// grew and then shrank keeps bucket bytes that this term has already refunded. Charging the
+        /// real `bucket_count` instead would cost more than it buys. The error is bounded by one
+        /// pointer per entry, a few percent of the charge even for the smallest entries and far below
+        /// the several-fold error this accounting exists to remove, while an exact bucket term would
+        /// stop shrinking when an entry is evicted - and the eviction loop in `refreshCache` pops
+        /// entries until the charge falls under the threshold, so it needs every term to do so.
         + sizeof(void *);
 
     return overhead;
