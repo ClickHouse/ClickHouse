@@ -2119,7 +2119,12 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
 void StorageObjectStorageQueue::dropFailedFiles()
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::dropFailedFiles");
-    files_metadata->dropFailedFiles();
+
+    auto metadata = tryGetFilesMetadata();
+    if (!metadata)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+
+    metadata->dropFailedFiles();
 }
 
 }
