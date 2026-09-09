@@ -27,7 +27,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -66,7 +66,31 @@ struct ProjectionPartData
     size_t rows = 0;
     /// uncompressed size of the projection part, drives the granularity
     size_t bytes = 0;
+    /// per-row size in read order, empty unless the part needs the adaptive granule walk
+    PaddedPODArray<UInt32> row_bytes;
 };
+
+/// per-row counterpart of `getBlockSizeForGranularity`, a fixed-width column costs the same in every row
+void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, const Block & block)
+{
+    const size_t rows = block.rows();
+    const size_t offset = row_bytes.size();
+    row_bytes.resize_fill(offset + rows, 0);
+
+    UInt32 fixed = 0;
+    for (const auto & elem : block)
+    {
+        if (!elem.column)
+            continue;
+        if (elem.column->valuesHaveFixedSize())
+            fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
+        else
+            for (size_t i = 0; i < rows; ++i)
+                row_bytes[offset + i] += static_cast<UInt32>(elem.column->byteSizeAt(i));
+    }
+    for (size_t i = 0; i < rows; ++i)
+        row_bytes[offset + i] += fixed;
+}
 
 /// why the ORDER BY tie-break is or is not available
 enum class SortOrderHelp
@@ -182,6 +206,7 @@ bool buildProjectionPart(
     const DataPartPtr & part,
     ReadFromMergeTree * read_step,
     const SizeLimits & read_limits,
+    bool need_row_bytes,
     UInt64 & total_rows_read,
     UInt64 & total_bytes_read,
     const ContextPtr & context)
@@ -218,6 +243,8 @@ bool buildProjectionPart(
         /// the same measure the writer takes of the block it is about to store, before the key
         /// expression adds columns a normal projection recomputes on read instead of storing
         out.bytes += getBlockSizeForGranularity(block);
+        if (need_row_bytes)
+            appendRowSizes(out.row_bytes, block);
         /// `required_columns` drops a subcolumn whose physical column is there, and the writer puts it
         /// back before executing the key expression (`addSubcolumnsFromSortingKeyAndSkipIndicesExpression`)
         for (const auto & required : proj_key.expression->getRequiredColumns())
@@ -242,7 +269,11 @@ bool buildProjectionPart(
     out.rows = key_columns[0]->size();
     /// a projection index also stores the parent offset, which the writer sizes but `required_columns` omits
     if (projection.with_parent_part_offset)
+    {
         out.bytes += out.rows * sizeof(UInt64);
+        for (auto & row_size : out.row_bytes)
+            row_size += sizeof(UInt64);
+    }
     for (size_t i = 0; i < key_columns.size(); ++i)
         out.key_block.insert({std::move(key_columns[i]), proj_key.data_types[i], proj_key.column_names[i]});
 
@@ -271,26 +302,82 @@ MarkRanges pruneSyntheticProjectionPart(
     /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
 
-    const size_t granule_rows = computeIndexGranularity(
-        data.rows,
-        data.bytes,
-        mt_settings[MergeTreeSetting::index_granularity_bytes],
-        mt_settings[MergeTreeSetting::index_granularity],
-        /* blocks_are_granules */ false,
-        parent_part->index_granularity_info.mark_type.adaptive);
-
-    /// the two writers part ways on the remainder: the wide one appends a mark per granule and only
-    /// trims the last (`fillIndexGranularityImpl` plus `adjustLastMark`), the compact one folds a
-    /// remainder below half a granule into the previous mark, so follow the format this part would get
     const auto part_type
         = merge_tree.choosePartFormat(data.bytes, data.rows, parent_part->info.level, &projection).part_type;
-    size_t num_marks = (data.rows + granule_rows - 1) / granule_rows;
-    const size_t remainder = data.rows % granule_rows;
-    if (part_type == MergeTreeDataPartType::Compact && num_marks > 1 && remainder != 0 && remainder * 2 < granule_rows)
-        --num_marks;
-    const size_t last_mark_rows = data.rows - (num_marks - 1) * granule_rows;
-    granularity_out
-        = std::make_shared<MergeTreeIndexGranularityConstant>(granule_rows, last_mark_rows, num_marks, /* has_final_mark */ false);
+
+    /// The writer picks one granule size per block it stores, from that block's average row size.
+    /// An insert stores the projection of one whole inserted block, so its granules come out even and
+    /// the part average is exact; a merge feeds the writer a long run of small blocks, so each granule
+    /// ends up holding the rows that fit `index_granularity_bytes` at the width found at that point in
+    /// the key order. Which of the two a part got is not recorded, so read it off the merge level.
+    /// ponytail: heuristic. It is exact at both ends and can miss where a part was written some third
+    /// way (a partial merge, a rebuilt projection); the margin below carries what it can miss by.
+    const bool granules_follow_row_width = data.row_bytes.size() == data.rows && parent_part->info.level > 0;
+
+    std::vector<size_t> mark_rows;
+    if (granules_follow_row_width)
+    {
+        const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
+        const size_t max_granule_rows = mt_settings[MergeTreeSetting::index_granularity];
+        size_t rows_in_granule = 0;
+        size_t bytes_in_granule = 0;
+        for (size_t i = 0; i < data.rows; ++i)
+        {
+            const size_t row_bytes = data.row_bytes[data.order[i]];
+            /// a granule holds the rows that fit, the way `index_granularity_bytes / row size` sizes it
+            if (rows_in_granule != 0 && bytes_in_granule + row_bytes > granularity_bytes)
+            {
+                mark_rows.push_back(rows_in_granule);
+                rows_in_granule = 0;
+                bytes_in_granule = 0;
+            }
+            ++rows_in_granule;
+            bytes_in_granule += row_bytes;
+            if (rows_in_granule == max_granule_rows)
+            {
+                mark_rows.push_back(rows_in_granule);
+                rows_in_granule = 0;
+                bytes_in_granule = 0;
+            }
+        }
+        if (rows_in_granule != 0)
+            mark_rows.push_back(rows_in_granule);
+    }
+    else
+    {
+        const size_t granule_rows = computeIndexGranularity(
+            data.rows,
+            data.bytes,
+            mt_settings[MergeTreeSetting::index_granularity_bytes],
+            mt_settings[MergeTreeSetting::index_granularity],
+            /* blocks_are_granules */ false,
+            parent_part->index_granularity_info.mark_type.adaptive);
+
+        const size_t num = (data.rows + granule_rows - 1) / granule_rows;
+        mark_rows.assign(num, granule_rows);
+        mark_rows.back() = data.rows - (num - 1) * granule_rows;
+    }
+
+    /// the two writers part ways on the remainder: the wide one keeps the short last mark
+    /// (`fillIndexGranularityImpl` plus `adjustLastMark`), the compact one folds a remainder below
+    /// half a granule into the previous mark, so follow the format this part would get
+    if (part_type == MergeTreeDataPartType::Compact && mark_rows.size() > 1
+        && mark_rows.back() * 2 < mark_rows[mark_rows.size() - 2])
+    {
+        mark_rows[mark_rows.size() - 2] += mark_rows.back();
+        mark_rows.pop_back();
+    }
+
+    const size_t num_marks = mark_rows.size();
+    std::vector<size_t> mark_starts(num_marks);
+    std::vector<size_t> partial_sums(num_marks);
+    for (size_t mark = 0, row = 0; mark < num_marks; ++mark)
+    {
+        mark_starts[mark] = row;
+        row += mark_rows[mark];
+        partial_sums[mark] = row;
+    }
+    granularity_out = std::make_shared<MergeTreeIndexGranularityAdaptive>(partial_sums);
 
     if (!key_condition)
         return MarkRanges{{0, num_marks}};
@@ -302,7 +389,7 @@ MarkRanges pruneSyntheticProjectionPart(
     {
         auto index_column = key_column.column->cloneEmpty();
         for (size_t mark = 0; mark < num_marks; ++mark)
-            index_column->insertFrom(*key_column.column, data.order[mark * granule_rows]);
+            index_column->insertFrom(*key_column.column, data.order[mark_starts[mark]]);
         index_columns.push_back(std::move(index_column));
     }
 
@@ -360,8 +447,13 @@ bool tryEstimateProjection(
         if (part_marks == 0)
             continue;
 
+        /// the byte walk only differs from a fixed granule count when the writer would size by bytes
+        const bool adaptive = part->index_granularity_info.mark_type.adaptive
+            && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
+
         ProjectionPartData part_data;
-        if (!buildProjectionPart(part_data, projection, part, read_step, read_limits, total_rows_read, total_bytes_read, context))
+        if (!buildProjectionPart(
+                part_data, projection, part, read_step, read_limits, adaptive, total_rows_read, total_bytes_read, context))
         {
             result.empirical_unsupported_reason
                 = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
@@ -370,7 +462,7 @@ bool tryEstimateProjection(
 
         ++scanned_parts;
         scanned_marks += part_marks;
-        if (part->index_granularity_info.mark_type.adaptive)
+        if (adaptive)
             ++adaptive_parts;
         /// no key rows out of a part that has rows means the key needs something the scan cannot
         /// provide, `_part_offset` for one, so do not pass a zero-mark estimate off as measured
@@ -394,8 +486,8 @@ bool tryEstimateProjection(
     result.estimated_marks = projection_marks;
     result.estimated_rows = projection_rows;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
-    /// the constant model can miss the adaptive layout by a granule per part, so a decision that
-    /// close to the base read is not one the optimizer would necessarily reach
+    /// the walk cuts granules over the whole part while the writer restarts at every block it stores,
+    /// which can cost a mark per part, so a decision that close to the base read is not a decision
     const UInt64 margin = adaptive_parts;
     /// fewer marks never loses, so the estimate decides only when both ends of its interval agree
     auto would_win = [&](UInt64 marks)

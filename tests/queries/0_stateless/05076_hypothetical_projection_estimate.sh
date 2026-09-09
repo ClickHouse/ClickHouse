@@ -192,4 +192,52 @@ $CLICKHOUSE_CLIENT -q "
 compare p_i "INDEX b TYPE basic" "SELECT count() FROM TABLE WHERE b = 7" t_est_i t_real_i
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_i; DROP TABLE IF EXISTS t_real_i;"
 
+# a merged part whose row width varies along the projection key: the writer sizes a granule per block
+# it stores, so one average over the part would be several times out
+echo "--- a merged part whose rows differ in width along the projection key ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;
+    CREATE TABLE t_est_w (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 8192, index_granularity_bytes = '128Ki', min_bytes_for_wide_part = 0;
+    CREATE TABLE t_real_w AS t_est_w;
+    ALTER TABLE t_real_w ADD PROJECTION p_w (SELECT a, b, s ORDER BY b);
+    -- narrow rows carry the low part of the key, wide rows the high part
+    INSERT INTO t_est_w SELECT number, number, repeat('x', 20) FROM numbers(10000);
+    INSERT INTO t_est_w SELECT number + 10000, number + 10000, repeat('y', 2000) FROM numbers(1000);
+    INSERT INTO t_real_w SELECT number, number, repeat('x', 20) FROM numbers(10000);
+    INSERT INTO t_real_w SELECT number + 10000, number + 10000, repeat('y', 2000) FROM numbers(1000);
+    OPTIMIZE TABLE t_est_w FINAL; OPTIMIZE TABLE t_real_w FINAL;
+"
+# the granule layout of such a part depends on the blocks the writer was fed, which is not recorded,
+# so the estimate is held to the documented margin of a granule instead of to the exact count
+for w in "b >= 10000" "b < 5000"; do
+    est=$($CLICKHOUSE_CLIENT -q "
+        CREATE HYPOTHETICAL PROJECTION p_w ON t_est_w (SELECT a, b, s ORDER BY b);
+        EXPLAIN WHATIF SELECT a, s FROM t_est_w WHERE ${w} SETTINGS ${PIN};
+    " | grep -E '^\s+marks:' | tail -1 | awk '{print $2}')
+    real=$($CLICKHOUSE_CLIENT -q "
+        EXPLAIN indexes = 1 SELECT a, s FROM t_real_w WHERE ${w} SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_w';
+    " | grep -oE 'Granules: [0-9]+' | head -1 | awk '{print $2}')
+    # a whole-part average would report a couple of marks here, the real read touches sixteen
+    echo "${w}: estimate within a granule of the real ${real}: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 )), off by a factor: $(( est * 4 < real || real * 4 < est ? 1 : 0 ))"
+done
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;"
+
+# a lightweight delete leaves the dead rows in the part, and a materialized projection keeps them too
+echo "--- a materialized lightweight delete ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;
+    CREATE TABLE t_est_d (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+                 lightweight_mutation_projection_mode = 'rebuild';
+    CREATE TABLE t_real_d AS t_est_d;
+    ALTER TABLE t_real_d ADD PROJECTION p_d (SELECT a, b, v ORDER BY b);
+    INSERT INTO t_est_d SELECT number, number % 100, number FROM numbers(1000);
+    INSERT INTO t_real_d SELECT number, number % 100, number FROM numbers(1000);
+    DELETE FROM t_est_d WHERE a % 2 = 0;
+    DELETE FROM t_real_d WHERE a % 2 = 0;
+"
+compare p_d "(SELECT a, b, v ORDER BY b)" "SELECT a, v FROM TABLE WHERE b < 30" t_est_d t_real_d
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real; DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;"
