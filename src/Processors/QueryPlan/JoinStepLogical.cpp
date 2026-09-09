@@ -2230,7 +2230,7 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     /// decided for itself would decide from an empty estimate and could decide differently. The byte
     /// is left out of a plan cache key because it differs between the single-node and the
     /// parallel-replicas plan build, and those two builds have to hash alike.
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ORDER_DECIDED && !ctx.for_cache_key)
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS && !ctx.for_cache_key)
     {
         UInt8 optimizer_flags = 0;
         if (optimized)
@@ -2300,7 +2300,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(join_settings),
         std::move(sort_settings));
 
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ORDER_DECIDED)
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS)
     {
         UInt8 optimizer_flags = 0;
         readIntBinary(optimizer_flags, ctx.in);

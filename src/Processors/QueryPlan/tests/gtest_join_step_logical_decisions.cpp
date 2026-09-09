@@ -21,7 +21,7 @@ namespace
 {
 
 constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
-constexpr UInt64 pre_decision_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ORDER_DECIDED - 1;
+constexpr UInt64 pre_decision_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS - 1;
 
 SharedHeader makeHeader(const String & column_name)
 {
@@ -92,7 +92,7 @@ std::unique_ptr<JoinStepLogical> deserializeStep(const String & bytes, UInt64 ve
 
 }
 
-TEST(JoinStepLogicalJoinOrderDecided, RoundTripsAtCurrentVersion)
+TEST(JoinStepLogicalDecisions, RoundTripsAtCurrentVersion)
 {
     auto decided = makeStep();
     decided->setOptimized();
@@ -113,7 +113,7 @@ TEST(JoinStepLogicalJoinOrderDecided, RoundTripsAtCurrentVersion)
     EXPECT_EQ(undecided_bytes, serializeStep(*restored_undecided, current_version));
 }
 
-TEST(JoinStepLogicalJoinOrderDecided, SmallProbeDecisionRoundTripsAtCurrentVersion)
+TEST(JoinStepLogicalDecisions, SmallProbeDecisionRoundTripsAtCurrentVersion)
 {
     auto declined = makeStep();
     declined->setRuntimeFilterDeclinedForSmallProbe();
@@ -135,7 +135,7 @@ TEST(JoinStepLogicalJoinOrderDecided, SmallProbeDecisionRoundTripsAtCurrentVersi
 
 /// The two decisions share one byte, so a serializer that conflated them would still pass the two
 /// tests above. Each of the four combinations has to survive on its own.
-TEST(JoinStepLogicalJoinOrderDecided, DecisionsAreIndependentlyObservable)
+TEST(JoinStepLogicalDecisions, DecisionsAreIndependentlyObservable)
 {
     for (const bool order_decided : {false, true})
     {
@@ -156,7 +156,7 @@ TEST(JoinStepLogicalJoinOrderDecided, DecisionsAreIndependentlyObservable)
 
 /// A clone is the initiator's own copy of the fragment it ships, so it has to reach the same
 /// decisions as the copy the replicas deserialize.
-TEST(JoinStepLogicalJoinOrderDecided, CloneCarriesTheDecisions)
+TEST(JoinStepLogicalDecisions, CloneCarriesTheDecisions)
 {
     auto step = makeStep();
     step->setOptimized();
@@ -171,7 +171,7 @@ TEST(JoinStepLogicalJoinOrderDecided, CloneCarriesTheDecisions)
     EXPECT_EQ(serializeStep(*cloned_join, current_version), serializeStep(*step, current_version));
 }
 
-TEST(JoinStepLogicalJoinOrderDecided, PreVersionCarriesNothing)
+TEST(JoinStepLogicalDecisions, PreVersionCarriesNothing)
 {
     auto decided = makeStep();
     decided->setOptimized();
