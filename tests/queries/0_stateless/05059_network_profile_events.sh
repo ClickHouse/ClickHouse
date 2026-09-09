@@ -105,10 +105,12 @@ function plaintext_request_to_https_port()
 }
 
 # A TLS handshake against the plain HTTP port: the peer answers with something that is not a
-# `ServerHello`, so the client side of the handshake fails.
+# `ServerHello`, so the client side of the handshake fails. `http_max_tries = 1` is essential:
+# with the default of 10 the failing handshake is retried with an exponential backoff, which takes
+# more than two minutes and by itself made this test time out.
 function https_request_to_plain_http_port()
 {
-    $CLICKHOUSE_CLIENT -q "SYSTEM DROP CONNECTIONS CACHE; SELECT * FROM url('https://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/', 'TSV', 'x UInt8') FORMAT Null" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "SYSTEM DROP CONNECTIONS CACHE; SELECT * FROM url('https://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/', 'TSV', 'x UInt8') FORMAT Null SETTINGS http_max_tries = 1" 2>/dev/null
 }
 
 expect_increase resolve_host DNSRequests DNSRequestMicroseconds
