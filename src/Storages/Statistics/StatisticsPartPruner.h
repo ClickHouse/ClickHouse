@@ -28,6 +28,10 @@ public:
     /// Get the list of column names used in the filter condition that have statistics.
     Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
+    /// Filter columns that have min/max statistics; unlike getUsedColumns, available
+    /// right after construction.
+    NameOrderedSet getStatsColumns() const;
+
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
     KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types);

@@ -3474,6 +3474,14 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (filter_depends_on_non_deterministic_virtuals)
         reader_settings.use_query_condition_cache = false;
 
+    /// Pending metadata mutations (DROP / RENAME / ADD) rewrite rows under unchanged part names but
+    /// produce no on-fly mutation steps, so the per-part write gate (appliesMutationsBeforePrewhere)
+    /// never fires for them; fail open here until they materialize. Data mutations are already
+    /// handled per part, and disabling writes for them would break priming under a pending mutation
+    /// of an unread column (see 04669).
+    if (mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations())
+        reader_settings.use_query_condition_cache = false;
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -5002,6 +5010,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
 
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
+        reader_settings.use_query_condition_cache = false;
+
+    /// Pending metadata mutations (DROP / RENAME / ADD) rewrite rows under unchanged part names but
+    /// produce no on-fly mutation steps, so the per-part write gate (appliesMutationsBeforePrewhere)
+    /// never fires for them; fail open here until they materialize. Data mutations are already
+    /// handled per part, and disabling writes for them would break priming under a pending mutation
+    /// of an unread column (see 04669).
+    if (mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations())
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of

@@ -55,6 +55,9 @@ public:
 
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
+    /// Pending DROP / RENAME COLUMN are tracked in dropped_columns / rename_map only,
+    /// not in mutation_commands, so hasMutations() does not cover them.
+    bool hasDroppedOrRenamedColumns() const { return !dropped_columns.empty() || !rename_map.empty(); }
     bool hasLightweightDelete() const;
     /// True if a pending ALTER DELETE filters out rows on read without touching any column.
     /// Such a delete is not reflected in all_updated_columns or _row_exists, so callers that

@@ -7389,6 +7389,8 @@ MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_conte
         return ColumnDefaultnessStatsUnavailableReason::DataMutations;
     if (mutations_snapshot->hasAlterMutations())
         return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
+    if (mutations_snapshot->hasMetadataMutations())
+        return ColumnDefaultnessStatsUnavailableReason::MetadataMutations;
 
     return ColumnDefaultnessStatsUnavailableReason::None;
 }
@@ -7417,6 +7419,12 @@ MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_conte
     /// type. The stat would mismatch the post-conversion default semantics.
     if (mutation_counters.num_alter > 0)
         return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
+
+    /// Pending metadata mutations (DROP / RENAME COLUMN) re-point the name at other
+    /// values without rewriting the part, so the recorded `num_defaults` no longer
+    /// describes what a read of the column returns.
+    if (mutation_counters.num_metadata > 0)
+        return ColumnDefaultnessStatsUnavailableReason::MetadataMutations;
 
     /// Masking policies rewrite values at read time without touching `serialization.json`,
     /// so the recorded `num_defaults` does not describe what the masked user reads.
@@ -7450,6 +7458,7 @@ const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(Colu
         case ColumnDefaultnessStatsUnavailableReason::PatchParts: return "table has patch parts";
         case ColumnDefaultnessStatsUnavailableReason::DataMutations: return "pending data mutations";
         case ColumnDefaultnessStatsUnavailableReason::AlterMutations: return "pending alter mutations";
+        case ColumnDefaultnessStatsUnavailableReason::MetadataMutations: return "pending metadata mutations";
         case ColumnDefaultnessStatsUnavailableReason::MaskingPolicy: return "table has a masking policy";
     }
     UNREACHABLE();

@@ -211,20 +211,19 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
-    /// Compute the union of updated columns only across the parts that will actually be read by this step.
-    /// Using `mutations_snapshot->getAllUpdatedColumns()` directly would include pending updates from
-    /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
-    /// the queried parts have no on-the-fly updates for the index columns.
-    NameSet all_updated_columns;
+    /// Compute per-part alter conversions only across the parts that will actually be read by this
+    /// step. Using `mutations_snapshot` directly would include pending mutations of other
+    /// partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when the
+    /// queried parts have no stale index data for the index columns.
+    std::vector<AlterConversionsPtr> alter_conversions_per_part;
+    alter_conversions_per_part.reserve(unique_parts.size());
     for (const auto & part : unique_parts)
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+        alter_conversions_per_part.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
             , context->getAccess()->getEnabledMaskingPolicies()
 #endif
-        );
-        const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
-        all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
+        ));
     }
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
@@ -232,11 +231,18 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         if (!index.index->isTextIndex())
             continue;
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
+        bool index_is_stale = false;
+        for (const auto & alter_conversions : alter_conversions_per_part)
         {
-            LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
-            continue;
+            if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, *alter_conversions); !result)
+            {
+                LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
+                index_is_stale = true;
+                break;
+            }
         }
+        if (index_is_stale)
+            continue;
 
         /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
         size_t num_materialized_parts = std::ranges::count_if(unique_parts, [&](const auto & part)
