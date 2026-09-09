@@ -175,6 +175,8 @@ TEST(ProfileEvents, MoveResetAndWrapEveryEvent)
         for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
             original.incrementNoTrace(event, std::numeric_limits<ProfileEvents::Count>::max());
         ProfileEvents::Counters moved(std::move(original));
+        /// Verify that `reset` also accepts a moved-from `Counters`.
+        // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
         original.reset();
         {
             DENY_ALLOCATIONS_IN_SCOPE;

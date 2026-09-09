@@ -33,7 +33,7 @@ public:
 
     ~FifoQueue() override
     {
-        purgeQueue();
+        FifoQueue::purgeQueue();
     }
 
     std::string_view getTypeName() const override { return "fifo"; }
