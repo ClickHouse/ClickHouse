@@ -69,8 +69,8 @@ const ASTPtr & getSimpleAggregateFunctionStorageTypeAST(const ASTDataType & ast)
     return arguments->children[1];
 }
 
-/// Return the nested type of a transparent wrapper. Nested is deliberately not transparent.
-DataTypePtr getTransparentNestedType(const DataTypePtr & type)
+/// Remove one transparent codec wrapper. Nested is deliberately not transparent.
+DataTypePtr unwrapTransparentCodecWrapper(const DataTypePtr & type)
 {
     /// Nested uses DataTypeArray too, but its named fields are separate columns.
     if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()); array && !isNested(type))
@@ -195,7 +195,7 @@ CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath &
     CodecPath result;
     for (const auto & segment : input)
     {
-        while (auto nested = getTransparentNestedType(current))
+        while (auto nested = unwrapTransparentCodecWrapper(current))
             current = std::move(nested);
 
         const auto * tuple = typeid_cast<const DataTypeTuple *>(current.get());
