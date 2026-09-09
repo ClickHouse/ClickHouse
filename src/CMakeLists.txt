@@ -1073,8 +1073,8 @@ if (ENABLE_FILC)
         Functions/if.cpp
         PROPERTIES COMPILE_OPTIONS "-O0")
     set_source_files_properties(
-        FunctionsConversion_reg.cpp
-        FunctionsNumericIndexedVector.cpp
-        FunctionsRound.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Functions/FunctionsConversion_reg.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Functions/FunctionsNumericIndexedVector.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Functions/FunctionsRound.cpp
         DIRECTORY Functions PROPERTIES COMPILE_OPTIONS "-O0")
 endif ()
