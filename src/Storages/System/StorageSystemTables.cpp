@@ -845,6 +845,11 @@ protected:
                         views_database_name_array.reserve(view_ids.size());
                         for (const auto & view_id : view_ids)
                         {
+                            /// Hide dependent views the user is not allowed to list.
+                            if (need_to_check_access_for_databases
+                                && !access->isGranted(AccessType::SHOW_TABLES, view_id.database_name, view_id.table_name))
+                                continue;
+
                             views_table_name_array.push_back(view_id.table_name);
                             views_database_name_array.push_back(view_id.database_name);
                         }
