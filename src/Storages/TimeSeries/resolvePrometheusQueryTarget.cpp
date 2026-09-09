@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
@@ -264,10 +265,11 @@ namespace
                     /// a replica that may not answer here is left to the check its own insert makes on its target.
                     if (e.code() == ErrorCodes::ACCESS_DENIED)
                         continue;
-                    /// Anything else the replica could not answer leaves its target unverified, as an unreachable one is.
-                    unavailable = e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE
-                        ? fmt::format("no table {}", backQuoteIfNeed(remote_id.table_name))
-                        : "unreachable";
+                    /// SHOW CREATE TABLE reports a name it cannot produce a DDL for as its own code, DESC as
+                    /// the plain one; anything else leaves the target unverified, as an unreachable replica does.
+                    const bool no_table = e.code() == ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY
+                        || e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE;
+                    unavailable = no_table ? fmt::format("no table {}", backQuoteIfNeed(remote_id.table_name)) : "unreachable";
                 }
                 /// A connection the pool could not open is skipped rather than raised, so it answers nothing.
                 if (unavailable.empty() && !answered)

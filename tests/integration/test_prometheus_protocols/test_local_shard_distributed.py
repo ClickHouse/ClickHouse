@@ -261,12 +261,13 @@ def test_local_shard_is_checked_on_the_callers_context_not_the_cluster_users():
     """A shard that is this server itself is checked, written and read on the caller's context: the
     credentials of its cluster entry play no part, and here they hold no grant at all.
     """
-    # The premise: as the cluster user, the old probe's SELECT from system.tables was denied.
-    denied = node.query_and_get_error(
+    # The premise: the cluster user is granted nothing, so the table the old probe selected from
+    # shows it no row of `metrics` (system.tables is readable by all and filters what it shows).
+    hidden = node.query(
         "SELECT count() FROM system.tables WHERE database = 'metrics'",
         user=CLUSTER_NOBODY,
     )
-    assert "Not enough privileges" in denied, denied
+    assert hidden.strip() == "0", hidden
 
     send_protobuf_to_remote_write(
         node.ip_address,
