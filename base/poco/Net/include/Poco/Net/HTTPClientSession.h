@@ -286,11 +286,25 @@ namespace Net
         /// for callers that parse the response header themselves. The caller has to
         /// report the completion of the body with `setResponseBodyComplete`.
 
-        bool isRequestBodyComplete() const { return _requestBodyComplete; }
-        void setRequestBodyComplete(bool value) { _requestBodyComplete = value; }
+        bool isRequestBodyComplete();
+        /// Whether the body of the last request was transferred to the end. A connection with a
+        /// half-sent request must not be reused: the rest of the body would be taken for the
+        /// beginning of the next request.
+        ///
+        /// It works for both the iostream-based `sendRequest` and the iostream-free
+        /// `sendRequestHeaders`: for the former the state is taken from the body stream itself.
 
-        bool isResponseBodyComplete() const { return _responseBodyComplete; }
+        void setRequestBodyComplete(bool value) { _requestBodyComplete = value; }
+        /// Reports the completion of a request body written by the caller of `sendRequestHeaders`.
+
+        bool isResponseBodyComplete();
+        /// Whether the body of the last response was read to the end. A connection with an
+        /// unread response body must not be reused: the rest of the body would be taken for the
+        /// beginning of the next response.
+
         void setResponseBodyComplete(bool value) { _responseBodyComplete = value; }
+        /// Reports the completion of a response body read by the caller of
+        /// `onResponseHeadersReceived`.
 
         virtual std::istream & receiveResponse(HTTPResponse & response);
         /// Receives the header for the response to the previous

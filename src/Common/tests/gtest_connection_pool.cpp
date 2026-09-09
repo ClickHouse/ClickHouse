@@ -5,6 +5,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
 #include <base/scope_guard.h>
+#include <base/unit.h>
 
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>
@@ -917,6 +918,101 @@ TEST_F(ConnectionPoolTest, NoReceiveCall)
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired]);
 
     ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// `getConnection` hands out the full `Poco::Net::HTTPClientSession` interface, so a caller may
+/// drive a pooled connection through the legacy `std::iostream` API instead of
+/// `sendRequestHeaders`/`receiveHTTPResponse`. The pool decides whether a connection can be reused
+/// from the completeness of the last request and response, and these tests pin that this decision
+/// stays correct for that API as well: a half-sent request or a half-read response must never let a
+/// connection back into the pool, because its leftover bytes would be taken for the beginning of
+/// the next exchange.
+TEST_F(ConnectionPoolTest, LegacyStreamApiCompleteExchangeIsPreserved)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    const auto data = String("Hello");
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
+        request.setContentLength(data.size());
+        connection->sendRequest(request) << data;
+
+        Poco::Net::HTTPResponse response;
+        std::istream & response_body = connection->receiveResponse(response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+
+        String result;
+        result.resize(data.size());
+        response_body.read(result.data(), static_cast<std::streamsize>(result.size()));
+        ASSERT_EQ(data, result);
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+}
+
+TEST_F(ConnectionPoolTest, LegacyStreamApiHalfReadResponseIsNotPreserved)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    /// The body has to be larger than the buffer of the response stream, so that a part of it is
+    /// left in the socket and not merely in the discarded buffer of the stream.
+    const auto data = String(1_MiB, 'x');
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        connection->sendRequest(request) << data;
+
+        Poco::Net::HTTPResponse response;
+        std::istream & response_body = connection->receiveResponse(response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+
+        /// Read a part of the body and leave the rest of it in the socket.
+        char first;
+        response_body.read(&first, 1);
+        ASSERT_EQ(data[0], first);
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+TEST_F(ConnectionPoolTest, LegacyStreamApiHalfSentRequestIsNotPreserved)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(10);
+        /// Announce ten bytes of body and send fewer of them.
+        connection->sendRequest(request) << "Hi";
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
 }
 

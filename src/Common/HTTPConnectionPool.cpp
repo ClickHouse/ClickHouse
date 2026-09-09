@@ -583,7 +583,9 @@ private:
         /// A connection can only be reused when both the request and the response of the last
         /// exchange were transferred to the end: anything left unsent or unread would be taken
         /// for a part of the next request or response.
-        bool isCompleted() const
+        /// Not `const`: for a chunked response body the check has to peek into the socket to tell
+        /// a body that ended exactly at the last chunk from a truncated one.
+        bool isCompleted()
         {
             return Session::isRequestBodyComplete() && Session::isResponseBodyComplete();
         }

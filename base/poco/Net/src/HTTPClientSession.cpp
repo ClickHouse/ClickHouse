@@ -261,12 +261,45 @@ void HTTPClientSession::setLastRequest(Poco::Timestamp time)
 }
 
 
+namespace
+{
+
+/// Whether a message body handed out as an `std::iostream` by `sendRequest`/`receiveResponse` was
+/// transferred to the end. A body that ends with the connection (HTTPStreamBuf) is never considered
+/// complete: there is no way to tell the end of it from a truncated transfer, so the connection
+/// must not be reused.
+bool isBodyStreamComplete(std::ostream * stream)
+{
+	if (auto * fixed_length_stream = dynamic_cast<HTTPFixedLengthOutputStream *>(stream))
+		return fixed_length_stream->isComplete();
+	if (auto * chunked_stream = dynamic_cast<HTTPChunkedOutputStream *>(stream))
+		return chunked_stream->isComplete();
+	return false;
+}
+
+bool isBodyStreamComplete(std::istream * stream)
+{
+	if (auto * fixed_length_stream = dynamic_cast<HTTPFixedLengthInputStream *>(stream))
+		return fixed_length_stream->isComplete();
+	if (auto * chunked_stream = dynamic_cast<HTTPChunkedInputStream *>(stream))
+		return chunked_stream->isComplete();
+	return false;
+}
+
+}
+
+
 std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * connect_time, uint64_t * first_byte_time)
 {
 	_pRequestStream = 0;
     _pResponseStream = 0;
 	clearException();
 	_responseReceived = false;
+	/// A new exchange starts: nothing of it has been transferred yet. The flags are only
+	/// consulted while there is no body stream to inspect (see isRequestBodyComplete), but they
+	/// must not keep the value left by a previous exchange on this session.
+	_requestBodyComplete = false;
+	_responseBodyComplete = false;
 
     _keepAliveCurrentRequest += 1;
 
@@ -465,8 +498,42 @@ HTTPClientSession::BodyInfo HTTPClientSession::onResponseHeadersReceived(const H
 
 void HTTPClientSession::flushRequest()
 {
+	if (_pRequestStream)
+	{
+		/// Flush here and not in the stream's destructor, which swallows the exception.
+		_pRequestStream->flush();
+
+		if (auto * chunked_stream = dynamic_cast<HTTPChunkedOutputStream *>(_pRequestStream.get()))
+			chunked_stream->rdbuf()->close(); /// Writes the terminating chunk.
+
+		/// The stream is about to be destroyed, so take the completeness of the request body from
+		/// it while it is still alive.
+		_requestBodyComplete = isBodyStreamComplete(_pRequestStream.get());
+	}
 	_pRequestStream = 0;
 	if (networkException()) networkException()->rethrow();
+}
+
+
+bool HTTPClientSession::isRequestBodyComplete()
+{
+	/// The iostream-based path (sendRequest) does not report the completion of the body, so it
+	/// has to be taken from the stream itself as long as it is alive. flushRequest stores it into
+	/// _requestBodyComplete before dropping the stream, and the iostream-free path
+	/// (sendRequestHeaders) maintains the flag directly.
+	if (_pRequestStream)
+		return isBodyStreamComplete(_pRequestStream.get());
+	return _requestBodyComplete;
+}
+
+
+bool HTTPClientSession::isResponseBodyComplete()
+{
+	/// Same as isRequestBodyComplete, for the response side. The response stream stays alive
+	/// until the next request or until the session is destroyed, so there is nothing to snapshot.
+	if (_pResponseStream)
+		return isBodyStreamComplete(_pResponseStream.get());
+	return _responseBodyComplete;
 }
 
 
