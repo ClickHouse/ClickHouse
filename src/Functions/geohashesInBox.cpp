@@ -142,7 +142,10 @@ public:
             geohashesInBox(prepared_args, out, budget);
 
             for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
+            {
+                budget.charge();
                 res_strings_offsets.push_back(starting_offset + prepared_args.precision * i);
+            }
             res_offsets.push_back(res_offsets.back() + prepared_args.items_count);
         }
 
