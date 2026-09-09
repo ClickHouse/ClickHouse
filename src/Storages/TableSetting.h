@@ -13,10 +13,20 @@ namespace DB
 
 /// Where the effective value of a table setting came from. Exposed as `system.table_settings.source`.
 ///
-/// The order matters when a setting is written more than once: the sources below are applied in
-/// roughly this order, and the last writer wins. A named collection is applied before the table's
-/// own `SETTINGS` clause, and a config section before that, so a setting named in the definition
-/// reports `Definition` even if a collection also names it.
+/// When more than one of these wrote a setting, the one reported is whichever wrote it last - and
+/// that order is decided by the engine, not by the order of this list.
+///
+/// Most engines apply the table's own `SETTINGS` clause last, so `Definition` outranks `Config`,
+/// `Compatibility` and `NamedCollection`: a setting named in the definition reports `Definition`
+/// even when a config section or a named collection also names it.
+///
+/// `S3Queue` and `AzureQueue` are the exception, deliberately. They apply `SharedMetadata` *after*
+/// the definition, because an `ALTER ... MODIFY SETTING` run on another replica has already changed
+/// the value this replica uses while its own `CREATE` query still states what it was created with.
+/// Reporting `Definition` there would name a source the engine does not consult.
+///
+/// So the order below is the usual one rather than a contract every engine keeps. An engine that
+/// adds a source has to decide where it belongs relative to the definition, and say so.
 enum class TableSettingOrigin : uint8_t
 {
     Default,          /// the engine's compiled-in default
