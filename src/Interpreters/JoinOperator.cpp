@@ -59,7 +59,7 @@ namespace Setting
     extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const SettingsUInt64 join_to_sort_maximum_table_rows;
-    extern const SettingsBool allow_experimental_join_right_table_sorting;
+    extern const SettingsBool allow_join_right_table_sorting;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
     extern const SettingsMaxThreads max_threads;
@@ -180,7 +180,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     join_output_by_rowlist_perkey_rows_threshold = query_settings[Setting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = query_settings[Setting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = query_settings[Setting::join_to_sort_maximum_table_rows];
-    allow_experimental_join_right_table_sorting = query_settings[Setting::allow_experimental_join_right_table_sorting];
+    allow_experimental_join_right_table_sorting = query_settings[Setting::allow_join_right_table_sorting];
 
     allow_dynamic_type_in_join_keys = query_settings[Setting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
