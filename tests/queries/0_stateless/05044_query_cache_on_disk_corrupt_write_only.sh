@@ -28,7 +28,7 @@ echo "-- Compute the result and write it to disk"
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "${query}; ${events_query};"
 
 echo "-- Corrupt the body of the entry, leaving the fixed header intact"
-# The fixed header is 56 bytes; everything after it is covered by the checksum in the header.
+# The fixed header is 56 bytes; the checksum in it covers the header itself (up to the checksum slot) and everything after it.
 find "${CACHE_DIR}" -type f -name '0_*' | while read -r file
 do
     printf '\xff\xff\xff\xff\xff\xff\xff\xff' | dd of="${file}" bs=1 seek=56 conv=notrunc status=none

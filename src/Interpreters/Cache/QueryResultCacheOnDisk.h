@@ -57,7 +57,7 @@ private:
         UInt64 total_size = 0; /// entire entry size in bytes, including this header
         UInt64 created_at = 0; /// seconds since epoch
         UInt64 expires_at = 0; /// seconds since epoch
-        UInt128 body_checksum = 0; /// SipHash-128 of everything after the fixed header
+        UInt128 checksum = 0; /// SipHash-128 of the preceding fixed header bytes and of everything after the fixed header
 
         bool isStale() const;
     };

@@ -28,7 +28,8 @@ ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "${query}; ${events_q
 
 echo "-- Corrupt the body of the entry: it must be handled as a cheap miss"
 # The bytes right after the 56-byte fixed header hold the access metadata. Overwriting them with 0xFF breaks the body
-# checksum in the fixed header (and would make the serialized role count decode to a huge number).
+# checksum in the fixed header (and would make the serialized role count decode to a huge number). See also 05153, which
+# corrupts the fixed header itself.
 find "${CACHE_DIR}" -type f -name '0_*' | while read -r file
 do
     printf '\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff' \

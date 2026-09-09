@@ -55,7 +55,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// On-disk entry layout, version 3:
+/// On-disk entry layout, version 4:
 ///
 ///     Fixed header (FIXED_HEADER_SIZE bytes):
 ///         char[8]  magic "QRCache1"
@@ -64,7 +64,9 @@ namespace
 ///         UInt64   total entry size in bytes, including the fixed header
 ///         UInt64   created_at, seconds since epoch
 ///         UInt64   expires_at, seconds since epoch
-///         UInt128  SipHash-128 of everything after the fixed header
+///         UInt128  SipHash-128 of the preceding fixed header bytes and of everything after the fixed header. The freshness
+///                  fields are authenticated as well: a corruption of `expires_at` or `total_size` alone would otherwise
+///                  silently change how long the entry is served, without ever failing the integrity check.
 ///
 ///     Access metadata (uncompressed):
 ///         UInt8    is_shared
@@ -85,11 +87,11 @@ namespace
 ///         Per column of the header: UInt8 is_const, then a single-column Native block (the data column of a Const column with
 ///         one row, the column itself with `number of rows` rows otherwise)
 constexpr char ENTRY_MAGIC[8] = {'Q', 'R', 'C', 'a', 'c', 'h', 'e', '1'};
-constexpr UInt32 ENTRY_FORMAT_VERSION = 3;
+constexpr UInt32 ENTRY_FORMAT_VERSION = 4;
 constexpr size_t FIXED_HEADER_SIZE
     = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt128);
 constexpr size_t TOTAL_SIZE_OFFSET_IN_FIXED_HEADER = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32);
-constexpr size_t BODY_CHECKSUM_OFFSET_IN_FIXED_HEADER = FIXED_HEADER_SIZE - sizeof(UInt128);
+constexpr size_t CHECKSUM_OFFSET_IN_FIXED_HEADER = FIXED_HEADER_SIZE - sizeof(UInt128);
 
 /// The key of a shared entry depends on the query only, so that every user can find it. The key of a non-shared entry additionally
 /// depends on the access context, so that the entry of one user (or of one role set of the same user) neither shadows nor can be
@@ -250,7 +252,7 @@ std::optional<QueryResultCacheOnDisk::FixedHeader> QueryResultCacheOnDisk::parse
     readBinaryLittleEndian(header.total_size, in);
     readBinaryLittleEndian(header.created_at, in);
     readBinaryLittleEndian(header.expires_at, in);
-    readBinaryLittleEndian(header.body_checksum, in);
+    readBinaryLittleEndian(header.checksum, in);
 
     if (header.format_version != ENTRY_FORMAT_VERSION
         || header.protocol_revision > DBMS_TCP_PROTOCOL_VERSION
@@ -263,13 +265,23 @@ std::optional<QueryResultCacheOnDisk::FixedHeader> QueryResultCacheOnDisk::parse
 std::optional<String> QueryResultCacheOnDisk::readCheckedBody(const FileSegmentsHolder & holder, const FixedHeader & header)
 {
     /// The caller has verified that all `total_size` bytes of the entry are downloaded.
+    auto in = createReadBufferFromSegments(holder, DBMS_DEFAULT_BUFFER_SIZE);
+
+    /// The fixed header is read back as raw bytes and authenticated together with the body: `parseFixedHeader` has to trust
+    /// `total_size` and `expires_at` before the checksum can be verified (they say how much to read and whether the entry is
+    /// worth reading at all), so the checksum must cover them, or a corruption of the freshness fields alone would keep an
+    /// expired entry alive instead of turning it into a cache miss.
+    char fixed_header[FIXED_HEADER_SIZE];
+    in->readStrict(fixed_header, FIXED_HEADER_SIZE);
+
     String body;
     body.resize(header.total_size - FIXED_HEADER_SIZE);
-    auto in = createReadBufferFromSegments(holder, DBMS_DEFAULT_BUFFER_SIZE);
-    in->ignore(FIXED_HEADER_SIZE);
     in->readStrict(body.data(), body.size());
 
-    if (sipHash128(body.data(), body.size()) != header.body_checksum)
+    SipHash hash;
+    hash.update(fixed_header, CHECKSUM_OFFSET_IN_FIXED_HEADER);
+    hash.update(body.data(), body.size());
+    if (hash.get128() != header.checksum)
         return std::nullopt;
 
     return body;
@@ -346,7 +358,7 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         writeBinaryLittleEndian(static_cast<UInt64>(0), out); /// total size, patched below
         writeBinaryLittleEndian(static_cast<UInt64>(std::chrono::system_clock::to_time_t(key.created_at)), out);
         writeBinaryLittleEndian(static_cast<UInt64>(std::chrono::system_clock::to_time_t(key.expires_at)), out);
-        writeBinaryLittleEndian(UInt128(0), out); /// body checksum, patched below
+        writeBinaryLittleEndian(UInt128(0), out); /// checksum, patched below
 
         writeBinaryLittleEndian(static_cast<UInt8>(key.is_shared), out);
         writeBinaryLittleEndian(static_cast<UInt8>(key.user_id.has_value()), out);
@@ -379,9 +391,12 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         data = std::move(out.str());
         unalignedStoreLittleEndian<UInt64>(data.data() + TOTAL_SIZE_OFFSET_IN_FIXED_HEADER, data.size());
 
-        UInt128 body_checksum = sipHash128(data.data() + FIXED_HEADER_SIZE, data.size() - FIXED_HEADER_SIZE);
-        transformEndianness<std::endian::little>(body_checksum);
-        memcpy(data.data() + BODY_CHECKSUM_OFFSET_IN_FIXED_HEADER, &body_checksum, sizeof(body_checksum));
+        SipHash hash;
+        hash.update(data.data(), CHECKSUM_OFFSET_IN_FIXED_HEADER);
+        hash.update(data.data() + FIXED_HEADER_SIZE, data.size() - FIXED_HEADER_SIZE);
+        UInt128 checksum = hash.get128();
+        transformEndianness<std::endian::little>(checksum);
+        memcpy(data.data() + CHECKSUM_OFFSET_IN_FIXED_HEADER, &checksum, sizeof(checksum));
     }
     catch (...)
     {
