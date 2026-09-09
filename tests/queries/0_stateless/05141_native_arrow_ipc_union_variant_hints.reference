@@ -60,6 +60,21 @@ b	Variant(Enum8(\'a\' = 1, \'b\' = 2))
 2022-01-08 00:00:00	Variant(DateTime(\'UTC\'), UInt64)
 8	Variant(DateTime(\'UTC\'), UInt64)
 2022-01-09 00:00:00	Variant(DateTime(\'UTC\'), UInt64)
+--- a DateTime64 alternative is what the flat date64 column reaches, so the branch takes it ---
+7	Variant(DateTime64(3, \'UTC\'), UInt64)
+2022-01-08 00:00:00.000	Variant(DateTime64(3, \'UTC\'), UInt64)
+8	Variant(DateTime64(3, \'UTC\'), UInt64)
+2022-01-09 00:00:00.000	Variant(DateTime64(3, \'UTC\'), UInt64)
+--- a uint32 branch takes IPv4, the encoding the writer uses for it ---
+0.0.0.7	Variant(IPv4, String)
+x	Variant(IPv4, String)
+0.0.0.8	Variant(IPv4, String)
+y	Variant(IPv4, String)
+--- and DateTime, its other writer encoding ---
+1970-01-01 00:00:07	Variant(DateTime, String)
+x	Variant(DateTime, String)
+1970-01-01 00:00:08	Variant(DateTime, String)
+y	Variant(DateTime, String)
 --- and a duration branch claims the alternative its int64 sibling could otherwise take ---
 7	Variant(Int128, IntervalSecond)
 5	Variant(Int128, IntervalSecond)
@@ -96,6 +111,8 @@ true	Variant(Bool, UInt8)
 []	Array(Variant(Bool, UInt8))
 --- a date32 branch is excluded by design, so this stays rejected ---
 Cannot convert type Variant(Date32, String) to Variant(Int32, String).
+--- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---
+Cannot convert type Variant(DateTime64(3, 'UTC'), String) to Variant(DateTime, String).
 --- two branches may never end up on one alternative ---
 Cannot convert type Variant(Bool, UInt8) to Variant(String, UInt8).
 --- an ambiguous branch gets no alternative, so this stays rejected ---
@@ -113,6 +130,8 @@ text_binary_int32	Variant(Int32, String)
 unparseable_binary_int32	Variant(Int32, String)					
 date32_utf8	Variant(Date32, String)					
 uint32_date64	Variant(DateTime, UInt32)					
+uint32_utf8	Variant(String, UInt32)					
+ts_utf8	Variant(DateTime64(3, \'UTC\'), String)					
 int64_duration	Variant(Int64, IntervalSecond)					
 uint32_date32	Variant(Date32, UInt32)					
 date32_flat	Nullable(Date32)					

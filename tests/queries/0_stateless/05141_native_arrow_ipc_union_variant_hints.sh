@@ -113,6 +113,13 @@ columns = {
     "uint32_date64": dense(
         [pa.array([7, 8], type=pa.uint32()),
          pa.array([19000 * 86400000, 19001 * 86400000], type=pa.date64())], ["i", "d"]),
+    # A `uint32` branch beside a branch that cannot take either of its special targets, so the branch
+    # must take them itself: the two encodings the ClickHouse Arrow writer uses for IPv4 and DateTime.
+    "uint32_utf8": dense([pa.array([7, 8], type=pa.uint32()), pa.array(["x", "y"])], ["i", "s"]),
+    # An Arrow timestamp decodes to DateTime64, and the narrowing DateTime target is refused: the cast
+    # would drop sub-second precision and wrap anything outside 1970-2106.
+    "ts_utf8": dense([pa.array([19000 * 86400000, 19001 * 86400000], type=pa.timestamp("ms", tz="UTC")),
+                      pa.array(["x", "y"])], ["t", "s"]),
     # `duration[s]` decodes to `IntervalSecond`, which no conversion admits, while `int64` admits every
     # interval kind, so the duration branch has to claim `IntervalSecond` itself. Every alternative an
     # `int64` branch can take is numeric, hence the sibling and the suspicious-types setting below.
@@ -204,6 +211,12 @@ echo "--- a branch no conversion admits claims its own alternative, which disamb
 read_column uint32_date64 'Variant(UInt64, DateTime)' Arrow "session_timezone = 'UTC'"
 echo "--- an explicitly zoned DateTime alternative is a relabel, so the branch takes it ---"
 read_column uint32_date64 "Variant(UInt64, DateTime('UTC'))"
+echo "--- a DateTime64 alternative is what the flat date64 column reaches, so the branch takes it ---"
+read_column uint32_date64 "Variant(UInt64, DateTime64(3, 'UTC'))"
+echo "--- a uint32 branch takes IPv4, the encoding the writer uses for it ---"
+read_column uint32_utf8 'Variant(IPv4, String)'
+echo "--- and DateTime, its other writer encoding ---"
+read_column uint32_utf8 'Variant(DateTime, String)' Arrow "session_timezone = 'UTC'"
 echo "--- and a duration branch claims the alternative its int64 sibling could otherwise take ---"
 read_column int64_duration 'Variant(IntervalSecond, Int128)' Arrow "allow_suspicious_variant_types = 1"
 echo "--- claiming it is not converting into it: an excluded branch keeps its own values ---"
@@ -220,6 +233,8 @@ read_column listed 'Array(Variant(Bool, UInt8))'
 
 echo "--- a date32 branch is excluded by design, so this stays rejected ---"
 rejected date32_utf8 'Variant(Int32, String)'
+echo "--- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---"
+rejected ts_utf8 'Variant(DateTime, String)'
 echo "--- two branches may never end up on one alternative ---"
 rejected bool_uint8 'Variant(UInt8, String)'
 echo "--- an ambiguous branch gets no alternative, so this stays rejected ---"

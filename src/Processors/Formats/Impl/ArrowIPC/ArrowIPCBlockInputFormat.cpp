@@ -699,9 +699,9 @@ bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & 
 /// outside 0/1 would then render as `true`. The reverse is allowed, since a `Bool` element only holds 0 or 1. A
 /// composite is never substituted, since `castColumn` pairs tuple fields by name while this walk keeps the decoded
 /// names, so a name-differing target field would be defaulted rather than rejected. `Date32` is never substituted,
-/// since whether a day number is range-checked, saturated or copied verbatim is decided by the decoder from its own
-/// hint, which this post-decode layer cannot supply; a decoded `UInt16` may still take `Date`, since that decode
-/// ignores every hint and every `UInt16` value is a valid day number.
+/// since the decoder decides from its own hint whether a day number is range-checked, saturated or copied verbatim,
+/// and this layer cannot supply one; a decoded `UInt16` may take `Date`, and a decoded `DateTime` a `DateTime64`,
+/// since those decodes read no hint and every value they produce is in range, while the narrowing reverse is refused.
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
 {
     const DataTypePtr to = ArrowIPC::stripHint(alternative);
@@ -743,9 +743,9 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
         return which.isUUID() || which.isString();
     if (from.isDecimal())
         return which.isDecimal();
-    /// Relabelling to another scale or time zone is what the flat column path does for the same request.
+    /// Another scale or time zone is what the flat column path returns for the same request.
     if (from.isDateTime())
-        return which.isDateTime();
+        return which.isDateTime() || which.isDateTime64();
     if (from.isDateTime64())
         return which.isDateTime64();
     if (from.isTime64())
@@ -822,7 +822,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
     }
 
     /// Every duplicate pairs one assigned name with one decoded name, so each pass drops at least one
-    /// assignment and the loop terminates; the worst case is no assignment, which is today's behaviour.
+    /// assignment and the loop terminates; the worst case is no assignment, which leaves the column as decoded.
     for (bool dropped = true; dropped;)
     {
         dropped = false;
