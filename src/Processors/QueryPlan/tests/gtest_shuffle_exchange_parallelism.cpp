@@ -333,3 +333,23 @@ TEST(ShuffleExchangeParallelism, BroadcastSerializesOncePerStream)
     EXPECT_EQ(stats.sinks, buckets);
     EXPECT_EQ(stats.rows_in_sinks, total_rows * buckets);
 }
+
+/// A keyless scatter spreads whole chunks round-robin over the buckets. It must keep the streams
+/// like the keyed scatter does, so the serialization runs on all of them.
+TEST(ShuffleExchangeParallelism, KeylessScatterKeepsBucketWorkSpreadOverStreams)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr size_t buckets = 3;
+    auto context = Context::createCopy(getContext().context);
+    auto settings = makeSettings(context, streams);
+    auto header = makeHeader();
+
+    ShuffleSendStep send(header, "exchange_0", Names{}, buckets);
+    auto stats = runSendingStep(send, streams, header, settings);
+
+    expectSpreadOverStreams(stats);
+    EXPECT_EQ(stats.serializers, streams * buckets);
+    EXPECT_EQ(stats.sinks, buckets);
+    EXPECT_EQ(stats.rows_in_sinks, total_rows);
+}

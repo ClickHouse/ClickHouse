@@ -8,7 +8,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/scatterByPartition.h>
-#include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Core/ColumnNumbers.h>
@@ -33,14 +32,26 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
 
     const String shard_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
+    /// Repartitioning creates num_streams * num_buckets connections in the pipeline.
+    /// Cap the number of streams to keep that number small.
+    const size_t max_scatter_streams = 16;
+    if (pipeline.getNumStreams() > max_scatter_streams)
+        pipeline.resize(max_scatter_streams);
+
+    /// Serialize on every stream ahead of the merge into the one sink of a bucket; otherwise that
+    /// sink would serialize its whole bucket alone.
+    auto serializer = [&](const SharedHeader & header) -> ProcessorPtr
+    {
+        return settings.exchange_lookup->createSerializer(header, exchange_id);
+    };
+
     if (key_names.empty())
     {
         /// No keys means no placement requirement: spread chunks round-robin. Start at this
         /// source's own bucket so parallel sources do not all begin with destination 0.
         UInt64 source_bucket = 0;
         tryParse<UInt64>(source_bucket, shard_id);
-        pipeline.resize(1);
-        pipeline.addTransform(ScatterByPartitionTransform::createRoundRobin(stream_header, num_buckets, source_bucket));
+        scatterRoundRobin(pipeline, num_buckets, source_bucket, serializer);
     }
     else
     {
@@ -48,19 +59,6 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         key_columns.reserve(key_names.size());
         for (const auto & key_name : key_names)
             key_columns.push_back(stream_header->getPositionByName(key_name));
-
-        /// Repartitioning creates num_streams * num_buckets connections in the pipeline.
-        /// Cap the number of streams to keep that number small.
-        const size_t max_scatter_streams = 16;
-        if (pipeline.getNumStreams() > max_scatter_streams)
-            pipeline.resize(max_scatter_streams);
-
-        /// Where the exchange kind serializes its data, the serialization runs on every stream ahead of
-        /// the merge into the one sink of a bucket; otherwise that sink would do it alone for the bucket.
-        auto serializer = [&](const SharedHeader & header) -> ProcessorPtr
-        {
-            return settings.exchange_lookup->createSerializer(header, exchange_id);
-        };
 
         /// Repartition the data so that stream i carries exactly the rows of bucket i.
         scatterByPartition(pipeline, num_buckets, key_columns, hash_cast_types, serializer);

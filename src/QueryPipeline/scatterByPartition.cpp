@@ -9,15 +9,20 @@
 namespace DB
 {
 
-void scatterByPartition(
+namespace
+{
+
+using ScatterFactory = std::function<std::shared_ptr<ScatterByPartitionTransform>(size_t stream)>;
+
+/// Shared by the keyed and the round-robin scatter: one scatter per stream from `make_scatter`,
+/// the optional transform on every scattered stream, one merge per partition.
+void scatterStreams(
     QueryPipelineBuilder & pipeline,
     size_t num_partitions,
-    const ColumnNumbers & key_columns,
-    const DataTypes & hash_cast_types,
+    const ScatterFactory & make_scatter,
     const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform)
 {
     const size_t num_streams = pipeline.getNumStreams();
-    auto stream_header = pipeline.getSharedHeader();
 
     /// Scatters and resizes are added in one transform call so that the intermediate
     /// num_streams * num_partitions port count does not become the pipe's max_parallel_streams
@@ -34,7 +39,7 @@ void scatterByPartition(
         partition_outputs.reserve(num_streams * num_partitions);
         for (size_t stream = 0; stream < num_streams; ++stream)
         {
-            auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, num_partitions, key_columns, hash_cast_types);
+            auto scatter = make_scatter(stream);
             connect(*ports[stream], scatter->getInputs().front());
             for (auto & output : scatter->getOutputs())
                 partition_outputs.push_back(&output);
@@ -73,6 +78,38 @@ void scatterByPartition(
     });
 
     chassert(pipeline.getNumStreams() == num_partitions);
+}
+
+}
+
+void scatterByPartition(
+    QueryPipelineBuilder & pipeline,
+    size_t num_partitions,
+    const ColumnNumbers & key_columns,
+    const DataTypes & hash_cast_types,
+    const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform)
+{
+    auto stream_header = pipeline.getSharedHeader();
+    auto make_scatter = [&](size_t)
+    {
+        return std::make_shared<ScatterByPartitionTransform>(stream_header, num_partitions, key_columns, hash_cast_types);
+    };
+    scatterStreams(pipeline, num_partitions, make_scatter, scattered_stream_transform);
+}
+
+void scatterRoundRobin(
+    QueryPipelineBuilder & pipeline,
+    size_t num_partitions,
+    size_t start_bucket,
+    const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform)
+{
+    auto stream_header = pipeline.getSharedHeader();
+    /// Every stream starts at another bucket, so the first chunks do not all go to the same one.
+    auto make_scatter = [&](size_t stream)
+    {
+        return ScatterByPartitionTransform::createRoundRobin(stream_header, num_partitions, start_bucket + stream);
+    };
+    scatterStreams(pipeline, num_partitions, make_scatter, scattered_stream_transform);
 }
 
 }

@@ -22,4 +22,13 @@ void scatterByPartition(
     const DataTypes & hash_cast_types = {},
     const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform = {});
 
+/// Spreads whole chunks round-robin over num_partitions streams: stream i carries the chunks of
+/// partition i. The scatter of input stream s starts at partition start_bucket + s.
+/// `scattered_stream_transform` works as in `scatterByPartition`.
+void scatterRoundRobin(
+    QueryPipelineBuilder & pipeline,
+    size_t num_partitions,
+    size_t start_bucket,
+    const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform = {});
+
 }
