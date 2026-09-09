@@ -130,10 +130,10 @@ You can configure multiple `<case>` sections.
 **Actions when conditions are met**:
 
 - If a data part matches a condition set, ClickHouse uses the specified compression method.
-- If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
+- If a data part matches multiple condition sets, ClickHouse uses the last matched condition set (the `<case>` sections are checked in order, and each matching one overrides the previous choice).
 
 <Note>
-If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
+If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` below 100 MB and `ZSTD(3)` at or above it. As for the `min_part_size` conditions above, the size is the one known when the codec has to be chosen, before the data is written: `0` for a freshly inserted part, and the size of the source parts for a merge or a mutation. A rewrite that shrinks its input, such as a `TTL DELETE` or a collapsing merge, is therefore classified by the input size and can produce a part below the threshold that is still `ZSTD(3)`.
 </Note>
 
 **Example**
@@ -144,7 +144,7 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```
@@ -476,6 +476,11 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 ## iceberg_background_schedule_pool_size {#iceberg_background_schedule_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.
+
+## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
+The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
@@ -931,12 +936,14 @@ SSL client/server configuration.
 
 Support for SSL is provided by the `libpoco` library. The available configuration options are explained in [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). Default values can be found in [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
 
+The files referenced by `certificateFile`, `privateKeyFile` and `caConfig` are reloaded without a restart when they change or on `SYSTEM RELOAD CONFIG`. New connections use the reloaded certificates, established connections are not affected.
+
 Keys for server/client settings:
 
 | Option                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Default Value                              |
 |-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
 | `cacheSessions` | Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                         | `false`                                    |
-| `caConfig` | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                            |
+| `caConfig` | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). Like `certificateFile` and `privateKeyFile`, the CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`. |                                            |
 | `certificateFile` | Path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.                                                                                                                                                                                                                                                                                                                                                |                                            |
 | `cipherList` | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
 | `disableProtocols` | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
@@ -988,7 +995,7 @@ Keys for server/client settings:
 
 ## openSSL.client.caConfig {#openssl.client.caconfig}
 
-<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). The CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`; new connections are verified against the reloaded certificates.
 
 ## openSSL.client.cacheSessions {#openssl.client.cachesessions}
 
@@ -1044,7 +1051,7 @@ Keys for server/client settings:
 
 ## openSSL.server.caConfig {#openssl.server.caconfig}
 
-<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). The CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`; new connections are verified against the reloaded certificates.
 
 ## openSSL.server.cacheSessions {#openssl.server.cachesessions}
 
@@ -1246,9 +1253,9 @@ Settings:
 - `port` – Port for `endpoint`.
 - `metrics` – Expose metrics from the [system.metrics](/reference/system-tables/metrics) table.
 - `events` – Expose metrics from the [system.events](/reference/system-tables/events) table.
-- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) table. Key-value metrics (those broken down per CPU core, block device, network interface, or disk) are exposed as one sample per key, carrying the key as a label: `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"}`. The [`asynchronous_metrics_key_values_mode`](/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) server setting exposes them under their pre-26.8 mangled names instead (`ClickHouseAsyncMetrics_BlockReadBytes_sda`), or both ways at once.
 - `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/reference/system-tables/errors) as well.
-- `labels` – Constant labels added to every exposed metric. Each child element defines one label: the element name is the label name (must match `[a-zA-Z_][a-zA-Z0-9_]*`) and the element value is the label value. Label values support standard config substitutions such as the `from_env` attribute. A label name is rejected when it starts with `__` (reserved by Prometheus), or when it would collide with a label this endpoint already writes for one of its enabled sections — otherwise a sample would carry the same label name twice. The reserved set therefore follows the endpoint's active export surface: `le` when `histograms` is enabled; the `ClickHouse_Info` labels (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) when `info` is enabled; and any label used by an exposed histogram or dimensional metric family (for example `group`, `direction`, or `operation_type`) when `histograms`/`dimensional_metrics` is enabled. Because it depends on what the endpoint actually exposes, a name can be valid on one endpoint but rejected on another — for example a Keeper `keeper_metrics_only` endpoint exposes only the `keeper_*` families, so labels used only by server families are accepted there.
+- `labels` – Constant labels added to every exposed metric. Each child element defines one label: the element name is the label name (must match `[a-zA-Z_][a-zA-Z0-9_]*`) and the element value is the label value. Label values support standard config substitutions such as the `from_env` attribute. A label name is rejected when it starts with `__` (reserved by Prometheus), or when it would collide with a label this endpoint already writes for one of its enabled sections — otherwise a sample would carry the same label name twice. The reserved set therefore follows the endpoint's active export surface: `le` when `histograms` is enabled; the `ClickHouse_Info` labels (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) when `info` is enabled; the key labels of the key-value asynchronous metrics (`channel`, `cpu`, `device`, `disk`, `interface`, `mc`, `sensor`) when `asynchronous_metrics` is enabled and they are published in the key-value form, which the [`asynchronous_metrics_key_values_mode`](/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) server setting decides; and any label used by an exposed histogram or dimensional metric family (for example `group`, `direction`, or `operation_type`) when `histograms`/`dimensional_metrics` is enabled. Because it depends on what the endpoint actually exposes, a name can be valid on one endpoint but rejected on another — for example a Keeper `keeper_metrics_only` endpoint exposes only the `keeper_*` families, so labels used only by server families are accepted there. The constant labels are validated against the same rule when a configuration is loaded, including on `SYSTEM RELOAD CONFIG`: a reload that would make a constant label collide - by adding such a label, or by changing `asynchronous_metrics_key_values_mode` so that the key labels start being written - is rejected as a whole before it takes effect, instead of exposing the same label twice. An accepted change of the mode re-creates the endpoints that expose the metrics, so that the new form and the labels of the same configuration are published together.
 
 **Example**
 
