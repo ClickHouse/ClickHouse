@@ -74,6 +74,7 @@ private:
         };
 
         std::vector<ConvertedColumn> converted_columns;
+        converted_columns.reserve(arguments.size());
         bool has_const_column = false;
         for (const auto & argument : arguments)
         {
@@ -88,7 +89,7 @@ private:
             }
             else
             {
-                converted_columns.push_back({std::move(converted_col), false});
+                converted_columns.push_back({converted_col->convertToFullColumnIfConst(), false});
             }
         }
 
@@ -136,29 +137,33 @@ private:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t best_arg = 0;
+            size_t best_row = converted_columns[0].is_const ? 0 : row_num;
             for (size_t arg = 1; arg < converted_columns.size(); ++arg)
             {
                 const auto & current = converted_columns[arg];
-                const auto & best = converted_columns[best_arg];
                 const size_t current_row = current.is_const ? 0 : row_num;
-                const size_t best_row = best.is_const ? 0 : row_num;
 
                 if constexpr (kind == LeastGreatest::Least)
                 {
-                    auto cmp_result = current.column->compareAt(current_row, best_row, *best.column, 1);
+                    auto cmp_result = current.column->compareAt(current_row, best_row, *converted_columns[best_arg].column, 1);
                     if (cmp_result < 0)
+                    {
                         best_arg = arg;
+                        best_row = current_row;
+                    }
                 }
                 else
                 {
-                    auto cmp_result = current.column->compareAt(current_row, best_row, *best.column, -1);
+                    auto cmp_result = current.column->compareAt(current_row, best_row, *converted_columns[best_arg].column, -1);
                     if (cmp_result > 0)
+                    {
                         best_arg = arg;
+                        best_row = current_row;
+                    }
                 }
             }
 
-            const auto & best = converted_columns[best_arg];
-            result_column->insertFrom(*best.column, best.is_const ? 0 : row_num);
+            result_column->insertFrom(*converted_columns[best_arg].column, best_row);
         }
 
         return result_column;
