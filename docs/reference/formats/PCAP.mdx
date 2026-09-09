@@ -26,6 +26,14 @@ Parsing is performed with the `libtins` library, which reads the capture
 container through `libpcap`. Only reading of capture files is supported; live
 capture is not.
 
+<Note>
+`pcapng` support is limited to the subset that `libpcap` accepts: every
+interface description block in the file must declare the same link type and
+the same snapshot length. A capture that mixes interfaces with different link
+types or snapshot lengths - for example one produced by `dumpcap -i eth0 -i
+lo` - is rejected while the file is being opened.
+</Note>
+
 <Info>
 A capture file is a sequence of packet records. Each record stores the
 capture timestamp, the number of bytes that were actually saved

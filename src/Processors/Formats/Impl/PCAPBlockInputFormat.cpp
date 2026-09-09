@@ -692,6 +692,14 @@ Parsing is performed with the `libtins` library, which reads the capture
 container through `libpcap`. Only reading of capture files is supported; live
 capture is not.
 
+:::note
+`pcapng` support is limited to the subset that `libpcap` accepts: every
+interface description block in the file must declare the same link type and
+the same snapshot length. A capture that mixes interfaces with different link
+types or snapshot lengths - for example one produced by `dumpcap -i eth0 -i
+lo` - is rejected while the file is being opened.
+:::
+
 :::info
 A capture file is a sequence of packet records. Each record stores the
 capture timestamp, the number of bytes that were actually saved
@@ -738,9 +746,10 @@ The `PCAP` format produces the following columns:
 | `payload` | `String` | Transport-layer payload bytes |
 | `raw` | `String` | The full captured frame, starting at the link layer |
 
-All layer-specific columns are `Nullable`, so packets that do not contain a
-given layer (for example a non-IP packet, or a UDP packet that has no TCP
-fields) still produce a row.
+Layer-specific columns are `Nullable`, except `eth_type` and `ip_protocol`.
+Those two low-cardinality string columns use an empty string when their layer
+is absent. Packets that do not contain a given layer (for example a non-IP
+packet, or a UDP packet that has no TCP fields) still produce a row.
 
 The transport-layer payload is a suffix of the raw frame, so its position in
 `raw` is `capture_length - payload_length`, and
