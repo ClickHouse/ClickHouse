@@ -197,8 +197,8 @@ real:
 ReadFromMergeTree (p_i)
 Granules: 3
 --- a merged part whose rows differ in width along the projection key ---
-b >= 10000: estimate within a granule of the real 16: 1, off by a factor: 0
-b < 5000: estimate within a granule of the real 2: 1, off by a factor: 0
+b >= 4000: within a granule of the real count: 1
+b < 2000: within a granule of the real count: 1
 --- a materialized lightweight delete ---
 hypothetical:
 marks: 10

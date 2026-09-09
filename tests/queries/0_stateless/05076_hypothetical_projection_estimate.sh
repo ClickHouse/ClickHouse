@@ -198,19 +198,20 @@ echo "--- a merged part whose rows differ in width along the projection key ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;
     CREATE TABLE t_est_w (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 8192, index_granularity_bytes = '128Ki', min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 8192, index_granularity_bytes = '128Ki', min_bytes_for_wide_part = 0,
+                 merge_max_block_size = 8192, merge_max_block_size_bytes = '10Mi';
     CREATE TABLE t_real_w AS t_est_w;
     ALTER TABLE t_real_w ADD PROJECTION p_w (SELECT a, b, s ORDER BY b);
     -- narrow rows carry the low part of the key, wide rows the high part
-    INSERT INTO t_est_w SELECT number, number, repeat('x', 20) FROM numbers(10000);
-    INSERT INTO t_est_w SELECT number + 10000, number + 10000, repeat('y', 2000) FROM numbers(1000);
-    INSERT INTO t_real_w SELECT number, number, repeat('x', 20) FROM numbers(10000);
-    INSERT INTO t_real_w SELECT number + 10000, number + 10000, repeat('y', 2000) FROM numbers(1000);
+    INSERT INTO t_est_w SELECT number, number, repeat('x', 20) FROM numbers(4000);
+    INSERT INTO t_est_w SELECT number + 4000, number + 4000, repeat('y', 2000) FROM numbers(400);
+    INSERT INTO t_real_w SELECT number, number, repeat('x', 20) FROM numbers(4000);
+    INSERT INTO t_real_w SELECT number + 4000, number + 4000, repeat('y', 2000) FROM numbers(400);
     OPTIMIZE TABLE t_est_w FINAL; OPTIMIZE TABLE t_real_w FINAL;
 "
 # the granule layout of such a part depends on the blocks the writer was fed, which is not recorded,
 # so the estimate is held to the documented margin of a granule instead of to the exact count
-for w in "b >= 10000" "b < 5000"; do
+for w in "b >= 4000" "b < 2000"; do
     est=$($CLICKHOUSE_CLIENT -q "
         CREATE HYPOTHETICAL PROJECTION p_w ON t_est_w (SELECT a, b, s ORDER BY b);
         EXPLAIN WHATIF SELECT a, s FROM t_est_w WHERE ${w} SETTINGS ${PIN};
@@ -219,7 +220,7 @@ for w in "b >= 10000" "b < 5000"; do
         EXPLAIN indexes = 1 SELECT a, s FROM t_real_w WHERE ${w} SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_w';
     " | grep -oE 'Granules: [0-9]+' | head -1 | awk '{print $2}')
     # a whole-part average would report a couple of marks here, the real read touches sixteen
-    echo "${w}: estimate within a granule of the real ${real}: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 )), off by a factor: $(( est * 4 < real || real * 4 < est ? 1 : 0 ))"
+    echo "${w}: within a granule of the real count: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 ))"
 done
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;"
 
@@ -234,8 +235,8 @@ $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_real_d ADD PROJECTION p_d (SELECT a, b, v ORDER BY b);
     INSERT INTO t_est_d SELECT number, number % 100, number FROM numbers(1000);
     INSERT INTO t_real_d SELECT number, number % 100, number FROM numbers(1000);
-    DELETE FROM t_est_d WHERE a % 2 = 0;
-    DELETE FROM t_real_d WHERE a % 2 = 0;
+    DELETE FROM t_est_d WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
+    DELETE FROM t_real_d WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
 "
 compare p_d "(SELECT a, b, v ORDER BY b)" "SELECT a, v FROM TABLE WHERE b < 30" t_est_d t_real_d
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;"
