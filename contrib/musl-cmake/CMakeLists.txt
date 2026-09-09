@@ -1,9 +1,9 @@
 set(MUSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl")
 
 # MUSL_ARCH is musl's name for the target architecture (the arch/<MUSL_ARCH>
-# directory in the musl sources), set by cmake/linux/toolchain-*-musl.cmake.
+# directory in the musl sources), set by the cmake/linux/toolchain-*.cmake files.
 if (NOT MUSL_ARCH)
-    message(FATAL_ERROR "Building musl from sources requires one of the cmake/linux/toolchain-*-musl.cmake toolchains")
+    message(FATAL_ERROR "Building musl from sources requires one of the cmake/linux toolchain files")
 endif()
 
 enable_language(ASM)
@@ -1666,6 +1666,11 @@ target_compile_options(musl PRIVATE
     -fno-stack-protector
     -fomit-frame-pointer
 
+    # Never instrument libc: its early-init code (__init_libc, CRT) runs before
+    # sanitizer runtimes are initialized, and sanitizers hook the public libc
+    # functions with interceptors instead (same model as with uninstrumented glibc).
+    -fno-sanitize=all
+
     # Unwind tables: required for C++ exceptions and stack traces through musl.
     -funwind-tables
     -fasynchronous-unwind-tables
@@ -1678,6 +1683,23 @@ target_compile_options(musl PRIVATE
     -Werror=pointer-sign
     -Werror=pointer-arith
 )
+
+if (ENABLE_XRAY)
+    # Emit XRay sleds in libc too, so `SYSTEM INSTRUMENT` can patch musl
+    # functions. Sleds are inert nops until patched, so early-init code is
+    # unaffected (unlike sanitizers, which stay off above). The dispatch
+    # handler's thread-local reentrancy guard makes patching functions the
+    # handler itself calls safe. CRT objects stay uninstrumented: rcrt1
+    # runs before static-PIE self-relocation. Note this only covers C
+    # sources - the hot asm routines (memcpy and friends) have no sleds.
+    # Flags mirror cmake/xray_instrumentation.cmake, which runs only after
+    # contrib is configured.
+    target_compile_options(musl PRIVATE
+        -fxray-instrument
+        -fxray-modes=none
+        -fxray-instrumentation-bundle=function
+    )
+endif ()
 
 # Suppress warnings expected in musl's own code
 target_compile_options(musl PRIVATE
@@ -1700,14 +1722,8 @@ target_compile_definitions(musl PUBLIC
     -D__MUSL__=1
 )
 
-# CRT objects (startup/shutdown code), linked into every executable in the canonical
-# order crt1.o, crti.o, [program objects and libraries], crtn.o: crti/crtn provide the
-# prologue/epilogue of the `.init`/`.fini` sections and must wrap every other
-# contribution to them. CMake's Ninja generator always emits $<TARGET_OBJECTS:...>
-# before the target's own objects, so the order cannot be expressed through source
-# lists; instead the objects are copied to stable paths below and wired into the link
-# line in cmake/linux/default_libs.cmake (crt1/crti through CMAKE_EXE_LINKER_FLAGS,
-# which precede all objects, and crtn through DEFAULT_LIBS, which follow all libraries).
+# CRT objects (startup/shutdown code), linked into every executable as
+# crt1.o -> crti.o -> [program objects] -> crtn.o (see clickhouse_add_executable).
 
 add_library(musl-crt1 OBJECT "${MUSL_SOURCE_DIR}/crt/crt1.c")
 target_include_directories(musl-crt1 PRIVATE
@@ -1721,9 +1737,30 @@ target_compile_options(musl-crt1 PRIVATE
     -std=c99
     -ffreestanding
     -fno-stack-protector
+    -fno-sanitize=all
     -fno-builtin
 )
 add_dependencies(musl-crt1 musl-headers)
+
+# rcrt1.o: self-relocating startup for static-PIE executables (sanitizer and
+# other PIE builds); it inlines ldso/dlstart.c to apply its own relocations.
+add_library(musl-rcrt1 OBJECT "${MUSL_SOURCE_DIR}/crt/rcrt1.c")
+target_include_directories(musl-rcrt1 PRIVATE
+    # src/include first: provides features.h with the 'hidden' and 'weak' macros
+    "${MUSL_SOURCE_DIR}/src/include"
+    "${MUSL_SOURCE_DIR}/src/internal"
+    "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
+    "${MUSL_GENERATED_DIR}"
+)
+target_compile_options(musl-rcrt1 PRIVATE
+    -std=c99
+    -ffreestanding
+    -fno-stack-protector
+    -fno-sanitize=all
+    -fno-builtin
+    -fPIC
+)
+add_dependencies(musl-rcrt1 musl-headers)
 
 add_library(musl-crti OBJECT "${MUSL_SOURCE_DIR}/crt/${MUSL_ARCH}/crti.s")
 set_source_files_properties(
@@ -1738,30 +1775,3 @@ set_source_files_properties(
     PROPERTIES LANGUAGE ASM
 )
 target_compile_options(musl-crtn PRIVATE -Qunused-arguments -Wa,--noexecstack)
-
-# The CRT object libraries must not participate in the global link interface: they
-# inherit a (weak) dependency back on `musl` through `global-group`, and together with
-# the `musl` -> `musl-crt` dependency below that would form a dependency cycle
-# involving non-static-library targets, which CMake rejects. They also don't link
-# anything — they only compile standalone startup objects.
-set_target_properties(musl-crt1 musl-crti musl-crtn PROPERTIES LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
-
-# Copy the CRT objects to stable paths so that the link flags in
-# cmake/linux/default_libs.cmake can reference them. Every executable links the `musl`
-# library, and `musl` depends on `musl-crt`, so the copies exist before any link runs.
-foreach (crt crt1 crti crtn)
-    add_custom_command(
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${crt}.o"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_OBJECTS:musl-${crt}>" "${CMAKE_CURRENT_BINARY_DIR}/${crt}.o"
-        DEPENDS musl-${crt} "$<TARGET_OBJECTS:musl-${crt}>"
-        COMMENT "Copying ${crt}.o"
-        VERBATIM
-    )
-endforeach ()
-add_custom_target(musl-crt
-    DEPENDS
-        "${CMAKE_CURRENT_BINARY_DIR}/crt1.o"
-        "${CMAKE_CURRENT_BINARY_DIR}/crti.o"
-        "${CMAKE_CURRENT_BINARY_DIR}/crtn.o"
-)
-add_dependencies(musl musl-crt)

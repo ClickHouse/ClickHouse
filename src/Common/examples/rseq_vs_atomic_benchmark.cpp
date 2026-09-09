@@ -210,13 +210,14 @@ int mainEntryExampleRSeqVsAtomicBenchmark(int argc, char ** argv)
         return 1;
 
 #if USE_LIBRSEQ
-    /// With glibc >= 2.35 every thread is registered by libc; librseq only adopts that
-    /// registration here, so one process-wide init is enough for the workers below.
-    /// A positive `rseq_size` alone is not enough: the kernel uses negative sentinels in
-    /// `cpu_id` (-1 UNINITIALIZED, -2 REGISTRATION_FAILED), and production `sched_getcpu`
-    /// (base/glibc-compatibility/musl/sched_getcpu.c) rejects them before taking the rseq
-    /// fast path — so also require an initialized `cpu_id`, or the "rseq" timing would not
-    /// measure a usable rseq fast path.
+    /// Every thread is registered by libc - glibc >= 2.35, and our musl - so librseq only
+    /// adopts that registration here and one process-wide init covers the workers below.
+    /// It finds the registration through `dlsym(RTLD_NEXT, "__rseq_offset")`, which yields
+    /// nothing in a static binary; there librseq registers an area of its own instead and
+    /// gets `EBUSY`, so this reports rseq as unsupported rather than mismeasuring it.
+    /// A positive `rseq_size` alone is not enough either: the kernel uses negative sentinels
+    /// in `cpu_id` (-1 UNINITIALIZED, -2 REGISTRATION_FAILED), and `sched_getcpu` rejects
+    /// them before taking the rseq fast path — so also require an initialized `cpu_id`.
     const bool rseq_supported = rseq_init() == RSEQ_INIT_OK && rseq_size > 0 && rseq_current_cpu_raw() >= 0;
 #else
     const bool rseq_supported = false;

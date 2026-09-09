@@ -41,7 +41,6 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.AMD_FREEBSD: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/freebsd/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.PPC64LE: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-ppc64le.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.AMD_COMPAT: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DX86_ARCH_LEVEL=1",
-    BuildTypes.AMD_MUSL: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64-musl.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.RISCV64: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-riscv64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.S390X: f"        cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-s390x.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.LOONGARCH64: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-loongarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_BUZZHOUSE=1",
@@ -626,6 +625,76 @@ def main():
             )
         )
         res = results[-1].is_ok()
+
+    # These build types publish their self-extracting binaries to
+    # builds.clickhouse.com (see build_master_head_hook.py): universal.sh routes
+    # modern hosts to the release artifacts and older CPUs to amd64compat /
+    # aarch64v80compat.
+    published_static_builds = (
+        BuildTypes.AMD_RELEASE,
+        BuildTypes.ARM_RELEASE,
+        BuildTypes.AMD_COMPAT,
+        BuildTypes.ARM_V80COMPAT,
+    )
+
+    if res and build_type in published_static_builds:
+        # Published binaries must be fully static: no dynamic loader (PT_INTERP)
+        # and no shared library dependencies (DT_NEEDED). The self-extracting
+        # wrapper starts with the decompressor ELF, so the same assertions
+        # cover the decompressor as well.
+        results.append(
+            Result.from_commands_run(
+                name="not dynamically linked",
+                command=[
+                    f'test "$(readelf -l {build_dir_normalized}/programs/clickhouse | grep -c INTERP)" = 0',
+                    f"test \"$(readelf -d {build_dir_normalized}/programs/clickhouse 2>/dev/null | grep -c '(NEEDED)')\" = 0",
+                    f'test "$(readelf -l {build_dir_normalized}/programs/self-extracting/clickhouse-stripped | grep -c INTERP)" = 0',
+                    f"test \"$(readelf -d {build_dir_normalized}/programs/self-extracting/clickhouse-stripped 2>/dev/null | grep -c '(NEEDED)')\" = 0",
+                ],
+            )
+        )
+        res = results[-1].is_ok()
+
+    if res and build_type in published_static_builds:
+        # Smoke-test the exact artifact universal.sh downloads: the
+        # self-extracting clickhouse-stripped (uploaded as the public
+        # "clickhouse"). Run a copy - the wrapper replaces itself with the
+        # decompressed binary on first run, and the original file must stay
+        # intact for the artifact upload.
+        #
+        # Execute only when the host matches the target architecture: amd
+        # builds cross-compile on aarch64 runners, where the wrapper would run
+        # under binfmt qemu emulation - baseline x86-64 (amd_compat) survives
+        # it, but the x86-64-v3 code in amd_release hits unsupported
+        # instructions (SIGILL). amd_compat is the exception: it runs under
+        # the emulation, and no later job consumes its artifact, so skipping
+        # here would leave the published amd64compat wrapper entirely
+        # unexecuted in CI. amd_release needs no such exception - its binary
+        # is exercised by every amd test lane.
+        target_is_arm = "amd" not in build_type
+        if target_is_arm == Utils.is_arm() or build_type == BuildTypes.AMD_COMPAT:
+            smoke_dir = f"{temp_dir}/self_extracting_smoke"
+            results.append(
+                Result.from_commands_run(
+                    name="self-extracting binary smoke test",
+                    command=[
+                        f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
+                        f"cp {build_dir_normalized}/programs/self-extracting/clickhouse-stripped {smoke_dir}/clickhouse",
+                        f"{smoke_dir}/clickhouse --version",
+                        f'{smoke_dir}/clickhouse local --query "SELECT 1"',
+                        f"rm -rf {smoke_dir}",
+                    ],
+                )
+            )
+            res = results[-1].is_ok()
+        else:
+            results.append(
+                Result(
+                    name="self-extracting binary smoke test",
+                    status=Result.Status.SKIPPED,
+                    info="host architecture does not match the target - cannot execute the wrapper",
+                )
+            )
 
     Result.create_from(results=results, files=files).complete_job()
 
