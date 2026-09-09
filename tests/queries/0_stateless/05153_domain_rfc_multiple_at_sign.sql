@@ -20,3 +20,7 @@ SELECT domainRFC('http://.com/') FORMAT CSV;
 SELECT domain('http://user@.com/') FORMAT CSV;
 SELECT domain('.com') FORMAT CSV;
 SELECT domain('http://.com/') FORMAT CSV;
+-- Two (or more) leading dots must be rejected too, not just a host that is exactly ".something".
+SELECT domainRFC('http://..com/') FORMAT CSV;
+SELECT domainRFC('http://user@..com/') FORMAT CSV;
+SELECT domain('http://..com/') FORMAT CSV;
