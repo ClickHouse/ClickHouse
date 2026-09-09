@@ -4,6 +4,11 @@
 -- EmbeddedRocksDB used to back up only table metadata, silently dropping all data on restore.
 -- See https://github.com/ClickHouse/ClickHouse/issues/109213
 
+-- The cases below drop a table and then restore into the same name. A DROP of a table that holds
+-- data on disk is silently ignored when this probability is non-zero, which the stress runner sets,
+-- and the following RESTORE would then take the already-exists path instead.
+SET ignore_drop_queries_probability = 0;
+
 DROP TABLE IF EXISTS 04401_rocksdb SYNC;
 
 CREATE TABLE 04401_rocksdb (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
