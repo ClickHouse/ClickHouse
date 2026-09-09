@@ -116,6 +116,28 @@ TEST(CubeRollupRepeatedKeysSerialization, RepeatedKeysBelowMinVersionThrow)
     EXPECT_THROW(serializeStep(rollup, too_old), Exception);
 }
 
+/// A payload whose positions do not reference every deduplicated key is not one the sender could
+/// have built - the positions come from the GROUP BY list, where every key appears at least once.
+/// Executing it anyway would silently drop the unreferenced key from every grouping set, so the
+/// deserializer must reject the stream. The constructor does not validate, which is what lets this
+/// test serialize the impossible payload in the first place.
+TEST(CubeRollupRepeatedKeysSerialization, PositionsNotCoveringEveryKeyAreRejected)
+{
+    tryRegisterAggregateFunctions();
+    /// Two keys, but every position points at the first: key `b` is never referenced.
+    const std::vector<size_t> not_covering{0, 0};
+
+    CubeStep cube(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, not_covering);
+    const String cube_bytes = serializeStep(cube, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    EXPECT_THROW(
+        deserializeStep(&CubeStep::deserialize, cube_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
+
+    RollupStep rollup(makeHeader(), makeParams(), /*final=*/true, /*use_nulls=*/false, not_covering);
+    const String rollup_bytes = serializeStep(rollup, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    EXPECT_THROW(
+        deserializeStep(&RollupStep::deserialize, rollup_bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), Exception);
+}
+
 /// The refusal is keyed on the payload, not on the version, so a plan whose GROUP BY list repeats
 /// nothing still ships to that same older peer.
 TEST(CubeRollupRepeatedKeysSerialization, WithoutRepeatedKeysOlderPeersStillAccepted)

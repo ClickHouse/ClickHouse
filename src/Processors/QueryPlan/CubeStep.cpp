@@ -241,6 +241,8 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
         UInt64 num_positions = 0;
         readVarUInt(num_positions, ctx.in);
         key_positions.resize(num_positions);
+        std::vector<bool> key_is_referenced(keys.size(), false);
+        size_t keys_referenced = 0;
         for (auto & position : key_positions)
         {
             UInt64 value = 0;
@@ -248,7 +250,25 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
             if (value >= keys.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Grouping key position {} is out of range", value);
             position = value;
+            if (!key_is_referenced[value])
+            {
+                key_is_referenced[value] = true;
+                ++keys_referenced;
+            }
         }
+
+        /// The positions say where each element of the GROUP BY list refers into the deduplicated
+        /// key list, so by construction every key is referenced at least once. A payload that skips
+        /// a key is not a plan the sender could have built, and executing it would silently drop
+        /// that key from every grouping set instead of failing here.
+        if (!key_positions.empty() && keys_referenced != keys.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Grouping key positions must reference every key at least once "
+                "({} of {} keys referenced by {} positions)",
+                keys_referenced,
+                keys.size(),
+                key_positions.size());
     }
 
     return std::make_unique<CubeStep>(ctx.input_headers.front(), std::move(params), final, use_nulls, std::move(key_positions));
