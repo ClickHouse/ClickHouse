@@ -3160,6 +3160,8 @@ Possible values:
 - 0 — The column name is substituted with the alias.
 - 1 — The column name is not substituted with the alias.
 
+If the column name is ambiguous between joined tables and an alias with the same name exists, the alias is used.
+
 **Example**
 
 The difference between enabled and disabled:

@@ -1196,6 +1196,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         }
         else if (!prefer_left_table)
         {
+            if (scope.ambiguous_join_tree_identifier)
+            {
+                *scope.ambiguous_join_tree_identifier = true;
+                return {};
+            }
+
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "JOIN {} ambiguous identifier '{}'. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
@@ -1695,6 +1701,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
+        }
+        else if (scope.ambiguous_join_tree_identifier)
+        {
+            *scope.ambiguous_join_tree_identifier = true;
+            return {};
         }
         else
         {

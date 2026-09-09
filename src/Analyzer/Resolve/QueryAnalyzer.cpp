@@ -1553,14 +1553,42 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         if (unlikely(prefer_column_name_to_alias))
         {
+            bool can_check_aliases = identifier_resolve_context.allow_to_check_aliases && !already_in_resolve_process;
+            bool ambiguous_in_join_tree = false;
+
             if (identifier_resolve_context.allow_to_check_join_tree)
             {
+                /** A column name that is ambiguous between joined tables but also names an alias resolves to the alias,
+                  * as the old analyzer did (`JoinToSubqueryTransformVisitor`, `allow_ambiguous = got_alias`).
+                  * Example: SELECT t1.x AS x FROM t1, t2, t3 WHERE ... ORDER BY x
+                  */
+                bool alias_can_take_over = can_check_aliases
+                    && identifier_lookup.isExpressionLookup()
+                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+
+                auto * saved_ambiguous_join_tree_identifier = scope.ambiguous_join_tree_identifier;
+                scope.ambiguous_join_tree_identifier = alias_can_take_over ? &ambiguous_in_join_tree : nullptr;
+                SCOPE_EXIT({ scope.ambiguous_join_tree_identifier = saved_ambiguous_join_tree_identifier; });
+
                 resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+
+                /// Ambiguity in a nested JOIN leaves the other side's column as the only candidate; it must not win.
+                if (ambiguous_in_join_tree)
+                    resolve_result = {};
             }
 
-            if (identifier_resolve_context.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
+            if (can_check_aliases && !resolve_result.resolved_identifier)
             {
                 resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_context);
+            }
+
+            /// No alias took over: resolve from the join tree again to throw the original `AMBIGUOUS_IDENTIFIER`.
+            if (ambiguous_in_join_tree && !resolve_result.resolved_identifier)
+            {
+                auto * saved_ambiguous_join_tree_identifier = scope.ambiguous_join_tree_identifier;
+                scope.ambiguous_join_tree_identifier = nullptr;
+                SCOPE_EXIT({ scope.ambiguous_join_tree_identifier = saved_ambiguous_join_tree_identifier; });
+                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
             }
         }
         else
