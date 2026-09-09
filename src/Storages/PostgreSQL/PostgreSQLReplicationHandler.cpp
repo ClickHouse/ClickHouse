@@ -1071,22 +1071,31 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
     if (tables_list.empty())
         return result;
 
+    /// `fetchRequiredTables` wrote every element through `doubleQuoteWithSchema`, so the table has to be
+    /// looked up by that spelling: the raw name does not occur in the list once a quote in it is doubled
+    /// or a schema is quoted separately.
+    const String quoted_table_name = doubleQuoteWithSchema(table_name);
+
     size_t table_pos = 0;
     while (true)
     {
-        table_pos = tables_list.find(table_name, table_pos + 1);
+        table_pos = tables_list.find(quoted_table_name, table_pos);
         if (table_pos == std::string::npos)
             return result;
-        if (table_pos + table_name.length() + 1 > tables_list.length())
-            return result;
-        if (tables_list[table_pos + table_name.length() + 1] == '(' ||
-            tables_list[table_pos + table_name.length() + 1] == ',' ||
-            tables_list[table_pos + table_name.length() + 1] == ' '
-        )
+
+        const size_t after = table_pos + quoted_table_name.length();
+        /// A whole element, not a suffix of a longer one: the match starts the list or follows a
+        /// separator, and ends the list or is followed by its column list or the next element.
+        const bool starts_element = table_pos == 0 || tables_list[table_pos - 1] == ',' || tables_list[table_pos - 1] == ' ';
+        const bool ends_element = after >= tables_list.length() || tables_list[after] == '('
+            || tables_list[after] == ',' || tables_list[after] == ' ';
+        if (starts_element && ends_element)
             break;
+
+        ++table_pos;
     }
 
-    String column_list = tables_list.substr(table_pos + table_name.length() + 1);
+    String column_list = tables_list.substr(table_pos + quoted_table_name.length());
     boost::trim(column_list);
     if (column_list.empty() || column_list[0] != '(')
         return result;

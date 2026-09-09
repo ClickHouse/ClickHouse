@@ -937,6 +937,8 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
         "pg_inj_nul",
     ]
     cols_table = "pg_inj_cols"
+    cols_quoted_name_table = 'pg_inj_cols_q"n'
+    quoted_name = '"' + cols_quoted_name_table.replace('"', '""') + '"'
     try:
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
@@ -1003,11 +1005,54 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
         assert instance.query(
             f'SELECT key, `a"b` FROM `test_database`.`{cols_table}` ORDER BY key'
         ) == "".join(f"{i}\t{100 + i}\n" for i in range(5))
+
+        # 6. The same allowed-columns list is keyed by the table, and the list is written with the
+        #    relation name quoted, so the lookup has to use that spelling too. Resolving to "no
+        #    restriction" is not a safe default: the nested table would take `extra` while the
+        #    publication keeps the requested subset, and a Relation message short of a column without a
+        #    default makes the consumer drop the table from replication.
+        pg_manager.drop_materialized_db()
+        cursor.execute(f"DROP TABLE IF EXISTS {quoted_name}")
+        cursor.execute(
+            f"CREATE TABLE {quoted_name} "
+            "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
+        )
+        cursor.execute(
+            f"INSERT INTO {quoted_name} SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i"
+        )
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{cols_quoted_name_table}(key, val)'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, cols_quoted_name_table)
+        wait_for_rows(f"`test_database`.`{cols_quoted_name_table}`", 5)
+
+        replicated = sorted(
+            instance.query(
+                "SELECT name FROM system.columns WHERE database = 'test_database'"
+                f" AND table = '{cols_quoted_name_table}'"
+            ).splitlines()
+        )
+        assert replicated == ["_sign", "_version", "key", "val"], (
+            "the requested column subset was not applied to a relation whose name carries a quote, so "
+            f"the nested table does not match the publication: {replicated}"
+        )
+
+        cursor.execute(f"INSERT INTO {quoted_name} VALUES (5, 105, 905)")
+        # Ongoing replication is where a nested table wider than the publication stops: the snapshot
+        # rows are already there, and the row inserted afterwards is the one that never arrives.
+        wait_for_rows(f"`test_database`.`{cols_quoted_name_table}`", 6)
     finally:
         for ch_table in ch_tables:
             instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
         pg_manager.drop_materialized_db()
         cursor.execute(f'DROP TABLE IF EXISTS "{cols_table}"')
+        cursor.execute(f"DROP TABLE IF EXISTS {quoted_name}")
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
