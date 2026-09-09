@@ -20,6 +20,7 @@
 #include <Common/logger_useful.h>
 
 #include <sys/socket.h>
+#include <unistd.h>
 
 
 namespace DB
@@ -110,16 +111,16 @@ void PostgreSQLSource<T>::finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx
 /// Wakes a read parked in the client library, which waits on the socket with no deadline of its own.
 /// `shutdown` and not `close` keeps the descriptor valid for the thread still reading it.
 template<typename T>
-void PostgreSQLSource<T>::interruptRead(const std::shared_ptr<T> & tx_to_interrupt) noexcept
+void PostgreSQLSource<T>::interruptRead(int fd) noexcept
 {
+    if (fd < 0 || connection_torn_down.exchange(true))
+        return;
+
+    ::shutdown(fd, SHUT_RDWR);
+
     try
     {
-        const int fd = tx_to_interrupt->conn().sock();
-        if (fd < 0 || connection_torn_down.exchange(true))
-            return;
-
-        LOG_DEBUG(getLogger("PostgreSQLSource"), "Shutting the connection down to interrupt the read");
-        ::shutdown(fd, SHUT_RDWR);
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "Shut the connection down to interrupt the read");
     }
     catch (...)
     {
@@ -157,6 +158,8 @@ void PostgreSQLSource<T>::onStart()
 
         std::lock_guard lock(tx_mutex);
         tx = std::move(new_tx);
+        /// Taken on the thread that owns the connection, so it cannot be a descriptor being closed.
+        interrupt_fd = ::dup(tx->conn().sock());
     }
 
     /// A cancel during the constructor found `tx` null and could only ask us to stop. Do not open
@@ -176,7 +179,16 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 {
     if (!started.load())
     {
-        onStart();
+        try
+        {
+            onStart();
+        }
+        catch (const pqxx::failure &)
+        {
+            /// A start that onCancel() interrupted fails instead of returning. Report the cancellation.
+            if (!stop_requested.load())
+                throw;
+        }
         started.store(true);
     }
 
@@ -291,9 +303,11 @@ void PostgreSQLSource<T>::onCancel() noexcept
     {
         /// Snapshot under the lock, then use it with the lock released: the pqxx calls below block.
         std::shared_ptr<T> tx_snapshot;
+        int fd = -1;
         {
             std::lock_guard lock(tx_mutex);
             tx_snapshot = tx;
+            fd = interrupt_fd;
         }
 
         if (!tx_snapshot)
@@ -302,7 +316,7 @@ void PostgreSQLSource<T>::onCancel() noexcept
         /// The connection is ours to discard, so the read can be interrupted at any point of its life.
         if (connection_holder)
         {
-            interruptRead(tx_snapshot);
+            interruptRead(fd);
             connection_holder->setBroken();
         }
         /// A connection that came with the transaction outlives this source, so ask the server instead.
@@ -332,6 +346,9 @@ PostgreSQLSource<T>::~PostgreSQLSource()
 
     stream.reset();
     tx.reset();
+
+    if (interrupt_fd >= 0)
+        ::close(interrupt_fd);
 }
 
 template

@@ -196,7 +196,7 @@ class StatementStallingProxy:
     constructor, before `onStart` has published `tx`. Stalling the `COPY` pins it one step
     later, inside `pqxx::stream_from`'s constructor, with `tx` published and still no
     statement running on the connection. Those are the two startup windows in which a cancel
-    finds nothing to interrupt.
+    request to the server finds no statement to interrupt.
 
     `skip` exists because the source's transaction is not the only one on the wire. Reading
     through `postgresql()` without an explicit column list first fetches the table structure,
@@ -512,11 +512,10 @@ def test_kill_query_while_copy_is_starting(started_cluster, setup_streaming_view
     not be lost either.
 
     This is one step later than `test_kill_query_while_transaction_is_starting`. Here `tx` is
-    already published, so `onCancel` does call `cancel_query()` -- but no statement is running
-    on that connection yet, so PostgreSQL has nothing to interrupt and the cancel is dropped.
-    `onStart` opens the COPY straight afterwards, so the destructor has to be the one that
-    cancels it. If a cancel could take the teardown away from it, nothing would, and the
-    rollback would sit waiting for the COPY.
+    already published, but no statement is running on the connection yet, so a cancel request
+    to the server would find nothing to interrupt and be dropped. `onCancel` therefore has to
+    act on the connection itself, and the failed `COPY` start must still surface as a
+    cancellation rather than as a transport error.
 
     Stalling the COPY request rather than the `BEGIN` is what places the cancel in this
     window; `test_kill_query_while_transaction_is_starting` cannot reach it, because there
@@ -581,9 +580,9 @@ ENGINE = PostgreSQL(
         finally:
             proxy.release()
 
-        # Once the COPY reaches the server the read has to be abandoned. Without the fix the
-        # dropped cancel leaves the source streaming the view to its end, so this join times
-        # out.
+        # The read has to be abandoned whether or not the COPY ever reaches the server. Without
+        # the fix the dropped cancel leaves the source streaming the view to its end, so this
+        # join times out.
         query_thread.join(timeout=60)
         assert (
             not query_thread.is_alive()
@@ -720,14 +719,20 @@ def test_kill_query_when_postgresql_cancel_connection_fails(
         )
         wait_for_port_forward_connection(port_forward)
 
-        # Keep the active `postgresql` data connection open, but refuse the separate
-        # `pqxx::connection::cancel_query` connection opened by `KILL QUERY`.
+        # Keep the active `postgresql` data connection open, but refuse any new connection to
+        # the host. The kill must get by without one.
         port_forward.stop()
         wait_for_proxy_listener_closed(proxy_host, port)
 
         node1.query(f"KILL QUERY WHERE query_id='{query_id}'")
-        node1.wait_for_log_line("PQcancel\\(\\) -- connect\\(\\) failed", timeout=30)
 
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+            "0",
+            retry_count=60,
+            sleep_time=0.5,
+        )
         assert node1.query("SELECT 1").strip() == "1"
     finally:
         port_forward.stop(force=True)
