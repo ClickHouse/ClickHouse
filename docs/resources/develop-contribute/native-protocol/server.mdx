@@ -23,8 +23,9 @@ keywords: ['native protocol', 'tcp protocol', 'client-server', 'protocol specifi
 | 12    | UUIDs                            | List of unique parts ids                                        |
 | 13    | ReadTaskRequest                  | String (UUID) describes a request for which next task is needed |
 | 14    | [ProfileEvents](#profile-events) | Packet with profile events from server                          |
+| 19    | [`ProfileTraces`](/reference/interfaces/specs/NativeProtocol#profiletraces) | Sampled query stacks and delivery status; revision `54493`+ with `send_profile_traces = 1` |
 
-The `Data`, `Totals` and `Extremes` can be compressed.
+The `Data`, `Totals`, `Extremes`, and `ProfileTraces` block bodies can be compressed. The current [native protocol specification](/reference/interfaces/specs/NativeProtocol) defines the revision gates and interleaving rules.
 
 ## Hello {#hello}
 
