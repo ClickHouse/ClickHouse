@@ -116,7 +116,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , idempotency_id(write_settings.object_storage_write_if_none_match.empty() ? "" : getRandomASCIIString(IDEMPOTENCY_ID_LENGTH))
+    , idempotency_id(getRandomASCIIString(IDEMPOTENCY_ID_LENGTH))
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -417,15 +417,8 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// A completion can come back as NO_SUCH_UPLOAD after an earlier attempt of it succeeded, and
-    /// only the id tells that from an upload really aborted over somebody else's object. So every
-    /// multipart upload carries one, conditional or not.
-    if (idempotency_id.empty())
-        idempotency_id = getRandomASCIIString(IDEMPOTENCY_ID_LENGTH);
-
     /// Metadata set here lands on the completed object, so a HEAD after completion sees the id.
-    if (auto metadata = metadataWithIdempotencyId())
-        req.SetMetadata(*metadata);
+    req.SetMetadata(metadataWithIdempotencyId());
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
@@ -744,8 +737,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    if (auto metadata = metadataWithIdempotencyId())
-        req.SetMetadata(*metadata);
+    req.SetMetadata(metadataWithIdempotencyId());
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
@@ -763,11 +755,8 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     return req;
 }
 
-std::optional<ObjectAttributes> WriteBufferFromS3::metadataWithIdempotencyId() const
+ObjectAttributes WriteBufferFromS3::metadataWithIdempotencyId() const
 {
-    if (idempotency_id.empty())
-        return object_metadata;
-
     auto metadata = object_metadata.value_or(ObjectAttributes{});
     metadata[IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
     return metadata;

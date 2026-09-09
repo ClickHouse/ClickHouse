@@ -608,7 +608,8 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
 
     std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
     {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
+        /// Serves both conditional single-part modes: `If-None-Match: *` and `If-Match: <etag>`.
+        EXPECT_FALSE(request.GetIfNoneMatch().empty() && request.GetIfMatch().empty());
 
         BucketMemStore::Metadata metadata;
         for (const auto & [name, value] : request.GetMetadata())
@@ -1212,8 +1213,9 @@ TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
     EXPECT_EQ(injection->seen_if_none_match[0], "*");
 }
 
-/// An ordinary (unconditional) S3 write is untouched: no token is stamped on the request, and a 412 is
-/// still thrown. Proves the `object_storage_write_if_none_match` guard is load-bearing.
+/// An ordinary (unconditional) S3 write sends no `If-None-Match`, and a 412 over an object this buffer
+/// did not write is still thrown. Every write carries an id, so what refuses the 412 is the id at the
+/// key not matching -- not the absence of one.
 TEST_P(SyncAsync, SinglepartPutWithoutIfNoneMatchStillThrows) {
     auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
     setInjectionModel(injection);
@@ -1235,13 +1237,62 @@ TEST_P(SyncAsync, SinglepartPutWithoutIfNoneMatchStillThrows) {
         }
       }, DB::S3Exception);
 
-    /// The request was not conditional, no token was stamped, and no HEAD looked one up.
+    /// The request was not conditional. The id was stamped, and the HEAD that looked it up found
+    /// nothing at the key, which is why the 412 was reported rather than absorbed.
     ASSERT_FALSE(injection->seen_metadata.empty());
     for (const auto & metadata : injection->seen_metadata)
-        EXPECT_FALSE(metadata.contains("clickhouse-idempotency-id"));
+        EXPECT_FALSE(metadata.at("clickhouse-idempotency-id").empty());
     for (const auto & if_none_match : injection->seen_if_none_match)
         EXPECT_TRUE(if_none_match.empty());
-    EXPECT_EQ(client->counters.headObject, 0u);
+    EXPECT_GE(client->counters.headObject, 1u);
+}
+
+/// `If-Match` is the other conditional single-part write: Iceberg advances `version-hint.text` with
+/// it once the file exists. A lost response leaves the object carrying a new ETag, so the replayed
+/// PUT sees its own `If-Match` fail. On our own object that is success, not a CAS conflict.
+TEST_P(SyncAsync, SinglepartIfMatchPutRecoversLostResponse) {
+    auto injection = std::make_shared<MockS3::PutObjectLostResponseThenPreconditionFailed>(
+        client->store, /* store_first_attempt= */ true);
+    setInjectionModel(injection);
+
+    auto buffer = getWriteBuffer("conditional_put_if_match", conditionalReplaceWriteSettings());
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["conditional_put_if_match"], "A");
+    EXPECT_FALSE(bStore.object_metadata["conditional_put_if_match"].at("clickhouse-idempotency-id").empty());
+}
+
+/// The protective half: the same 412 over an object somebody else wrote is a real conflict.
+TEST_P(SyncAsync, SinglepartIfMatchPutDoesNotMaskForeignObject) {
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("conditional_put_if_match_foreign", "1", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
+
+    setInjectionModel(std::make_shared<MockS3::PutObjectPreconditionFailedInjection>());
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_put_if_match_foreign", conditionalReplaceWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    EXPECT_EQ(bStore.objects["conditional_put_if_match_foreign"], "1");
+    EXPECT_EQ(
+        bStore.object_metadata["conditional_put_if_match_foreign"].at("clickhouse-idempotency-id"),
+        "written-by-somebody-else");
 }
 
 /// A caller-supplied `object_metadata` must survive next to the write token -- the token is merged in,
