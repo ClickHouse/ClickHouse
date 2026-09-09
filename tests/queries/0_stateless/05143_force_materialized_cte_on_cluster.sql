@@ -40,10 +40,14 @@ CREATE VIEW v_05143 ON CLUSTER test_shard_localhost AS WITH c AS MATERIALIZED (S
 SELECT 'MODIFY QUERY on cluster: rejected on the host, accepted with the guard off';
 SET distributed_ddl_entry_format_version = DEFAULT;
 SET force_materialized_cte = 1;
+-- A materialized view must read from a table, not a table function.
+CREATE TABLE src_05143 ON CLUSTER test_shard_localhost (x UInt64) ENGINE = Memory;
+INSERT INTO src_05143 SELECT number FROM numbers(3);
 CREATE TABLE dst_05143 ON CLUSTER test_shard_localhost (n UInt64) ENGINE = Memory;
-CREATE MATERIALIZED VIEW mv_05143 ON CLUSTER test_shard_localhost TO dst_05143 AS SELECT count() AS n FROM numbers(3);
-ALTER TABLE mv_05143 ON CLUSTER test_shard_localhost MODIFY QUERY WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() AS n FROM c AS a, c AS b; -- { serverError SUPPORT_IS_DISABLED }
+CREATE MATERIALIZED VIEW mv_05143 ON CLUSTER test_shard_localhost TO dst_05143 AS SELECT count() AS n FROM src_05143;
+ALTER TABLE mv_05143 ON CLUSTER test_shard_localhost MODIFY QUERY WITH c AS MATERIALIZED (SELECT x FROM src_05143) SELECT count() AS n FROM c AS a, c AS b; -- { serverError SUPPORT_IS_DISABLED }
 SET force_materialized_cte = 0;
-ALTER TABLE mv_05143 ON CLUSTER test_shard_localhost MODIFY QUERY WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() AS n FROM c AS a, c AS b;
+ALTER TABLE mv_05143 ON CLUSTER test_shard_localhost MODIFY QUERY WITH c AS MATERIALIZED (SELECT x FROM src_05143) SELECT count() AS n FROM c AS a, c AS b;
 DROP TABLE mv_05143 ON CLUSTER test_shard_localhost;
 DROP TABLE dst_05143 ON CLUSTER test_shard_localhost;
+DROP TABLE src_05143 ON CLUSTER test_shard_localhost;
