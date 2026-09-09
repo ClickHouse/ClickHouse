@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
@@ -20,10 +22,11 @@ namespace ErrorCodes
 }
 
 #define EXTRACT_VECTOR(INDEX) \
-    const ColumnPtr & col##INDEX = non_const_arguments[(INDEX) + vectorStartIndex].column;
+    const ColumnPtr & col##INDEX = non_const_arguments[(INDEX) + vectorStartIndex].column; \
+    const auto span##INDEX = makeUIntColumnSpan(*col##INDEX);
 
 #define EXPAND(IDX, ...) \
-    (mask ? expand(mask.read(IDX, i), __VA_ARGS__) : __VA_ARGS__)
+    (mask ? expand(mask.is_const ? mask_ratios[(IDX)] : mask.read((IDX), i), __VA_ARGS__) : __VA_ARGS__)
 
 #define EXECUTE() \
     size_t nd = arguments.size(); \
@@ -51,6 +54,11 @@ namespace ErrorCodes
     for (auto & argument : non_const_arguments) \
         argument.column = argument.column->convertToFullColumnIfConst(); \
      \
+    std::array<UInt64, 8> mask_ratios{}; \
+    if (mask && mask.is_const) \
+        for (size_t mask_idx = 0; mask_idx < std::min<size_t>(nd, mask_ratios.size()); ++mask_idx) \
+            mask_ratios[mask_idx] = mask.read(mask_idx, 0); \
+     \
     auto col_res = ColumnUInt64::create(); \
     ColumnUInt64::Container & vec_res = col_res->getData(); \
     vec_res.resize(input_rows_count); \
@@ -60,60 +68,60 @@ namespace ErrorCodes
     { \
         for (size_t i = 0; i < input_rows_count; i++) \
         { \
-            vec_res[i] = EXPAND(0, col0->getUInt(i)); \
+            vec_res[i] = EXPAND(0, span0[i]); \
         } \
         return col_res; \
     } \
      \
     EXTRACT_VECTOR(1) \
     ENCODE(2, \
-           MASK(2, 0, col0->getUInt(i)), \
-           MASK(2, 1, col1->getUInt(i))) \
+           MASK(2, 0, span0[i]), \
+           MASK(2, 1, span1[i])) \
     EXTRACT_VECTOR(2) \
     ENCODE(3, \
-           MASK(3, 0, col0->getUInt(i)), \
-           MASK(3, 1, col1->getUInt(i)), \
-           MASK(3, 2, col2->getUInt(i))) \
+           MASK(3, 0, span0[i]), \
+           MASK(3, 1, span1[i]), \
+           MASK(3, 2, span2[i])) \
     EXTRACT_VECTOR(3) \
     ENCODE(4, \
-           MASK(4, 0, col0->getUInt(i)), \
-           MASK(4, 1, col1->getUInt(i)), \
-           MASK(4, 2, col2->getUInt(i)), \
-           MASK(4, 3, col3->getUInt(i))) \
+           MASK(4, 0, span0[i]), \
+           MASK(4, 1, span1[i]), \
+           MASK(4, 2, span2[i]), \
+           MASK(4, 3, span3[i])) \
     EXTRACT_VECTOR(4) \
     ENCODE(5, \
-           MASK(5, 0, col0->getUInt(i)), \
-           MASK(5, 1, col1->getUInt(i)), \
-           MASK(5, 2, col2->getUInt(i)), \
-           MASK(5, 3, col3->getUInt(i)), \
-           MASK(5, 4, col4->getUInt(i))) \
+           MASK(5, 0, span0[i]), \
+           MASK(5, 1, span1[i]), \
+           MASK(5, 2, span2[i]), \
+           MASK(5, 3, span3[i]), \
+           MASK(5, 4, span4[i])) \
     EXTRACT_VECTOR(5) \
     ENCODE(6, \
-           MASK(6, 0, col0->getUInt(i)), \
-           MASK(6, 1, col1->getUInt(i)), \
-           MASK(6, 2, col2->getUInt(i)), \
-           MASK(6, 3, col3->getUInt(i)), \
-           MASK(6, 4, col4->getUInt(i)), \
-           MASK(6, 5, col5->getUInt(i))) \
+           MASK(6, 0, span0[i]), \
+           MASK(6, 1, span1[i]), \
+           MASK(6, 2, span2[i]), \
+           MASK(6, 3, span3[i]), \
+           MASK(6, 4, span4[i]), \
+           MASK(6, 5, span5[i])) \
     EXTRACT_VECTOR(6) \
     ENCODE(7, \
-           MASK(7, 0, col0->getUInt(i)), \
-           MASK(7, 1, col1->getUInt(i)), \
-           MASK(7, 2, col2->getUInt(i)), \
-           MASK(7, 3, col3->getUInt(i)), \
-           MASK(7, 4, col4->getUInt(i)), \
-           MASK(7, 5, col5->getUInt(i)), \
-           MASK(7, 6, col6->getUInt(i))) \
+           MASK(7, 0, span0[i]), \
+           MASK(7, 1, span1[i]), \
+           MASK(7, 2, span2[i]), \
+           MASK(7, 3, span3[i]), \
+           MASK(7, 4, span4[i]), \
+           MASK(7, 5, span5[i]), \
+           MASK(7, 6, span6[i])) \
     EXTRACT_VECTOR(7) \
     ENCODE(8, \
-           MASK(8, 0, col0->getUInt(i)), \
-           MASK(8, 1, col1->getUInt(i)), \
-           MASK(8, 2, col2->getUInt(i)), \
-           MASK(8, 3, col3->getUInt(i)), \
-           MASK(8, 4, col4->getUInt(i)), \
-           MASK(8, 5, col5->getUInt(i)), \
-           MASK(8, 6, col6->getUInt(i)), \
-           MASK(8, 7, col7->getUInt(i))) \
+           MASK(8, 0, span0[i]), \
+           MASK(8, 1, span1[i]), \
+           MASK(8, 2, span2[i]), \
+           MASK(8, 3, span3[i]), \
+           MASK(8, 4, span4[i]), \
+           MASK(8, 5, span5[i]), \
+           MASK(8, 6, span6[i]), \
+           MASK(8, 7, span7[i])) \
      \
     throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, \
                     "Illegal number of UInt arguments of function {}, max: 8", \

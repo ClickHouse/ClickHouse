@@ -249,7 +249,9 @@ BUILDX_RETRIES = 2
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
-    "unexpected status from HEAD request",
+    # One containerd error, formatted `unexpected status from <method> request to <url>:
+    # <status>`, so the method is an interpolated field and not part of the failure.
+    "unexpected status from ",
     "500 Internal Server Error",
     "502 Bad Gateway",
     "503 Service Unavailable",
@@ -283,6 +285,32 @@ APT_MIRROR_ERRORS = [
     # `apt-get update` could not refresh the package lists
     "Some index files failed to download",
 ]
+
+# `apt-get update` does not fail when a mirror withholds a suite's `InRelease`: it
+# warns (`W: Failed to fetch ... 503`, then `W: Some index files failed to download`),
+# carries on with whatever suites it did get and exits 0. So the `RUN` chain reaches
+# `apt-get install`, which dies resolving the packages against a partial index, and it
+# is that resolution error - naming no mirror, no URL and no `Failed to fetch` - that
+# buildx fences. `APT_MIRROR_ERRORS` matches none of it, which is why not one of the
+# 26 arm64 image builds that reded across the fleet inside the 00:00 UTC hour of
+# 2026-09-05 rebuilt against Canonical.
+#
+# Which of the three shapes apt reports depends only on what the missing suites were
+# providing, so all three have to be here: `wget` and `tzdata` came out as `Unable to
+# locate package`, `busybox`, `ca-certificates` and `locales` as `has no installation
+# candidate` because the pristine base image's `/var/lib/dpkg/status` still names them,
+# and a `wget` whose `libpsl5` had gone as `held broken packages`.
+APT_RESOLUTION_ERRORS = [
+    "Unable to locate package",
+    "has no installation candidate",
+    "Unable to correct problems, you have held broken packages",
+]
+# On its own a resolution error is also what a misspelled package name in one of these
+# Dockerfiles produces, and that must keep failing on the first attempt. What separates
+# the two is the `apt-get update` in the very same step: against a healthy mirror it
+# refreshes every suite silently, so this warning is the mirror's own signature and not
+# an inference from the base image's contents.
+APT_INDEX_WARNING = "Some index files failed to download"
 
 
 # `--progress=plain` prints the whole build, so a signature found anywhere in the
@@ -355,6 +383,45 @@ def is_apt_mirror_failure(info: str) -> bool:
         and APT_ERROR_SEVERITY in line
         and any(error in line for error in APT_MIRROR_ERRORS)
         for line in terminal_build_failure(info).splitlines()
+    )
+
+
+def terminal_step_prefix(info: str) -> str:
+    """`--progress=plain` line prefix (`#8 `) of the step the build stopped on.
+
+    buildx tags every output line with the step it came from and announces the failure
+    as `#8 ERROR: process ... did not complete successfully`, which is the only place
+    the fenced block's step number is stated. Empty when that line is absent, so
+    callers fail closed.
+    """
+    prefix = ""
+    for line in info.splitlines():
+        if line.startswith("#") and line.partition(" ")[2].startswith(
+            BUILDX_ERROR_PREFIX
+        ):
+            prefix = line.partition(" ")[0] + " "
+    return prefix
+
+
+def is_apt_index_failure(info: str) -> bool:
+    """Did the step that stopped the build resolve packages against a partial index?
+
+    Both halves have to come from that one step: apt's `E:` resolution error inside the
+    terminal fenced block, and the warning that the step's own index refresh came back
+    incomplete, which apt prints far enough above the fence that only the step's
+    `#N ` prefix ties the two together.
+    """
+    if not any(
+        not line.startswith(BUILDX_STEP_HEADER_PREFIX)
+        and APT_ERROR_SEVERITY in line
+        and any(error in line for error in APT_RESOLUTION_ERRORS)
+        for line in terminal_build_failure(info).splitlines()
+    ):
+        return False
+    prefix = terminal_step_prefix(info)
+    return bool(prefix) and any(
+        line.startswith(prefix) and APT_INDEX_WARNING in line
+        for line in info.splitlines()
     )
 
 
@@ -432,7 +499,11 @@ def should_try_next_mirror(info: str) -> bool:
     has to reach the next mirror too - it is only reached once the build is failing
     anyway, and `buildx_timeout` keeps the extra attempt inside the job's own cap.
     """
-    return is_apt_mirror_failure(info) or is_buildx_timeout(info)
+    return (
+        is_apt_mirror_failure(info)
+        or is_apt_index_failure(info)
+        or is_buildx_timeout(info)
+    )
 
 
 def buildx_args(

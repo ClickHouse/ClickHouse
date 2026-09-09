@@ -16,7 +16,7 @@ Expression (Project names)
         Sorting
           Expression ((Before ORDER BY + (Projection + )))
             JoinLogical (Shuffle HashJoin (by __table6.__table1.p_partkey)  swapped)
-              Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
+              Expression ((Derived NOT NULL filter from JOIN condition + (Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection)))))
                 Aggregating
                   Expression ((Before GROUP BY + ))
                     ShuffleExchange
