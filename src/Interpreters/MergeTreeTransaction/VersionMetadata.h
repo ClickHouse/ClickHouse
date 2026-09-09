@@ -86,9 +86,17 @@ public:
     /// persists to storage, then updates in-memory state. Optionally logs the event to system log if context is provided.
     void setAndStoreCreationTID(const TransactionID & tid, TransactionInfoContext * context);
 
+    /// Returns true if the object was created by a transaction that has not committed yet.
+    /// An unset `creation_csn` is not enough to tell: it is written lazily, so an already
+    /// committed transaction can leave it unset until some later operation stamps it. The
+    /// transaction log is consulted in that case.
+    bool isCreatedByUncommittedTransaction() const;
+
     /// Sets `removal_tid` when a transaction starts removing the data part.
     /// Gets current info, updates `removal_tid` (and sets `removal_csn` to `NonTransactionalCSN` if non-transactional),
     /// persists to storage, then updates in-memory state.
+    /// Throws `SERIALIZATION_ERROR` for a non-transactional `tid` when the object was created by a
+    /// transaction that has not committed yet: such a removal is not representable on disk.
     void setAndStoreRemovalTID(const TransactionID & tid);
 
     /// Locks the data part for removal by the given transaction.
