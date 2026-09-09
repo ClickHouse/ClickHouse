@@ -43,6 +43,80 @@ async function main()
         createElement: () => new Element(),
         createDocumentFragment: () => Object.assign(new Element(), { fragment: true }),
     };
+    const requestApi = vm.runInNewContext(extract('const TT = {', '/// SQL keywords recognized')
+        + extract('const OPENING_BRACKETS', '/// The closing type that matches')
+        + extract('const TT_FALLBACK_OTHER', 'async function getQueryUnderCursor(')
+        + extract('function profilerPeriodNs(', 'const MAX_FLAME_NODES')
+        + extract('async function postImpl(', '    targetResultEl.queryText = query;')
+        + extract('        if (profile_traces && (', '        const fetch_options =')
+        + '\nreturn {url: use_framing ? framing_url : url, profile_traces}; }\n'
+        + '({detectFramingSetting, postImpl})', {
+            tokenizeOrNull: async () => null,
+            default_format: 'JSONCompactStringsEachRowWithNamesAndTypes',
+            framed_default_format: 'JSONCompactStringsEachRowWithNamesAndTypes',
+        });
+    const request = (query, params = {}, enabled = true) => requestApi.postImpl(
+        {profileTraces: enabled, profilerPeriodNs: '1000000'}, 1, query, {}, {}, params, '',
+        {url: 'http://fixture/', user: '', password: ''}, 0);
+    for (const value of ['0', "'0'", 'FALSE', "'false'", 'DEFAULT', "'\\x66alse'", '$value$false$value$'])
+    {
+        const result = await request(`SELECT 1 SETTINGS send_profile_traces = ${value}`);
+        const params = new URL(result.url).searchParams;
+        assert.equal(result.profile_traces, false, value);
+        for (const name of ['send_profile_traces', 'query_profiler_cpu_time_period_ns', 'query_profiler_real_time_period_ns'])
+            assert.equal(params.has(name), false, `${value}: ${name}`);
+    }
+    for (const query of [
+        'SELECT 1 SETTINGS send_profile_traces = 1, send_profile_traces = 0',
+        'SELECT 1 SETTINGS send_profile_traces = DEFAULT, send_profile_traces = 1',
+        'SELECT 1 SETTINGS send_profile_traces = 1, send_profile_traces = DEFAULT',
+        'SELECT 1 SETTINGS `send_profile_traces` = 0',
+        'SELECT 1 SETTINGS optimize_move_to_prewhere, send_profile_traces = 0',
+        'SELECT 1 SETTINGS send_profile_traces = {enabled:Bool}',
+    ])
+        assert.equal((await request(query, {enabled: '0'})).profile_traces, false, query);
+    for (const query of [
+        "SELECT 'SETTINGS send_profile_traces = 0'",
+        'SELECT 1 /* SETTINGS send_profile_traces = 0 */',
+        'SELECT * FROM (SELECT 1 SETTINGS send_profile_traces = 0)',
+        'SELECT settings x, send_profile_traces = 0 FROM t',
+        'SELECT 1 SETTINGS send_profile_traces = 0, send_profile_traces = 1',
+        'SELECT 1 SETTINGS send_profile_traces = 0, send_profile_traces',
+        'SELECT 1 SETTINGS send_profile_traces = {enabled:Bool}',
+    ])
+    {
+        const result = await request(query, {enabled: '1'});
+        assert.equal(result.profile_traces, true, query);
+        assert.equal(new URL(result.url).searchParams.get('query_profiler_cpu_time_period_ns'), '1000000', query);
+    }
+    const inlinePayload = await requestApi.detectFramingSetting("INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nSETTINGS send_profile_traces = 0");
+    assert.equal(!!inlinePayload.user_disables_profile_traces, false);
+    assert.equal(inlinePayload.has_ambiguous_post_format_settings, true);
+    assert.equal(new URL((await request('SELECT 1', {}, false)).url).searchParams.has('send_profile_traces'), false);
+    const changingTab = {profileTraces: true, profilerPeriodNs: '1000000'};
+    const pendingRequest = requestApi.postImpl(changingTab, 1, 'SELECT 1', {}, {}, {}, '', {url: 'http://fixture/'}, 0);
+    changingTab.profileTraces = false;
+    changingTab.profilerPeriodNs = '100000000';
+    assert.equal(new URL((await pendingRequest).url).searchParams.get('query_profiler_cpu_time_period_ns'), '1000000');
+    console.log('PASS request settings respect SQL opt-outs, DEFAULT resets, parameters, and lexical query scope');
+    for (const clause of [
+        "framing_output_format = 'EventStream'",
+        "framing_output_format = 'Event\\x53tream'",
+        'framing_output_format = $fmt$EventStream$fmt$',
+        "framing_output_format = 'None', framing_output_format = 'EventStream'",
+    ])
+        assert.equal((await request(`SELECT 1 SETTINGS ${clause}`)).profile_traces, true, clause);
+    for (const query of [
+        "SELECT 1 SETTINGS framing_output_format = 'None'",
+        'SELECT 1 SETTINGS framing_output_format = DEFAULT',
+        "SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'",
+        "SELECT 1 SETTINGS framing_output_format = 'EventStream', framing_output_format = 'None'",
+        "SELECT 1 SETTINGS framing_output_format = DEFAULT, framing_output_format = 'EventStream'",
+        "SELECT 1 FORMAT JSONCompactColumns SETTINGS framing_output_format = 'EventStream'",
+    ])
+        await assert.rejects(request(query), /framing/, query);
+    console.log('PASS explicit EventStream supports Flame while incompatible framing and chart formats remain rejected');
+
     const api = vm.runInNewContext(extract('const MAX_FLAME_NODES', 'async function getServerStatus')
         + extract('function makeEventStreamHandler(', '/// Parse one SSE event block')
         + '\n({freshFlameGraphState, accumulateProfileTraces, selectFlameTree, updateFlameHostSelector, flameGraphStatus, renderFlameGraph, makeEventStreamHandler, MAX_FLAME_NODES, MAX_FLAME_LABEL_CHARS, MAX_FLAME_HOSTS, MAX_FLAME_DOM_FRAMES, MAX_FLAME_SERVER_DROPS})',

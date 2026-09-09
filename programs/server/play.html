@@ -11064,8 +11064,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
-    const profile_traces = !!tab.profileTraces;
+    const requested_profile_traces = !!tab.profileTraces;
     const profiler_period_ns = profilerPeriodNs(tab);
+    const framing_settings = await detectFramingSetting(query, paramValuesSnapshot);
+    const profile_traces = requested_profile_traces && !framing_settings.user_disables_profile_traces;
     if (profile_traces) url += '&send_profile_traces=1';
     if (profile_traces && profiler_period_ns)
         url += `&query_profiler_real_time_period_ns=${profiler_period_ns}&query_profiler_cpu_time_period_ns=${profiler_period_ns}`;
@@ -11130,7 +11132,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// `framing_output_format` mention inside a string literal or a comment - e.g.
     /// `SELECT 'framing_output_format = None'` - is not mistaken for a real setting and does not
     /// change how the request is framed.
-    const { user_framing, user_disables_framing, user_sets_session_framing, has_ambiguous_post_format_settings } = await detectFramingSetting(query);
+    const { user_framing, user_event_stream, user_disables_framing, user_sets_session_framing, has_ambiguous_post_format_settings } = framing_settings;
     let use_framing = !user_framing && !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
     /// The framed and the plain request ask for different default formats: the server rejects the
     /// in-band-progress `default_format` under framing (progress arrives as separate `progress`
@@ -11195,9 +11197,9 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     reply = '';
     try {
         targetResultEl.startProfileTraces(profile_traces);
-        if (profile_traces && !use_framing)
+        if (profile_traces && ((!use_framing && !user_event_stream) || explicit_format?.toLowerCase() === 'jsoncompactcolumns'))
         {
-            throw new Error('Live flame graphs require automatic EventStream framing. Uncheck Flame graph to use JSONCompactColumns or an explicit framing_output_format setting.');
+            throw new Error('Live flame graphs require EventStream framing. Uncheck Flame graph to use JSONCompactColumns or another framing_output_format.');
         }
         if (user_sets_session_framing)
         {
@@ -16211,6 +16213,24 @@ function tokensBeforeInlineInsertPayload(tokens)
     return tokens;
 }
 
+/// Decode string settings as `parseEscapeSequence` and the quoted-string reader do on the server.
+function sqlSettingTokenValue(token)
+{
+    if (token.type === TT.StringLiteral)
+    {
+        const escapes = { '0': '\0', a: '\x07', b: '\b', e: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+        return token.token.slice(1, -1).replace(/''|\\(?:x[\da-fA-F]{2}|[\s\S])/g, escaped =>
+            escaped === "''" ? "'" : escaped.startsWith('\\x') && escaped.length === 4
+                ? String.fromCharCode(parseInt(escaped.slice(2), 16)) : escapes[escaped[1]] ?? escaped[1]);
+    }
+    if (token.type === TT.HereDoc)
+    {
+        const delimiter = token.token.match(/^\$[\w]*\$/)?.[0];
+        return delimiter ? token.token.slice(delimiter.length, -delimiter.length) : undefined;
+    }
+    return token.token;
+}
+
 /// Decide whether the query carries its own `framing_output_format` setting and, if so, whether that
 /// setting is a query-level choice (an inline `SETTINGS` clause), disables framing (`= 'None'`), or is
 /// a standalone `SET` statement that changes the setting for the whole session. Values the page cannot
@@ -16246,8 +16266,9 @@ function tokensBeforeInlineInsertPayload(tokens)
 /// former persists in the session (when the connection uses a `session_id`), which this page cannot
 /// honor. When the lexer cannot produce a token list - WebAssembly is unavailable, or tokenization
 /// failed - the same walk runs over `fallbackTokenize`'s tokens, so the classification (and every
-/// context rule above) is identical in both paths.
-async function detectFramingSetting(query)
+/// context rule above) is identical in both paths. The same settings walk detects a query-level
+/// profiler opt-out, so the page's checkbox cannot add profiling settings to a disabled run.
+async function detectFramingSetting(query, param_values = {})
 {
     const raw_tokens = await tokenizeWithFallback(query);
     const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant));
@@ -16267,11 +16288,16 @@ async function detectFramingSetting(query)
     /// recognized per statement.
     let at_statement_start = true;
     /// The server keeps duplicate `SETTINGS` entries and applies them in order, so the last
-    /// assignment wins: `SETTINGS framing_output_format = 'None', framing_output_format =
+    /// ordinary assignment wins: `SETTINGS framing_output_format = 'None', framing_output_format =
     /// 'EventStream'` leaves framing enabled. The walk therefore records every assignment
     /// (each overwriting the previous) and classifies after it, instead of exiting on the first.
+    /// `DEFAULT` resets are applied after all ordinary assignments regardless of their text order.
     let saw_query_setting = false;
     let query_setting_disables = false;
+    let query_setting_value;
+    let query_resets_framing = false;
+    let query_disables_profile_traces = false;
+    let query_resets_profile_traces = false;
     for (let i = 0; i < tokens.length; ++i) {
         const t = tokens[i];
         const is_top_level_semicolon = depth === 0 && t.type === TT.Semicolon;
@@ -16319,6 +16345,10 @@ async function detectFramingSetting(query)
                 const opened_by_shorthand = tokens[i + 2].type !== TT.Equals;
                 const saved_saw_query_setting = saw_query_setting;
                 const saved_query_setting_disables = query_setting_disables;
+                const saved_query_setting_value = query_setting_value;
+                const saved_query_resets_framing = query_resets_framing;
+                const saved_query_disables_profile_traces = query_disables_profile_traces;
+                const saved_query_resets_profile_traces = query_resets_profile_traces;
                 let j = i + 1;
                 while (settingName(tokens[j]) !== null) {
                     const name = settingName(tokens[j]);
@@ -16342,7 +16372,9 @@ async function detectFramingSetting(query)
                             }
                             saw_query_setting = true;
                             query_setting_disables = false;
+                            query_setting_value = undefined;
                         }
+                        if (is_settings && name === 'send_profile_traces') query_disables_profile_traces = false;
                         ++j;
                         if (continues) { ++j; continue; }
                         break;
@@ -16356,6 +16388,19 @@ async function detectFramingSetting(query)
                     }
                     const value_token = tokens[j];
                     if (!value_token) break;
+                    if (is_settings && name === 'send_profile_traces')
+                    {
+                        /// `DEFAULT` resets follow all value assignments and restore the canonical false value.
+                        if (value_token.type === TT.BareWord && value_token.token.toLowerCase() === 'default')
+                            query_resets_profile_traces = true;
+                        else
+                        {
+                            const value = value_token.type === TT.OpeningCurlyBrace
+                                ? param_values[tokens[j + 1]?.token] : sqlSettingTokenValue(value_token);
+                            query_disables_profile_traces = ['0', 'false'].includes(String(value).toLowerCase())
+                                || (value_token.type === TT.Number && Number(value) === 0);
+                        }
+                    }
                     if (name === 'framing_output_format') {
                         /// A standalone `SET framing_output_format = ...` changes the setting for the
                         /// whole session; this page overrides `framing_output_format` on every request,
@@ -16365,6 +16410,7 @@ async function detectFramingSetting(query)
                             return { user_framing: false, user_disables_framing: false, user_sets_session_framing: true };
                         }
                         saw_query_setting = true;
+                        query_setting_value = undefined;
                         if (value_token.type === TT.OpeningCurlyBrace) {
                             /// A query-parameter placeholder (`= {fmt:String}`): the page cannot know
                             /// what it resolves to (it may well be `None`), so classify it
@@ -16372,16 +16418,13 @@ async function detectFramingSetting(query)
                             /// request shape the response might not match.
                             query_setting_disables = true;
                         } else {
-                            /// A string-literal value carries its surrounding quotes.
-                            let value = value_token.token;
-                            if (value_token.type === TT.StringLiteral) {
-                                value = value.slice(1, -1);
-                            }
-                            value = value.toLowerCase();
+                            const value = String(sqlSettingTokenValue(value_token)).toLowerCase();
+                            query_setting_value = value;
                             /// `ParserSetQuery` also accepts `= DEFAULT` - a reset to the session/server
                             /// default, which the page cannot know (and which is `None` out of the box) -
                             /// so it is classified as disabling too.
                             query_setting_disables = value === 'none' || value === 'default';
+                            if (value_token.type === TT.BareWord && value === 'default') query_resets_framing = true;
                         }
                     }
                     /// A query-parameter placeholder value (`{name:Type}`) spans several tokens
@@ -16408,6 +16451,10 @@ async function detectFramingSetting(query)
                 if (opened_by_shorthand && !list_ends_properly) {
                     saw_query_setting = saved_saw_query_setting;
                     query_setting_disables = saved_query_setting_disables;
+                    query_setting_value = saved_query_setting_value;
+                    query_resets_framing = saved_query_resets_framing;
+                    query_disables_profile_traces = saved_query_disables_profile_traces;
+                    query_resets_profile_traces = saved_query_resets_profile_traces;
                 } else {
                     /// Resume the main walk right after the settings list (the loop's `++i` steps past
                     /// the last consumed token).
@@ -16421,13 +16468,15 @@ async function detectFramingSetting(query)
     if (has_ambiguous_post_format_settings) {
         return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: true };
     }
-    if (saw_query_setting) {
-        if (query_setting_disables) {
-            return { user_framing: false, user_disables_framing: true, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
-        }
-        return { user_framing: true, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
-    }
-    return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
+    const disables_framing = query_setting_disables || query_resets_framing;
+    return {
+        user_framing: saw_query_setting && !disables_framing,
+        user_disables_framing: saw_query_setting && disables_framing,
+        user_sets_session_framing: false,
+        has_ambiguous_post_format_settings: false,
+        user_event_stream: saw_query_setting && !disables_framing && query_setting_value === 'eventstream',
+        user_disables_profile_traces: query_disables_profile_traces || query_resets_profile_traces,
+    };
 }
 
 /// Detect a real `FORMAT` clause in the query and return `{ name, start, end }` - the format name
