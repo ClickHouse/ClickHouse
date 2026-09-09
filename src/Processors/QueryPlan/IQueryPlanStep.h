@@ -49,7 +49,7 @@ class PlanStepIndex
 public:
     PlanStepIndex();                                                   // fresh index
     PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}          // copy => fresh index
-    PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // keep our own
+    PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // NOLINT(cert-oop54-cpp) - keeping our own index is self-assignment safe
     PlanStepIndex(PlanStepIndex &&) noexcept = default;
     PlanStepIndex & operator=(PlanStepIndex &&) noexcept = default;
 
